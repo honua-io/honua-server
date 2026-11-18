@@ -2324,3 +2324,22 @@ The class stays in Server Features Sharing 1 on selected PR runs and full trunk
 runs. No workflow, shard filter, required check, aggregate dependency or runner
 count changes. Build-host class 45/45 identical passing cases in one job, 297.2
 to 34.7-34.8 seconds (process wall 345 to 62-71 seconds).
+
+### Sharing community and REST read host lifetime
+
+`SharingCommunityTests` shares one application with the durable PostgreSQL
+portal sharing stores; the portal sharing tables are created once, and each case
+deletes all rows from `portal_item_shares` and `portal_community_groups` before
+it starts, so every case still begins from empty sharing tables. The case that
+needs the store binding removed keeps its own application.
+`SharingRestReadTests` shares one application across the default-graph cases,
+which only send anonymous GET and HEAD requests; the info, portal URI list and
+sharing root endpoints are not output-cached. The configured-public-root and
+disabled-entitlement cases keep their own applications.
+
+Both classes stay in Server Features Sharing 2 on selected PR runs and full
+trunk runs. No workflow, shard filter, required check, aggregate dependency or
+runner count changes. One build-host job, all 83 cases of the three Sharing
+classes identical and passing: SharingCommunityTests 114.6 to 10.3-10.9 seconds,
+SharingRestReadTests 121.3 to 16.1-17.5 seconds, SharingRestTokenTests 326.4 to
+36.3-38.9 seconds; process wall 584 to 106-121 seconds.
