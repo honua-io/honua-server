@@ -75,12 +75,21 @@ jobs:
         run: python3 scripts/security/existing-image-scan.py validate
       - name: Verify scan receipt controls
         run: python3 scripts/security/test-existing-image-scan.py
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
       - name: Pull the existing image without running it
         env:
           REGISTRY_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null 2>&1
+          # A published digest is often an index. Inspecting the index reports no
+          # platform, so the scan pulls the one runnable manifest for this platform.
+          docker buildx imagetools inspect --raw "$SCAN_IMAGE" > source-manifest.json
+          SCAN_IMAGE="$(python3 scripts/security/release_images.py resolve-scan-image \
+            --image "$SCAN_IMAGE" --platform "$SCAN_PLATFORM" < source-manifest.json)"
+          export SCAN_IMAGE
+          echo "SCAN_IMAGE=$SCAN_IMAGE" >> "$GITHUB_ENV"
           docker pull --platform "$SCAN_PLATFORM" "$SCAN_IMAGE"
           docker image inspect "$SCAN_IMAGE" > existing-image-inspect.json
           python3 scripts/security/existing-image-scan.py identity
@@ -93,7 +102,7 @@ jobs:
           TRIVY_PLATFORM: ${{ inputs.existing_image_platform }}
         with:
           scan-type: image
-          image-ref: ${{ inputs.existing_image }}
+          image-ref: ${{ env.SCAN_IMAGE }}
           scanners: vuln
           format: json
           output: existing-image-trivy.json
