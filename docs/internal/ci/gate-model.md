@@ -625,7 +625,10 @@ validation and the required aggregate. Both test-analyzer rows remain hosted;
 producer, heavy-shard and Fast/architecture routing stays unchanged. Other refs
 and events keep these jobs on `ubuntu-latest`. Qualification is an operator-run
 health check; the input does not enable normal routing or change repository
-settings.
+settings. The authored inventory template records this placement. A pull
+request that edits `pr-gate.yml` cannot also submit the generated inventory
+page, because that workflow is a generated-file verification input; the trunk
+generator publishes the page.
 
 Draft Format and the admission/control jobs stay on `ubuntu-latest` on a pull request.
 Runner select, the format/analyzer
