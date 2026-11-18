@@ -631,6 +631,9 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
         {
             await oidcFixture.InitializeAsync();
             var oidcClient = oidcFixture.CreateClient();
+            // The public base URL is https, so the pending sign-in cookie is Secure and the
+            // browser reaches the server over https.
+            oidcClient.BaseAddress = new Uri("https://localhost");
 
             var authorizeResponse = await oidcClient.PostAsJsonAsync(
                 "/api/v1/admin/auth/providers/oidc/authorize-url",

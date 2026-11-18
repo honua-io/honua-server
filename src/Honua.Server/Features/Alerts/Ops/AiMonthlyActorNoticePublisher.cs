@@ -2,8 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Security.Admission;
 
@@ -18,18 +16,9 @@ internal sealed class AiMonthlyActorNoticePublisher(
     internal async Task<int> PublishPendingAsync(CancellationToken cancellationToken)
     {
         var pending = await notices.ListPendingAsync(BatchSize, cancellationToken).ConfigureAwait(false);
-        var queued = 0;
-        foreach (var notice in pending)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (await notifications.TryNotifyAsync(CreateNotification(notice), cancellationToken).ConfigureAwait(false)
-                && await notices.MarkQueuedAsync(notice, cancellationToken).ConfigureAwait(false))
-            {
-                queued++;
-            }
-        }
-
-        return queued;
+        return await AiSpendNoticePublisher.PublishAsync(notifications,
+            new AiSpendNoticePublisher.Batch<AiMonthlyActorNotice>(pending, notices.MarkQueuedAsync, CreateNotification),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private static OpsNotification CreateNotification(AiMonthlyActorNotice notice)
@@ -42,7 +31,7 @@ internal sealed class AiMonthlyActorNoticePublisher(
             Severity = AlertSeverity.Warning,
             Title = "Monthly agent spend reached 80%",
             Body = "An agent has reached 80% of a monthly spend limit. Review its remaining allowance before further execution.",
-            DedupeIdentifier = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(identity))),
+            DedupeIdentifier = AiSpendNoticePublisher.DedupeIdentifier(identity),
             Attributes = new Dictionary<string, string>
             {
                 ["deployment"] = notice.DeploymentId,
