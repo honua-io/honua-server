@@ -1,0 +1,246 @@
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+
+using FluentAssertions;
+using Honua.Core.Configuration;
+using Honua.Protocols.GeoServices.GeometryService.Services;
+using Honua.TestKit.Attributes;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
+using NetTopologySuite.Operation.Buffer;
+
+namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
+
+// The segment pairs that could cross, counted before an overlay runs. In process; the
+// component host is not needed.
+[Protocol(TestProtocols.GeometryService)]
+public sealed class GeometryServiceOverlayBudgetTests
+{
+    private static readonly GeometryFactory _factory = new();
+
+    private static readonly long _signedInDefault = new GeometryLimits().MaxOverlayCandidatePairs;
+
+    [UnitTest]
+    [Operation(Operations.Intersect)]
+    public void Grid_CountsEveryCrossing()
+    {
+        var count = OverlayCandidatePairs.Count([Rows(30), Columns(30)], long.MaxValue);
+
+        count.Should().BeGreaterThanOrEqualTo(30 * 30);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Intersect)]
+    public void GridAtTheVertexLimit_StopsSoonAfterTheLimitWithBoundedAllocation()
+    {
+        // 25,000 two-point paths in one geometry: 50,000 vertices, about 156 million crossings.
+        var grid = _factory.CreateMultiLineString([.. Rows(12_500).Geometries
+            .Concat(Columns(12_500).Geometries)
+            .Cast<LineString>()]);
+        const long limit = 500_000;
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        var count = OverlayCandidatePairs.Count([grid], limit);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        count.Should().BeGreaterThan(limit);
+        count.Should().BeLessThanOrEqualTo(limit + 1 + (OverlayCandidatePairs.MaxChainSegments * OverlayCandidatePairs.MaxChainSegments));
+        allocated.Should().BeLessThan(32L * 1024 * 1024, "the count holds the input's chains and index, never the crossings");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Union)]
+    public void PartsOfOneGeometry_AreCountedAgainstEachOther()
+    {
+        var crossing = _factory.CreateMultiLineString([.. Rows(20).Geometries
+            .Concat(Columns(20).Geometries)
+            .Cast<LineString>()]);
+
+        OverlayCandidatePairs.Count([crossing], long.MaxValue).Should().BeGreaterThanOrEqualTo(20 * 20);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Intersect)]
+    public void OverlappingEnvelopesWithoutCrossings_AreCountedAsWork()
+    {
+        // Parallel diagonals 0.1 apart: no line crosses another, but every segment envelope
+        // meets its neighbours'. The count bounds the work of finding crossings, not only them.
+        var diagonals = Enumerable.Range(0, 200)
+            .Select(i => _factory.CreateLineString([new Coordinate(i * 0.1, 0), new Coordinate((i * 0.1) + 100, 100)]))
+            .ToArray();
+
+        OverlayCandidatePairs.Count([_factory.CreateMultiLineString(diagonals)], 10_000).Should().BeGreaterThan(10_000);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Intersect)]
+    public void TwoChainsAlongsideEachOther_CountTheirSegmentPairs()
+    {
+        // Two staircases of 64 steps, each one monotone chain, a quarter step apart: one chain pair,
+        // and every step meets its neighbours in the other staircase.
+        var lower = Staircase(0);
+        var upper = Staircase(0.25);
+
+        OverlayCandidatePairs.Count([lower, upper], long.MaxValue).Should().BeGreaterThan(64);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Intersect)]
+    public void OverlappingDetailedPolygons_FitTheNotSignedInBudget()
+    {
+        // Two 50,000-vertex circles, half overlapping: an ordinary overlay at the vertex limit.
+        var first = Circle(0, 50_000);
+        var second = Circle(500, 50_000);
+
+        OverlayCandidatePairs.Count([first, second], long.MaxValue)
+            .Should().BeLessThan(_signedInDefault / GeometryServiceOverlayBudget.NotSignedInDivisor);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Union)]
+    public void AdjacentParcels_FitTheNotSignedInBudget()
+    {
+        // 2,500 squares sharing their edges, unioned in one request.
+        var parcels = Enumerable.Range(0, 2_500)
+            .Select(i => (Geometry)_factory.ToGeometry(new Envelope(i % 50, (i % 50) + 1, i / 50, (i / 50) + 1)))
+            .ToArray();
+
+        OverlayCandidatePairs.Count(parcels, long.MaxValue)
+            .Should().BeLessThan(_signedInDefault / GeometryServiceOverlayBudget.NotSignedInDivisor);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Union)]
+    public void BuffersUnioned_FitTheNotSignedInBudget()
+    {
+        // 100 points 10 metres apart on a grid, each buffered by 10 metres and unioned.
+        OverlayCandidatePairs.Count(Buffers(spacing: 10), long.MaxValue)
+            .Should().BeLessThan(_signedInDefault / GeometryServiceOverlayBudget.NotSignedInDivisor);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Union)]
+    public void ClusteredBuffersUnioned_FitTheSignedInBudget()
+    {
+        // 100 points half a metre apart, each buffered by 10 metres: every circle overlaps every
+        // other. A signed-in caller may dissolve them; the lower budget for callers that are not
+        // signed in may refuse it.
+        OverlayCandidatePairs.Count(Buffers(spacing: 0.5), long.MaxValue).Should().BeLessThan(_signedInDefault);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Offset)]
+    public void Buffer_RefusesOffsetCurvesThatCrossTooOften()
+    {
+        // A comb of 1,000 thin teeth offset by more than the gap between them: the teeth do not
+        // touch, but the curves drawn around them all cross their neighbours'.
+        var comb = Comb(1_000);
+        const long limit = 500_000;
+        var budget = new GeometryServiceOverlayBudget(limit);
+
+        OverlayCandidatePairs.Count([comb], limit).Should().BeLessThan(limit, "the comb itself crosses nothing");
+        var act = () => budget.Buffer(comb, 60, new BufferParameters());
+
+        act.Should().Throw<GeometryServiceLimitException>().WithMessage(GeometryServiceOverlayBudget.RefusalMessage);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Offset)]
+    public void Buffer_DetailedPolygonByItsRadius_FitsTheNotSignedInBudget()
+    {
+        var circle = Circle(0, 5_000);
+        var budget = new GeometryServiceOverlayBudget(_signedInDefault / GeometryServiceOverlayBudget.NotSignedInDivisor);
+
+        var buffered = budget.Buffer(circle, 1_000, new BufferParameters());
+
+        buffered.Area.Should().BeGreaterThan(circle.Area);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Intersect)]
+    public void Budget_IsAQuarterForCallersNotSignedIn()
+    {
+        GeometryServiceOverlayBudget.Create(GeometryServiceTestContexts.Create(GeometryServiceCaller.SignedIn))
+            .PerOperation.Should().Be(_signedInDefault);
+        GeometryServiceOverlayBudget.Create(GeometryServiceTestContexts.Create(GeometryServiceCaller.NotSignedIn))
+            .PerOperation.Should().Be(_signedInDefault / GeometryServiceOverlayBudget.NotSignedInDivisor);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Intersect)]
+    public void Budget_FollowsTheConfiguredLimitUpToTheCeiling()
+    {
+        var limits = new LimitsOptions();
+        limits.Geometry.MaxOverlayCandidatePairs = 40_000;
+        GeometryServiceOverlayBudget.Create(GeometryServiceTestContexts.Create(GeometryServiceCaller.SignedIn, limits))
+            .PerOperation.Should().Be(40_000);
+
+        limits.Geometry.MaxOverlayCandidatePairs = long.MaxValue;
+        GeometryServiceOverlayBudget.Create(GeometryServiceTestContexts.Create(GeometryServiceCaller.SignedIn, limits))
+            .PerOperation.Should().Be(GeometryServiceOverlayBudget.PerOperationCeiling);
+
+        GeometryServiceOverlayBudget.Create(GeometryServiceTestContexts.CreateWithoutLimits())
+            .PerOperation.Should().Be(_signedInDefault / GeometryServiceOverlayBudget.NotSignedInDivisor);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Intersect)]
+    public void Check_RefusesInputsThatCrossTooOften()
+    {
+        var budget = new GeometryServiceOverlayBudget(500);
+        var writer = new WKBWriter();
+        var rows = writer.Write(Rows(30));
+        var columns = writer.Write(Columns(30));
+
+        budget.Check(Rows(30));
+        var act = () => budget.Check(rows, columns);
+
+        act.Should().Throw<GeometryServiceLimitException>()
+            .WithMessage(GeometryServiceOverlayBudget.RefusalMessage)
+            .Which.Should().BeAssignableTo<ArgumentException>("handlers answer it as a 400");
+    }
+
+    private static MultiLineString Rows(int count)
+        => _factory.CreateMultiLineString(Enumerable.Range(0, count)
+            .Select(i => _factory.CreateLineString([new Coordinate(-1, i), new Coordinate(count, i)]))
+            .ToArray());
+
+    private static MultiLineString Columns(int count)
+        => _factory.CreateMultiLineString(Enumerable.Range(0, count)
+            .Select(i => _factory.CreateLineString([new Coordinate(i, -1), new Coordinate(i, count)]))
+            .ToArray());
+
+    // A base strip with thin teeth one unit wide, two units apart and 100 high.
+    private static Polygon Comb(int teeth)
+    {
+        var points = new List<Coordinate> { new(0, -10), new(2 * teeth, -10), new(2 * teeth, 0) };
+        for (var i = teeth - 1; i >= 0; i--)
+        {
+            points.AddRange([new((2 * i) + 1, 0), new((2 * i) + 1, 100), new(2 * i, 100), new(2 * i, 0)]);
+        }
+
+        points.Add(new Coordinate(0, -10));
+        return _factory.CreatePolygon([.. points]);
+    }
+
+    private static Geometry[] Buffers(double spacing)
+        => [.. Enumerable.Range(0, 100)
+            .Select(i => _factory.CreatePoint(new Coordinate((i % 10) * spacing, (i / 10) * spacing)).Buffer(10))];
+
+    private static LineString Staircase(double offset)
+        => _factory.CreateLineString([.. Enumerable.Range(0, OverlayCandidatePairs.MaxChainSegments + 1)
+            .Select(i => new Coordinate(i + offset, i + (i % 2 * 0.5)))]);
+
+    private static Polygon Circle(double centerX, int vertices)
+    {
+        var ring = new Coordinate[vertices + 1];
+        for (var i = 0; i < vertices; i++)
+        {
+            var angle = 2 * Math.PI * i / vertices;
+            ring[i] = new Coordinate(centerX + (1_000 * Math.Cos(angle)), 1_000 * Math.Sin(angle));
+        }
+
+        ring[vertices] = ring[0].Copy();
+        return _factory.CreatePolygon(ring);
+    }
+}

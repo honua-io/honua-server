@@ -393,7 +393,9 @@ public sealed class ZarrPointSliceReader : IZarrPointSliceReader
                     return false;
                 }
 
-                var row = Math.Clamp((int)((extent.YMax - y) / height * array.Shape[i]), 0, array.Shape[i] - 1);
+                // Row 0 is the north edge unless the y coordinate ascends (south-first CF grids).
+                var fromRowZero = metadata.YAxisAscending ? y - extent.YMin : extent.YMax - y;
+                var row = Math.Clamp((int)(fromRowZero / height * array.Shape[i]), 0, array.Shape[i] - 1);
                 start[i] = row;
                 stop[i] = row + 1;
             }

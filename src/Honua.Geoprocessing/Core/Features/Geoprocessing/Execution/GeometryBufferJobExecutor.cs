@@ -9,12 +9,19 @@ using Honua.ControlPlane;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using NetTopologySuite.Operation.Union;
 
 namespace Honua.Geoprocessing.Execution;
 
 internal sealed partial class GeometryBufferJobExecutor : IProcessExecutor
 {
     internal const string HandledProcessId = "geometry.buffer";
+
+    // A single Buffer call on a large collection does not observe cancellation,
+    // so one cancelled job holds the in-process worker until it finishes.
+    // Collections larger than this are buffered in pieces and the token is
+    // checked between pieces. One piece still runs to completion.
+    internal const int CooperativeChunkSize = 1024;
 
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
     private readonly ILogger<GeometryBufferJobExecutor> _logger;
@@ -101,7 +108,7 @@ internal sealed partial class GeometryBufferJobExecutor : IProcessExecutor
         Geometry buffered;
         try
         {
-            buffered = geometry.Buffer(inputs.Distance);
+            buffered = BufferCooperatively(geometry, inputs.Distance, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -138,6 +145,95 @@ internal sealed partial class GeometryBufferJobExecutor : IProcessExecutor
         await context.ReportProgressAsync(100, "Buffer completed", cancellationToken).ConfigureAwait(false);
 
         return JobExecutionResult.Succeeded();
+    }
+
+    internal sealed class BufferCooperativeRequest
+    {
+        public required Geometry Geometry { get; init; }
+
+        public required double Distance { get; init; }
+
+        public required CancellationToken CancellationToken { get; init; }
+
+        public int ChunkSize { get; init; } = CooperativeChunkSize;
+
+        public Action<int>? AfterChunk { get; init; }
+    }
+
+    internal static Geometry BufferCooperatively(
+        Geometry geometry,
+        double distance,
+        CancellationToken cancellationToken)
+        => BufferCooperatively(new BufferCooperativeRequest
+        {
+            Geometry = geometry,
+            Distance = distance,
+            CancellationToken = cancellationToken,
+        });
+
+    internal static Geometry BufferCooperatively(BufferCooperativeRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(request.Geometry);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(request.ChunkSize);
+        request.CancellationToken.ThrowIfCancellationRequested();
+
+        var geometry = request.Geometry;
+        if (geometry.NumGeometries <= request.ChunkSize)
+        {
+            var single = geometry.Buffer(request.Distance);
+            request.AfterChunk?.Invoke(1);
+            return single;
+        }
+
+        return UnionBufferedChunks(geometry, CollectBufferedChunks(request));
+    }
+
+    private static List<Geometry> CollectBufferedChunks(BufferCooperativeRequest request)
+    {
+        var geometry = request.Geometry;
+        var count = geometry.NumGeometries;
+        var parts = new List<Geometry>();
+        var index = 0;
+        var chunks = 0;
+        while (index < count)
+        {
+            request.CancellationToken.ThrowIfCancellationRequested();
+            var take = Math.Min(request.ChunkSize, count - index);
+            var batch = new Geometry[take];
+            for (var i = 0; i < take; i++)
+            {
+                batch[i] = geometry.GetGeometryN(index + i);
+            }
+
+            index += take;
+            var buffered = geometry.Factory.BuildGeometry(batch).Buffer(request.Distance);
+            if (buffered is { IsEmpty: false })
+            {
+                parts.Add(buffered);
+            }
+
+            chunks++;
+            request.AfterChunk?.Invoke(chunks);
+        }
+
+        request.CancellationToken.ThrowIfCancellationRequested();
+        return parts;
+    }
+
+    private static Geometry UnionBufferedChunks(Geometry geometry, List<Geometry> parts)
+    {
+        if (parts.Count == 0)
+        {
+            return geometry.Factory.CreateEmpty((Dimension)geometry.Dimension);
+        }
+
+        if (parts.Count == 1)
+        {
+            return parts[0];
+        }
+
+        return UnaryUnionOp.Union(parts);
     }
 
     private static bool TryReadStepInputs(

@@ -416,6 +416,11 @@ carries two independent gate lanes per sampled operation:
 
 Shared OGC capabilities XML tests live in the Wms namespace and run in Maps Supporting. The WMS class/complement partition and its legacy budgets stay unchanged; Supporting also retains catalog metadata and cross-protocol XML source triggers.
 
+Full CI `mcp-certification` and `mcp-llm-smoke`, and the manual certification job in
+`mcp-certification-focused.yml`, build `honua-sdk-js` on Node 22.23.3 (SDK engine
+minimum 22.12) with a 4 GiB V8 heap. Workflow-level `NODE_VERSION` stays 20 for the
+browser and JavaScript integration jobs.
+
 ## Verification receipts and batch landing (quality-contract amendment, 2026-09)
 
 The fleet lander (honua-flow `tools/land-ready-prs.sh`, `tools/land-batch.sh`)

@@ -522,7 +522,7 @@ which is why both the run count and exact observed span are recorded.
 | `gp-qualification-harness-checks.yml` | GP Qualification Harness Checks | path-filtered `pull_request`, `workflow_dispatch` | Checks Bash syntax and Python failure-isolation regressions. An explicit dispatch can build the matching canonical worker into a runner-local registry and rehearse one actual staged-store outage, natural worker heartbeat recovery, or terminal-CAS result-package recovery; its receipt is qualification:false and does not qualify a release. |
 | `gp-resilience-qualification.yml` | GP Resilience Qualification | `workflow_dispatch` | Exact-digest poison, crash/output, lease, backlog, TTL, retry, quota/isolation, output-cap, and sustained-concurrency qualification with finding-preserving receipts. |
 | `gp-release-evidence.yml` | GP Release Evidence | `workflow_dispatch` | Verifies matching executed lifecycle/resilience run heads and receipt identities, then publishes a content-hashed immutable release asset containing both summaries and every scenario receipt. |
-| `mcp-certification-focused.yml` | Focused MCP Certification | path-filtered `pull_request` / `push`, `workflow_dispatch` | Automatic installed SDK and Inspector CLI addressability controls, plus public Inspector web UI cancellation controls with a real PostGIS observer and dropped-notification negative. Authored peers are non-qualifying controls. Manual diagnostic of both live SDK backend transports requires an exact SDK source SHA and strict receipts. This is not full-CI image admission. |
+| `mcp-certification-focused.yml` | Focused MCP Certification | path-filtered `pull_request` / `push`, `workflow_dispatch` | Automatic installed SDK and Inspector CLI addressability controls, plus public Inspector web UI cancellation controls with a real PostGIS observer and dropped-notification negative. Authored peers are non-qualifying controls. Manual diagnostic of both live SDK backend transports requires an exact SDK source SHA and strict receipts. That job builds the SDK on Node 22.23.3 (engine minimum 22.12) with a 4 GiB V8 heap, the same pin as full CI MCP certification. This is not full-CI image admission. |
 | `mcp-inspector-pagination.yml` | Installed Inspector Pagination Controls | `pull_request`, `push` (matching paths) | Runs the public installed Inspector CLI against controlled peers to verify transparent pagination observation, compressed-response decoding and fail-closed controls. Source-bound controls are separate from candidate/version qualification. |
 | `mcp-client-contract.yml` | MCP Client Contract | path-filtered ready `pull_request` / `push`, daily `schedule` (11:40 UTC) | Exercises every MCP view through pinned published SDK and Inspector clients against the server, checking both content channels and documented inputs. Draft conversion cancels admission; draft PRs skip the contract job. |
 | `flaky-detection.yml` | Flaky Test Detection | daily `schedule` (05:00 UTC), `workflow_dispatch` | Bounded, **incremental** flake hunt (ADR-0037). Each run takes a rotating window of `.github/ci-shards.json` shards (default 6), re-runs each shard's own filter under its own inner budget via `scripts/ci/run-server-test-shard.sh` (default 2 iterations), and reports per-shard flake candidates through `scripts/ci/summarize-flaky-detection.py`. The whole shard set is covered every `ceil(shards / shard_count)` days. Test commands run in dedicated process groups; cancellation cleans up the group and snapshotted descendants, including those that leave the group, with a bounded half-second escalation. Group escalation reaches children forked after the snapshot. Signal handlers are installed before child creation and record cancellation for cleanup outside the active child wait, checked every 0.1 seconds; this also preserves cancellation during startup without reentering the subprocess wait lock. Reports only; it never gates. Also runs the validated issue-backed quarantine in a separate non-gating matrix, without retries or exclusions. |
@@ -708,7 +708,7 @@ The server matrix combines 33 small unit/component assemblies into four jobs:
 Provider and AI Units, Runtime Units, Protocol Units, and Protocol and Host
 Components. Each `csprojs` list is an explicit assembly union. Routing, build
 selection, resource classification, and the source coverage guard inspect every
-member. Catalogued Docker, Postgres, and Redis dependencies remain supported;
+member. Catalogued Docker and Postgres dependencies remain supported;
 resourceful members retain service provisioning. Unknown resources fail closed.
 The existing required check names and tier policies remain unchanged.
 
@@ -784,7 +784,7 @@ and aggregate dependencies are unchanged.
 
 The authorization matrix selects the live `AdminAuthorizationTests` class.
 The remaining authorization shard owns every other method in the original parent
-filter. Retired Redis endpoint selectors are removed; the coverage guard still
+filter. Retired cache endpoint selectors are removed; the coverage guard still
 rejects dead positive clauses, and the partition fixture verifies complete,
 disjoint method ownership with unchanged source triggers and budgets.
 
@@ -1045,7 +1045,7 @@ skipping or missing results fail the shell check. The required name and both
 avoid the aggregate runner. Live after-change timing awaits a superseding event.
 See [GitHub cancellation semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).
 
-The numbered MCP, GPServer/NAServer, Admin Authorization, Operator Eval and Migration capacity children retain Redis image preparation; Operator Eval children also prepare PostGIS 17. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.
+Operator Eval children keep Ryuk and PostGIS 17, and Core and Cloud Contracts children keep Ryuk, PostGIS 16 and PostGIS 18; the other split children prepare no images. `test-shard-image-selection.py` executes the workflow selector against every child of every split parent, compares it with the images the unsplit parent selected, and checks unrelated controls. Only Operator Eval Harness 1, which runs `EvalHarnessTests`, uploads `operator-eval-report`; the partition contracts require each report upload to move to exactly one child.
 
 ### Lightweight workflow runner admission
 
