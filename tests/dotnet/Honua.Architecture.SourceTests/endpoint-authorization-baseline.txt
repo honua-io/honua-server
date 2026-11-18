@@ -5,6 +5,7 @@
 # discovery documents, geocoding, health probes). EndpointAuthorizationGuardTests fails
 # on any unmarked route that is not listed here and on entries that no longer match.
 # Add a route only after confirming its handler's access check. Format: <path> <verb> <route expression as written>
+src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpEndpointExtensions.cs MapGet RoutePath
 src/Honua.Geoprocessing/Core/Features/Geoprocessing/GeoprocessingOutputArtifactEndpoints.cs MapGet "/api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex:int}/content"
 src/Honua.Import/Features/TileCachePackage/TileCachePackageEndpoints.cs MapGet "/{tileCacheId}"
 src/Honua.Import/Features/TileCachePackage/TileCachePackageEndpoints.cs MapGet "/{tileCacheId}/{z:int}/{x:int}/{y:int}"

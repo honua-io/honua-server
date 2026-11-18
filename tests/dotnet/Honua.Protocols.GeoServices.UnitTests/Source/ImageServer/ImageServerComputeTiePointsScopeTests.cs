@@ -7,6 +7,7 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Primitives;
 using NSubstitute;
@@ -27,8 +28,11 @@ public sealed class ImageServerComputeTiePointsScopeTests
     {
         var store = CreateStore();
 
-        await ComputeAsync(store, OtherLayerRasterId);
+        var context = CreateContext();
 
+        var result = await ComputeAsync(store, OtherLayerRasterId, context);
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
         await store.DidNotReceive().GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>());
     }
 
@@ -38,26 +42,25 @@ public sealed class ImageServerComputeTiePointsScopeTests
     {
         var store = CreateStore();
 
-        await ComputeAsync(store, SameLayerRasterId);
+        await ComputeAsync(store, SameLayerRasterId, CreateContext());
 
         await store.Received(1).GetSensorMetadataAsync(
             Arg.Is<IReadOnlyCollection<long>>(ids => ids.Contains(SameLayerRasterId)),
             Arg.Any<CancellationToken>());
     }
 
-    private static async Task ComputeAsync(IRasterStore store, long rasterId)
+    private static async Task<IResult> ComputeAsync(IRasterStore store, long rasterId, HttpContext context)
     {
         var handler = new ImageServerComputeTiePointsHandler(store, NullLogger<ImageServerComputeTiePointsHandler>.Instance);
         var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
         {
             ["rasterId"] = rasterId.ToString(System.Globalization.CultureInfo.InvariantCulture),
         };
-        var context = ImageServerTestFixtures.CreateContext($"/rest/services/{LayerId}/ImageServer/computeTiePoints");
-
-        var result = await handler.ComputeTiePointsAsync(context, LayerId, values, CancellationToken.None);
-
-        result.Should().NotBeNull();
+        return await handler.ComputeTiePointsAsync(context, LayerId, values, CancellationToken.None);
     }
+
+    private static DefaultHttpContext CreateContext()
+        => ImageServerTestFixtures.CreateContext($"/rest/services/{LayerId}/ImageServer/computeTiePoints");
 
     private static IRasterStore CreateStore()
     {

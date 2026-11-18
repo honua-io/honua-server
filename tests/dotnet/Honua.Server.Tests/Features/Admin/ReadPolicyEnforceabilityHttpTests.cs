@@ -103,16 +103,32 @@ public sealed class ReadPolicyEnforceabilityHttpTests : IAsyncLifetime
     // assertion does not leave state behind for later tests in the collection.
     private static async Task DeleteCreatedPolicyAsync(HttpClient admin, string createPayload)
     {
-        using var document = JsonDocument.Parse(createPayload);
-        if (!document.RootElement.TryGetProperty("data", out var data)
-            || data.ValueKind != JsonValueKind.Object
-            || !data.TryGetProperty("policyId", out var policyId))
+        var policyId = TryReadPolicyId(createPayload);
+        if (policyId is null)
         {
             return;
         }
 
-        using var deleted = await admin.DeleteAsync($"{FieldMaskPoliciesPath}/{policyId.GetGuid()}");
+        using var deleted = await admin.DeleteAsync($"{FieldMaskPoliciesPath}/{policyId}");
         deleted.IsSuccessStatusCode.Should().BeTrue();
+    }
+
+    private static Guid? TryReadPolicyId(string createPayload)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(createPayload);
+            return document.RootElement.TryGetProperty("data", out var data)
+                && data.ValueKind == JsonValueKind.Object
+                && data.TryGetProperty("policyId", out var policyId)
+                && policyId.TryGetGuid(out var id)
+                    ? id
+                    : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private HttpClient CreateAdminClient()

@@ -113,14 +113,15 @@ public sealed partial class EndpointAuthorizationGuardTests
     // A route mapped on a builder parameter of a private helper, e.g.
     // `private static void MapImportRoutes(IEndpointRouteBuilder group, ...)`, inherits the
     // group's decision when every use of that helper in the file passes an authorized MapGroup
-    // variable as its first argument.
+    // variable as its first argument. Calls from other partial-class files are not seen, so the
+    // nearest enclosing declaration must be the private helper itself.
     private static bool IsAuthorizedGroupParameter(ScannedFile file, int matchIndex, string receiver)
     {
         var declarations = Regex.Matches(
             file.Content[..matchIndex],
-            @"\bprivate\s+static\s+[\w<>?]+\s+(?<name>\w+)\s*\(\s*(?:IEndpointRouteBuilder|RouteGroupBuilder)\s+" + Regex.Escape(receiver) + @"\b",
+            @"(?<name>\w+)\s*\(\s*(?:this\s+)?(?:IEndpointRouteBuilder|RouteGroupBuilder)\s+" + Regex.Escape(receiver) + @"\b",
             RegexOptions.CultureInvariant);
-        if (declarations.Count == 0)
+        if (declarations.Count == 0 || !IsDeclaration(file.Content, declarations[^1].Index))
         {
             return false;
         }

@@ -19,6 +19,15 @@ public sealed partial class EndpointAuthorizationGuardTests
     private static readonly string[] MutationVerbs = ["MapPost", "MapPut", "MapDelete", "MapPatch"];
     private static readonly string[] BaselinedVerbs = ["MapGet", "MapMethods"];
 
+    // Mutation routes that are reachable without credentials on purpose and authorize inside the
+    // handler. The MCP dispatcher admits the anonymous protocol handshake and checks each tool's
+    // scope and approval rules per call. Add an entry only with that kind of in-handler check.
+    private static readonly string[] ReviewedAnonymousMutationRoutes =
+    [
+        "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpEndpointExtensions.cs MapDelete RoutePath",
+        "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpEndpointExtensions.cs MapPost RoutePath",
+    ];
+
     private static readonly string[] AuthOptInMarkers =
     {
         "RequireAuthorization",
@@ -49,8 +58,6 @@ public sealed partial class EndpointAuthorizationGuardTests
         // credential for the scheduled SDK conformance runner, additionally gated per run by an
         // ownership token checked inside each handler.
         "RequireConformanceMutateAuthorization",
-        // MCP routes authenticate the bearer token in an endpoint filter before the handler runs.
-        "McpBearerAuthenticationEndpointExtensions.AuthenticateBearerAsync",
     };
 
     [ArchitectureTest]
@@ -58,8 +65,11 @@ public sealed partial class EndpointAuthorizationGuardTests
     {
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
 
-        var gaps = FindUnmarkedRoutes(repoRoot, MutationVerbs);
+        var found = FindUnmarkedRoutes(repoRoot, MutationVerbs);
+        var gaps = SubtractMultiset(found, ReviewedAnonymousMutationRoutes);
+        var stale = SubtractMultiset(ReviewedAnonymousMutationRoutes, found);
 
+        stale.Should().BeEmpty("reviewed anonymous mutation routes must still exist unmarked: " + string.Join("; ", stale));
         gaps.Should().BeEmpty(
             "every HTTP mutation route in any src project must call one of "
             + string.Join(", ", AuthOptInMarkers)
