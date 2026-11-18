@@ -2662,6 +2662,11 @@ jobs:
     needs: mcp-certification
     continue-on-error: true
     timeout-minutes: 10
+    # The Bedrock role trusts only this environment; jobs assume it through OIDC, never a stored key.
+    environment: bedrock-smoke
+    permissions:
+      contents: read
+      id-token: write
     services:
       postgres:
         image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
@@ -2709,22 +2714,23 @@ jobs:
         if: steps.setup.outputs.smoke-available == 'true'
         shell: bash
         env:
-          BEDROCK_AWS_ACCESS_KEY_ID: ${{ secrets.BEDROCK_AWS_ACCESS_KEY_ID }}
-          BEDROCK_AWS_SECRET_ACCESS_KEY: ${{ secrets.BEDROCK_AWS_SECRET_ACCESS_KEY }}
+          BEDROCK_ROLE_ARN: ${{ vars.HONUA_BEDROCK_SMOKE_ROLE_ARN }}
+          SAME_REPOSITORY: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
         run: |
-          if [[ -n "$BEDROCK_AWS_ACCESS_KEY_ID" && -n "$BEDROCK_AWS_SECRET_ACCESS_KEY" ]]; then
+          # Fork pull requests get no OIDC token, so they run without the live Bedrock driver.
+          if [[ -n "$BEDROCK_ROLE_ARN" && "$SAME_REPOSITORY" == "true" ]]; then
             echo "available=true" >> "$GITHUB_OUTPUT"
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::BEDROCK_AWS_* secrets are not configured; MCP LLM smoke will run without the live Bedrock driver."
+            echo "::notice::HONUA_BEDROCK_SMOKE_ROLE_ARN is not set or this is a fork pull request; MCP LLM smoke will run without the live Bedrock driver."
           fi
 
       - name: Configure AWS credentials for Bedrock smoke
         if: steps.bedrock.outputs.available == 'true'
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          aws-access-key-id: ${{ secrets.BEDROCK_AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.BEDROCK_AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ vars.HONUA_BEDROCK_SMOKE_ROLE_ARN }}
+          role-session-name: honua-mcp-llm-smoke
           aws-region: ${{ vars.HONUA_MCP_SMOKE_AWS_REGION || 'us-west-2' }}
 
       - name: Run MCP LLM Smoke Tests
