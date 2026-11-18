@@ -119,10 +119,6 @@ public static partial class GeoParquetFeatureWriter
         var features = result.Items;
         var includeGeometry = returnGeometry && resource.HasGeometry();
         var srid = outputSrid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
-        if (encodingLimits.OrderByBboxHilbert && includeGeometry && features.Length > 1)
-        {
-            features = OrderByBboxCenterHilbert(features, srid, geometryLimits, returnZ, returnM, logger);
-        }
 
         // Resolve (and thereby validate) the output-CRS PROJJSON up-front so a non-resolvable
         // SRID fails fast with a precise error before any geometry encoding work happens.
@@ -130,7 +126,13 @@ public static partial class GeoParquetFeatureWriter
         _ = ResolveGeoParquetCrsProjJson(includeGeometry, srid);
         EnsureSupportedCloudNativeGeometryMeasures(includeGeometry, returnM, "GeoParquet");
 
+        // Admit the page before Hilbert decoding so an over-budget result is refused as a limit,
+        // including when its WKB would not decode.
         var batches = PlanBatches(features, encodingLimits);
+        if (encodingLimits.OrderByBboxHilbert && includeGeometry && features.Length > 1)
+        {
+            features = OrderByBboxCenterHilbert(features, srid, geometryLimits, returnZ, returnM, logger);
+        }
         if (features.Length == 0)
         {
             return CreateEmptyGeoParquet(resource, objectIdFieldName, returnGeometry, outFields, outputSrid, encodingLimits, fileMetadata);
@@ -350,12 +352,16 @@ public static partial class GeoParquetFeatureWriter
             return schema;
         }
 
-        var rowsPerGroup = limits.RowsPerRowGroup ?? limits.MaxRowsPerBatch;
-        return WithFileMetadata(schema, new Dictionary<string, string>
+        var documented = new Dictionary<string, string>
         {
             [RowOrderMetadataKey] = limits.OrderByBboxHilbert && includeGeometry ? HilbertBboxCenterOrder : SourceOrder,
-            [RowsPerRowGroupMetadataKey] = rowsPerGroup.ToString(CultureInfo.InvariantCulture),
-        });
+        };
+        if (limits.RowsPerRowGroup is int rowsPerRowGroup)
+        {
+            documented[RowsPerRowGroupMetadataKey] = rowsPerRowGroup.ToString(CultureInfo.InvariantCulture);
+        }
+
+        return WithFileMetadata(schema, documented);
     }
 
     private static ImmutableArray<Feature> OrderByBboxCenterHilbert(

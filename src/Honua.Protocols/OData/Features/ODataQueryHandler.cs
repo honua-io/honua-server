@@ -866,7 +866,7 @@ internal sealed partial class ODataQueryHandler(
                 GeometryLimits = geometryLimits,
                 OutFields = outFields,
                 Logger = _logger,
-                EncodingLimits = limitsOptions?.Value?.GeoParquet
+                EncodingLimits = (limitsOptions?.Value?.GeoParquet ?? new GeoParquetLimits()).ForQuery()
             });
 
             ODataUtilityService.SetODataHeaders(context);

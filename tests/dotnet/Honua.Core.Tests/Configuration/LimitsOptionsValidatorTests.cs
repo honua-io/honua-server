@@ -69,6 +69,26 @@ public class LimitsOptionsValidatorTests
     }
 
     [UnitTest]
+    public void Validate_GeoParquetArtifactBounds_RejectsOutOfRangeValues()
+    {
+        foreach (var rowsPerRowGroup in new int?[] { 0, GeoParquetLimits.SpecMaxRowsPerRowGroup + 1 })
+        {
+            var options = new LimitsOptions
+            {
+                GeoParquet = new GeoParquetLimits { RowsPerRowGroup = rowsPerRowGroup }
+            };
+            var result = _validator.Validate(null, options);
+            Assert.False(result.Succeeded);
+        }
+
+        var overSize = new LimitsOptions
+        {
+            GeoParquet = new GeoParquetLimits { MaxArtifactBytes = (long)Array.MaxLength + 1 }
+        };
+        Assert.False(_validator.Validate(null, overSize).Succeeded);
+    }
+
+    [UnitTest]
     public void Validate_ReplicaMaxChangesPerLayerOutOfRange_ReturnsFail()
     {
         // The Replica section carries [Range(100, 1000000)]; it must be validated like every other section.

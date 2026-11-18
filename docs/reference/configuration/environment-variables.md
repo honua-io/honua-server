@@ -214,11 +214,9 @@ With a system database, MCP session records are shared through the `mcp_sessions
 | `Limits__GeoParquet__MaxRowsPerBatch` | `1024` | Maximum rows per Arrow batch. A query response starts one Parquet row group per batch. |
 | `Limits__GeoParquet__MaxEstimatedBatchBytes` | `8388608` (8 MiB) | Byte admission estimate per batch; an individual row must fit. |
 | `Limits__GeoParquet__MaxEstimatedInputBytes` | `134217728` (128 MiB) | Byte admission estimate for a materialized GeoParquet query result. |
-| `Limits__GeoParquet__MaxResponseBytes` | `67108864` (64 MiB) | Encoded HTTP GeoParquet payload and buffer capacity ceiling, including footer. Stored artifacts use `MaxArtifactBytes` when that is set. |
-| `Limits__GeoParquet__RowsPerRowGroup` | unset | Artifact row-group length. Unset keeps one row group per batch. Values outside 1–150000 are rejected. |
-| `Limits__GeoParquet__MaxArtifactBytes` | unset | Byte cap for a stored artifact. Unset uses `MaxResponseBytes`. |
-| `Limits__GeoParquet__OrderByBboxHilbert` | `false` | When true, artifact rows are ordered by the Hilbert index of each geometry's bbox centre. Query responses stay in source order. |
-| `Limits__GeoParquet__CompressWithZstd` | `false` | When true, artifact columns use Zstandard. Query responses stay uncompressed. |
+| `Limits__GeoParquet__MaxResponseBytes` | `67108864` (64 MiB) | Encoded HTTP GeoParquet payload ceiling, including footer. Query responses ignore `MaxArtifactBytes`. |
+| `Limits__GeoParquet__RowsPerRowGroup` | unset | Stored-artifact row-group length. Unset uses 16384. Values outside 1–150000 fail startup. HTTP GeoParquet responses ignore this and keep one row group per batch. |
+| `Limits__GeoParquet__MaxArtifactBytes` | unset | Byte cap for a stored GeoParquet artifact. Unset uses `MaxResponseBytes`. It does not raise the HTTP response cap. |
 | `Limits__Query__MaxRecordCount` | `10000` | Max features per query response. |
 | `Limits__Query__DefaultRecordCount` | `1000` | Default page size when the client does not specify one. |
 | `Limits__Query__MaxOffset` | `1000000` | Max pagination offset. |
@@ -418,10 +416,12 @@ GeoServices `f=parquet` and OData `$format=parquet` share the configured
 `Limits:GeoParquet` budgets. A response that cannot fit is rejected with the shared
 protocol-specific 413 error contract. Reduce the requested page or selected fields,
 or omit geometry. The existing query authorization, ordering and paging are applied
-before encoding; the writer retains that order and never spatially sorts results.
+before encoding; an HTTP GeoParquet response keeps that order. Stored paired-publication
+GeoParquet orders rows by the Hilbert index of each geometry's bbox centre, compresses with
+Zstandard, and sizes row groups separately from the response batch.
 
-Each Arrow batch is admitted by both row count and an estimated byte total, then
-written as its own Parquet row group and disposed. The estimate counts six bytes per
+Each query-response Arrow batch is admitted by both row count and an estimated byte total,
+then written as its own Parquet row group and disposed. The estimate counts six bytes per
 input WKB byte or string character, two per binary-attribute byte, and fixed row,
 attribute and output-column bookkeeping. The input budget is checked before native
 encoding or geometry decoding. A second pass accounts for the discovered schema's
