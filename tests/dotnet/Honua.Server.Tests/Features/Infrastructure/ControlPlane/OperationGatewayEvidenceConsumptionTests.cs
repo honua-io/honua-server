@@ -29,11 +29,12 @@ public sealed class OperationGatewayEvidenceConsumptionTests
             ladder,
             [CanonicalOperationGatewayTestComposition.PlanningOnly(OperationClass.Deploy)]);
 
-        var result = await gateway.RouteAsync(new OperationGatewayRequest
+        var result = await gateway.CreateApprovalProposalAsync("opinst-evidence-reuse", new OperationGatewayRequest
         {
             Kind = OperationClass.Deploy,
             RequestedBy = "agent",
             IdempotencyKey = "evidence-reuse",
+            Plan = new OperationProposalPlan { Summary = "Deploy a candidate" },
         });
 
         result.Outcome.Should().Be(OperationGatewayOutcome.Blocked);
