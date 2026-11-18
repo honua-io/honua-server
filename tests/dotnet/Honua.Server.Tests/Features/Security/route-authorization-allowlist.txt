@@ -162,6 +162,7 @@ anonymous GET /rest/services/{serviceId}/VersionManagementServer/versions
 anonymous GET /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}
 anonymous GET /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/inspectConflicts
 anonymous GET /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/jobs/{jobId}
+anonymous GET /saml/login
 anonymous GET /saml/metadata
 anonymous GET /scim/v2/Groups/
 anonymous GET /scim/v2/Groups/{id}

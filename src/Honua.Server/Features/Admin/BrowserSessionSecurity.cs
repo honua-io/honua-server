@@ -48,7 +48,10 @@ internal static class BrowserSessionSecurity
                 return;
             }
 
-            // SAML POST bindings validate signed protocol messages and their own correlation state.
+            // SAML POST bindings are cross-site by design, so antiforgery cannot apply. They validate
+            // signed protocol messages instead, and the ACS accepts a solicited response only when its
+            // InResponseTo names the request ID held in this browser's data-protected, single-use
+            // correlation cookie (SamlRequestCorrelation); unsolicited responses follow the configured policy.
             if (!safe && requiresCsrf && metadata?.GetMetadata<BrowserCsrfProtocolBindingMetadata>() is null)
             {
                 if (!request.IsHttps || !IsSameOrigin(request) || !await PassesAntiforgeryAsync(context).ConfigureAwait(false))

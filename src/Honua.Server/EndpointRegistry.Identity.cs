@@ -30,8 +30,9 @@ public static partial class EndpointRegistry
         new("GET", "/scim/v2/Schemas"),
         new("GET", "/scim/v2/Schemas/{id}"),
 
-        // SAML 2.0 Service Provider endpoints, including single logout
+        // SAML 2.0 Service Provider endpoints, including SP-initiated sign-in and single logout
         new("GET", "/saml/metadata"),
+        new("GET", "/saml/login"),
         new("POST", "/saml/acs"),
         new("POST", "/saml/slo"),
     ];

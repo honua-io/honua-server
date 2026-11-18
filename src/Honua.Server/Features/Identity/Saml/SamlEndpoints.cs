@@ -53,6 +53,7 @@ internal static partial class SamlEndpoints
             });
 
         group.MapGet("/metadata", HandleMetadata).WithDisplayName("SAML SP Metadata");
+        group.MapGet("/login", HandleLogin).WithDisplayName("SAML SP-Initiated Sign-In");
         group.MapPost("/acs", HandleAssertionConsumerService).WithMetadata(new BrowserCsrfProtocolBindingMetadata()).WithDisplayName("SAML Assertion Consumer Service");
         group.MapPost("/slo", HandleSingleLogout).WithMetadata(new BrowserCsrfProtocolBindingMetadata()).WithDisplayName("SAML Single Logout Service");
     }
@@ -82,6 +83,7 @@ internal static partial class SamlEndpoints
         [FromServices] ILogger<SamlEndpointsLog> logger)
     {
         var opts = options.Value;
+        SamlRequestCorrelation.Clear(context);
         if (!opts.Enabled)
         {
             return Results.Problem(
@@ -119,17 +121,20 @@ internal static partial class SamlEndpoints
         }
 
         var result = validator.Validate(responseXml);
-        if (!result.Succeeded || result.Subject is null)
+        var rejection = result.Succeeded && result.Subject is not null
+            ? context.RequestServices.GetRequiredService<SamlRequestCorrelation>().Verify(context, result.InResponseTo)
+            : result.FailureReason ?? "The SAML assertion could not be validated.";
+        if (rejection is not null)
         {
-            // Forged, unsigned, expired, or otherwise invalid assertions land here.
-            SamlLog.AssertionRejected(logger, result.FailureReason ?? "unknown");
+            // Forged, unsigned, expired, uncorrelated, or otherwise invalid responses land here.
+            SamlLog.AssertionRejected(logger, rejection);
             return Results.Problem(
                 title: "SAML assertion rejected",
-                detail: result.FailureReason ?? "The SAML assertion could not be validated.",
+                detail: rejection,
                 statusCode: StatusCodes.Status401Unauthorized);
         }
 
-        var subject = result.Subject;
+        var subject = result.Subject!;
 
         // Project the validated SAML subject into the same claim shape OIDC sessions use so the
         // AdminAuthSession handler and downstream RBAC treat both identically.

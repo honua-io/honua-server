@@ -39,6 +39,7 @@ public static class IdentityServiceCollectionExtensions
         services.TryAddSingleton<SamlAssertionReplayCache>();
         services.TryAddSingleton<SamlAssertionValidator>();
         services.TryAddSingleton<SamlLogoutRequestValidator>();
+        services.TryAddSingleton<SamlRequestCorrelation>();
 
         return services;
     }
