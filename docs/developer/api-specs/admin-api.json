@@ -26975,6 +26975,11 @@
             "default": false,
             "description": "Declares attachment support for the published resource. Does not enable editing."
           },
+          "exactTypes": {
+            "type": "boolean",
+            "default": false,
+            "description": "Opt in to exact decimal and offset-timestamp field types. The primary key and temporal column stay on the default mapping."
+          },
           "folderId": {
             "type": "string",
             "nullable": true
@@ -50518,6 +50523,11 @@
               "type": "string"
             },
             "description": "Attribute fields to publish. Empty means all discovered columns."
+          },
+          "exactTypes": {
+            "type": "boolean",
+            "default": false,
+            "description": "Preview the exact decimal and offset-timestamp field types."
           }
         }
       },

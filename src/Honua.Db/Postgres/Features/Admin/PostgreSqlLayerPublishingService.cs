@@ -297,6 +297,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 {
                     AllowEmptyTable = request.AllowEmptyTable,
                     ManagedStore = isManagedStore,
+                    ExactTypes = request.ExactTypes,
+                    TemporalColumn = request.TemporalColumn,
                     Schema = schema,
                     Table = table,
                     LayerName = request.LayerName,
@@ -414,9 +416,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             }
         }
 
-        var fields = isManagedStore && !request.CreateEditableCopy
-            ? BuildManagedLayerFields(selectedColumns, primaryKeyColumn, geometryColumn, request.FieldDomains)
-            : BuildLayerFields(selectedColumns, primaryKeyColumn!, geometryColumn, request.FieldDomains);
+        var fields = WithExactFieldTypes(
+            isManagedStore && !request.CreateEditableCopy
+                ? BuildManagedLayerFields(selectedColumns, primaryKeyColumn, geometryColumn, request.FieldDomains)
+                : BuildLayerFields(selectedColumns, primaryKeyColumn!, geometryColumn, request.FieldDomains),
+            selectedColumns,
+            PublishFieldTypePolicy.ForPublish(request, primaryKeyColumn?.Name));
         var attributeColumns = isManagedStore && !request.CreateEditableCopy
             ? SelectManagedAttributeColumns(selectedColumns, primaryKeyColumn, geometryColumn)
             : selectedColumns;
