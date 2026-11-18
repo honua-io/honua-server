@@ -197,6 +197,7 @@ internal sealed partial class DeployWorkflowService
         }
 
         plan = await ApplyProbeUrlValidationAsync(plan, spec, cancellationToken).ConfigureAwait(false);
+        plan = ApplyTargetIdentityOverrideBlock(plan, target, parameterOverrides);
 
         return new DeployWorkflowPlanResult(target, spec, plan, capabilities, canonicalApproval);
     }
