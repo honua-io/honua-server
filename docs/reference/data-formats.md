@@ -63,7 +63,7 @@ Cloud-optimized HDF5 (`.h5`/`.hdf5`) and NetCDF4 multidimensional coverages are 
 | `json`, `pjson` | `application/json` | GeoServices REST JSON feature sets (default). |
 | `geojson` | `application/geo+json` | GeoJSON FeatureCollection. |
 | `pbf` | `application/x-protobuf` | GeoServices REST FeatureCollection protocol buffers. |
-| `fgb` | FlatGeobuf | Encoded export; PostGIS-backed layers, including source-backed (provider-routed) layers. |
+| `fgb` | `application/vnd.flatgeobuf` | Encoded export; PostGIS-backed layers, including source-backed (provider-routed) layers. |
 | `geobuf` | `application/geobuf` | Encoded export; PostGIS-backed layers, including source-backed (provider-routed) layers. |
 | `parquet` | `application/vnd.apache.parquet` | GeoParquet 1.1.0, WKB geometry + `geo` metadata. Honors resolved `outSR` values; EPSG:4326 uses the GeoParquet default OGC:CRS84 when `crs` is omitted, while projected output includes PROJJSON CRS metadata. Rejects unresolvable `outSR`. `returnGeometry=false` short-circuits feature re-projection. Requires a glibc-based runtime image (see [runtime requirement](#geoparquet-runtime-requirement)). |
 | `arrow` | `application/vnd.apache.arrow.stream` | Arrow IPC stream with `geoarrow.wkb` extension type and GeoParquet-style `geo` schema metadata. When returning geometry, non-4326 `outSR` requests return a GeoServices error with code 400. Pure-managed encoder (Apache.Arrow); no native runtime dependency. |
