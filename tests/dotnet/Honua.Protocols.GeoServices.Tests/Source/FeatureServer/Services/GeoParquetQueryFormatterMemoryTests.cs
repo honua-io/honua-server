@@ -9,6 +9,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Services;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.TestKit.Attributes;
+using Honua.Tests.ParquetUnitSupport;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
@@ -47,7 +48,7 @@ public sealed class GeoParquetQueryFormatterMemoryTests
             contentType.Should().Be("application/vnd.apache.parquet");
             (GC.GetTotalMemory(true) - baseline).Should().BeLessThan(8 * 1024 * 1024);
             var path = ((FileStream)payload).Name;
-            using (var reader = new ParquetSharp.Arrow.FileReader(payload, leaveOpen: true))
+            using (var reader = ArrowParquetTestReader.OpenLeavingStreamOpen(payload))
             using (var batches = reader.GetRecordBatchReader())
             {
                 long rows = 0;

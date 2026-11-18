@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FluentAssertions;
+using Honua.Tests.ParquetUnitSupport;
 using Microsoft.AspNetCore.Hosting;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -120,7 +121,7 @@ public sealed partial class PairedPublishEndpointTests(PairedPublishEndpointTest
 
         var parquet = await ReadBytesAsync(ArtifactKey(published, descriptor.Artifacts.Geoparquet.Href));
         Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(parquet)).Should().Be(descriptor.Artifacts.Geoparquet.Sha256);
-        using (var reader = new ParquetSharp.Arrow.FileReader(new MemoryStream(parquet)))
+        using (var reader = ArrowParquetTestReader.Open(parquet))
         {
             reader.Schema.Metadata[PairedPublicationCapture.CaptureIdMetadataKey].Should().Be(published.CaptureId);
             reader.Schema.FieldsList.Select(field => field.Name).Should().NotContain(HiddenField);
