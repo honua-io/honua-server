@@ -267,6 +267,14 @@ Stage 3 details:
 
 ## PR Lane (Required Checks)
 
+Besides the required checks below and the required Clean code check, every
+`pull_request` or `pull_request_target` workflow is optional and path-filtered,
+apart from two cheap control workflows that run on every event: auto-merge
+ready pull requests and Close external pull requests. Runner label lint reads only
+`.github/workflows`, so it runs only when a pull request or trunk push changes
+that directory. A new optional pull request workflow needs a `paths` filter
+naming what can change its result.
+
 These workflows are merge-blocking for all PRs to trunk:
 
 | Workflow | What it validates | Path filter |
@@ -532,6 +540,19 @@ not qualify. Missing configuration, credentials, checkout, API access, malformed
 proof, stale proof, or busy/stopped capacity falls back hosted. There is no
 wake, wait, polling or retry loop. A snapshot is admission evidence, not a
 capacity reservation; a later queue remains possible.
+
+Selective (affected) dispatches build the producer graph with
+`RunAnalyzers=false`; scheduled and `full_ci` runs keep the analyzer build.
+PR Gate's analyzer partitions already checked each landed PR's affected
+projects on its merge ref, and ci.yml's `Format Check` still runs
+`dotnet format` in the same affected run. Warnings-as-errors still applies to
+compiler diagnostics and source generators still run; the PR Gate producer
+already publishes its managed outputs from this no-analyzer build mode under
+the same build-properties label. An analyzer finding that only appears when
+several landed PRs combine is left to the scheduled full run. Selected
+protocol-profile builds keep analyzers for the projects they recompile
+(Honua.Server, whose profile constants change); referenced projects are reused
+from the no-analyzer producer build, and PR Gate analyzed them on each PR.
 
 The producer skips hosted sudo cleanup on self-hosted runners and installs its
 SDK into `${{ runner.temp }}/honua-ci-producer-sdk`. Every producer restore,
@@ -1486,8 +1507,13 @@ before publishing change outputs; neither cancellation nor a failed cancellation
 Admitted affected runs use two concurrent server shards. A selective run whose
 router reason is `no_path_match` schedules none of those default smoke shards.
 Honua.Core package compatibility, which uses the heavy pool, runs on a selective
-dispatch only when a changed file sits outside docs, workflows, `scripts/ci/` and
-tests. An empty path list still runs it. A skipped Core package does not cancel a selected AOT or MCP lane; a failed
+dispatch only when a changed file sits outside docs, workflows, `scripts/ci/`,
+repository metadata and tests. Repository metadata (`.github/codeql/`, issue
+templates, CODEOWNERS, Dependabot, actionlint, hygiene and PR template files)
+starts no managed build or integration lane on any `ci.yml` run: affected run
+44254098776 spent a 30-minute producer build plus Format, GDAL and Core package
+jobs on a range whose only build input was `.github/codeql/pr-paths.txt`. An
+empty path list still runs it. A skipped Core package does not cancel a selected AOT or MCP lane; a failed
 Core package or Postgres compatibility job still does. All trusted indices
 use the configured `honua-heavy` pool, so a run holds at most two heavy runners
 for shards; side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today,

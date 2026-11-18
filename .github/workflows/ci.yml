@@ -504,15 +504,18 @@ jobs:
               echo "non_test_changes=true" >> $GITHUB_OUTPUT
             fi
 
+            # Repository metadata that no build, test or package reads;
+            # scripts/ci/trailing_selection.py REPO_METADATA keeps the same list.
+            REPO_METADATA='\.github/(codeql/|ISSUE_TEMPLATE/|CODEOWNERS$|actionlint\.yaml$|dependabot\.yml$|hygiene\.json$|pull_request_template\.md$)'
             BUILD_FILES=$(
               printf '%s\n' "$CHANGED_FILES" \
-                | grep -Ev '^($|docs/|README\.md$|\.github/(workflows/[^/]+\.yml$|ci-shards\.json$)|scripts/ci/)' \
+                | grep -Ev -e '^($|docs/|README\.md$|\.github/(workflows/[^/]+\.yml$|ci-shards\.json$)|scripts/ci/)' -e "^${REPO_METADATA}" \
                 | sed '/^$/d' || true
             )
 
             INTEGRATION_FILES=$(
               printf '%s\n' "$CHANGED_FILES" \
-                | grep -Ev '^($|docs/|README\.md$|\.github/(actions/setup-dotnet-ci/|workflows/[^/]+\.yml$|ci-shards\.json$)|scripts/ci/|NuGet\.config$|src/Honua\.Core/Honua\.Core\.csproj$)' \
+                | grep -Ev -e '^($|docs/|README\.md$|\.github/(actions/setup-dotnet-ci/|workflows/[^/]+\.yml$|ci-shards\.json$)|scripts/ci/|NuGet\.config$|src/Honua\.Core/Honua\.Core\.csproj$)' -e "^${REPO_METADATA}" \
                 | sed '/^$/d' || true
             )
 
@@ -785,6 +788,12 @@ jobs:
       DOTNET_PROCESSOR_COUNT: '4'
       DOTNET_CLI_USE_MSBUILD_SERVER: 'false'
       MSBUILDDISABLENODEREUSE: '1'
+      # Selective (affected) dispatches compile without analyzers: PR Gate's
+      # analyzer partitions proved each landed PR and Format Check below still
+      # runs dotnet format. Scheduled and full runs keep the analyzer build.
+      # Protocol-profile builds keep analyzers for the projects they recompile
+      # (Honua.Server); referenced projects are reused from the producer build.
+      PRODUCER_RUN_ANALYZERS: ${{ needs.changes.outputs.full_ci == 'true' && 'true' || 'false' }}
     steps:
       - name: Place the producer SDK in the runner temp directory
         run: echo "DOTNET_INSTALL_DIR=$RUNNER_TEMP/honua-ci-producer-sdk" >> "$GITHUB_ENV"
@@ -878,12 +887,12 @@ jobs:
       - name: Restore producer build graph
         env:
           BUILD_TARGET: ${{ steps.managed-plan.outputs.target }}
-        run: scripts/ci/dotnet-restore-retry.sh "${BUILD_TARGET}" -p:Configuration=Release -maxcpucount:4 -p:TreatWarningsAsErrors=true -p:RunAnalyzers=true -p:UseSharedCompilation=false
+        run: scripts/ci/dotnet-restore-retry.sh "${BUILD_TARGET}" -p:Configuration=Release -maxcpucount:4 -p:TreatWarningsAsErrors=true -p:RunAnalyzers="${PRODUCER_RUN_ANALYZERS}" -p:UseSharedCompilation=false
 
       - name: Build (warnings as errors)
         env:
           BUILD_TARGET: ${{ steps.managed-plan.outputs.target }}
-        run: dotnet build "${BUILD_TARGET}" --no-restore --configuration Release -graphBuild -maxcpucount:4 -p:TreatWarningsAsErrors=true -p:RunAnalyzers=true -p:UseSharedCompilation=false
+        run: dotnet build "${BUILD_TARGET}" --no-restore --configuration Release -graphBuild -maxcpucount:4 -p:TreatWarningsAsErrors=true -p:RunAnalyzers="${PRODUCER_RUN_ANALYZERS}" -p:UseSharedCompilation=false
 
       - name: Build selected standalone tooling projects
         run: >-
