@@ -1208,7 +1208,7 @@ public sealed partial class CapabilityManifestEndpointTests
     {
         [IntegrationTest]
         [Endpoint("GET /api/v1/capabilities/manifest")]
-        public async Task GetManifest_WithNoRedis_ReportsProposalsAvailable()
+        public async Task GetManifest_WithSystemDatabaseOnly_ReportsProposalsAvailable()
         {
             var fixture = CreateManifestFixture().WithProductionJobSubstrate();
             await fixture.InitializeAsync();
@@ -1224,7 +1224,7 @@ public sealed partial class CapabilityManifestEndpointTests
                 using var document = await ReadDocumentAsync(response);
                 var proposals = GetCapability(document.RootElement, "operations.proposals");
                 proposals.GetProperty("available").GetBoolean().Should().BeTrue(
-                    "proposals live in the system database, so approvals work without Redis");
+                    "proposals live in the system database, so approvals need no external store");
                 GetCapability(document.RootElement, "jobs.runner").GetProperty("available").GetBoolean().Should().BeTrue();
             }
             finally
@@ -1234,121 +1234,114 @@ public sealed partial class CapabilityManifestEndpointTests
         }
     }
 
-    // Job-runtime composition cases build their own hosts over in-memory stores and run as a
-    // separate class in parallel with the other cases.
-    [Protocol(TestProtocols.Infrastructure)]
-    [Operation(Operations.Metadata)]
-    public sealed class JobRuntimeComposition
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_WithJobStoreAndQueueAndNoRedis_ReportsJobsRunnerAvailableAndProposalsUnavailable()
     {
-        [IntegrationTest]
-        [Endpoint("GET /api/v1/capabilities/manifest")]
-        public async Task GetManifest_WithJobStoreAndQueueAndNoRedis_ReportsJobsRunnerAvailableAndProposalsUnavailable()
+        var fixture = CreateManifestFixture().ConfigureServices(AddJobStoreAndQueue);
+        await fixture.InitializeAsync();
+
+        try
         {
-            var fixture = CreateManifestFixture().ConfigureServices(AddJobStoreAndQueue);
-            await fixture.InitializeAsync();
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
 
-            try
-            {
-                using var client = fixture.CreateAdminClient();
-                using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = await ReadDocumentAsync(response);
+            var root = document.RootElement;
 
-                response.StatusCode.Should().Be(HttpStatusCode.OK);
-                using var document = await ReadDocumentAsync(response);
-                var root = document.RootElement;
+            var jobsRunner = GetCapability(root, "jobs.runner");
+            jobsRunner.GetProperty("available").GetBoolean().Should().BeTrue(
+                "the job store and queue live in the system database, so jobs run without Redis");
+            jobsRunner.TryGetProperty("reasonCode", out _).Should().BeFalse(
+                "an available capability carries no reason code");
 
-                var jobsRunner = GetCapability(root, "jobs.runner");
-                jobsRunner.GetProperty("available").GetBoolean().Should().BeTrue(
-                    "the job store and queue live in the system database, so jobs run without Redis");
-                jobsRunner.TryGetProperty("reasonCode", out _).Should().BeFalse(
-                    "an available capability carries no reason code");
+            var job = root.GetProperty("limits").GetProperty("job");
+            job.GetProperty("durableJobRuntimeAvailable").GetBoolean().Should().BeTrue();
 
-                var job = root.GetProperty("limits").GetProperty("job");
-                job.GetProperty("durableJobRuntimeAvailable").GetBoolean().Should().BeTrue();
-
-                var proposals = GetCapability(root, "operations.proposals");
-                proposals.GetProperty("available").GetBoolean().Should().BeFalse(
-                    "this host composes no proposal store");
-                proposals.GetProperty("reasonCode").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
-            }
-            finally
-            {
-                await fixture.DisposeAsync();
-            }
+            var proposals = GetCapability(root, "operations.proposals");
+            proposals.GetProperty("available").GetBoolean().Should().BeFalse(
+                "this host composes no proposal store");
+            proposals.GetProperty("reasonCode").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
         }
-
-        [IntegrationTest]
-        [Endpoint("GET /api/v1/capabilities/manifest")]
-        public async Task GetManifest_DurableProposalStore_AdvertisesControlPlaneWithoutARedisDurabilityLimit()
+        finally
         {
-            var fixture = CreateManifestFixture()
-                .ConfigureServices(static services =>
-                {
-                    AddJobStoreAndQueue(services);
-                    AddDurableProposalStore(services);
-                });
-            await fixture.InitializeAsync();
-
-            try
-            {
-                using var client = fixture.CreateAdminClient();
-                using var response = await client.GetAsync("/api/v1/capabilities/manifest");
-
-                response.StatusCode.Should().Be(HttpStatusCode.OK);
-                using var document = await ReadDocumentAsync(response);
-                var root = document.RootElement;
-
-                foreach (var capabilityId in new[] { "jobs.runner", "operations.proposals" })
-                {
-                    var capability = GetCapability(root, capabilityId);
-                    capability.GetProperty("available").GetBoolean().Should().BeTrue(capabilityId);
-                    capability.TryGetProperty("reasonCode", out _).Should().BeFalse();
-                }
-
-                var job = root.GetProperty("limits").GetProperty("job");
-                job.GetProperty("durableJobRuntimeAvailable").GetBoolean().Should().BeTrue();
-                job.TryGetProperty("redisDurability", out _).Should().BeFalse(
-                    "the job and proposal stores are in the system database, so there is no Redis durability to report");
-            }
-            finally
-            {
-                await fixture.DisposeAsync();
-            }
+            await fixture.DisposeAsync();
         }
+    }
 
-        [IntegrationTest]
-        [Endpoint("GET /api/v1/capabilities/manifest")]
-        public async Task GetManifest_WithJobStoreButNoQueue_StillReportsJobsRunnerUnavailable()
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_DurableProposalStore_AdvertisesControlPlaneWithoutARedisDurabilityLimit()
+    {
+        var fixture = CreateManifestFixture()
+            .ConfigureServices(static services =>
+            {
+                AddJobStoreAndQueue(services);
+                AddDurableProposalStore(services);
+            });
+        await fixture.InitializeAsync();
+
+        try
         {
-            // A job store without a runnable queue is the fabricated-availability trap: submissions
-            // would be persisted, GeoprocessingJobDispatcher.MaybeEnqueueLocalAsync would silently skip
-            // enqueueing, and nothing would ever drain. Store presence alone must therefore never
-            // flip the manifest to available.
-            var fixture = CreateManifestFixture()
-                .ConfigureServices(static services =>
-                    services.AddSingleton<IExecutionJobStore>(new InMemoryExecutionJobStore()));
-            await fixture.InitializeAsync();
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
 
-            try
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = await ReadDocumentAsync(response);
+            var root = document.RootElement;
+
+            foreach (var capabilityId in new[] { "jobs.runner", "operations.proposals" })
             {
-                using var client = fixture.CreateAdminClient();
-                using var response = await client.GetAsync("/api/v1/capabilities/manifest");
-
-                response.StatusCode.Should().Be(HttpStatusCode.OK);
-                using var document = await ReadDocumentAsync(response);
-                var root = document.RootElement;
-
-                var jobsRunner = GetCapability(root, "jobs.runner");
-                jobsRunner.GetProperty("available").GetBoolean().Should().BeFalse(
-                    "no queue is composed, so a submitted job could never drain");
-                jobsRunner.GetProperty("reasonCode").GetString()
-                    .Should().Be(CapabilityUnavailableCodes.ErrorCode);
-                root.GetProperty("limits").GetProperty("job").GetProperty("durableJobRuntimeAvailable")
-                    .GetBoolean().Should().BeFalse();
+                var capability = GetCapability(root, capabilityId);
+                capability.GetProperty("available").GetBoolean().Should().BeTrue(capabilityId);
+                capability.TryGetProperty("reasonCode", out _).Should().BeFalse();
             }
-            finally
-            {
-                await fixture.DisposeAsync();
-            }
+
+            var job = root.GetProperty("limits").GetProperty("job");
+            job.GetProperty("durableJobRuntimeAvailable").GetBoolean().Should().BeTrue();
+            job.TryGetProperty("redisDurability", out _).Should().BeFalse(
+                "the job and proposal stores are in the system database, so there is no Redis durability to report");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_WithJobStoreButNoQueue_StillReportsJobsRunnerUnavailable()
+    {
+        // A job store without a runnable queue is the fabricated-availability trap: submissions
+        // would be persisted, GeoprocessingJobDispatcher.MaybeEnqueueLocalAsync would silently skip
+        // enqueueing, and nothing would ever drain. Store presence alone must therefore never
+        // flip the manifest to available.
+        var fixture = CreateManifestFixture()
+            .ConfigureServices(static services =>
+                services.AddSingleton<IExecutionJobStore>(new InMemoryExecutionJobStore()));
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = await ReadDocumentAsync(response);
+            var root = document.RootElement;
+
+            var jobsRunner = GetCapability(root, "jobs.runner");
+            jobsRunner.GetProperty("available").GetBoolean().Should().BeFalse(
+                "no queue is composed, so a submitted job could never drain");
+            jobsRunner.GetProperty("reasonCode").GetString()
+                .Should().Be(CapabilityUnavailableCodes.ErrorCode);
+            root.GetProperty("limits").GetProperty("job").GetProperty("durableJobRuntimeAvailable")
+                .GetBoolean().Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
         }
     }
 
