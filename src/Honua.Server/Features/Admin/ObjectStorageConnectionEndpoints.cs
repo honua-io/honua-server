@@ -66,21 +66,13 @@ internal static class ObjectStorageConnectionEndpoints
         }
 
         var options = services.GetRequiredService<IOptions<ObjectStorageConnectionOptions>>().Value;
-        var setup = new ObjectStorageConnectionSetup
-        {
-            ExternalId = ObjectStoragePolicy.NewExternalId(),
-            MintedBy = SetupPrincipal(context),
-            Bucket = bucket!,
-            Prefix = normalized,
-            ExpiresAt = services.GetRequiredService<TimeProvider>().GetUtcNow() + options.SetupLifetime,
-        };
+        var setup = NewSetup(context, bucket!, normalized);
         if (!await store.SaveSetupAsync(setup, options.MaxOpenSetupsPerPrincipal, context.RequestAborted).ConfigureAwait(false))
         {
             return TypedResults.Json(ApiResponse<object>.Failure(TooManySetupsMessage), statusCode: StatusCodes.Status429TooManyRequests);
         }
 
         await RecordSetupAsync(context, setup).ConfigureAwait(false);
-
         return TypedResults.Ok(ApiResponse<ObjectStorageSetupResponse>.CreateSuccess(new ObjectStorageSetupResponse
         {
             ExternalId = setup.ExternalId,
@@ -88,6 +80,16 @@ internal static class ObjectStorageConnectionEndpoints
             RoleNamePrefix = ObjectStorageConnectionKinds.RoleNamePrefix,
         }));
     }
+
+    private static ObjectStorageConnectionSetup NewSetup(HttpContext context, string bucket, string prefix) => new()
+    {
+        ExternalId = ObjectStoragePolicy.NewExternalId(),
+        MintedBy = SetupPrincipal(context),
+        Bucket = bucket,
+        Prefix = prefix,
+        ExpiresAt = context.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow()
+            + context.RequestServices.GetRequiredService<IOptions<ObjectStorageConnectionOptions>>().Value.SetupLifetime,
+    };
 
     // The external id is never recorded.
     private static Task RecordSetupAsync(HttpContext context, ObjectStorageConnectionSetup setup)
