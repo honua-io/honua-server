@@ -578,6 +578,31 @@ gate runners. Heavy-pool readiness remains independent of gate-pool admission.
 The producer takes one snapshot; the existing PR selector retains its bounded
 wake/wait orchestration. Both sparse checkouts include the shared validator.
 
+### Host NuGet fallback folder
+
+Build-host runners start every job with an empty home. They export
+`HONUA_NUGET_FALLBACK`, a package folder that only the host can write. A
+no-credential host account fills it from trunk's package closure (honua-iac
+`install-nuget-fallback.sh`). When a job passes `host-package-fallback: 'true'`,
+`setup-dotnet-ci` resolves the link to one generation and sets
+`NUGET_FALLBACK_PACKAGES` to it. The job then skips the ~1.7 GB NuGet cache
+archive, and NuGet downloads only the packages the folder lacks (GitHub
+Packages ids are never in it). If the variable is unset, the target is missing
+or writable, or it holds no package, the job restores the cache archive as
+before. Hosted runners never set the variable. Only the `ci.yml` `server-tests`
+shards and the `PR Gate / Affected shard` jobs opt in, because both re-check
+package imports after consuming managed outputs. `fast-server-tests` stays out:
+a fully consumed group goes straight to its test phase. Producers stay out as
+well, since a producer must keep its static web asset roots under the
+package folder it packages. A consumed `obj` folder names the producer's
+`~/.nuget/packages`, which the fallback leaves mostly empty, so on the fallback
+even a fully consumed shard runs `managed-test-build.py fallback`: it restores
+only projects whose package imports are missing and compiles nothing. A shard
+restored from the exact-head shard cache gets the same restore-only check,
+because that payload's `obj` came from whichever job wrote the cache. Measured
+18 Nov 2026: Setup .NET took 77-86 s on build-host runners against 31 s hosted,
+about 50 s of it the archive.
+
 ## PR Gate compute runner selection
 
 `PR Gate / Runner select` decides where `pr-gate` (Build and tests) and
