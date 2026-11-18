@@ -63,8 +63,12 @@ public sealed class ScheduledRetryExpediter
                 return current;
             }
 
-            current?.Status.IsTerminal().Should().BeFalse(
-                $"job {operationId} must be requeued after attempt {attempt}, not end as {current?.Status}: {current?.ErrorMessage}");
+            if (current is not null)
+            {
+                current.Status.IsTerminal().Should().BeFalse(
+                    $"job {operationId} must be requeued after attempt {attempt}, not end as {current.Status}: {current.ErrorMessage}");
+            }
+
             await Task.Delay(PollDelay).ConfigureAwait(false);
         }
 
