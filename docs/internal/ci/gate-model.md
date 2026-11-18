@@ -2443,3 +2443,19 @@ job: wall 633 to 419-438 seconds; DeploymentCapabilityProfileIntegrationTests
 80.4 to 43.0-43.7 seconds and CapabilityManifestEndpointTests 305.0 to
 225.7-241.8 seconds, while the unchanged classes in the same job also ran
 148.5 to 102-110 seconds, so part of that difference is host load.
+
+### API key token parameter host lifetime
+
+`ApiKeyTokenParameterTests` shares one application across the class. Each case
+creates and revokes only its own keys. Key names are not unique in the store;
+lookup is by key material. The in-process transport leaves the client address
+unset, and the authentication failure limiter ignores a request with no client
+address, so the expected invalid-token responses do not lock later cases out.
+The protected layer's access metadata is set once when the host starts.
+`ApiKeyTokenParameterPrincipalTests` does not use this host.
+
+The class stays split across Security and Authorization 2 and 3 on selected PR
+runs and full trunk runs. No workflow, shard filter, required check, aggregate
+dependency or runner count changes. One build-host job, 24/24 identical passing
+cases, zero skipped: class span 163.3 to 3.9-4.0 seconds (process wall 186 to
+63 and 29 seconds). Whole-job shard savings were not measured.
