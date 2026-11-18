@@ -123,34 +123,18 @@ internal static partial class VectorTileServerEndpoints
 
         try
         {
-            var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-            var serviceResult = await ServiceResourceValidationHelpers.ValidateServiceV2Async(
-                resourceValidator,
-                serviceId,
-                MetadataV2ServiceProtocols.VectorTileServer,
-                context,
-                cancellationToken: cancellationToken);
-            if (!serviceResult.IsValid)
-            {
-                return serviceResult.ErrorResult!;
-            }
-
-            var service = serviceResult.Service!;
-            var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
-            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-
-            // Select with the tile route's operation so root.json always styles the publication the
+            // Same Query-operation selection as the tile route, so root.json styles the publication the
             // tiles render, even under per-layer operation grants.
-            var primary = await ResolvePrimaryVectorTilePublicationAsync(
-                snapshot, service, context, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
-            if (primary is null)
+            var resolved = await ResolveServicePrimaryAsync(context, serviceId, cancellationToken).ConfigureAwait(false);
+            var service = resolved.Service!;
+            if (resolved.Primary is not { } primary)
             {
-                return StandardErrorHelpers.CreateNotFound(
+                return resolved.Error ?? StandardErrorHelpers.CreateNotFound(
                     context,
                     "The VectorTileServer service has no accessible vector tile layer.");
             }
 
-            var (_, resource) = primary.Value;
+            var resource = primary.Resource;
             var styleId = resource.Metadata.Name;
             var geometryType = resource.ReadGeometryType();
 
@@ -190,37 +174,71 @@ internal static partial class VectorTileServerEndpoints
         }
     }
 
-    private static async Task<(MetadataV2Layer Publication, MetadataV2Object Resource)?> ResolvePrimaryVectorTilePublicationAsync(
+    // An empty result with AccessError set means every routable publication was denied: the caller
+    // gets the same 499/403 as the service document, not a "no tiled layer" 404.
+    private readonly record struct PrimaryVectorTilePublication(
+        VectorTilePublicationDescriptor? Primary,
+        IResult? AccessError);
+
+    // The validated service, the snapshot it was resolved in and its primary tile publication, or
+    // the service's validation error or the 499/403 its denied publications give.
+    private readonly record struct ServicePrimary(
+        MetadataV2Service? Service,
+        MetadataV2GraphSnapshot? Snapshot,
+        PrimaryVectorTilePublication Selection)
+    {
+        public VectorTilePublicationDescriptor? Primary => Selection.Primary;
+
+        public IResult? Error => Selection.AccessError;
+    }
+
+    private static async Task<ServicePrimary> ResolveServicePrimaryAsync(
+        HttpContext context, string serviceId, CancellationToken cancellationToken)
+    {
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var serviceResult = await ServiceResourceValidationHelpers.ValidateServiceV2Async(
+            resourceValidator,
+            serviceId,
+            MetadataV2ServiceProtocols.VectorTileServer,
+            context,
+            cancellationToken: cancellationToken);
+        if (!serviceResult.IsValid)
+        {
+            return new ServicePrimary(null, null, new PrimaryVectorTilePublication(null, serviceResult.ErrorResult));
+        }
+
+        var service = serviceResult.Service!;
+        var snapshot = await context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>()
+            .GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var selection = await ResolvePrimaryVectorTilePublicationAsync(
+            snapshot, service, context, cancellationToken).ConfigureAwait(false);
+        return new ServicePrimary(service, snapshot, selection);
+    }
+
+    private static async Task<PrimaryVectorTilePublication> ResolvePrimaryVectorTilePublicationAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
         HttpContext context,
-        AuthorizationOperation operation,
         CancellationToken cancellationToken)
     {
-        (MetadataV2Layer Publication, MetadataV2Object Resource)? best = null;
-        foreach (var publication in TenantScopeHelpers.FilterVisiblePublications(
-                     context, snapshot, snapshot.Index.PublicationsByService[service.Metadata.Id]))
+        var (visible, accessError) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
+            context,
+            ResolveVectorTilePublications(snapshot, service, context),
+            static publication => publication.Resource,
+            service,
+            AuthorizationOperation.Query,
+            cancellationToken).ConfigureAwait(false);
+
+        VectorTilePublicationDescriptor? best = null;
+        foreach (var candidate in visible)
         {
-            var resource = snapshot.ResolveResource(publication);
-            if (!snapshot.IsRoutable(publication))
+            if (best is null || IsPreferredPublication(candidate.Publication, best.Publication))
             {
-                continue;
-            }
-
-            if (!await AccessPolicyHelpers.IsResourceAccessibleAsync(
-                    context, resource!, service, operation, cancellationToken).ConfigureAwait(false))
-            {
-                continue;
-            }
-
-            if (best is null
-                || IsPreferredPublication(publication, best.Value.Publication))
-            {
-                best = (publication, resource!);
+                best = candidate;
             }
         }
 
-        return best;
+        return new PrimaryVectorTilePublication(best, accessError);
     }
 
     private static bool IsPreferredPublication(
