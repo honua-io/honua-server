@@ -2,12 +2,34 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using DbUp.Engine;
+using DbUp.Engine.Transactions;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 
 namespace Honua.Db.Postgres.Tests.Features.Infrastructure;
 
 public sealed class HonuaResidentTableScriptProviderTests
 {
+    private static readonly HonuaResidentTableBinding[] Bindings =
+    [
+        new(
+            "Honua.Server.Migrations.157_FeatureChangeRealtimeStream.sql",
+            "feature_changes",
+            "feature_change_outbox"),
+        new("Honua.Server.Migrations.199_AddAnalysisContentTenantOwnership.sql", "analysis_content_items"),
+        new("Honua.Server.Migrations.215_AddConsoleAccessEnvironmentOwnership.sql", "rbac_role_permissions")
+    ];
+
+    private static SqlScript Render(SqlScript script)
+        => new HonuaResidentTableScriptProvider(Unused.Instance, Bindings).Render(script);
+
+    private sealed class Unused : IScriptProvider
+    {
+        internal static readonly Unused Instance = new();
+
+        public IEnumerable<SqlScript> GetScripts(IConnectionManager connectionManager)
+            => throw new NotSupportedException();
+    }
+
     [Fact]
     public void Render_ChangeLogMigration_BindsOnlyTheChangeLogToHonua()
     {
@@ -19,7 +41,7 @@ public sealed class HonuaResidentTableScriptProviderTests
             CREATE TABLE IF NOT EXISTS $HonuaSchema$.stream_cursors (name TEXT);
             """);
 
-        var rendered = HonuaResidentTableScriptProvider.Render(script).Contents;
+        var rendered = Render(script).Contents;
 
         Assert.Contains("AFTER INSERT ON honua.feature_changes", rendered, StringComparison.Ordinal);
         Assert.Contains("ON honua.feature_change_outbox (event_id)", rendered, StringComparison.Ordinal);
@@ -37,7 +59,7 @@ public sealed class HonuaResidentTableScriptProviderTests
             FROM $HonuaSchema$.studio_content_items AS studio;
             """);
 
-        var rendered = HonuaResidentTableScriptProvider.Render(script).Contents;
+        var rendered = Render(script).Contents;
 
         Assert.Contains("UPDATE honua.analysis_content_items AS items", rendered, StringComparison.Ordinal);
         Assert.Contains("FROM $HonuaSchema$.studio_content_items AS studio", rendered, StringComparison.Ordinal);
@@ -54,7 +76,7 @@ public sealed class HonuaResidentTableScriptProviderTests
             ON CONFLICT (role_id, service, layer, operation) DO NOTHING;
             """);
 
-        var rendered = HonuaResidentTableScriptProvider.Render(script).Contents;
+        var rendered = Render(script).Contents;
 
         Assert.Contains("INSERT INTO honua.rbac_role_permissions", rendered, StringComparison.Ordinal);
         Assert.Contains("FROM honua.rbac_role_permissions", rendered, StringComparison.Ordinal);
@@ -67,6 +89,6 @@ public sealed class HonuaResidentTableScriptProviderTests
         var script = new SqlScript("Honua.Server.Migrations.999_Future.sql",
             "CREATE INDEX IF NOT EXISTS ix ON $HonuaSchema$.feature_changes (event_id);");
 
-        Assert.Same(script, HonuaResidentTableScriptProvider.Render(script));
+        Assert.Same(script, Render(script));
     }
 }

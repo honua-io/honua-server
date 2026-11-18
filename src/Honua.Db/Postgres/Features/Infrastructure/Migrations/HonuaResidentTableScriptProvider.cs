@@ -11,26 +11,53 @@ namespace Honua.Db.Postgres.Features.Infrastructure.Migrations;
 // change log (the change-tracking trigger writes it there), the analysis content items and the
 // RBAC role store. A few migrations reach them through $HonuaSchema$, which under a configured
 // schema names a table that does not exist. Their hashes are pinned, so those references are
-// bound back to honua here.
-internal sealed class HonuaResidentTableScriptProvider(IScriptProvider source) : IScriptProvider
+// bound back to honua here. The caller supplies the script identities.
+internal sealed class HonuaResidentTableScriptProvider : IScriptProvider
 {
     internal const string ResidentSchema = "honua";
 
-    private static readonly Dictionary<string, Regex> _residentReferences = new(StringComparer.Ordinal)
+    private readonly IScriptProvider _source;
+    private readonly Dictionary<string, Regex> _residentReferences;
+
+    internal HonuaResidentTableScriptProvider(
+        IScriptProvider source,
+        IEnumerable<HonuaResidentTableBinding> bindings)
     {
-        ["Honua.Server.Migrations.157_FeatureChangeRealtimeStream.sql"] = ReferencesTo("feature_changes", "feature_change_outbox"),
-        ["Honua.Server.Migrations.199_AddAnalysisContentTenantOwnership.sql"] = ReferencesTo("analysis_content_items"),
-        ["Honua.Server.Migrations.215_AddConsoleAccessEnvironmentOwnership.sql"] = ReferencesTo("rbac_role_permissions")
-    };
+        _source = source;
+        _residentReferences = new Dictionary<string, Regex>(StringComparer.Ordinal);
+        foreach (var binding in bindings)
+        {
+            _residentReferences[binding.ScriptName] = ReferencesTo(binding.Tables);
+        }
+    }
 
     public IEnumerable<SqlScript> GetScripts(IConnectionManager connectionManager)
-        => source.GetScripts(connectionManager).Select(Render);
+        => _source.GetScripts(connectionManager).Select(Render);
 
-    internal static SqlScript Render(SqlScript script)
+    internal SqlScript Render(SqlScript script)
         => _residentReferences.TryGetValue(script.Name, out var references)
             ? new SqlScript(script.Name, references.Replace(script.Contents, ResidentSchema + ".$1"), script.SqlScriptOptions)
             : script;
 
-    private static Regex ReferencesTo(params string[] tables)
+    private static Regex ReferencesTo(IReadOnlyList<string> tables)
         => new(@"\$HonuaSchema\$\.(" + string.Join('|', tables) + @")\b", RegexOptions.CultureInvariant);
+}
+
+internal sealed class HonuaResidentTableBinding
+{
+    internal HonuaResidentTableBinding(string scriptName, params string[] tables)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scriptName);
+        if (tables.Length == 0)
+        {
+            throw new ArgumentException("A resident table binding names at least one table.", nameof(tables));
+        }
+
+        ScriptName = scriptName;
+        Tables = tables;
+    }
+
+    internal string ScriptName { get; }
+
+    internal IReadOnlyList<string> Tables { get; }
 }
