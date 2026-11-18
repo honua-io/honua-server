@@ -97,7 +97,7 @@ internal static class ExportAdminEndpoints
 
     private static string BaseUrl(HttpContext context) => $"{context.Request.Scheme}://{context.Request.Host}{context.Request.PathBase}";
 
-    private static IResult Failure(string message, int statusCode)
+    private static Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApiResponse<object>> Failure(string message, int statusCode)
         => Json(ApiResponse<object>.Failure(message), statusCode);
 
     private static Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApiResponse<T>> Json<T>(ApiResponse<T> response, int statusCode)
