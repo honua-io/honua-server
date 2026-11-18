@@ -32,6 +32,22 @@ public sealed partial class RuntimeImageOwnershipTests
     }
 
     [ArchitectureTest]
+    public void GdalWorkerImage_KeepsApplicationFilesRootOwned()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var dockerfile = File.ReadAllText(Path.Join(repositoryRoot, "docker/worker-gdal/Dockerfile"));
+        var runtimeStage = dockerfile[dockerfile.LastIndexOf("FROM native-tools AS runtime", StringComparison.Ordinal)..];
+
+        runtimeStage.Should().Contain("COPY --from=build /app .");
+        runtimeStage.Should().NotContain(
+            "--chown=1001",
+            "the worker's application files and scripts must not be writable by the job user");
+        runtimeStage.Should().Contain("chown 1001:1001 /tmp/honua-gdal-worker");
+        runtimeStage.Should().NotMatchRegex(@"chown\s+(-R\s+)?(1001|honua)\S*\s[^\n]*/app\b");
+        runtimeStage.Should().Contain("USER 1001:1001");
+    }
+
+    [ArchitectureTest]
     public void TrivyIgnoreEntries_CarryAnExpiry()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
