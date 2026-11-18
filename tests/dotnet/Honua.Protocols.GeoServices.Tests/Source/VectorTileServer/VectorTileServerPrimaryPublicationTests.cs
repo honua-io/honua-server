@@ -83,6 +83,45 @@ public sealed class VectorTileServerPrimaryPublicationTests :
         tile.Should().Equal(TileBytes(RestrictedPrivateStorageId));
     }
 
+    [IntegrationTheory]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/tile/{z}/{y}/{x}.pbf")]
+    [InlineData("/rest/services/vts-private/VectorTileServer?f=json")]
+    [InlineData("/rest/services/vts-private/VectorTileServer/tile/1/0/0.pbf")]
+    [InlineData("/rest/services/vts-private/VectorTileServer/resources/styles/root.json")]
+    public async Task VectorTileServer_AnonymousCallerOnPrivateService_AnswersAuthenticationRequired(string path)
+    {
+        // Clients open their sign-in prompt on body code 499; a 404 reads as a broken layer.
+        using var client = _fixture.App.CreateClient();
+
+        var code = await GetErrorCodeAsync(client, path);
+
+        code.Should().Be(499);
+    }
+
+    [IntegrationTheory]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/tile/{z}/{y}/{x}.pbf")]
+    [InlineData("/rest/services/vts-empty/VectorTileServer/tile/1/0/0.pbf")]
+    [InlineData("/rest/services/vts-empty/VectorTileServer/resources/styles/root.json")]
+    public async Task VectorTileServer_SignedInCallerOnServiceWithoutLayers_AnswersNotFound(string path)
+    {
+        using var client = _fixture.App.CreateAdminClient();
+
+        var code = await GetErrorCodeAsync(client, path);
+
+        code.Should().Be(404);
+    }
+
+    private static async Task<int> GetErrorCodeAsync(HttpClient client, string path)
+    {
+        using var response = await client.GetAsync(path);
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        using var document = JsonDocument.Parse(content);
+        return document.RootElement.GetProperty("error").GetProperty("code").GetInt32();
+    }
+
     private static async Task<string?> GetRootStyleNameAsync(HttpClient client, string serviceName)
     {
         var response = await client.GetAsync(
@@ -190,6 +229,13 @@ public sealed class VectorTileServerPrimaryPublicationTests :
                 .AddPublication(
                     "pub-restricted-private", "svc-vts-restricted", "res-restricted-private",
                     layerIndex: 1, publicationType: MetadataV2LayerType.EsriVectorTileLayer)
+                .AddResource("res-private-only", "private-only-layer", accessPolicy: privatePolicy)
+                .AddStorageBinding("binding-private-only", "res-private-only", "features", storageLayerId: RestrictedPrivateStorageId)
+                .AddService("svc-vts-private", "vts-private", protocols: [ServiceProtocols.VectorTileServer], accessPolicy: privatePolicy)
+                .AddPublication(
+                    "pub-private-only", "svc-vts-private", "res-private-only",
+                    layerIndex: 0, publicationType: MetadataV2LayerType.EsriVectorTileLayer)
+                .AddService("svc-vts-empty", "vts-empty", protocols: [ServiceProtocols.VectorTileServer], accessPolicy: openPolicy)
                 .BuildProvider();
         }
     }

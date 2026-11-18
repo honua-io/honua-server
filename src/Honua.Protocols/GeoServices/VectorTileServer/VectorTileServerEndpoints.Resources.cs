@@ -139,18 +139,18 @@ internal static partial class VectorTileServerEndpoints
             var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-            // Select with the tile route's operation so root.json always styles the publication the
+            // Same Query-operation selection as the tile route, so root.json styles the publication the
             // tiles render, even under per-layer operation grants.
-            var primary = await ResolvePrimaryVectorTilePublicationAsync(
-                snapshot, service, context, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
+            var (primary, accessError) = await ResolvePrimaryVectorTilePublicationAsync(
+                snapshot, service, context, cancellationToken).ConfigureAwait(false);
             if (primary is null)
             {
-                return StandardErrorHelpers.CreateNotFound(
+                return accessError ?? StandardErrorHelpers.CreateNotFound(
                     context,
                     "The VectorTileServer service has no accessible vector tile layer.");
             }
 
-            var (_, resource) = primary.Value;
+            var resource = primary.Resource;
             var styleId = resource.Metadata.Name;
             var geometryType = resource.ReadGeometryType();
 
@@ -190,37 +190,36 @@ internal static partial class VectorTileServerEndpoints
         }
     }
 
-    private static async Task<(MetadataV2Layer Publication, MetadataV2Object Resource)?> ResolvePrimaryVectorTilePublicationAsync(
+    // An empty result with AccessError set means every routable publication was denied: the caller
+    // gets the same 499/403 as the service document, not a "no tiled layer" 404.
+    private readonly record struct PrimaryVectorTilePublication(
+        VectorTilePublicationDescriptor? Primary,
+        IResult? AccessError);
+
+    private static async Task<PrimaryVectorTilePublication> ResolvePrimaryVectorTilePublicationAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
         HttpContext context,
-        AuthorizationOperation operation,
         CancellationToken cancellationToken)
     {
-        (MetadataV2Layer Publication, MetadataV2Object Resource)? best = null;
-        foreach (var publication in TenantScopeHelpers.FilterVisiblePublications(
-                     context, snapshot, snapshot.Index.PublicationsByService[service.Metadata.Id]))
+        var (visible, accessError) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
+            context,
+            ResolveVectorTilePublications(snapshot, service, context),
+            static publication => publication.Resource,
+            service,
+            AuthorizationOperation.Query,
+            cancellationToken).ConfigureAwait(false);
+
+        VectorTilePublicationDescriptor? best = null;
+        foreach (var candidate in visible)
         {
-            var resource = snapshot.ResolveResource(publication);
-            if (!snapshot.IsRoutable(publication))
+            if (best is null || IsPreferredPublication(candidate.Publication, best.Publication))
             {
-                continue;
-            }
-
-            if (!await AccessPolicyHelpers.IsResourceAccessibleAsync(
-                    context, resource!, service, operation, cancellationToken).ConfigureAwait(false))
-            {
-                continue;
-            }
-
-            if (best is null
-                || IsPreferredPublication(publication, best.Value.Publication))
-            {
-                best = (publication, resource!);
+                best = candidate;
             }
         }
 
-        return best;
+        return new PrimaryVectorTilePublication(best, accessError);
     }
 
     private static bool IsPreferredPublication(
