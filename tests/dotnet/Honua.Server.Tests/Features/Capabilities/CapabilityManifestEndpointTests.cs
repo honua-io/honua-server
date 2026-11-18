@@ -1199,7 +1199,7 @@ public sealed partial class CapabilityManifestEndpointTests
         proposals.GetProperty("reasonCode").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
     }
 
-    // This host runs the production job worker over the shared job tables, so it stays in the
+    // This host runs the production job worker over the shared job tables, so it runs in the
     // serial JobSubstrate collection with the other WithProductionJobSubstrate hosts.
     [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
     [Protocol(TestProtocols.Infrastructure)]
