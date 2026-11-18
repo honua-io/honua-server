@@ -20,9 +20,7 @@ public sealed class PreflightRefusalExitTests
         "HONUA_SKIP_MIGRATIONS",
         "HONUA_REGISTER_TEST_INFRASTRUCTURE",
         "HONUA_TEST_SCHEMA_HEADERS",
-        "HONUA_DB_DEGRADED_START",
-        "ConnectionStrings__redis",
-        "ConnectionStrings__Redis"
+        "HONUA_DB_DEGRADED_START"
     ];
 
     [IntegrationTest]

@@ -56,7 +56,6 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
-                builder.UseSetting("ConnectionStrings:redis", "");
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
                 // Authentication must be decided by the presented credential only: the dev-auth
                 // bypass would hand the proposer and the approver the same identity.

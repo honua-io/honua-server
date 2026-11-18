@@ -186,7 +186,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
     public async Task CanonicalRunner_RollbackAcrossNewerDeclaredMigration_StartsOnlyWhenItVerifiesExpand(
         string kind, bool rollbackStarts)
     {
-        // #6477: this image is the N-1 reader. A newer image applied one more migration and recorded
+        // This image is the N-1 reader. A newer image applied one more migration and recorded
         // its forward-compatibility declaration; image-only rollback keeps that database.
         var assembly = typeof(Program).Assembly;
         var runner = new PostgresDatabaseMigrationRunner(
@@ -944,7 +944,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
 
         // Ingest allocates @iot.ids from these sequences: dropping them must fail the floor
         // through the strict physical-family floor, not surface as a NOT NULL violation on
-        // the first insert (#4199). Migration 127 validates the complete family, including
+        // the first insert. Migration 127 validates the complete family, including
         // the original sequences introduced by 116; its diagnosis must name both defects.
         await using (var drop = connection.CreateCommand())
         {

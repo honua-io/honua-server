@@ -43,7 +43,7 @@ internal static class SeedRunner
 
     internal const long SeedApplicationLockKey = 7_893_641_160_553_452_791;
 
-    // honua-server#1359: the serially-seeded Database collections pay a per-test seed
+    // The serially-seeded Database collections pay a per-test seed
     // cost. Re-reading and re-parsing the seed YAML from disk on every isolated-schema
     // creation is pure, deterministic work whose result (an init-only SeedDefinition) is
     // immutable once loaded, so memoize it keyed by absolute path + last-write time.
@@ -169,7 +169,7 @@ internal static class SeedRunner
         => ex.SqlState is PostgresErrorCodes.SerializationFailure or PostgresErrorCodes.DeadlockDetected
            || IsConcurrentSchemaCreationRace(ex);
 
-    // honua-server#1568 (CREATE SCHEMA race variant): under parallel collection seeding,
+    // CREATE SCHEMA race: under parallel collection seeding,
     // two setups racing `CREATE SCHEMA IF NOT EXISTS honua` can both pass the catalog
     // existence check and then collide on the `pg_namespace` unique index, surfacing as
     // 23505 (unique_violation) on pg_namespace_nspname_index rather than 40001/40P01.

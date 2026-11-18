@@ -3,7 +3,7 @@
 
 Never use this destructive drill against a customer deployment. The caller owns the
 unique Compose project and bind-mounted output directory. All application writers and
-both databases are stopped before the physical backup, and no original volume survives.
+PostgreSQL are stopped before the physical backup, and no original volume survives.
 """
 
 import argparse
@@ -42,19 +42,17 @@ def recover(compose_file, project, object_root, backup_dir):
         if (len(mounts) != 1 or mounts[0]["Type"] != "bind"
                 or Path(mounts[0]["Source"]).resolve() != object_root):
             raise ValueError("output directory must be the actual shared mount of every qualification host")
-    inventory = []
-    for service, target in (("postgres", "/var/lib/postgresql/data"), ("redis", "/data")):
-        container = run(*compose, "ps", "-q", service).decode().strip()
-        details = json.loads(run("docker", "inspect", container))[0]
-        mounts = [m for m in details["Mounts"] if m["Destination"] == target]
-        if len(mounts) != 1 or mounts[0]["Type"] != "volume":
-            raise ValueError(f"{service} must use one named persistent volume")
-        volume = mounts[0]["Name"]
-        labels = json.loads(run("docker", "volume", "inspect", volume))[0]["Labels"]
-        if labels.get("com.docker.compose.project") != project:
-            raise ValueError("refusing a volume not owned by this qualification project")
-        inventory.append({"store": service, "volume": volume, "type": "volume"})
-    inventory.append({"store": "gp-output", "volume": str(object_root), "type": "bind"})
+    container = run(*compose, "ps", "-q", "postgres").decode().strip()
+    details = json.loads(run("docker", "inspect", container))[0]
+    mounts = [m for m in details["Mounts"] if m["Destination"] == "/var/lib/postgresql/data"]
+    if len(mounts) != 1 or mounts[0]["Type"] != "volume":
+        raise ValueError("postgres must use one named persistent volume")
+    volume = mounts[0]["Name"]
+    labels = json.loads(run("docker", "volume", "inspect", volume))[0]["Labels"]
+    if labels.get("com.docker.compose.project") != project:
+        raise ValueError("refusing a volume not owned by this qualification project")
+    output_store = {"store": "gp-output", "volume": str(object_root), "type": "bind"}
+    inventory = [{"store": "postgres", "volume": volume, "type": "volume"}, output_store]
     helper = json.loads(run(*compose, "config", "--format", "json"))["services"]["postgres"]["image"]
 
     def mounted(item, *command, **kwargs):
@@ -67,7 +65,7 @@ def recover(compose_file, project, object_root, backup_dir):
 
     started = now()
     run(*compose, "stop", "server", "server-peer", "worker")
-    run(*compose, "stop", "postgres", "redis")
+    run(*compose, "stop", "postgres")
     for item in inventory:
         item["files_before"] = file_inventory(item)
         archive = mounted(item, "tar -C /volume -cpf - .")
@@ -77,14 +75,16 @@ def recover(compose_file, project, object_root, backup_dir):
                     bytes=len(archive), captured_at=now())
     # No subsequent read can fall back to an original database or output object.
     run(*compose, "down", "--volumes", "--remove-orphans")
-    for item in inventory[:2]:
+    for item in inventory:
+        if item["type"] != "volume":
+            continue
         result = subprocess.run(["docker", "volume", "inspect", item["volume"]],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if result.returncode == 0:
             raise RuntimeError("original database volume survived destruction")
-    mounted(inventory[2], "find /volume -mindepth 1 -delete")
+    mounted(output_store, "find /volume -mindepth 1 -delete")
     destroyed = now()
-    run(*compose, "create", "postgres", "redis")
+    run(*compose, "create", "postgres")
     for item in inventory:
         if mounted(item, "find /volume -mindepth 1 -print -quit").strip():
             raise RuntimeError(f'{item["store"]}: restore destination is not empty')

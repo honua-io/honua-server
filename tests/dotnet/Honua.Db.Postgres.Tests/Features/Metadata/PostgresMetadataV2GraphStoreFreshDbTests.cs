@@ -187,7 +187,7 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFix
     [IntegrationTest]
     public async Task StageAsync_KeepsReadersOnCurrent_AndActivationNeverOverwritesANewerRevision()
     {
-        // #4619: a protected metadata release stages its candidate as an immutable retained revision,
+        // A protected metadata release stages its candidate as an immutable retained revision,
         // keeps canonical readers on the active revision until an ETag-conditional activation, and a
         // concurrent publish that lands first is reported as a typed conflict instead of overwritten.
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreFreshDbTests));
@@ -270,7 +270,7 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFix
     [IntegrationTest]
     public async Task SaveAsync_OnBootstrapWithOrphanedServiceSidecarRows_ReconcilesInsteadOf23505()
     {
-        // honua-server#1395: a shared/partially-written DB can carry orphaned
+        // A shared/partially-written DB can carry orphaned
         // metadata_v2_services_idx rows with NO activated metadata_v2_current row. The
         // publish path then bootstraps from an empty graph and forces a first write at
         // revision 1; without reconciliation the new service-name insert collided with

@@ -63,16 +63,7 @@ internal sealed partial class ConsoleJobService
         var truncated = new List<string>();
         var notes = new List<string>();
 
-        var executeDecision = await approvalGate.CheckAuthorizationAsync(
-            user,
-            new OperatorAuthorizationRequest
-            {
-                ResourceType = OperatorResourceType.Job,
-                Operation = OperatorOperation.Execute,
-                ResourceId = job.OperationId
-            },
-            cancellationToken).ConfigureAwait(false);
-        var operatorView = executeDecision.IsAllowed;
+        var operatorView = await IsOperatorViewAsync(user, job, cancellationToken).ConfigureAwait(false);
         if (!operatorView)
         {
             notes.Add("owner view: worker and provider identities are withheld; an execute-scoped principal receives them");

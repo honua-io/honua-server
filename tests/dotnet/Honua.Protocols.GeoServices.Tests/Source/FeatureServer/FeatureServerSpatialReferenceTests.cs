@@ -173,7 +173,7 @@ public sealed partial class FeatureServerSpatialReferenceTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task Query_WithReprojectionAndNoDatumTransformation_AppliesDefault_Returns200(/* #1274 */)
+    public async Task Query_WithReprojectionAndNoDatumTransformation_AppliesDefault_Returns200()
     {
         // Reproject the layer (3857) to WGS84 with no client datumTransformation. The
         // catalog has no curated default for this pair, so the query falls through to the
@@ -197,7 +197,7 @@ public sealed partial class FeatureServerSpatialReferenceTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_WithWebMercatorAliasOutSr_AgainstWebMercatorLayer_EchoesAliasWithoutTransform()
     {
-        // Regression for #2736: ArcGIS Pro / the ArcGIS JS API request outSR=102100 (a Web
+        // ArcGIS Pro / the ArcGIS JS API request outSR=102100 (a Web
         // Mercator alias of EPSG:3857). The srid-test point layer is stored as 3857, so the query
         // must (1) accept 102100 rather than rejecting it as an invalid outSR, (2) NOT reproject
         // (same CRS after alias normalization — the geometry stays in stored 3857 metres), and
@@ -229,11 +229,11 @@ public sealed partial class FeatureServerSpatialReferenceTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_WithWebMercatorAliasInSr_AgainstWebMercatorLayer_IsAcceptedNotRejected()
     {
-        // Regression for #2736: an envelope filter expressed in a Web Mercator alias (inSR=102100)
-        // must be ACCEPTED on the query path. Before the resolver normalized the alias, 102100 was
-        // not in the CRS registry so the query returned 400 "Invalid input spatial reference".
-        // A generous EPSG:3857 envelope (well under the 100000 sq km bbox-area limit) around the
-        // San Francisco point returns it; the response echoes {wkid:102100, latestWkid:3857}.
+        // An envelope filter expressed in a Web Mercator alias (inSR=102100) must be ACCEPTED on
+        // the query path: the resolver normalizes the alias, so 102100 is not rejected with 400
+        // "Invalid input spatial reference" for being absent from the CRS registry. A generous
+        // EPSG:3857 envelope (well under the 100000 sq km bbox-area limit) around the San
+        // Francisco point returns it; the response echoes {wkid:102100, latestWkid:3857}.
         var geometry = "{\"xmin\":-13700000,\"ymin\":4400000,\"xmax\":-13500000,\"ymax\":4600000}";
         // Pin to the seeded row with a where clause: the point layer is shared across the test
         // collection, so an envelope-only query can match other classes' seed data.
@@ -257,7 +257,7 @@ public sealed partial class FeatureServerSpatialReferenceTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task Query_WithUnknownDatumTransformationWkid_ReturnsExplicitError(/* #1274 */)
+    public async Task Query_WithUnknownDatumTransformationWkid_ReturnsExplicitError()
     {
         // An unknown datumTransformation WKID must produce an explicit error rather than
         // a silent substitution to PROJ's default pipeline.
@@ -272,7 +272,7 @@ public sealed partial class FeatureServerSpatialReferenceTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task Query_WithDatumTransformationNotApplicableToReprojection_ReturnsExplicitError(/* #1274 */)
+    public async Task Query_WithDatumTransformationNotApplicableToReprojection_ReturnsExplicitError()
     {
         // WKID 108001 connects NAD83<->WGS84; it does not apply to the layer's 3857->4326
         // reprojection. A known-but-inapplicable WKID must be rejected explicitly rather
@@ -288,7 +288,7 @@ public sealed partial class FeatureServerSpatialReferenceTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task Query_WithVerticalCoordinateSystemOutSr_ReturnsExplicitError(/* #1274 */)
+    public async Task Query_WithVerticalCoordinateSystemOutSr_ReturnsExplicitError()
     {
         // outSR carrying a vertical CS (vcsWkid) requests a vertical datum transformation,
         // which is not supported; it must fail explicitly instead of being ignored.
@@ -427,7 +427,7 @@ public sealed partial class FeatureServerSpatialReferenceTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_CollinearPolygonOnPolygonLayer_IsRejectedNotStoredAsLine()
     {
-        // #6108: ST_MakeValid collapses a zero-area ring to a LINESTRING. The shared mutation
+        // ST_MakeValid collapses a zero-area ring to a LINESTRING. The shared mutation
         // validator re-checks the post-repair geometry type, so the polygon layer must not
         // receive a line.
         var request = new ApplyEditsRequest
@@ -478,10 +478,10 @@ public sealed partial class FeatureServerSpatialReferenceTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithWebMercatorAliasSrid_AgainstWebMercatorLayer_Succeeds()
     {
-        // Regression for #2360: ArcGIS Pro / the ArcGIS JS API send the Web Mercator
-        // spatial reference as {wkid:102100, latestWkid:3857}. The srid-test point layer is
-        // stored as 3857, so this edit must be accepted (102100 is an alias of 3857) rather
-        // than rejected as a SRID mismatch (which, with rollbackOnFailure, failed the batch).
+        // ArcGIS Pro / the ArcGIS JS API send the Web Mercator spatial reference as
+        // {wkid:102100, latestWkid:3857}. The srid-test point layer is stored as 3857, so
+        // this edit must be accepted (102100 is an alias of 3857) rather than rejected as a
+        // SRID mismatch (which, with rollbackOnFailure, fails the batch).
         var request = new ApplyEditsRequest
         {
             Adds =
@@ -525,7 +525,7 @@ public sealed partial class FeatureServerSpatialReferenceTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_WithGenuinelyDifferentSrid_AgainstWebMercatorLayer_ReturnsError()
     {
-        // Guard for #2360: normalizing Web Mercator aliases must not weaken genuine
+        // Normalizing Web Mercator aliases must not weaken genuine
         // SRID-mismatch rejection. A truly different CRS (EPSG:4326) against the 3857 layer
         // is still rejected because the edit path does not reproject geometry.
         var request = new ApplyEditsRequest

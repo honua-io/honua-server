@@ -71,7 +71,7 @@ public sealed class StudioDeliverableComposerTests
         artifact.Content.Take(PngMagic.Length).Should().Equal(PngMagic);
     }
 
-    // honua-server#4908: prior to this guard, a typeface that resolved to a glyphless object
+    // Prior to this guard, a typeface that resolved to a glyphless object
     // (no fonts installed on the AOT image) let StudioDeliverableComposer.Compose return a
     // 200-worthy PNG with only the two hairline rules drawn -- a silent blank artifact. The
     // guard must refuse loudly instead, for both "no typeface at all" (the attestation-marker

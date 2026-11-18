@@ -1,12 +1,14 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.RegularExpressions;
+
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Studio.Domain;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-public static class MetadataV2GraphValidator
+public static partial class MetadataV2GraphValidator
 {
     public static MetadataV2GraphValidationResult Validate(MetadataV2Graph graph)
     {
@@ -755,6 +757,7 @@ public static class MetadataV2GraphValidator
         }
         ValidateContactEmail(errors, $"{ownerLabel} metadata.contactPoint.email", metadata.ContactPoint?.Email);
         ValidateContactUrl(errors, $"{ownerLabel} metadata.contactPoint.url", metadata.ContactPoint?.Url);
+        ValidateContactPhone(errors, $"{ownerLabel} metadata.contactPoint.phone", metadata.ContactPoint?.Phone);
 
         for (var i = 0; i < metadata.Links.Count; i++)
         {
@@ -794,6 +797,24 @@ public static class MetadataV2GraphValidator
             errors.Add($"{field} must contain non-empty local and domain parts.");
         }
     }
+
+    // A dialable number: digits with optional leading '+', spaces, '-', '.', '/', parentheses and an
+    // "x"/"ext" extension. Free text would land verbatim in ContactVoiceTelephone and ows:Voice.
+    internal static void ValidateContactPhone(List<string> errors, string field, string? phone)
+    {
+        if (string.IsNullOrWhiteSpace(phone))
+        {
+            return;
+        }
+        if (phone.Length > MetadataV2ContactPoint.MaxPhoneLength || !ContactPhonePattern().IsMatch(phone))
+        {
+            errors.Add(
+                $"{field} must be a telephone number of at most {MetadataV2ContactPoint.MaxPhoneLength} characters: digits, an optional leading '+', spaces, '-', '.', '/', parentheses and an optional 'x' or 'ext' extension.");
+        }
+    }
+
+    [GeneratedRegex(@"^\+?[0-9(][0-9 ()./-]*[0-9](?: ?(?:x|ext\.?) ?[0-9]+)?\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    private static partial Regex ContactPhonePattern();
 
     internal static void ValidateContactUrl(List<string> errors, string field, string? url)
     {
@@ -838,8 +859,7 @@ public static class MetadataV2GraphValidator
         IReadOnlyList<MetadataV2Service> services,
         Dictionary<string, MetadataV2Layer> publicationsById)
     {
-        // Service→publications is now derived from publication.ServiceId only;
-        // the redundant Service.PublicationIds slot was removed in design slice 55/N.
+        // Service→publications is derived from publication.ServiceId only.
         _ = publicationsById;
 
         foreach (var service in services)

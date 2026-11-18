@@ -131,7 +131,7 @@ public class ImageServerMetadataHandlerTests
         // ArcGIS Pro draws an image service only inside minPixelSize..maxPixelSize and
         // minScale..maxScale. ArcGIS Server publishes 0 for all four ("no limit"). A positive
         // minPixelSize in geographic units hides Client Compat Coverage at 1:339,824: the map
-        // cell is ~0.001 degrees and the service was advertising 0.1 (#6563). Export of the
+        // cell is ~0.001 degrees and the service was advertising 0.1. Export of the
         // same bbox still returns pixels; Pro never requests them.
         SetupSuccessfulMetadata();
 
@@ -300,7 +300,7 @@ public class ImageServerMetadataHandlerTests
     [Operation(Operations.GetServiceInfo)]
     public async Task GetServiceInfoAsync_DynamicService_MatchesEsriShapeForArcGisRuntime()
     {
-        // #1456: the native .NET ImageServiceRaster.LoadAsync ALWAYS fetches the
+        // The native .NET ImageServiceRaster.LoadAsync ALWAYS fetches the
         // ImageServer config (served at both the root descriptor and conf.json) and
         // parses it with a strict reader. Verified against a public Esri ImageServer,
         // a dynamic (non-fused-cache) service:
@@ -335,12 +335,12 @@ public class ImageServerMetadataHandlerTests
         info.BlockHeight.Should().BeNull();
 
         // Esri serializes allowedMosaicMethods as a comma-separated string, not an array, using
-        // the unprefixed method vocabulary (#4063).
+        // the unprefixed method vocabulary.
         info.AllowedMosaicMethods.Should().BeOfType<string>();
         info.AllowedMosaicMethods.Should().Be("None,NorthWest,LockRaster,ByAttribute,Nadir,Seamline");
 
         // renderingRule raster functions execute, so they are allowed; a rule-less request composites
-        // newest acquisition first with the default Newest merge keeping the first raster (#4063).
+        // newest acquisition first with the default Newest merge keeping the first raster.
         info.AllowRasterFunction.Should().BeTrue();
         info.DefaultMosaicMethod.Should().Be("ByAttribute");
         info.SortField.Should().Be("AcquisitionDate");
@@ -433,9 +433,9 @@ public class ImageServerMetadataHandlerTests
     [Operation(Operations.GetServiceInfo)]
     public async Task GetServiceInfoAsync_TileMetadataDisabled_OmitsTileInfoAndCache()
     {
-        // Default (#1456-safe) contract: the ArcGIS Maps SDK for .NET native runtime
+        // Default (conf.json-safe) contract: the ArcGIS Maps SDK for .NET native runtime
         // reads this same descriptor from conf.json and rejects a service that
-        // advertises a cache. Tiled advertising must stay off unless opted in (#1648).
+        // advertises a cache. Tiled advertising must stay off unless opted in.
         SetupSuccessfulMetadata();
 
         var context = CreateImageServerContext();

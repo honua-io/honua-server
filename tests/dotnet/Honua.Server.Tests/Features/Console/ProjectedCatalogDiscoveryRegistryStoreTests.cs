@@ -60,6 +60,21 @@ public sealed class ProjectedCatalogDiscoveryRegistryStoreTests
     }
 
     [UnitTest]
+    public async Task GetEndpoint_ExistingIdentity_ReturnsStableItemHandles()
+    {
+        using var scope = new ProjectionScope(Graph());
+        var detail = await scope.Store.GetEndpointAsync("default", "esri");
+        Assert.NotNull(detail);
+        Assert.Equal(
+            new[]
+            {
+                "765f7626cab761392c1a33ee2ff060143d659549cc4b9a373b0763b22bbf3649",
+                "ce1629fe553e69d911a70ef08f833dbf9576efa248ab468bca5d32b0bfd14719",
+            },
+            detail.Items.Select(item => item.Id).Order());
+    }
+
+    [UnitTest]
     public async Task TwoConfiguredNamespaces_DoNotShareEntriesOrItemIdentifiers()
     {
         var alpha = Graph();
@@ -72,7 +87,7 @@ public sealed class ProjectedCatalogDiscoveryRegistryStoreTests
         }, mappings:
         [
             Mapping(),
-            new CatalogDiscoveryWorkspaceOptions { Id = "second", TenantId = "public", Namespace = "beta" },
+            new CatalogDiscoveryEnvironmentOptions { Id = "second", TenantId = "public", Namespace = "beta" },
         ]);
         var first = await scope.Store.GetEndpointAsync("default", "esri");
         var second = await scope.Store.GetEndpointAsync("second", "esri");
@@ -94,18 +109,18 @@ public sealed class ProjectedCatalogDiscoveryRegistryStoreTests
         Assert.True(validator.Validate(null, new CatalogDiscoveryOptions()).Succeeded);
         foreach (var invalid in new[]
         {
-            new CatalogDiscoveryWorkspaceOptions { Id = "default", Namespace = "alpha" },
-            new CatalogDiscoveryWorkspaceOptions { Id = "default", TenantId = "public" },
-            new CatalogDiscoveryWorkspaceOptions { Id = "default", TenantId = "public", Namespace = "*" },
-            new CatalogDiscoveryWorkspaceOptions { Id = new string('a', 129), TenantId = "public", Namespace = "alpha" },
+            new CatalogDiscoveryEnvironmentOptions { Id = "default", Namespace = "alpha" },
+            new CatalogDiscoveryEnvironmentOptions { Id = "default", TenantId = "public" },
+            new CatalogDiscoveryEnvironmentOptions { Id = "default", TenantId = "public", Namespace = "*" },
+            new CatalogDiscoveryEnvironmentOptions { Id = new string('a', 129), TenantId = "public", Namespace = "alpha" },
         })
         {
-            Assert.True(validator.Validate(null, new CatalogDiscoveryOptions { Workspaces = [invalid] }).Failed);
+            Assert.True(validator.Validate(null, new CatalogDiscoveryOptions { Environments = [invalid] }).Failed);
         }
 
         Assert.True(validator.Validate(null, new CatalogDiscoveryOptions
         {
-            Workspaces = [Mapping("default"), Mapping("DEFAULT")],
+            Environments = [Mapping("default"), Mapping("DEFAULT")],
         }).Failed);
     }
 
@@ -115,7 +130,7 @@ public sealed class ProjectedCatalogDiscoveryRegistryStoreTests
     [InlineData("PUBLIC")]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
-    public async Task UnresolvedOrDifferentTenant_DoesNotExposeMappedWorkspace(string? tenant)
+    public async Task UnresolvedOrDifferentTenant_DoesNotExposeMappedEnvironment(string? tenant)
     {
         using var scope = new ProjectionScope(Graph(), tenant);
         Assert.Null(await scope.Store.GetRegistryAsync("default"));
@@ -125,13 +140,13 @@ public sealed class ProjectedCatalogDiscoveryRegistryStoreTests
     }
 
     [UnitTest]
-    public async Task WorkspaceNamesAreCaseInsensitive_ButUnknownWorkspaceDoesNotAliasDefault()
+    public async Task EnvironmentNamesAreCaseInsensitive_ButUnknownEnvironmentDoesNotAliasDefault()
     {
         using var scope = new ProjectionScope(Graph());
         Assert.Null(await scope.Store.GetRegistryAsync("unmapped"));
         var registry = await scope.Store.GetRegistryAsync("DEFAULT");
         Assert.NotNull(registry);
-        Assert.Equal("default", registry.WorkspaceId);
+        Assert.Equal("default", registry.EnvironmentId);
         Assert.Equal(2, Assert.Single(registry.Endpoints).Entries);
     }
 
@@ -223,7 +238,7 @@ public sealed class ProjectedCatalogDiscoveryRegistryStoreTests
         Assert.Null(await scope.Store.GetItemAsync("default", "esri", "unknown"));
     }
 
-    internal static CatalogDiscoveryWorkspaceOptions Mapping(string id = "default") =>
+    internal static CatalogDiscoveryEnvironmentOptions Mapping(string id = "default") =>
         new() { Id = id, TenantId = "public", Namespace = "alpha" };
 
     internal static MetadataV2Graph Graph(string metadataNamespace = "alpha", string suffix = "")
@@ -249,7 +264,7 @@ public sealed class ProjectedCatalogDiscoveryRegistryStoreTests
     private sealed class ProjectionScope : IDisposable
     {
         public ProjectionScope(MetadataV2Graph graph, string? tenant = "public", bool allowed = true,
-            List<CatalogDiscoveryWorkspaceOptions>? mappings = null)
+            List<CatalogDiscoveryEnvironmentOptions>? mappings = null)
         {
             Provider = Substitute.For<IMetadataV2GraphProvider>();
             Provider.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(new MetadataV2GraphSnapshot(graph, "etag", DateTimeOffset.UtcNow));
@@ -272,7 +287,7 @@ public sealed class ProjectedCatalogDiscoveryRegistryStoreTests
             Context.Request.Scheme = "https";
             Context.Request.Host = new HostString("catalog.example");
             Store = new ProjectedCatalogDiscoveryRegistryStore(
-                Options.Create(new CatalogDiscoveryOptions { Workspaces = mappings ?? [Mapping()] }), Provider, tenantContext,
+                Options.Create(new CatalogDiscoveryOptions { Environments = mappings ?? [Mapping()] }), Provider, tenantContext,
                 new HttpContextAccessor { HttpContext = Context });
         }
 

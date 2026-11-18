@@ -171,6 +171,18 @@ The following values are synthetic and use an inert `.invalid` route. `TST` is a
 
 Money values are integer units in the explicit currency scale. Rates are those units per million tokens. Input and output charges round upward independently; no exchange rate is inferred. Token allowances count input plus output. Deployment, canonical actor and actor/use-case scopes always apply; a verified workflow scope also applies when present. Reservation of all applicable financial scopes, attempt charge and concurrency admission is one PostgreSQL transaction.
 
+### Monthly actor cap
+
+`financial.monthlyActor` is optional. When present it is `{ "tokens": <integer>, "money": <integer> }`, in the same token and money units as the other financial scopes, and it limits what one canonical actor may reserve in a UTC calendar month:
+
+- The month is the UTC calendar month of the reservation. It does not follow `periodAnchorUtc` or `periodSeconds`; the per-period `actor` scope and the monthly cap are checked independently, and a request must pass both.
+- Unsettled reservations count in full, as do settled invocations that were reserved during the month.
+- Adding or changing the cap needs stopped, drained admission, like other financial policy changes. Once set, the cap cannot be removed; the database refuses a policy that drops it.
+- When an actor's reserved and settled spend reaches 80% of either the token or the money allowance, one notice row is written to `ai_monthly_actor_notices` for that actor and month. Later reservations in the same month do not add another row. The notice is delivered through the webhook channel when one is configured.
+- A request that would exceed the cap is denied with admission code `financial_monthly_actor_exceeded` before any provider contact. The denying transaction rolls back, so no `ai_financial_invocations` or attempt row records it, and Reporting returns its deterministic fallback narrative.
+
+Every budget denial (`financial_monthly_actor_exceeded`, `financial_budget_exceeded`, `financial_stop`, `financial_ledger_full` and `budget_exceeded`) writes a structured warning, event ID 9542, with the admission code, deployment ID, actor key (the SHA-256 digest of the canonical actor, never the actor itself), use case and UTC month. Search the server log for event 9542 or the code to find out why a report lost its AI narrative.
+
 The basis binds the provider, exact final invocation URL/model, standard/default tier, effective/expiry times, conservative input bound, output cap and rates. The input bound is an operator assertion covering complete framing and messages; it is not estimated from bytes. Request byte limits are a separate check. Reporting freezes its final request and applies the stricter of its configured output limit and the financial output cap before send. Model disclosure approval and credentials remain separately required.
 
 ### Liability, stop and recovery limits

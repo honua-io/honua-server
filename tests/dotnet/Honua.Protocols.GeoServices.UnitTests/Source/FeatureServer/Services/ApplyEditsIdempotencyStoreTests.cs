@@ -14,7 +14,6 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class ApplyEditsIdempotencyStoreTests
 {
-    // ─── BH5-001 regression ──────────────────────────────────────────────────────
 
     [Fact]
     public async Task TryReserveAsync_ConcurrentSameScope_ExactlyOneWins()

@@ -37,7 +37,7 @@ internal sealed partial class GeoservicesImportService
             // Esri geometries carry explicit hasZ/hasM flags. When hasZ is false but
             // hasM is true, the third ordinate in each coordinate is M, NOT Z — so we
             // must not promote it to GeoJSON Z. When the flag is absent (older/partial
-            // payloads) we keep the historical behavior of treating index 2 as Z.
+            // payloads), treat index 2 as Z.
             var hasExplicitZ = geometry.TryGetProperty("hasZ", out var hasZFlag);
             var coordsCarryZ = layerHasZ ?? (!hasExplicitZ || hasZFlag.ValueKind != JsonValueKind.False);
             var coordsCarryM = layerHasM ?? (geometry.TryGetProperty("hasM", out var hasMFlag) &&

@@ -73,7 +73,7 @@ public sealed class SplunkHecAuditSinkTests
     [Fact]
     public async Task SendAsync_ResolvesClientFromFactoryOnEverySend()
     {
-        // PA-081: the sink must not capture a single HttpClient at construction — it should
+        // the sink must not capture a single HttpClient at construction — it should
         // resolve a fresh client from the factory on every send so a rotated/replaced
         // primary handler (e.g. after a DNS change) is observed.
         var handler = new StubHandler(HttpStatusCode.OK);

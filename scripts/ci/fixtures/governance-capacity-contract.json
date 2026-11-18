@@ -27,7 +27,6 @@
       "tests/dotnet/Honua.Server.Tests/Features/Admin/InvestigationEndpointsTests.cs",
       "tests/dotnet/Honua.Server.Tests/Features/Admin/ProposalEndpointsTests.cs",
       "tests/dotnet/Honua.Server.Tests/Features/Admin/Share/",
-      "tests/dotnet/RedisCollection.cs",
       "tests/dotnet/Shared/AlertUnitSupport/AlertEventTestFactories.cs",
       "tests/dotnet/Shared/AlertUnitSupport/AwsPublisherFakes.cs",
       "tests/dotnet/Shared/AlertUnitSupport/AzurePublisherFake.cs",

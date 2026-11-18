@@ -552,7 +552,7 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
     {
         var replicaId = await CreateReplicaAsync("ResolveRestoreServerReplica");
         // Last-write-wins: the client edit is already committed, so the committed row carries the
-        // client value and keeping the server is the action that has to write (#2430).
+        // client value and keeping the server is the action that has to write.
         var seeded = await SeedConflictAsync(replicaId, clientEditApplied: true);
         await UpdateFeatureNameAsync(seeded.ObjectId, "client");
         await UpdateFeatureDescriptionAsync(seeded.ObjectId, "client-only");

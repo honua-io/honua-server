@@ -13,7 +13,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 public sealed class ControlPlaneEventAuthorizationTests
 {
-    // ---- Fail-closed when no token is configured (PA-060) -------------------
+    // ---- Fail-closed when no token is configured -------------------
 
     [Fact]
     public void CheckAuthorization_NoTokenConfigured_Returns503()

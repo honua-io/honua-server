@@ -361,7 +361,7 @@ def require_required_gate_contract(text: str) -> None:
         text=block[0],
     )
     require(
-        r"^    needs: \[pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer\]$",
+        r"^    needs: \[pr-gate, fast-tests, fast-server-tests, format, ci-router-validation, affected-shards, server-test-producer\]$",
         "keep the fail-closed aggregator dependencies over build/tests, format, "
         "CI router validation, affected shards, and the server-test producer",
         text=block[0],
@@ -372,8 +372,8 @@ require_required_gate_contract(PR_GATE_TEXT)
 for old, new in (
     ("name: ${{ github.event.pull_request.draft && 'PR Gate (draft)' || 'PR Gate' }}", "name: PR Gate"),
     ("'PR Gate (draft)' || 'PR Gate'", "'PR Gate' || 'PR Gate (draft)'"),
-    ("needs: [pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer]",
-     "needs: [pr-gate, fast-tests, format, ci-router-validation, affected-shards]"),
+    ("needs: [pr-gate, fast-tests, fast-server-tests, format, ci-router-validation, affected-shards, server-test-producer]",
+     "needs: [pr-gate, fast-tests, format, ci-router-validation, affected-shards, server-test-producer]"),
 ):
     if old not in PR_GATE_TEXT:
         raise AssertionError("required aggregator mutation must change the workflow")

@@ -67,7 +67,6 @@ jobs:
       # approval operator, so deny is the honest safe default.
       Operations__Policy__Enabled: "true"
       Operations__Policy__DefaultDecision: Deny
-      ConnectionStrings__redis: "localhost:6379"
       # PostgresDataSourceFactory applies Limits:Connections to the data source after
       # parsing the connection string. Keep both settings aligned: setting only
       # Maximum Pool Size here is otherwise overridden by the production default
@@ -92,15 +91,6 @@ jobs:
           - 5432:5432
         options: >-
           --health-cmd "pg_isready -U honua -d honua_load"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
@@ -133,12 +123,9 @@ jobs:
       - name: Mint a throwaway key-ring certificate for this run
         run: |
           set -euo pipefail
-          # Since #4722 the Production startup policy composes the Redis-backed durable operation
-          # secret channel and refuses to boot unless an operator certificate encrypts the
-          # data-protection key ring (Operations:SecretChannel:KeyRingCertificatePath); without one
-          # the server exits before readiness (#4968). The requirement stays: the run supplies a
-          # certificate instead. It guards only this runner's disposable Redis, so it is generated
-          # here, used for this run, and never leaves the runner or enters the repo.
+          # Production requires an operator certificate to encrypt the durable operation
+          # secret channel's data-protection key ring. Generate a disposable certificate
+          # for this run; no key material leaves the runner or enters the repository.
           keyring="$RUNNER_TEMP/keyring"
           install -d -m 0755 "$keyring"
           SOAK_KEYRING_PASSWORD="$(openssl rand -hex 24)"

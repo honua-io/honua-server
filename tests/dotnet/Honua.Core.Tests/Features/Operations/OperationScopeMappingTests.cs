@@ -64,7 +64,7 @@ public sealed class OperationScopeMappingTests
             .Should().BeTrue();
     }
 
-    // #3429: the dispatcher refuses every scope-governed submission it cannot map (#4722), so each
+    // The dispatcher refuses every scope-governed submission it cannot map, so each
     // Studio operation routed through the canonical runtime must resolve, with or without a gateway
     // envelope, to the same operation StudioAuthorizationService uses as its scope ceiling.
     [Trait("Tier", "Fast")]

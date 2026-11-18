@@ -238,7 +238,7 @@ jobs:
         uses: ./.github/actions/setup-honua-mcp
         with:
           dotnet-version: '11.0.x'
-          node-version: '20'
+          node-version: '22.23.3'
           python-version: '3.11'
           sdk-ref: ${{ inputs.sdk_ref }}
 

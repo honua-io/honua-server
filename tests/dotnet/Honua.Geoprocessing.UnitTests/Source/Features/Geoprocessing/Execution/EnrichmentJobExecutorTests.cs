@@ -144,7 +144,7 @@ public sealed class EnrichmentJobExecutorTests
     [UnitTest]
     public async Task Enrich_NormalizesBothLayersToOneCrs()
     {
-        // Codex P1: without a common output CRS a 4326 source joined to a 3857 dataset
+        // Without a common output CRS a 4326 source joined to a 3857 dataset
         // would compare raw, incomparable ordinates. Both reads must therefore request
         // the SAME OutputSrid.
         var source = new RecordingDagFeatureSource(
@@ -170,7 +170,7 @@ public sealed class EnrichmentJobExecutorTests
     [UnitTest]
     public async Task Enrich_InputAboveCap_FailsFastWithActionableMessage()
     {
-        // Codex P2: the cap must be enforced WHILE streaming so an oversized selection
+        // The cap must be enforced WHILE streaming so an oversized selection
         // fails fast instead of materializing everything before the artifact check.
         var services = DefaultServices(dataset: Dataset());
 
@@ -187,7 +187,7 @@ public sealed class EnrichmentJobExecutorTests
     [UnitTest]
     public async Task Enrich_CallerCannotRaiseInputCapAboveOperatorCeiling()
     {
-        // Codex P2: the cap is an operator ceiling a caller may only LOWER, so an
+        // The cap is an operator ceiling a caller may only LOWER, so an
         // int.MaxValue request cannot disable the streaming guard.
         var source = new RecordingDagFeatureSource(
             HonuaLayerSourceId,
@@ -212,7 +212,7 @@ public sealed class EnrichmentJobExecutorTests
     [UnitTest]
     public async Task Enrich_InlineSourceAboveCap_FailsLikeTheLayerBackedSource()
     {
-        // Codex P2: the admission cap is a property of the request, not the source form.
+        // The admission cap is a property of the request, not the source form.
         // An inline collection above the cap must fail exactly as the equivalent
         // layer-backed selection does, before the dataset read and the join.
         var services = DefaultServices(dataset: Dataset());
@@ -230,7 +230,7 @@ public sealed class EnrichmentJobExecutorTests
     [UnitTest]
     public async Task Enrich_InlineSourceWithWhereFilter_FailsInsteadOfIgnoringTheFilter()
     {
-        // Codex P2 (#3043 review): 'where' windows the source.honua-layer read; the inline
+        // 'where' windows the source.honua-layer read; the inline
         // branch parses the staged FeatureCollection verbatim and never applies it. Silently
         // accepting it enriched EVERY staged feature while the caller believed a filter was
         // in force. The catalog documents 'where' as layer-source-only, so the executor
@@ -246,7 +246,7 @@ public sealed class EnrichmentJobExecutorTests
         status.Should().Be(ExecutionJobStatus.Failed);
         error.Should().Contain("where");
         error.Should().Contain("layerId", "the failure must name the source form the filter belongs to");
-        // A deterministic input refusal is terminal; a retry would repeat it after backoff (#4629).
+        // A deterministic input refusal is terminal; a retry would repeat it after backoff.
         _lastRetryable.Should().BeFalse();
     }
 
@@ -290,7 +290,7 @@ public sealed class EnrichmentJobExecutorTests
         // The nearest branch returns after AnnotateNearest without consulting plan.Stats, so
         // accepting this combination published an artifact silently missing every requested
         // aggregate. The submit-time validator refuses it too; this is the runtime backstop
-        // for any path that reaches the executor without it (#3043 review).
+        // for any path that reaches the executor without it.
         var services = DefaultServices(dataset: Dataset());
 
         var (status, error) = await RunExpectingFailureAsync(
@@ -345,7 +345,7 @@ public sealed class EnrichmentJobExecutorTests
     [UnitTest]
     public async Task Enrich_MatchBudgetExceeded_SurfacesActionableMessage()
     {
-        // Codex P2: the budget's remedies must reach the caller verbatim rather than
+        // The budget's remedies must reach the caller verbatim rather than
         // collapsing to "computation failed: TransformInputException". Two 1-feature
         // layers with a carried field exceed a budget of zero on the first match.
         var services = DefaultServices(
@@ -368,7 +368,7 @@ public sealed class EnrichmentJobExecutorTests
     [UnitTest]
     public void MatchBudget_ExhaustedByCumulativeCarriedValues_ThrowsActionableError()
     {
-        // Codex P1: the per-layer input caps cannot see the join's Cartesian growth
+        // The per-layer input caps cannot see the join's Cartesian growth
         // (targets x matches x carried fields), so a cumulative budget must fail the
         // job before the carried arrays and artifact are materialized.
         var budget = new SpatialJoinSupport.MatchBudget(4);
@@ -393,7 +393,7 @@ public sealed class EnrichmentJobExecutorTests
 
         status.Should().Be(ExecutionJobStatus.Failed);
         error.Should().Contain("no-such-dataset");
-        // A deterministic input refusal is terminal; a retry would repeat it after backoff (#4629).
+        // A deterministic input refusal is terminal; a retry would repeat it after backoff.
         _lastRetryable.Should().BeFalse();
     }
 
@@ -504,7 +504,7 @@ public sealed class EnrichmentJobExecutorTests
 
         status.Should().Be(ExecutionJobStatus.Failed);
         error.Should().Contain("exactly one source");
-        // A deterministic input refusal is terminal; a retry would repeat it after backoff (#4629).
+        // A deterministic input refusal is terminal; a retry would repeat it after backoff.
         _lastRetryable.Should().BeFalse();
     }
 
@@ -677,7 +677,7 @@ public sealed class EnrichmentJobExecutorTests
         status.Should().Be(ExecutionJobStatus.Failed);
         uri.Should().BeNull();
         error.Should().Contain("MaxLayerVertices");
-        // The same input is refused again on every attempt, so the budget failure is terminal (#4629).
+        // The same input is refused again on every attempt, so the budget failure is terminal.
         _lastRetryable.Should().BeFalse();
     }
 
@@ -710,7 +710,7 @@ public sealed class EnrichmentJobExecutorTests
         var prefix = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.";
 
         // Every real submission is stamped with the dataset layer the submit-time gate
-        // authorized (GeoprocessingLayerAccessGuard, #3043 review), so the default here
+        // authorized (GeoprocessingLayerAccessGuard), so the default here
         // mirrors a gate-approved job. Tests that exercise the binding itself override it
         // explicitly or opt out of the stamp entirely.
         if (stampAuthorizedDatasetLayer

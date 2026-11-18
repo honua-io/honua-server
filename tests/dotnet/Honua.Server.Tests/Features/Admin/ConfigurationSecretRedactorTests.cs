@@ -12,8 +12,8 @@ public sealed class ConfigurationSecretRedactorTests
     [UnitTest]
     public void Redact_ConnectionStringPropertyWithEmbeddedPassword_IsMasked()
     {
-        // Property name is NOT on the legacy password/secret/key/token denylist, yet the value leaks a
-        // password — this is the exact leak reported in honua-server#2804.
+        // Property name is NOT on the legacy password/secret/key/token denylist, yet the value carries
+        // a password and must be masked.
         const string connectionString =
             "Host=db.internal;Port=5432;Database=honua;Username=honua;Password=sup3r-s3cret!";
 

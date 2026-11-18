@@ -199,14 +199,13 @@ public sealed class PostgresFixture : IAsyncLifetime, IIsolatedSchemaFixture
     {
         var schemaName = CreateIsolatedIdentifier(testClassName);
 
-        // honua-server#1568 residual (#2028 follow-up): CREATE SCHEMA writes pg_namespace and
-        // churns the shared pg_catalog (pg_class/pg_depend) exactly like the already-serialized
-        // DROP SCHEMA ... CASCADE teardown. #2020/#2028 routed schema *drop* and the post-create
-        // migration/seed through the advisory lock but left schema *creation* a non-participant,
-        // so a per-test CREATE SCHEMA in one collection raced a locked DROP SCHEMA CASCADE in
-        // another and the two acquired catalog locks in interleaved order — the residual 40P01
-        // deadlock. Serialize creation on the same lock so all schema-namespace DDL orders
-        // behind in-flight schema mutation instead of deadlocking it.
+        // CREATE SCHEMA writes pg_namespace and churns the shared pg_catalog
+        // (pg_class/pg_depend) exactly like the already-serialized DROP SCHEMA ... CASCADE
+        // teardown. Without the advisory lock that schema drop and the post-create
+        // migration/seed take, a per-test CREATE SCHEMA in one collection would race a locked
+        // DROP SCHEMA CASCADE in another and the two would acquire catalog locks in interleaved
+        // order — a 40P01 deadlock. Serialize creation on the same lock so all schema-namespace
+        // DDL orders behind in-flight schema mutation instead of deadlocking it.
         await CreateSchemaUnderLockAsync(schemaName).ConfigureAwait(false);
 
         var seedPath = applySeed ? Environment.GetEnvironmentVariable(SeedPathEnv) : null;

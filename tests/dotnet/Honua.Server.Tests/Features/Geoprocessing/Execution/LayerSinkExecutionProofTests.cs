@@ -145,7 +145,7 @@ public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
     [IntegrationTest]
     public async Task HonuaLayerSink_ReplayOfSameBatchIdAfterCommit_ReturnsSameReceiptWithoutDuplicatingRows()
     {
-        // server#4626: a retry that replays an already-committed batchId (the crash/retry
+        // A retry that replays an already-committed batchId (the crash/retry
         // scenario — process death after commit, before the job reaches a terminal state)
         // must reconstruct the original receipt rather than re-appending the rows a second
         // time. The oracle here is independently computed: exactly one row for key "R" is
@@ -170,7 +170,7 @@ public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
     [IntegrationTest]
     public async Task HonuaLayerSink_SpilledStreamInput_LoadsIdenticalContentToInlineEquivalent()
     {
-        // server#4628: FeatureStreamPublisher spills a transform's output to a
+        // FeatureStreamPublisher spills a transform's output to a
         // honua-feature-stream reference once it crosses the inline threshold; the sink must
         // accept that reference (not only the inline data-URI shape) and load the same
         // content. The oracle is independently computed from the source features written to
@@ -237,7 +237,7 @@ public sealed class LayerSinkExecutionProofTests : IAsyncLifetime
     private async Task<(JobExecutionResult Result, List<string> Artifacts)> RunWithInputUri(
         string mode, string batch, string inputUri, GeoprocessingExecutorOptions? executorOptions = null)
     {
-        // #4625: the sink now authorizes its destination against the job's submitter
+        // The sink now authorizes its destination against the job's submitter
         // security context before any DDL/DML runs. This layer was published as a real
         // catalog layer in InitializeAsync, so the submitter needs the administrative
         // role (the fixture registers no data-editor grant for this synthetic principal).

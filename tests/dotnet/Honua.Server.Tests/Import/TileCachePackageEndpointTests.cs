@@ -89,7 +89,7 @@ public sealed class TileCachePackageEndpointTests : IAsyncLifetime
         content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
 
         // The tileset id names a published layer the test client can read, so its tiles
-        // serve under that layer's read policy (SEC-15).
+        // serve under that layer's read policy.
         var tilesetId = await PublishedLayerResourceIdAsync();
         var importResponse = await _client.PostAsync(
             $"/api/v1/admin/import/tile-package?tilesetId={Uri.EscapeDataString(tilesetId)}&fileName=served.tpkx", content);

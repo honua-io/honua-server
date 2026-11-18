@@ -183,7 +183,8 @@ class ImmutableTagsTests(unittest.TestCase):
         self.assertIn('tags: ${{ steps.immutable_tags.outputs.tags }}', workflow)
         self.assertIn("if: steps.existing_executor.outputs.digest == ''", workflow)
         self.assertIn('digest=${EXISTING_DIGEST:-$BUILT_DIGEST}', workflow)
-        self.assertIn('subject_ref="${subject_name}:nightly-${{ needs.select-candidate.outputs.sha7 }}"', workflow)
+        self.assertIn('subject_ref="${subject_name}:nightly-aot-${{ needs.select-candidate.outputs.sha7 }}"', workflow)
+        self.assertIn('subject_ref="${subject_name}:nightly-jit-${{ needs.select-candidate.outputs.sha7 }}"', workflow)
         self.assertIn('subject_ref="${subject_name}:nightly-lambda-aot-${{ needs.select-candidate.outputs.sha7 }}"', workflow)
         # Existing Git candidate refs are accepted only when their full SHA matches.
         self.assertIn('if [ "${existing}" != "${CANDIDATE_SHA}" ]; then', workflow)

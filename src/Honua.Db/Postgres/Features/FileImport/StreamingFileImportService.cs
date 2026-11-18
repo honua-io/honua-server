@@ -28,8 +28,7 @@ namespace Honua.Db.Postgres.Features.FileImport;
 
 internal sealed partial class StreamingFileImportService : IFileImportService
 {
-    // PA-161: the batch-insert hot path (InsertBatchAsync, StreamingFileImportService.Batch.cs)
-    // had no OTel span. Local ActivitySource named "Honua" for TracerProvider correlation,
+    // Local ActivitySource named "Honua" for TracerProvider correlation,
     // matching the convention already used by PostgresAnomalyAnalyzer in this project.
     private static readonly ActivitySource _activitySource = new("Honua", "1.0.0");
 
@@ -202,7 +201,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         // Validate request has exactly one source: FileStream, CloudFileId, or LocalFilePath
         request.Validate();
 
-        // Refuse a reserved target schema before any source is read or connection opened (SEC-23).
+        // Refuse a reserved target schema before any source is read or connection opened.
         _ = ResolveTargetSchema(request.TargetSchema);
 
         var stopwatch = Stopwatch.StartNew();

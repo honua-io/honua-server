@@ -84,7 +84,7 @@ public sealed class FlatGeobufPreviewTests
     [Fact]
     public async Task PreviewFileAsync_FlatGeobuf_LargeHeaderNonSeekable_DetectsCrs()
     {
-        // Regression: FlatGeobuf headers with many columns can exceed the 8 KB
+        // FlatGeobuf headers with many columns can exceed the 8 KB
         // CRS-detection buffer. Verify that the non-seekable path spills to a
         // seekable temp file and still detects the CRS from the full header.
         await using var innerStream = CreateFlatGeobufStreamWithLargeHeader(4326, columnCount: 200);

@@ -339,8 +339,8 @@ public static class MigrationAcceptanceParityStageRunner
         MigrationParityTargetObservation? targetObservation,
         bool isManualReview)
     {
-        var expectedBbox = NormalizeBbox(sourceObservation?.Bbox);
-        var observedBbox = NormalizeBbox(targetObservation?.Bbox);
+        var expectedBbox = MigrationBoundingBoxes.Normalize(sourceObservation?.Bbox);
+        var observedBbox = MigrationBoundingBoxes.Normalize(targetObservation?.Bbox);
 
         if (expectedBbox is null && observedBbox is null)
         {
@@ -359,7 +359,7 @@ public static class MigrationAcceptanceParityStageRunner
                 ProbeId = BboxProbeId,
                 State = ManualReviewState,
                 Summary = "Resource routed to manual review; spatial extent parity must be verified by an operator.",
-                Expected = expectedBbox is null ? null : FormatBbox(expectedBbox)
+                Expected = expectedBbox is null ? null : MigrationBoundingBoxes.Format(expectedBbox)
             };
         }
 
@@ -370,7 +370,7 @@ public static class MigrationAcceptanceParityStageRunner
                 ProbeId = BboxProbeId,
                 State = WarnState,
                 Summary = "Target advertised a bbox but the source did not; cannot verify overlap.",
-                Observed = FormatBbox(observedBbox!)
+                Observed = MigrationBoundingBoxes.Format(observedBbox!)
             };
         }
 
@@ -381,15 +381,15 @@ public static class MigrationAcceptanceParityStageRunner
             observedBbox = expectedBbox;
         }
 
-        if (BboxesOverlap(expectedBbox, observedBbox))
+        if (MigrationBoundingBoxes.Overlap(expectedBbox, observedBbox))
         {
             return new MigrationParityProbeResult
             {
                 ProbeId = BboxProbeId,
                 State = PassState,
                 Summary = "Source and target axis-aligned bboxes overlap.",
-                Expected = FormatBbox(expectedBbox),
-                Observed = FormatBbox(observedBbox)
+                Expected = MigrationBoundingBoxes.Format(expectedBbox),
+                Observed = MigrationBoundingBoxes.Format(observedBbox)
             };
         }
 
@@ -398,8 +398,8 @@ public static class MigrationAcceptanceParityStageRunner
             ProbeId = BboxProbeId,
             State = FailState,
             Summary = "Source and target axis-aligned bboxes are disjoint.",
-            Expected = FormatBbox(expectedBbox),
-            Observed = FormatBbox(observedBbox),
+            Expected = MigrationBoundingBoxes.Format(expectedBbox),
+            Observed = MigrationBoundingBoxes.Format(observedBbox),
             Differences =
             [
                 $"source-min=[{expectedBbox[0].ToString(System.Globalization.CultureInfo.InvariantCulture)},{expectedBbox[1].ToString(System.Globalization.CultureInfo.InvariantCulture)}]",
@@ -558,26 +558,6 @@ public static class MigrationAcceptanceParityStageRunner
             .Distinct(StringComparer.Ordinal)
             .OrderBy(static name => name, StringComparer.Ordinal)
             .ToArray();
-
-    private static double[]? NormalizeBbox(double[]? bbox)
-    {
-        if (bbox is null || bbox.Length != 4)
-        {
-            return null;
-        }
-        var minX = Math.Min(bbox[0], bbox[2]);
-        var minY = Math.Min(bbox[1], bbox[3]);
-        var maxX = Math.Max(bbox[0], bbox[2]);
-        var maxY = Math.Max(bbox[1], bbox[3]);
-        return [minX, minY, maxX, maxY];
-    }
-
-    private static bool BboxesOverlap(double[] a, double[] b)
-        => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
-
-    private static string FormatBbox(double[] bbox)
-        => string.Create(System.Globalization.CultureInfo.InvariantCulture,
-            $"[{bbox[0]},{bbox[1]},{bbox[2]},{bbox[3]}]");
 
     private static string JoinPreview(string[] values)
         => values.Length == 0 ? string.Empty : string.Join(",", values);

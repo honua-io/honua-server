@@ -50,7 +50,7 @@ public sealed class OgcProcessesStagedArtifactContentTests
         payload.Should().Equal(_fixture.StagedPayload);
         response.Headers.ETag.Should().NotBeNull();
 
-        // #4400: pin the fact that this payload is NOT a GeoTIFF, so nobody can later read the
+        // Pin the fact that this payload is NOT a GeoTIFF, so nobody can later read the
         // image/tiff content type above as evidence that a raster was produced. Both TIFF byte
         // orders are checked: II*\0 (little-endian) and MM\0* (big-endian).
         var prefix = payload.Take(4).ToArray();
@@ -321,7 +321,7 @@ public sealed class OgcProcessesStagedArtifactStoreUnavailableTestsFixture : IAs
                 MediaType = "image/tiff",
                 Checksum = new RasterChecksum("sha256", new string('a', 64)),
             },
-            // #4400: a descriptor field the streaming route reads, NOT a claim that GDAL ran.
+            // A descriptor field the streaming route reads, NOT a claim that GDAL ran.
             // The staged payload is synthetic (see CreatePayload).
             ProducingEngine = RasterOutputContract.GdalWorkerEngine,
             Provider = CloudStorageProvider.Local,
@@ -410,7 +410,7 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
             AttemptNumber = 1,
             OutputName = "outputRaster",
             Content = content,
-            // #4400: a descriptor field the streaming route reads, NOT a claim that GDAL ran.
+            // A descriptor field the streaming route reads, NOT a claim that GDAL ran.
             // The staged payload is synthetic (see CreatePayload).
             ProducingEngine = RasterOutputContract.GdalWorkerEngine,
             Provider = store.Provider,

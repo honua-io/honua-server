@@ -7,6 +7,7 @@
 -- Capabilities publish catalog metadata rather than placeholders, so the services
 -- also declare the publisher, contact point and describedby link the ETS
 -- recommendations look for; every layer inherits the link from its service.
+-- The phone is what satisfies service-contact-info (ContactVoiceTelephone).
 -- Expects the temp table cite_source_graph(document) built from the compat projection.
 WITH publications AS (
     SELECT item.ordinality,
@@ -28,7 +29,8 @@ WITH publications AS (
                 'contactPoint', jsonb_build_object(
                     'name', 'CITE fixture operator',
                     'email', 'cite@example.com',
-                    'url', 'https://example.com/cite'),
+                    'url', 'https://example.com/cite',
+                    'phone', '+1 555 0100'),
                 'links', COALESCE(item.service #> '{metadata,links}', '[]'::jsonb)
                     || jsonb_build_array(jsonb_build_object(
                         'rel', 'describedby',

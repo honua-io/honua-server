@@ -19,7 +19,6 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class ImportDatasetJobExecutorPathTraversalTests
 {
-    // ─── BH3-027 regression ──────────────────────────────────────────────────────
 
     [UnitTest]
     [Operation(Operations.Create)]

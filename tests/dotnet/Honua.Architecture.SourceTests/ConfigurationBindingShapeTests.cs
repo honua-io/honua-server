@@ -29,7 +29,7 @@ public sealed partial class ConfigurationBindingShapeTests
         "TemporaryFileOptions",
         "TileOptions",
         "WorkspaceOptions",
-        // Direct instance-bind shapes (#3055 follow-up): `var options = new T(); section.Bind(options)`
+        // Direct instance-bind shapes: `var options = new T(); section.Bind(options)`
         // and `GetSection(T.SectionName).Bind(instance)`.
         "MySqlOptions",
         "OidcAuthenticationOptions",
@@ -39,12 +39,11 @@ public sealed partial class ConfigurationBindingShapeTests
 
     private static readonly string[] AuditedNestedGraphNames =
     [
-        // Limits -> Imports. #3306 was filed believing this reached
-        // Honua.Core.Features.Import.Domain.ImportLimits; it does not, and must not — that is a
-        // different type built by a hand parser and guarded by
-        // HandParsedConfigurationSectionTests. LimitsOptions.Imports is the settable
-        // Honua.Core.Configuration.ImportSizeLimits declared in AdvancedLimits.cs (#3346),
-        // and the walk must keep descending into it.
+        // Limits -> Imports. This does not reach
+        // Honua.Core.Features.Import.Domain.ImportLimits, and must not — that is a different
+        // type built by a hand parser and guarded by HandParsedConfigurationSectionTests.
+        // LimitsOptions.Imports is the settable Honua.Core.Configuration.ImportSizeLimits
+        // declared in AdvancedLimits.cs, and the walk must keep descending into it.
         "Honua.Core.Configuration.ImportSizeLimits",
         "Honua.Core.Configuration.AttachmentLimits",
         "Honua.Core.Configuration.TileLimits",
@@ -96,10 +95,8 @@ public sealed partial class ConfigurationBindingShapeTests
         var visited = new HashSet<string>(StringComparer.Ordinal);
         var violations = new SortedSet<string>(StringComparer.Ordinal);
 
-        // #3306: a property whose simple type name matches several declarations that neither the
-        // declaring namespace nor the file's imports disambiguate used to be dropped silently, so
-        // the walk could stop early and stay green over a graph it never actually inspected. Such a
-        // reference is now collected and reported rather than skipped.
+        // Collect and report an ambiguous property type when its declaring namespace and
+        // imports cannot distinguish declarations, so the graph walk cannot skip it silently.
         var unresolvable = new SortedSet<string>(StringComparer.Ordinal);
 
         while (pending.TryPop(out var typeShape))

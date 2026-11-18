@@ -188,11 +188,10 @@ public sealed class GeoprocessingOperationEvidenceMatrixTests
                 operations.Count(row => RequiredString(row, "entryPoint") == entryPoint));
         }
 
-        // honua-server#4408: the exact-ten-element literal range this replaced could
-        // never shrink even after #3848/#3850/#3851 closed — removing a resolved gap
-        // from the manifest failed the test instead of passing it. The manifest now
-        // owns membership; the guard only enforces the reference shape, so shared-gap
-        // closure is reconciled by editing this list, not by fighting the test.
+        // The manifest owns membership; the guard only enforces the reference shape,
+        // so shared-gap closure is reconciled by editing this list, not by fighting
+        // the test. An exact-length literal range could never shrink: removing a
+        // resolved gap from the manifest would fail the test instead of passing it.
         var sharedRuntimeGaps = root.GetProperty("sharedRuntimeGaps")
             .EnumerateArray()
             .Select(item => item.GetString())
@@ -206,7 +205,7 @@ public sealed class GeoprocessingOperationEvidenceMatrixTests
                 @"^https://github\.com/honua-io/honua-server/issues/\d+$",
                 "each shared runtime gap must be a concrete honua-server issue reference"));
 
-        // honua-server#4408: recorded but never re-checked, `audit.catalogSourceRevision`
+        // Recorded but never re-checked, `audit.catalogSourceRevision`
         // let an executor change silently outlive the audit that proved it. This digest
         // is recomputed from the tree every run and fails loudly instead.
         var audit = root.GetProperty("audit");

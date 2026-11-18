@@ -93,7 +93,7 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
                 builder.UseSetting("Oidc:AdminRoles:0", "admin");
                 builder.UseSetting("Oidc:AdminRoles:1", "deployment-admins");
                 builder.UseSetting("MultiTenancy:Enabled", "true");
-                // #2997: GET /api/v1/admin/oidc/providers is now gated on identity.oidc (Pro);
+                // GET /api/v1/admin/oidc/providers is now gated on identity.oidc (Pro);
                 // grant it so the accept-valid path reaches the endpoint past the gate.
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
             })

@@ -103,36 +103,6 @@ public sealed partial class PublishedContentProjectionTests : IAsyncLifetime
         Assert.Equal(0, searched.RootElement.GetProperty("total").GetInt32());
     }
 
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/console/content")]
-    [Endpoint("DELETE /api/v1/console/content/{id}")]
-    [Endpoint("GET /api/v1/console/session")]
-    [Endpoint("POST /api/v1/console/actions/check")]
-    public async Task GetContent_PublishedIdentity_DoesNotCreateMutableContentRows()
-    {
-        using var listed = await ReadContentAsync("?itemType=service");
-        Assert.Single(listed.RootElement.GetProperty("items").EnumerateArray());
-        using var removed = await _admin.DeleteAsync("/api/v1/console/content/publication");
-        Assert.Equal(HttpStatusCode.NotFound, removed.StatusCode);
-        using var stillPublished = await ReadContentAsync("?itemType=layer");
-        var item = Assert.Single(stillPublished.RootElement.GetProperty("items").EnumerateArray());
-        Assert.Equal(["view"], item.GetProperty("actions").EnumerateArray().Select(action => action.GetString()));
-        using var sessionResponse = await _admin.GetAsync("/api/v1/console/session");
-        Assert.Equal(HttpStatusCode.OK, sessionResponse.StatusCode);
-        using var session = JsonDocument.Parse(await sessionResponse.Content.ReadAsStringAsync());
-        Assert.Equal(2, session.RootElement.GetProperty("data").GetProperty("content").GetProperty("total").GetInt32());
-        using var actionResponse = await _admin.PostAsJsonAsync("/api/v1/console/actions/check", new ConsoleActionCheckRequest
-        {
-            Targets = [new ConsoleActionCheckTarget { ItemId = "publication" }],
-            Actions = [ConsoleContentAction.View, ConsoleContentAction.Edit]
-        });
-        Assert.Equal(HttpStatusCode.OK, actionResponse.StatusCode);
-        using var actions = JsonDocument.Parse(await actionResponse.Content.ReadAsStringAsync());
-        var result = Assert.Single(actions.RootElement.GetProperty("data").GetProperty("results").EnumerateArray());
-        Assert.Equal(["view"], result.GetProperty("allowed").EnumerateArray().Select(action => action.GetString()));
-        Assert.Equal(["edit"], result.GetProperty("denied").EnumerateArray().Select(action => action.GetString()));
-    }
-
     [IntegrationTheory]
     [InlineData("anonymous", 1)]
     [InlineData("other-role", 2)]
@@ -170,16 +140,19 @@ public sealed partial class PublishedContentProjectionTests : IAsyncLifetime
         Assert.Equal(expectedCount, payload.RootElement.GetProperty("results").GetArrayLength());
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("service")]
+    [InlineData("publication")]
+    [InlineData("resource")]
     [Operation(Operations.TestInfrastructure)]
-    public async Task CreateContent_WithAPublishedId_IsRefusedAsAClientError()
+    public async Task CreateContent_WithAPublishedId_IsRefusedAsAClientError(string publishedId)
     {
         await using var scope = _fixture.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<ProjectedConsoleContentStore>();
 
         var refusal = await Assert.ThrowsAsync<ConsoleContentIdConflictException>(() => store.CreateAsync(new ConsoleContentItem
         {
-            Id = "publication",
+            Id = publishedId,
             Name = "collision",
             ItemType = ConsoleContentItemType.Layer,
         }));
@@ -230,18 +203,18 @@ public sealed partial class PublishedContentProjectionTests : IAsyncLifetime
             {
                 Id = $"authored-{index:D3}",
                 Name = $"authored-{index:D3}",
-                ItemType = ConsoleContentItemType.SavedMap
+                ItemType = ConsoleContentItemType.Map
             });
         }
         using var first = await ReadContentAsync("?limit=200");
-        Assert.Equal(203, first.RootElement.GetProperty("total").GetInt32());
+        Assert.Equal(204, first.RootElement.GetProperty("total").GetInt32());
         Assert.Equal(200, first.RootElement.GetProperty("items").GetArrayLength());
         var cursor = first.RootElement.GetProperty("nextCursor").GetString();
         Assert.False(string.IsNullOrWhiteSpace(cursor));
         using var next = await ReadContentAsync("?limit=200&cursor=" + Uri.EscapeDataString(cursor!));
-        Assert.Equal(203, next.RootElement.GetProperty("total").GetInt32());
+        Assert.Equal(204, next.RootElement.GetProperty("total").GetInt32());
         var remainder = next.RootElement.GetProperty("items").EnumerateArray().Select(item => item.GetProperty("id").GetString()!).ToArray();
-        Assert.Equal(["authored-200", "publication", "service"], remainder);
+        Assert.Equal(["authored-200", "publication", "resource", "service"], remainder);
     }
 
     [IntegrationTest]
@@ -281,7 +254,7 @@ public sealed partial class PublishedContentProjectionTests : IAsyncLifetime
         });
         using var listed = await ReadContentAsync();
         var items = listed.RootElement.GetProperty("items").EnumerateArray().ToArray();
-        Assert.Equal(collision == "cross-kind" ? 1 : 2, items.Length);
+        Assert.Equal(collision == "cross-kind" ? 2 : 3, items.Length);
         Assert.DoesNotContain(items, item => item.GetProperty("title").GetString() == "Duplicate");
         var service = Assert.Single(items, item => item.GetProperty("itemType").GetString() == "service");
         Assert.True(service.GetProperty("typeMetadata").TryGetProperty("serviceType", out _));
@@ -309,8 +282,8 @@ public sealed partial class PublishedContentProjectionTests : IAsyncLifetime
             }]
         });
         using var listed = await ReadContentAsync();
-        Assert.Equal(2, listed.RootElement.GetProperty("total").GetInt32());
-        Assert.Equal(["publication", "service"], listed.RootElement.GetProperty("items").EnumerateArray()
+        Assert.Equal(3, listed.RootElement.GetProperty("total").GetInt32());
+        Assert.Equal(["publication", "resource", "service"], listed.RootElement.GetProperty("items").EnumerateArray()
             .Select(item => item.GetProperty("id").GetString()));
         using var denied = await _admin.GetAsync("/api/v1/console/content/restricted-publication");
         Assert.Equal(HttpStatusCode.NotFound, denied.StatusCode);

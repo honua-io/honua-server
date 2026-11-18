@@ -166,11 +166,11 @@ internal static class FeatureCatalogGenerator
             return "serve.ogc-api-coverages";
         }
 
-        // Temporal analytics — /api/v1/temporal/* was promoted to GA (Implemented) in
-        // #2429 (temporal.filtering/extent-discovery/histogram/time-series-tiles), so it is
-        // no longer a flipped experimental group: its routes fall through to the in-release
-        // surface (implemented) like any other GA capability. Edition entitlements
-        // (Community vs Pro) still apply, but those are not an experimental-maturity concern.
+        // Temporal analytics — /api/v1/temporal/* is GA (Implemented:
+        // temporal.filtering/extent-discovery/histogram/time-series-tiles), so it is not a
+        // flipped experimental group: its routes fall through to the in-release surface
+        // (implemented) like any other GA capability. Edition entitlements (Community vs Pro)
+        // still apply, but those are not an experimental-maturity concern.
 
         // Geofence alerting is registered only when its Preview capability flag is enabled.
         if (route.StartsWith("/api/v1/admin/alerts/", StringComparison.OrdinalIgnoreCase))
@@ -178,11 +178,9 @@ internal static class FeatureCatalogGenerator
             return "alerts.geofence";
         }
 
-        // Native mTLS (client certificates) — /api/v1/admin/security/client-certificates/* was
-        // promoted to GA (Implemented) in #2431, then DEMOTED back to experimental in #2958
-        // (release-safety follow-up to #2946/#2431): the always-on client-certificate scheme/RBAC
-        // layer interposed on admin requests regardless of bearer-token validity. It is a flipped
-        // experimental group again.
+        // Native mTLS (client certificates) — /api/v1/admin/security/client-certificates/* is
+        // experimental because the always-on client-certificate scheme/RBAC layer interposes on
+        // admin requests regardless of bearer-token validity. It is a flipped experimental group.
         if (route.StartsWith(
             "/api/v1/admin/security/client-certificates/", StringComparison.OrdinalIgnoreCase))
         {
@@ -226,7 +224,7 @@ internal static class FeatureCatalogGenerator
         }
 
         // Realtime feature streaming remains opt-in Preview until exact-candidate
-        // transport qualification passes (#3810).
+        // transport qualification passes.
         if (route.StartsWith("/api/v1/streaming/features", StringComparison.OrdinalIgnoreCase) ||
             route.StartsWith("/api/v1/admin/streaming/features", StringComparison.OrdinalIgnoreCase))
         {
@@ -247,7 +245,7 @@ internal static class FeatureCatalogGenerator
         }
 
         // Branch versioning (VMS REST surface) — /rest/services/{serviceId}/VersionManagementServer/*
-        // Gated Preview in the BH6-001/BH6-002 fix batch (ADR-0058).
+        // Gated Preview (ADR-0058).
         if (route.StartsWith("/rest/services/", StringComparison.OrdinalIgnoreCase) &&
             route.Contains("/VersionManagementServer", StringComparison.OrdinalIgnoreCase))
         {

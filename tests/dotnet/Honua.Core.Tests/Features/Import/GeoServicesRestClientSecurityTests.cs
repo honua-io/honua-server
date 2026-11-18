@@ -194,7 +194,7 @@ public sealed class GeoServicesRestClientSecurityTests
     [Fact]
     public async Task GetLayerInfoAsync_FeatureCountQueryCanceled_PropagatesCancellation()
     {
-        // PA-034: the feature-count query is best-effort enrichment and its failures are
+        // the feature-count query is best-effort enrichment and its failures are
         // swallowed into a null count — but a genuine cancellation must still propagate to
         // the caller instead of being reported as "count unavailable".
         var handler = new CancelingSecondRequestHandler("""

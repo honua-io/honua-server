@@ -30,5 +30,7 @@ public interface IOperationDescriptor
 
     OperationPolicyMetadata Policy { get; }
 
+    OperationCompensationMetadata Compensation => OperationCompensationMetadata.For(Policy.SideEffectClass);
+
     OperationGroundingMetadata? Grounding { get; }
 }

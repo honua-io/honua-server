@@ -183,7 +183,7 @@ public sealed class PostgresFirstPageCountIntegrationTests(PostgresFixture fixtu
         var result = await CreateReader().QueryAsync(1,
             new FeatureQuery { Limit = 100, Distinct = true, OutFields = ["tenant"] });
 
-        // #6196 counts the projected tuples, not the four matching source rows.
+        // The count is of the projected tuples, not the four matching source rows.
         // Keep the distinct count query outside short-first-page source-count reuse.
         result.TotalCount.Should().Be(2);
         result.Items.Select(feature => feature.Attributes["tenant"]).Should().BeEquivalentTo(new[] { "a", "b" });

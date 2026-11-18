@@ -70,7 +70,7 @@ until actual hosted/dedicated parity passes on the same immutable candidate and 
 ## Collection
 
 The substrate is [local Docker](../../../docker/compose/docker-compose.soak.yml): one server
-replica, PostGIS, Redis and local file storage. All share one host failure domain.
+replica, PostGIS and local file storage. All share one host failure domain.
 The server boots its Production policy with a real per-run Pro license and a
 throwaway password-protected key-ring certificate. Schema migrations run before
 [fixture seeding](../../../scripts/soak/seed_envelope.py); the served catalogue is
@@ -120,8 +120,7 @@ no gap above 60 seconds. Samples are taken on a fixed 30-second cadence anchored
 window start, so a slow sample delays only the next one. Samples retain their supporting observations. Worker
 pressure is the server container's CPU consumption divided by the available host
 CPUs (GP shares this process); database pressure is the server's measured pool
-utilization; Redis pressure is connected clients divided by its `maxclients`.
-The receipt gates the maximum of these three ratios. Queue depth and age are
+utilization. The receipt gates the maximum of these two ratios. Queue depth and age are
 observed through submitted GP jobs. The driver offers a bounded batch up to the
 queue target plus worker slots and replenishes terminal jobs; admission rejections
 are retained as failures, never counted as queued jobs. Configured limits are not substituted
@@ -129,10 +128,10 @@ for observed depths. Missing samples and background-task errors remain explicit
 `samplingFailures` and cannot qualify.
 
 Founder ruling 2026-10-27: steady-state SLOs exclude the fault window, and the drill
-is judged separately. Worker, database and Redis stop/start drills therefore run
+is judged separately. Worker and database stop/start drills therefore run
 **after** the measured window closes, with the workload and GP queue still running
 but no longer recorded in `requests`. Each retains injection, detected-stop and
-recovery timestamps plus its serving probe; database and Redis recovery also require
+recovery timestamps plus its serving probe; database recovery also requires
 direct dependency readiness. `faultDrill` in the observations and the receipt marks
 the fault period (`window`, `excludedFromMeasuredWindow: true`) and judges the drill:
 every dependency recovered, every layer still serves its full count and the maximum

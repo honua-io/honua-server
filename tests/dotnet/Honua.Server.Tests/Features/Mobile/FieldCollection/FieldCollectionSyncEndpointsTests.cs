@@ -234,7 +234,7 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
         // delete-vs-delete has always been declared on the wire contract and was never produced:
         // a delete landing on an already-tombstoned row was reported as idempotently applied even
         // when a different actor had deleted it at a version this client never saw, silently hiding
-        // the divergence from the field client (#2430).
+        // the divergence from the field client.
         var featureId = $"feat-{Guid.NewGuid():N}";
         const int layerId = 137;
 
@@ -756,14 +756,10 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/fieldcollection/changes")]
     public async Task Push_ConcurrentInsertsForSameAbsentFeature_OneAppliesOneConflicts()
     {
-        // Two distinct change_ids both target the same (feature_id, layer_id) for
-        // an absent feature. The change_id advisory lock does not serialize them
-        // (different keys), and SELECT ... FOR UPDATE locks nothing when the row
-        // is absent — so without the feature-identity advisory lock both would
-        // resolve as Applied and the second upsert would silently overwrite the
-        // first. With the fix, the loser re-reads the freshly committed row and
-        // resolves as Conflict. Exactly one applied + one conflict is the
-        // expected outcome.
+        // Distinct change IDs for one absent feature require a feature-identity advisory
+        // lock: their change-ID locks differ and FOR UPDATE cannot lock an absent row.
+        // After the winner commits, the loser must reread it and report Conflict.
+        // Expect exactly one Applied result and one Conflict result.
         var featureId = $"feat-{Guid.NewGuid():N}";
         var layerId = 170;
         var payloadA = new
@@ -878,16 +874,9 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/fieldcollection/changes")]
     public async Task Push_LoserAfterAdvisoryLockReplaysWinnerOutcomeWithoutDuplicateKeyError()
     {
-        // Regression for the RepeatableRead idempotency-replay race. A holding
-        // transaction acquires the advisory lock and stages an idempotency row
-        // for changeId X without committing. The HTTP loser opens its own
-        // transaction, fast-path read sees nothing, then blocks on the advisory
-        // lock. The holder commits, the loser proceeds, and under the fix
-        // (ReadCommitted) the post-lock idempotency read sees the freshly
-        // committed row and replays it as 200 OK. Under the old RepeatableRead
-        // shape the loser's snapshot was taken before the holder committed and
-        // the post-lock read returned count=0, which would surface as a unique
-        // violation 5xx.
+        // Hold an advisory lock while staging an uncommitted idempotency row. The HTTP
+        // request sees no fast-path row, then waits for the lock. Once the holder commits,
+        // its ReadCommitted post-lock read must see the row and replay it as 200 OK.
         const int FieldCollectionPushLockNamespace = 0x0894_FC5C;
         var changeId = Guid.NewGuid().ToString("N");
         var featureId = $"feat-{Guid.NewGuid():N}";
@@ -921,7 +910,7 @@ public sealed class FieldCollectionSyncEndpointsTests : IAsyncLifetime
         using var scope = _fixture.Services.CreateScope();
         var dataSource = scope.ServiceProvider.GetRequiredService<NpgsqlDataSource>();
 
-        // #2020: the staged INSERT mutates the global honua.fieldcollection_pushed_changes table,
+        // The staged INSERT mutates the global honua.fieldcollection_pushed_changes table,
         // but the existing per-feature pg_advisory_xact_lock (FieldCollectionPushLockNamespace) is
         // load-bearing — it is the holder/loser race the test exercises — so it must be preserved.
         // Additionally take the shared schema-mutation advisory lock around the whole holder block so

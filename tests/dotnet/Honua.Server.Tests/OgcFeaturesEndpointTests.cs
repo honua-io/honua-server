@@ -236,7 +236,7 @@ public sealed class OgcFeaturesEndpointTests : IAsyncLifetime
     public async Task GetCollections_UsesServiceAccessPolicyWhenLayerPolicyIsMissing()
     {
         var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
-        // #2020: route the literal honua.layers/honua.services UPDATE through the shared
+        // Route the literal honua.layers/honua.services UPDATE through the shared
         // schema-mutation advisory lock so it serializes with parallel-collection seeders
         // instead of racing the catalog and deadlocking (40P01).
         await _fixture.Postgres.ApplyGlobalSeedSqlAsync(

@@ -65,7 +65,7 @@ internal abstract class BaseGeocodeProvider : IGeocodeProvider
             stopwatch.Stop();
 
             // No ILogger is threaded through this abstract base (none of the five
-            // concrete providers currently accept one; PA-067/PA-201), so the
+            // concrete providers currently accept one), so the
             // exception detail is surfaced in the returned health record itself —
             // that is the only diagnostic signal available to callers here.
             return new GeocodeProviderHealth(
