@@ -496,8 +496,10 @@ internal sealed partial class JobExecutionService(
             operationId, workerId, jobStore, logStore, job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default, jobCts, logger,
             running.AttemptCount, licenseCancellation);
 
-        // Start heartbeat pump in background.
-        using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(jobCts.Token);
+        // Linked to host shutdown only. The executor can still be running after
+        // its token is cancelled, and a missing beat makes the reconciler treat
+        // that live attempt as lost.
+        using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         var heartbeatTask = context.RunHeartbeatPumpAsync(heartbeatCts.Token);
         using var qualificationScope = ExecutionQualificationBarrier.Begin(operationId, workerId);
         using var securityScope = JobSecurityScope.Begin(running.Audit.SubmitterSecurityContext);
@@ -1707,17 +1709,16 @@ internal sealed partial class JobExecutionContext(
                     }
 
                     // A remote API host persisted a durable cancellation signal.
-                    // Cancel the local CTS so the executor receives the signal
-                    // through its CancellationToken.
+                    // Cancel the executor token, but keep heartbeats until the
+                    // execution method stops this pump. The worker is still
+                    // inside the attempt until the executor returns; dropping
+                    // the beat here makes the reconciler treat that live
+                    // attempt as lost. Cancel is queued so a callback cannot
+                    // re-enter this lock on the pump stack.
                     if (job.CancellationRequestedAt.HasValue && durableCancellationCts != null)
                     {
-                        try { durableCancellationCts.Cancel(); }
-                        catch (ObjectDisposedException)
-                        {
-                            // Expected race: the execution task completed and disposed
-                            // the CTS between the read above and this cancel. Benign.
-                        }
-                        break;
+                        var cts = durableCancellationCts;
+                        ThreadPool.UnsafeQueueUserWorkItem(static state => CancelLease((CancellationTokenSource)state!), cts);
                     }
 
                     var updated = job with

@@ -163,6 +163,7 @@ class BindPlatformImage(unittest.TestCase):
         persisted = script.split('>> "$GITHUB_ENV"', 1)[0].rsplit('{', 1)[1]
         self.assertNotIn("SCAN_IMAGE=", persisted)
         self.assertNotIn('echo "SCAN_IMAGE=', script)
+        self.assertIn('docker image inspect --platform "$SCAN_PLATFORM" "$resolved"', script)
 
 
 if __name__ == "__main__":

@@ -753,7 +753,7 @@ jobs:
           set -euo pipefail
           printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null 2>&1
           docker pull --platform "$SCAN_PLATFORM" "$SCAN_IMAGE"
-          docker image inspect "$SCAN_IMAGE" > existing-image-inspect.json
+          docker image inspect --platform "$SCAN_PLATFORM" "$SCAN_IMAGE" > existing-image-inspect.json
           python3 scripts/security/existing-image-scan.py identity
           # VEX is the only suppression mechanism for release images: no ignore-file entries.
           : > "$RUNNER_TEMP/release-image-empty.trivyignore"

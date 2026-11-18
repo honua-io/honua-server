@@ -114,7 +114,7 @@ assert any("configured launch command uses managed" in issue for issue in
 
 # The positive worker smoke must exercise the image's configured ENTRYPOINT. A
 # command-only probe with --entrypoint can pass even when the managed worker host
-# is absent or crashes before joining the durable Redis-backed execution loop.
+# is absent or crashes before joining the durable PostgreSQL-backed execution loop.
 worker_runs: list[list[str]] = []
 
 

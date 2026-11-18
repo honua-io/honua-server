@@ -25,6 +25,6 @@ resolved="$(python3 scripts/security/release_images.py resolve-scan-image \
 } >> "$GITHUB_ENV"
 
 docker pull --platform "$SCAN_PLATFORM" "$resolved"
-docker image inspect "$resolved" > existing-image-inspect.json
+docker image inspect --platform "$SCAN_PLATFORM" "$resolved" > existing-image-inspect.json
 REQUESTED_IMAGE="$requested" SCAN_IMAGE="$resolved" \
   python3 scripts/security/existing-image-scan.py identity
