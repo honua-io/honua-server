@@ -51,18 +51,7 @@ internal static class BrowserSessionSecurity
             // SAML POST bindings validate signed protocol messages and their own correlation state.
             if (!safe && requiresCsrf && metadata?.GetMetadata<BrowserCsrfProtocolBindingMetadata>() is null)
             {
-                if (!request.IsHttps || !IsSameOrigin(request))
-                {
-                    await RejectCsrfAsync(context).ConfigureAwait(false);
-                    return;
-                }
-
-                try
-                {
-                    await context.RequestServices.GetRequiredService<IAntiforgery>()
-                        .ValidateRequestAsync(context).ConfigureAwait(false);
-                }
-                catch (AntiforgeryValidationException)
+                if (!request.IsHttps || !IsSameOrigin(request) || !await PassesAntiforgeryAsync(context).ConfigureAwait(false))
                 {
                     await RejectCsrfAsync(context).ConfigureAwait(false);
                     return;
@@ -71,6 +60,20 @@ internal static class BrowserSessionSecurity
 
             await next(context).ConfigureAwait(false);
         });
+    }
+
+    private static async Task<bool> PassesAntiforgeryAsync(HttpContext context)
+    {
+        try
+        {
+            await context.RequestServices.GetRequiredService<IAntiforgery>()
+                .ValidateRequestAsync(context).ConfigureAwait(false);
+            return true;
+        }
+        catch (AntiforgeryValidationException)
+        {
+            return false;
+        }
     }
 
     // A WebSocket upgrade is a GET, so the antiforgery check never sees it. When the browser
