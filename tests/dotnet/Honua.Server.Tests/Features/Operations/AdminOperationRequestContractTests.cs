@@ -350,9 +350,13 @@ public sealed partial class AdminOperationRequestContractTests
             OperationId = executor.OperationId,
             Parameters = new Dictionary<string, string?>
             {
-                ["role"] = "viewer", ["service"] = "roads", ["layer"] = "1",
-                ["attribute"] = "region", ["claimType"] = "region",
-                ["filterExpression"] = "population > 100", ["areaGeometry"] = area
+                ["role"] = "viewer",
+                ["service"] = "roads",
+                ["layer"] = "1",
+                ["attribute"] = "region",
+                ["claimType"] = "region",
+                ["filterExpression"] = "population > 100",
+                ["areaGeometry"] = area
             }
         }, new OperationPolicyContext());
 

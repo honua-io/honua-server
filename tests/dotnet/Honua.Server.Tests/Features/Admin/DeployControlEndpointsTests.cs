@@ -689,6 +689,9 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
             using var denied = await machine.PostAsJsonAsync(
                 $"/api/v1/admin/deploy/operations/{operationId}/promote", new { reason = "Promote" });
             denied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            using var deniedReview = await machine.GetAsync(
+                $"/api/v1/admin/deploy/operations/{operationId}/approval-review/promote");
+            deniedReview.StatusCode.Should().Be(HttpStatusCode.Forbidden);
             backend.PromoteCalls.Should().Be(0);
             var snapshot = await human.OpenDeployReviewAsync(operationId, "promote");
             using var response = await human.SubmitDeployReviewAsync(operationId, "promote", snapshot);
