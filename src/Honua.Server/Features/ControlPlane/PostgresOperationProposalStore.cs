@@ -212,7 +212,11 @@ internal sealed partial class PostgresOperationProposalStore(
             StatementRepeat.SafeToRepeat,
             cancellationToken).ConfigureAwait(false);
 
-    public Task<int> DeleteExpiredAsync(int batchSize, CancellationToken cancellationToken)
+    public async Task<int> DeleteExpiredAsync(int batchSize, CancellationToken cancellationToken)
+        => await DeleteExpiredProposalsAsync(batchSize, cancellationToken).ConfigureAwait(false)
+            + await DeleteExpiredConsumptionsAsync(batchSize, cancellationToken).ConfigureAwait(false);
+
+    private Task<int> DeleteExpiredProposalsAsync(int batchSize, CancellationToken cancellationToken)
         => _database.ExecuteAsync(
             async (connection, _, token) =>
             {

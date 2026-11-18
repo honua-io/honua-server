@@ -30,7 +30,6 @@ internal sealed partial class PostgresOperationProposalStore
             throw new OperationProposalEvidenceConsumedException(EvidenceIdentityMissingMessage);
         }
 
-        await DeleteExpiredConsumptionsAsync(transaction, token).ConfigureAwait(false);
         if (await TryInsertConsumptionAsync(transaction, created, token).ConfigureAwait(false))
         {
             return;
@@ -40,14 +39,29 @@ internal sealed partial class PostgresOperationProposalStore
         throw new OperationProposalEvidenceConsumedException(OperationProposalEvidenceConsumedException.AlreadyUsedMessage);
     }
 
-    // Expired evidence is refused before it reaches the store, so an expired consumption row guards nothing.
-    private async Task DeleteExpiredConsumptionsAsync(NpgsqlTransaction transaction, CancellationToken token)
-    {
-        await using var command = new NpgsqlCommand(
-            $"DELETE FROM {_evidenceConsumptions} WHERE expires_at < now()",
-            transaction.Connection, transaction);
-        await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
-    }
+    // The retention sweep removes a consumption row only a day after its evidence expired, far beyond the
+    // verify-to-commit interval and any clock skew, so evidence verified just before expiry cannot reuse it.
+    private Task<int> DeleteExpiredConsumptionsAsync(int batchSize, CancellationToken cancellationToken)
+        => _database.ExecuteAsync(
+            async (connection, _, token) =>
+            {
+                await using var command = new NpgsqlCommand(
+                    $"""
+                    WITH expired AS (
+                        SELECT tenant_id, transcript_key_id, run_nonce FROM {_evidenceConsumptions}
+                        WHERE expires_at < now() - interval '1 day'
+                        ORDER BY expires_at LIMIT @batch_size FOR UPDATE SKIP LOCKED)
+                    DELETE FROM {_evidenceConsumptions} AS consumed USING expired
+                    WHERE consumed.tenant_id = expired.tenant_id
+                        AND consumed.transcript_key_id = expired.transcript_key_id
+                        AND consumed.run_nonce = expired.run_nonce
+                    """,
+                    connection);
+                command.Parameters.Add(new NpgsqlParameter("batch_size", NpgsqlDbType.Integer) { Value = batchSize });
+                return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+            },
+            StatementRepeat.SafeToRepeat,
+            cancellationToken);
 
     private async Task<bool> TryInsertConsumptionAsync(
         NpgsqlTransaction transaction,

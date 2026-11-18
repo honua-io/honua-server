@@ -67,6 +67,33 @@ public sealed class PostgresOperationProposalStoreEvidenceTests(DatabaseFixtureA
         (await store.GetAsync(proposal.ProposalId)).Should().BeNull();
     }
 
+    [IntegrationTest]
+    public async Task DeleteExpiredAsync_RecentlyExpiredEvidence_KeepsItSingleUse()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.CreateProposalStore();
+        var evidence = Evidence("tenant-a", "run-recent") with { ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-10) };
+        (await store.TryCreateAsync(Proposal(evidence))).Should().BeTrue();
+
+        (await store.DeleteExpiredAsync(batchSize: 100, CancellationToken.None)).Should().Be(0);
+
+        var reuse = () => store.TryCreateAsync(Proposal(evidence));
+        await reuse.Should().ThrowAsync<OperationProposalEvidenceConsumedException>();
+    }
+
+    [IntegrationTest]
+    public async Task DeleteExpiredAsync_EvidenceExpiredBeyondGrace_RemovesConsumption()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.CreateProposalStore();
+        var evidence = Evidence("tenant-a", "run-old") with { ExpiresAt = DateTimeOffset.UtcNow.AddDays(-2) };
+        (await store.TryCreateAsync(Proposal(evidence))).Should().BeTrue();
+
+        (await store.DeleteExpiredAsync(batchSize: 100, CancellationToken.None)).Should().Be(1);
+
+        (await store.TryCreateAsync(Proposal(evidence))).Should().BeTrue();
+    }
+
     private Task<ControlPlaneStateHarness> CreateHarnessAsync()
         => ControlPlaneStateHarness.CreateAsync(database, nameof(PostgresOperationProposalStoreEvidenceTests));
 
