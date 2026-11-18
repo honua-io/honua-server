@@ -265,6 +265,15 @@ public sealed class SpecLexer
                 return;
             }
 
+            if (value.Length >= MaxStringLiteralLength)
+            {
+                _diagnostics.Add(SpecDiagnostic.Error(
+                    SpecDiagnosticCode.SyntaxError,
+                    $"String literal exceeds the {MaxStringLiteralLength:N0}-character cap.",
+                    new SourceSpan(startLine, startColumn, startOffset, _offset - startOffset)));
+                return;
+            }
+
             if (ch == '\\')
             {
                 if (_offset + 1 >= _input.Length)
@@ -312,15 +321,6 @@ public sealed class SpecLexer
                 _diagnostics.Add(SpecDiagnostic.Error(
                     SpecDiagnosticCode.SyntaxError,
                     "String literal is not terminated before end of line.",
-                    new SourceSpan(startLine, startColumn, startOffset, _offset - startOffset)));
-                return;
-            }
-
-            if (value.Length >= MaxStringLiteralLength)
-            {
-                _diagnostics.Add(SpecDiagnostic.Error(
-                    SpecDiagnosticCode.SyntaxError,
-                    $"String literal exceeds the {MaxStringLiteralLength:N0}-character cap.",
                     new SourceSpan(startLine, startColumn, startOffset, _offset - startOffset)));
                 return;
             }
