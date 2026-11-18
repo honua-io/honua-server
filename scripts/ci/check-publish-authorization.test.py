@@ -68,13 +68,21 @@ class PublishAuthorizationTests(unittest.TestCase):
                         'publish': publisher(needs='authorize-publish', environment='publish-images', **{'if': condition})}
                 self.assertEqual(problems(jobs), [])
 
-    def test_the_authorization_job_takes_only_literal_tag_patterns(self) -> None:
-        for patterns in ('*', 'v* *', '?*', '[a-z]*', '${{ inputs.tag-patterns }}'):
+    def test_the_authorization_job_takes_only_ruleset_protected_tag_patterns(self) -> None:
+        for patterns in ('*', 'v*', 'v* *', 'v*.*.* v*', '?*', '[a-z]*', '${{ inputs.tag-patterns }}'):
             with self.subTest(patterns=patterns):
                 jobs = {'authorize-publish': {**AUTHORIZE, 'with': {'tag-patterns': patterns}},
                         'publish': publisher(needs='authorize-publish', environment='publish-images')}
                 self.assertEqual(problems(jobs), [
-                    f'release.yml:authorize-publish: tag-patterns {patterns!r} must be literal globs that start with a letter or digit'])
+                    f'release.yml:authorize-publish: tag-patterns {patterns!r} may name only ruleset-protected '
+                    'tag globs (honua-core-v* v*.*.*)'])
+
+    def test_ruleset_protected_tag_patterns_pass(self) -> None:
+        for patterns in ('', 'v*.*.*', 'honua-core-v* v*.*.*'):
+            with self.subTest(patterns=patterns):
+                jobs = {'authorize-publish': {**AUTHORIZE, 'with': {'tag-patterns': patterns}},
+                        'publish': publisher(needs='authorize-publish', environment='publish-images')}
+                self.assertEqual(problems(jobs), [])
 
     def test_an_unguarded_publisher_fails_both_rules(self) -> None:
         self.assertEqual(problems({'publish': publisher()}), [
@@ -168,14 +176,21 @@ class PublishAuthorizationTests(unittest.TestCase):
         workflow = yaml.safe_load((ROOT / '.github/workflows/deploy-platform-images.yml').read_text())
         step = workflow['jobs']['build-and-push']['steps'][0]
         self.assertEqual(step['if'], "env.PUBLISH_IMAGES == 'true'")
-        cases = [('refs/heads/trunk', 0), ('refs/tags/v2026.1.0', 0), ('refs/heads/TRUNK', 1),
-                 ('refs/heads/trunk-copy', 1), ('refs/tags/vx/evil', 1), ('refs/tags/nightly-candidate-abc1234', 1),
-                 ('refs/pull/7/merge', 1)]
+        cases = [('refs/heads/trunk', 0), ('refs/tags/v2026.1.0', 0), ('refs/tags/v2026.1.0-rc.2', 0),
+                 ('refs/heads/TRUNK', 1), ('refs/heads/trunk-copy', 1), ('refs/tags/vx/evil', 1),
+                 ('refs/tags/vscratch', 1), ('refs/tags/nightly-candidate-abc1234', 1), ('refs/pull/7/merge', 1)]
         for ref, expected in cases:
             with self.subTest(ref=ref):
                 run = subprocess.run(['bash', '-e', '-c', step['run']], capture_output=True, text=True, cwd=ROOT,
                                      env={**os.environ, 'GITHUB_REF': ref})
                 self.assertEqual(run.returncode, expected, run.stdout + run.stderr)
+
+    def test_tag_triggered_publishers_start_only_on_ruleset_protected_tags(self) -> None:
+        for name in ('deploy.yml', 'deploy-platform-images.yml', 'nuget-publish.yml'):
+            with self.subTest(workflow=name):
+                workflow = yaml.safe_load((ROOT / '.github/workflows' / name).read_text())
+                tags = workflow[True]['push']['tags']
+                self.assertTrue(set(tags) <= check.PROTECTED_TAG_GLOBS, tags)
 
     def test_exceptions_file_is_sorted_and_reasoned(self) -> None:
         text = (ROOT / 'scripts/ci/publish-authorization-exceptions.json').read_text()

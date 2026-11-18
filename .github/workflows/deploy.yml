@@ -2,7 +2,7 @@ name: Build & Publish Images
 
 on:
   push:
-    tags: ['v*']
+    tags: ['v*.*.*']
   workflow_dispatch:
 
 env:
@@ -25,7 +25,7 @@ jobs:
   authorize-publish:
     uses: ./.github/workflows/publish-authorization.yml
     with:
-      tag-patterns: 'v*'
+      tag-patterns: 'v*.*.*'
 
   build-and-push:
     name: Build & Push ${{ matrix.image_name }} (${{ matrix.arch }})
