@@ -31,7 +31,8 @@ class ExistingImageScanTests(unittest.TestCase):
         self.assertEqual(REVISION, scan.bind_identity(IMAGE, "linux/amd64", REVISION, INSPECTED)["sourceRevision"])
         self.assertNotIn("requestedImage", scan.bind_identity(IMAGE, "linux/amd64", REVISION, INSPECTED))
         requested = "ghcr.io/honua-io/honua-server@sha256:" + "d" * 64
-        bound = scan.bind_identity(IMAGE, "linux/amd64", REVISION, INSPECTED, requested)
+        bound = scan.note_requested_image(
+            scan.bind_identity(IMAGE, "linux/amd64", REVISION, INSPECTED), requested)
         self.assertEqual(IMAGE, bound["image"])
         self.assertEqual(requested, bound["requestedImage"])
         for key, value in (("RepoDigests", []), ("Architecture", "arm64"), ("Config", {})):

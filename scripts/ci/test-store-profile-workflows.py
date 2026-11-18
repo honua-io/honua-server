@@ -8,6 +8,41 @@ import unittest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
+_RELEASE_REPOSITORY = 'ghcr.io/honua-io/honua-server@'
+_RELEASE_PLATFORM_DIGEST = 'sha256:' + 'a' * 64
+_RELEASE_REQUESTED_DIGEST = 'sha256:' + 'b' * 64
+_RELEASE_PULL_IDS = (_RELEASE_REPOSITORY, _RELEASE_PLATFORM_DIGEST, _RELEASE_REQUESTED_DIGEST)
+_RELEASE_DOCKER = '''docker() {
+  if [[ "${1-}" == login ]]; then return 0; fi
+  if [[ "${1-} ${2-} ${3-} ${4-}" == "buildx imagetools inspect --raw" ]]; then printf '%s' "$SOURCE_MANIFEST"; return 0; fi
+  if [[ "${1-}" == pull ]]; then return 0; fi
+  if [[ "${1-} ${2-}" == "image inspect" ]]; then printf '%s' "$INSPECT_JSON"; return 0; fi
+  echo "unexpected docker $*" >&2
+  return 1
+}
+'''
+
+
+def _run_release_pull(pull):
+    revision = 'e' * 40
+    index = {'mediaType': 'application/vnd.oci.image.index.v1+json', 'manifests': [
+        {'mediaType': 'application/vnd.oci.image.manifest.v1+json', 'digest': _RELEASE_PLATFORM_DIGEST,
+         'platform': {'os': 'linux', 'architecture': 'amd64'}}]}
+    inspected = [{'RepoDigests': [_RELEASE_REPOSITORY + _RELEASE_PLATFORM_DIGEST],
+                  'Os': 'linux', 'Architecture': 'amd64', 'Id': 'sha256:' + 'c' * 64,
+                  'Config': {'Labels': {'org.opencontainers.image.revision': revision}}}]
+    with tempfile.TemporaryDirectory() as directory:
+        work = Path(directory)
+        (work / 'scripts').symlink_to(ROOT / 'scripts', target_is_directory=True)
+        environment = dict(os.environ, SCAN_IMAGE=_RELEASE_REPOSITORY + _RELEASE_REQUESTED_DIGEST,
+                           SCAN_PLATFORM='linux/amd64', SCAN_REVISION=revision,
+                           SOURCE_MANIFEST=json.dumps(index), INSPECT_JSON=json.dumps(inspected),
+                           REGISTRY_TOKEN='unused', GITHUB_ACTOR='actor', RUNNER_TEMP=str(work),
+                           GITHUB_ENV=str(work / 'env'), GITHUB_SERVER_URL='https://github.com',
+                           GITHUB_REPOSITORY='honua-io/honua-server', GITHUB_RUN_ID='1')
+        subprocess.run(['bash', '-c', _RELEASE_DOCKER + pull], cwd=work, env=environment, check=True)
+        identity = json.loads((work / 'existing-image-identity.json').read_text())
+        return (work / 'env').read_text(), identity, (work / 'requested-manifest.json').is_file()
 
 
 def workflow(name):
@@ -130,46 +165,16 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         trivy = next(step for step in steps if step.get('name') == 'Scan with the release VEX applied')
         self.assertIn('--image "$SCAN_IMAGE"', vex)
         self.assertIn('"$PLATFORM_REF" != "$SCAN_IMAGE"', vex)
-        self.assertNotIn('SCAN_IMAGE=', pull.split('GITHUB_ENV', 1)[1] if 'GITHUB_ENV' in pull else pull)
+        self.assertNotIn('SCAN_IMAGE=', pull.split('GITHUB_ENV', 1)[1])
         self.assertEqual(trivy['with']['image-ref'], '${{ env.RESOLVED_IMAGE }}')
-        manifest_type = 'application/vnd.oci.image.manifest.v1+json'
-        platform_digest = 'sha256:' + 'a' * 64
-        requested_digest = 'sha256:' + 'b' * 64
-        repository = 'ghcr.io/honua-io/honua-server@'
-        revision = 'e' * 40
-        index = {'mediaType': 'application/vnd.oci.image.index.v1+json', 'manifests': [
-            {'mediaType': manifest_type, 'digest': platform_digest,
-             'platform': {'os': 'linux', 'architecture': 'amd64'}}]}
-        inspected = [{'RepoDigests': [repository + platform_digest], 'Os': 'linux', 'Architecture': 'amd64',
-                      'Id': 'sha256:' + 'c' * 64,
-                      'Config': {'Labels': {'org.opencontainers.image.revision': revision}}}]
-        docker = '''docker() {
-  if [[ "${1-}" == login ]]; then return 0; fi
-  if [[ "${1-} ${2-} ${3-} ${4-}" == "buildx imagetools inspect --raw" ]]; then printf '%s' "$SOURCE_MANIFEST"; return 0; fi
-  if [[ "${1-}" == pull ]]; then return 0; fi
-  if [[ "${1-} ${2-}" == "image inspect" ]]; then printf '%s' "$INSPECT_JSON"; return 0; fi
-  echo "unexpected docker $*" >&2
-  return 1
-}
-'''
-        with tempfile.TemporaryDirectory() as directory:
-            work = Path(directory)
-            (work / 'scripts').symlink_to(ROOT / 'scripts', target_is_directory=True)
-            environment = dict(os.environ, SCAN_IMAGE=repository + requested_digest, SCAN_PLATFORM='linux/amd64',
-                               SCAN_REVISION=revision, SOURCE_MANIFEST=json.dumps(index),
-                               INSPECT_JSON=json.dumps(inspected), REGISTRY_TOKEN='unused',
-                               GITHUB_ACTOR='actor', RUNNER_TEMP=str(work),
-                               GITHUB_ENV=str(work / 'env'), GITHUB_SERVER_URL='https://github.com',
-                               GITHUB_REPOSITORY='honua-io/honua-server', GITHUB_RUN_ID='1')
-            subprocess.run(['bash', '-c', docker + pull], cwd=work, env=environment, check=True)
-            saved = (work / 'env').read_text()
-            self.assertIn('RESOLVED_IMAGE=' + repository + platform_digest, saved)
-            self.assertIn('REQUESTED_IMAGE=' + repository + requested_digest, saved)
-            self.assertNotIn('SCAN_IMAGE=', saved)
-            identity = json.loads((work / 'existing-image-identity.json').read_text())
-            self.assertEqual(repository + platform_digest, identity['image'])
-            self.assertEqual(repository + requested_digest, identity['requestedImage'])
-            self.assertTrue((work / 'requested-manifest.json').is_file())
+        saved, identity, manifest = _run_release_pull(pull)
+        repository, platform_digest, requested_digest = _RELEASE_PULL_IDS
+        self.assertIn('RESOLVED_IMAGE=' + repository + platform_digest, saved)
+        self.assertIn('REQUESTED_IMAGE=' + repository + requested_digest, saved)
+        self.assertNotIn('SCAN_IMAGE=', saved)
+        self.assertEqual(repository + platform_digest, identity['image'])
+        self.assertEqual(repository + requested_digest, identity['requestedImage'])
+        self.assertTrue(manifest)
 
     def test_shell_free_consumers_use_native_probe_and_external_http(self):
         jobs = workflow('security-nightly.yml')['jobs']
