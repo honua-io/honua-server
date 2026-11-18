@@ -31,7 +31,7 @@ Fetch `GET /api/v1/capabilities/manifest` before rendering feature-specific cont
 
 ## Pagination and result completeness
 
-- Query endpoints apply `maxRecordCount` (default 2 000 per the shipped templates); page with `resultOffset`/`resultRecordCount` (GeoServices) or `limit` + `next` links (OGC API Features).
+- Query endpoints apply `maxRecordCount` (default 10 000 from `Limits:Query:MaxRecordCount`; the Development settings file sets 2 000); page with `resultOffset`/`resultRecordCount` (GeoServices) or `limit` + `next` links (OGC API Features).
 - JSON responses set `exceededTransferLimit` when truncated; **binary formats (GeoParquet, Arrow, FlatGeobuf) carry no truncation flag** — compare the returned row count against `maxRecordCount`, or call `returnCountOnly=true` first.
 - For full-table exports prefer the async export job surface (`.../layers/{layerId}/export`) or paged `f=parquet` pulls.
 
@@ -44,24 +44,31 @@ Fetch `GET /api/v1/capabilities/manifest` before rendering feature-specific cont
 | Variable | Purpose |
 | --- | --- |
 | `FeatureChangeEvents__Webhook__Enabled` | Enable delivery. |
-| `FeatureChangeEvents__Webhook__Url` | Absolute target URL. |
+| `FeatureChangeEvents__Webhook__Url` | HTTPS URL on a public address, with no embedded credentials. |
 | `FeatureChangeEvents__Webhook__Secret` | Shared HMAC secret — verify the signature on every delivery. |
 | `FeatureChangeEvents__Webhook__MaxAttempts` | Delivery attempts per event (default 5, exponential backoff). |
 
-Keep the webhook handler thin: verify the signature, enqueue, return fast — process from the queue so delivery retries do not pile up behind slow handlers. Deliveries can arrive more than once; key processing on the event id.
+Startup validation rejects a webhook URL that is not HTTPS, that embeds credentials, or that names localhost or a private address literal. Delivery also rejects a name that resolves to a private, loopback, or unresolvable address. Keep the webhook handler thin: verify the signature, enqueue, return fast — process from the queue so delivery retries do not pile up behind slow handlers. Deliveries can arrive more than once; key processing on the event id.
 
 ## ETL and idempotent loads
 
-Extract with OData or OGC API Features, transform to GeoJSON, load through FeatureServer edits:
+Extract with OData or OGC API Features, then load through FeatureServer `addFeatures`. That endpoint reads GeoServices features (`attributes` plus Esri JSON `geometry`). A GeoJSON Feature, or a feature that uses `properties` and GeoJSON `coordinates`, is not accepted.
 
 ```python
 import requests
 
 SERVICE = "parcels"
-LAYER_INDEX = 1  # the layer's id from /rest/services/parcels/FeatureServer?f=json
+LAYER_ID = 1  # the layer's id from /rest/services/parcels/FeatureServer?f=json
+
+features = [
+    {
+        "attributes": {"source_id": "parcel-1", "status": "active"},
+        "geometry": {"x": -122.4, "y": 47.6, "spatialReference": {"wkid": 4326}},
+    }
+]
 
 resp = requests.post(
-    f"http://localhost:8080/rest/services/{SERVICE}/FeatureServer/{LAYER_INDEX}/addFeatures",
+    f"http://localhost:8080/rest/services/{SERVICE}/FeatureServer/{LAYER_ID}/addFeatures",
     json={"features": features},
     headers={"X-API-Key": API_KEY},
 )

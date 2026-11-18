@@ -21,6 +21,7 @@ internal sealed class ListJobsTool : IMcpTool
     private const string InputSchemaJson = """
         {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "status": {
               "type": "array",

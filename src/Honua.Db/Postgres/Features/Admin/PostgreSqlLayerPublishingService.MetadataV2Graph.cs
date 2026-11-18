@@ -2834,6 +2834,27 @@ internal sealed partial class PostgreSqlLayerPublishingService
             JsonSerializer.SerializeToElement(left, typeInfo),
             JsonSerializer.SerializeToElement(right, typeInfo));
 
+    // A link reuses an existing resource, so it is primary only when nothing else is. The
+    // resource's first primary publication stays its canonical service, and writes through
+    // the linked publication must also satisfy that service's data-editor grant.
+    private static bool HasPrimaryPublication(MetadataV2Graph graph, string resourceId)
+        => PrimaryPublications(graph, resourceId).Any();
+
+    // Deterministic survivor when a legacy graph holds several primaries for one resource:
+    // the oldest by creation time (undated last), then by publication id.
+    private static bool IsEarliestPrimaryPublication(MetadataV2Graph graph, MetadataV2Layer publication)
+        => PrimaryPublications(graph, publication.ResourceId)
+            .OrderBy(candidate => candidate.Metadata.CreatedAt ?? DateTimeOffset.MaxValue)
+            .ThenBy(candidate => candidate.Metadata.Id, StringComparer.Ordinal)
+            .Select(candidate => candidate.Metadata.Id)
+            .FirstOrDefault() is { } earliestId
+           && string.Equals(earliestId, publication.Metadata.Id, StringComparison.Ordinal);
+
+    private static IEnumerable<MetadataV2Layer> PrimaryPublications(MetadataV2Graph graph, string resourceId)
+        => graph.Publications.Where(publication =>
+            publication.IsPrimary &&
+            string.Equals(publication.ResourceId, resourceId, StringComparison.Ordinal));
+
     internal static MetadataV2Graph BuildLinkedLayerMetadataV2Graph(
         MetadataV2Graph graph,
         string serviceName,
@@ -2906,7 +2927,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             featurePublication = existingFeaturePublication with
             {
-                Status = WithReadyStatus(existingFeaturePublication.Status, readyStatus)
+                Status = WithReadyStatus(existingFeaturePublication.Status, readyStatus),
+                // Re-linking repairs a graph written before links became secondary: only the
+                // resource's earliest primary publication keeps the canonical role.
+                IsPrimary = existingFeaturePublication.IsPrimary &&
+                            IsEarliestPrimaryPublication(graph, existingFeaturePublication)
             };
         }
         else
@@ -2934,7 +2959,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 BuildLayerGraphId("layer", layerId, storageScope?.ManagedLayerIds?.Contains(layerId) == true ? null : storageScope?.ConnectionId),
                 layerName,
                 MetadataV2LayerType.EsriFeatureLayer,
-                isPrimary: true,
+                isPrimary: !HasPrimaryPublication(graph, resource.Metadata.Id),
                 idPrefix: "pub",
                 enabled,
                 now);

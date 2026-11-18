@@ -160,13 +160,13 @@ public sealed partial class FolderOperationIntegrationTests
                 Summary = "Create folder",
                 ExecutionPayload = JsonSerializer.Serialize(payload, AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload)
             };
-            var prepare = () => FolderApprovalAuthorization.PrepareAsync(new OperationGatewayRequest
+            var prepare = () => FolderApprovalAuthorization.PrepareAsync(new(new OperationGatewayRequest
             {
                 OperationId = payload.OperationId,
                 Kind = OperationClass.AdminConfigChange,
                 TenantId = payload.TenantId,
                 RequestedBy = CanonicalSecurityActor.Resolve(context.User)!.ActorId
-            }, plan, context, CancellationToken.None);
+            }, plan, context), CancellationToken.None);
             var refused = (await prepare.Should().ThrowAsync<FolderProposalRefusal>()).Which;
             refused.Outcome.Should().Be(OperationGatewayOutcome.Failed);
             refused.Message.Should().Be(FolderMutationFailure.ReadOnlyCatalog.Detail);
@@ -178,11 +178,11 @@ public sealed partial class FolderOperationIntegrationTests
     [Endpoint("POST /api/v1/operations/{id}/submit")]
     public async Task FolderCreate_MissingRequesterContext_ExplainsRequiredAuthentication()
     {
-        var prepare = () => FolderApprovalAuthorization.PrepareAsync(new OperationGatewayRequest
+        var prepare = () => FolderApprovalAuthorization.PrepareAsync(new(new OperationGatewayRequest
         {
             OperationId = "folder.create",
             Kind = OperationClass.AdminConfigChange
-        }, new OperationProposalPlan(), null, CancellationToken.None);
+        }, new OperationProposalPlan(), null), CancellationToken.None);
         var refused = (await prepare.Should().ThrowAsync<FolderProposalRefusal>()).Which;
         refused.Outcome.Should().Be(OperationGatewayOutcome.Blocked);
         refused.Message.Should().Be("Folder proposals require an active authenticated requester; background callers cannot create them.");

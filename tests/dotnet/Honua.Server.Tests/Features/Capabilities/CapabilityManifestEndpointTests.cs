@@ -51,18 +51,23 @@ namespace Honua.Server.Tests.Features.Capabilities;
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.Metadata)]
 public sealed partial class CapabilityManifestEndpointTests
-    : IClassFixture<CapabilityManifestEndpointTests.DefaultApplication>, IAsyncLifetime
+    : IClassFixture<CapabilityManifestEndpointTests.DefaultApplication>,
+      IClassFixture<CapabilityManifestEndpointTests.ConfiguredApplications>,
+      IAsyncLifetime
 {
     private readonly WebAppFixture _fixture;
+    private readonly ConfiguredApplications _configured;
     private HttpClient _anonymousClient = null!;
     private HttpClient _adminClient = null!;
 
-    public CapabilityManifestEndpointTests(DefaultApplication defaultApplication)
+    public CapabilityManifestEndpointTests(DefaultApplication defaultApplication, ConfiguredApplications configured)
     {
         _fixture = defaultApplication.Fixture;
+        _configured = configured;
     }
 
-    // Read-only default application shared by the class; tests that need other configuration
+    // Read-only default application shared by the class. Registry and experimental-switch
+    // variants come from ConfiguredApplications; tests that need any other configuration
     // build and dispose their own application.
     public sealed class DefaultApplication : IAsyncLifetime
     {
@@ -123,8 +128,7 @@ public sealed partial class CapabilityManifestEndpointTests
     [Endpoint("GET /api/v1/capabilities/manifest")]
     public async Task GetManifest_FileExportDirections_AdvertisesOnlyThreeImplementedWriters(bool fromRegistry)
     {
-        await using var fixture = CreateManifestFixture(manifestFromRegistry: fromRegistry);
-        await fixture.InitializeAsync();
+        var fixture = fromRegistry ? await _configured.GetAsync(new() { FromRegistry = true }) : _fixture;
         using var client = fixture.CreateAdminClient();
         using var response = await client.GetAsync("/api/v1/capabilities/manifest");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -256,33 +260,24 @@ public sealed partial class CapabilityManifestEndpointTests
     [Endpoint("GET /api/v1/capabilities/manifest")]
     public async Task GetManifest_LegacyProjection_MarksDisabledPreviewsUnavailable()
     {
-        var fixture = CreateManifestFixture(experimentalGlobalEnabled: false);
-        await fixture.InitializeAsync();
+        var fixture = await _configured.GetAsync(new() { ExperimentalEnabled = false });
+        using var client = fixture.CreateAdminClient();
+        using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        try
+        using var document = await ReadDocumentAsync(response);
+        foreach (var (id, lifecycle) in new[]
+                 {
+                     ("admin.multi-tenancy", "internal"),
+                     ("realtime.feature-streams", "experimental"),
+                     ("serve.sensorthings", "preview"),
+                 })
         {
-            using var client = fixture.CreateAdminClient();
-            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-            using var document = await ReadDocumentAsync(response);
-            foreach (var (id, lifecycle) in new[]
-                     {
-                         ("admin.multi-tenancy", "internal"),
-                         ("realtime.feature-streams", "experimental"),
-                         ("serve.sensorthings", "preview"),
-                     })
-            {
-                var capability = GetCapability(document.RootElement, id);
-                capability.GetProperty("lifecycle").GetString().Should().Be(lifecycle);
-                capability.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
-                capability.GetProperty("available").GetBoolean().Should().BeFalse();
-                capability.GetProperty("reasonCode").GetString().Should().Be("disabled-by-configuration");
-            }
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
+            var capability = GetCapability(document.RootElement, id);
+            capability.GetProperty("lifecycle").GetString().Should().Be(lifecycle);
+            capability.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
+            capability.GetProperty("available").GetBoolean().Should().BeFalse();
+            capability.GetProperty("reasonCode").GetString().Should().Be("disabled-by-configuration");
         }
     }
 
@@ -292,30 +287,22 @@ public sealed partial class CapabilityManifestEndpointTests
     [Endpoint("GET /api/v1/capabilities/manifest")]
     public async Task GetManifest_LifecycleOnlyPreviews_RemainAvailableWithoutOptIn(bool fromRegistry)
     {
-        var fixture = CreateManifestFixture(manifestFromRegistry: fromRegistry, experimentalGlobalEnabled: false);
-        await fixture.InitializeAsync();
-        try
+        var fixture = await _configured.GetAsync(new() { FromRegistry = fromRegistry, ExperimentalEnabled = false });
+        using var client = fixture.CreateAdminClient();
+        using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadDocumentAsync(response);
+        foreach (var (id, lifecycle) in new[]
+                 {
+                     ("serve.geoservices-imageserver", "implemented"),
+                     ("serve.wmts", "preview"),
+                     ("serve.ogc-api-coverages", "preview"),
+                 })
         {
-            using var client = fixture.CreateAdminClient();
-            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            using var document = await ReadDocumentAsync(response);
-            foreach (var (id, lifecycle) in new[]
-                     {
-                         ("serve.geoservices-imageserver", "implemented"),
-                         ("serve.wmts", "preview"),
-                         ("serve.ogc-api-coverages", "preview"),
-                     })
-            {
-                var capability = GetCapability(document.RootElement, id);
-                capability.GetProperty("lifecycle").GetString().Should().Be(lifecycle);
-                capability.GetProperty("available").GetBoolean().Should().BeTrue();
-                capability.GetProperty("optInRequired").GetBoolean().Should().BeFalse();
-            }
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
+            var capability = GetCapability(document.RootElement, id);
+            capability.GetProperty("lifecycle").GetString().Should().Be(lifecycle);
+            capability.GetProperty("available").GetBoolean().Should().BeTrue();
+            capability.GetProperty("optInRequired").GetBoolean().Should().BeFalse();
         }
     }
 
@@ -1122,39 +1109,29 @@ public sealed partial class CapabilityManifestEndpointTests
         // resolution is unchanged.
         const string query = "/api/v1/capabilities/manifest?environment=test&workspaceId=field-team";
 
-        var legacyFixture = CreateManifestFixture();
-        var derivedFixture = CreateManifestFixture(manifestFromRegistry: true);
-        await legacyFixture.InitializeAsync();
-        await derivedFixture.InitializeAsync();
+        var legacyFixture = _fixture;
+        var derivedFixture = await _configured.GetAsync(new() { FromRegistry = true });
 
-        try
-        {
-            using var legacyClient = legacyFixture.CreateAdminClient();
-            using var derivedClient = derivedFixture.CreateAdminClient();
-            using var legacyResponse = await legacyClient.GetAsync(query);
-            using var derivedResponse = await derivedClient.GetAsync(query);
+        using var legacyClient = legacyFixture.CreateAdminClient();
+        using var derivedClient = derivedFixture.CreateAdminClient();
+        using var legacyResponse = await legacyClient.GetAsync(query);
+        using var derivedResponse = await derivedClient.GetAsync(query);
 
-            legacyResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-            derivedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        legacyResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        derivedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-            using var legacyDocument = await ReadDocumentAsync(legacyResponse);
-            using var derivedDocument = await ReadDocumentAsync(derivedResponse);
+        using var legacyDocument = await ReadDocumentAsync(legacyResponse);
+        using var derivedDocument = await ReadDocumentAsync(derivedResponse);
 
-            var derivedCapabilities = derivedDocument.RootElement.GetProperty("capabilities").GetRawText();
-            var legacyCapabilities = legacyDocument.RootElement.GetProperty("capabilities").GetRawText();
-            derivedCapabilities.Should().Be(legacyCapabilities);
+        var derivedCapabilities = derivedDocument.RootElement.GetProperty("capabilities").GetRawText();
+        var legacyCapabilities = legacyDocument.RootElement.GetProperty("capabilities").GetRawText();
+        derivedCapabilities.Should().Be(legacyCapabilities);
 
-            var derivedFamilies = derivedDocument.RootElement
-                .GetProperty("packages").GetProperty("families").GetRawText();
-            var legacyFamilies = legacyDocument.RootElement
-                .GetProperty("packages").GetProperty("families").GetRawText();
-            derivedFamilies.Should().Be(legacyFamilies);
-        }
-        finally
-        {
-            await legacyFixture.DisposeAsync();
-            await derivedFixture.DisposeAsync();
-        }
+        var derivedFamilies = derivedDocument.RootElement
+            .GetProperty("packages").GetProperty("families").GetRawText();
+        var legacyFamilies = legacyDocument.RootElement
+            .GetProperty("packages").GetProperty("families").GetRawText();
+        derivedFamilies.Should().Be(legacyFamilies);
     }
 
     [IntegrationTest]
