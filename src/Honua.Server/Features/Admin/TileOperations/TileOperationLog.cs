@@ -48,4 +48,10 @@ internal static partial class TileOperationLog
 
     [LoggerMessage(EventId = 9221, Level = LogLevel.Information, Message = "Paired publish job {JobId} activated version {Version} of publication {PublicationId}.")]
     public static partial void PairedPublishActivated(ILogger logger, string jobId, string publicationId, string version);
+
+    [LoggerMessage(EventId = 9222, Level = LogLevel.Warning, Message = "Paired publish {PublicationVersion} could not read the layer's stored style; style.json and the thumbnail use default paints.")]
+    public static partial void ExportStoredStyleSkipped(ILogger logger, string publicationVersion, Exception exception);
+
+    [LoggerMessage(EventId = 9223, Level = LogLevel.Warning, Message = "Paired publish {PublicationVersion} was published without a thumbnail because rendering failed.")]
+    public static partial void ExportThumbnailSkipped(ILogger logger, string publicationVersion, Exception exception);
 }

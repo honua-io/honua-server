@@ -63,10 +63,11 @@ internal static class PairedPublicationDescriptorFactory
     }
 
     // A STAC item with role-tagged assets, so a catalog browser opens the pair without Honua.
-    public static JsonObject StacItem(PublicationDescriptor descriptor)
+    public static JsonObject StacItem(ExportCompanionInput companions)
     {
+        var descriptor = companions.Descriptor;
         var (west, south, east, north) = (descriptor.Bounds[0], descriptor.Bounds[1], descriptor.Bounds[2], descriptor.Bounds[3]);
-        return new JsonObject
+        var item = new JsonObject
         {
             ["type"] = "Feature",
             ["stac_version"] = "1.1.0",
@@ -86,13 +87,25 @@ internal static class PairedPublicationDescriptorFactory
                 ["href"] = DescriptorFileName,
                 ["type"] = "application/json"
             }),
-            ["assets"] = new JsonObject
-            {
-                ["pmtiles"] = Asset(descriptor.Artifacts.Pmtiles.Href, PmtilesPublicationArtifact.MediaTypeValue, "visual"),
-                ["geoparquet"] = Asset(descriptor.Artifacts.Geoparquet.Href, GeoparquetPublicationArtifact.MediaTypeValue, "data")
-            }
+            ["assets"] = Assets(descriptor)
         };
+        if (companions.Thumbnail is not null)
+        {
+            item["assets"]!["thumbnail"] = Asset(ExportThumbnail.FileName, ExportThumbnail.MediaType, "thumbnail");
+        }
+
+        ExportStacFacts.Apply(item, item["properties"]!.AsObject(), companions);
+        return item;
     }
+
+    private static JsonObject Assets(PublicationDescriptor descriptor) => new()
+    {
+        ["pmtiles"] = Asset(descriptor.Artifacts.Pmtiles.Href, PmtilesPublicationArtifact.MediaTypeValue, "visual"),
+        ["geoparquet"] = Asset(descriptor.Artifacts.Geoparquet.Href, GeoparquetPublicationArtifact.MediaTypeValue, "data"),
+        ["readme"] = Asset(ExportCompanionFiles.ReadmeFileName, ExportCompanionFiles.MarkdownMediaType, "metadata"),
+        ["agents"] = Asset(ExportCompanionFiles.AgentsFileName, ExportCompanionFiles.MarkdownMediaType, "metadata"),
+        ["style"] = Asset(ExportCompanionFiles.StyleFileName, ExportCompanionFiles.StyleMediaType, "style")
+    };
 
     private static JsonObject StacProperties(PublicationDescriptor descriptor)
     {
