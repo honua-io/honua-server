@@ -85,15 +85,28 @@ public sealed class ExactTypesPublishIntegrationTests(PostgresFixture fixture) :
 
     private LayerPublishRequest ExactRequest() => new()
     {
-        Schema = _schema, Table = "ledger", LayerName = "Ledger", GeometryColumn = "geom", Srid = 4326,
-        PrimaryKey = "id", ServiceName = _serviceName, TemporalColumn = "observed", ExactTypes = true
+        Schema = _schema,
+        Table = "ledger",
+        LayerName = "Ledger",
+        GeometryColumn = "geom",
+        Srid = 4326,
+        PrimaryKey = "id",
+        ServiceName = _serviceName,
+        TemporalColumn = "observed",
+        ExactTypes = true
     };
 
     // A republish that omits the flag, as the GeoServices import replacement path sends it.
     private LayerPublishRequest PlainRequest() => new()
     {
-        Schema = _schema, Table = "ledger", LayerName = "Ledger", GeometryColumn = "geom", Srid = 4326,
-        PrimaryKey = "id", ServiceName = _serviceName, TemporalColumn = "observed"
+        Schema = _schema,
+        Table = "ledger",
+        LayerName = "Ledger",
+        GeometryColumn = "geom",
+        Srid = 4326,
+        PrimaryKey = "id",
+        ServiceName = _serviceName,
+        TemporalColumn = "observed"
     };
 
     private async Task<Dictionary<string, string>> ReadFieldTypesAsync(int layerId)
@@ -134,14 +147,36 @@ public sealed class ExactTypesPublishIntegrationTests(PostgresFixture fixture) :
     {
         var resource = new MetadataV2Object
         {
-            Metadata = new MetadataV2ObjectMetadata { Id = "exact-ledger", Name = "Ledger" },
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "exact-ledger",
+                Name = "Ledger"
+            },
             Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields =
             [
-                new() { Name = "id", Type = MetadataV2FieldType.Integer, SemanticRoles = ["id.primary"] },
-                new() { Name = "amount", Type = MetadataV2FieldType.Decimal },
-                new() { Name = "signed", Type = MetadataV2FieldType.TimestampOffset },
-                new() { Name = "geom", Type = MetadataV2FieldType.Geometry, SemanticRoles = ["geometry.primary"] }
+                new()
+                {
+                    Name = "id",
+                    Type = MetadataV2FieldType.Integer,
+                    SemanticRoles = ["id.primary"]
+                },
+                new()
+                {
+                    Name = "amount",
+                    Type = MetadataV2FieldType.Decimal
+                },
+                new()
+                {
+                    Name = "signed",
+                    Type = MetadataV2FieldType.TimestampOffset
+                },
+                new()
+                {
+                    Name = "geom",
+                    Type = MetadataV2FieldType.Geometry,
+                    SemanticRoles = ["geometry.primary"]
+                }
             ]
         };
         return new PostgresStorageMappedFeatureReader(
@@ -156,7 +191,10 @@ public sealed class ExactTypesPublishIntegrationTests(PostgresFixture fixture) :
 
     // The publishing service references the shared catalog unqualified, so route it to 'honua'.
     private string ConnectionString()
-        => new NpgsqlConnectionStringBuilder(fixture.ConnectionString) { SearchPath = "honua,public" }.ConnectionString;
+        => new NpgsqlConnectionStringBuilder(fixture.ConnectionString)
+        {
+            SearchPath = "honua,public"
+        }.ConnectionString;
 
     private sealed class ConnectionProvider(string connectionString, NpgsqlDataSource dataSource)
         : IAdoNetDatabaseConnectionProvider

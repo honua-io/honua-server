@@ -26978,7 +26978,7 @@
           "exactTypes": {
             "type": "boolean",
             "default": false,
-            "description": "Opt in to exact field types: numeric/decimal columns publish as decimal and timestamp with time zone columns as timestamp-offset, so the gRPC feature API carries their exact values. The primary key and temporalColumn keep their default types. Other protocols and exports read decimals as doubles and offset timestamps as UTC date-times. A republish keeps the exact types of a layer that already has them."
+            "description": "Opt in to exact decimal and offset-timestamp field types. The primary key and temporal column stay on the default mapping."
           },
           "folderId": {
             "type": "string",
@@ -50527,7 +50527,7 @@
           "exactTypes": {
             "type": "boolean",
             "default": false,
-            "description": "Report numeric/decimal and timestamp with time zone columns with the exact field types a publish with exactTypes would use."
+            "description": "Preview the exact decimal and offset-timestamp field types."
           }
         }
       },

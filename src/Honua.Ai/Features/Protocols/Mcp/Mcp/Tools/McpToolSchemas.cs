@@ -113,7 +113,7 @@ internal static class McpToolSchemas
             },
             "exactTypes": {
               "type": "boolean",
-              "description": "Publish numeric as decimal, timestamptz as timestamp-offset."
+              "description": "Exact decimal and offset types."
             },
             "fields": {
               "type": "array",
