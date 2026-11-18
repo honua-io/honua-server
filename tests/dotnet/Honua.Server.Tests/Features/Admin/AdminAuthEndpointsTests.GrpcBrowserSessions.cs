@@ -15,15 +15,12 @@ public sealed partial class AdminAuthEndpointsTests
 {
     [Protocol(TestProtocols.Admin)]
     [Operation(Operations.Configuration)]
-    public sealed class GrpcBrowserSessions : IAsyncLifetime
+    public sealed class GrpcBrowserSessions(BaseSessionHost baseHost)
+        : IClassFixture<BaseSessionHost>, IDisposable
     {
-        private readonly LazyBaseHost _baseHost = new();
+        private readonly HttpClient _browser = baseHost.CreateBrowser();
 
-        public Task InitializeAsync() => Task.CompletedTask;
-
-        public Task DisposeAsync() => _baseHost.DisposeAsync();
-
-        private Task<HttpClient> GetClientAsync() => _baseHost.GetClientAsync();
+        public void Dispose() => _browser.Dispose();
 
         [IntegrationTest]
         [Endpoint("GET /api/v1/admin/auth/session")]
@@ -210,9 +207,8 @@ public sealed partial class AdminAuthEndpointsTests
 
         private async Task<HttpClient> SignInGrpcBrowserAsync()
         {
-            var client = await GetClientAsync();
-            await SignInGrpcBrowserAsync(client);
-            return client;
+            await SignInGrpcBrowserAsync(_browser);
+            return _browser;
         }
 
         private static async Task SignInGrpcBrowserAsync(HttpClient browser)
@@ -224,7 +220,7 @@ public sealed partial class AdminAuthEndpointsTests
             browser.DefaultRequestHeaders.Remove("X-Honua-CSRF");
         }
 
-        private async Task<HttpResponseMessage> PostEmptyGrpcWebAsync() => await PostEmptyGrpcWebAsync(await GetClientAsync());
+        private Task<HttpResponseMessage> PostEmptyGrpcWebAsync() => PostEmptyGrpcWebAsync(_browser);
 
         private static async Task<HttpResponseMessage> PostEmptyGrpcWebAsync(
             HttpClient browser, string path = "/geospatial.v1.SpecService/PlanSpec")

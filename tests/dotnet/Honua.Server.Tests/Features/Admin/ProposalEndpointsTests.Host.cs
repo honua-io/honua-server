@@ -1,15 +1,12 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Net;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.TestKit;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -22,7 +19,6 @@ public sealed partial class ProposalEndpointsTests
     // persist, and every case seeds and reads its own ids.
     public sealed class ProposalHost : IAsyncLifetime
     {
-        private const string ClientAddressHeader = "X-Proposal-Test-Client";
         private HttpClient? _client;
 
         public ProposalHost()
@@ -79,8 +75,7 @@ public sealed partial class ProposalEndpointsTests
         {
             var client = Fixture.CreateClient();
             client.BaseAddress = new Uri("https://localhost");
-            client.DefaultRequestHeaders.Add(ClientAddressHeader, Guid.NewGuid().ToString("N"));
-            return client;
+            return PerClientAddress.Assign(client);
         }
 
         private void ReplaceOperationServices(IServiceCollection services)
@@ -100,24 +95,7 @@ public sealed partial class ProposalEndpointsTests
                 new TestExecutorCatalog([OperationClass.AdminConfigChange]));
             services.AddSingleton<IOperationGateway, Honua.ControlPlane.OperationGateway>();
             // Registered after the sign-in helper's fixed per-host address, so this one wins.
-            services.AddSingleton<IStartupFilter>(new PerClientAddress());
-        }
-
-        private sealed class PerClientAddress : IStartupFilter
-        {
-            public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => application =>
-            {
-                application.Use((HttpContext context, RequestDelegate continueRequest) =>
-                {
-                    if (Guid.TryParse(context.Request.Headers[ClientAddressHeader], out var client))
-                    {
-                        context.Connection.RemoteIpAddress = new IPAddress(client.ToByteArray());
-                    }
-
-                    return continueRequest(context);
-                });
-                next(application);
-            };
+            PerClientAddress.Register(services);
         }
     }
 
