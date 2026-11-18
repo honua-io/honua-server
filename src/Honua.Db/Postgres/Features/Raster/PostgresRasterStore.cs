@@ -114,14 +114,27 @@ internal sealed class PostgresRasterStore : IRasterStore
         AddParameter(command, "@layerId", layerId);
         AddParameter(command, "@rasterId", rasterId);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        RasterInfo[] rasters;
+        try
+        {
+            rasters = await ReadRasterInfosAsync(command, cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            if (await IsRasterStorageNotInstalledAsync(connection, layerId, cancellationToken).ConfigureAwait(false))
+            {
+                return null;
+            }
+
+            throw;
+        }
+
+        if (rasters is not [var info, ..])
         {
             PostgresRasterLog.RasterNotFound(_logger, layerId, rasterId);
             return null;
         }
 
-        var info = ReadRasterInfo(reader);
         PostgresRasterLog.RasterInfoRetrieved(_logger, layerId, rasterId, info.Width, info.Height);
         return info;
     }
@@ -203,15 +216,23 @@ internal sealed class PostgresRasterStore : IRasterStore
             AddParameter(command, name, value);
         }
 
-        var rasters = new List<RasterInfo>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        RasterInfo[] rasters;
+        try
         {
-            rasters.Add(ReadRasterInfo(reader));
+            rasters = await ReadRasterInfosAsync(command, cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            if (await IsRasterStorageNotInstalledAsync(connection, layerId, cancellationToken).ConfigureAwait(false))
+            {
+                return [];
+            }
+
+            throw;
         }
 
-        PostgresRasterLog.RasterListRetrieved(_logger, layerId, rasters.Count);
-        return rasters.ToArray();
+        PostgresRasterLog.RasterListRetrieved(_logger, layerId, rasters.Length);
+        return rasters;
     }
 
     public async Task<RasterCatalogPage> QueryCatalogAsync(
@@ -537,7 +558,21 @@ internal sealed class PostgresRasterStore : IRasterStore
             LIMIT 1
             """;
         AddParameter(referenceCommand, "@layerId", layerId);
-        var referenceIdValue = await referenceCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        object? referenceIdValue;
+        try
+        {
+            referenceIdValue = await referenceCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            if (!await IsRasterStorageNotInstalledAsync(connection, layerId, cancellationToken).ConfigureAwait(false))
+            {
+                throw;
+            }
+
+            referenceIdValue = null;
+        }
+
         if (referenceIdValue is null || referenceIdValue == DBNull.Value)
         {
             // The layer holds no raster at all, so there is no band layout to copy and no empty
@@ -3338,18 +3373,33 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
         catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UndefinedTable)
         {
-            // Raster provisioning is optional. Feature-only deployments have no
-            // raster tables; catalog discovery must treat that as no raster data.
-            // Preserve failures when raster is installed but its schema is broken.
-            await using var extensionCommand = connection.CreateCommand();
-            extensionCommand.CommandText = "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_extension WHERE extname = 'postgis_raster')";
-            if (await extensionCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is false)
+            if (await IsRasterStorageNotInstalledAsync(connection, layerId, cancellationToken).ConfigureAwait(false))
             {
                 return null;
             }
 
             throw;
         }
+    }
+
+    // Raster provisioning is optional: the raster migration root runs only when the
+    // postgis_raster extension is installed, so feature-only deployments have no raster
+    // tables. Lookups treat that as a layer with no rasters (callers answer not-found).
+    // A missing table while postgis_raster IS installed is a broken schema and still fails.
+    private async Task<bool> IsRasterStorageNotInstalledAsync(
+        DbConnection connection,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        await using var extensionCommand = connection.CreateCommand();
+        extensionCommand.CommandText = "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_extension WHERE extname = 'postgis_raster')";
+        if (await extensionCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not false)
+        {
+            return false;
+        }
+
+        PostgresRasterLog.RasterListRetrieved(_logger, layerId, 0);
+        return true;
     }
 
     public async Task<RasterHistogram[]> GetHistogramsAsync(
@@ -4562,6 +4612,27 @@ internal sealed class PostgresRasterStore : IRasterStore
             """;
         AddParameter(command, "@layerId", layerId);
 
+        RasterInfo[] rasters;
+        try
+        {
+            rasters = await ReadRasterInfosAsync(command, cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            if (await IsRasterStorageNotInstalledAsync(connection, layerId, cancellationToken).ConfigureAwait(false))
+            {
+                return [];
+            }
+
+            throw;
+        }
+
+        PostgresRasterLog.RasterListRetrieved(_logger, layerId, rasters.Length);
+        return rasters;
+    }
+
+    private static async Task<RasterInfo[]> ReadRasterInfosAsync(DbCommand command, CancellationToken cancellationToken)
+    {
         var rasters = new List<RasterInfo>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -4569,7 +4640,6 @@ internal sealed class PostgresRasterStore : IRasterStore
             rasters.Add(ReadRasterInfo(reader));
         }
 
-        PostgresRasterLog.RasterListRetrieved(_logger, layerId, rasters.Count);
         return rasters.ToArray();
     }
 
