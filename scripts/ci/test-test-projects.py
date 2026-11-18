@@ -388,6 +388,10 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual([self.unit], still_broad['selectedProjects'])
         github = catalog.plan(self.root, self.entries, ['.github/workflows/ci.yml'])
         self.assertEqual([self.unit], github['selectedProjects'])
+        for path in ('Directory.Build.targets', 'Directory.Packages.props', 'global.json',
+                     'NuGet.config', 'Honua.sln', '.github/pull_request_template.md'):
+            selected = catalog.plan(self.root, self.entries, [path])['selectedProjects']
+            self.assertEqual([self.unit], selected, path)
 
 
 if __name__ == '__main__':

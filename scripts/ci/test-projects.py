@@ -247,7 +247,7 @@ def selects_every_isolated_unit(path):
     """Shared build files and executable CI inputs reach every unit.
 
     Markdown under scripts/ci/ is documentation. A template edit next to a
-    server test must not rebuild all 28 isolated unit projects.
+    server test must not rebuild every isolated unit project.
     """
     if Path(path).name in {'Directory.Build.props', 'Directory.Build.targets', 'Directory.Packages.props', 'global.json', 'NuGet.config', 'Honua.sln'}:
         return True
