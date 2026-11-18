@@ -791,7 +791,8 @@ jobs:
       # Selective (affected) dispatches compile without analyzers: PR Gate's
       # analyzer partitions proved each landed PR and Format Check below still
       # runs dotnet format. Scheduled and full runs keep the analyzer build.
-      # Protocol profiles keep analyzers because PR Gate never builds them.
+      # Protocol-profile builds keep analyzers for the projects they recompile
+      # (Honua.Server); referenced projects are reused from the producer build.
       PRODUCER_RUN_ANALYZERS: ${{ needs.changes.outputs.full_ci == 'true' && 'true' || 'false' }}
     steps:
       - name: Place the producer SDK in the runner temp directory

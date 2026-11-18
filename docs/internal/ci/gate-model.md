@@ -549,8 +549,10 @@ projects on its merge ref, and ci.yml's `Format Check` still runs
 compiler diagnostics and source generators still run; the PR Gate producer
 already publishes its managed outputs from this no-analyzer build mode under
 the same build-properties label. An analyzer finding that only appears when
-several landed PRs combine is left to the scheduled full run. The selected
-protocol profiles keep analyzers, because PR Gate never builds them.
+several landed PRs combine is left to the scheduled full run. Selected
+protocol-profile builds keep analyzers for the projects they recompile
+(Honua.Server, whose profile constants change); referenced projects are reused
+from the no-analyzer producer build, and PR Gate analyzed them on each PR.
 
 The producer skips hosted sudo cleanup on self-hosted runners and installs its
 SDK into `${{ runner.temp }}/honua-ci-producer-sdk`. Every producer restore,
