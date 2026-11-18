@@ -109,7 +109,7 @@ internal sealed partial class ExportCatalog(
             new ExportArtifactResponse("pmtiles", FileUrl(baseUrl, version.ExportId, version.Version, version.Artifacts.Pmtiles.Href), version.Artifacts.Pmtiles.Bytes)
         ]);
 
-    private static string Status(ExportVersion? current, IReadOnlyList<string> versionIds, TileOperationProgress? job)
+    private static string Status(ExportVersion? current, List<string> versionIds, TileOperationProgress? job)
     {
         if (job?.Status is OperationStatus.Queued or OperationStatus.Processing)
         {

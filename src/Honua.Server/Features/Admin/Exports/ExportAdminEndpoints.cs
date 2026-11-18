@@ -100,7 +100,7 @@ internal static class ExportAdminEndpoints
     private static IResult Failure(string message, int statusCode)
         => Json(ApiResponse<object>.Failure(message), statusCode);
 
-    private static IResult Json<T>(ApiResponse<T> response, int statusCode)
+    private static Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApiResponse<T>> Json<T>(ApiResponse<T> response, int statusCode)
         => TypedResults.Json(response, (System.Text.Json.Serialization.Metadata.JsonTypeInfo<ApiResponse<T>>)
             ExportAdminJsonContext.Default.GetTypeInfo(typeof(ApiResponse<T>))!, statusCode: statusCode);
 }
