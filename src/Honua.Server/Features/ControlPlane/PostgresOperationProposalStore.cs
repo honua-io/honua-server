@@ -24,6 +24,7 @@ internal sealed partial class PostgresOperationProposalStore(
     private readonly string _proposals = storage.Database.Table("operation_proposals");
     private readonly string _batches = storage.Database.Table("operation_proposal_batches");
     private readonly string _notificationSchedules = storage.Database.Table("ops_notification_schedules");
+    private readonly string _evidenceConsumptions = storage.Database.Table("proposal_evidence_consumptions");
     private readonly OperationLeases _operationLeases = new(storage.Leases, "operation-proposal:");
 
     public Task<bool> TryAcquireLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
@@ -51,19 +52,11 @@ internal sealed partial class PostgresOperationProposalStore(
             async (connection, _, token) =>
             {
                 await using var transaction = await connection.BeginTransactionAsync(token).ConfigureAwait(false);
-                await using var command = new NpgsqlCommand(
-                    $"""
-                    INSERT INTO {_proposals} (proposal_id, version, kind, active, updated_at, expires_at, record)
-                    VALUES (@proposal_id, @version, @kind, @active, @updated_at, now() + @retention, @record)
-                    ON CONFLICT (proposal_id) DO NOTHING
-                    """,
-                    connection, transaction);
-                AddRecordParameters(command, created, ttl);
-                command.Parameters.Add(new NpgsqlParameter("updated_at", NpgsqlDbType.TimestampTz)
+                var changed = await InsertProposalRowAsync(transaction, new ProposalInsert(created, ttl), token).ConfigureAwait(false);
+                if (changed)
                 {
-                    Value = created.UpdatedAt.ToUniversalTime()
-                });
-                var changed = await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
+                    await ConsumeEvidenceAsync(transaction, created, token).ConfigureAwait(false);
+                }
                 if (changed && storage.Realtime is { } realtime)
                 {
                     await realtime.AppendProposalAsync(created, new ControlPlaneWriteContext(transaction, token)).ConfigureAwait(false);
@@ -241,6 +234,26 @@ internal sealed partial class PostgresOperationProposalStore(
             },
             StatementRepeat.SafeToRepeat,
             cancellationToken);
+
+    private async Task<bool> InsertProposalRowAsync(
+        NpgsqlTransaction transaction,
+        ProposalInsert insert,
+        CancellationToken token)
+    {
+        await using var command = new NpgsqlCommand(
+            $"""
+            INSERT INTO {_proposals} (proposal_id, version, kind, active, updated_at, expires_at, record)
+            VALUES (@proposal_id, @version, @kind, @active, @updated_at, now() + @retention, @record)
+            ON CONFLICT (proposal_id) DO NOTHING
+            """,
+            transaction.Connection, transaction);
+        AddRecordParameters(command, insert.Proposal, insert.Ttl);
+        command.Parameters.Add(new NpgsqlParameter("updated_at", NpgsqlDbType.TimestampTz)
+        {
+            Value = insert.Proposal.UpdatedAt.ToUniversalTime()
+        });
+        return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) == 1;
+    }
 
     private void AddRecordParameters(NpgsqlCommand command, OperationProposal proposal, TimeSpan? ttl)
     {

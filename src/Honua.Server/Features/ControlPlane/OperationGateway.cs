@@ -835,7 +835,13 @@ internal sealed partial class OperationGateway : IOperationGateway, IOpsRemediat
 
         for (var renewal = 0; ; renewal++)
         {
-            if (await _proposalStore.TryCreateAsync(proposal, cancellationToken: cancellationToken).ConfigureAwait(false))
+            var creation = await TryCreateProposalAsync(proposal, cancellationToken).ConfigureAwait(false);
+            if (creation == ProposalCreation.EvidenceAlreadyUsed)
+            {
+                return EvidenceAlreadyUsedResult(decision);
+            }
+
+            if (creation == ProposalCreation.Created)
             {
                 break;
             }

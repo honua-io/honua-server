@@ -78,7 +78,7 @@ public sealed class McpPlatformOpsReaderIntegrationTests
                 ReleaseId = "2026.1-rc.1",
                 EndpointIdentity = "candidate-proxy",
                 ActionId = "governed-mutation",
-                RunNonce = "nonce-1"
+                RunNonce = $"nonce-{Guid.NewGuid():N}"
             },
             Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "propose the release mutation" }],
             Tools =
