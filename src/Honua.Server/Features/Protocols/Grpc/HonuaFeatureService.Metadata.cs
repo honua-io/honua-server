@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 using Grpc.Core;
@@ -194,15 +195,21 @@ internal sealed partial class HonuaFeatureService
 
     private static async Task<MetadataV2Field[]> VisibleMetadataFieldsAsync(GrpcLayerContext layer, ServerCallContext context)
     {
-        var maskSource = context.GetHttpContext().RequestServices.GetService<IFieldMaskSource>();
-        var fields = layer.Resource.SchemaFields.Where(field => !field.Hidden);
-        if (maskSource is null)
+        var masked = await MaskedFieldNamesAsync(
+            layer.Resource, context.GetHttpContext().RequestServices, context.CancellationToken).ConfigureAwait(false);
+        return layer.Resource.SchemaFields.Where(field => !field.Hidden && !masked.Contains(field.Name)).ToArray();
+    }
+
+    // The caller's masked attributes; metadata and query responses withhold them alike.
+    private static async Task<IReadOnlySet<string>> MaskedFieldNamesAsync(
+        MetadataV2Object resource, IServiceProvider requestServices, CancellationToken cancellationToken)
+    {
+        if (requestServices.GetService<IFieldMaskSource>() is not { } maskSource)
         {
-            return fields.ToArray();
+            return ImmutableHashSet<string>.Empty;
         }
-        var masked = (await maskSource.ResolveAsync(layer.Resource, context.CancellationToken).ConfigureAwait(false))
+        return (await maskSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return fields.Where(field => !masked.Contains(field.Name)).ToArray();
     }
 
     private async Task<Proto.FeatureCapabilities> MetadataCapabilitiesAsync(GrpcLayerContext layer, ServerCallContext context)
