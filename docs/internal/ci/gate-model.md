@@ -2642,3 +2642,42 @@ the 514-second TRX interval in Server Features Capabilities (198 of them outside
 `CapabilityManifestEndpointTests`), 239 of 530 seconds in Sharing OAuth and
 Portal, and 230 of 678 seconds in Admin Governance and Sharing 2. The parallel
 saving is not yet measured.
+
+### Shared-table audit for the database collection exits
+
+Isolated `WebAppFixture` hosts get their own schema for feature and metadata data,
+but every host uses the same test database, and system tables (progress, users,
+SCIM groups, security tokens, token replay, audit log, alert and ops-health
+history) stay in the shared `honua` schema. A fixture configured only through
+`ReplaceRequestService` also counts as unconfigured and uses the process-wide
+shared server. A class leaves the serial `Database` collection only when its
+assertions cannot see rows that another parallel class writes to those tables.
+
+Fourteen more classes pass that audit and leave the collection:
+`ObservabilityEndpointsTests`, `ObservabilityEventEndpointsTests`,
+`OpsObservabilityEndpointsTests` and `ObservabilityAlertEndpointsTests` (Server
+Features Admin Operations Endpoints); `ScimProvisioningEndpointsTests`,
+`IdentityEntitlementGateTests`, `SamlBridgeEndpointsTests`,
+`AdminLogoutDependencyLossTests` and `ScimAuthenticationSecurityTests` (Server
+Features Identity); `ServiceSettingsAttachmentAuthoringTests`,
+`OpsIncidentEndpointsTests`, `AgentSettingsApprovalTests`,
+`ProcessLocalAdminStoreGuardEndpointTests` and `ExpiredGeoprocessingResultsTests`
+(Server Features Admin Integrations and Automation 4). Their shared-table writes
+use names, ids or keys unique to the class, and their assertions are scoped to
+them. The audit also rechecked the classes above and `AdminAuthEndpointsTests`
+against the shared tables and found no collision.
+
+These stay serial: `OperationsProgressEndpointsTests` (shared server, exact
+Upload and Import counts over the shared progress table),
+`CacheOperationsEndpointsTests` (shared server; invalidates every cache),
+`AlertPreviewFloorTests` (creates and drops a trigger on the shared
+`honua.audit_log`), `CommunityOpsHealthEndpointsTests`, `OidcEntitlementGateTests`
+(uses the collection fixture), and every production job-substrate host.
+
+Cases, fixtures and assertions are unchanged, and every case stays in the same
+shards on selected PR runs and twice-daily full trunk runs. No workflow, shard
+definition, required check, aggregate dependency or runner count changes. Before,
+on hosted full trunk run 44183857476, the moved classes summed 137 seconds of the
+882-second Admin Operations Endpoints TRX interval, 169 of 380 seconds in
+Identity, and 97 of 515 seconds in Admin Integrations and Automation 4, each run
+one class at a time. The parallel saving is not yet measured.
