@@ -235,6 +235,48 @@ public sealed class FeatureServerStatisticsFieldsTests(FeatureServerStatisticsFi
         return JsonDocument.Parse(body);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    public Task LayerMetadata_ListsNeitherHiddenNorMaskedFields()
+        => AssertFieldsOmitHiddenAndMaskedAsync("/rest/services/test/FeatureServer/0?f=json");
+
+    // The service field list merges every layer, and another layer publishes "description" visibly.
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    public async Task ServiceMetadata_DoesNotListMaskedFields()
+    {
+        var names = await GetFieldNamesAsync("/rest/services/test/FeatureServer?f=json");
+
+        names.Should().Contain("name");
+        names.Should().NotContain("notes", "a field the caller's mask withholds is not listed");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryTopFeatures)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures")]
+    public Task TopFeatures_ListsNeitherHiddenNorMaskedFields() => AssertFieldsOmitHiddenAndMaskedAsync(
+        "/rest/services/test/FeatureServer/0/queryTopFeatures?f=json&topFilter="
+        + Uri.EscapeDataString("{\"groupByFields\":\"category\",\"topCount\":1,\"orderByFields\":\"objectid desc\"}"));
+
+    private async Task AssertFieldsOmitHiddenAndMaskedAsync(string path)
+    {
+        var names = await GetFieldNamesAsync(path);
+
+        names.Should().Contain("name");
+        names.Should().NotContain("description", "hidden fields are not listed");
+        names.Should().NotContain("notes", "a field the caller's mask withholds is not listed");
+    }
+
+    private async Task<string?[]> GetFieldNamesAsync(string path)
+    {
+        using var response = await _fixture.Client.GetAsync(path);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return [.. document.RootElement.GetProperty("fields").EnumerateArray().Select(field => field.GetProperty("name").GetString())];
+    }
+
     private static string Path(bool serviceQuery)
         => "/rest/services/test/FeatureServer/" + (serviceQuery ? "query" : "0/query");
 
