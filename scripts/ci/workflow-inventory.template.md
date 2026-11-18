@@ -1790,3 +1790,30 @@ client. Application boots per run drop from 29 to 9; every assertion is kept.
 The class stays in its admin shard on selected PR runs and full trunk runs. No
 workflow, shard filter, required check, aggregate dependency or runner count
 changes. Before: 80.4 seconds summed case time in full trunk run 44013566836.
+
+### Isolated-host classes leave the serial database collection
+
+The `Database` xUnit collection sets `DisableParallelization = true`: its classes run
+one at a time and nothing else runs beside them. Ten classes in three shards were
+in it although none injects the collection fixture and every application they
+start is configured, so each owns its host and isolated schema:
+`CapabilityManifestEndpointTests`, `ExperimentalCapabilityGatingIntegrationTests`,
+`DeploymentCapabilityProfileIntegrationTests` and
+`DeploymentCapabilityProfileManifestTests` (Server Features Capabilities);
+`SharingOAuth2Tests`, `PortalFacadeDiscoveryContractTests`,
+`SharingOAuth2IntrospectionTests` and `SharingOAuth2CallbackE2ETests` (Server
+Features Sharing OAuth and Portal); `ProposalEndpointsTests` and
+`InvestigationEndpointsTests` (Server Features Admin Governance and Sharing 2, and
+the authorization partition that also runs proposal cases). Before the change they
+were audited for shared state: no static mutable fields, environment, culture or
+file-system writes, fixed ports, shared-server fixtures or sub-second timing
+windows. They now run in parallel with the other classes in their shard. Cases,
+fixtures and assertions are unchanged; only the collection attribute is removed.
+
+Shard filters select by class name, so every case stays in its shard on selected
+PR runs and twice-daily full trunk runs. No workflow, shard definition, required
+check, aggregate dependency or runner count changes. Before, on hosted full trunk
+run 44183857476, the serial collection classes summed 492 of the 514-second TRX
+interval in Server Features Capabilities, 239 of 530 seconds in Sharing OAuth and
+Portal, and 230 of 678 seconds in Admin Governance and Sharing 2. The parallel
+saving is not yet measured.

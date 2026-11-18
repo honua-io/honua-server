@@ -47,7 +47,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Capabilities;
 
-[Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.Metadata)]
 public sealed partial class CapabilityManifestEndpointTests
