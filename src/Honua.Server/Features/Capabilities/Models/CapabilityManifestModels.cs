@@ -47,7 +47,7 @@ internal sealed record CapabilityManifestDeploymentProfile
 {
     public required bool Configured { get; init; }
 
-    public required string? SchemaVersion { get; init; }
+    public string? SchemaVersion { get; init; }
 
     public required string[] EnabledCapabilities { get; init; }
 }
