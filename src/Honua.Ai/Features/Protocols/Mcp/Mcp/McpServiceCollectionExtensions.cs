@@ -426,6 +426,11 @@ internal static class McpServiceCollectionExtensions
 
         services.TryAddSingleton<McpDataAccessSurface>();
 
+        // Access audit records are written by one background writer in batches, so MCP
+        // calls never queue on the audit chain lock.
+        services.TryAddSingleton<McpAccessAuditQueue>();
+        services.AddHostedService(static sp => sp.GetRequiredService<McpAccessAuditQueue>());
+
         // MCP transport + session-lifecycle options (A3 hardening):
         // server-initiated GET-stream toggle, idle TTL, session cap, and eviction
         // policy. Bound from the `Mcp` section; defaults live on McpOptions.

@@ -13,6 +13,11 @@ namespace Honua.Server.Features.Admin;
 
 internal static partial class OAuthClientEndpoints
 {
+    // Tokens issued to a client carry no agent marker, so a client is registered by a person, never
+    // on an agent's call or the replay of a proposal an agent made.
+    private const string AgentRegistrationRefusal =
+        "Validation failed: an OAuth client is registered by a person, not by an agent or from a proposal an agent made";
+
     internal sealed class OAuthClientEndpointsLog;
 
     public static void MapOAuthClientEndpoints(this IEndpointRouteBuilder endpoints)
@@ -84,6 +89,11 @@ internal static partial class OAuthClientEndpoints
             [FromServices] ILogger<OAuthClientEndpointsLog> logger,
             HttpContext context)
     {
+        if (AdminApiKeyKind.CallerOf(context) == AdminApiKeyCaller.Agent)
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(AgentRegistrationRefusal));
+        }
+
         if (!TryValidateCreateRequest(request, out var clientType, out var validationMessage))
         {
             return TypedResults.BadRequest(ApiResponse<object>.Failure(validationMessage));

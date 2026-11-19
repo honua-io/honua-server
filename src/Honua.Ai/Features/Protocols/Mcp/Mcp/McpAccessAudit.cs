@@ -13,7 +13,7 @@ namespace Honua.Ai.Protocols.Mcp;
 // One durable record per tool call and resource read by an authenticated principal, so an
 // operator can review what an agent session read. Records carry identifiers only, never query
 // text, arguments outside the identifier list, or results. A failed write is logged and never
-// fails the call it describes.
+// fails the call it describes; the host writes records through McpAccessAuditQueue.
 internal static class McpAccessAudit
 {
     public const string ResourceType = "mcp";
@@ -126,6 +126,8 @@ internal static class McpAccessAudit
         }
     }
 
+    // The record is built from the request here; with the access audit queue registered the
+    // write happens in the background, so the call never waits on the audit chain lock.
     public static async Task RecordAsync(HttpContext context, McpAccess access, ILogger logger)
     {
         if (context.User.Identity?.IsAuthenticated != true
@@ -136,7 +138,14 @@ internal static class McpAccessAudit
 
         try
         {
-            await auditLog.RecordAsync(ToAuditEvent(context, access), CancellationToken.None).ConfigureAwait(false);
+            var auditEvent = ToAuditEvent(context, access);
+            if (context.RequestServices.GetService<McpAccessAuditQueue>() is { } queue)
+            {
+                queue.Enqueue(auditEvent);
+                return;
+            }
+
+            await auditLog.RecordAsync(auditEvent, CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {

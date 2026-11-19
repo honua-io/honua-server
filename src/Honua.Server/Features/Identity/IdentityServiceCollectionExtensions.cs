@@ -40,6 +40,7 @@ public static class IdentityServiceCollectionExtensions
         services.TryAddSingleton<SamlAssertionValidator>();
         services.TryAddSingleton<SamlLogoutRequestValidator>();
         services.TryAddSingleton<SamlRequestCorrelation>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<Honua.Infrastructure.Security.IExternalIdentityProviderSource, SamlIdentityProviderSource>());
 
         return services;
     }

@@ -252,8 +252,11 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             if (hasCompatibleStreamingStore && string.Equals(outputFormat, MediaTypes.Csv, StringComparison.OrdinalIgnoreCase))
             {
+                var csvSchema = await CallerVisibleSchema.HideMaskedFieldsAsync(context, resource, cancellationToken).ConfigureAwait(false);
+                var csvFieldNames = ResolveCsvFieldNames(csvSchema, projectedProperties);
                 return CreateStreamingCsvResult(streamingFeatureStore, new CsvStreamQuery(resource, layerId, query)
                 {
+                    FieldNames = csvFieldNames,
                     AxisOrder = outputAxisOrder,
                     ProjectedProperties = projectedProperties,
                     CrsUri = outputCrsUri
@@ -560,7 +563,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             if (string.Equals(outputFormat, MediaTypes.Csv, StringComparison.OrdinalIgnoreCase))
             {
-                var fieldNames = ResolveCsvFieldNames(resource, projectedProperties);
+                var csvSchema = await CallerVisibleSchema.HideMaskedFieldsAsync(context, resource, cancellationToken).ConfigureAwait(false);
+                var fieldNames = ResolveCsvFieldNames(csvSchema, projectedProperties);
                 var csv = OgcResponseFormatter.BuildCsvResponse(features, fieldNames, resource.FindPrimaryIdField()?.Name);
                 return Results.Text(csv, MediaTypes.Csv);
             }
@@ -890,7 +894,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             if (string.Equals(outputFormat, MediaTypes.Csv, StringComparison.OrdinalIgnoreCase))
             {
-                var fieldNames = ResolveCsvFieldNames(resource, null);
+                var csvSchema = await CallerVisibleSchema.HideMaskedFieldsAsync(context, resource, cancellationToken).ConfigureAwait(false);
+                var fieldNames = ResolveCsvFieldNames(csvSchema, null);
                 var csv = OgcResponseFormatter.BuildCsvResponse([ogcFeature], fieldNames, resource.FindPrimaryIdField()?.Name);
                 return Results.Text(csv, MediaTypes.Csv);
             }

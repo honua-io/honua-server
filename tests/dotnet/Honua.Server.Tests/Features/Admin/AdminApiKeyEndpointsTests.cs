@@ -323,6 +323,10 @@ public sealed class AdminApiKeyEndpointsTests(AdminApiKeyEndpointsTests.ApiKeyHo
 
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, rotate.StatusCode);
+
+        // Without its loopback attestation the credential cannot show whose proposal it runs.
+        var created = await create.Content.ReadFromJsonAsync<ApiResponse<AdminApiKeySecretResponse>>(_jsonOptions);
+        Assert.Equal("agent", created!.Data!.ApiKey.Kind);
     }
 
     [IntegrationTest]
