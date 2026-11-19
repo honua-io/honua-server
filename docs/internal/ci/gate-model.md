@@ -3134,3 +3134,26 @@ time.
 Shard filters are unchanged, so every case runs in the same shards on selected PR
 runs and twice-daily full trunk runs. No workflow, shard definition, required
 check name or aggregate `needs` changed.
+
+### Shared hosts in sharing OAuth2, introspection and portal discovery tests
+
+`SharingOAuth2Tests` and `PortalFacadeDiscoveryContractTests` built their server
+through the class's own `IAsyncLifetime`, so each of their 27 and 23 cases started
+one. Each class now shares one class-fixture host. Every case seeds its own
+authorization code or issues its own token, `PortalOAuthStore` and the token issuer
+cap nothing per principal, and neither the OAuth2 token endpoint nor
+`generateToken` is rate-limited, so no case sees another's codes or tokens.
+`SharingOAuth2IntrospectionTests` started a server for each of its 6 cases. It now
+starts one host per token format (opaque and JWT) on first use; the case that
+checks disabled introspection keeps its own host. Cases with another configuration
+still build their own hosts, and every assertion is unchanged.
+
+Measured on the build host (Release, the same 56 cases, 56/56 passing before and
+after): case time went from 128.8 to 38.3 s (`SharingOAuth2Tests`), 77.4 to 3.0 s
+(`PortalFacadeDiscoveryContractTests`) and 71.5 to 34.0 s
+(`SharingOAuth2IntrospectionTests`), 277.7 to 75.3 s in all; the test run went from
+6 m 16 s to 51 s. On hosted full run 44401872530 the three took 237.0 s of case time.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
