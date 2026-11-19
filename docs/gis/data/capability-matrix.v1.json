@@ -30,7 +30,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 433,
-      "provingTestCount": 1976,
+      "provingTestCount": 1979,
       "maturity": {
         "implemented": 430,
         "experimental": 3
@@ -651,7 +651,7 @@
       "edition": "Community",
       "status": "experimental",
       "entryCount": 9,
-      "provingTestCount": 65,
+      "provingTestCount": 66,
       "maturity": {
         "experimental": 9
       },
@@ -1075,7 +1075,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 25,
-      "provingTestCount": 120,
+      "provingTestCount": 121,
       "maturity": {
         "implemented": 25
       },
@@ -1101,7 +1101,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 34,
+      "provingTestCount": 36,
       "maturity": {
         "implemented": 2
       },
@@ -1118,10 +1118,10 @@
       "category": "Identity",
       "edition": "Enterprise",
       "status": null,
-      "entryCount": 3,
-      "provingTestCount": 18,
+      "entryCount": 4,
+      "provingTestCount": 30,
       "maturity": {
-        "implemented": 3
+        "implemented": 4
       },
       "noSurface": null,
       "cite": [],
@@ -1350,10 +1350,10 @@
       "category": "Process",
       "edition": "Community",
       "status": "preview",
-      "entryCount": 18,
-      "provingTestCount": 255,
+      "entryCount": 19,
+      "provingTestCount": 260,
       "maturity": {
-        "preview": 18
+        "preview": 19
       },
       "noSurface": null,
       "cite": [],
@@ -1673,7 +1673,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 49,
-      "provingTestCount": 616,
+      "provingTestCount": 617,
       "maturity": {
         "implemented": 49
       },
@@ -2073,7 +2073,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 19,
-      "provingTestCount": 370,
+      "provingTestCount": 373,
       "maturity": {
         "implemented": 19
       },
@@ -2267,7 +2267,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 11,
-      "provingTestCount": 111,
+      "provingTestCount": 112,
       "maturity": {
         "implemented": 11
       },
@@ -2323,7 +2323,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 162,
+      "provingTestCount": 165,
       "maturity": {
         "implemented": 2
       },
