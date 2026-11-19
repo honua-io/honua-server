@@ -2676,7 +2676,10 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
             $"/rest/services/{TestLayerId}/ImageServer/computeStatisticsHistograms?f=json");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // A catalog layer still requires the AOI geometry over REST.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        body.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
     }
 
     [IntegrationTest]
@@ -2871,7 +2874,10 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
             $"/rest/services/{TestLayerId}/ImageServer/computeHistograms?f=json");
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // A catalog layer still requires the AOI geometry over REST.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        body.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
     }
 
     [IntegrationTest]

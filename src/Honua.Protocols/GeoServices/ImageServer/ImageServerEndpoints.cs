@@ -2223,7 +2223,7 @@ internal static class ImageServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, error ?? "Invalid request.");
         }
 
-        return await handler.ComputeAsync(context, id, values, cancellationToken);
+        return await handler.ComputeAsync(context, new StatisticsRequest { LayerId = id, Values = values, Aoi = StatisticsAoi.Required }, cancellationToken);
     }
 
     private static async Task<IResult> ComputeStatisticsHistogramsGetByService(
@@ -2275,7 +2275,7 @@ internal static class ImageServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, error ?? "Invalid request.");
         }
 
-        return await handler.ComputeAsync(context, id, merged, cancellationToken);
+        return await handler.ComputeAsync(context, new StatisticsRequest { LayerId = id, Values = merged, Aoi = StatisticsAoi.Required }, cancellationToken);
     }
 
     private static async Task<IResult> ComputeStatisticsHistogramsPostByService(
@@ -2311,7 +2311,7 @@ internal static class ImageServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, error ?? "Invalid request.");
         }
 
-        return await handler.ComputeHistogramsAsync(context, id, values, cancellationToken);
+        return await handler.ComputeHistogramsAsync(context, new StatisticsRequest { LayerId = id, Values = values, Aoi = StatisticsAoi.Required }, cancellationToken);
     }
 
     private static async Task<IResult> ComputeHistogramsGetByService(
@@ -2353,7 +2353,7 @@ internal static class ImageServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, error ?? "Invalid request.");
         }
 
-        return await handler.ComputeHistogramsAsync(context, id, merged, cancellationToken);
+        return await handler.ComputeHistogramsAsync(context, new StatisticsRequest { LayerId = id, Values = merged, Aoi = StatisticsAoi.Required }, cancellationToken);
     }
 
     private static async Task<IResult> ComputeHistogramsPostByService(
@@ -3915,6 +3915,8 @@ internal static class ImageServerEndpoints
     private static bool? TryGetBool(IReadOnlyDictionary<string, StringValues> values, string key)
         => bool.TryParse(ImageServerRequestValues.GetString(values, key), out var value) ? value : null;
 
+    // geometry is optional here: a COG-only layer answers without one, and the handler refuses a
+    // catalog layer whose request has none. A supplied geometry must be complete and valid.
     private static bool TryValidateComputeStatisticsHistogramsRequest(
         IReadOnlyDictionary<string, StringValues> values,
         out string? error)
@@ -3923,8 +3925,7 @@ internal static class ImageServerEndpoints
 
         if (string.IsNullOrWhiteSpace(ImageServerRequestValues.GetString(values, "geometry")))
         {
-            error = "geometry is required.";
-            return false;
+            return true;
         }
 
         var geometryType = ImageServerRequestValues.GetString(values, "geometryType");

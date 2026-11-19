@@ -162,6 +162,58 @@ public sealed class ImageServerCogStatisticsTests
     }
 
     [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task ComputeStatisticsHistograms_RestWithoutGeometryOnCogOnlyLayer_AnswersFromTheCog()
+    {
+        var context = CreateContext();
+
+        var result = await StatisticsHandler().ComputeAsync(context, new StatisticsRequest { LayerId = 1, Values = new Dictionary<string, StringValues>(), Aoi = StatisticsAoi.Required }, CancellationToken.None);
+
+        var response = result.Should().BeOfType<JsonHttpResult<ComputeStatisticsHistogramsResponse>>().Which.Value!;
+        response.Statistics.Should().HaveCount(3);
+        response.Statistics[0].Min.Should().Be(10);
+    }
+
+    [UnitTheory]
+    [Operation(Operations.Query)]
+    [InlineData("mosaicRule", "{\"mosaicMethod\":\"esriMosaicNone\"}")]
+    public async Task ComputeHistograms_RestWithUnappliedParameterButNoGeometryOnCogOnlyLayer_AnswersNotImplemented(string name, string value)
+    {
+        var context = CreateContext();
+        var values = new Dictionary<string, StringValues> { [name] = value };
+
+        var result = await StatisticsHandler().ComputeHistogramsAsync(context, new StatisticsRequest { LayerId = 1, Values = values, Aoi = StatisticsAoi.Required }, CancellationToken.None);
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task ComputeStatisticsHistograms_RestWithoutGeometryOnLayerWithoutCogs_AnswersGeometryRequired()
+    {
+        _cogStore.ListByLayerAsync(1, Arg.Any<CancellationToken>()).Returns(Array.Empty<CogRegistration>());
+        var context = CreateContext();
+
+        var result = await StatisticsHandler().ComputeAsync(context, new StatisticsRequest { LayerId = 1, Values = new Dictionary<string, StringValues>(), Aoi = StatisticsAoi.Required }, CancellationToken.None);
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
+        await _rasterStore.DidNotReceiveWithAnyArgs().QueryRastersAsync(default, default, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task ComputeStatisticsHistograms_RestWithoutGeometryOnCatalogLayer_AnswersGeometryRequiredWithoutCogLookup()
+    {
+        _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>()).Returns((RasterInfo?)ImageServerCogRasters.Describe(Registration()));
+        var context = CreateContext();
+
+        var result = await StatisticsHandler().ComputeAsync(context, new StatisticsRequest { LayerId = 1, Values = new Dictionary<string, StringValues>(), Aoi = StatisticsAoi.Required }, CancellationToken.None);
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
+        await _cogStore.DidNotReceiveWithAnyArgs().ListByLayerAsync(default, default);
+    }
+
+    [UnitTest]
     [Operation(Operations.Metadata)]
     public async Task Legend_CogOnlyLayer_StretchesOverTheCogBandOneRange()
     {
