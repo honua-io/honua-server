@@ -11,21 +11,17 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-// A control-plane context persists records and reads them back. One that omits nulls on write
-// cannot read back a required property whose value was null: the property is missing, so
-// deserialization refuses the whole record. Such a property must be optional, or written
-// explicitly with JsonIgnore(Condition = Never).
+// A context that omits nulls on write cannot read back a required property whose value was null:
+// the property is missing, so deserialization refuses the whole record or response. Such a
+// property must be optional, or written explicitly with JsonIgnore(Condition = Never).
 public sealed class NullSuppressingJsonContextRequiredPropertyTests
 {
-    private const string ControlPlaneNamespace = "Honua.ControlPlane";
-
     [UnitTest]
-    public void NullSuppressingControlPlaneContexts_DeclareNoRequiredNullableProperty()
+    public void NullSuppressingContexts_DeclareNoRequiredNullableProperty()
     {
         var violations = HonuaAssemblies()
             .SelectMany(LoadableTypes)
-            .Where(static type => !type.IsAbstract && type.IsSubclassOf(typeof(JsonSerializerContext))
-                && type.Namespace?.StartsWith(ControlPlaneNamespace, StringComparison.Ordinal) == true)
+            .Where(static type => !type.IsAbstract && type.IsSubclassOf(typeof(JsonSerializerContext)))
             .Select(static type => DefaultInstance(type))
             .Where(static context => context?.Options.DefaultIgnoreCondition == JsonIgnoreCondition.WhenWritingNull)
             .SelectMany(static context => RequiredNullableProperties(context!))
