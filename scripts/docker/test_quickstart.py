@@ -3,6 +3,7 @@ import base64
 import hmac
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -96,6 +97,18 @@ class QuickstartTests(unittest.TestCase):
             key = self.render(env_file)["honua"]["environment"]["AuditLog__ChainVerification__Key"]
             self.assertGreaterEqual(len(base64.b64decode(key, validate=True)), 32)
 
+    def test_admin_key_is_generated_and_the_published_sample_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {}, clear=True):
+            env_file = Path(directory) / ".env"
+            initialize(env_file)
+            generated = re.search(r"^HONUA_ADMIN_PASSWORD=([0-9a-f]{64})$", env_file.read_text(), re.MULTILINE)
+            self.assertIsNotNone(generated, "The bootstrap must generate a per-install admin key")
+            sample = Path(directory) / "sample.env"
+            sample.write_text("HONUA_ADMIN_PASSWORD=quickstart-admin-password\n")
+            with self.assertRaises(ValueError):
+                initialize(sample)
+            self.assertEqual(sample.read_text(), "HONUA_ADMIN_PASSWORD=quickstart-admin-password\n")
+
     def test_invalid_audit_keys_are_rejected_without_changing_saved_secrets(self):
         for value in ("", "not-base64!", base64.b64encode(b"short").decode()):
             with self.subTest(value=value), tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {}, clear=True):
@@ -150,9 +163,10 @@ class QuickstartTests(unittest.TestCase):
 
     def render(self, env_file, **overrides):
         env = {key: value for key, value in os.environ.items()
-               if key not in ("POSTGRES_PASSWORD", "MINIO_ROOT_PASSWORD", "HONUA_BIND_ADDRESS",
+               if key not in ("POSTGRES_PASSWORD", "MINIO_ROOT_PASSWORD", "HONUA_ADMIN_PASSWORD", "HONUA_BIND_ADDRESS",
                               "HONUA_CONSOLE_IMAGE", "HONUA_PUBLIC_BASE_URL", "AuditLog__ChainVerification__Key",
                               "LayerPublishing__MaterializationTimeoutSeconds")}
+        env["HONUA_ADMIN_PASSWORD"] = os.urandom(32).hex()
         env.update(overrides)
         result = subprocess.run(
             ["docker", "compose", "--env-file", str(env_file), "-f",
