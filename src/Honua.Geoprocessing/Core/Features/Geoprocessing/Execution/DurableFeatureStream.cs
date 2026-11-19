@@ -108,7 +108,8 @@ internal sealed record DurableFeatureStream
             var workspace = workspaces is null || descriptor.WorkspaceId is null ? null
                 : await workspaces.GetAsync(descriptor.WorkspaceId, cancellationToken).ConfigureAwait(false);
             var owner = authorizedJob.Audit.SubmitterSecurityContext;
-            var workspaceOwner = owner?.WorkspaceOwnerId ?? authorizedJob.Audit.RequestedBy;
+            // Without a submitter snapshot the stored requester alone does not establish the owner.
+            var workspaceOwner = owner is null ? null : owner.WorkspaceOwnerId ?? authorizedJob.Audit.RequestedBy;
             if (artifact is null || workspace is null || artifact.WorkspaceId != workspace.WorkspaceId
                 || artifact.State != ArtifactLifecycleState.Available || artifact.Uri != reference
                 || !artifact.Metadata.TryGetValue(WorkspaceStreamProvenance.Published, out var marker) || marker != "v1"

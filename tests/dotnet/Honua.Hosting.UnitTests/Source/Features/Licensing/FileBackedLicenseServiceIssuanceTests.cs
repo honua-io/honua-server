@@ -61,10 +61,59 @@ public sealed class FileBackedLicenseServiceIssuanceTests
         newer.Success.Should().BeTrue(newer.Message);
     }
 
+    [UnitTest]
+    public async Task UploadLicenseAsync_IssuedInTheFuture_NamesTheReason()
+    {
+        var inForce = Issued(DateTimeOffset.UtcNow.AddDays(-1));
+        using var directory = new TemporaryLicenseDirectory();
+        await File.WriteAllBytesAsync(directory.LicensePath, inForce.LicenseData);
+        using var service = CreateService(directory.LicensePath, inForce.PublicKeySetting);
+        await service.StartAsync(CancellationToken.None);
+
+        var future = await UploadAsync(service, Issued(DateTimeOffset.UtcNow.AddDays(2)));
+
+        future.Success.Should().BeFalse();
+        future.Message.Should().Contain("issued-in-future");
+    }
+
+    [UnitTest]
+    public async Task UploadLicenseAsync_OlderThanAnExpiredLicenseInForce_IsRefused()
+    {
+        var expired = Issued(DateTimeOffset.UtcNow.AddDays(-10), DateTimeOffset.UtcNow.AddDays(-1));
+        using var directory = new TemporaryLicenseDirectory();
+        await File.WriteAllBytesAsync(directory.LicensePath, expired.LicenseData);
+        using var service = CreateService(directory.LicensePath, expired.PublicKeySetting);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(CancellationToken.None));
+        service.GetSnapshot().ValidationState.Should().Be(LicenseValidationState.Expired);
+
+        var older = await UploadAsync(service, Issued(DateTimeOffset.UtcNow.AddDays(-30)));
+
+        older.Success.Should().BeFalse();
+        older.Message.Should().Contain("issued before the license in force");
+    }
+
+    [UnitTest]
+    public async Task UploadLicenseAsync_IssuedAfterItsOwnExpiry_IsRefusedAsMalformed()
+    {
+        var inForce = Issued(DateTimeOffset.UtcNow.AddDays(-1));
+        using var directory = new TemporaryLicenseDirectory();
+        await File.WriteAllBytesAsync(directory.LicensePath, inForce.LicenseData);
+        using var service = CreateService(directory.LicensePath, inForce.PublicKeySetting);
+        await service.StartAsync(CancellationToken.None);
+
+        var inverted = await UploadAsync(service, Issued(DateTimeOffset.UtcNow.AddDays(-2), DateTimeOffset.UtcNow.AddDays(-3)));
+
+        inverted.Success.Should().BeFalse();
+        inverted.Message.Should().Contain("issued-after-expiry");
+    }
+
     private static SignedLicenseTestFile Issued(DateTimeOffset issuedAt)
+        => Issued(issuedAt, DateTimeOffset.UtcNow.AddDays(60));
+
+    private static SignedLicenseTestFile Issued(DateTimeOffset issuedAt, DateTimeOffset expiresAt)
         => LicenseTestSupport.CreateSignedLicenseWithOptions(
             HonuaEdition.Pro,
-            new SignedLicenseTestOptions { IssuedAt = issuedAt, ExpiresAt = DateTimeOffset.UtcNow.AddDays(60) });
+            new SignedLicenseTestOptions { IssuedAt = issuedAt, ExpiresAt = expiresAt });
 
     private static async Task<LicenseUploadResult> UploadAsync(FileBackedLicenseService service, SignedLicenseTestFile license)
     {
