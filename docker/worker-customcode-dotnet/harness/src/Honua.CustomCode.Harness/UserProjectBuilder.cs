@@ -26,7 +26,7 @@ public sealed class UserProjectBuilder
     private readonly Func<IReadOnlyList<string>, string?, ProcessResult> _runner;
 
     // The image's warm NuGet package folder, the user build's only package source.
-    public static string WarmPackageSource { get; } =
+    internal static string WarmPackageSource { get; } =
         Environment.GetEnvironmentVariable("NUGET_PACKAGES") is { Length: > 0 } configured ? configured : "/opt/nuget/packages";
 
     /// <summary>Creates a project builder.</summary>
