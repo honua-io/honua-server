@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Honua.ControlPlane;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Core.Features.Orchestration.Domain;
@@ -109,7 +110,9 @@ internal sealed class PostgresWorkflowRunStore(
             command.Parameters.AddWithValue("created", write.Run.CreatedAt.ToUniversalTime());
             command.Parameters.AddWithValue("retention", write.Retention);
             command.Parameters.AddWithValue("record", NpgsqlDbType.Jsonb,
-                WorkflowJsonb.Serialize(write.Run, OrchestrationJsonContext.Default.WorkflowRun));
+                WorkflowJsonb.Serialize(
+                    write.Run with { Audit = ExecutionJobSubmitterSeal.SealAudit(write.Run.Audit, RunBinding(write.Run), storage.Database.Secrets) },
+                    OrchestrationJsonContext.Default.WorkflowRun));
             return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) > 0;
         }, StatementRepeat.NotAfterSend, cancellationToken);
     }
@@ -133,9 +136,22 @@ internal sealed class PostgresWorkflowRunStore(
             return runs;
         }, StatementRepeat.SafeToRepeat, cancellationToken);
 
-    private static WorkflowRun Decode(string payload)
-        => JsonSerializer.Deserialize(payload, OrchestrationJsonContext.Default.WorkflowRun)
+    private WorkflowRun Decode(string payload)
+    {
+        var run = JsonSerializer.Deserialize(payload, OrchestrationJsonContext.Default.WorkflowRun)
             ?? throw new JsonException("Invalid workflow run record.");
+        return run with { Audit = ExecutionJobSubmitterSeal.VerifyAudit(run.Audit, RunBinding(run), storage.Database.Secrets) };
+    }
+
+    // The run's requester snapshot is bound to the run and the plans its steps were authorized to execute.
+    private static string RunBinding(WorkflowRun run)
+        => JobSecurityContextDigest.Binding(
+            ["honua.workflow-run.submitter.v1", run.RunId, run.Audit.RequestedBy,
+             .. run.StepStates.SelectMany(step => new[]
+             {
+                 step.StepId,
+                 step.AuthorizedPlan is null ? null : JsonSerializer.Serialize(step.AuthorizedPlan, OrchestrationJsonContext.Default.AnalysisPlan),
+             })]);
 
     private static bool IsReconcileComplete(WorkflowRun run)
         => run.Status is WorkflowRunStatus.Succeeded or WorkflowRunStatus.Failed or WorkflowRunStatus.Cancelled

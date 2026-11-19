@@ -14,16 +14,24 @@ internal sealed class DataProtectionExecutionJobSecrets : IExecutionJobSecretPro
     internal const string Marker = "dp1:";
 
     private readonly Lazy<IDataProtector> _protector;
+    private readonly Lazy<IDataProtector> _sealer;
 
     public DataProtectionExecutionJobSecrets(IDataProtectionProvider dataProtection)
-        => _protector = new(() => dataProtection.CreateProtector(Purpose));
+    {
+        _protector = new(() => dataProtection.CreateProtector(Purpose));
+        _sealer = new(() => dataProtection.CreateProtector(SealPurpose));
+    }
 
     // The shared key ring is stored through JobStoreDatabase, which holds this protector, so the
     // provider is resolved on first use rather than while JobStoreDatabase is being built.
     public DataProtectionExecutionJobSecrets(IServiceProvider services)
-        => _protector = new(() => services.GetRequiredService<IDataProtectionProvider>().CreateProtector(Purpose));
+    {
+        _protector = new(() => services.GetRequiredService<IDataProtectionProvider>().CreateProtector(Purpose));
+        _sealer = new(() => services.GetRequiredService<IDataProtectionProvider>().CreateProtector(SealPurpose));
+    }
 
     private const string Purpose = "Honua.ExecutionJobs.Secrets";
+    private const string SealPurpose = "Honua.ExecutionJobs.SubmitterSeal.v1";
 
     public string Protect(string value)
         => value.StartsWith(Marker, StringComparison.Ordinal) ? value : Marker + _protector.Value.Protect(value);
@@ -44,6 +52,28 @@ internal sealed class DataProtectionExecutionJobSecrets : IExecutionJobSecretPro
             // A key outside this node's ring: the protected value never matches a presented
             // capability, so the job fails closed, and it is kept for a node that holds the ring.
             return stored;
+        }
+    }
+
+    public string Seal(string digest) => Marker + _sealer.Value.Protect(digest);
+
+    public bool VerifySeal(string digest, string seal)
+    {
+        if (!seal.StartsWith(Marker, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        try
+        {
+            var sealedDigest = _sealer.Value.Unprotect(seal[Marker.Length..]);
+            return CryptographicOperations.FixedTimeEquals(
+                System.Text.Encoding.UTF8.GetBytes(sealedDigest),
+                System.Text.Encoding.UTF8.GetBytes(digest));
+        }
+        catch (CryptographicException)
+        {
+            return false;
         }
     }
 }

@@ -244,6 +244,9 @@ builder.Services.AddDataProtection()
 // Job capabilities in stored execution records are protected with the same key ring.
 builder.Services.TryAddSingleton<Honua.ControlPlane.IExecutionJobSecretProtector>(static services =>
     new Honua.Server.Features.Infrastructure.SecurityState.DataProtectionExecutionJobSecrets(services));
+// Stored submitter snapshots on approval proposals and workflow records are sealed with it too.
+builder.Services.TryAddSingleton<Honua.Core.Features.Authorization.Abstractions.IJobSecurityContextSealer,
+    Honua.Server.Features.Infrastructure.SecurityState.DataProtectionJobSecurityContextSealer>();
 builder.Services.AddSingleton<Honua.ControlPlane.OperationHumanApprovalAuthority>();
 builder.Services.AddSingleton<Honua.ControlPlane.OperationInitiationResolver>();
 builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationHumanApprovalVerifier>(

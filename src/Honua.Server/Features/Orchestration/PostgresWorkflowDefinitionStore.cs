@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Honua.ControlPlane;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Core.Features.Orchestration.Domain;
 using Npgsql;
@@ -89,12 +90,50 @@ internal sealed partial class PostgresWorkflowDefinitionStore(ControlPlaneStorag
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("id", definition.WorkflowId);
             command.Parameters.AddWithValue("record", NpgsqlDbType.Jsonb,
-                WorkflowJsonb.Serialize(definition, OrchestrationJsonContext.Default.WorkflowDefinition));
+                WorkflowJsonb.Serialize(Seal(definition), OrchestrationJsonContext.Default.WorkflowDefinition));
             return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) > 0;
         }, StatementRepeat.NotAfterSend, cancellationToken);
     }
 
-    private static WorkflowDefinition Decode(string payload)
-        => JsonSerializer.Deserialize(payload, OrchestrationJsonContext.Default.WorkflowDefinition)
+    private WorkflowDefinition Decode(string payload)
+    {
+        var definition = JsonSerializer.Deserialize(payload, OrchestrationJsonContext.Default.WorkflowDefinition)
             ?? throw new JsonException("Invalid workflow definition record.");
+        var secrets = storage.Database.Secrets;
+        if (ExecutionJobSubmitterSeal.Bypassed(secrets) || definition.AuthorSecurityContext is not { } author)
+        {
+            return definition;
+        }
+
+        return ExecutionJobSubmitterSeal.Verifies(secrets, Binding(definition), new StoredSnapshot(author, definition.AuthorSecurityContextSeal))
+            ? definition with { AuthorSecurityContextSeal = null }
+            : definition with { AuthorSecurityContext = null, UnverifiedAuthorSecurityContext = author };
+    }
+
+    // The author snapshot is sealed on write; a snapshot this node could not verify goes back unchanged.
+    private WorkflowDefinition Seal(WorkflowDefinition definition)
+    {
+        var secrets = storage.Database.Secrets;
+        if (ExecutionJobSubmitterSeal.Bypassed(secrets))
+        {
+            return definition;
+        }
+
+        if (definition.AuthorSecurityContext is { } author)
+        {
+            return definition with { AuthorSecurityContextSeal = ExecutionJobSubmitterSeal.SealSnapshot(secrets, Binding(definition), author) };
+        }
+
+        return definition.UnverifiedAuthorSecurityContext is { } unverified
+            ? definition with { AuthorSecurityContext = unverified }
+            : definition with { AuthorSecurityContextSeal = null };
+    }
+
+    // The author snapshot is bound to the workflow and the steps and trigger it was published with.
+    private static string Binding(WorkflowDefinition definition)
+        => JobSecurityContextDigest.Binding(
+            "honua.workflow-definition.author.v1",
+            definition.WorkflowId,
+            JsonSerializer.Serialize(definition.Steps, OrchestrationJsonContext.Default.IReadOnlyListWorkflowStepDefinition),
+            definition.Trigger is null ? null : JsonSerializer.Serialize(definition.Trigger, OrchestrationJsonContext.Default.WorkflowTrigger));
 }
