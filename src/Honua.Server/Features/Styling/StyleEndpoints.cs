@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -69,8 +70,8 @@ internal static class StyleEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Style for publication '{publicationId}' not found.");
         }
 
-        var snapshot = await styleService.GetStyleAsync(layerValidation.Resource, storageLayerId.Value, cancellationToken);
-        var styleElement = snapshot?.MapLibreStyle;
+        var styleElement = SavedPresentation(context, layerValidation.Resource, storageLayerId.Value)
+            ?? (await styleService.GetStyleAsync(layerValidation.Resource, storageLayerId.Value, cancellationToken))?.MapLibreStyle;
 
         if (!styleElement.HasValue || styleElement.Value.ValueKind == JsonValueKind.Null)
         {
@@ -107,6 +108,14 @@ internal static class StyleEndpoints
         var resolvedThemedStyle = StyleEndpointUrlResolver.Resolve(themedElement.Value, StyleUrlContext.From(context));
         return Results.Json(resolvedThemedStyle, StyleJsonContext.Default.JsonElement, contentType: MediaTypes.Json);
     }
+
+    // A saved presentation (the Console drawingInfo override) is what the layer's rendered outputs
+    // draw, so this document serves it ahead of the stored MapLibre style, as /ogc/styles does.
+    private static JsonElement? SavedPresentation(HttpContext context, MetadataV2Object resource, int storageLayerId)
+        => RasterMapRenderingPipeline.ResolveSavedDrawingInfoMapLibreStyle(
+            resource, storageLayerId, context.RequestServices.GetRequiredService<IGeoServicesStyleConverter>()) is { } saved
+            ? StyleJsonUtilities.ParseJsonElement(saved)
+            : null;
 
     // The style without layers or properties that read a field withheld from this caller.
     private static async Task<JsonElement> VisibleStyleAsync(HttpContext context, MetadataV2Object resource, JsonElement style)
