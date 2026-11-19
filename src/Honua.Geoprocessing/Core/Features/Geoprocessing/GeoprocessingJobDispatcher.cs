@@ -93,9 +93,10 @@ internal sealed class GeoprocessingJobDispatcher
             ? null
             : _sealer.Seal(ProposalBinding(payload), submitter);
 
+    // Bound to the proposal's requester, key and the whole plan it asks to run.
     private static string ProposalBinding(GeoprocessExecutionPayload payload)
-        => string.Join('\n', "honua.geoprocess-proposal.v1", payload.RequestedBy ?? string.Empty,
-            payload.IdempotencyKey ?? string.Empty, payload.Plan.PlanId);
+        => JobSecurityContextDigest.Binding(
+            "honua.geoprocess-proposal.v1", payload.RequestedBy, payload.IdempotencyKey, payload.SerializePlan());
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
 

@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Honua.ControlPlane;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Core.Features.Orchestration.Domain;
@@ -142,7 +143,15 @@ internal sealed class PostgresWorkflowRunStore(
         return run with { Audit = ExecutionJobSubmitterSeal.VerifyAudit(run.Audit, RunBinding(run), storage.Database.Secrets) };
     }
 
-    private static string RunBinding(WorkflowRun run) => "honua.workflow-run.submitter.v1\n" + run.RunId;
+    // The run's requester snapshot is bound to the run and the plans its steps were authorized to execute.
+    private static string RunBinding(WorkflowRun run)
+        => JobSecurityContextDigest.Binding(
+            ["honua.workflow-run.submitter.v1", run.RunId, run.Audit.RequestedBy,
+             .. run.StepStates.SelectMany(step => new[]
+             {
+                 step.StepId,
+                 step.AuthorizedPlan is null ? null : JsonSerializer.Serialize(step.AuthorizedPlan, OrchestrationJsonContext.Default.AnalysisPlan),
+             })]);
 
     private static bool IsReconcileComplete(WorkflowRun run)
         => run.Status is WorkflowRunStatus.Succeeded or WorkflowRunStatus.Failed or WorkflowRunStatus.Cancelled

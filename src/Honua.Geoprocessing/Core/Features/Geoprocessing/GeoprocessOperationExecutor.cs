@@ -149,12 +149,16 @@ internal sealed record GeoprocessExecutionPayload
 
     public string Serialize()
         => JsonSerializer.Serialize(this, GeoprocessExecutionPayloadJsonContext.Default.GeoprocessExecutionPayload);
+
+    public string SerializePlan()
+        => JsonSerializer.Serialize(Plan, GeoprocessExecutionPayloadJsonContext.Default.AnalysisPlan);
 }
 
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(GeoprocessExecutionPayload))]
+[JsonSerializable(typeof(AnalysisPlan))]
 internal sealed partial class GeoprocessExecutionPayloadJsonContext : JsonSerializerContext
 {
 }

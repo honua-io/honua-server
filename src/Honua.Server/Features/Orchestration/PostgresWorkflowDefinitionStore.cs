@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Honua.ControlPlane;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Core.Features.Orchestration.Domain;
 using Npgsql;
@@ -128,5 +129,11 @@ internal sealed partial class PostgresWorkflowDefinitionStore(ControlPlaneStorag
             : definition with { AuthorSecurityContextSeal = null };
     }
 
-    private static string Binding(WorkflowDefinition definition) => "honua.workflow-definition.author.v1\n" + definition.WorkflowId;
+    // The author snapshot is bound to the workflow and the steps and trigger it was published with.
+    private static string Binding(WorkflowDefinition definition)
+        => JobSecurityContextDigest.Binding(
+            "honua.workflow-definition.author.v1",
+            definition.WorkflowId,
+            JsonSerializer.Serialize(definition.Steps, OrchestrationJsonContext.Default.IReadOnlyListWorkflowStepDefinition),
+            definition.Trigger is null ? null : JsonSerializer.Serialize(definition.Trigger, OrchestrationJsonContext.Default.WorkflowTrigger));
 }

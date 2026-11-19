@@ -57,6 +57,21 @@ public sealed class WorkflowSecuritySnapshotSealTests(DatabaseFixtureAdapter dat
     }
 
     [IntegrationTest]
+    public async Task Definition_StepsRewrittenUnderTheSealedAuthor_IsNotTrusted()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = DefinitionStore(harness, new EphemeralDataProtectionProvider());
+        var definition = Definition();
+        await store.SetAsync(definition);
+
+        await harness.ExecuteAsync(
+            $"UPDATE {harness.Database.Table("workflow_definitions")} SET record = jsonb_set(record, '{{steps,0,stepId}}', '\"injected\"') WHERE workflow_id = @id",
+            new NpgsqlParameter("id", definition.WorkflowId));
+
+        (await store.GetAsync(definition.WorkflowId))!.AuthorSecurityContext.Should().BeNull();
+    }
+
+    [IntegrationTest]
     public async Task Definition_NodeWithAnotherKeyRing_KeepsTheAuthorItCannotVerify()
     {
         await using var harness = await CreateHarnessAsync();

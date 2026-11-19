@@ -65,6 +65,19 @@ public sealed partial class GeoprocessingJobServiceTests
 
     [UnitTest]
     [Operation(Operations.Create)]
+    public async Task ResumeApprovedJob_PlanRewrittenAfterSealing_IsRefused()
+    {
+        var sealer = new BindingSealer();
+        var sealedPayload = SealedPayload(sealer, "idem-plan");
+        var payload = sealedPayload with { Plan = sealedPayload.Plan with { IntentId = "rewritten" } };
+
+        var act = async () => await SealingService(sealer).ResumeApprovedJobAsync(payload);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
     public async Task ResumeApprovedJob_UnsealedSnapshotOnASealingHost_IsRefused()
     {
         var payload = new GeoprocessExecutionPayload
@@ -92,7 +105,7 @@ public sealed partial class GeoprocessingJobServiceTests
         return payload with
         {
             SubmitterSecurityContextSeal = sealer.Seal(
-                string.Join('\n', "honua.geoprocess-proposal.v1", payload.RequestedBy, idempotencyKey, payload.Plan.PlanId),
+                JobSecurityContextDigest.Binding("honua.geoprocess-proposal.v1", payload.RequestedBy, idempotencyKey, payload.SerializePlan()),
                 payload.SubmitterSecurityContext),
         };
     }

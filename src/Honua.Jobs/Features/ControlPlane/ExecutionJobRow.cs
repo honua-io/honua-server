@@ -119,8 +119,8 @@ internal sealed record ExecutionJobRow(
             return null;
         }
 
-        record = ExecutionJobSubmitterSeal.Verify(record, secrets);
-        return ExecutionJobSecretParameters.Unprotect(record, secrets) with
+        record = ExecutionJobSubmitterSeal.Verify(ExecutionJobSecretParameters.Unprotect(record, secrets), secrets);
+        return record with
         {
             Version = reader.GetInt64(0),
             Status = Enum.Parse<ExecutionJobStatus>(reader.GetString(1)),

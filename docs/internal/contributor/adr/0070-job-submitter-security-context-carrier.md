@@ -145,25 +145,29 @@ old snapshot otherwise remains authoritative.
 ### Sealed at rest
 
 The snapshot decides what a job may read, so a writer of the job store must not be able to
-grant itself claims. `ExecutionJobRow.From` seals the stored snapshot with the shared
-data-protection key ring (purpose `Honua.ExecutionJobs.SubmitterSeal.v1`) over a digest of
-the snapshot, the operation id and `RequestedBy`, so a snapshot edited in place or copied
-from another job does not verify. `ExecutionJobRow.TryRead` verifies it; a snapshot without
-a valid seal is not used, the job has no submitter context, and the fail-closed guards above
-refuse its reads. The unverified snapshot is kept and written back unchanged, so a node
-without the key ring does not erase what it cannot check.
+grant itself claims, or reuse a valid snapshot for other work. Every stored copy carries a seal
+made with the shared data-protection key ring over one canonical digest
+(`JobSecurityContextDigest`): the snapshot's fields and a binding to the record and the work it
+authorizes, each part length-prefixed.
 
-The other stored copies are sealed the same way, each bound to its own record: the workflow
-run's requester snapshot (by run id, in `PostgresWorkflowRunStore`), the workflow definition's
-author snapshot (by workflow id, in `PostgresWorkflowDefinitionStore`), and the approval
-proposal's snapshot (by requester, idempotency key and plan, through
-`IJobSecurityContextSealer` in `GeoprocessingJobDispatcher`; resume treats an unverified
-snapshot as missing and is refused).
+| Stored copy | Bound to | Sealed and verified in |
+| --- | --- | --- |
+| Execution job record | operation id, requester, job spec | `ExecutionJobRow.From` / `TryRead` |
+| Approval proposal | requester, idempotency key, whole plan | `GeoprocessingJobDispatcher` (`IJobSecurityContextSealer`) |
+| Workflow run | run id, requester, each step's authorized plan | `PostgresWorkflowRunStore` |
+| Workflow definition | workflow id, steps, trigger | `PostgresWorkflowDefinitionStore` |
 
-The key ring is stored wrapped by the key-ring protector, so database access alone cannot
-forge a seal. Jobs queued, approvals pending and workflow runs started by a build without
-seals are refused after the upgrade and must be resubmitted; workflow definitions stored
-before seals must be republished before their scheduled or triggered runs resume.
+A snapshot without a valid seal is not used: the work has no submitter context and the
+fail-closed guards above refuse it (an approval resume treats it as missing). The unverified
+snapshot is kept and written back unchanged, so a node without the key ring does not erase what
+it cannot check. Seals are recomputed on every write by a node that holds the ring.
+
+The key ring is stored wrapped by the key-ring protector, so database access alone cannot forge
+a seal. Restoring an earlier definition record with its own seal still verifies; that restores
+what its author published. Jobs queued, approvals pending and workflow runs started by a build
+without seals are refused after the upgrade and must be resubmitted with a new idempotency key
+(a reused key returns the refused record); workflow definitions stored before seals must be
+republished before their scheduled or triggered runs resume.
 
 ## Consequences
 

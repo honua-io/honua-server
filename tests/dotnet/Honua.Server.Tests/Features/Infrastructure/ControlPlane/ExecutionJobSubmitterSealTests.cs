@@ -53,6 +53,21 @@ public sealed class ExecutionJobSubmitterSealTests(DatabaseFixtureAdapter databa
     }
 
     [IntegrationTest]
+    public async Task SealedSnapshotOverRewrittenWork_IsNotTrusted()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = SealingStore(harness, new EphemeralDataProtectionProvider());
+        var job = WithSubmitter(CreateQueuedJob("rewritten-work"), "admin");
+        (await store.TryCreateAsync(job)).Should().BeTrue();
+
+        await harness.ExecuteAsync(
+            $"UPDATE {harness.JobsTable} SET record = jsonb_set(record::jsonb, '{{spec,workloadName}}', '\"other-workload\"')::json WHERE operation_id = @id",
+            new NpgsqlParameter("id", job.OperationId));
+
+        (await store.GetAsync(job.OperationId))!.Audit.SubmitterSecurityContext.Should().BeNull();
+    }
+
+    [IntegrationTest]
     public async Task SnapshotCopiedFromAnotherJob_IsNotTrusted()
     {
         await using var harness = await CreateHarnessAsync();
