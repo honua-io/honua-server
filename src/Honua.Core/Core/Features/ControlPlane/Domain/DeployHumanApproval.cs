@@ -8,7 +8,9 @@ public sealed record DeployHumanApproval
     public required string WorkflowId { get; init; }
     public required long WorkflowVersion { get; init; }
     public required string Action { get; init; }
-    public required string? TenantId { get; init; }
+    // Not required: stored records omit a null tenant (ControlPlaneJsonContext writes no nulls), and an
+    // install without tenancy must read its own approval evidence back. Every construction sets it explicitly.
+    public string? TenantId { get; init; }
     public required string ActorId { get; init; }
     public required string Channel { get; init; }
     public required string SessionReference { get; init; }
