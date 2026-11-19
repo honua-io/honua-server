@@ -352,6 +352,9 @@
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
@@ -28901,6 +28904,14 @@
             },
             "default": []
           },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "agent"
+            ],
+            "description": "Key type, lowercase. An `agent` key always carries the `agent` grant, which is added when missing. Omitted, the type follows the grants. An API key issued to an agent caller, or from a proposal an agent made, is always an agent key, and `standard` is refused for it."
+          },
           "expiresAt": {
             "type": "string",
             "format": "date-time",
@@ -28968,7 +28979,8 @@
           "permissions",
           "status",
           "createdAt",
-          "updatedAt"
+          "updatedAt",
+          "kind"
         ],
         "properties": {
           "id": {
@@ -28981,6 +28993,14 @@
           "keyPrefix": {
             "type": "string",
             "description": "Non-secret prefix used to recognize the key."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "agent"
+            ],
+            "description": "`agent` when the key carries the `agent` grant, otherwise `standard`."
           },
           "permissions": {
             "type": "array",
@@ -29068,7 +29088,8 @@
           "name",
           "status",
           "permissions",
-          "canAuthenticate"
+          "canAuthenticate",
+          "kind"
         ],
         "properties": {
           "id": {
@@ -29085,6 +29106,14 @@
               "expired",
               "revoked"
             ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "agent"
+            ],
+            "description": "`agent` when the key carries the `agent` grant, otherwise `standard`."
           },
           "permissions": {
             "type": "array",
