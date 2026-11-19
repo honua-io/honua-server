@@ -153,9 +153,17 @@ a valid seal is not used, the job has no submitter context, and the fail-closed 
 refuse its reads. The unverified snapshot is kept and written back unchanged, so a node
 without the key ring does not erase what it cannot check.
 
+The other stored copies are sealed the same way, each bound to its own record: the workflow
+run's requester snapshot (by run id, in `PostgresWorkflowRunStore`), the workflow definition's
+author snapshot (by workflow id, in `PostgresWorkflowDefinitionStore`), and the approval
+proposal's snapshot (by requester, idempotency key and plan, through
+`IJobSecurityContextSealer` in `GeoprocessingJobDispatcher`; resume treats an unverified
+snapshot as missing and is refused).
+
 The key ring is stored wrapped by the key-ring protector, so database access alone cannot
-forge a seal. Jobs queued by a build without seals are refused after the upgrade and must be
-resubmitted.
+forge a seal. Jobs queued, approvals pending and workflow runs started by a build without
+seals are refused after the upgrade and must be resubmitted; workflow definitions stored
+before seals must be republished before their scheduled or triggered runs resume.
 
 ## Consequences
 

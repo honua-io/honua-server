@@ -109,7 +109,9 @@ internal sealed class PostgresWorkflowRunStore(
             command.Parameters.AddWithValue("created", write.Run.CreatedAt.ToUniversalTime());
             command.Parameters.AddWithValue("retention", write.Retention);
             command.Parameters.AddWithValue("record", NpgsqlDbType.Jsonb,
-                WorkflowJsonb.Serialize(write.Run, OrchestrationJsonContext.Default.WorkflowRun));
+                WorkflowJsonb.Serialize(
+                    write.Run with { Audit = ExecutionJobSubmitterSeal.SealAudit(write.Run.Audit, RunBinding(write.Run), storage.Database.Secrets) },
+                    OrchestrationJsonContext.Default.WorkflowRun));
             return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false) > 0;
         }, StatementRepeat.NotAfterSend, cancellationToken);
     }
@@ -133,9 +135,14 @@ internal sealed class PostgresWorkflowRunStore(
             return runs;
         }, StatementRepeat.SafeToRepeat, cancellationToken);
 
-    private static WorkflowRun Decode(string payload)
-        => JsonSerializer.Deserialize(payload, OrchestrationJsonContext.Default.WorkflowRun)
+    private WorkflowRun Decode(string payload)
+    {
+        var run = JsonSerializer.Deserialize(payload, OrchestrationJsonContext.Default.WorkflowRun)
             ?? throw new JsonException("Invalid workflow run record.");
+        return run with { Audit = ExecutionJobSubmitterSeal.VerifyAudit(run.Audit, RunBinding(run), storage.Database.Secrets) };
+    }
+
+    private static string RunBinding(WorkflowRun run) => "honua.workflow-run.submitter.v1\n" + run.RunId;
 
     private static bool IsReconcileComplete(WorkflowRun run)
         => run.Status is WorkflowRunStatus.Succeeded or WorkflowRunStatus.Failed or WorkflowRunStatus.Cancelled
