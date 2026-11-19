@@ -60,8 +60,14 @@ satisfy unique constraints on `id` and `name`.
 ## Validation
 
 Validation is shape-only; no live network or filesystem probing is performed.
-Containment of `assetRoot` against the canonical serving directory is
-enforced by the hosted-serving asset resolver introduced in #837.
+An `assetRoot` supplied on register or update must also resolve (relative paths
+against the server content root) to a subdirectory of a scene asset directory:
+`/var/lib/honua/scenes`, the `SceneGeneration:OutputRoot`, or a directory listed in
+`Scenes:AdminAssetDirectories`; anything else is refused with `400`. Datasets declared
+in `Scenes:Datasets` configuration are operator-owned and are not subject to this check.
+The check applies when a root is written; rows stored before it was introduced keep their root.
+Containment of each asset path under its `assetRoot` is enforced by the hosted-serving
+asset resolver.
 
 | Field | Rule |
 | --- | --- |
