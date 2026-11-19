@@ -183,4 +183,10 @@ internal static partial class OrchestrationLog
         ILogger logger,
         string workflowId,
         string principalId);
+
+    [LoggerMessage(8137, LogLevel.Warning, "Workflow run {RunId} has no requester security snapshot; it was ended without observing or cancelling {OrphanedJobCount} step job(s)")]
+    public static partial void WorkflowRunEndedWithoutSnapshot(
+        ILogger logger,
+        string runId,
+        int orphanedJobCount);
 }

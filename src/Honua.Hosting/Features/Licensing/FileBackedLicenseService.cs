@@ -510,7 +510,7 @@ internal sealed partial class FileBackedLicenseService :
 
         var result = ValidateLicenseData(licenseData, options);
         var rejection = result.Snapshot.ValidationState != LicenseValidationState.Valid
-            ? $"License validation failed: {result.Snapshot.ValidationState}."
+            ? $"License validation failed: {result.Snapshot.ValidationState} ({result.Reason})."
             : OlderThanLicenseInForce(result.Snapshot);
         if (rejection is not null)
         {
@@ -554,11 +554,13 @@ internal sealed partial class FileBackedLicenseService :
         }
     }
 
-    // An upload may not roll back to a license issued before the valid one in force; the persisted upload keeps that across restarts.
+    // An upload may not roll back to a license issued before the one in force; the persisted upload keeps that across
+    // restarts. An expired license in force still counts: its signature verified, so its issue time is trusted.
     private string? OlderThanLicenseInForce(LicenseSnapshot uploaded)
     {
         var current = GetSnapshot();
-        return current.IsValid && current.IssuedAt is { } inForce && uploaded.IssuedAt < inForce
+        return (current.IsValid || current.ValidationState == LicenseValidationState.Expired)
+            && current.IssuedAt is { } inForce && uploaded.IssuedAt < inForce
             ? "License validation failed: the uploaded license was issued before the license in force."
             : null;
     }
@@ -726,6 +728,13 @@ internal sealed partial class FileBackedLicenseService :
         if (!payload.IssuedAt.HasValue)
         {
             reason = "missing-issued-at";
+            return false;
+        }
+
+        // A license issued at or after its own expiry is malformed; its issue time must not outrank later licenses.
+        if (payload.ExpiresAt is { } expiresAt && payload.IssuedAt.Value >= expiresAt)
+        {
+            reason = "issued-after-expiry";
             return false;
         }
 

@@ -5,6 +5,7 @@ using System.Security.Claims;
 using FluentAssertions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -552,6 +553,24 @@ public sealed class GeoprocessingDispatchJobExecutorTests
     }
 
     [UnitTest]
+    public async Task ExecuteAsync_WorkspaceRequestedWithoutSubmitterSnapshot_FailsWithoutResolvingTheRequesterWorkspace()
+    {
+        var workspaceLifecycle = Substitute.For<IWorkspaceLifecycleService>();
+        var dispatcher = CreateFakeExecutorDispatcher(BuildScopeFactory(workspaceLifecycle));
+        var context = Substitute.For<IJobExecutionContext>();
+        context.OperationId.Returns("op-no-snapshot");
+        var record = CreateFakeExecutorJobRecord(workspaceId: "ws-1", overwriteOutput: null);
+        record = record with { Audit = record.Audit with { RequestedBy = "victim", SubmitterSecurityContext = null } };
+
+        var result = await dispatcher.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.IsRetryable.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("no submitter security context");
+        await workspaceLifecycle.DidNotReceiveWithAnyArgs().GetOrCreateNamedWorkspaceAsync(default!, default!, default);
+    }
+
+    [UnitTest]
     public async Task ExecuteAsync_WorkspaceProviderNotRegistered_FailsPermanentlyWithoutRunningHandler()
     {
         using var services = new ServiceCollection().BuildServiceProvider();
@@ -707,7 +726,11 @@ public sealed class GeoprocessingDispatchJobExecutorTests
             Status = ExecutionJobStatus.Running,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
-            Audit = new OperationAuditInfo { RequestedBy = "admin" },
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = "admin",
+                SubmitterSecurityContext = new JobSecurityContext("admin", null, []),
+            },
             Spec = new ExecutionJobSpec
             {
                 Kind = ExecutionJobKind.Geoprocessing,
