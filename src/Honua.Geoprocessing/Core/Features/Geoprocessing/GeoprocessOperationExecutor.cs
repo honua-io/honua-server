@@ -127,6 +127,9 @@ internal sealed record GeoprocessExecutionPayload
     // The submitter security snapshot is pinned on the proposal because resume rebuilds the principal from that snapshot alone and would otherwise apply no row filter.
     public JobSecurityContext? SubmitterSecurityContext { get; init; }
 
+    // Binds the snapshot to this proposal with the shared key ring; resume ignores a snapshot it does not verify.
+    public string? SubmitterSecurityContextSeal { get; init; }
+
     public static GeoprocessExecutionPayload? Parse(string? json)
     {
         if (string.IsNullOrWhiteSpace(json))

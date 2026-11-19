@@ -110,7 +110,8 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
         IEnumerable<IJobTerminalCallback>? terminalCallbacks = null,
         GpProcessReleaseAdmission? releaseAdmission = null,
         ICloudFileStorage? customCodeArtifactStorage = null,
-        IGeoprocessingHostRuntime? hostRuntime = null)
+        IGeoprocessingHostRuntime? hostRuntime = null,
+        IJobSecurityContextSealer? jobSecurityContextSealer = null)
         : this(
             progressStore,
             cancellationNotifiers,
@@ -139,7 +140,8 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
                 admissionEvaluator,
                 operationGateway,
                 operationEnvelopeFactory,
-                admissionCoordinator)
+                admissionCoordinator,
+                jobSecurityContextSealer)
             {
                 HostRuntime = hostRuntime ?? ProcessEnvironmentHostRuntime.Instance,
             },
@@ -1653,7 +1655,8 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
                 // match zero RLS policies, and hand back an UNRESTRICTED read. Marked
                 // inherited so a proposal persisted before the snapshot existed is REFUSED
                 // rather than silently recaptured from that name-only principal.
-                submitterSecurityContext: payload.SubmitterSecurityContext,
+                // A snapshot whose seal does not verify for this proposal is treated as missing.
+                submitterSecurityContext: _dispatcher.VerifiedProposalSubmitter(payload),
                 inheritsSubmitterSecurityContext: true,
                 processCatalog: _processCatalog,
                 cancellationToken: cancellationToken)

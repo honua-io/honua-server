@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -48,6 +49,7 @@ internal sealed class GeoprocessingJobDispatcher
     private readonly IOperationGateway? _operationGateway;
     private readonly IOperationEnvelopeFactory? _operationEnvelopeFactory;
     private readonly ExecutionAdmissionCoordinator _admissionCoordinator;
+    private readonly IJobSecurityContextSealer? _sealer;
 
     internal IGeoprocessingHostRuntime HostRuntime { get; init; } = ProcessEnvironmentHostRuntime.Instance;
 
@@ -61,7 +63,8 @@ internal sealed class GeoprocessingJobDispatcher
         IExecutionAdmissionEvaluator? admissionEvaluator = null,
         IOperationGateway? operationGateway = null,
         IOperationEnvelopeFactory? operationEnvelopeFactory = null,
-        ExecutionAdmissionCoordinator? admissionCoordinator = null)
+        ExecutionAdmissionCoordinator? admissionCoordinator = null,
+        IJobSecurityContextSealer? sealer = null)
     {
         _logger = logger;
         _executorOptions = executorOptions;
@@ -73,7 +76,26 @@ internal sealed class GeoprocessingJobDispatcher
         _operationGateway = operationGateway;
         _operationEnvelopeFactory = operationEnvelopeFactory;
         _admissionCoordinator = admissionCoordinator ?? ExecutionAdmissionCoordinator.ProcessLocal;
+        _sealer = sealer;
     }
+
+    // The proposal's snapshot is used on resume only when its seal verifies for this proposal; a
+    // host without a sealer (a lightweight host with no key ring) neither seals nor checks.
+    internal JobSecurityContext? VerifiedProposalSubmitter(GeoprocessExecutionPayload payload)
+        => _sealer is null
+           || payload.SubmitterSecurityContext is not { } submitter
+           || _sealer.Verify(ProposalBinding(payload), submitter, payload.SubmitterSecurityContextSeal)
+            ? payload.SubmitterSecurityContext
+            : null;
+
+    private string? SealProposalSubmitter(GeoprocessExecutionPayload payload)
+        => _sealer is null || payload.SubmitterSecurityContext is not { } submitter
+            ? null
+            : _sealer.Seal(ProposalBinding(payload), submitter);
+
+    private static string ProposalBinding(GeoprocessExecutionPayload payload)
+        => string.Join('\n', "honua.geoprocess-proposal.v1", payload.RequestedBy ?? string.Empty,
+            payload.IdempotencyKey ?? string.Empty, payload.Plan.PlanId);
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
 
@@ -154,6 +176,7 @@ internal sealed class GeoprocessingJobDispatcher
             // resumed job enforces the ORIGINAL submitter's RLS and masking.
             SubmitterSecurityContext = submitterSecurityContext,
         };
+        payload = payload with { SubmitterSecurityContextSeal = SealProposalSubmitter(payload) };
 
         // The envelope and gateway derive the proposal identity from the idempotency key and
         // tenant alone, so scope the key to the durable submitter before it reaches them: two
