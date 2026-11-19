@@ -13,4 +13,4 @@ concurrency:
 
 jobs:
   clean-code:
-    uses: honua-io/.github/.github/workflows/clean-code.yml@d05acacf878e6abe755cab07bbb8f127d3802ac3 # v1.2.0 + light runner switch
+    uses: honua-io/.github/.github/workflows/clean-code.yml@fe9517f40a39eaea9caee394ba867522d9ef0d7f # v1.2.0 + light runner switch
