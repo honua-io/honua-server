@@ -51,7 +51,7 @@ x-gp-dev-environment: &gp-dev-environment
   Licensing__DevGrantEdition: "${HONUA_DEV_GRANT_EDITION:-Pro}"
   # Admin password doubles as the X-API-Key for authenticated calls. The
   # admin role holds the process-execute grant the GP submit path requires.
-  HONUA_ADMIN_PASSWORD: "${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
+  HONUA_ADMIN_PASSWORD: "${HONUA_ADMIN_PASSWORD:?Run python3 scripts/docker/quickstart.py to initialize per-install credentials}"
   Security__ConnectionEncryption__MasterKey: "${HONUA_CONNECTION_ENCRYPTION_MASTER_KEY:-honua-compose-dev-master-key-0123456789}"
   Security__ConnectionEncryption__Salt: "${HONUA_CONNECTION_ENCRYPTION_SALT:-aG9udWEtY29tcG9zZS1kZXYtc2FsdC0yMDI2}"
   # Registered COGs are admitted by the API-side bounded range reader before a

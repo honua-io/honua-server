@@ -45,6 +45,7 @@ python3 "${extractor}" "${document}" --list --output "${extracted}" | tee "${art
 
 python3 "${repo_root}/scripts/docker/test_quickstart.py"
 python3 "${repo_root}/scripts/docker/quickstart.py" --init-only
+admin_key="$(sed -n 's/^HONUA_ADMIN_PASSWORD=//p' "${repo_root}/.env")"
 
 # A validation run owns an isolated Compose project and always begins without its
 # containers or volumes, proving the documented bootstrap against a clean install.
@@ -71,15 +72,15 @@ python3 "${owned_server}" wait --container "$("${compose[@]}" ps -q honua)" --co
   and (map(select(.Service == "storage-init"))
     | length == 1 and all(.[]; .State == "exited" and .ExitCode == 0))'
 curl --fail --silent --show-error \
-  -H 'X-API-Key: quickstart-admin-password' \
+  -H "X-API-Key: ${admin_key}" \
   "${base_url}/rest/services/quickstart/FeatureServer/${layer_id}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true" \
   | jq -e '.features | length == 3'
 curl --fail --silent --show-error \
-  -H 'X-API-Key: quickstart-admin-password' \
+  -H "X-API-Key: ${admin_key}" \
   "${base_url}/tiles/${layer_id}/tile.json" \
   | jq -e '.tiles | length > 0'
 curl --fail --silent --show-error \
-  -H 'X-API-Key: quickstart-admin-password' \
+  -H "X-API-Key: ${admin_key}" \
   "${base_url}/tiles/${layer_id}/12/655/1582.mvt" \
   --output "${artifacts}/sample.mvt"
 test -s "${artifacts}/sample.mvt"
