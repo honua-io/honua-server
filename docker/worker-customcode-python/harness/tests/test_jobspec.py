@@ -189,3 +189,24 @@ def test_contract_version_non_positive_or_non_integer_rejected(value: str) -> No
     env = dict(BASE_ENV, HONUA_CONTRACT_VERSION=value)
     with pytest.raises(JobSpecError, match="HONUA_CONTRACT_VERSION"):
         load_job_spec(env)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://user:token@github.com/acme/tool.git",
+        "https://token@github.com/acme/tool.git",
+        "ssh://git:secret@github.com/acme/tool.git",
+    ],
+)
+def test_repo_url_with_credentials_rejected_without_echoing_them(url: str) -> None:
+    env = dict(BASE_ENV, CUSTOMCODE_REPO_URL=url)
+    with pytest.raises(JobSpecError) as raised:
+        load_job_spec(env)
+    assert "credentials" in str(raised.value)
+    assert "token" not in str(raised.value) and "secret" not in str(raised.value)
+
+
+@pytest.mark.parametrize("url", ["git@github.com:acme/tool.git", "ssh://git@github.com/acme/tool.git"])
+def test_repo_url_with_a_plain_ssh_user_accepted(url: str) -> None:
+    assert load_job_spec(dict(BASE_ENV, CUSTOMCODE_REPO_URL=url)).repo_url == url

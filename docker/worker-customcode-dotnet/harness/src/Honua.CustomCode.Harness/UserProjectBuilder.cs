@@ -25,6 +25,10 @@ public sealed class UserProjectBuilder
 {
     private readonly Func<IReadOnlyList<string>, string?, ProcessResult> _runner;
 
+    // The image's warm NuGet package folder, the user build's only package source.
+    public static string WarmPackageSource { get; } =
+        Environment.GetEnvironmentVariable("NUGET_PACKAGES") is { Length: > 0 } configured ? configured : "/opt/nuget/packages";
+
     /// <summary>Creates a project builder.</summary>
     /// <param name="dotnetRunner">An injectable <c>dotnet</c> runner (for tests); defaults to invoking the real SDK.</param>
     public UserProjectBuilder(Func<IReadOnlyList<string>, string?, ProcessResult>? dotnetRunner = null)
@@ -71,15 +75,18 @@ public sealed class UserProjectBuilder
 
         Directory.CreateDirectory(outputDirectory);
 
-        // --offline so the warm cache is authoritative for the common case and a tool
-        // cannot silently pull arbitrary packages at job time; if a tool genuinely needs
-        // an extra package the operator widens the cache, not the network at runtime.
+        // The restore's only source is the warm cache baked into the image: it overrides any
+        // nuget.config in the user's repository, so a tool cannot pull arbitrary packages at
+        // job time. If a tool genuinely needs another package the operator widens the cache,
+        // not the network at runtime.
         var args = new List<string>
         {
             "build",
             project,
             "--configuration", "Release",
             "--nologo",
+            "--source", WarmPackageSource,
+            "-p:RestoreIgnoreFailedSources=false",
             "--output", outputDirectory,
             "-p:TreatWarningsAsErrors=false",
             "-p:NuGetAudit=false",

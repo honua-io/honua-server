@@ -209,7 +209,13 @@ public sealed class JobSpec
 
         if (!StartsWithAny(repoUrl!, "https://", "git@", "ssh://", "http://"))
         {
-            throw new JobSpecException($"repo_url has an unsupported scheme: '{repoUrl}'.");
+            throw new JobSpecException("repo_url has an unsupported scheme.");
+        }
+
+        // The URL is logged and echoed in git errors, so credentials must never travel in it.
+        if (EmbedsCredentials(repoUrl!))
+        {
+            throw new JobSpecException("repo_url must not embed credentials.");
         }
 
         if (!outputPrefix!.StartsWith("s3://", StringComparison.Ordinal))
@@ -399,6 +405,18 @@ public sealed class JobSpec
         }
 
         return !path.Split('/', '\\').Any(segment => segment == "..");
+    }
+
+    // An http(s) URL may carry no userinfo at all; an ssh URL may name a user but not a password.
+    private static bool EmbedsCredentials(string repoUrl)
+    {
+        if (repoUrl.StartsWith("git@", StringComparison.Ordinal) ||
+            !Uri.TryCreate(repoUrl, UriKind.Absolute, out var uri) || string.IsNullOrEmpty(uri.UserInfo))
+        {
+            return false;
+        }
+
+        return uri.Scheme is "http" or "https" || uri.UserInfo.Contains(':', StringComparison.Ordinal);
     }
 
     private static bool StartsWithAny(string value, params string[] prefixes)
