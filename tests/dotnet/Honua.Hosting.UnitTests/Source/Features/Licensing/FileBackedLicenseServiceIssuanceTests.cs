@@ -92,6 +92,21 @@ public sealed class FileBackedLicenseServiceIssuanceTests
         older.Message.Should().Contain("issued before the license in force");
     }
 
+    [UnitTest]
+    public async Task UploadLicenseAsync_IssuedAfterItsOwnExpiry_IsRefusedAsMalformed()
+    {
+        var inForce = Issued(DateTimeOffset.UtcNow.AddDays(-1));
+        using var directory = new TemporaryLicenseDirectory();
+        await File.WriteAllBytesAsync(directory.LicensePath, inForce.LicenseData);
+        using var service = CreateService(directory.LicensePath, inForce.PublicKeySetting);
+        await service.StartAsync(CancellationToken.None);
+
+        var inverted = await UploadAsync(service, Issued(DateTimeOffset.UtcNow.AddDays(-2), DateTimeOffset.UtcNow.AddDays(-3)));
+
+        inverted.Success.Should().BeFalse();
+        inverted.Message.Should().Contain("issued-after-expiry");
+    }
+
     private static SignedLicenseTestFile Issued(DateTimeOffset issuedAt)
         => Issued(issuedAt, DateTimeOffset.UtcNow.AddDays(60));
 

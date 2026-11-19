@@ -731,6 +731,13 @@ internal sealed partial class FileBackedLicenseService :
             return false;
         }
 
+        // A license issued at or after its own expiry is malformed; its issue time must not outrank later licenses.
+        if (payload.ExpiresAt is { } expiresAt && payload.IssuedAt.Value >= expiresAt)
+        {
+            reason = "issued-after-expiry";
+            return false;
+        }
+
         return true;
     }
 

@@ -35,8 +35,8 @@ internal static class OrchestrationSystemPrincipal
     }
 
     // The identity a run uses to submit, observe and cancel its step jobs. A run without its
-    // requester's snapshot gets no administrative role, so it reaches only jobs that requester
-    // owns rather than any job id recorded in its step states.
+    // requester's snapshot gets no administrative role, so it cannot reach any job id recorded
+    // in its step states; the engine ends such a run instead of acting for it.
     public static ClaimsPrincipal ForRun(OperationAuditInfo runAudit)
     {
         if (runAudit.SubmitterSecurityContext is { } snapshot)

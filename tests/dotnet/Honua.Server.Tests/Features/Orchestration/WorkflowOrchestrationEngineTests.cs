@@ -89,6 +89,29 @@ public sealed class WorkflowOrchestrationEngineTests
         Assert.Single(harness.JobService.Submitted);
     }
 
+    [UnitTest]
+    public async Task ReconcileWorkflowRun_RunWithoutRequesterSnapshot_IsEndedWithoutTouchingItsJobs()
+    {
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(
+            harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+        await harness.RunStore.SetAsync(run with
+        {
+            Audit = run.Audit with { SubmitterSecurityContext = null },
+            StepStates = run.StepStates.Select(step => step with { Status = WorkflowStepStatus.Running, JobId = "victim-job" }).ToArray(),
+        });
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var ended = (await harness.RunStore.GetAsync(run.RunId))!;
+        Assert.Equal(WorkflowRunStatus.Failed, ended.Status);
+        Assert.All(ended.StepStates, step => Assert.Equal(WorkflowStepStatus.Cancelled, step.Status));
+        Assert.Contains(ended.Warnings, warning => warning.Contains("victim-job", StringComparison.Ordinal));
+        Assert.Empty(harness.JobService.Submitted);
+    }
+
     [Fact]
     public async Task ReconcileWorkflowRun_ReplaysRunRequestersSecurityContextOnStepSubmission()
     {

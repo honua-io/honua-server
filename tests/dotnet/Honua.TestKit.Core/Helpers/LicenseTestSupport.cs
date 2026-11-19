@@ -54,13 +54,20 @@ public static class LicenseTestSupport
                 licenseId = "lic-test-338",
                 licensedTo = "Honua Test Operator",
                 edition = edition.ToString(),
-                issuedAt = options.IssuedAt ?? DateTimeOffset.UtcNow.AddDays(-1),
+                issuedAt = options.IssuedAt ?? DefaultIssuedAt(options.ExpiresAt),
                 expiresAt = options.ExpiresAt,
                 entitlements = options.Entitlements ?? ActiveEntitlementsFor(edition),
                 capacity = options.Capacity
             },
             PayloadJsonOptions);
         return SignPayload(Encoding.UTF8.GetBytes(payload), options);
+    }
+
+    // A day ago, or a day before an already-past expiry, so a default license is never issued after it expires.
+    private static DateTimeOffset DefaultIssuedAt(DateTimeOffset? expiresAt)
+    {
+        var dayAgo = DateTimeOffset.UtcNow.AddDays(-1);
+        return expiresAt is { } expiry && expiry <= dayAgo ? expiry.AddDays(-1) : dayAgo;
     }
 
     private static SignedLicenseTestFile SignPayload(byte[] payloadBytes, SignedLicenseTestOptions options)
