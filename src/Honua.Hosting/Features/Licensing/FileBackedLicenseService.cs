@@ -29,6 +29,8 @@ internal sealed partial class FileBackedLicenseService :
     private readonly IEd25519Verifier _verifier;
     private readonly ILogger<FileBackedLicenseService> _logger;
     private readonly IReadOnlyList<ILicenseContentSecretResolver> _secretResolvers;
+    private static readonly TimeSpan IssuedAtClockSkew = TimeSpan.FromMinutes(5);
+
     private readonly SemaphoreSlim _uploadLock = new(1, 1);
     private LicenseSnapshot _snapshot;
     private long _snapshotVersion;
@@ -507,11 +509,13 @@ internal sealed partial class FileBackedLicenseService :
         }
 
         var result = ValidateLicenseData(licenseData, options);
-        if (result.Snapshot.ValidationState != LicenseValidationState.Valid)
+        var rejection = result.Snapshot.ValidationState != LicenseValidationState.Valid
+            ? $"License validation failed: {result.Snapshot.ValidationState}."
+            : OlderThanLicenseInForce(result.Snapshot);
+        if (rejection is not null)
         {
-            var message = $"License validation failed: {result.Snapshot.ValidationState}.";
-            LicenseRuntimeLog.LicenseUploadRejected(_logger, message);
-            return new LicenseUploadResult(false, message);
+            LicenseRuntimeLog.LicenseUploadRejected(_logger, rejection);
+            return new LicenseUploadResult(false, rejection);
         }
 
         try
@@ -548,6 +552,15 @@ internal sealed partial class FileBackedLicenseService :
             return new LicenseUploadResult(true,
                 "License applied to the persisted upload override; the LicensePath mirror could not be updated. See server logs for details.");
         }
+    }
+
+    // An upload may not roll back to a license issued before the valid one in force; the persisted upload keeps that across restarts.
+    private string? OlderThanLicenseInForce(LicenseSnapshot uploaded)
+    {
+        var current = GetSnapshot();
+        return current.IsValid && current.IssuedAt is { } inForce && uploaded.IssuedAt < inForce
+            ? "License validation failed: the uploaded license was issued before the license in force."
+            : null;
     }
 
     private static async Task WriteLicenseFileAsync(string path, byte[] licenseData, CancellationToken cancellationToken)
@@ -652,6 +665,12 @@ internal sealed partial class FileBackedLicenseService :
         if (payload.ExpiresAt.HasValue && payload.ExpiresAt.Value <= _timeProvider.GetUtcNow())
         {
             return CreateInvalidResult(LicenseValidationState.Expired, "expired", payload, envelope.KeyId, edition);
+        }
+
+        // The issue time is the license's not-before: one dated beyond clock skew was not issued yet.
+        if (payload.IssuedAt!.Value > _timeProvider.GetUtcNow() + IssuedAtClockSkew)
+        {
+            return CreateInvalidResult(LicenseValidationState.Malformed, "issued-in-future", payload, envelope.KeyId, edition);
         }
 
         var snapshot = CreateSnapshot(
