@@ -9,6 +9,7 @@ namespace Honua.Server.Features.Identity.Saml;
 internal sealed class SamlAssertionReplayCache(ITokenReplayStore replays)
 {
     private const string KeyPrefix = "saml:replay:";
+    private const string RequestKeyPrefix = "saml:request:";
     private const string Marker = "saml";
 
     public bool TryRemember(string id, DateTimeOffset notOnOrAfter)
@@ -21,9 +22,18 @@ internal sealed class SamlAssertionReplayCache(ITokenReplayStore replays)
         var lifetime = notOnOrAfter > DateTimeOffset.UtcNow
             ? notOnOrAfter - DateTimeOffset.UtcNow
             : TimeSpan.FromMinutes(5);
+        return TryRegister(KeyPrefix + id.Trim(), lifetime);
+    }
+
+    // An issued sign-in request ID may complete one sign-in; a second response for it is refused.
+    public bool TryConsumeRequest(string requestId, TimeSpan lifetime)
+        => !string.IsNullOrWhiteSpace(requestId) && TryRegister(RequestKeyPrefix + requestId.Trim(), lifetime);
+
+    private bool TryRegister(string key, TimeSpan lifetime)
+    {
         try
         {
-            return replays.TryRegister(new TokenReplayRegistrationRequest(KeyPrefix + id.Trim(), Marker, lifetime));
+            return replays.TryRegister(new TokenReplayRegistrationRequest(key, Marker, lifetime));
         }
         catch (Exception storeFailure) when (storeFailure is not OutOfMemoryException and not OperationCanceledException)
         {
