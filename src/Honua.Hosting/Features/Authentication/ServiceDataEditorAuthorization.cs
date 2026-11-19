@@ -9,6 +9,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Validation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -366,6 +367,13 @@ internal static class ServiceDataEditorAuthorization
             return null;
         }
 
+        // A multi-provider install stamps the provider-qualified owner at authentication.
+        var qualifiedOwner = CanonicalSecurityActor.FindStampedValue(principal, OwnerIdentityScope.OwnerClaim);
+        return string.IsNullOrWhiteSpace(qualifiedOwner) ? ResolveBareOwnerSubject(principal) : qualifiedOwner;
+    }
+
+    internal static string? ResolveBareOwnerSubject(ClaimsPrincipal principal)
+    {
         var subject = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (!string.IsNullOrWhiteSpace(subject))
         {

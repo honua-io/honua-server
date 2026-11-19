@@ -11,8 +11,8 @@ public sealed record CoordinatedReleaseHumanApproval
     public required string WorkflowId { get; init; }
     public required long WorkflowVersion { get; init; }
     public required CoordinatedReleaseStep Gate { get; init; }
-    // Not required: control-plane records omit nulls on write, and an install without tenancy has no
-    // tenant, so a required property would refuse every stored approval on read.
+    // Not required: stored records omit a null tenant (ControlPlaneJsonContext writes no nulls), and an
+    // install without tenancy must read its own approval evidence back. Every construction sets it explicitly.
     public string? TenantId { get; init; }
     public required string ActorId { get; init; }
     public required string Channel { get; init; }

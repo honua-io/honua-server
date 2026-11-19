@@ -44,6 +44,8 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         _logger = logger;
     }
 
+    public bool IsCallerRead => _httpContextAccessor.HttpContext is not null;
+
     public async Task<SqlFragment?> ResolveAsync(MetadataV2Object resource, CancellationToken cancellationToken = default)
     {
         var predicates = await ResolvePredicatesAsync(resource, cancellationToken).ConfigureAwait(false);

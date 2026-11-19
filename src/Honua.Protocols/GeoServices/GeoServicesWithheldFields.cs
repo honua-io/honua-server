@@ -3,8 +3,8 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Rendering;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 
@@ -17,19 +17,9 @@ internal static class GeoServicesWithheldFields
     private static readonly string[] SeparableEntryArrays = ["labelingInfo", "fieldInfos"];
 
     // Marks the caller's masked fields hidden, so every listing that omits hidden fields omits them too.
-    public static async Task<MetadataV2Object> HideMaskedFieldsAsync(
+    public static Task<MetadataV2Object> HideMaskedFieldsAsync(
         HttpContext context, MetadataV2Object resource, CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(resource);
-        if (context.RequestServices.GetService<IFieldMaskSource>() is not { } masks)
-        {
-            return resource;
-        }
-
-        var masked = await masks.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
-        return resource.WithSchemaFieldsHidden(masked);
-    }
+        => CallerVisibleSchema.HideMaskedFieldsAsync(context, resource, cancellationToken);
 
     // Hidden fields plus every field the caller's masks name, including masked names the schema does not declare.
     public static Task<IReadOnlySet<string>> WithheldFieldNamesAsync(

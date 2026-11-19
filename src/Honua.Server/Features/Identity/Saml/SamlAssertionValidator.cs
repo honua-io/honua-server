@@ -25,7 +25,11 @@ public sealed class SamlValidationResult
 
     public SamlSubject? Subject { get; }
 
-    public static SamlValidationResult Success(SamlSubject subject) => new(true, null, subject);
+    // The request ID the response answers; null for an unsolicited (IdP-initiated) response.
+    public string? InResponseTo { get; private init; }
+
+    public static SamlValidationResult Success(SamlSubject subject, string? inResponseTo = null)
+        => new(true, null, subject) { InResponseTo = string.IsNullOrEmpty(inResponseTo) ? null : inResponseTo };
 
     public static SamlValidationResult Failure(string reason) => new(false, reason, null);
 }
@@ -277,7 +281,7 @@ internal sealed class SamlAssertionValidator(
             DisplayName = displayName,
             Roles = roles,
             SessionNotOnOrAfter = sessionExpiry,
-        });
+        }, responseInResponseTo);
     }
 
     private static Dictionary<string, List<string>> ReadAttributes(XElement assertion)
