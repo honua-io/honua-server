@@ -95,10 +95,14 @@ def _embeds_credentials(repo_url: str) -> bool:
     """True when an http(s) URL carries any userinfo, or an ssh URL carries a password."""
     if repo_url.startswith("git@"):
         return False
-    parts = urlsplit(repo_url)
+    try:
+        parts = urlsplit(repo_url)
+        username, password = parts.username, parts.password
+    except ValueError as exc:
+        raise JobSpecError("repo_url is malformed.") from exc
     if parts.scheme in ("http", "https"):
-        return parts.username is not None or parts.password is not None
-    return parts.password is not None
+        return username is not None or password is not None
+    return password is not None
 
 
 def validate_entrypoint(entrypoint: str | None) -> str:

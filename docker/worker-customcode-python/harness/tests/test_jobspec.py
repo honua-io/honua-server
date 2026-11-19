@@ -210,3 +210,8 @@ def test_repo_url_with_credentials_rejected_without_echoing_them(url: str) -> No
 @pytest.mark.parametrize("url", ["git@github.com:acme/tool.git", "ssh://git@github.com/acme/tool.git"])
 def test_repo_url_with_a_plain_ssh_user_accepted(url: str) -> None:
     assert load_job_spec(dict(BASE_ENV, CUSTOMCODE_REPO_URL=url)).repo_url == url
+
+
+def test_malformed_repo_url_rejected_as_job_spec_error() -> None:
+    with pytest.raises(JobSpecError, match="malformed"):
+        load_job_spec(dict(BASE_ENV, CUSTOMCODE_REPO_URL="https://[bad/acme/tool.git"))

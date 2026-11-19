@@ -410,8 +410,17 @@ public sealed class JobSpec
     // An http(s) URL may carry no userinfo at all; an ssh URL may name a user but not a password.
     private static bool EmbedsCredentials(string repoUrl)
     {
-        if (repoUrl.StartsWith("git@", StringComparison.Ordinal) ||
-            !Uri.TryCreate(repoUrl, UriKind.Absolute, out var uri) || string.IsNullOrEmpty(uri.UserInfo))
+        if (repoUrl.StartsWith("git@", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!Uri.TryCreate(repoUrl, UriKind.Absolute, out var uri))
+        {
+            throw new JobSpecException("repo_url is malformed.");
+        }
+
+        if (string.IsNullOrEmpty(uri.UserInfo))
         {
             return false;
         }

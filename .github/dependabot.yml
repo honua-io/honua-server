@@ -46,10 +46,7 @@ updates:
     directories:
       - "/"
       - "/docker"
-      - "/docker/worker-customcode-python"
-      - "/docker/worker-customcode-dotnet"
-      - "/docker/worker-gdal"
-      - "/docker/proj-grids"
+      - "/docker/*"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -70,15 +67,3 @@ updates:
     labels:
       - "dependencies"
       - "nuget"
-
-  # The custom-code Python harness's hashed requirements.
-  - package-ecosystem: "pip"
-    directory: "/docker/worker-customcode-python"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    commit-message:
-      prefix: "deps"
-    labels:
-      - "dependencies"
-      - "python"

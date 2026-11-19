@@ -36,4 +36,43 @@ public sealed class UserProjectBuilderTests
             root.Delete(recursive: true);
         }
     }
+
+    [Fact]
+    public void Build_IgnoresFeedsTheUserProjectAdds()
+    {
+        var root = Directory.CreateTempSubdirectory();
+        try
+        {
+            File.WriteAllText(Path.Join(root.FullName, "tool.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\" />");
+            IReadOnlyList<string>? captured = null;
+            var builder = new UserProjectBuilder((args, _) =>
+            {
+                captured = args;
+                return new ProcessResult(0, "build ok", "");
+            });
+
+            builder.Build(root.FullName, "tool.csproj", Path.Join(root.FullName, "out"));
+
+            captured.Should().Contain("-p:RestoreAdditionalProjectSources=")
+                .And.Contain("-p:RestoreAdditionalProjectFallbackFolders=");
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void RemoveCredentials_StartsTheBuildWithoutJobCredentials()
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo("dotnet");
+        psi.Environment["HONUA_JOB_TOKEN"] = "scoped";
+        psi.Environment["HONUA_JOB_REDEMPTION_CODE"] = "code";
+        psi.Environment["PATH"] = "/usr/bin";
+
+        UserProjectBuilder.RemoveCredentials(psi);
+
+        psi.Environment.Should().NotContainKey("HONUA_JOB_TOKEN").And.NotContainKey("HONUA_JOB_REDEMPTION_CODE");
+        psi.Environment.Should().ContainKey("PATH");
+    }
 }

@@ -75,10 +75,11 @@ public sealed class UserProjectBuilder
 
         Directory.CreateDirectory(outputDirectory);
 
-        // The restore's only source is the warm cache baked into the image: it overrides any
-        // nuget.config in the user's repository, so a tool cannot pull arbitrary packages at
-        // job time. If a tool genuinely needs another package the operator widens the cache,
-        // not the network at runtime.
+        // Package restore uses only the warm cache baked into the image: --source overrides any
+        // nuget.config in the user's repository, and the empty properties override feeds a user
+        // project adds itself. A tool that needs another package gets it from a wider cache, not
+        // the network. (Build targets can still run commands, so egress policy remains the
+        // network control.)
         var args = new List<string>
         {
             "build",
@@ -87,6 +88,8 @@ public sealed class UserProjectBuilder
             "--nologo",
             "--source", WarmPackageSource,
             "-p:RestoreIgnoreFailedSources=false",
+            "-p:RestoreAdditionalProjectSources=",
+            "-p:RestoreAdditionalProjectFallbackFolders=",
             "--output", outputDirectory,
             "-p:TreatWarningsAsErrors=false",
             "-p:NuGetAudit=false",
@@ -121,11 +124,22 @@ public sealed class UserProjectBuilder
             psi.ArgumentList.Add(arg);
         }
 
+        RemoveCredentials(psi);
         using var process = Process.Start(psi)
             ?? throw new UserBuildException("failed to start dotnet.");
         var stdout = process.StandardOutput.ReadToEnd();
         var stderr = process.StandardError.ReadToEnd();
         process.WaitForExit();
         return new ProcessResult(process.ExitCode, stdout, stderr);
+    }
+
+    // The build runs the user's MSBuild targets before the harness scrubs its own environment,
+    // so the dotnet process starts without the job credentials.
+    internal static void RemoveCredentials(ProcessStartInfo psi)
+    {
+        foreach (var name in CredentialSandbox.StrippedEnvVars)
+        {
+            psi.Environment.Remove(name);
+        }
     }
 }
