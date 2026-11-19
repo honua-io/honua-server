@@ -419,6 +419,8 @@ internal sealed partial class Wfs20Handler
             return CreateStoredQueryFeatureNotFoundResult(context, featureId);
         }
 
+        descriptor = (await WithCallerMasksAsync(context, [descriptor], cancellationToken).ConfigureAwait(false))[0];
+
         var query = await BuildFeatureQueryAsync(
             descriptor,
             propertyName: null,

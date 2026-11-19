@@ -22,6 +22,7 @@ internal sealed partial class OgcFeaturesQueryHandler
         int LayerId,
         FeatureQuery Query)
     {
+        public required string[] FieldNames { get; init; }
         public required AxisOrder AxisOrder { get; init; }
         public ImmutableHashSet<string>? ProjectedProperties { get; init; }
         public required string CrsUri { get; init; }
@@ -34,7 +35,7 @@ internal sealed partial class OgcFeaturesQueryHandler
     {
         return new StreamingCsvItemsResult(
             token => StreamCsvFeaturesAsync(store, query, token),
-            new CsvResponseOptions(ResolveCsvFieldNames(query.Resource, query.ProjectedProperties),
+            new CsvResponseOptions(query.FieldNames,
                 query.Resource.FindPrimaryIdField()?.Name, cancellationToken),
             query.CrsUri);
     }
