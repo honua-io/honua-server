@@ -3099,3 +3099,38 @@ run from 1 m 40 s to 1 m 9 s.
 Shard filters are unchanged, so every case runs in the same shards on selected PR
 runs and twice-daily full trunk runs. No workflow, shard definition, required
 check name or aggregate `needs` changed.
+
+### Shared hosts in gRPC spec, GP alias and attachment authoring tests
+
+`GrpcSpecServiceIntegrationTests` built a Pro-licensed server in its constructor, so
+each of its 17 Pro cases started one. They now share one class host. The spec
+artifact cache is in memory and lives as long as the host, and a cache hit reports
+the node as `Cached`, not `Succeeded`. So the two cases that apply with
+`ReadWrite` each take a node id of their own (the id is part of the content hash)
+and still miss the cache. The Community-licence case keeps its own host.
+
+`GPServerEsriTaskAliasEndpointTests` started a server for each replaced-service
+case: 7 with a recording job service, 3 with a synchronous execute service and 3
+with the alias-colliding catalog. A class fixture now starts one host per
+configuration on first use, and clears the recording service before each case
+takes it. The case that needs the colliding catalog and the recording service
+together keeps its own host.
+
+`ServiceSettingsAttachmentAuthoringTests` started a server for every case. Its four
+editing-graph cases with the default output cache now share one
+`SeededMetadataHost`. Before each case it drops any queued graph swap, restores the
+seeded graph under a new revision and evicts cached service metadata. The
+output-cache case and the non-editing case keep their own hosts. Every assertion
+is unchanged.
+
+Measured on the build host (Release, the same 49 cases, 49/49 passing before and
+after): case time went from 118.0 to 9.3 s (`GrpcSpecServiceIntegrationTests`),
+108.0 to 18.8 s (`ServiceSettingsAttachmentAuthoringTests`) and 82.2 to 28.8 s
+(`GPServerEsriTaskAliasEndpointTests`), 308.2 to 56.9 s in all. The test run went
+from 117 s to 28 s for the two server classes and from 82 s to 28 s for the
+GeoServices class. On hosted full run 44271438677 the three took 272.7 s of case
+time.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.

@@ -27,7 +27,10 @@ namespace Honua.Server.Tests.Features.Admin;
 
 [Protocol(TestProtocols.Admin, TestProtocols.FeatureServer)]
 [Operation(Operations.Configuration)]
-public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper output)
+public sealed class ServiceSettingsAttachmentAuthoringTests(
+    ITestOutputHelper output,
+    ServiceSettingsAttachmentAuthoringTests.EditingHost editing)
+    : IClassFixture<ServiceSettingsAttachmentAuthoringTests.EditingHost>
 {
     private const string ServiceName = "attachment-authoring-owned";
     private const string ResourceId = "attachment-authoring-resource";
@@ -40,7 +43,7 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
     public async Task AttachmentIntent_RoundTripsWithoutChangingOtherMetadata_AndInvalidatesAliases()
     {
         var cache = Substitute.For<IOutputCacheStore>();
-        await using var fixture = await CreateFixtureAsync(withEditing: true, cache);
+        await using var fixture = await CreateFixtureAsync(BuildGraph(withEditing: true), cache);
         using var client = fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
         var before = fixture.GetCurrentV2GraphSnapshot().Graph;
         var original = before.Resources.Single(resource => resource.Metadata.Id == ResourceId);
@@ -95,7 +98,7 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task AttachmentIntent_OmittedOrNullPreservesLegacyMetadata_ExplicitValueUsesCanonicalDefaults()
     {
-        await using var fixture = await CreateFixtureAsync(withEditing: false);
+        await using var fixture = await CreateFixtureAsync(BuildGraph(withEditing: false));
         using var client = fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
         var original = fixture.GetCurrentV2GraphSnapshot().Graph;
         foreach (var payload in new[] { "{}", "{\"editing\":null}", "{\"editing\":{}}", "{\"editing\":{\"supportsAttachments\":null}}" })
@@ -138,7 +141,7 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task AttachmentIntent_WhenPublicationRelinks_DoesNotChangeEitherResource()
     {
-        await using var fixture = await CreateFixtureAsync(withEditing: true);
+        var fixture = await EditingFixtureAsync();
         using var client = fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
         var original = fixture.GetCurrentV2GraphSnapshot().Graph;
         var replacement = original.Resources.Single(resource => resource.Metadata.Id == "attachment-unrelated-resource");
@@ -159,7 +162,7 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task AttachmentIntent_InvalidBoolean_IsRejectedWithoutMutation()
     {
-        await using var fixture = await CreateFixtureAsync(withEditing: true);
+        var fixture = await EditingFixtureAsync();
         using var client = fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
         var original = fixture.GetCurrentV2GraphSnapshot().Graph;
         using var response = await PutAsync(client, "{\"editing\":{\"supportsAttachments\":\"yes\"}}");
@@ -172,7 +175,7 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task EditorTracking_IsStoredAndPublishedAndAnEmptyStringClearsIt()
     {
-        await using var fixture = await CreateFixtureAsync(withEditing: true);
+        var fixture = await EditingFixtureAsync();
         using var client = fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
         using var response = await PutAsync(client,
             "{\"editing\":{\"editorField\":\"OWNER\",\"updatedAtField\":\"edited_at\",\"creatorField\":\"\"}}");
@@ -190,7 +193,7 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata")]
     public async Task EditorTracking_WrongTypeOrUnknownProperty_IsRejectedWithoutMutation()
     {
-        await using var fixture = await CreateFixtureAsync(withEditing: true);
+        var fixture = await EditingFixtureAsync();
         using var client = fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
         var original = fixture.GetCurrentV2GraphSnapshot().Graph;
         foreach (var payload in new[]
@@ -285,10 +288,27 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
         }
     }
 
-    private static async Task<WebAppFixture> CreateFixtureAsync(bool withEditing, IOutputCacheStore? cache = null)
+    // One host for the editing-graph cases that keep the default output cache. Each case restores the
+    // seeded graph first, so no case sees another's writes or a cached response from them.
+    public sealed class EditingHost() : SeededMetadataHost(CreateFixture(BuildGraph(withEditing: true)));
+
+    private async Task<WebAppFixture> EditingFixtureAsync()
     {
-        var provider = new TestMetadataV2GraphProvider(BuildGraph(withEditing));
-        var fixture = new WebAppFixture()
+        await editing.RestoreSeededStateAsync();
+        return editing.Application;
+    }
+
+    private static async Task<WebAppFixture> CreateFixtureAsync(MetadataV2Graph graph, IOutputCacheStore? cache = null)
+    {
+        var fixture = CreateFixture(graph, cache);
+        await fixture.InitializeAsync();
+        return fixture;
+    }
+
+    private static WebAppFixture CreateFixture(MetadataV2Graph graph, IOutputCacheStore? cache = null)
+    {
+        var provider = new TestMetadataV2GraphProvider(graph);
+        return new WebAppFixture()
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -310,8 +330,6 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
                     services.AddSingleton(cache);
                 }
             });
-        await fixture.InitializeAsync();
-        return fixture;
     }
 
     private static MetadataV2Graph BuildGraph(bool withEditing)
