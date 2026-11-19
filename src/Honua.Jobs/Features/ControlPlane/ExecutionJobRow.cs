@@ -65,7 +65,9 @@ internal sealed record ExecutionJobRow(
         $"'{nameof(ExecutionJobStatus.Queued)}', '{nameof(ExecutionJobStatus.Provisioning)}', '{nameof(ExecutionJobStatus.Running)}'";
 
     public static ExecutionJobRow From(ExecutionJobRecord job, IExecutionJobSecretProtector secrets)
-        => new(
+    {
+        job = ExecutionJobSubmitterSeal.Seal(job, secrets);
+        return new(
             JsonSerializer.Serialize(ExecutionJobSecretParameters.Protect(job, secrets), ControlPlaneJsonContext.Default.ExecutionJobRecord),
             job.Spec.Kind.ToString(),
             RuntimeProfiles.Normalize(job.Spec.RuntimeProfile),
@@ -77,6 +79,7 @@ internal sealed record ExecutionJobRow(
             (job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default).Timeout,
             (job.TimeoutPolicy ?? JobTimeoutPolicy.Default).MaxDuration,
             BuildLookupKeys(job));
+    }
 
     public static short PriorityBand(OperationPriority priority)
         => priority switch
@@ -116,6 +119,7 @@ internal sealed record ExecutionJobRow(
             return null;
         }
 
+        record = ExecutionJobSubmitterSeal.Verify(record, secrets);
         return ExecutionJobSecretParameters.Unprotect(record, secrets) with
         {
             Version = reader.GetInt64(0),

@@ -14,6 +14,11 @@ internal interface IExecutionJobSecretProtector
 
     // Returns the stored value unchanged when it cannot be read, so no caller sees a usable capability.
     string Unprotect(string stored);
+
+    string Seal(string digest);
+
+    // False unless the seal was made for this digest with a key this node holds.
+    bool VerifySeal(string digest, string seal);
 }
 
 internal sealed class UnprotectedExecutionJobSecrets : IExecutionJobSecretProtector
@@ -23,6 +28,10 @@ internal sealed class UnprotectedExecutionJobSecrets : IExecutionJobSecretProtec
     public string Protect(string value) => value;
 
     public string Unprotect(string stored) => stored;
+
+    public string Seal(string digest) => digest;
+
+    public bool VerifySeal(string digest, string seal) => string.Equals(digest, seal, StringComparison.Ordinal);
 }
 
 internal static class ExecutionJobSecretParameters

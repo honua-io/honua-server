@@ -142,6 +142,21 @@ do not fall back; they propagate as transient failures. Operators using a non-qu
 republish scheduled workflows and resubmit pending approvals after role revocation, because the
 old snapshot otherwise remains authoritative.
 
+### Sealed at rest
+
+The snapshot decides what a job may read, so a writer of the job store must not be able to
+grant itself claims. `ExecutionJobRow.From` seals the stored snapshot with the shared
+data-protection key ring (purpose `Honua.ExecutionJobs.SubmitterSeal.v1`) over a digest of
+the snapshot, the operation id and `RequestedBy`, so a snapshot edited in place or copied
+from another job does not verify. `ExecutionJobRow.TryRead` verifies it; a snapshot without
+a valid seal is not used, the job has no submitter context, and the fail-closed guards above
+refuse its reads. The unverified snapshot is kept and written back unchanged, so a node
+without the key ring does not erase what it cannot check.
+
+The key ring is stored wrapped by the key-ring protector, so database access alone cannot
+forge a seal. Jobs queued by a build without seals are refused after the upgrade and must be
+resubmitted.
+
 ## Consequences
 
 - Job output for RLS/field-mask-restricted callers shrinks to match the synchronous
