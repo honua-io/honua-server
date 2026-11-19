@@ -28979,8 +28979,7 @@
           "permissions",
           "status",
           "createdAt",
-          "updatedAt",
-          "kind"
+          "updatedAt"
         ],
         "properties": {
           "id": {
@@ -29088,8 +29087,7 @@
           "name",
           "status",
           "permissions",
-          "canAuthenticate",
-          "kind"
+          "canAuthenticate"
         ],
         "properties": {
           "id": {
