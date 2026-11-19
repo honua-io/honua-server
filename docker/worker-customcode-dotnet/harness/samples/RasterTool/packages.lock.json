@@ -4,9 +4,9 @@
     "net11.0": {
       "MaxRev.Gdal.Core": {
         "type": "Direct",
-        "requested": "[3.12.4.520, )",
-        "resolved": "3.12.4.520",
-        "contentHash": "EfZGoJqcySSewub5FJ+J/h87ZfMTZ/umuEqS4wU/wTT1G8veYhSrGjXkoIIpAS05ST4De6jEfVxDvDnBnJlM9Q=="
+        "requested": "[3.13.3.611, )",
+        "resolved": "3.13.3.611",
+        "contentHash": "rioZ1DomXfWIh3R1dUJZSfNLjV9PCsUdCLYmFlfEa00hUc//R+kC710mfLtYCzyWCuYqDaeD7FHzay8uxzVeQw=="
       },
       "MaxRev.Gdal.LinuxRuntime.Minimal": {
         "type": "Direct",
@@ -35,9 +35,9 @@
     "net11.0/linux-x64": {
       "MaxRev.Gdal.Core": {
         "type": "Direct",
-        "requested": "[3.12.4.520, )",
-        "resolved": "3.12.4.520",
-        "contentHash": "EfZGoJqcySSewub5FJ+J/h87ZfMTZ/umuEqS4wU/wTT1G8veYhSrGjXkoIIpAS05ST4De6jEfVxDvDnBnJlM9Q=="
+        "requested": "[3.13.3.611, )",
+        "resolved": "3.13.3.611",
+        "contentHash": "rioZ1DomXfWIh3R1dUJZSfNLjV9PCsUdCLYmFlfEa00hUc//R+kC710mfLtYCzyWCuYqDaeD7FHzay8uxzVeQw=="
       },
       "MaxRev.Gdal.LinuxRuntime.Minimal.arm64": {
         "type": "Transitive",

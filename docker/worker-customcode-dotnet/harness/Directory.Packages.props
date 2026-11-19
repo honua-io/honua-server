@@ -24,7 +24,7 @@
       native payload for linux-x64. Init via GdalBase.ConfigureAll() (see the
       RasterInfo sample + the README).
     -->
-    <PackageVersion Include="MaxRev.Gdal.Core" Version="3.12.4.520" />
+    <PackageVersion Include="MaxRev.Gdal.Core" Version="3.13.3.611" />
     <PackageVersion Include="MaxRev.Gdal.LinuxRuntime.Minimal" Version="3.12.4.520" />
   </ItemGroup>
 
