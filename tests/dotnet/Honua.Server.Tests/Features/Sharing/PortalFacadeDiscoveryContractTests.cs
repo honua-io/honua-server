@@ -46,6 +46,8 @@ public sealed class PortalFacadeDiscoveryContractTests(PortalFacadeDiscoveryCont
 
     // One host for the class: every case reads the discovery projection or issues a token
     // of its own, and neither generateToken nor the issuer caps or rate-limits a principal.
+    // The stamped client IP is tracked by the failed-attempt gate, so a case that posts bad
+    // credentials belongs on a host of its own.
     public sealed class DiscoveryHost : IAsyncLifetime
     {
         public WebAppFixture Application { get; } = new WebAppFixture()

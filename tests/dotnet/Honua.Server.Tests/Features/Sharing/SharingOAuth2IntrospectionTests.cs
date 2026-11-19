@@ -197,8 +197,11 @@ public sealed class SharingOAuth2IntrospectionTests(SharingOAuth2IntrospectionTe
                 ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30)),
             CancellationToken.None);
 
-        // Flip the last character of the signature segment to forge the token.
-        var tampered = issuance.Token[..^1] + (issuance.Token[^1] == 'a' ? 'b' : 'a');
+        // Change a middle character of the signature segment to forge the token. Every bit of a
+        // middle character is signature data; the last character also carries padding bits, so
+        // changing it can leave the decoded signature unchanged.
+        var position = issuance.Token.LastIndexOf('.') + 10;
+        var tampered = issuance.Token[..position] + (issuance.Token[position] == 'A' ? 'B' : 'A') + issuance.Token[(position + 1)..];
 
         using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
         using var response = await PostIntrospectAsync(client, tampered);
