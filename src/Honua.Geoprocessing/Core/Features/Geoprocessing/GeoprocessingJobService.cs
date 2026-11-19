@@ -138,10 +138,8 @@ internal sealed partial class GeoprocessingJobService : IGeoprocessingJobService
                 workloadRegistry,
                 backends,
                 admissionEvaluator,
-                operationGateway,
-                operationEnvelopeFactory,
-                admissionCoordinator,
-                jobSecurityContextSealer)
+                new GeoprocessApprovalServices(operationGateway, operationEnvelopeFactory, jobSecurityContextSealer),
+                admissionCoordinator)
             {
                 HostRuntime = hostRuntime ?? ProcessEnvironmentHostRuntime.Instance,
             },

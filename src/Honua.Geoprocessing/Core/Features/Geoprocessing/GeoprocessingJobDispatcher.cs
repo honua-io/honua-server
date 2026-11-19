@@ -61,10 +61,8 @@ internal sealed class GeoprocessingJobDispatcher
         IExecutionJobDefinitionRegistry? workloadRegistry = null,
         IEnumerable<IBatchComputeBackend>? backends = null,
         IExecutionAdmissionEvaluator? admissionEvaluator = null,
-        IOperationGateway? operationGateway = null,
-        IOperationEnvelopeFactory? operationEnvelopeFactory = null,
-        ExecutionAdmissionCoordinator? admissionCoordinator = null,
-        IJobSecurityContextSealer? sealer = null)
+        GeoprocessApprovalServices? approvals = null,
+        ExecutionAdmissionCoordinator? admissionCoordinator = null)
     {
         _logger = logger;
         _executorOptions = executorOptions;
@@ -73,10 +71,10 @@ internal sealed class GeoprocessingJobDispatcher
         _workloadRegistry = workloadRegistry;
         _backends = backends?.ToArray() ?? Array.Empty<IBatchComputeBackend>();
         _admissionEvaluator = admissionEvaluator;
-        _operationGateway = operationGateway;
-        _operationEnvelopeFactory = operationEnvelopeFactory;
+        _operationGateway = approvals?.Gateway;
+        _operationEnvelopeFactory = approvals?.EnvelopeFactory;
         _admissionCoordinator = admissionCoordinator ?? ExecutionAdmissionCoordinator.ProcessLocal;
-        _sealer = sealer;
+        _sealer = approvals?.Sealer;
     }
 
     // The proposal's snapshot is used on resume only when its seal verifies for this proposal; a
@@ -609,4 +607,19 @@ internal sealed class GeoprocessingJobDispatcher
             ? new(RemoteCancelOutcome.TerminalConflict, updated.Status)
             : new(RemoteCancelOutcome.Delegated);
     }
+}
+
+// What the dispatcher needs to park a plan for approval and resume it: the proposal gateway, the
+// envelope factory, and the sealer for the submitter snapshot the proposal carries. Each is absent
+// on a lightweight host, which then refuses plans that need approval.
+internal sealed class GeoprocessApprovalServices(
+    IOperationGateway? gateway = null,
+    IOperationEnvelopeFactory? envelopeFactory = null,
+    IJobSecurityContextSealer? sealer = null)
+{
+    public IOperationGateway? Gateway { get; } = gateway;
+
+    public IOperationEnvelopeFactory? EnvelopeFactory { get; } = envelopeFactory;
+
+    public IJobSecurityContextSealer? Sealer { get; } = sealer;
 }
