@@ -18,7 +18,8 @@ namespace Honua.Server.Tests.Features.Sharing;
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
-public sealed class SharingOAuth2IntrospectionTests
+public sealed class SharingOAuth2IntrospectionTests(SharingOAuth2IntrospectionTests.IntrospectionHosts hosts)
+    : IClassFixture<SharingOAuth2IntrospectionTests.IntrospectionHosts>
 {
     private const string AdminPassword = WebAppFixture.SharedAdminPassword;
     private const string IntrospectPath = "/sharing/rest/oauth2/introspect";
@@ -41,41 +42,64 @@ public sealed class SharingOAuth2IntrospectionTests
             }
         });
 
+    // One host per token format, each started on first use and shared by the class. Every case
+    // issues its own token or introspects one that was never issued, so no case sees another's.
+    public sealed class IntrospectionHosts : IAsyncLifetime
+    {
+        private readonly Lazy<Task<WebAppFixture>> _opaque = new(() => StartAsync(CreateFixture()));
+        private readonly Lazy<Task<WebAppFixture>> _jwt = new(() => StartAsync(CreateFixture(enableJwt: true)));
+
+        internal Task<WebAppFixture> OpaqueAsync() => _opaque.Value;
+
+        internal Task<WebAppFixture> JwtAsync() => _jwt.Value;
+
+        public Task InitializeAsync() => Task.CompletedTask;
+
+        public async Task DisposeAsync()
+        {
+            foreach (var host in new[] { _opaque, _jwt })
+            {
+                if (host.IsValueCreated && host.Value.IsCompletedSuccessfully)
+                {
+                    await host.Value.Result.DisposeAsync();
+                }
+            }
+        }
+
+        private static async Task<WebAppFixture> StartAsync(WebAppFixture host)
+        {
+            await host.InitializeAsync();
+            return host;
+        }
+    }
+
     [IntegrationTest]
     [Operation(Operations.Security)]
     [Endpoint("POST /sharing/rest/oauth2/introspect")]
     public async Task Introspect_ActiveOpaqueToken_ReturnsActiveTrueWithMetadata()
     {
-        var fixture = CreateFixture();
-        await fixture.InitializeAsync();
-        try
-        {
-            var issuer = fixture.Services.GetRequiredService<IPortalTokenIssuer>();
-            var issuance = await issuer.IssueAsync(
-                new PortalTokenIssueRequest(
-                    PrincipalId: "etl-worker",
-                    DisplayName: "ETL Worker",
-                    TenantId: null,
-                    Roles: ["services:read"],
-                    ClientType: PortalTokenClientType.Ip,
-                    BindingValue: "203.0.113.10",
-                    ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30)),
-                CancellationToken.None);
+        var fixture = await hosts.OpaqueAsync();
+        var issuer = fixture.Services.GetRequiredService<IPortalTokenIssuer>();
+        var issuance = await issuer.IssueAsync(
+            new PortalTokenIssueRequest(
+                PrincipalId: "etl-worker",
+                DisplayName: "ETL Worker",
+                TenantId: null,
+                Roles: ["services:read"],
+                ClientType: PortalTokenClientType.Ip,
+                BindingValue: "203.0.113.10",
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30)),
+            CancellationToken.None);
 
-            using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
-            using var response = await PostIntrospectAsync(client, issuance.Token);
+        using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+        using var response = await PostIntrospectAsync(client, issuance.Token);
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var payload = await ReadAsync(response);
-            payload.Active.Should().BeTrue();
-            payload.Sub.Should().Be("etl-worker");
-            payload.Scope.Should().Contain("services:read");
-            payload.Exp.Should().BeGreaterThan(0);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadAsync(response);
+        payload.Active.Should().BeTrue();
+        payload.Sub.Should().Be("etl-worker");
+        payload.Scope.Should().Contain("services:read");
+        payload.Exp.Should().BeGreaterThan(0);
     }
 
     [IntegrationTest]
@@ -83,24 +107,16 @@ public sealed class SharingOAuth2IntrospectionTests
     [Endpoint("POST /sharing/rest/oauth2/introspect")]
     public async Task Introspect_UnknownToken_ReturnsActiveFalse()
     {
-        var fixture = CreateFixture();
-        await fixture.InitializeAsync();
-        try
-        {
-            using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
-            using var response = await PostIntrospectAsync(client, "0000000000000000000000000000000000000000000000000000000000000000");
+        var fixture = await hosts.OpaqueAsync();
+        using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+        using var response = await PostIntrospectAsync(client, "0000000000000000000000000000000000000000000000000000000000000000");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var payload = await ReadAsync(response);
-            payload.Active.Should().BeFalse();
-            // RFC 7662 §2.2: an inactive token leaks nothing else.
-            payload.Sub.Should().BeNull();
-            payload.Scope.Should().BeNull();
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadAsync(response);
+        payload.Active.Should().BeFalse();
+        // RFC 7662 §2.2: an inactive token leaks nothing else.
+        payload.Sub.Should().BeNull();
+        payload.Scope.Should().BeNull();
     }
 
     [IntegrationTest]
@@ -108,35 +124,27 @@ public sealed class SharingOAuth2IntrospectionTests
     [Endpoint("POST /sharing/rest/oauth2/introspect")]
     public async Task Introspect_ExpiredToken_ReturnsActiveFalse()
     {
-        var fixture = CreateFixture();
-        await fixture.InitializeAsync();
-        try
-        {
-            var issuer = fixture.Services.GetRequiredService<IPortalTokenIssuer>();
-            // Issue an already-expired token; the cache-backed issuer evicts on read,
-            // so introspection sees it as inactive.
-            var issuance = await issuer.IssueAsync(
-                new PortalTokenIssueRequest(
-                    PrincipalId: "expired",
-                    DisplayName: "Expired",
-                    TenantId: null,
-                    Roles: [],
-                    ClientType: PortalTokenClientType.Ip,
-                    BindingValue: "203.0.113.10",
-                    ExpiresAt: DateTimeOffset.UtcNow.AddSeconds(-1)),
-                CancellationToken.None);
+        var fixture = await hosts.OpaqueAsync();
+        var issuer = fixture.Services.GetRequiredService<IPortalTokenIssuer>();
+        // Issue an already-expired token; the cache-backed issuer evicts on read,
+        // so introspection sees it as inactive.
+        var issuance = await issuer.IssueAsync(
+            new PortalTokenIssueRequest(
+                PrincipalId: "expired",
+                DisplayName: "Expired",
+                TenantId: null,
+                Roles: [],
+                ClientType: PortalTokenClientType.Ip,
+                BindingValue: "203.0.113.10",
+                ExpiresAt: DateTimeOffset.UtcNow.AddSeconds(-1)),
+            CancellationToken.None);
 
-            using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
-            using var response = await PostIntrospectAsync(client, issuance.Token);
+        using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+        using var response = await PostIntrospectAsync(client, issuance.Token);
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var payload = await ReadAsync(response);
-            payload.Active.Should().BeFalse();
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadAsync(response);
+        payload.Active.Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -144,39 +152,31 @@ public sealed class SharingOAuth2IntrospectionTests
     [Endpoint("POST /sharing/rest/oauth2/introspect")]
     public async Task Introspect_ValidJwtAccessToken_ReturnsActiveTrue()
     {
-        var fixture = CreateFixture(enableJwt: true);
-        await fixture.InitializeAsync();
-        try
-        {
-            var jwtService = fixture.Services.GetRequiredService<PortalJwtAccessTokenService>();
-            jwtService.JwtEnabled.Should().BeTrue("the fixture enables JWT with a usable signing key");
+        var fixture = await hosts.JwtAsync();
+        var jwtService = fixture.Services.GetRequiredService<PortalJwtAccessTokenService>();
+        jwtService.JwtEnabled.Should().BeTrue("the fixture enables JWT with a usable signing key");
 
-            var issuance = await jwtService.IssueAsync(
-                new PortalTokenIssueRequest(
-                    PrincipalId: "jwt-user",
-                    DisplayName: "JWT User",
-                    TenantId: null,
-                    Roles: ["services:read"],
-                    ClientType: PortalTokenClientType.Ip,
-                    BindingValue: "203.0.113.10",
-                    ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30)),
-                CancellationToken.None);
+        var issuance = await jwtService.IssueAsync(
+            new PortalTokenIssueRequest(
+                PrincipalId: "jwt-user",
+                DisplayName: "JWT User",
+                TenantId: null,
+                Roles: ["services:read"],
+                ClientType: PortalTokenClientType.Ip,
+                BindingValue: "203.0.113.10",
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30)),
+            CancellationToken.None);
 
-            // The minted access token is a signed JWT (three dot-separated segments).
-            issuance.Token.Split('.').Should().HaveCount(3);
+        // The minted access token is a signed JWT (three dot-separated segments).
+        issuance.Token.Split('.').Should().HaveCount(3);
 
-            using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
-            using var response = await PostIntrospectAsync(client, issuance.Token);
+        using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+        using var response = await PostIntrospectAsync(client, issuance.Token);
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var payload = await ReadAsync(response);
-            payload.Active.Should().BeTrue();
-            payload.Sub.Should().Be("jwt-user");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadAsync(response);
+        payload.Active.Should().BeTrue();
+        payload.Sub.Should().Be("jwt-user");
     }
 
     [IntegrationTest]
@@ -184,36 +184,28 @@ public sealed class SharingOAuth2IntrospectionTests
     [Endpoint("POST /sharing/rest/oauth2/introspect")]
     public async Task Introspect_TamperedJwt_ReturnsActiveFalse()
     {
-        var fixture = CreateFixture(enableJwt: true);
-        await fixture.InitializeAsync();
-        try
-        {
-            var jwtService = fixture.Services.GetRequiredService<PortalJwtAccessTokenService>();
-            var issuance = await jwtService.IssueAsync(
-                new PortalTokenIssueRequest(
-                    PrincipalId: "jwt-user",
-                    DisplayName: "JWT User",
-                    TenantId: null,
-                    Roles: ["services:read"],
-                    ClientType: PortalTokenClientType.Ip,
-                    BindingValue: "203.0.113.10",
-                    ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30)),
-                CancellationToken.None);
+        var fixture = await hosts.JwtAsync();
+        var jwtService = fixture.Services.GetRequiredService<PortalJwtAccessTokenService>();
+        var issuance = await jwtService.IssueAsync(
+            new PortalTokenIssueRequest(
+                PrincipalId: "jwt-user",
+                DisplayName: "JWT User",
+                TenantId: null,
+                Roles: ["services:read"],
+                ClientType: PortalTokenClientType.Ip,
+                BindingValue: "203.0.113.10",
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30)),
+            CancellationToken.None);
 
-            // Flip the last character of the signature segment to forge the token.
-            var tampered = issuance.Token[..^1] + (issuance.Token[^1] == 'a' ? 'b' : 'a');
+        // Flip the last character of the signature segment to forge the token.
+        var tampered = issuance.Token[..^1] + (issuance.Token[^1] == 'a' ? 'b' : 'a');
 
-            using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
-            using var response = await PostIntrospectAsync(client, tampered);
+        using var client = fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+        using var response = await PostIntrospectAsync(client, tampered);
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var payload = await ReadAsync(response);
-            payload.Active.Should().BeFalse("a forged-signature JWT must never introspect as active");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadAsync(response);
+        payload.Active.Should().BeFalse("a forged-signature JWT must never introspect as active");
     }
 
     [IntegrationTest]

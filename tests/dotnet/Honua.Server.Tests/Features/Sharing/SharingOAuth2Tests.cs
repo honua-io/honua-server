@@ -22,18 +22,22 @@ namespace Honua.Server.Tests.Features.Sharing;
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
-public sealed class SharingOAuth2Tests : IAsyncLifetime
+public sealed class SharingOAuth2Tests(SharingOAuth2Tests.PortalHost host) : IClassFixture<SharingOAuth2Tests.PortalHost>
 {
     private const string AdminPassword = WebAppFixture.SharedAdminPassword;
     private const string TokenEndpoint = "/sharing/rest/oauth2/token";
     private const string ClientId = "arcgispro";
     private const string RedirectUri = "https://app.example.com/oauth/redirect";
 
-    private readonly WebAppFixture _fixture;
+    private readonly WebAppFixture _fixture = host.Application;
 
-    public SharingOAuth2Tests()
+    // One host for the class. Every case seeds its own authorization code or issues its own
+    // token, the OAuth store caps nothing per principal, and the token endpoint has no rate
+    // limit, so no case sees another's codes or tokens. Cases with another configuration
+    // still build their own host.
+    public sealed class PortalHost : IAsyncLifetime
     {
-        _fixture = new WebAppFixture()
+        public WebAppFixture Application { get; } = new WebAppFixture()
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -41,11 +45,11 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
                 builder.UseSetting("Authentication:PortalToken:RequireHttps", "false");
             });
+
+        public Task InitializeAsync() => Application.InitializeAsync();
+
+        public Task DisposeAsync() => Application.DisposeAsync();
     }
-
-    public Task InitializeAsync() => _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
     [Operation(Operations.Security)]
