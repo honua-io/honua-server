@@ -23,7 +23,8 @@ namespace Honua.Server.Tests.Features.Sharing;
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
-public sealed class PortalFacadeDiscoveryContractTests : IAsyncLifetime
+public sealed class PortalFacadeDiscoveryContractTests(PortalFacadeDiscoveryContractTests.DiscoveryHost host)
+    : IClassFixture<PortalFacadeDiscoveryContractTests.DiscoveryHost>
 {
     private const string AdminPassword = WebAppFixture.SharedAdminPassword;
     private const string PublicServiceId = "portal-public-svc";
@@ -41,41 +42,16 @@ public sealed class PortalFacadeDiscoveryContractTests : IAsyncLifetime
         PropertyNameCaseInsensitive = true,
     };
 
-    private readonly WebAppFixture _fixture;
+    private readonly WebAppFixture _fixture = host.Application;
 
-    public PortalFacadeDiscoveryContractTests()
+    // One host for the class: every case reads the discovery projection or issues a token
+    // of its own, and neither generateToken nor the issuer caps or rate-limits a principal.
+    // The stamped client IP is tracked by the failed-attempt gate, so a case that posts bad
+    // credentials belongs on a host of its own.
+    public sealed class DiscoveryHost : IAsyncLifetime
     {
-        var graph = new TestMetadataV2GraphBuilder()
-            .AddService(
-                PublicServiceId,
-                "Public Basemap",
-                protocols: [ServiceProtocols.FeatureServer],
-                accessPolicy: new AccessPolicy { AllowAnonymous = true })
-            .AddService(
-                OrgServiceId,
-                "Org Operational Layers",
-                protocols: [ServiceProtocols.FeatureServer],
-                // No AllowAnonymous, no role restriction -> any authenticated principal
-                // is allowed, which the projector maps to the "org" access tier.
-                accessPolicy: new AccessPolicy())
-            .AddService(
-                PrivateServiceId,
-                "Restricted Parcels",
-                protocols: [ServiceProtocols.FeatureServer],
-                // Role-gated: the admin token (role "admin") must NOT satisfy this,
-                // proving the "private" tier and that access cannot drift from RBAC.
-                accessPolicy: new AccessPolicy { AllowedRoles = ["portal-admin"] })
-            .Build();
-
-        graph = graph with
-        {
-            Services = graph.Services.Select(service => service.Metadata.Id == OrgServiceId
-                ? service with { Metadata = service.Metadata with { Publisher = "gis-team", Description = "status:deprecated" } }
-                : service).ToArray(),
-        };
-
-        _fixture = new WebAppFixture()
-            .ReplaceService<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph))
+        public WebAppFixture Application { get; } = new WebAppFixture()
+            .ReplaceService<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(BuildGraph()))
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -87,11 +63,43 @@ public sealed class PortalFacadeDiscoveryContractTests : IAsyncLifetime
                 builder.ConfigureServices(services =>
                     services.AddSingleton<IStartupFilter>(new RemoteIpStartupFilter(ClientIp)));
             });
+
+        public Task InitializeAsync() => Application.InitializeAsync();
+
+        public Task DisposeAsync() => Application.DisposeAsync();
+
+        private static MetadataV2Graph BuildGraph()
+        {
+            var graph = new TestMetadataV2GraphBuilder()
+                .AddService(
+                    PublicServiceId,
+                    "Public Basemap",
+                    protocols: [ServiceProtocols.FeatureServer],
+                    accessPolicy: new AccessPolicy { AllowAnonymous = true })
+                .AddService(
+                    OrgServiceId,
+                    "Org Operational Layers",
+                    protocols: [ServiceProtocols.FeatureServer],
+                    // No AllowAnonymous, no role restriction -> any authenticated principal
+                    // is allowed, which the projector maps to the "org" access tier.
+                    accessPolicy: new AccessPolicy())
+                .AddService(
+                    PrivateServiceId,
+                    "Restricted Parcels",
+                    protocols: [ServiceProtocols.FeatureServer],
+                    // Role-gated: the admin token (role "admin") must NOT satisfy this,
+                    // proving the "private" tier and that access cannot drift from RBAC.
+                    accessPolicy: new AccessPolicy { AllowedRoles = ["portal-admin"] })
+                .Build();
+
+            return graph with
+            {
+                Services = graph.Services.Select(service => service.Metadata.Id == OrgServiceId
+                    ? service with { Metadata = service.Metadata with { Publisher = "gis-team", Description = "status:deprecated" } }
+                    : service).ToArray(),
+            };
+        }
     }
-
-    public Task InitializeAsync() => _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTheory]
     [InlineData(PublicServiceId, true)]
