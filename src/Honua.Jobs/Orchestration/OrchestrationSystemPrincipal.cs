@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Server.Features.Orchestration;
 
@@ -31,5 +32,21 @@ internal static class OrchestrationSystemPrincipal
         }
 
         return new ClaimsPrincipal(identity);
+    }
+
+    // The identity a run uses to submit, observe and cancel its step jobs. A run without its
+    // requester's snapshot gets no administrative role, so it reaches only jobs that requester
+    // owns rather than any job id recorded in its step states.
+    public static ClaimsPrincipal ForRun(OperationAuditInfo runAudit)
+    {
+        if (runAudit.SubmitterSecurityContext is { } snapshot)
+        {
+            return Create(runAudit.RequestedBy, snapshot);
+        }
+
+        var name = string.IsNullOrWhiteSpace(runAudit.RequestedBy) ? SystemIdentityName : runAudit.RequestedBy;
+        return new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, name), new Claim(ClaimTypes.Role, "orchestrator")],
+            AuthenticationType));
     }
 }

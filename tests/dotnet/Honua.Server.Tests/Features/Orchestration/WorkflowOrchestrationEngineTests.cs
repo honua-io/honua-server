@@ -3,11 +3,13 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Orchestration.Domain;
 using Honua.Server.Features.Orchestration;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Orchestration;
@@ -972,6 +974,29 @@ public sealed class WorkflowOrchestrationEngineTests
         var principal = OrchestrationSystemPrincipal.Create("some-operator");
         Assert.True(principal.IsInRole("admin"));
         Assert.True(principal.IsInRole("orchestrator"));
+    }
+
+    [UnitTest]
+    public void OrchestrationSystemPrincipal_ForRunWithSnapshot_ActsWithTheRunTenant()
+    {
+        var principal = OrchestrationSystemPrincipal.ForRun(new OperationAuditInfo
+        {
+            RequestedBy = "requester",
+            SubmitterSecurityContext = new JobSecurityContext("requester", "tenant-a", []),
+        });
+
+        Assert.True(principal.IsInRole("admin"));
+        Assert.Equal("tenant-a", principal.FindFirst("tenant_id")?.Value);
+    }
+
+    [UnitTest]
+    public void OrchestrationSystemPrincipal_ForRunWithoutSnapshot_HasNoAdministrativeRole()
+    {
+        var principal = OrchestrationSystemPrincipal.ForRun(new OperationAuditInfo { RequestedBy = "requester" });
+
+        Assert.False(principal.IsInRole("admin"));
+        Assert.True(principal.IsInRole("orchestrator"));
+        Assert.Equal("requester", principal.Identity!.Name);
     }
 
     [Fact]
