@@ -223,6 +223,7 @@ public static partial class OidcAuthenticationExtensions
         });
 
         services.AddScoped<IClaimsTransformation, OidcClaimsTransformation>();
+        services.TryAddSingleton<OwnerIdentityScope>();
         services.TryAddSingleton<ITokenReplayStore, InMemoryTokenReplayStore>();
 
         return services;
