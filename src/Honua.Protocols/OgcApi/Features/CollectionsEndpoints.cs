@@ -452,7 +452,9 @@ internal static class CollectionsEndpoints
                 return validation.ErrorResult!;
             }
 
-            var resource = validation.Resource!;
+            // A field the caller's mask withholds is not a queryable for that caller.
+            var resource = await CallerVisibleSchema.HideMaskedFieldsAsync(context, validation.Resource!, effectiveToken)
+                .ConfigureAwait(false);
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var queryablesId = $"{baseUrl}/ogc/features/collections/{Uri.EscapeDataString(collectionId)}/queryables";
