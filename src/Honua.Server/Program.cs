@@ -167,6 +167,12 @@ StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, buil
 var useTestSchemaHeaders = builder.Configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
 var forwardedHeadersEnabled = StartupConfigurationHelpers.ConfigureForwardedHeaders(builder.Services, builder.Configuration);
 StartupConfigurationHelpers.ResolveEnvironmentSecretReferences(builder.Configuration);
+if (Honua.Server.Startup.LicensingRegistration.DevGrantRefusal(builder.Configuration, builder.Environment) is { } devGrantRefusal)
+{
+    Honua.Server.Hosting.StartupRefusal.Exit(devGrantRefusal);
+    return;
+}
+
 // Validate the declared paid deployment before registering or starting any data workers.
 await StartupConfigurationHelpers.LoadBootstrapLicenseSnapshotAsync(builder.Configuration, builder.Environment);
 // Start the license hosted service before any workload execution or reconciliation service.

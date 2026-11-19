@@ -30,6 +30,22 @@ public sealed class DevGrantEnvironmentGuardTests
     public void DevGrant_InDevelopmentOrTest_IsAccepted(string environmentName)
         => Register(environmentName);
 
+    [UnitTheory]
+    [InlineData("Production", null)]
+    [InlineData("Production", " ")]
+    [InlineData("Development", "Enterprise")]
+    public void DevGrantRefusal_WithoutGrantOrInDevelopment_IsNull(string environmentName, string? edition)
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Licensing:DevGrantEdition"] = edition,
+        }).Build();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(environmentName);
+
+        Assert.Null(LicensingRegistration.DevGrantRefusal(configuration, environment));
+    }
+
     private static void Register(string environmentName)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
