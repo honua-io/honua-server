@@ -48,6 +48,7 @@ on:
       - 'docker/Dockerfile.aot'
       - 'docker/Dockerfile.lambda.aot'
       - 'scripts/docker/restore-dotnet-with-github-packages.sh'
+      - 'scripts/docker/server-lock-args.sh'
       - 'scripts/ci/verify-serving-image-boundary.py'
       - 'scripts/ci/serving-image-reuse.py'
       - 'scripts/ci/verify-native-migration-refusal.py'
@@ -132,7 +133,7 @@ jobs:
           # both and fails closed when they diverge.
           while IFS= read -r path; do
             case "$path" in
-              .dockerignore|docker/runtime/*|scripts/docker/restore-dotnet-with-github-packages.sh|scripts/ci/verify-serving-image-boundary.py|scripts/ci/serving-image-reuse.py|scripts/ci/verify-native-migration-refusal.py|scripts/ci/fixtures/validate-native-migration-refusal.py|scripts/ci/fixtures/validate-serving-image-boundary.py|.github/workflows/serving-image-boundary.yml)
+              .dockerignore|docker/runtime/*|scripts/docker/restore-dotnet-with-github-packages.sh|scripts/docker/server-lock-args.sh|scripts/ci/verify-serving-image-boundary.py|scripts/ci/serving-image-reuse.py|scripts/ci/verify-native-migration-refusal.py|scripts/ci/fixtures/validate-native-migration-refusal.py|scripts/ci/fixtures/validate-serving-image-boundary.py|.github/workflows/serving-image-boundary.yml)
                 generic=true
                 lambda=true
                 ;;

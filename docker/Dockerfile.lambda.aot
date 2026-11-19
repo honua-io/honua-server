@@ -29,6 +29,7 @@ COPY Honua.sln Directory.Build.props Directory.Build.targets Directory.Packages.
 # publish fails with NETSDK1004 for every project restore skipped.
 COPY eng/ eng/
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
+COPY scripts/docker/server-lock-args.sh scripts/docker/
 COPY scripts/ci/analyzer-baseline/ scripts/ci/analyzer-baseline/
 # Copy ALL project files referenced (directly or transitively) by Honua.Server so
 # that `dotnet restore` can generate obj/project.assets.json for every project before
@@ -83,7 +84,8 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       arm64) RUNTIME_ID="linux-arm64" ;; \
       *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
+    LOCK_ARG="$(sh scripts/docker/server-lock-args.sh lambda-aot)" && \
+    sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj ${LOCK_ARG:+"$LOCK_ARG"} \
       --runtime "$RUNTIME_ID" \
       -p:RuntimeIdentifier="$RUNTIME_ID" \
       -p:HonuaUseSkiaNoDependencies=true
@@ -117,10 +119,11 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       arm64) RUNTIME_ID="linux-arm64" ;; \
       *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
+    LOCK_ARG="$(sh scripts/docker/server-lock-args.sh lambda-aot)" && \
     attempt=1 && \
     max_attempts="${AOT_PUBLISH_MAX_ATTEMPTS:-3}" && \
     until \
-        sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
+        sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj ${LOCK_ARG:+"$LOCK_ARG"} \
           --runtime "$RUNTIME_ID" \
           -p:RuntimeIdentifier="$RUNTIME_ID" \
           -p:HonuaUseSkiaNoDependencies=true && \

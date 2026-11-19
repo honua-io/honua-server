@@ -30,6 +30,8 @@
   <Import Project="..\..\eng\Honua.BuildProfiles.props" />
   <!-- Protocol profiles are a separate axis from provider/cloud presets. -->
   <Import Project="..\..\eng\Honua.ProtocolProfiles.props" />
+  <!-- Locked NuGet restore for shipped images. -->
+  <Import Project="..\..\eng\Honua.ServerLockFiles.props" />
   <PropertyGroup Condition="'$(HonuaIncludeGeoServices)' != 'true'">
     <DefaultItemExcludes>$(DefaultItemExcludes);Features/Geocoding/GeocodingHandler.cs;Features/Geocoding/GeocodingEndpoints.cs;Features/PrintingTools/**/*.cs;Features/Protocols/SpatialAnalytics/SpatialAnalyticsRequestHandlers*.cs;Features/Protocols/SpatialAnalytics/SpatialAnalyticsEndpoints.cs;Features/Infrastructure/Analytics/AnalyticsFeatureQueryFactory.cs;Features/Infrastructure/Analytics/AnalyticsLayerSelectionFilterTranslator.cs;Features/Infrastructure/Hosting/Modules/GeoServicesProtocolModule.cs;Features/Protocols/Grpc/HonuaFeatureService*.cs</DefaultItemExcludes>
   </PropertyGroup>
