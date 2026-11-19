@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 # Default rc.2 serving image: chiseled JIT runtime and PostGIS-only database stores.
 # Native AOT remains available separately through docker/Dockerfile.aot.
 # Enhanced security: minimal attack surface, non-root user, read-only filesystem

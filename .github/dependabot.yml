@@ -41,9 +41,15 @@ updates:
         patterns:
           - "*"
 
-  # Docker (for Testcontainers base images if we add Dockerfile)
+  # Docker base images: the root server Dockerfile and every image under docker/.
   - package-ecosystem: "docker"
-    directory: "/"
+    directories:
+      - "/"
+      - "/docker"
+      - "/docker/worker-customcode-python"
+      - "/docker/worker-customcode-dotnet"
+      - "/docker/worker-gdal"
+      - "/docker/proj-grids"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -52,3 +58,27 @@ updates:
     labels:
       - "dependencies"
       - "docker"
+
+  # The custom-code .NET harness restores from its own lock files.
+  - package-ecosystem: "nuget"
+    directory: "/docker/worker-customcode-dotnet/harness"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+      - "nuget"
+
+  # The custom-code Python harness's hashed requirements.
+  - package-ecosystem: "pip"
+    directory: "/docker/worker-customcode-python"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+      - "python"
