@@ -124,14 +124,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
     DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
     NUGET_XMLDOC_MODE=skip
 
-# git (clone user code), ca-certificates (TLS to git host + Honua API) and curl. The .NET SDK
+# git (clone user code) and ca-certificates (TLS to git host + Honua API). The .NET SDK
 # is required at runtime to `dotnet build` the user's .csproj at job time (this is why the
 # image carries the SDK, not just the runtime).
 # hadolint ignore=DL3008
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates \
-      curl \
       git \
  && rm -rf /var/lib/apt/lists/*
 
