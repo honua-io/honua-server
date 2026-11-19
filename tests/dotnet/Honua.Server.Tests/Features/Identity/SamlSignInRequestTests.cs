@@ -62,24 +62,16 @@ public sealed class SamlSignInRequestTests
     }
 
     [UnitTest]
-    public void BuildRedirectUrl_KeepsTheIdpQueryAndAddsRequestAndRelayState()
+    public void BuildRedirectUrl_KeepsTheIdpQueryAndAddsTheRequest()
     {
-        var url = SamlAuthnRequestBuilder.BuildRedirectUrl("https://idp.example.com/sso?tenant=a", "a+b/c=", "/console/");
+        var url = SamlAuthnRequestBuilder.BuildRedirectUrl("https://idp.example.com/sso?tenant=a", "a+b/c=");
 
         var uri = new Uri(url);
         var query = QueryHelpers.ParseQuery(uri.Query);
         Assert.Equal("idp.example.com", uri.Host);
         Assert.Equal("a", query["tenant"].ToString());
         Assert.Equal("a+b/c=", query["SAMLRequest"].ToString());
-        Assert.Equal("/console/", query["RelayState"].ToString());
-    }
-
-    [UnitTest]
-    public void BuildRedirectUrl_OmitsAnEmptyRelayState()
-    {
-        var url = SamlAuthnRequestBuilder.BuildRedirectUrl(SamlSignInTestFlow.IdpSignOnUrl, "abc", relayState: "");
-
-        Assert.False(QueryHelpers.ParseQuery(new Uri(url).Query).ContainsKey("RelayState"));
+        Assert.False(query.ContainsKey("RelayState"));
     }
 
     private static bool AllowsUnsolicited(Action<SamlAuthenticationOptions> configure)
@@ -118,28 +110,4 @@ public sealed class SamlSignInRequestTests
             options.IdpSingleSignOnServiceUrl = null;
         }));
     }
-
-    [UnitTheory]
-    [InlineData("/")]
-    [InlineData("/console/")]
-    [InlineData("/console/maps?id=7")]
-    public void IsLocalReturnPath_AcceptsLocalPaths(string value)
-        => Assert.True(SamlEndpoints.IsLocalReturnPath(value));
-
-    [UnitTheory]
-    [InlineData("")]
-    [InlineData("console/")]
-    [InlineData("https://evil.example/")]
-    [InlineData("//evil.example/")]
-    [InlineData("/\\evil.example/")]
-    [InlineData("/console\\..\\x")]
-    [InlineData("/\t/evil.example/")]
-    [InlineData("/ /evil.example/")]
-    [InlineData("javascript:alert(1)")]
-    public void IsLocalReturnPath_RefusesAnythingElse(string value)
-        => Assert.False(SamlEndpoints.IsLocalReturnPath(value));
-
-    [UnitTest]
-    public void IsLocalReturnPath_RefusesValuesTooLongForRelayState()
-        => Assert.False(SamlEndpoints.IsLocalReturnPath("/" + new string('a', 80)));
 }

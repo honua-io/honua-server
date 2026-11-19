@@ -62,15 +62,9 @@ internal static class SamlAuthnRequestBuilder
         return Convert.ToBase64String(buffer.ToArray());
     }
 
-    // Appends SAMLRequest (and RelayState when present) to the IdP URL, keeping any query it already has.
-    public static string BuildRedirectUrl(string singleSignOnServiceUrl, string encodedRequest, string? relayState)
+    // Appends SAMLRequest to the IdP URL, keeping any query it already has.
+    public static string BuildRedirectUrl(string singleSignOnServiceUrl, string encodedRequest)
     {
-        var query = new Dictionary<string, string?> { ["SAMLRequest"] = encodedRequest };
-        if (!string.IsNullOrEmpty(relayState))
-        {
-            query["RelayState"] = relayState;
-        }
-
-        return QueryHelpers.AddQueryString(singleSignOnServiceUrl.Trim(), query);
+        return QueryHelpers.AddQueryString(singleSignOnServiceUrl.Trim(), "SAMLRequest", encodedRequest);
     }
 }

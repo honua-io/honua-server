@@ -6,7 +6,6 @@ using System.Security.Cryptography.X509Certificates;
 using Honua.Server.Features.Identity.Saml;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
-using Microsoft.AspNetCore.WebUtilities;
 
 namespace Honua.Server.Tests.Features.Identity;
 
@@ -48,34 +47,6 @@ public sealed class SamlSolicitedSignInTests : IAsyncLifetime
         Assert.Contains("path=/saml", attributes, StringComparison.Ordinal);
         Assert.Contains("max-age=600", attributes, StringComparison.Ordinal);
         Assert.DoesNotContain(signIn.RequestId, signIn.CorrelationCookie, StringComparison.Ordinal);
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /saml/login")]
-    public async Task Login_LocalReturnUrl_TravelsAsRelayState()
-    {
-        using var client = _fixture.CreateClient(allowAutoRedirect: false);
-
-        using var response = await client.GetAsync("/saml/login?returnUrl=%2Fconsole%2F");
-
-        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        var query = QueryHelpers.ParseQuery(response.Headers.Location!.Query);
-        Assert.Equal("/console/", query["RelayState"].ToString());
-    }
-
-    [IntegrationTheory]
-    [InlineData("https%3A%2F%2Fevil.example%2F")]
-    [InlineData("%2F%2Fevil.example%2F")]
-    [InlineData("%2F%5Cevil.example%2F")]
-    [Endpoint("GET /saml/login")]
-    public async Task Login_NonLocalReturnUrl_IsRefused(string encodedReturnUrl)
-    {
-        using var client = _fixture.CreateClient(allowAutoRedirect: false);
-
-        using var response = await client.GetAsync("/saml/login?returnUrl=" + encodedReturnUrl);
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.False(response.Headers.Contains("Set-Cookie"));
     }
 
     [IntegrationTest]

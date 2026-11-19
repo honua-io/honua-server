@@ -8,19 +8,23 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Identity;
 
-// An IdP-initiated-only deployment (no sign-on URL) that has explicitly refused unsolicited responses.
+// A deployment with SP-initiated sign-in that also explicitly accepts IdP-initiated responses.
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.IdentityManagement)]
-public sealed class SamlUnsolicitedOptOutTests : IAsyncLifetime
+public sealed class SamlUnsolicitedOptInTests : IAsyncLifetime
 {
     private readonly X509Certificate2 _certificate = SamlTestAssertions.CreateSigningCertificate();
     private readonly WebAppFixture _fixture;
 
-    public SamlUnsolicitedOptOutTests()
+    public SamlUnsolicitedOptInTests()
     {
         _fixture = SamlSignInTestFlow.CreateFixture(
             _certificate,
-            new Dictionary<string, string> { ["Saml:AllowUnsolicitedResponses"] = "false" });
+            new Dictionary<string, string>
+            {
+                ["Saml:IdpSingleSignOnServiceUrl"] = SamlSignInTestFlow.IdpSignOnUrl,
+                ["Saml:AllowUnsolicitedResponses"] = "true",
+            });
     }
 
     public Task InitializeAsync() => _fixture.InitializeAsync();
@@ -33,25 +37,27 @@ public sealed class SamlUnsolicitedOptOutTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /saml/acs")]
-    public async Task Acs_UnsolicitedResponse_IsRejectedWhenOptedOut()
+    public async Task Acs_UnsolicitedResponse_IsAcceptedWhenOptedIn()
     {
         var samlResponse = SamlSignInTestFlow.CreateResponseTo(_certificate, inResponseTo: null);
 
         using var response = await SamlSignInTestFlow.PostAcsAsync(_fixture, samlResponse, cookie: null);
 
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.False(SamlSignInTestFlow.SetsSessionCookie(response));
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.True(SamlSignInTestFlow.SetsSessionCookie(response));
     }
 
     [IntegrationTest]
     [Endpoint("GET /saml/login")]
-    public async Task Login_WithoutSignOnUrl_ReturnsNotFound()
+    [Endpoint("POST /saml/acs")]
+    public async Task Acs_ResponseToARequest_StillNeedsItsCorrelationWhenOptedIn()
     {
-        using var client = _fixture.CreateClient(allowAutoRedirect: false);
+        var signIn = await SamlSignInTestFlow.StartAsync(_fixture);
+        var samlResponse = SamlSignInTestFlow.CreateResponseTo(_certificate, signIn.RequestId);
 
-        using var response = await client.GetAsync("/saml/login");
+        using var response = await SamlSignInTestFlow.PostAcsAsync(_fixture, samlResponse, cookie: null);
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.False(response.Headers.Contains("Set-Cookie"));
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.False(SamlSignInTestFlow.SetsSessionCookie(response));
     }
 }

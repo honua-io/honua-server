@@ -125,4 +125,21 @@ public sealed class SamlRequestCorrelationTests
     [InlineData("not a url")]
     public void OptionsValidator_RefusesANonHttpsSignOnUrl(string signOnUrl)
         => Assert.False(SignOnUrlIsValid(signOnUrl));
+
+    [UnitTest]
+    public void OptionsValidator_RefusesOptingOutOfUnsolicitedResponsesWithoutASignOnUrl()
+    {
+        var options = new SamlAuthenticationOptions
+        {
+            Enabled = true,
+            EntityId = SamlTestAssertions.Audience,
+            IdpEntityId = SamlTestAssertions.Issuer,
+            AssertionConsumerServiceUrl = SamlTestAssertions.AcsUrl,
+            AllowUnsolicitedResponses = false,
+        };
+
+        Assert.False(new SamlAuthenticationOptionsValidator().Validate(null, options).Succeeded);
+        options.IdpSingleSignOnServiceUrl = "https://idp.example.com/sso";
+        Assert.True(new SamlAuthenticationOptionsValidator().Validate(null, options).Succeeded);
+    }
 }

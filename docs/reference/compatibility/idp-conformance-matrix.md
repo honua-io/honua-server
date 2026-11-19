@@ -56,13 +56,16 @@ Set `Saml:IdpSingleSignOnServiceUrl` to the IdP's single sign-on endpoint (an ab
 `https` URL) to enable `GET /saml/login`. It redirects the browser to the IdP with an
 `AuthnRequest` (HTTP-Redirect binding) and sets a short-lived, single-use correlation cookie.
 The assertion consumer service accepts a response that carries `InResponseTo` only when it
-names the request issued to that browser, and only once. An optional `returnUrl` query value
-must be a local path; it travels as `RelayState`.
+names the request issued to that browser, and only once. Start `/saml/login` on the same host
+and path base as `Saml:AssertionConsumerServiceUrl`, because the correlation cookie is scoped
+to that host's `/saml` routes; a newer sign-in in another tab replaces the earlier one.
 
 A response without `InResponseTo` is IdP-initiated. `Saml:AllowUnsolicitedResponses` controls
 whether those are accepted. When it is unset, they are accepted only while
 `Saml:IdpSingleSignOnServiceUrl` is unset, so an IdP-initiated-only deployment keeps working
-and a deployment that offers SP-initiated sign-in refuses them by default.
+and a deployment that offers SP-initiated sign-in refuses them by default. Startup fails when
+`Saml:AllowUnsolicitedResponses` is `false` and no sign-on URL is set, because no sign-in could
+succeed.
 
 ### Single Logout (SLO) configuration
 

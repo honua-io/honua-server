@@ -60,6 +60,16 @@ public class SamlBridgeEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /saml/login")]
+    public async Task Login_WithoutSignOnUrl_ReturnsNotFound()
+    {
+        var response = await _client.GetAsync("/saml/login");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.False(response.Headers.Contains("Set-Cookie"));
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /saml/metadata")]
     public async Task Metadata_WhenConfigured_ReturnsSpMetadata()
     {
