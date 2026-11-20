@@ -259,6 +259,40 @@ internal sealed class PostgresStyleCatalog : IStyleCatalog
             : null;
     }
 
+    public async Task<StyleCatalogRecord?> UpdateStyleIfVersionAsync(
+        string styleId,
+        ConditionalStyleWrite write,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(styleId);
+        ArgumentNullException.ThrowIfNull(write);
+        ArgumentException.ThrowIfNullOrWhiteSpace(write.MapLibreStyleJson);
+
+        var sql = $"""
+            UPDATE {_stylesTable}
+            SET maplibre_style = @mapLibreStyle,
+                drawing_info = @drawingInfo,
+                style_version = style_version + 1,
+                updated_at = NOW(),
+                revised_by = NULL,
+                change_summary = NULL
+            WHERE style_id = @styleId AND style_version = @expectedVersion
+            RETURNING {SelectColumns}
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        _ = command.Parameters.AddWithValue("@styleId", styleId);
+        _ = command.Parameters.AddWithValue("@expectedVersion", write.ExpectedVersion);
+        AddJsonb(command, "@mapLibreStyle", write.MapLibreStyleJson);
+        AddNullableJsonb(command, "@drawingInfo", write.DrawingInfoJson);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            ? ReadStyle(reader)
+            : null;
+    }
+
     public async Task<StyleCatalogDeleteResult> DeleteStyleAsync(
         string styleId,
         int? protectedLayerId = null,

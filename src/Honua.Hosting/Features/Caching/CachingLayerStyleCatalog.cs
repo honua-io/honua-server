@@ -20,6 +20,10 @@ internal sealed class CachingLayerStyleCatalog : ILayerStyleCatalog
     private readonly CacheOptions _options;
     private readonly ISchemaContext? _schemaContext;
 
+    // Set by a precondition read. The decorator is request-scoped, so the review that request
+    // builds next cannot reuse another request's in-flight or re-cached load.
+    private bool _readThrough;
+
     public CachingLayerStyleCatalog(
         ILayerStyleCatalog innerCatalog,
         ICacheService cacheService,
@@ -36,6 +40,11 @@ internal sealed class CachingLayerStyleCatalog : ILayerStyleCatalog
         int layerId,
         CancellationToken cancellationToken = default)
     {
+        if (_readThrough)
+        {
+            return await _innerCatalog.GetLayerStyleAsync(layerId, cancellationToken).ConfigureAwait(false);
+        }
+
         var styleKey = GetStyleKey(layerId);
         var existsKey = GetStyleExistsKey(layerId);
 
@@ -88,7 +97,27 @@ internal sealed class CachingLayerStyleCatalog : ILayerStyleCatalog
         var updated = await _innerCatalog
             .SetMapLibreStyleAsync(layerId, mapLibreStyleJson, revisedBy, changeSummary, cancellationToken)
             .ConfigureAwait(false);
-        await RefreshCacheAsync(layerId, updated, cancellationToken).ConfigureAwait(false);
+        await EvictAsync(layerId, cancellationToken).ConfigureAwait(false);
+        return updated;
+    }
+
+    public async Task<int?> GetLayerStyleWriteVersionAsync(int layerId, CancellationToken cancellationToken = default)
+    {
+        // Another node may have saved since this node cached the style; the review that follows must not use it.
+        _readThrough = true;
+        await EvictAsync(layerId, cancellationToken).ConfigureAwait(false);
+        return await _innerCatalog.GetLayerStyleWriteVersionAsync(layerId, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<LayerStyleDefinition?> SetStyleIfVersionAsync(
+        int layerId,
+        ConditionalStyleWrite write,
+        CancellationToken cancellationToken = default)
+    {
+        var updated = await _innerCatalog
+            .SetStyleIfVersionAsync(layerId, write, cancellationToken)
+            .ConfigureAwait(false);
+        await EvictAsync(layerId, cancellationToken).ConfigureAwait(false);
         return updated;
     }
 
@@ -103,7 +132,7 @@ internal sealed class CachingLayerStyleCatalog : ILayerStyleCatalog
         var updated = await _innerCatalog
             .SetStyleAsync(layerId, mapLibreStyleJson, drawingInfoJson, revisedBy, changeSummary, cancellationToken)
             .ConfigureAwait(false);
-        await RefreshCacheAsync(layerId, updated, cancellationToken).ConfigureAwait(false);
+        await EvictAsync(layerId, cancellationToken).ConfigureAwait(false);
         return updated;
     }
 
@@ -113,36 +142,17 @@ internal sealed class CachingLayerStyleCatalog : ILayerStyleCatalog
         CancellationToken cancellationToken = default)
     {
         var updated = await _innerCatalog.SetDrawingInfoAsync(layerId, drawingInfoJson, cancellationToken).ConfigureAwait(false);
-        await RefreshCacheAsync(layerId, updated, cancellationToken).ConfigureAwait(false);
+        await EvictAsync(layerId, cancellationToken).ConfigureAwait(false);
         return updated;
     }
 
-    private async Task RefreshCacheAsync(
-        int layerId,
-        LayerStyleDefinition? style,
-        CancellationToken cancellationToken)
+    // A write evicts rather than caching the row it returned: that row carries the layer's own
+    // revision, while a read reports the layer's primary catalog style, and the shared-style
+    // entity tag must come from one form. The next read caches what GetLayerStyleAsync returns.
+    private async Task EvictAsync(int layerId, CancellationToken cancellationToken)
     {
-        var styleKey = GetStyleKey(layerId);
-        var existsKey = GetStyleExistsKey(layerId);
-
-        if (style == null)
-        {
-            await _cacheService.RemoveAsync(styleKey, cancellationToken).ConfigureAwait(false);
-            await _cacheService.SetAsync(
-                existsKey,
-                new CachedExistenceResult(false),
-                _options.GetNegativeTtlWithJitter(),
-                cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        var ttl = _options.GetLayerTtlWithJitter();
-        await _cacheService.SetAsync(styleKey, style, ttl, cancellationToken).ConfigureAwait(false);
-        await _cacheService.SetAsync(
-            existsKey,
-            new CachedExistenceResult(true),
-            ttl,
-            cancellationToken).ConfigureAwait(false);
+        await _cacheService.RemoveAsync(GetStyleKey(layerId), cancellationToken).ConfigureAwait(false);
+        await _cacheService.RemoveAsync(GetStyleExistsKey(layerId), cancellationToken).ConfigureAwait(false);
     }
 
     private string GetStyleKey(int layerId) => ScopeKey($"{StyleKeyPrefix}{layerId}");

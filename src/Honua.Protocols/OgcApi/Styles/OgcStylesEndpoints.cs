@@ -405,12 +405,6 @@ public static partial class OgcStylesEndpoints
                 "manage-styles accepts MapLibre/Mapbox style JSON (application/vnd.mapbox.style+json or application/json) or Esri drawingInfo (application/vnd.esri.drawinginfo+json).");
         }
 
-        var stale = await RejectStaleStyleAsync(styleId, context, projection).ConfigureAwait(false);
-        if (stale is not null)
-        {
-            return stale;
-        }
-
         var bodyRead = await RequestBodySizeGuard.ReadUtf8TextAsync(
             context,
             RequestBodySizeGuard.ResolveMaxBodyBytes(limitsOptions),
@@ -431,14 +425,16 @@ public static partial class OgcStylesEndpoints
                     : "Request body must contain a MapLibre style document.");
         }
 
-        var strict = IsStrictRequested(context);
+        var save = new StyleSave { StyleId = styleId, Body = body, IsDrawingInfo = isEsri, Options = new OgcStyleWriteOptions { Strict = IsStrictRequested(context) } };
+        var (rejection, result) = await SaveStyleAsync(save, context, projection).ConfigureAwait(false);
+        if (rejection is not null)
+        {
+            return rejection;
+        }
 
-        var result = isEsri
-            ? await projection.UpdateStyleFromDrawingInfoAsync(styleId, body, strict, cancellationToken).ConfigureAwait(false)
-            : await projection.UpdateStyleAsync(styleId, body, strict, cancellationToken).ConfigureAwait(false);
         var logger = loggerFactory.CreateLogger("Honua.Protocols.Ogc.Api.Styles.OgcStylesEndpoints");
 
-        switch (result.Status)
+        switch (result!.Status)
         {
             case OgcStyleUpdateStatus.Updated:
                 OgcStylesLog.StyleUpdated(logger, styleId);
@@ -456,6 +452,9 @@ public static partial class OgcStylesEndpoints
             case OgcStyleUpdateStatus.NotFound:
                 OgcStylesLog.StyleNotFound(logger, styleId);
                 return StandardErrorHelpers.CreateNotFound(context, $"Style '{styleId}' not found.");
+            case OgcStyleUpdateStatus.PreconditionFailed:
+                OgcStylesLog.StyleUpdateRejected(logger, styleId, "a concurrent save landed first");
+                return StaleStyle(context);
             default:
                 OgcStylesLog.StyleUpdateRejected(logger, styleId, result.ErrorMessage ?? "invalid");
                 var detail = result.ErrorMessage ?? "Style is invalid.";

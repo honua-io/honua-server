@@ -551,6 +551,12 @@ internal static partial class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
+        services.AddScoped<IStyleSaveLock>(serviceProvider =>
+            new PostgresStyleSaveLock(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                configuration["Database:Schema"],
+                StyleSaveLockWaitMilliseconds(serviceProvider.GetRequiredService<IConfiguration>())));
+
         // Reconciles Type=Style graph resources + StyleResourceIds with the style catalog
         services.AddScoped<IMetadataV2StyleGraphSync, Features.Metadata.PostgresMetadataV2StyleGraphSync>();
 
@@ -1180,4 +1186,9 @@ internal static partial class ServiceCollectionExtensions
             : defaultValue;
     }
 
+    // An unset, non-numeric or non-positive value keeps the two-second default instead of failing every save.
+    private static int StyleSaveLockWaitMilliseconds(IConfiguration configuration) =>
+        int.TryParse(configuration["Styles:SaveLockWaitMilliseconds"], NumberStyles.None, CultureInfo.InvariantCulture, out var value) && value > 0
+            ? value
+            : 2000;
 }
