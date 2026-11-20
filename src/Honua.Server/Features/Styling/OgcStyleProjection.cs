@@ -434,7 +434,7 @@ internal sealed partial class OgcStyleProjection : IOgcStyleProjection
             (resource, storageLayerId) = (bound.Value.Resource, bound.Value.StorageLayerId);
         }
 
-        if (!TryValidateStandaloneMapLibre(mapLibreStyleJson, strict, out var validationError))
+        if (!TryValidateStandaloneMapLibre(mapLibreStyleJson, options.Strict, out var validationError))
         {
             return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, validationError);
         }
