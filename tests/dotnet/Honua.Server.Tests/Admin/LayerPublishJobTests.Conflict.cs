@@ -20,9 +20,9 @@ namespace Honua.Server.Tests.Admin;
 public sealed partial class LayerPublishJobTests
 {
     [UnitTheory]
-    [InlineData(LayerPublishRunnerMode.DurableLocal)]
-    [InlineData(LayerPublishRunnerMode.Unavailable)]
-    public async Task Submit_AboveThresholdAlreadyPublished_IsConflictBeforeQueueing(LayerPublishRunnerMode mode)
+    [InlineData((int)LayerPublishRunnerMode.DurableLocal)]
+    [InlineData((int)LayerPublishRunnerMode.Unavailable)]
+    public async Task Submit_AboveThresholdAlreadyPublished_IsConflictBeforeQueueing(int mode)
     {
         var publisher = LargeTablePublisher();
         publisher.FindPublishedSourceLayerAsync(
@@ -31,7 +31,7 @@ public sealed partial class LayerPublishJobTests
         var queue = Substitute.For<IJobQueue>();
 
         var conflict = await Assert.ThrowsAsync<LayerPublishingException>(() =>
-            Service(publisher, mode, threshold: 10, queue: queue)
+            Service(publisher, (LayerPublishRunnerMode)mode, threshold: 10, queue: queue)
                 .SubmitAsync(Connection, Guid.NewGuid(), DomainRequest(), "roads", CancellationToken.None));
 
         Assert.Equal(LayerPublishingErrorKind.Conflict, conflict.ErrorKind);

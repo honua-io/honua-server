@@ -182,12 +182,18 @@ internal sealed partial class PostgreSqlLayerPublishingService
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Schema);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Table);
+        var schema = request.Schema.Trim();
+        if (!CommittedSinkSchemaGate.Allows(_schemaConfiguration, _schemaContext?.CurrentSchema, schema))
+        {
+            // The publish itself answers 404 for a schema outside this tenant; reveal nothing here.
+            return null;
+        }
 
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-            return await FindExistingLayerAsync(connection, null, request.Schema.Trim(), request.Table.Trim(), cancellationToken)
+            return await FindExistingLayerAsync(connection, null, schema, request.Table.Trim(), cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (PostgresException exception) when (exception.SqlState is PostgresErrorCodes.UndefinedTable or PostgresErrorCodes.InvalidSchemaName)
