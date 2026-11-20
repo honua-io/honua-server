@@ -854,8 +854,9 @@ internal static class AdminAuthEndpoints
 
     // Behind a TLS-terminating proxy whose forwarded headers are not trusted the request looks
     // like HTTP; a configured https public base URL still keeps the session cookie off plain
-    // HTTP. Outside Development and Test the cookie is always Secure: browser sessions need
-    // HTTPS there anyway (the CSRF and password sign-in endpoints refuse plain HTTP).
+    // HTTP. Outside Development and Test the cookie is always Secure: the CSRF, password and OIDC
+    // callback endpoints refuse plain HTTP everywhere, so only SAML sign-in changes (it needs HTTPS
+    // at the browser there).
     internal static bool UseSecureSessionCookie(HttpContext context)
         => context.Request.IsHttps
            || (context.RequestServices.GetService<IHostEnvironment>() is { } environment
