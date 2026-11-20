@@ -62,15 +62,19 @@ internal static partial class OAuthClientEndpoints
             .WithDisplayName("List OAuth Scopes")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
+        // A scope's permissions become the authority of every client token that requests it, so
+        // redefining one is a credential change, like registering the client itself.
         scopes.MapPut("/", HandleDefineScope)
             .WithDisplayName("Define OAuth Scope")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
-            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
+            .RequireCredentialManagementAuthority();
 
         scopes.MapDelete("/{scope}", HandleDeleteScope)
             .WithDisplayName("Delete OAuth Scope")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }))
-            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
+            .RequireCredentialManagementAuthority();
     }
 
     private static async Task<Ok<ApiResponse<IReadOnlyList<OAuthClientResponse>>>> HandleListClients(
