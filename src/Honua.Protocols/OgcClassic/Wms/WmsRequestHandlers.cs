@@ -128,16 +128,7 @@ internal static partial class WmsRequestHandlers
                     svcDef);
             if (accessError != null)
             {
-                var isAuthenticated = context.User?.Identity?.IsAuthenticated == true;
-                return CreateWmsServiceException(
-                    context,
-                    "AccessDenied",
-                    isAuthenticated
-                        ? AccessPolicyHelpers.AccessForbiddenMessage
-                        : AccessPolicyHelpers.AuthRequiredMessage,
-                    isAuthenticated
-                        ? StatusCodes.Status403Forbidden
-                        : StatusCodes.Status401Unauthorized);
+                return CreateWmsAccessDenied(context);
             }
 
             if (wmsLayers.Length == 0 && !string.IsNullOrWhiteSpace(requestType) &&
@@ -149,6 +140,12 @@ internal static partial class WmsRequestHandlers
             var accessibleLayers = wmsLayers
                 .Where(l => AccessPolicyHelpers.IsResourceAccessible(context, l.Resource, svcDef))
                 .ToArray();
+            var challengeLayers = ResolveWmsChallengeLayers(svcDef, wmsLayers, accessibleLayers);
+            var challengeError = ChallengeRequestedProtectedLayers(context, svcDef, challengeLayers);
+            if (challengeError != null)
+            {
+                return challengeError;
+            }
 
             if (string.IsNullOrWhiteSpace(requestType) ||
                 string.Equals(requestType, "GetCapabilities", StringComparison.OrdinalIgnoreCase))
@@ -170,7 +167,7 @@ internal static partial class WmsRequestHandlers
 
                 OgcClassicLog.WmsRequested(logger, serviceId, "GetCapabilities");
                 var metadataService = svcDef with { Metadata = PublishedMetadataProjection.ForCapabilities(snapshot.Graph, svcDef) };
-                var xml = await BuildWmsCapabilities(context, metadataService, accessibleLayers, capabilitiesVersion).ConfigureAwait(false);
+                var xml = await BuildWmsCapabilities(context, metadataService, new(accessibleLayers, challengeLayers), capabilitiesVersion).ConfigureAwait(false);
                 return Results.Content(xml, GetWmsCapabilitiesMimeType(capabilitiesVersion), Encoding.UTF8, StatusCodes.Status200OK);
             }
 
