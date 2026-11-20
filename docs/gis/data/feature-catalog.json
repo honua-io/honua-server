@@ -443,7 +443,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.DefineListDeleteScope_RoundTrips"
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.DefineListDeleteScope_RoundTrips",
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.OperationalWriteKey_CannotDefineOrDeleteOAuthScopes"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -548,6 +549,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.DeleteRole_BuiltInRole_ReturnsNotFound",
         "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.DeleteRole_CustomRole_ReturnsSuccess",
+        "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.OperationalWriteKey_CannotChangeRoles",
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.AdminRoleDelete_AssignedConsoleRoleAlsoReservesName"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -1809,6 +1811,7 @@
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests\u002BBrowserSessions.PasswordSignIn_WithoutOidc_CreatesSecureSessionAndProtectsLogout",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests\u002BBrowserSessions.PasswordToken_AllowedOrigin_IssuesUsableBearerWithoutCookies",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests\u002BBrowserSessions.SessionBearer_StopsWorkingWhenTheSessionSignsOut",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests\u002BPasswordTokenRotation.PasswordBearer_StopsWorkingWhenThePasswordIsRotated",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.IssueOperatorBearer_WithAuthenticatedSession_ReturnsForwardableBearerThatAuthorizesAdminApi",
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetConfig_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.Authentication_WithInvalidApiKey_ShouldReturn401",
@@ -7470,6 +7473,7 @@
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.SloMetricContractTests.PrometheusExposition_DoesNotReintroduceTheUnitSuffixedSeriesNames",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.SloMetricContractTests.PrometheusExposition_ExportsEverySeriesNamedByTheSloMetricContract",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.SloMetricContractTests.ServingDenominator_ExcludesHealthProbesAndTheMetricsScrape",
+        "Honua.Server.Tests.HealthEndpointsTests.PrometheusMetricsEndpoint_AuthorizationHeaderScheme_DecidesAccess",
         "Honua.Server.Tests.HealthEndpointsTests.PrometheusMetricsEndpoint_ReturnsPrometheusTextExposition",
         "Honua.Server.Tests.HealthEndpointsTests.PrometheusMetricsEndpoint_WithoutAuthentication_ReturnsUnauthorized",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
@@ -17447,7 +17451,8 @@
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests\u002BBrowserSessions.PasswordToken_InvalidPassword_IsUnauthorized",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests\u002BBrowserSessions.PasswordToken_UntrustedRequest_IsRejected",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests\u002BFailedAttempts.PasswordToken_RepeatedInvalidPasswords_RefusesWithRetryAfter",
-        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests\u002BFailedAttempts.PasswordToken_ValidPasswordBeforeThreshold_DoesNotResetTheCount"
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests\u002BFailedAttempts.PasswordToken_ValidPasswordBeforeThreshold_DoesNotResetTheCount",
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests\u002BPasswordTokenRotation.PasswordBearer_StopsWorkingWhenThePasswordIsRotated"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -19988,7 +19993,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.CreateRole_ValidRequest_ReturnsCreated"
+        "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.CreateRole_ReservedName_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.CreateRole_ValidRequest_ReturnsCreated",
+        "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.OperationalWriteKey_CannotChangeRoles"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -20006,6 +20013,7 @@
         "Honua.Server.Tests.Features.Admin.SceneDatasetEndpointsTests.FindAsync_ActiveScene_ReturnsServingModel",
         "Honua.Server.Tests.Features.Admin.SceneDatasetEndpointsTests.FindAsync_DeactivatedScene_ReturnsNull",
         "Honua.Server.Tests.Features.Admin.SceneDatasetEndpointsTests.FindAsync_ProtectedScene_PropagatesAccessPolicy",
+        "Honua.Server.Tests.Features.Admin.SceneDatasetEndpointsTests.Register_AssetRootOutsideSceneDirectories_Returns400Problem",
         "Honua.Server.Tests.Features.Admin.SceneDatasetEndpointsTests.Register_BadAssetRoot_Returns400Problem",
         "Honua.Server.Tests.Features.Admin.SceneDatasetEndpointsTests.Register_BadCrsToken_Returns400Problem",
         "Honua.Server.Tests.Features.Admin.SceneDatasetEndpointsTests.Register_BadTilesetFileName_Returns400Problem",
@@ -20592,7 +20600,8 @@
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_AdminLifecycle_ProjectsRolesMembersAndAudit",
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_ConcurrentDuplicateRoleCreates_ReturnOneCreatedAndOneConflict",
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_DeleteAssignedRole_TombstonesNameAndRemovesPermissions",
-        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleNames_AreGloballyUniqueOnCreate"
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleNames_AreGloballyUniqueOnCreate",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_ServerAssignedRoleName_IsTaken"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
@@ -25654,6 +25663,8 @@
         "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Acs_UnsignedAssertion_IsRejected",
         "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Acs_UnsupportedSigningProfile_IsRejected",
         "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Acs_ValidSignedAssertion_EstablishesSession",
+        "Honua.Server.Tests.Features.Identity.SamlIdpInitiatedLogoutTests.Slo_WithoutTheSessionCookie_EndsTheSessionNamedBySessionIndex",
+        "Honua.Server.Tests.Features.Identity.SamlSessionStoreOutageTests.Acs_WhenTheSessionIndexCannotBeRecorded_IssuesNoSession",
         "Honua.Server.Tests.Features.Identity.SamlSolicitedSignInTests.Acs_InResponseToForAnotherRequest_IsRejected",
         "Honua.Server.Tests.Features.Identity.SamlSolicitedSignInTests.Acs_MatchingInResponseToWithoutCookie_IsRejected",
         "Honua.Server.Tests.Features.Identity.SamlSolicitedSignInTests.Acs_ResponseToIssuedRequestWithCookie_EstablishesSessionAndClearsCookie",
@@ -25676,9 +25687,16 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Identity.AdminLogoutDependencyLossTests.Logout_WhileTheSessionCannotBeDeleted_Returns503UntilRevocationCanBeRetried",
         "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Slo_MissingSamlRequest_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Slo_RepeatedLogoutRequest_LeavesAnotherSessionSignedIn",
         "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Slo_SameSignedLogoutRequestTwice_SecondIsRejected",
         "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Slo_UnsignedLogoutRequest_IsRejected",
-        "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Slo_ValidSignedLogoutRequest_TerminatesSessionAndRelaysResponse"
+        "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Slo_ValidSignedLogoutRequest_TerminatesSessionAndRelaysResponse",
+        "Honua.Server.Tests.Features.Identity.SamlIdpInitiatedLogoutTests.Slo_NamingNoSessionWithoutTheSessionCookie_ReportsPartialLogout",
+        "Honua.Server.Tests.Features.Identity.SamlIdpInitiatedLogoutTests.Slo_NamingOneSubject_LeavesAnotherSubjectWithTheSameSessionIndexSignedIn",
+        "Honua.Server.Tests.Features.Identity.SamlIdpInitiatedLogoutTests.Slo_SessionIndexMatchingNoSessionWithoutTheSessionCookie_ReportsPartialLogout",
+        "Honua.Server.Tests.Features.Identity.SamlIdpInitiatedLogoutTests.Slo_WithoutTheSessionCookie_EndsTheSessionNamedBySessionIndex",
+        "Honua.Server.Tests.Features.Identity.SamlSessionStoreOutageTests.Slo_WhenAnIndexedSessionCannotBeEnded_KeepsTheCallersCookieForTheRetry",
+        "Honua.Server.Tests.Features.Identity.SamlSessionStoreOutageTests.Slo_WhenTheReplayStoreIsUnavailable_RefusesAndKeepsTheSession"
       ],
       "proof_ledger_surface": "saml-sso",
       "maturity": "implemented",
@@ -27205,6 +27223,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.DefineListDeleteScope_RoundTrips",
+        "Honua.Server.Tests.Features.Admin.OAuthClientEndpointsTests.OperationalWriteKey_CannotDefineOrDeleteOAuthScopes",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ContentPublicationAndOAuthScopes_AgentKey_AreRefused"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -27293,6 +27312,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.OperationalWriteKey_CannotChangeRoles",
         "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.UpdateRole_ValidRequest_ReturnsUpdated",
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.AdminRoleUpdate_RenameAssignedConsoleRole_ReturnsBadRequestWithoutOrphaningMember"
       ],
@@ -27309,6 +27329,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.EnableLayerAndRoleGrants_AgentKey_RequireHumanApproval",
+        "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.OperationalWriteKey_CannotChangeRoles",
+        "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.SetPermissions_BuiltInRole_ReturnsBadRequestAndKeepsGrants",
         "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.SetPermissions_ValidRequest_ReturnsUpdatedPermissions",
         "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.AdminPermissionReplacement_PreservesConsoleEnvironmentOwnership"
       ],
@@ -27325,6 +27347,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.SceneDatasetEndpointsTests.AgentAdministrator_CannotRegisterOrWidenSceneAccess",
+        "Honua.Server.Tests.Features.Admin.SceneDatasetEndpointsTests.Update_AssetRootOutsideSceneDirectories_Returns400Problem",
         "Honua.Server.Tests.Features.Admin.SceneDatasetEndpointsTests.Update_ChangesFieldsAndBumpsRevision"
       ],
       "proof_ledger_surface": "control-plane-admin",
