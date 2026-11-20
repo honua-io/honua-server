@@ -632,6 +632,20 @@ internal sealed partial class PostgreSqlLayerPublishingService
         };
     }
 
+    // Returns the view to publish as the layer's table and the geometry type it declares.
+    // Concurrent first publishes of one family would race on CREATE VIEW, so the view's
+    // publish lock is taken first; the publish path takes it again, which is a no-op.
+    private static async Task<(string Table, string GeometryType)> PrepareGeometryFamilyViewAsync(
+        NpgsqlTransaction transaction,
+        GeometryFamilyView view,
+        CancellationToken cancellationToken)
+    {
+        await AcquireLayerPublishLockAsync(transaction.Connection!, transaction, view.Schema, view.ViewName, cancellationToken)
+            .ConfigureAwait(false);
+        var table = await CreateGeometryFamilyViewAsync(transaction, view, cancellationToken).ConfigureAwait(false);
+        return (table, await DeclaredFamilyTypeAsync(transaction, view, cancellationToken).ConfigureAwait(false));
+    }
+
     private static async Task<string> CreateGeometryFamilyViewAsync(
         NpgsqlTransaction transaction,
         GeometryFamilyView view,

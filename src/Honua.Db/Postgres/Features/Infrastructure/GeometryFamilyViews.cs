@@ -84,24 +84,28 @@ internal static class GeometryFamilyViews
             CREATE OR REPLACE VIEW {view} AS
             SELECT *
             FROM {SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(table)}
-            WHERE GeometryType({SqlIdentifier.QuoteIdentifier(filter.GeometryColumn)}) IN ({TypeList(filter.Family)});
+            WHERE GeometryType({SqlIdentifier.QuoteIdentifier(filter.GeometryColumn)}) IN ({TypeList(filter.Family)})
+            WITH LOCAL CHECK OPTION;
             COMMENT ON VIEW {view} IS '{marker}';
             """;
     }
 
-    // True when a relation other than this table's own family view already holds the name.
+    // True when a relation other than this table's own marked family view already holds the name.
     internal static async Task<bool> NameTakenByOtherAsync(
         TableScope scope,
         string viewName,
         CancellationToken cancellationToken)
     {
         await using var command = scope.Command($"""
-            SELECT NOT (c.relkind = 'v' AND {DependsOnTableSql})
+            SELECT NOT (c.relkind = 'v'
+                        AND starts_with(obj_description(c.oid, 'pg_class'), @marker)
+                        AND {DependsOnTableSql})
             FROM pg_class c
             JOIN pg_namespace n ON n.oid = c.relnamespace
             WHERE n.nspname = @schema AND c.relname = @view
             """);
         command.Parameters.AddWithValue("view", viewName);
+        command.Parameters.AddWithValue("marker", MarkerPrefix);
         return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is true;
     }
 

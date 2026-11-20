@@ -464,8 +464,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         var sourceTable = table;
         if (!isManagedStore && GeometryFamilyViewFor(validation, request.GeometryType) is { } familyView)
         {
-            table = await CreateGeometryFamilyViewAsync(transaction, familyView, cancellationToken).ConfigureAwait(false);
-            geometryType = await DeclaredFamilyTypeAsync(transaction, familyView, cancellationToken).ConfigureAwait(false);
+            (table, geometryType) = await PrepareGeometryFamilyViewAsync(transaction, familyView, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         var serviceCreated = await EnsureServiceAsync(connection, transaction, serviceName, srid, request.ConnectionId, cancellationToken);
