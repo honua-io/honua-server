@@ -93,11 +93,17 @@ internal sealed class ImageServerProjectHandler
 
             var sourceSrid = inSrid.Value;
             var targetSrid = outSrid.Value;
+            var inGeodeticSrid = await _projection
+                .ResolveGeodeticBaseSridAsync(sourceSrid, cancellationToken)
+                .ConfigureAwait(false);
+            var outGeodeticSrid = await _projection
+                .ResolveGeodeticBaseSridAsync(targetSrid, cancellationToken)
+                .ConfigureAwait(false);
 
             if (!_projection.TryResolveDatumTransformation(
                     ImageServerRequestValues.GetString(values, "datumTransformation"),
-                    sourceSrid,
-                    targetSrid,
+                    inGeodeticSrid,
+                    outGeodeticSrid,
                     out var datumSelection,
                     out var datumError))
             {
@@ -237,16 +243,22 @@ internal sealed class ImageServerProjectHandler
         // different datum). An unknown/inapplicable transformation is rejected with a precise 400
         // rather than silently dropped, matching the datumTransformation contract on the map path.
         DatumTransformationSelection? datumSelection = null;
-        if (reprojectToOut && !_projection.TryResolveDatumTransformation(
-                ImageServerRequestValues.GetString(values, "datumTransformation"),
-                GroundSrid,
-                outSrid.Value,
-                out datumSelection,
-                out var datumTransformationError))
+        if (reprojectToOut)
         {
-            var error = datumTransformationError ?? "Invalid datumTransformation.";
-            ImageServerLog.InvalidProjectParameters(_logger, layerId, error);
-            return StandardErrorHelpers.CreateBadRequest(context, error);
+            var outGeodeticSrid = await _projection
+                .ResolveGeodeticBaseSridAsync(outSrid.Value, cancellationToken)
+                .ConfigureAwait(false);
+            if (!_projection.TryResolveDatumTransformation(
+                    ImageServerRequestValues.GetString(values, "datumTransformation"),
+                    GroundSrid,
+                    outGeodeticSrid,
+                    out datumSelection,
+                    out var datumTransformationError))
+            {
+                var error = datumTransformationError ?? "Invalid datumTransformation.";
+                ImageServerLog.InvalidProjectParameters(_logger, layerId, error);
+                return StandardErrorHelpers.CreateBadRequest(context, error);
+            }
         }
 
         // Parse each input through the projection while retaining explicit per-iteration disposal.

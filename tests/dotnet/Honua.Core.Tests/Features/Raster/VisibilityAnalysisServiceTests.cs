@@ -306,6 +306,66 @@ public sealed class VisibilityAnalysisServiceTests
         lon.Should().BeApproximately(0.0, 0.001);
     }
 
+    [UnitTest]
+    public void ComputeCurvatureAndRefractionDropMeters_At30Km_IsApproximately61Meters()
+    {
+        // At d = 30,000 m, R = 6,371,008.8 m, k = 0.13:
+        // deltaH = -(30000^2 * 0.87) / (2 * 6371008.8) = -61.4502447 m.
+        var drop = VisibilityAnalysisService.ComputeCurvatureAndRefractionDropMeters(30_000d);
+
+        drop.Should().BeApproximately(-61.4502447d, 1e-4);
+    }
+
+    [UnitTest]
+    public void EvaluateSightLine_DistantRidgeDroppedByEarthCurvature_DoesNotObstruct()
+    {
+        // At d = 15,000 m (midpoint of a 30 km path), curvature+refraction drops terrain by
+        // ~(15000^2 * 0.87) / (2 * 6371008.8) = 15.36 m. A 110 m midpoint ridge that would block
+        // a 100 m sightline on a flat Earth drops to ~94.64 m and clears the 100 m sightline.
+        var samples = new ElevationSample[]
+        {
+            new() { DistanceMeters = 0, Elevation = 0, NoData = false },
+            new() { DistanceMeters = 15_000, Elevation = 110, NoData = false },
+            new() { DistanceMeters = 30_000, Elevation = 0, NoData = false }
+        };
+
+        var (visible, index, _) = VisibilityAnalysisService.EvaluateSightLine(
+            samples, observerHeight: 100, targetHeight: 100, totalDistance: 30_000);
+
+        visible.Should().BeTrue();
+        index.Should().Be(-1);
+    }
+
+    [UnitTest]
+    public async Task ComputeViewshedAsync_LongRangeFlatTerrain_OccludesBeyondCurvedEarthHorizon()
+    {
+        // For a 2 m observer on flat terrain (elevation 50 m), the curved-Earth refracted
+        // horizon is at sqrt(2 * R * 2 / (1 - 0.13)) ~= 5,412 m. Over a 20 km radius, near
+        // samples (< 5 km) are visible while far samples (> 7 km) fall below the horizon.
+        var service = new VisibilityAnalysisService(new FlatTerrainElevationService(elevation: 50));
+
+        var result = await service.ComputeViewshedAsync(
+            LayerId,
+            new VisibilityPoint { Longitude = 0, Latitude = 0 },
+            new ViewshedOptions
+            {
+                RadiusMeters = 20_000,
+                RayCount = 8,
+                SamplesPerRay = 40,
+                ObserverHeightOffsetMeters = 2,
+                TargetHeightOffsetMeters = 0
+            },
+            RasterMergeStrategy.Newest);
+
+        var nearSamples = result.Samples.Where(s => s.DistanceMeters <= 5_000).ToArray();
+        var farSamples = result.Samples.Where(s => s.DistanceMeters >= 7_000).ToArray();
+
+        nearSamples.Should().NotBeEmpty();
+        nearSamples.Should().OnlyContain(s => s.Visible);
+        farSamples.Should().NotBeEmpty();
+        farSamples.Should().OnlyContain(s => !s.Visible);
+    }
+
     private static ElevationSample[] BuildSamples(double[] elevations, double totalDistance)
     {
         var samples = new ElevationSample[elevations.Length];

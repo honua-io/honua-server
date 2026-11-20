@@ -32,6 +32,10 @@ public sealed class VisibilityAnalysisService
 
     public const int MaxSamplesPerRay = 512;
 
+    public const double MeanEarthRadiusMeters = 6_371_008.8;
+
+    public const double DefaultRefractionCoefficient = 0.13;
+
     private readonly IElevationService _elevationService;
 
     public VisibilityAnalysisService(IElevationService elevationService)
@@ -227,9 +231,11 @@ public sealed class VisibilityAnalysisService
                 }
                 else
                 {
-                    var terrainAngle = Math.Atan2(sample.Elevation.Value - observerHeight, distance);
+                    var curvatureDrop = ComputeCurvatureAndRefractionDropMeters(distance);
+                    var adjustedElevation = sample.Elevation.Value + curvatureDrop;
+                    var terrainAngle = Math.Atan2(adjustedElevation - observerHeight, distance);
                     var targetAngle = Math.Atan2(
-                        sample.Elevation.Value + options.TargetHeightOffsetMeters - observerHeight,
+                        adjustedElevation + options.TargetHeightOffsetMeters - observerHeight,
                         distance);
                     visible = targetAngle >= maxAngle;
                     if (terrainAngle > maxAngle)
@@ -291,16 +297,29 @@ public sealed class VisibilityAnalysisService
 
             var fraction = totalDistance > 0 ? sample.DistanceMeters / totalDistance : 0.0;
             var sightHeight = observerHeight + (targetHeight - observerHeight) * fraction;
+            var adjustedElevation = sample.Elevation.Value + ComputeCurvatureAndRefractionDropMeters(sample.DistanceMeters);
 
             // Small tolerance so floating-point noise on flat terrain does not
             // register a phantom obstruction.
-            if (sample.Elevation.Value > sightHeight + ObstructionToleranceMeters)
+            if (adjustedElevation > sightHeight + ObstructionToleranceMeters)
             {
                 return (false, i, hasNoData);
             }
         }
 
         return (true, -1, hasNoData);
+    }
+
+    internal static double ComputeCurvatureAndRefractionDropMeters(
+        double distanceMeters,
+        double refractionCoefficient = DefaultRefractionCoefficient)
+    {
+        if (distanceMeters <= 0d || !double.IsFinite(distanceMeters))
+        {
+            return 0d;
+        }
+
+        return -(distanceMeters * distanceMeters * (1.0 - refractionCoefficient)) / (2.0 * MeanEarthRadiusMeters);
     }
 
     private const double ObstructionToleranceMeters = 1e-6;

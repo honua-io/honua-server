@@ -3,12 +3,22 @@
 
 using FluentAssertions;
 using Honua.Core.Configuration;
+using Honua.Core.Features.GeometryService.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Crs;
+using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Services;
 using Honua.Protocols.GeoServices.GeometryService.Services;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Primitives;
 using NetTopologySuite.Densify;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 
@@ -194,5 +204,108 @@ public sealed class GeometryServiceVertexBudgetTests
 
         generated.Should().Be(budget.PerRequest - GeometryServiceVertexBudget.SignedInGeometriesPerRequest);
         allocated.Should().BeLessThan(allocationBound, "measured {0} MiB", allocated / Megabyte);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Project)]
+    public async Task HandleProjectAsync_ProjectedInSr_DoesNotTreatMeterCoordinatesAsGeographicEnvelope()
+    {
+        var crsDetection = Substitute.For<ICrsDetectionService>();
+        var crsRegistry = Substitute.For<ICrsRegistry>();
+        crsRegistry.IsSridSupportedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(true);
+        crsRegistry.ResolveBySridAsync(26710, Arg.Any<CancellationToken>())
+            .Returns(new CrsDefinition("EPSG:26710", 26710, AxisOrder.EastNorth, false)
+            {
+                Wkt = """PROJCS["NAD27 / UTM zone 10N",GEOGCS["NAD27",AUTHORITY["EPSG","4267"]],AUTHORITY["EPSG","26710"]]"""
+            });
+        crsRegistry.ResolveBySridAsync(4269, Arg.Any<CancellationToken>())
+            .Returns(new CrsDefinition("EPSG:4269", 4269, AxisOrder.EastNorth, true));
+
+        var datumCatalog = Substitute.For<IDatumTransformationCatalog>();
+        var operationService = Substitute.For<IGeometryOperationService>();
+        operationService.ProjectAsync(
+                Arg.Any<byte[]>(),
+                26710,
+                4269,
+                Arg.Any<DatumTransformationSelection?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new WKBWriter().Write(new Point(-123.0, 40.0)));
+
+        var handler = new GeometryServiceHandler(
+            operationService,
+            new GeometryConverter(),
+            new SpatialReferenceResolver(crsDetection, crsRegistry),
+            NullLogger<GeometryServiceHandler>.Instance);
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(datumCatalog);
+        var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
+        context.Request.Method = "GET";
+        context.Request.Query = new QueryCollection(new Dictionary<string, StringValues>
+        {
+            ["f"] = "json",
+            ["inSR"] = "26710",
+            ["outSR"] = "4269",
+            ["geometries"] = """{"geometryType":"esriGeometryPoint","geometries":[{"x":500000,"y":4400000}]}"""
+        });
+
+        await handler.HandleProjectAsync(context, CancellationToken.None);
+
+        datumCatalog.DidNotReceiveWithAnyArgs().TryGetForEnvelope(
+            default, default, default, default, default, default, out Arg.Any<DatumTransformationSelection>());
+        datumCatalog.Received(1).TryGetDefault(4267, 4269, out Arg.Any<DatumTransformationSelection>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Area)]
+    public async Task HandleAreaAsync_PreserveShapeInWebMercator_DensifiesInNativeCrsAndMeasuresOn4326()
+    {
+        var crsDetection = Substitute.For<ICrsDetectionService>();
+        var crsRegistry = Substitute.For<ICrsRegistry>();
+        crsRegistry.IsSridSupportedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(true);
+        crsRegistry.ResolveBySridAsync(3857, Arg.Any<CancellationToken>())
+            .Returns(new CrsDefinition("EPSG:3857", 3857, AxisOrder.EastNorth, false));
+
+        byte[]? projectedSourceWkb = null;
+        var operationService = Substitute.For<IGeometryOperationService>();
+        operationService.ProjectAsync(Arg.Any<byte[]>(), 3857, 4326, Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                projectedSourceWkb = callInfo.ArgAt<byte[]>(0);
+                return projectedSourceWkb;
+            });
+        operationService.AreaAsync(Arg.Any<byte[]>(), 4326, Arg.Any<CancellationToken>())
+            .Returns(250_000_000d);
+        operationService.LengthAsync(Arg.Any<byte[]>(), 4326, Arg.Any<CancellationToken>())
+            .Returns(60_000d);
+
+        var handler = new GeometryServiceHandler(
+            operationService,
+            new GeometryConverter(),
+            new SpatialReferenceResolver(crsDetection, crsRegistry),
+            NullLogger<GeometryServiceHandler>.Instance);
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(crsRegistry);
+        var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
+        context.Request.Method = "GET";
+        context.Request.Query = new QueryCollection(new Dictionary<string, StringValues>
+        {
+            ["f"] = "json",
+            ["sr"] = "3857",
+            ["calculationType"] = "preserveShape",
+            ["polygons"] = """[{"rings":[[[0,0],[0,100000],[100000,100000],[100000,0],[0,0]]]}]"""
+        });
+
+        await handler.HandleAreaAsync(context, CancellationToken.None);
+
+        projectedSourceWkb.Should().NotBeNull();
+        var densifiedGeometry = new WKBReader().Read(projectedSourceWkb!);
+        densifiedGeometry.NumPoints.Should().BeGreaterThan(5,
+            "preserveShape must linearly densify the 100 km projected segments before projecting to 4326");
+        await operationService.Received(1).AreaAsync(Arg.Any<byte[]>(), 4326, Arg.Any<CancellationToken>());
+        await operationService.Received(1).LengthAsync(Arg.Any<byte[]>(), 4326, Arg.Any<CancellationToken>());
     }
 }
