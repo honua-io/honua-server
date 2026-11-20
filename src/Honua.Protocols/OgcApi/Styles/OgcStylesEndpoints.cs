@@ -7,6 +7,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
+using Honua.Core.Features.Styling;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
@@ -28,7 +29,7 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Protocols.Ogc.Api.Styles;
 
-public static class OgcStylesEndpoints
+public static partial class OgcStylesEndpoints
 {
     private const string SldBaseMediaType = "application/vnd.ogc.sld+xml";
 
@@ -84,6 +85,8 @@ public static class OgcStylesEndpoints
             .Produces(StatusCodes.Status406NotAcceptable)
             .CacheOutput("OgcStylesStylesheet");
 
+        MapSharedStyleImpact(group);
+
         group.MapGet("/{styleId}/metadata", GetStyleMetadata)
             .WithDisplayName("Get Style Metadata")
             .WithName("GetStyleMetadata")
@@ -101,6 +104,7 @@ public static class OgcStylesEndpoints
             .Produces(StatusCodes.Status204NoContent)
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status412PreconditionFailed)
             .Produces(StatusCodes.Status413PayloadTooLarge)
             .Produces(StatusCodes.Status415UnsupportedMediaType)
             .RequireAdminAuthorization();
@@ -266,7 +270,7 @@ public static class OgcStylesEndpoints
             ? StyleEndpointUrlResolver.Resolve(visibleContent, StyleUrlContext.From(context))
             : visibleContent;
 
-        return Results.Content(content, stylesheet.MediaType, Encoding.UTF8);
+        return new VersionedTextResult(content, stylesheet.MediaType, StoredStyleEntityTag(stylesheet));
     }
 
     private static async Task<IResult> GetStyleMetadata(
@@ -399,6 +403,12 @@ public static class OgcStylesEndpoints
             return StandardErrorHelpers.CreateUnsupportedMediaType(
                 context,
                 "manage-styles accepts MapLibre/Mapbox style JSON (application/vnd.mapbox.style+json or application/json) or Esri drawingInfo (application/vnd.esri.drawinginfo+json).");
+        }
+
+        var stale = await RejectStaleStyleAsync(styleId, context, projection).ConfigureAwait(false);
+        if (stale is not null)
+        {
+            return stale;
         }
 
         var bodyRead = await RequestBodySizeGuard.ReadUtf8TextAsync(

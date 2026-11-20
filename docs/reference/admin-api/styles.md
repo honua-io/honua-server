@@ -72,10 +72,11 @@ Named styles are also exposed through the standards-based OGC API Styles surface
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/ogc/styles` | List styles |
-| GET | `/ogc/styles/{styleId}` | Fetch a style |
+| GET | `/ogc/styles/{styleId}` | Fetch a style. The strong `ETag` is the stored version plus the canonical MapLibre content hash, and every encoding of that style returns the same tag. |
+| GET | `/ogc/styles/{styleId}/impact` | Associations and map or app consumers of the style in the caller's tenant, with the same `ETag` and an impact hash. Requires the same rights as the style PUT. `impactComplete` is false when the scan is capped. |
 | GET | `/ogc/styles/{styleId}/metadata` | Fetch style metadata |
 | POST | `/ogc/styles` | Create a style |
-| PUT | `/ogc/styles/{styleId}` | Replace a style |
+| PUT | `/ogc/styles/{styleId}` | Replace a style. `If-Match` and `X-Honua-Style-Impact` are optional; when either is sent, a mismatch returns 412 and the body is not stored. A request that sends neither remains an unconditional replace. |
 | DELETE | `/ogc/styles/{styleId}` | Delete a style |
 
 ## Related guides

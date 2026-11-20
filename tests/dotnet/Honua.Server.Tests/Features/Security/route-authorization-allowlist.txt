@@ -37,6 +37,7 @@ anonymous GET /api/v{version:apiVersion}/capabilities/manifest
 anonymous GET /api/v{version:apiVersion}/console/share/content/{id}
 anonymous GET /api/v{version:apiVersion}/console/share/link/{token}
 anonymous GET /api/v{version:apiVersion}/embed/policy
+anonymous GET /api/v{version:apiVersion}/open-data/datasets
 anonymous GET /api/v{version:apiVersion}/open-data/datasets/{id}
 anonymous GET /api/v{version:apiVersion}/open-data/datasets/{id}/data.json
 anonymous GET /api/v{version:apiVersion}/open-data/datasets/{id}/schema.org
