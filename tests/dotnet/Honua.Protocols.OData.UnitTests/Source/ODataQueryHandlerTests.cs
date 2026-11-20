@@ -188,7 +188,7 @@ public sealed class ODataQueryHandlerTests
             .AddSingleton<ODataQuerySearchService>()
             .AddSingleton(Substitute.For<Honua.Core.Features.Infrastructure.Caching.IResponseCache>())
             .AddSingleton(Substitute.For<Honua.Infrastructure.Caching.IETagService>())
-            .AddSingleton(new Honua.Infrastructure.Caching.CacheOptions())
+            .AddSingleton(new Honua.Core.Features.Caching.CacheOptions())
             .AddSingleton<Honua.Protocols.OData.ODataQueryDependencies>()
             .AddSingleton<Honua.Protocols.OData.ODataQueryHandler>()
             .BuildServiceProvider();

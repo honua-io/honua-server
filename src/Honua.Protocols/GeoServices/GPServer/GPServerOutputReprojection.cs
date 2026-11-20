@@ -349,7 +349,7 @@ internal static class GPServerOutputReprojection
                     writer.WriteEndArray();
                 }
                 else if (targetSrid is > 0 &&
-                         string.Equals(property.Name, FeatureArtifactSpatialReference.PropertyName, StringComparison.Ordinal) &&
+                         string.Equals(property.Name, FeatureArtifactSpatialReference.MemberName, StringComparison.Ordinal) &&
                          property.Value.ValueKind == JsonValueKind.Object)
                 {
                     WriteUpdatedSpatialReference(writer, property.Value, targetSrid.Value);
@@ -380,7 +380,7 @@ internal static class GPServerOutputReprojection
                 geometryDoc.RootElement.WriteTo(writer);
             }
             else if (targetSrid is > 0 &&
-                     string.Equals(property.Name, FeatureArtifactSpatialReference.PropertyName, StringComparison.Ordinal) &&
+                     string.Equals(property.Name, FeatureArtifactSpatialReference.MemberName, StringComparison.Ordinal) &&
                      property.Value.ValueKind == JsonValueKind.Object)
             {
                 WriteUpdatedSpatialReference(writer, property.Value, targetSrid.Value);
@@ -396,7 +396,7 @@ internal static class GPServerOutputReprojection
 
     private static void WriteUpdatedSpatialReference(Utf8JsonWriter writer, JsonElement srObject, int targetSrid)
     {
-        writer.WritePropertyName(FeatureArtifactSpatialReference.PropertyName);
+        writer.WritePropertyName(FeatureArtifactSpatialReference.MemberName);
         writer.WriteStartObject();
 
         var wroteSrid = false;

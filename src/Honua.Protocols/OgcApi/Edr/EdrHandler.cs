@@ -217,10 +217,10 @@ internal sealed partial class EdrHandler
             return datetimeError;
         }
 
-        var parameterError = ValidateRequestedParameters(context, raster, out var requestedParameters);
-        if (parameterError is not null)
+        var requestedParameterError = ValidateRequestedParameters(context, raster, out var requestedParameters);
+        if (requestedParameterError is not null)
         {
-            return parameterError;
+            return requestedParameterError;
         }
 
         if (!temporallyIntersects)
@@ -337,10 +337,10 @@ internal sealed partial class EdrHandler
             return datetimeError;
         }
 
-        var parameterError = ValidateRequestedParameters(context, raster, out var requestedParameters);
-        if (parameterError is not null)
+        var requestedParameterError = ValidateRequestedParameters(context, raster, out var requestedParameters);
+        if (requestedParameterError is not null)
         {
-            return parameterError;
+            return requestedParameterError;
         }
 
         if (!temporallyIntersects)

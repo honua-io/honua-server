@@ -18,6 +18,7 @@ using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Services;
 using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;

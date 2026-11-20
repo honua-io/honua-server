@@ -10,6 +10,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Metadata.Services;
@@ -29,7 +30,9 @@ using Honua.Protocols.Ogc.Classic.Wfs20.Services;
 using Honua.Protocols.Ogc.Classic.Wms;
 using Honua.Protocols.Ogc.Classic.Wmts;
 using Honua.Protocols.Ogc.Classic.Wps20;
+using Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -100,7 +103,7 @@ public sealed class OgcClassicConformance8725Tests
     public void Wcs_TryParseSubsetEnvelope_AllowsEqualBoundTrimsAndRejects1DSlices()
     {
         var raster = CreateTestRaster();
-        SpatialReferenceHelpers.TryParseCrsDefinition("CRS:84", out var crs).Should().BeTrue();
+        var crs = new CrsDefinition("CRS:84", 4326, AxisOrder.EastNorth, true);
 
         var equalTrim = new StringValues(["Long(-122.4,-122.4)", "Lat(37.7,37.8)"]);
         Wcs20Handler.TryParseSubsetEnvelope(equalTrim, raster, crs, out var envelope, out _).Should().BeTrue();
@@ -117,7 +120,7 @@ public sealed class OgcClassicConformance8725Tests
     [UnitTest]
     public void Wcs_TryParseBboxEnvelope_RespectsSubsettingCrsAxisOrder()
     {
-        SpatialReferenceHelpers.TryParseCrsDefinition("EPSG:4326", out var epsg4326).Should().BeTrue();
+        var epsg4326 = new CrsDefinition("EPSG:4326", 4326, AxisOrder.NorthEast, true);
         epsg4326.AxisOrder.Should().Be(AxisOrder.NorthEast);
 
         Wcs20Handler.TryParseBboxEnvelope("37.7,-122.4,37.8,-122.3", epsg4326, out var envelope, out _).Should().BeTrue();
@@ -333,20 +336,19 @@ public sealed class OgcClassicConformance8725Tests
     public async Task Wmts_UnknownRequest_Returns501OperationNotSupported()
     {
         var graph = BuildMinimalWmtsGraph();
-        var graphProvider = Substitute.For<IMetadataV2GraphProvider>();
-        graphProvider.GetCurrentAsync(Arg.Any<CancellationToken>())
-            .Returns(MetadataV2GraphSnapshot.Create(graph));
+        var graphProvider = new TestMetadataV2GraphProvider(graph);
+        var snapshot = await graphProvider.GetCurrentAsync();
         var validator = Substitute.For<IResourceValidator>();
         validator.ValidateServiceV2Async("svc1", Arg.Any<CancellationToken>())
             .Returns(ResourceValidationResult.Success(
                 graph.Services[0],
-                MetadataV2GraphSnapshot.Create(graph)));
+                snapshot));
         var routes = Substitute.For<IRouteParameterValidator>();
         routes.ValidateServiceId(Arg.Any<HttpContext>()).Returns(ValidationResult<string>.Success("svc1"));
 
         await using var services = new ServiceCollection()
             .AddLogging()
-            .AddSingleton(graphProvider)
+            .AddSingleton<IMetadataV2GraphProvider>(graphProvider)
             .AddSingleton(validator)
             .AddSingleton(routes)
             .BuildServiceProvider();

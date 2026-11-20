@@ -220,7 +220,7 @@ internal static partial class FeatureServerEndpoints
 
         var response = new QueryResponse
         {
-            Fields = BuildDateBinFields(resource, dateBin.OutStatistics),
+            Fields = BuildDateBinFields(resource, dateBin.OutStatistics ?? ImmutableArray<StatisticDefinition>.Empty),
             Features = responseFeatures
         };
 

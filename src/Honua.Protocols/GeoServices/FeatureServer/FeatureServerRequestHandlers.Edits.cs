@@ -856,7 +856,7 @@ internal static partial class FeatureServerEndpoints
 
     private static int? ResolveLayerResultStatusCode(IResult layerResult)
     {
-        if (layerResult is IValueHttpResult { Value: Honua.Core.Contracts.ApiErrorResponse { Error.Code: > 0 } apiError })
+        if (layerResult is IValueHttpResult { Value: ApiErrorResponse { Error.Code: > 0 } apiError })
         {
             return apiError.Error.Code;
         }
@@ -866,7 +866,7 @@ internal static partial class FeatureServerEndpoints
 
     private static string? ResolveLayerResultErrorDescription(IResult layerResult)
     {
-        if (layerResult is IValueHttpResult { Value: Honua.Core.Contracts.ApiErrorResponse { Error.Message: { Length: > 0 } message } })
+        if (layerResult is IValueHttpResult { Value: ApiErrorResponse { Error.Message: { Length: > 0 } message } })
         {
             return message;
         }

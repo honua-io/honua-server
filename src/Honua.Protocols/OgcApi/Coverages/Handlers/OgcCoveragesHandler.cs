@@ -1906,7 +1906,7 @@ internal sealed class OgcCoveragesHandler
             return $"<{requestedCrs.Uri}>";
         }
 
-        if (resultSrid is not { } srid or <= 0)
+        if (resultSrid is not { } srid || srid <= 0)
         {
             return null;
         }

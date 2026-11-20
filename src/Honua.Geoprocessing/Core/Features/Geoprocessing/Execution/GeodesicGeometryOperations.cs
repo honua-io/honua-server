@@ -366,7 +366,7 @@ internal static class GeodesicGeometryOperations
 
     internal static double ComputeEllipsoidalDistanceMeters(double lon1Deg, double lat1Deg, double lon2Deg, double lat2Deg)
     {
-        if (lon1Deg == lon2Deg && lat1Deg == lat2Deg)
+        if (Math.Abs(lon1Deg - lon2Deg) <= 1e-12 && Math.Abs(lat1Deg - lat2Deg) <= 1e-12)
         {
             return 0.0;
         }

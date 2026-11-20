@@ -15,6 +15,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
@@ -257,8 +258,19 @@ internal static partial class FeatureServerEndpoints
                 if (sourceField is not null)
                 {
                     var mapped = MapFieldInfoV2(sourceField, string.Empty);
-                    mapped.Editable = false;
-                    fields.Add(mapped);
+                    fields.Add(new GeoServicesFieldInfo
+                    {
+                        Name = mapped.Name,
+                        Type = mapped.Type,
+                        SqlType = mapped.SqlType,
+                        Alias = mapped.Alias,
+                        Length = mapped.Length,
+                        Nullable = mapped.Nullable,
+                        Editable = false,
+                        DefaultValue = mapped.DefaultValue,
+                        Domain = mapped.Domain,
+                        Visible = mapped.Visible
+                    });
                 }
                 else if (!string.IsNullOrWhiteSpace(binDefinition.Field))
                 {
@@ -325,7 +337,7 @@ internal static partial class FeatureServerEndpoints
             var schemaField = resource.FindVisibleSchemaField(fieldName);
             if (schemaField is not null)
             {
-                return MapFieldTypeV2(schemaField.Type);
+                return GeoServicesFieldConventions.MapFieldType(schemaField.Type);
             }
         }
 

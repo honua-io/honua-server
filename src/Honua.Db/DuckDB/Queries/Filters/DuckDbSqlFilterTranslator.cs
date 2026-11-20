@@ -200,7 +200,7 @@ internal sealed class DuckDbSqlFilterTranslator : SqlFilterExpressionVisitorBase
         if (!isGeographic && spatial.DistanceInMeters)
         {
             var metersPerUnit = CrsLinearUnitFactor.LinearUnitToMeters(context.Wkid);
-            if (metersPerUnit != 1d)
+            if (Math.Abs(metersPerUnit - 1d) > 1e-12)
             {
                 if (spatial.Distance is Literal { Type: LiteralType.Number, Value: not null } literal)
                 {

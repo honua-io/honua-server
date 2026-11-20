@@ -290,7 +290,7 @@ public sealed class GeoservicesEsriProbeBugHuntTests
         protected override System.Data.Common.DbDataReader ExecuteDbDataReader(System.Data.CommandBehavior behavior)
         {
             executedCommands.Add(CommandText);
-            var table = new System.Data.DataTable();
+            using var table = new System.Data.DataTable();
             table.Columns.Add("wkb", typeof(byte[]));
             table.Columns.Add("repaired_type", typeof(string));
             table.Columns.Add("original_type", typeof(string));

@@ -6,6 +6,7 @@ using System.Globalization;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.ZarrParser;
 using Honua.Infrastructure.Models;
+using Honua.Protocols.Ogc.Api.Common.SpatialReference;
 using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Protocols.Ogc.Api.Coverages.Services;
@@ -326,7 +327,7 @@ internal sealed partial class ZarrCoverageService
         if (extent.Srid is { } srid and > 0)
         {
             var contentCrs = srid == 4326
-                ? OgcFeaturesUtilities.Crs84Uri
+                ? SpatialReferenceHelpers.Crs84Uri
                 : CreateEpsgUri(srid);
             context.Response.Headers.Append("Content-Crs", $"<{contentCrs}>");
         }
