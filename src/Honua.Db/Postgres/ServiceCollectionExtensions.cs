@@ -683,6 +683,7 @@ internal static partial class ServiceCollectionExtensions
             new CrsDetectionService(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 serviceProvider.GetRequiredService<ILoggerFactory>().CreateLogger<CrsDetectionService>()));
+        services.AddSingleton<PostgresCrsRegistryCache>();
         services.AddScoped<ICrsRegistry, PostgresCrsRegistry>();
         services.AddScoped<ICoordinateTransformService, PostGisCoordinateTransformService>();
 

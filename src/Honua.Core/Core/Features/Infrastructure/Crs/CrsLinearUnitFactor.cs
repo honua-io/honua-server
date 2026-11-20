@@ -115,11 +115,246 @@ public static partial class CrsLinearUnitFactor
     }
 
     // The unit match is not anchored at the end of the WKT, so a trailing AUTHORITY clause does not hide the unit.
-    public static double? LinearUnitFromWkt(string? wkt) =>
-        string.IsNullOrWhiteSpace(wkt) ? null : ParseUnitFactor(LinearUnitPattern().Matches(wkt).LastOrDefault());
+    public static double? LinearUnitFromWkt(string? wkt)
+    {
+        if (string.IsNullOrWhiteSpace(wkt))
+        {
+            return null;
+        }
 
-    private static double? AngularUnitFromWkt(string? wkt) =>
-        string.IsNullOrWhiteSpace(wkt) ? null : ParseUnitFactor(AngularUnitPattern().Match(wkt));
+        var scoped = ScopeToHorizontalCrs(wkt);
+        if (IsGeographicWkt(scoped))
+        {
+            return ParseUnitFactor(AngularUnitPattern().Matches(scoped).LastOrDefault());
+        }
+
+        var outerWkt = StripBaseGeographicBlockIfProjected(scoped);
+        return ParseUnitFactor(LinearUnitPattern().Matches(outerWkt).LastOrDefault());
+    }
+
+    private static double? AngularUnitFromWkt(string? wkt)
+    {
+        if (string.IsNullOrWhiteSpace(wkt))
+        {
+            return null;
+        }
+
+        var scoped = ScopeToHorizontalCrs(wkt);
+        return ParseUnitFactor(AngularUnitPattern().Matches(scoped).LastOrDefault());
+    }
+
+    private static readonly string[] _horizontalCrsKeywords =
+    [
+        "PROJCRS",
+        "PROJECTEDCRS",
+        "PROJCS",
+        "GEOGCRS",
+        "GEOGRAPHICCRS",
+        "GEODCRS",
+        "GEOGCS"
+    ];
+
+    private static readonly string[] _projectedCrsKeywords =
+    [
+        "PROJCRS",
+        "PROJECTEDCRS",
+        "PROJCS"
+    ];
+
+    private static readonly string[] _baseGeographicKeywords =
+    [
+        "BASEGEOGCRS",
+        "BASEGEODCRS",
+        "GEOGCS",
+        "GEODCRS",
+        "GEOGRAPHICCRS",
+        "GEOGCRS"
+    ];
+
+    private static string ScopeToHorizontalCrs(string wkt)
+    {
+        var current = wkt.Trim();
+        if (StartsWithKeyword(current, "BOUNDCRS") &&
+            TryExtractMember(current, "SOURCECRS", out var sourceCrs))
+        {
+            current = UnwrapContainer(sourceCrs, "SOURCECRS");
+        }
+
+        if (StartsWithKeyword(current, "COMPD_CS") || StartsWithKeyword(current, "COMPOUNDCRS"))
+        {
+            var bestStart = int.MaxValue;
+            string? bestMember = null;
+            foreach (var keyword in _horizontalCrsKeywords)
+            {
+                if (TryFindMember(current, keyword, out var start, out var end) && start < bestStart)
+                {
+                    bestStart = start;
+                    bestMember = current.Substring(start, end - start + 1);
+                }
+            }
+
+            if (bestMember is not null)
+            {
+                return bestMember;
+            }
+        }
+
+        return current;
+    }
+
+    private static bool IsGeographicWkt(string wkt)
+    {
+        if (StartsWithKeyword(wkt, "GEOGCRS") ||
+            StartsWithKeyword(wkt, "GEOGRAPHICCRS") ||
+            StartsWithKeyword(wkt, "GEOGCS"))
+        {
+            return true;
+        }
+
+        if (StartsWithKeyword(wkt, "GEODCRS"))
+        {
+            return !wkt.Contains("CS[Cartesian", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    private static string StripBaseGeographicBlockIfProjected(string wkt)
+    {
+        var isProjected = false;
+        foreach (var keyword in _projectedCrsKeywords)
+        {
+            if (StartsWithKeyword(wkt, keyword))
+            {
+                isProjected = true;
+                break;
+            }
+        }
+
+        if (!isProjected)
+        {
+            return wkt;
+        }
+
+        var maxEnd = -1;
+        foreach (var keyword in _baseGeographicKeywords)
+        {
+            if (TryFindMember(wkt, keyword, out _, out var end) && end > maxEnd)
+            {
+                maxEnd = end;
+            }
+        }
+
+        return maxEnd >= 0 && maxEnd + 1 < wkt.Length ? wkt[(maxEnd + 1)..] : wkt;
+    }
+
+    private static string UnwrapContainer(string wkt, string keyword)
+    {
+        var trimmed = wkt.Trim();
+        if (!StartsWithKeyword(trimmed, keyword))
+        {
+            return trimmed;
+        }
+
+        var open = trimmed.IndexOf('[');
+        if (open < 0 || trimmed[^1] != ']')
+        {
+            return trimmed;
+        }
+
+        return trimmed[(open + 1)..^1].Trim();
+    }
+
+    private static bool StartsWithKeyword(string wkt, string keyword)
+    {
+        var span = wkt.AsSpan().TrimStart();
+        if (!span.StartsWith(keyword, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var rest = span[keyword.Length..].TrimStart();
+        return rest.Length > 0 && rest[0] == '[';
+    }
+
+    private static bool TryExtractMember(string wkt, string keyword, out string member)
+    {
+        if (TryFindMember(wkt, keyword, out var start, out var end))
+        {
+            member = wkt.Substring(start, end - start + 1);
+            return true;
+        }
+
+        member = string.Empty;
+        return false;
+    }
+
+    private static bool TryFindMember(string wkt, string keyword, out int start, out int end)
+    {
+        start = -1;
+        end = -1;
+
+        var idx = wkt.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
+        while (idx >= 0)
+        {
+            var isWordStart = idx == 0 || (!char.IsLetterOrDigit(wkt[idx - 1]) && wkt[idx - 1] != '_');
+            var i = idx + keyword.Length;
+            while (i < wkt.Length && char.IsWhiteSpace(wkt[i]))
+            {
+                i++;
+            }
+
+            if (isWordStart && i < wkt.Length && wkt[i] == '[')
+            {
+                var close = FindMatchingBracket(wkt, i);
+                if (close > i)
+                {
+                    start = idx;
+                    end = close;
+                    return true;
+                }
+            }
+
+            idx = wkt.IndexOf(keyword, idx + keyword.Length, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    private static int FindMatchingBracket(string s, int openIndex)
+    {
+        var depth = 0;
+        var inQuote = false;
+        for (var i = openIndex; i < s.Length; i++)
+        {
+            var c = s[i];
+            if (c == '"')
+            {
+                inQuote = !inQuote;
+                continue;
+            }
+
+            if (inQuote)
+            {
+                continue;
+            }
+
+            if (c == '[')
+            {
+                depth++;
+            }
+            else if (c == ']')
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    return i;
+                }
+            }
+        }
+
+        return -1;
+    }
 
     private static double? ParseUnitFactor(Match? match) =>
         match is { Success: true }

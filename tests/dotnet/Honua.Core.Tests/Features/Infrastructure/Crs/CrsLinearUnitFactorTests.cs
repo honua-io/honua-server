@@ -101,4 +101,37 @@ public sealed class CrsLinearUnitFactorTests
 
         CrsLinearUnitFactor.LinearUnitFromWkt(wkt).Should().BeApproximately(CrsLinearUnitFactor.UsSurveyFootMeters, 1e-15);
     }
+
+    [UnitTheory]
+    [InlineData("""GEOGCRS["NTF (Paris)",DATUM["Nouvelle Triangulation Francaise",ELLIPSOID["Clarke 1880 (IGN)",6378249.2,293.4660212936269,LENGTHUNIT["metre",1]]],PRIMEM["Paris",2.5969213,ANGLEUNIT["grad",0.015707963267948967]],CS[ellipsoidal,2],AXIS["latitude",north],AXIS["longitude",east],ANGLEUNIT["grad",0.015707963267948967]]""", 0.015707963267948967)]
+    [InlineData("""GEOGRAPHICCRS["WGS 84",DATUM["World Geodetic System 1984",ELLIPSOID["WGS 84",6378137,298.257223563,LENGTHUNIT["metre",1]]],CS[ellipsoidal,2],AXIS["latitude",north],AXIS["longitude",east],ANGLEUNIT["degree",0.0174532925199433]]""", 0.0174532925199433)]
+    [InlineData("""GEODCRS["WGS 84",DATUM["World Geodetic System 1984",ELLIPSOID["WGS 84",6378137,298.257223563,LENGTHUNIT["metre",1]]],CS[ellipsoidal,2],AXIS["latitude",north],AXIS["longitude",east],ANGLEUNIT["degree",0.0174532925199433]]""", 0.0174532925199433)]
+    public void LinearUnitFromWkt_Wkt2GeographicWithAngleUnit_ReturnsAngleUnit(string wkt, double expectedFactor)
+    {
+        CrsLinearUnitFactor.LinearUnitFromWkt(wkt).Should().BeApproximately(expectedFactor, 1e-15);
+        CrsLinearUnitFactor.Resolve(proj4Text: null, wkt, isGeographic: true).Should().BeApproximately(expectedFactor, 1e-15);
+    }
+
+    [UnitTest]
+    public void Resolve_CompoundCrsWithFootHorizontalAndMeterVertical_ExtractsHorizontalUnit()
+    {
+        const string wkt1Compound =
+            """COMPD_CS["NAD83 / New York Long Island (ftUS) + NAVD88 height",PROJCS["NAD83 / New York Long Island (ftUS)",GEOGCS["NAD83",DATUM["North_American_Datum_1983",SPHEROID["GRS 1980",6378137,298.257222101]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433]],PROJECTION["Lambert_Conformal_Conic_2SP"],UNIT["US survey foot",0.3048006096012192]],VERT_CS["NAVD88 height",VERT_DATUM["North American Vertical Datum 1988",2005],UNIT["metre",1]]]""";
+        const string wkt2Compound =
+            """COMPOUNDCRS["NAD83 / New York Long Island (ftUS) + NAVD88 height",PROJCRS["NAD83 / New York Long Island (ftUS)",BASEGEOGCRS["NAD83",DATUM["North American Datum 1983",ELLIPSOID["GRS 1980",6378137,298.257222101,LENGTHUNIT["metre",1]]]],CONVERSION["SPCS83",METHOD["Lambert Conic Conformal (2SP)"]],CS[Cartesian,2],LENGTHUNIT["US survey foot",0.3048006096012192]],VERTCRS["NAVD88 height",VDATUM["North American Vertical Datum 1988"],CS[vertical,1],LENGTHUNIT["metre",1]]]""";
+
+        CrsLinearUnitFactor.LinearUnitFromWkt(wkt1Compound).Should().BeApproximately(CrsLinearUnitFactor.UsSurveyFootMeters, 1e-15);
+        CrsLinearUnitFactor.Resolve(proj4Text: null, wkt1Compound, isGeographic: false).Should().BeApproximately(CrsLinearUnitFactor.UsSurveyFootMeters, 1e-15);
+        CrsLinearUnitFactor.LinearUnitFromWkt(wkt2Compound).Should().BeApproximately(CrsLinearUnitFactor.UsSurveyFootMeters, 1e-15);
+        CrsLinearUnitFactor.Resolve(proj4Text: null, wkt2Compound, isGeographic: false).Should().BeApproximately(CrsLinearUnitFactor.UsSurveyFootMeters, 1e-15);
+    }
+
+    [UnitTest]
+    public void LinearUnitFromWkt_Wkt2ProjectedWithoutOuterLengthUnit_IgnoresBaseEllipsoidLengthUnit()
+    {
+        const string wkt =
+            """PROJECTEDCRS["x",BASEGEOGCRS["WGS 84",DATUM["World Geodetic System 1984",ELLIPSOID["WGS 84",6378137,298.257223563,LENGTHUNIT["metre",1]]],ANGLEUNIT["degree",0.0174532925199433]],CS[Cartesian,2]]""";
+
+        CrsLinearUnitFactor.LinearUnitFromWkt(wkt).Should().BeNull();
+    }
 }
