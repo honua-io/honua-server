@@ -283,9 +283,15 @@ internal static class NAServerResultMapping
         };
     }
 
-    public static NAServerLocationAllocationResponse MapLocationAllocation(LocationAllocationSolveResult result)
+    public static NAServerLocationAllocationResponse MapLocationAllocation(
+        LocationAllocationSolveResult result,
+        LocationAllocationSolveRequest? request = null,
+        int outSrid = 4326)
     {
         ArgumentNullException.ThrowIfNull(result);
+
+        var effectiveOutSrid = request?.OutSrid ?? outSrid;
+        var spatialReference = BuildSpatialReference(effectiveOutSrid);
 
         // Sum allocated weight per chosen facility for the facility feature output.
         var weightByFacility = new Dictionary<int, double>();
@@ -300,8 +306,16 @@ internal static class NAServerResultMapping
         {
             var facilityId = result.ChosenFacilityIds[i];
             weightByFacility.TryGetValue(facilityId, out var demandWeight);
+            NAServerPointGeometry? facilityGeometry = null;
+            if (request is not null && facilityId >= 0 && facilityId < request.Facilities.Count)
+            {
+                var coord = request.Facilities[facilityId];
+                facilityGeometry = new NAServerPointGeometry { X = coord.X, Y = coord.Y };
+            }
+
             facilityFeatures[i] = new NAServerLaFacilityFeature
             {
+                Geometry = facilityGeometry,
                 Attributes = new NAServerLaFacilityAttributes
                 {
                     FacilityId = facilityId + 1,
@@ -315,8 +329,16 @@ internal static class NAServerResultMapping
         {
             var allocation = result.Allocations[i];
             var allocated = allocation.AllocatedFacilityId >= 0;
+            NAServerPointGeometry? demandGeometry = null;
+            if (request is not null && allocation.DemandPointId >= 0 && allocation.DemandPointId < request.DemandPoints.Count)
+            {
+                var coord = request.DemandPoints[allocation.DemandPointId].Location;
+                demandGeometry = new NAServerPointGeometry { X = coord.X, Y = coord.Y };
+            }
+
             demandFeatures[i] = new NAServerLaDemandPointFeature
             {
+                Geometry = demandGeometry,
                 Attributes = new NAServerLaDemandPointAttributes
                 {
                     DemandOid = allocation.DemandPointId + 1,
@@ -342,8 +364,18 @@ internal static class NAServerResultMapping
 
         return new NAServerLocationAllocationResponse
         {
-            Facilities = new NAServerLaFacilitiesFeatureSet { Features = facilityFeatures },
-            DemandPoints = new NAServerLaDemandPointsFeatureSet { Features = demandFeatures },
+            Facilities = new NAServerLaFacilitiesFeatureSet
+            {
+                GeometryType = "esriGeometryPoint",
+                SpatialReference = spatialReference,
+                Features = facilityFeatures
+            },
+            DemandPoints = new NAServerLaDemandPointsFeatureSet
+            {
+                GeometryType = "esriGeometryPoint",
+                SpatialReference = spatialReference,
+                Features = demandFeatures
+            },
             Messages = messages,
         };
     }

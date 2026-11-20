@@ -152,6 +152,15 @@ internal static partial class GPServerEndpoints
             .WithDescription("Returns the current status and progress of a GP job")
             .WithTags("GPServer");
 
+        // Job messages
+        endpoints.MapGet($"{RouteBase}/{{taskName}}/jobs/{{jobId}}/messages",
+                static (HttpContext context, CancellationToken ct) => HandleJobMessages(context, ct))
+            .WithDisplayName("GPServer Job Messages")
+            .WithName("GPServerJobMessages")
+            .WithSummary("Get the diagnostic messages of a GP job")
+            .WithDescription("Returns the messages array for an asynchronous GP job")
+            .WithTags("GPServer");
+
         // Per-output result
         endpoints.MapGet($"{RouteBase}/{{taskName}}/jobs/{{jobId}}/results/{{paramName}}",
                 static (HttpContext context, CancellationToken ct) => HandleJobResult(context, ct))
@@ -1065,6 +1074,60 @@ internal static partial class GPServerEndpoints
             // endpoint; MapExceptionToResult logs and records telemetry for every
             // exception type before mapping to a GeoServices-format error response.
             return MapExceptionToResult(context, logger, "JobStatus", ex);
+        }
+    }
+
+    private static async Task<IResult> HandleJobMessages(HttpContext context, CancellationToken ct)
+    {
+        ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? "";
+        var taskName = context.Request.RouteValues["taskName"]?.ToString() ?? "";
+        EnrichActivity("JobMessages", serviceId, taskName);
+        var jobId = context.Request.RouteValues["jobId"]?.ToString();
+        var logger = ResolveLogger(context);
+
+        if (string.IsNullOrWhiteSpace(jobId))
+        {
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateBadRequest(context, "Missing jobId."),
+                "Missing jobId");
+        }
+
+        var formatError = ValidateJsonFormat(context);
+        if (formatError != null)
+        {
+            return formatError;
+        }
+
+        var jobService = context.RequestServices.GetRequiredService<IGeoprocessingJobService>();
+
+        try
+        {
+            var serviceValidation = await ValidateServiceAsync(context, serviceId, logger, ct);
+            if (!serviceValidation.IsValid)
+            {
+                return serviceValidation.ErrorResult!;
+            }
+
+            var job = await jobService.GetGPServerJobAsync(jobId, serviceId, taskName, context.User, ct);
+
+            var bindingError = ValidateJobBinding(context, logger, job, serviceId, taskName);
+            if (bindingError != null)
+            {
+                return bindingError;
+            }
+
+            var response = new GPJobMessagesResponse
+            {
+                Messages = [.. BuildJobMessages(job)]
+            };
+
+            return Results.Json(response, GPServerJsonContext.Default.GPJobMessagesResponse,
+                contentType: "application/json");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return MapExceptionToResult(context, logger, "JobMessages", ex);
         }
     }
 

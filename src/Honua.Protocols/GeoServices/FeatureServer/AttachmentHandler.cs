@@ -431,7 +431,7 @@ internal static partial class AttachmentHandler
                         Success = false,
                         Error = new EditError
                         {
-                            Code = 500,
+                            Code = GeoServicesEditErrorCodes.GenericFailure,
                             Description = "Failed to delete attachment."
                         }
                     });

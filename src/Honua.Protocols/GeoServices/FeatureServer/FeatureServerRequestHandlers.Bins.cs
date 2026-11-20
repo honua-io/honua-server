@@ -206,10 +206,130 @@ internal static partial class FeatureServerEndpoints
 
         var response = new QueryResponse
         {
+            Fields = BuildBinFields(resource, binDefinition),
             Features = responseFeatures
         };
 
         return Results.Json(response, FeatureServerJsonContext.Default.QueryResponse, contentType: "application/json");
+    }
+
+    internal static FieldInfo[] BuildBinFields(MetadataV2Object resource, BinDefinition binDefinition)
+    {
+        var fields = new List<FieldInfo>();
+        switch (binDefinition.Type)
+        {
+            case BinType.FixedInterval:
+            case BinType.AutoInterval:
+            case BinType.FixedBoundaries:
+                fields.Add(new FieldInfo
+                {
+                    Name = "lowerBoundary",
+                    Type = "esriFieldTypeDouble",
+                    Alias = "lowerBoundary",
+                    Editable = false,
+                    Nullable = true
+                });
+                fields.Add(new FieldInfo
+                {
+                    Name = "upperBoundary",
+                    Type = "esriFieldTypeDouble",
+                    Alias = "upperBoundary",
+                    Editable = false,
+                    Nullable = true
+                });
+                break;
+
+            case BinType.Date:
+                fields.Add(new FieldInfo
+                {
+                    Name = "boundary",
+                    Type = "esriFieldTypeDate",
+                    Alias = "boundary",
+                    Editable = false,
+                    Nullable = true
+                });
+                break;
+
+            case BinType.Classification:
+                var sourceField = !string.IsNullOrWhiteSpace(binDefinition.Field)
+                    ? resource.FindVisibleSchemaField(binDefinition.Field)
+                    : null;
+                if (sourceField is not null)
+                {
+                    var mapped = MapFieldInfoV2(sourceField, string.Empty);
+                    mapped.Editable = false;
+                    fields.Add(mapped);
+                }
+                else if (!string.IsNullOrWhiteSpace(binDefinition.Field))
+                {
+                    fields.Add(new FieldInfo
+                    {
+                        Name = binDefinition.Field,
+                        Type = "esriFieldTypeString",
+                        Alias = binDefinition.Field,
+                        Editable = false,
+                        Nullable = true
+                    });
+                }
+                break;
+        }
+
+        AppendBinStatisticsFields(fields, resource, binDefinition.OutStatistics);
+        return [.. fields];
+    }
+
+    internal static void AppendBinStatisticsFields(
+        List<FieldInfo> fields,
+        MetadataV2Object resource,
+        ImmutableArray<StatisticDefinition> outStatistics)
+    {
+        if (outStatistics.IsDefaultOrEmpty)
+        {
+            fields.Add(new FieldInfo
+            {
+                Name = "count",
+                Type = "esriFieldTypeInteger",
+                Alias = "count",
+                Editable = false,
+                Nullable = false
+            });
+            return;
+        }
+
+        foreach (var stat in outStatistics)
+        {
+            var fieldName = !string.IsNullOrWhiteSpace(stat.OutStatisticFieldName)
+                ? stat.OutStatisticFieldName
+                : $"{stat.StatisticType.ToString().ToLowerInvariant()}_{stat.OnStatisticField}";
+            var fieldType = stat.StatisticType switch
+            {
+                StatisticType.Count => "esriFieldTypeInteger",
+                StatisticType.Min or StatisticType.Max => ResolveStatisticFieldType(resource, stat.OnStatisticField),
+                _ => "esriFieldTypeDouble"
+            };
+            fields.Add(new FieldInfo
+            {
+                Name = fieldName,
+                Type = fieldType,
+                Alias = fieldName,
+                Editable = false,
+                Nullable = stat.StatisticType != StatisticType.Count
+            });
+        }
+    }
+
+    private static string ResolveStatisticFieldType(MetadataV2Object resource, string? fieldName)
+    {
+        if (!string.IsNullOrWhiteSpace(fieldName))
+        {
+            var schemaField = resource.FindVisibleSchemaField(fieldName);
+            if (schemaField is not null)
+            {
+                return MapFieldTypeV2(schemaField.Type);
+            }
+        }
+
+        return "esriFieldTypeDouble";
     }
 
     // Publisher-hidden fields are treated as absent so bins cannot aggregate a hidden column.
@@ -534,7 +654,12 @@ internal static partial class FeatureServerEndpoints
             var unit = fixEl.TryGetProperty("intervalUnit", out var unitEl)
                 ? unitEl.GetString()?.ToLowerInvariant() ?? "days"
                 : "days";
-            fixedInterval = ConvertToTimeSpan(count, unit);
+            if (!TryConvertToTimeSpan(count, unit, out var parsedInterval, out error))
+            {
+                return false;
+            }
+
+            fixedInterval = parsedInterval;
         }
         else
         {

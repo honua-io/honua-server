@@ -692,6 +692,66 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/GeocodeServer/geocodeAddresses")]
+    public async Task BatchGeocode_BlankAddressInBatch_EmitsUnmatchedSlotAndHonorsClientResultIdOnRootPostAlias()
+    {
+        using var client = _fixture.BatchApplication.CreateClient();
+
+        var addresses = """{"records":[{"attributes":{"ResultID":10,"SingleLine":"1600 Pennsylvania Ave NW"}},{"attributes":{"ResultID":42,"SingleLine":"   "}}]}""";
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["addresses"] = addresses,
+            ["outFields"] = "Match_addr",
+            ["f"] = "json"
+        });
+
+        using var response = await client.PostAsync("/rest/services/GeocodeServer/geocodeAddresses", content);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var locations = payload.RootElement.GetProperty("locations");
+        Assert.Equal(2, locations.GetArrayLength());
+
+        Assert.Equal(10, locations[0].GetProperty("resultId").GetInt32());
+        Assert.Equal("10", locations[0].GetProperty("attributes").GetProperty("ResultID").GetString());
+        Assert.True(locations[0].GetProperty("score").GetDouble() > 0);
+
+        Assert.Equal(42, locations[1].GetProperty("resultId").GetInt32());
+        Assert.Equal("42", locations[1].GetProperty("attributes").GetProperty("ResultID").GetString());
+        Assert.Equal(0, locations[1].GetProperty("score").GetDouble());
+        Assert.True(
+            !locations[1].TryGetProperty("location", out var unmatchedLoc) ||
+            unmatchedLoc.ValueKind == JsonValueKind.Null);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/GeocodeServer/suggest")]
+    [Endpoint("POST /rest/services/GeocodeServer/reverseGeocode")]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/messages")]
+    public async Task RootGeocodeServerAliases_Post_SupportSuggestAndReverseGeocode()
+    {
+        using var client = _fixture.Application.CreateClient();
+
+        using var suggestContent = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["text"] = "1600 Pennsylvania",
+            ["f"] = "json"
+        });
+        using var suggestResponse = await client.PostAsync("/rest/services/GeocodeServer/suggest", suggestContent);
+        Assert.Equal(HttpStatusCode.OK, suggestResponse.StatusCode);
+
+        using var reverseContent = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["location"] = "-77.03655,38.89768",
+            ["f"] = "json"
+        });
+        using var reverseResponse = await client.PostAsync("/rest/services/GeocodeServer/reverseGeocode", reverseContent);
+        Assert.Equal(HttpStatusCode.OK, reverseResponse.StatusCode);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
     public async Task GeocodeServerMetadata_AdvertisesSupportsSuggest_WhenProviderSupports()
