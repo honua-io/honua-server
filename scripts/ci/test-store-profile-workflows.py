@@ -246,6 +246,13 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         for step in job['steps']:
             self.assertNotIn('cache-to', step.get('with', {}), step.get('name'))
 
+    def test_store_measurement_builder_keeps_its_cache_between_solves(self):
+        steps = workflow('store-image-size.yml')['jobs']['measure']['steps']
+        setup = next(step for step in steps if step.get('uses', '').startswith('docker/setup-buildx-action@'))
+        config = setup.get('with', {}).get('buildkitd-config-inline', '')
+        self.assertEqual([line.strip() for line in config.splitlines()], ['[worker.oci]', 'gc = false'])
+        self.assertNotIn('cleanup', setup.get('with', {}))
+
     def test_store_matrix_jobs_use_isolated_local_images(self):
         job = workflow('store-image-size.yml')['jobs']['measure']
         reference = job.get('env', {}).get('IMAGE', '')
