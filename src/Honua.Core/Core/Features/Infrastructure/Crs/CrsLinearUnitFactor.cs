@@ -14,6 +14,37 @@ public static partial class CrsLinearUnitFactor
 
     private const double IndianFootMeters = 0.3047995102481469d;
 
+    public static double LinearUnitToMeters(int srid) => srid switch
+    {
+        // NAD83 / NAD83(HARN) / NAD83(2011) State Plane zones using International Feet (0.3048 m)
+        2222 or 2223 or 2224 => InternationalFootMeters,
+        2251 or 2252 or 2253 => InternationalFootMeters,
+        2257 => InternationalFootMeters,
+        2269 or 2270 => InternationalFootMeters,
+        2273 => InternationalFootMeters,
+        2868 or 2869 or 2870 => InternationalFootMeters,
+        2896 or 2897 or 2898 => InternationalFootMeters,
+        2901 => InternationalFootMeters,
+        2913 or 2914 or 2915 => InternationalFootMeters,
+        6404 or 6405 or 6406 => InternationalFootMeters,
+
+        // NAD83 State Plane zones in US survey feet (1200/3937 m)
+        >= 2225 and <= 2286 => UsSurveyFootMeters,
+        // NAD83(HARN) State Plane zones in US survey feet
+        >= 2867 and <= 2930 => UsSurveyFootMeters,
+        // NAD83 / Indiana East & West (ftUS)
+        2965 or 2966 => UsSurveyFootMeters,
+        // NAD83 / Arkansas, Illinois, New Hampshire, Rhode Island (ftUS)
+        >= 3433 and <= 3438 => UsSurveyFootMeters,
+        // NAD83(NSRS2007) State Plane in US survey feet
+        >= 3451 and <= 3466 => UsSurveyFootMeters,
+        // NAD83(2011) State Plane in US survey feet
+        >= 6425 and <= 6599 => UsSurveyFootMeters,
+
+        // All other projected CRSs default to meters
+        _ => 1d
+    };
+
     public static double Resolve(string? proj4Text, string? wkt, bool isGeographic)
     {
         if (!isGeographic && TryToMeter(proj4Text, out var metersPerUnit))

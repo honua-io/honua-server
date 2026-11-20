@@ -21,6 +21,7 @@ internal static partial class OracleFeatureQueryBuilder
         ArgumentNullException.ThrowIfNull(attributeColumns);
         query = NormalizeConstraints(query, translationOfWhere: null, translationProved: false, mapping.PrimaryKeyColumn);
         GuardUnsupportedTemporalFilter(query);
+        GuardUnsupportedOutputSrid(mapping, query);
 
         var sb = new StringBuilder();
         var parameters = new List<object>();
@@ -74,6 +75,7 @@ internal static partial class OracleFeatureQueryBuilder
         ArgumentNullException.ThrowIfNull(mapping);
         query = NormalizeConstraints(query, translationOfWhere: null, translationProved: false, mapping.PrimaryKeyColumn);
         GuardUnsupportedTemporalFilter(query);
+        GuardUnsupportedOutputSrid(mapping, query);
 
         var sb = new StringBuilder();
         var parameters = new List<object>();
@@ -123,6 +125,7 @@ internal static partial class OracleFeatureQueryBuilder
         ArgumentNullException.ThrowIfNull(mapping);
         query = NormalizeConstraints(query, translationOfWhere: null, translationProved: false, mapping.PrimaryKeyColumn);
         GuardUnsupportedTemporalFilter(query);
+        GuardUnsupportedOutputSrid(mapping, query);
 
         var sb = new StringBuilder();
         var parameters = new List<object>();
@@ -160,16 +163,17 @@ internal static partial class OracleFeatureQueryBuilder
         var geometryColumn = mapping.QuotedGeometryColumn!;
 
         sb.Append("SELECT ");
-        sb.Append("t.mbb.SDO_ORDINATES(1) AS \"min_x\", ");
-        sb.Append("t.mbb.SDO_ORDINATES(2) AS \"min_y\", ");
-        sb.Append("t.mbb.SDO_ORDINATES(3) AS \"max_x\", ");
-        sb.Append("t.mbb.SDO_ORDINATES(4) AS \"max_y\" ");
-        sb.Append("FROM (SELECT SDO_AGGR_MBR(").Append(geometryColumn).Append(") AS mbb FROM ");
+        sb.Append("SDO_GEOM.SDO_MIN_MBR_ORDINATE(mbr, 1) AS \"min_x\", ");
+        sb.Append("SDO_GEOM.SDO_MIN_MBR_ORDINATE(mbr, 2) AS \"min_y\", ");
+        sb.Append("SDO_GEOM.SDO_MAX_MBR_ORDINATE(mbr, 1) AS \"max_x\", ");
+        sb.Append("SDO_GEOM.SDO_MAX_MBR_ORDINATE(mbr, 2) AS \"max_y\" ");
+        sb.Append("FROM (SELECT SDO_AGGR_MBR(").Append(geometryColumn).Append(") AS mbr FROM ");
         sb.Append(mapping.QuotedTableReference);
         sb.Append(" WHERE ").Append(geometryColumn).Append(" IS NOT NULL");
 
         var effective = NormalizeConstraints(query ?? new FeatureQuery(), translationOfWhere: null, translationProved: false, mapping.PrimaryKeyColumn);
         GuardUnsupportedTemporalFilter(effective);
+        GuardUnsupportedOutputSrid(mapping, effective);
         AppendWhereClause(sb, effective, parameters, resolveColumnName);
         AppendObjectIdsFilter(sb, mapping, effective, parameters);
         AppendSpatialFilter(sb, mapping, effective, parameters);
@@ -186,6 +190,17 @@ internal static partial class OracleFeatureQueryBuilder
             throw new NotSupportedException(
                 "Temporal filters are not supported by the Oracle provider in this slice. " +
                 "Apply temporal filtering in the calling layer or use a PostGIS-backed layer.");
+        }
+    }
+
+    private static void GuardUnsupportedOutputSrid(OracleLayerMapping mapping, FeatureQuery query)
+    {
+        if (query.OutputSrid is > 0 && mapping.Srid is > 0 && query.OutputSrid.Value != mapping.Srid.Value)
+        {
+            throw new NotSupportedException(
+                $"Output SRID transforms are not supported by the Oracle provider " +
+                $"(layer SRID is {mapping.Srid.Value}, requested {query.OutputSrid.Value}). " +
+                "Request features in the layer's storage SRID or use a PostGIS-backed layer.");
         }
     }
 
@@ -453,17 +468,14 @@ internal static partial class OracleFeatureQueryBuilder
             SpatialRelationship.Intersects =>
                 $"SDO_RELATE({geomCol}, {filterExpr}, 'mask=ANYINTERACT') = 'TRUE'",
             SpatialRelationship.EnvelopeIntersects =>
-                $"SDO_RELATE(SDO_GEOM.SDO_MBR({geomCol}), {filterExpr}, 'mask=ANYINTERACT') = 'TRUE'",
-            // Esri semantics: esriSpatialRelWithin = filter geometry is within feature geometry;
-            // esriSpatialRelContains = filter geometry contains feature geometry. Lead with the
-            // filter geometry to match the canonical PostGIS reference. SDO_RELATE masks
-            // are operand-order sensitive: SDO_RELATE(A, B, 'mask=INSIDE') means A is inside B, so
-            // the filter geometry must be the first operand. Reversing inverts the relationship and
-            // returns the wrong (typically empty) result set.
+                $"SDO_FILTER({geomCol}, {filterExpr}) = 'TRUE'",
+            // Oracle Spatial requires the indexed table column as the first argument to use
+            // the MDSYS.SPATIAL_INDEX domain index. SDO_RELATE(feature, filter, 'mask=...')
+            // evaluates the topological relationship of the feature relative to the filter.
             SpatialRelationship.Within =>
-                $"SDO_RELATE({filterExpr}, {geomCol}, 'mask=INSIDE+COVEREDBY') = 'TRUE'",
+                $"SDO_RELATE({geomCol}, {filterExpr}, 'mask=INSIDE+COVEREDBY+EQUAL') = 'TRUE'",
             SpatialRelationship.Contains =>
-                $"SDO_RELATE({filterExpr}, {geomCol}, 'mask=CONTAINS+COVERS') = 'TRUE'",
+                $"SDO_RELATE({geomCol}, {filterExpr}, 'mask=CONTAINS+COVERS+EQUAL') = 'TRUE'",
             SpatialRelationship.Disjoint =>
                 $"NOT (SDO_RELATE({geomCol}, {filterExpr}, 'mask=ANYINTERACT') = 'TRUE')",
             _ => throw new NotSupportedException(
