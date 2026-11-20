@@ -7,11 +7,14 @@ using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
 // Session cookies are Secure whenever the installation is served over HTTPS, including behind a
-// TLS-terminating proxy whose forwarded headers are not trusted (the request then looks like HTTP).
+// TLS-terminating proxy whose forwarded headers are not trusted (the request then looks like HTTP),
+// and always outside Development and Test, where browser sessions require HTTPS anyway.
 public sealed class AdminSessionCookieSecurityTests
 {
     [UnitTheory]
@@ -33,17 +36,50 @@ public sealed class AdminSessionCookieSecurityTests
         AdminAuthEndpoints.CreateAdminAuthCookieOptions(context, TimeSpan.FromMinutes(5)).Secure.Should().BeFalse();
     }
 
-    private static DefaultHttpContext Context(string scheme, string publicBaseUrl)
+    [UnitTheory]
+    [InlineData("Production")]
+    [InlineData("Staging")]
+    public void SessionCookie_IsSecure_OutsideDevelopmentAndTest_EvenWhenNeitherIsHttps(string environmentName)
+    {
+        var context = Context("http", "http://honua.internal:8080", environmentName);
+
+        AdminAuthEndpoints.CreateAdminAuthCookieOptions(context, TimeSpan.FromMinutes(5)).Secure.Should().BeTrue();
+    }
+
+    [UnitTheory]
+    [InlineData("Development")]
+    [InlineData("Test")]
+    public void SessionCookie_IsNotSecure_InDevelopmentOrTest_WhenNeitherIsHttps(string environmentName)
+    {
+        var context = Context("http", "http://honua.internal:8080", environmentName);
+
+        AdminAuthEndpoints.CreateAdminAuthCookieOptions(context, TimeSpan.FromMinutes(5)).Secure.Should().BeFalse();
+    }
+
+    private static DefaultHttpContext Context(string scheme, string publicBaseUrl, string? environmentName = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Public:BaseUrl"] = publicBaseUrl })
             .Build();
         var context = new DefaultHttpContext
         {
-            RequestServices = new ServiceCollection().AddSingleton<IConfiguration>(configuration).BuildServiceProvider(),
+            RequestServices = Services(configuration, environmentName),
         };
         context.Request.Scheme = scheme;
         context.Request.Host = new HostString("localhost");
         return context;
+    }
+
+    private static ServiceProvider Services(IConfiguration configuration, string? environmentName)
+    {
+        var services = new ServiceCollection().AddSingleton(configuration);
+        if (environmentName is not null)
+        {
+            var environment = Substitute.For<IHostEnvironment>();
+            environment.EnvironmentName.Returns(environmentName);
+            services.AddSingleton(environment);
+        }
+
+        return services.BuildServiceProvider();
     }
 }
