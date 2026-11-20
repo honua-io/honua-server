@@ -16,7 +16,7 @@ using NSubstitute;
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
 // A Prometheus Operator ServiceMonitor can send only an Authorization header, so the
-// API-key handler also reads "Authorization: ApiKey <key>" (honua-server#8680).
+// API-key handler also reads "Authorization: ApiKey <key>".
 public sealed class ApiKeyAuthorizationSchemeTests
 {
     private const string BootstrapAdminPassword = "AuthorizationScheme-AdminPassword123!";
