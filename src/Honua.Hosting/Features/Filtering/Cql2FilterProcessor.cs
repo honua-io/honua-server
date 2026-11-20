@@ -142,6 +142,11 @@ internal sealed class Cql2FilterProcessor(
             parsedExpression = NormalizeFilterAxisOrder(parsedExpression, filterCrsDefinition.Value.AxisOrder);
         }
 
+        if (!TryValidateFilterGeometries(parsedExpression, out var geometryValidationError))
+        {
+            return ProcessingResult.Failure(geometryValidationError!);
+        }
+
         // Not converted to `.Where(...)`: the predicate is an awaited async lookup, and the
         // first unsupported SRID must short-circuit the enclosing method with a specific
         // error message, which a synchronous LINQ filter cannot express.
@@ -1209,6 +1214,116 @@ internal sealed class Cql2FilterProcessor(
         }
 
         return SwapAxisOrder(filterExpression, preserveExplicitGeometryCrs: true);
+    }
+
+    internal static bool TryValidateFilterGeometries(
+        FilterExpression filterExpression,
+        out string? errorMessage)
+    {
+        switch (filterExpression)
+        {
+            case GeometryLiteral geometry:
+                return TryValidateGeometryLiteral(geometry, out errorMessage);
+            case BinaryExpression binary:
+                return TryValidateFilterGeometries(binary.Left, out errorMessage) &&
+                       TryValidateFilterGeometries(binary.Right, out errorMessage);
+            case UnaryExpression unary:
+                return TryValidateFilterGeometries(unary.Operand, out errorMessage);
+            case SpatialPredicate spatial:
+                return TryValidateFilterGeometries(spatial.Left, out errorMessage) &&
+                       TryValidateFilterGeometries(spatial.Right, out errorMessage);
+            case SpatialDistancePredicate spatialDistance:
+                return TryValidateFilterGeometries(spatialDistance.Left, out errorMessage) &&
+                       TryValidateFilterGeometries(spatialDistance.Right, out errorMessage) &&
+                       TryValidateFilterGeometries(spatialDistance.Distance, out errorMessage);
+            case TemporalPredicate temporal:
+                return TryValidateFilterGeometries(temporal.Left, out errorMessage) &&
+                       TryValidateFilterGeometries(temporal.Right, out errorMessage);
+            case ArrayPredicate array:
+                return TryValidateFilterGeometries(array.Left, out errorMessage) &&
+                       TryValidateFilterGeometries(array.Right, out errorMessage);
+            case FunctionCall functionCall:
+                foreach (var argument in functionCall.Arguments)
+                {
+                    if (!TryValidateFilterGeometries(argument, out errorMessage))
+                    {
+                        return false;
+                    }
+                }
+
+                errorMessage = null;
+                return true;
+            case ArrayLiteral arrayLiteral:
+                foreach (var element in arrayLiteral.Elements)
+                {
+                    if (!TryValidateFilterGeometries(element, out errorMessage))
+                    {
+                        return false;
+                    }
+                }
+
+                errorMessage = null;
+                return true;
+            case ValueList valueList:
+                foreach (var value in valueList.Values)
+                {
+                    if (!TryValidateFilterGeometries(value, out errorMessage))
+                    {
+                        return false;
+                    }
+                }
+
+                errorMessage = null;
+                return true;
+            default:
+                errorMessage = null;
+                return true;
+        }
+    }
+
+    private static bool TryValidateGeometryLiteral(GeometryLiteral geometry, out string? errorMessage)
+    {
+        errorMessage = null;
+        if (!IsBboxGeometryLiteral(geometry) || !SpatialReference.Create(geometry.Srid).IsGeographic)
+        {
+            return true;
+        }
+
+        try
+        {
+            var parsed = new WKBReader().Read(geometry.Wkb);
+            var envelope = parsed?.EnvelopeInternal;
+            if (envelope is null ||
+                envelope.IsNull ||
+                envelope.MinX < -180.0 ||
+                envelope.MaxX > 180.0 ||
+                envelope.MinY < -90.0 ||
+                envelope.MaxY > 90.0 ||
+                envelope.MinY >= envelope.MaxY)
+            {
+                errorMessage = "Invalid BBOX coordinates.";
+                return false;
+            }
+
+            return true;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            errorMessage = "Invalid BBOX coordinates.";
+            return false;
+        }
+    }
+
+    private static bool IsBboxGeometryLiteral(GeometryLiteral geometry)
+    {
+        if (string.IsNullOrWhiteSpace(geometry.OriginalFormat))
+        {
+            return false;
+        }
+
+        var trimmed = geometry.OriginalFormat.TrimStart();
+        return trimmed.StartsWith("BBOX", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.Contains("\"bbox\"", StringComparison.OrdinalIgnoreCase);
     }
 
     internal static FilterExpression ApplyFilterCrs(

@@ -9,6 +9,14 @@ namespace Honua.Core.Geometries;
 
 public static class AntimeridianCutter
 {
+    public static bool CrossesAntimeridian(Geometry geometry)
+    {
+        ArgumentNullException.ThrowIfNull(geometry);
+        return !geometry.IsEmpty
+            && (geometry.SRID <= 0 || GeographicSridClassifier.IsGeographicSrid(geometry.SRID))
+            && HasLongEdge(geometry);
+    }
+
     public static Geometry Cut(Geometry geometry)
     {
         ArgumentNullException.ThrowIfNull(geometry);

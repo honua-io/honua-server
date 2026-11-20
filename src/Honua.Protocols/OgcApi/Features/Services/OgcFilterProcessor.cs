@@ -213,6 +213,11 @@ internal sealed partial class OgcFilterProcessor
             if (filterExpression != null)
             {
                 filterExpression = Cql2FilterProcessor.NormalizeFilterAxisOrder(filterExpression, filterCrsDefinition.AxisOrder);
+                if (!Cql2FilterProcessor.TryValidateFilterGeometries(filterExpression, out var geometryValidationError))
+                {
+                    return FilterProcessingResult.Failure(
+                        $"{InvalidCqlFilterPrefix}: {SanitizeCqlErrorMessage(geometryValidationError ?? "Invalid filter.")}");
+                }
             }
 
             SqlFragment? sqlFilter = null;

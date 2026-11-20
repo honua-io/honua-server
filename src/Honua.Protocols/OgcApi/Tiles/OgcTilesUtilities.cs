@@ -78,7 +78,7 @@ internal static class OgcTilesUtilities
 
     public const string Crs84 = "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
 
-    public const string WorldCrs84ScaleSet = "http://www.opengis.net/def/wkss/OGC/1.0/GoogleCRS84Quad";
+    public const string WorldCrs84ScaleSet = "http://www.opengis.net/def/wkss/OGC/1.0/WorldCRS84Quad";
 
     public const string WorldCrs84Title = "World CRS84 Quad";
 

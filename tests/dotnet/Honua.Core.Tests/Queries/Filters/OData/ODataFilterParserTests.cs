@@ -891,5 +891,45 @@ public class ODataFilterParserTests
         ((SpatialPredicate)result).Geodesic.Should().BeTrue();
     }
 
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("st_relate(Geometry, geography'POINT(1 2)', 'T********')")]
+    [InlineData("geo.relate(Geometry, geography'POINT(1 2)', '0F12tf***')")]
+    public void Parse_StRelateAndGeoRelate_WithValidDe9ImPattern_ReturnsFunctionCall(string filter)
+    {
+        var result = _parser.Parse(filter);
+
+        var function = result.Should().BeOfType<FunctionCall>().Subject;
+        function.FunctionName.Should().Be("ST_RELATE");
+        function.Arguments.Should().HaveCount(3);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("st_relate(Geometry, geography'POINT(1 2)', 'TOO_SHORT')")]
+    [InlineData("st_relate(Geometry, geography'POINT(1 2)', 'T*******')")]
+    [InlineData("geo.relate(Geometry, geography'POINT(1 2)', 'T*******X')")]
+    [InlineData("st_relate(Geometry, geography'POINT(1 2)', 123456789)")]
+    public void Parse_StRelateAndGeoRelate_WithInvalidDe9ImPattern_ThrowsODataFilterParseException(string filter)
+    {
+        var act = () => _parser.Parse(filter);
+
+        act.Should().Throw<ODataFilterParseException>()
+            .WithMessage("*DE-9IM*");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Parse_AntimeridianCrossingGeographyPolygonWithPlanarSelfIntersection_SucceedsForGeographyAndRejectsForGeometry()
+    {
+        const string wkt = "POLYGON((170 -10, -175 0, 170 10, 175 0, 170 -10))";
+
+        var geographyResult = _parser.Parse($"geo.intersects(Geometry, geography'{wkt}')");
+        geographyResult.Should().BeOfType<SpatialPredicate>();
+
+        var geometryAct = () => _parser.Parse($"st_intersects(Geometry, geometry'SRID=4326;{wkt}')");
+        geometryAct.Should().Throw<ODataFilterParseException>();
+    }
+
     #endregion
 }
