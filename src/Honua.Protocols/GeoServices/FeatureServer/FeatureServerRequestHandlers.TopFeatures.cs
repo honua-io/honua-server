@@ -16,6 +16,7 @@ using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Primitives;
 
@@ -139,6 +140,13 @@ internal static partial class FeatureServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid topFilter parameter",
                 [parseError ?? "topFilter must be valid JSON."]);
+        }
+
+        if (FirstUnavailableTopFilterField(resource, topFilter) is { } unavailableField)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid topFilter parameter",
+                [ErrorMessages.NotFound.FormatField(unavailableField, resource.Metadata.Name)]);
         }
 
         if (!TryParseBoolValue(values, "returnCountOnly", false, out var returnCountOnly, out var countError))
@@ -509,6 +517,14 @@ internal static partial class FeatureServerEndpoints
             return false;
         }
     }
+
+    // topFilter groups and orders only by fields the layer publishes and does not hide; a hidden
+    // field is answered like an undeclared one.
+    private static string? FirstUnavailableTopFilterField(MetadataV2Object resource, TopFilter topFilter)
+        => topFilter.GroupByFields
+            .Concat(topFilter.OrderByFields.Select(clause => clause.Field))
+            .FirstOrDefault(field => resource.FindVisibleSchemaField(field) is null &&
+                (!CallerOrderByFields.AllowedCoreOrderByFields.Contains(field) || resource.IsHiddenSchemaField(field)));
 
     private static ImmutableArray<OrderByClause> ParseOrderByFields(string orderByFieldsStr)
     {

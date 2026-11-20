@@ -11992,6 +11992,10 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.ApplyEdits_MultiRowPartialUpdate_PreservesFieldsAndGeometryCommittedAfterPreRead",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.ApplyEdits_NumericPrimaryKeyAndDuplicateIdAttribute_TargetsOnlyPrimaryKey",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryGapsTests.Query_WithViewModeLowerLeftQuantization_EmitsTransformBeforeFeaturesAndDecodesToSeededPoints",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryHiddenFieldTests.Query_OrderByHiddenField_Returns400",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryHiddenFieldTests.Query_WhereAndOrderByOnVisibleField_StillAnswer",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryHiddenFieldTests.Query_WhereNamesHiddenField_AnswersLikeAnUndeclaredField",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryHiddenFieldTests.Query_WhereNamesHiddenField_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_BidirectionalReturnIdsForAdds_MapsServerIdsWithoutEchoingOwnAdds",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_EsriFeatureEnvelopeAndDeleteIds_RoundTripAllOperations",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.SynchronizeReplica_IdenticalUploadAfterAnotherUpload_AppliesAgain",
@@ -12289,6 +12293,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryHiddenFieldTests.QueryTopFeatures_TopFilterNamesHiddenField_Returns400",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryHiddenFieldTests.QueryTopFeatures_WhereNamesHiddenField_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryTopFeaturesTests.QueryTopFeatures_InvalidService_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryTopFeaturesTests.QueryTopFeatures_InvalidTopFilter_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryTopFeaturesTests.QueryTopFeatures_MissingTopFilter_ReturnsBadRequest",
@@ -12358,7 +12364,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMaintenanceTests.ValidateSql_InvalidSqlType_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMaintenanceTests.ValidateSql_MissingSqlClause_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMaintenanceTests.ValidateSql_SqlParameterWithSqlType_ReturnsIsValid",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMaintenanceTests.ValidateSql_ValidExpression_ReturnsIsValid"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMaintenanceTests.ValidateSql_ValidExpression_ReturnsIsValid",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryHiddenFieldTests.ValidateSql_HiddenField_IsInvalidLikeAnUndeclaredField"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
@@ -24137,6 +24144,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerAnalyticsHiddenFieldTests.QueryH3_HiddenSummaryOrGroupByField_Returns400",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerAnalyticsHiddenFieldTests.QueryH3_WhereNamesHiddenField_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerH3EntitlementTests.QueryH3Post_CommunityEdition_ReturnsPaymentRequired",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3Post_ValidRequest_ReturnsOkOrCapabilityError",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3Post_WithHistogramSummariesAndNoTotals_ResolvesCellBounds",

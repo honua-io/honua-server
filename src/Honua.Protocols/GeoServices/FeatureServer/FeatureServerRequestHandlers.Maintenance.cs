@@ -1895,10 +1895,7 @@ internal static partial class FeatureServerEndpoints
         {
             try
             {
-                OrderByParsing.ParseFeatureServerOrderBy(
-                    sqlExpression,
-                    resource,
-                    FeatureServerOrderByFields.AllowedCoreOrderByFields);
+                CallerOrderByFields.ParseCallerOrderBy(sqlExpression, resource);
                 return (true, null);
             }
             catch (InvalidOperationException ex)
@@ -1918,7 +1915,8 @@ internal static partial class FeatureServerEndpoints
 
         if (parseResult.Expression != null)
         {
-            var translationResult = filterService.Translate(parseResult.Expression, resource);
+            // A hidden field validates like an undeclared one, so validateSQL is no existence probe.
+            var translationResult = filterService.Translate(parseResult.Expression, resource.WithoutHiddenSchemaFields());
             if (!translationResult.IsSuccess)
             {
                 return (false, translationResult.ErrorMessage ?? "Invalid SQL expression for the service schema.");

@@ -1050,13 +1050,11 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             Limit = (streaming || request.ReturnIdsOnly) && !requestedLimit.HasValue ? null : pagination.Limit
         };
 
-        if (query.OrderBy is { } orderBy)
+        var masked = await MaskedFieldNamesAsync(layer.Resource, requestServices, cancellationToken).ConfigureAwait(false);
+        query = query with
         {
-            query = query with
-            {
-                OrderBy = GrpcConversionHelpers.WithSchemaFieldTypes(orderBy, layer.Resource.SchemaFields)
-            };
-        }
+            OrderBy = ResolveCallerOrderBy(request.OrderBy, layer.Resource, masked)
+        };
 
         var outputSrid = query.OutputSrid;
         if (request.OutSr != null)
@@ -1104,7 +1102,6 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
                 wkt: string.IsNullOrWhiteSpace(request.OutSr?.Wkt) ? null : request.OutSr!.Wkt)
             : layer.SpatialReference;
 
-        var masked = await MaskedFieldNamesAsync(layer.Resource, requestServices, cancellationToken).ConfigureAwait(false);
         var (projected, attributeHiddenFields) = WithGlobalIdField(
             query,
             globalIdField,
@@ -1123,7 +1120,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         };
     }
 
-    // A where clause that names a masked field is refused.
+    // A where clause that names a hidden or masked field is refused.
     private static async Task<SqlFragment?> BindWhereClauseAsync(
         string? where,
         MetadataV2Object resource,
@@ -1168,7 +1165,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             return null;
         }
 
-        var translation = filterService.Translate(expression, resource);
+        // Hidden fields are left out of every public read path, so a filter cannot name one either.
+        var translation = filterService.Translate(expression, resource.WithoutHiddenSchemaFields());
         if (!translation.IsSuccess)
         {
             throw new RpcException(new Status(
