@@ -203,7 +203,7 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertIn('Publish pristine managed test outputs', producer_names)
         self.assertIn('Honua.Server boot + migrations smoke', producer_names)
         consumer = workflow('ci.yml')['jobs']['runtime-proofs']
-        self.assertEqual(consumer['needs'], 'build')
+        self.assertEqual(consumer['needs'], ['build', 'changes'])
         steps = consumer['steps']
         names = [step.get('name', '') for step in steps]
         verify = steps[names.index(verify_name)]
