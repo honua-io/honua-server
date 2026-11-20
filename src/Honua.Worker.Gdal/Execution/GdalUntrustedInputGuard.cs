@@ -131,81 +131,96 @@ internal static class GdalUntrustedInputGuard
     private static byte ToLowerAscii(byte b)
         => b is >= (byte)'A' and <= (byte)'Z' ? (byte)(b + 32) : b;
 
-    /// <summary>
-    /// Finds the first refused marker or prefix in <paramref name="window"/> that starts before
-    /// <paramref name="startLimit"/>. Every marker begins with '&lt;' and every prefix with '/', so only
-    /// those bytes are compared, which keeps a scan of extracted archive entries linear.
-    /// </summary>
-    internal static bool TryFindRefused(ReadOnlySpan<byte> window, int startLimit, out string reason)
+    // Every marker begins with '<' and every prefix with '/', so only those bytes are compared, which keeps
+    // a scan of a large extracted file linear. Returns the refusal reason, or null when the window is clean.
+    internal static string? FindRefused(ReadOnlySpan<byte> window)
     {
         var offset = 0;
-        while (offset < startLimit)
+        while (offset < window.Length)
         {
-            var hit = window[offset..startLimit].IndexOfAny((byte)'<', (byte)'/');
+            var hit = window[offset..].IndexOfAny((byte)'<', (byte)'/');
             if (hit < 0)
             {
-                break;
+                return null;
             }
 
             var candidate = window[(offset + hit)..];
-            if (StartsWithAny(candidate, IndirectionXmlMarkers, out var marker)
-                || StartsWithAny(candidate, DangerousVsiPrefixes, out marker))
+            var marker = MatchAny(candidate, candidate[0] == (byte)'<' ? IndirectionXmlMarkers : DangerousVsiPrefixes);
+            if (marker is not null)
             {
-                reason = $"archive entry references '{marker}', which is refused on the untrusted-input path";
-                return true;
+                return $"it references '{marker}', which is refused on the untrusted-input path";
             }
 
             offset += hit + 1;
         }
 
-        reason = "";
-        return false;
+        return null;
     }
 
     internal static int LongestRefusedLength { get; } =
         Math.Max(IndirectionXmlMarkers.Max(m => m.Length), DangerousVsiPrefixes.Max(p => p.Length));
 
-    private static bool StartsWithAny(ReadOnlySpan<byte> candidate, string[] needles, out string matched)
+    private static string? MatchAny(ReadOnlySpan<byte> candidate, string[] needles)
     {
         foreach (var needle in needles)
         {
             if (candidate.Length >= needle.Length && IndexOfAsciiIgnoreCase(candidate[..needle.Length], needle) == 0)
             {
-                matched = needle;
-                return true;
+                return needle;
             }
         }
 
-        matched = "";
-        return false;
+        return null;
     }
 }
 
-/// <summary>
-/// Applies <see cref="GdalUntrustedInputGuard"/> to one extracted archive entry as it streams, so a
-/// VRT, service description or VSI reference inside a ZIP is refused like a bare upload.
-/// </summary>
+// Applies GdalUntrustedInputGuard to an extracted file in chunks, so a VRT, service description or VSI
+// reference that arrived inside a ZIP is refused like a bare upload. A match may straddle two chunks.
 internal sealed class GdalUntrustedEntryScanner
 {
+    private const int ChunkSize = 64 * 1024;
     private readonly int carryLength = GdalUntrustedInputGuard.LongestRefusedLength - 1;
     private readonly byte[] window;
+    private readonly int chunkSize;
     private int carried;
 
     public GdalUntrustedEntryScanner(int chunkSize)
-        => window = new byte[chunkSize + GdalUntrustedInputGuard.LongestRefusedLength];
-
-    /// <summary>Scans the next chunk; a match may straddle the previous chunk.</summary>
-    public bool Admit(ReadOnlySpan<byte> chunk, out string reason)
     {
+        this.chunkSize = chunkSize;
+        window = new byte[chunkSize + GdalUntrustedInputGuard.LongestRefusedLength];
+    }
+
+    public static async Task<string?> ScanFileAsync(string path, CancellationToken cancellationToken)
+    {
+        var scanner = new GdalUntrustedEntryScanner(ChunkSize);
+        var buffer = new byte[ChunkSize];
+        await using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, ChunkSize, useAsync: true);
+        int read;
+        while ((read = await input.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            var reason = scanner.FindRefusal(buffer.AsSpan(0, read));
+            if (reason is not null)
+            {
+                return reason;
+            }
+        }
+
+        return null;
+    }
+
+    public string? FindRefusal(ReadOnlySpan<byte> chunk)
+    {
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(chunk.Length, chunkSize);
         chunk.CopyTo(window.AsSpan(carried));
         var length = carried + chunk.Length;
-        if (GdalUntrustedInputGuard.TryFindRefused(window.AsSpan(0, length), length, out reason))
+        var reason = GdalUntrustedInputGuard.FindRefused(window.AsSpan(0, length));
+        if (reason is not null)
         {
-            return false;
+            return reason;
         }
 
         carried = Math.Min(carryLength, length);
         window.AsSpan(length - carried, carried).CopyTo(window);
-        return true;
+        return null;
     }
 }

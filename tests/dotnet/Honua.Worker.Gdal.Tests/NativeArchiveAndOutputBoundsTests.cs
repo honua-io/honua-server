@@ -212,39 +212,37 @@ public sealed class NativeArchiveAndOutputBoundsTests : IDisposable
     }
 
     [UnitTest]
-    public async Task SourceOgr_VrtInsideZip_IsRefusedBeforeOgrRuns()
+    public async Task SourceOgr_VrtContentInDataset_IsRefusedBeforeOgrRuns()
     {
+        // OGR sniffs content, so VRT XML under a .gml name would open as a VRT. Deflated, so the marker is
+        // visible only after extraction, not in the archive bytes the upload guard saw.
         var vrt = Encoding.UTF8.GetBytes("<OGRVRTDataSource><OGRVRTLayer name=\"x\"><SrcDataSource>/etc/passwd</SrcDataSource></OGRVRTLayer></OGRVRTDataSource>");
-        // Deflated, so the marker is visible only after extraction, not in the archive bytes.
-        var zip = CreateZip(CompressionLevel.Optimal, ("roads.vrt", vrt), ("roads.geojson", Encoding.UTF8.GetBytes(GeoJson)));
+        var zip = CreateZip(CompressionLevel.Optimal, ("data/roads.gml", vrt));
         zip.AsSpan().IndexOf("<OGRVRTDataSource"u8).Should().BeLessThan(0);
         var runner = WriteGeoJsonOutput();
 
         var result = await ExecuteSourceOgrAsync(runner, zip, Options());
 
         result.Status.Should().Be(ExecutionJobStatus.Failed);
-        result.ErrorMessage.Should().Contain("roads.vrt").And.Contain("<OGRVRTDataSource");
+        result.ErrorMessage.Should().Contain("roads.gml").And.Contain("<OGRVRTDataSource");
         runner.Invocations.Should().BeEmpty();
     }
 
     [UnitTest]
-    public async Task SourceOgr_VsiReferenceAcrossReadBoundary_IsRefusedBeforeOgrRuns()
+    public async Task SourceOgr_VsiPathInProjectFile_StillReachesOgr()
     {
-        // The executor reads entries in 64 KiB chunks; the prefix starts three bytes before the boundary. Hashed
-        // letters keep the deflated entry under the compression-ratio cap and the prefix out of the archive bytes.
-        var padding = new string(Enumerable.Range(0, (64 * 1024) - 3)
-            .Select(i => (char)('a' + (int)((uint)(i * 2654435761L) % 26)))
-            .ToArray());
-        var entry = Encoding.UTF8.GetBytes(padding + "/vsicurl/https://example.invalid/x.shp");
-        var zip = CreateZip(CompressionLevel.Optimal, ("roads.gml", entry));
-        zip.AsSpan().IndexOf("/vsicurl"u8).Should().BeLessThan(0);
+        // Only the dataset OGR opens is scanned; a QGIS project beside it routinely names /vsizip/ paths.
+        var project = Encoding.UTF8.GetBytes("<qgis><datasource>/vsizip/roads.zip/roads.shp</datasource></qgis>");
+        var zip = CreateZip(
+            CompressionLevel.Optimal,
+            ("roads.geojson", Encoding.UTF8.GetBytes(GeoJson)),
+            ("roads.qgs", project));
         var runner = WriteGeoJsonOutput();
 
         var result = await ExecuteSourceOgrAsync(runner, zip, Options());
 
-        result.Status.Should().Be(ExecutionJobStatus.Failed);
-        result.ErrorMessage.Should().Contain("/vsicurl");
-        runner.Invocations.Should().BeEmpty();
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        runner.Invocations.Should().ContainSingle();
     }
 
     [UnitTest]
