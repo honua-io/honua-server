@@ -768,7 +768,7 @@ Postgres compatibility, browser, Python, MCP, quickstart and runtime-proof lanes
 and MCP checks conservatively include every runtime source change,
 including transitive publish inputs and REST/gRPC backends. AOT ignores project
 files outside `src/`, which the `Honua.Server` publish cannot read. Runtime proofs
-run for `src/`, the GDAL and runtime images, their own tests, fixtures and
+run for `src/`, the GDAL and runtime images, the docs data the server embeds, their own tests, fixtures and
 scripts; CI Gate requires them only when selected. A changed composite action
 selects the lanes whose `ci.yml` jobs use it, nested actions included; an action
 no lane job uses selects none, and an unknown action selects every lane. Shared seed files

@@ -24,12 +24,17 @@ LANES = {
     # the helper folders they import.
     'runtime': (r'(^src/|^docker/(worker-gdal|runtime)/'
                 r'|^tests/dotnet/Honua[.]Server[.]Tests/([^/]+[.](csproj|json|props|targets)$|(TestData|Infrastructure|Admin|Seed)/'
-                r'|Features/(Geoprocessing|Export|Admin)/)'
+                r'|Features/(Geoprocessing|Export|Admin|Eval)/)'
                 r'|^tests/dotnet/Honua[.](Core|Db[.]Postgres)[.]Tests/|^tests/(fixtures|baselines|config|integration)/'
                 r'|^tests/python/unit/test_(import_export_fidelity_proof|diff_baselines)[.]py$|^scripts/client-compat/'
                 r'|^scripts/ci/(run-import-export-fidelity-proof[.]py|decode-vector-export-proof[.]py'
                 r'|fixtures/import-export-fidelity-baseline[.]json|managed-test-build[.]py|prepull-'
-                r'|server-test-shard-free-disk[.]sh))'),
+                r'|server-test-shard-free-disk[.]sh|shard_projects[.]py|test-projects[.]py|run-foundation-family[.]sh'
+                r'|dotnet-restore-retry[.]sh|honua-target-framework[.]sh|lib/python-resolve[.]sh)'
+                r'|^[.]github/test-projects[.]json$'
+                # Embedded in the server binary or checked by test_diff_baselines.py.
+                r'|^docs/gis/data/(feature-catalog|capability-manifest-crosswalk[.]v1|client-certification-matrix[.]v1)[.]json$'
+                r'|^docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX[.]md$|^docs/developer/api-specs/admin-api[.]json$)'),
 }
 # ci.yml jobs each lane gates; a composite action selects the lanes whose jobs use it.
 LANE_JOBS = {
@@ -38,7 +43,7 @@ LANE_JOBS = {
     'python': ['python-integration-tests'], 'mcp': ['mcp-certification', 'mcp-llm-smoke'],
     'quickstart': ['quickstart-console-smoke'], 'runtime': ['runtime-proofs'],
 }
-ACTION_PATH = re.compile(r'^[.]github/actions/([^/]+)/')
+ACTION_PATH = re.compile(r'^[.]github/actions/([^/]+)(/|$)')
 ACTION_USE = re.compile(r'uses:\s*[.]/[.]github/actions/([A-Za-z0-9_.-]+)')
 JOB_HEADER = re.compile(r'^  ([A-Za-z0-9_-]+):\s*$', re.MULTILINE)
 # Changes to common runtime/contracts/build inputs or shared seeds invalidate

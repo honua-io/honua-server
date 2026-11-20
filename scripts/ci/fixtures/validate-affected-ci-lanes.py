@@ -50,7 +50,9 @@ class AffectedLaneTests(unittest.TestCase):
         self.assertFalse(any(selected.values()))
 
     def test_unknown_or_unreadable_action_fails_closed(self):
-        self.assertTrue(all(MODULE.select(['.github/actions/removed-action/action.yml']).values()))
+        for path in ['.github/actions/removed-action/action.yml', '.github/actions/README.md']:
+            with self.subTest(path=path):
+                self.assertTrue(all(MODULE.select([path]).values()))
         with tempfile.TemporaryDirectory() as temporary:
             self.assertTrue(all(MODULE.select(['.github/actions/format-check/action.yml'],
                                               root=Path(temporary)).values()))
@@ -95,7 +97,12 @@ class AffectedLaneTests(unittest.TestCase):
                      'tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/GeoservicesImportFidelityGateTests.cs',
                      'tests/dotnet/Honua.Core.Tests/Features/Security/StoreProfileWritePolicyTests.cs',
                      'tests/python/unit/test_import_export_fidelity_proof.py',
-                     'scripts/ci/run-import-export-fidelity-proof.py', 'scripts/client-compat/diff-baselines.py']:
+                     'scripts/ci/run-import-export-fidelity-proof.py', 'scripts/client-compat/diff-baselines.py',
+                     'tests/dotnet/Honua.Server.Tests/Features/Eval/McpQueryWildcardPostgresIntegrationTests.cs',
+                     'docs/gis/data/client-certification-matrix.v1.json',
+                     'docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md', 'docs/gis/data/feature-catalog.json',
+                     'docs/developer/api-specs/admin-api.json', 'scripts/ci/shard_projects.py',
+                     '.github/test-projects.json', 'scripts/ci/lib/python-resolve.sh']:
             with self.subTest(path=path):
                 self.assertTrue(MODULE.select([path])['runtime'])
 
