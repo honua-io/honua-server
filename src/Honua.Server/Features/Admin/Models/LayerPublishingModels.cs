@@ -132,6 +132,9 @@ public sealed class LayerPublishJobStatusResponse
 
     public int? StorageLayerId { get; init; }
 
+    // Deprecated wire alias of StorageLayerId; published clients still read layerId.
+    public int? LayerId => StorageLayerId;
+
     public string? ErrorMessage { get; init; }
 }
 

@@ -9,6 +9,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
@@ -432,6 +433,7 @@ public static class OgcStylesEndpoints
             case OgcStyleUpdateStatus.Updated:
                 OgcStylesLog.StyleUpdated(logger, styleId);
                 await EvictStylesOutputCacheAsync(context, logger).ConfigureAwait(false);
+                await EvictStyledLayerAsync(context, logger, result.StorageLayerId).ConfigureAwait(false);
                 // Surface lossy-conversion warnings non-blockingly so the client can show them (the canonical
                 // MapLibre was still stored). Mirrors the unsupportedSymbolizers[] contract.
                 if (result.UnsupportedSymbolizers is { Count: > 0 })
@@ -568,6 +570,28 @@ public static class OgcStylesEndpoints
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             OgcStylesLog.StylesCacheEvictionFailed(logger, ex);
+        }
+    }
+
+    // A layer style write can retire the layer's saved presentation, which FeatureServer and
+    // MapServer metadata, tiles and cached map output advertise, so evict the layer as the
+    // endpoint that sets that presentation does.
+    private static async Task EvictStyledLayerAsync(HttpContext context, ILogger logger, int? storageLayerId)
+    {
+        var invalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
+        if (storageLayerId is not { } layerId || invalidator is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await invalidator.InvalidateServiceCatalogAsync(null, [layerId], CancellationToken.None).ConfigureAwait(false);
+        }
+        // Best effort, as for the styles tag above: the style write has committed.
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            OgcStylesLog.StyledLayerCacheEvictionFailed(logger, layerId, ex);
         }
     }
 

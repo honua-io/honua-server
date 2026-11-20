@@ -90,7 +90,11 @@ public enum OgcStyleUpdateStatus
 public sealed record OgcStyleUpdateResult(
     OgcStyleUpdateStatus Status,
     string? ErrorMessage,
-    IReadOnlyList<string>? UnsupportedSymbolizers = null);
+    IReadOnlyList<string>? UnsupportedSymbolizers = null)
+{
+    // The storage layer whose style was written, when the style belongs to a layer.
+    public int? StorageLayerId { get; init; }
+}
 
 public enum OgcStyleCreateStatus
 {

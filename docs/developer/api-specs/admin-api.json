@@ -52354,7 +52354,14 @@
             "type": "integer",
             "format": "int32",
             "nullable": true,
-            "description": "Published layer identifier after the transaction commits."
+            "description": "Published layer identifier after the transaction commits. Null on a Failed job."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
           },
           "errorMessage": {
             "type": "string",

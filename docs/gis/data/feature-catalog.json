@@ -13906,6 +13906,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_LayerMetadata_ReturnsLayerInfo",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerMetadataFaultIsolationTests.MapServer_Metadata_WhenTemporalExtentFails_OmitsTimeInfoAndReturnsMetadata",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerObjectIdFieldTests.LayerMetadata_WithStringIdAndNumericObjectId_UsesNumericObjectIdField",
+        "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_LayerWithSavedPresentation_RetiresItAndEvictsTheLayer",
         "Honua.Server.Tests.MapServerSublayerRelationshipMetadataTests.MapServerSublayerMetadata_MatchesFeatureServerRelationshipsAndAttachments",
         "Honua.Server.Tests.MapServerSublayerRelationshipMetadataTests.MapServerSublayerMetadata_SurfacesRelationshipsAndHasAttachments"
       ],
@@ -27088,7 +27089,8 @@
         "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutDrawingInfo_ThenGet_RoundTripsRenderer",
         "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutDrawingInfo_WithNullBody_ClearsStoredDocument",
         "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.SetDrawingInfo_LayerIdSharedByTwoResources_Returns409AndChangesNeither",
-        "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.UpdateConfiguration_SharedIndexWithDistinctStorageIds_UpdatesOnlyRequestedStorage"
+        "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.UpdateConfiguration_SharedIndexWithDistinctStorageIds_UpdatesOnlyRequestedStorage",
+        "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_LayerWithSavedPresentation_RetiresItAndEvictsTheLayer"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -27887,6 +27889,7 @@
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_AssociatedCatalogDefault_UpdatesRenderedDefaultAndPreservesOtherStyle",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_LayerBoundCatalogStyle_NonObjectDrawingInfo_Returns400",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_LayerBoundCatalogStyle_WritesThroughToLayerStyle",
+        "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_LayerWithSavedPresentation_RetiresItAndEvictsTheLayer",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_StandaloneStyle_MapLibreRoundTripsToDrawingInfo",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_StandaloneStyle_NonObjectDrawingInfo_Returns400",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.PutStyle_StandaloneStyle_UpdatesCatalogStyle",
