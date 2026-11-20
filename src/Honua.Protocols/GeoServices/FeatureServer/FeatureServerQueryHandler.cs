@@ -19,6 +19,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
@@ -1629,6 +1630,7 @@ internal sealed partial class FeatureServerQueryHandler(
             }
         }
 
+        var callerWhere = filterExpression;
         if (filterExpression != null && temporalExpression != null)
         {
             filterExpression = new BinaryExpression(filterExpression, BinaryOperator.And, temporalExpression);
@@ -1646,6 +1648,11 @@ internal sealed partial class FeatureServerQueryHandler(
             filterExpression = filterExpression is null
                 ? objectIdsExpression
                 : new BinaryExpression(filterExpression, BinaryOperator.And, objectIdsExpression);
+        }
+
+        if (RefuseHiddenWhereField(context, resource, callerWhere) is { } hiddenFieldRefusal)
+        {
+            return (null, null, hiddenFieldRefusal);
         }
 
         SqlFragment? sqlFilter = null;
@@ -1849,6 +1856,25 @@ internal sealed partial class FeatureServerQueryHandler(
         }
 
         return new DatumAreaEnvelope(west, south, east, north);
+    }
+
+    // Hidden fields are left out of every public read path, so the caller's where may not name one.
+    // Only the caller's expression is checked (server-built time and object-ID predicates are exempt),
+    // and the refusal comes from translating it without the hidden fields, so a hidden field gets
+    // exactly the answer an undeclared one gets.
+    private IResult? RefuseHiddenWhereField(HttpContext context, MetadataV2Object resource, FilterExpression? callerWhere)
+    {
+        var hidden = resource.HiddenSchemaFieldNames();
+        if (callerWhere is null || hidden.Count == 0 ||
+            !FeatureQuerySecurity.CollectFieldReferences(callerWhere).Any(hidden.Contains))
+        {
+            return null;
+        }
+
+        var refusal = _filterExpressionService.Translate(callerWhere, resource.WithoutHiddenSchemaFields());
+        return StandardErrorHelpers.CreateBadRequest(context,
+            ErrorMessages.Validation.InvalidParameter,
+            [refusal.ErrorMessage ?? "Invalid filter syntax."]);
     }
 
     // A declared objectid may be a source attribute with a separate storage key.

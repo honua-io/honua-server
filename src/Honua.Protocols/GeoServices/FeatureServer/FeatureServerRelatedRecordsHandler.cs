@@ -163,10 +163,9 @@ internal sealed class FeatureServerRelatedRecordsHandler(
             ImmutableArray<OrderByClause>? relatedOrderBy;
             try
             {
-                relatedOrderBy = OrderByParsing.ParseFeatureServerOrderBy(
+                relatedOrderBy = FeatureServerOrderByFields.ParseCallerOrderBy(
                     validatedParams.OrderByFields,
-                    resolvedRelatedResource,
-                    FeatureServerOrderByFields.AllowedCoreOrderByFields);
+                    resolvedRelatedResource);
             }
             catch (InvalidOperationException ex)
             {
@@ -201,7 +200,8 @@ internal sealed class FeatureServerRelatedRecordsHandler(
 
                 if (parseResult.Expression != null)
                 {
-                    var translationResult = _filterExpressionService.Translate(parseResult.Expression, resolvedRelatedResource);
+                    var translationResult = _filterExpressionService.Translate(
+                        parseResult.Expression, resolvedRelatedResource.WithoutHiddenSchemaFields());
                     if (!translationResult.IsSuccess)
                     {
                         return StandardErrorHelpers.CreateBadRequest(httpContext,
