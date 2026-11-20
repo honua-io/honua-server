@@ -109,11 +109,11 @@ public sealed class DuckDBExternalSourceSqlTests
 
         var commands = DuckDBExternalSourceSql.BuildConnectionSettingCommands(options);
 
-        Assert.Contains(commands, command => command.Sql == "SET s3_region = 'us-east-1'");
-        Assert.Contains(commands, command => command.Sql == "SET s3_secret_access_key = 'super-secret'");
-        Assert.Contains(commands, command => command.Sql == "SET s3_url_style = 'path'");
-        Assert.Contains(commands, command => command.Sql == "SET s3_use_ssl = false");
-        Assert.Contains(commands, command => command.Sql == "SET azure_storage_connection_string = 'DefaultEndpointsProtocol=https;AccountKey=secret'");
+        Assert.Contains(commands, command => command.Sql == "SET GLOBAL s3_region = 'us-east-1'");
+        Assert.Contains(commands, command => command.Sql == "SET GLOBAL s3_secret_access_key = 'super-secret'");
+        Assert.Contains(commands, command => command.Sql == "SET GLOBAL s3_url_style = 'path'");
+        Assert.Contains(commands, command => command.Sql == "SET GLOBAL s3_use_ssl = false");
+        Assert.Contains(commands, command => command.Sql == "SET GLOBAL azure_storage_connection_string = 'DefaultEndpointsProtocol=https;AccountKey=secret'");
         Assert.DoesNotContain(commands, command => command.Description.Contains("super-secret", StringComparison.Ordinal));
         Assert.DoesNotContain(commands, command => command.Description.Contains("AccountKey=secret", StringComparison.Ordinal));
     }
