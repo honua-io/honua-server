@@ -1292,6 +1292,8 @@ jobs:
         run: python3 scripts/docker/shipped_images.py
       - name: Scan third-party install images on fixable HIGH/CRITICAL vulnerabilities
         continue-on-error: true
+        # A report must not spend the publish job's budget: the quickstart is packaged after it.
+        timeout-minutes: 10
         env:
           TRIVY_IMAGE: aquasec/trivy:0.68.1@sha256:a93fd67162843c0f749002af9245fe9a2e5edc41445bd71d3949c803e95ef05b
           TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache

@@ -18,8 +18,12 @@ SHIPPED_FILES = (
     'docs/get-started/linux-packages.md',
     'docs/get-started/windows-packages.md',
     'docker/proj-grids/Dockerfile',
+    # The Docker Compose deploy guide (docs/guides/deploy/docker-compose.md) runs this file.
+    'docker/compose/docker-compose.production.yml',
 )
-REFERENCE = re.compile(r'^\s*(?:image|BASE_IMAGE):\s*["\']?([^\s"\'#]+)|^ARG BASE_IMAGE=(\S+)|^FROM\s+(?:--\S+\s+)*(\S+)')
+COMPOSE_REFERENCE = re.compile(r'^\s*(?:image|BASE_IMAGE):\s*["\']?([^\s"\'#]+)')
+DOCKERFILE_REFERENCE = re.compile(r'^ARG BASE_IMAGE=(\S+)|^FROM\s+(?:--\S+\s+)*(\S+)', re.IGNORECASE)
+STAGE = re.compile(r'^FROM\s+.*\s+AS\s+(\S+)\s*$', re.IGNORECASE)
 LOCAL_BUILD = re.compile(r'^\s*build:')
 PINNED = re.compile(r'[a-z0-9][a-z0-9./:_-]*@sha256:[a-f0-9]{64}')
 
@@ -27,13 +31,15 @@ PINNED = re.compile(r'[a-z0-9][a-z0-9./:_-]*@sha256:[a-f0-9]{64}')
 def references(relative_path, text):
     """Yield (location, image) for each third-party image reference in one shipped file."""
     lines = text.splitlines()
+    reference = DOCKERFILE_REFERENCE if relative_path.endswith('Dockerfile') else COMPOSE_REFERENCE
+    local = {'scratch'} | {match.group(1).lower() for match in map(STAGE.match, lines) if match}
     for number, line in enumerate(lines, 1):
-        match = REFERENCE.match(line)
+        match = reference.match(line)
         if not match:
             continue
         image = next(group for group in match.groups() if group)
         builds_locally = number < len(lines) and LOCAL_BUILD.match(lines[number])
-        if image.startswith('$') or builds_locally:
+        if image.startswith('$') or builds_locally or image.lower() in local:
             continue
         yield f'{relative_path}:{number}', image
 

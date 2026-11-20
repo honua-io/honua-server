@@ -36,7 +36,8 @@ class ShippedImageTests(unittest.TestCase):
         self.assertEqual(['a', 'b', 'c'], [location for location, _ in shipped_images.unpinned(found)])
 
     def test_dockerfile_base_and_stage_references_are_read(self):
-        text = f'ARG BASE_IMAGE=base/db:1@{DIGEST}\nFROM --platform=$BUILDPLATFORM debian:13@{DIGEST} AS grids\nFROM ${{BASE_IMAGE}}\n'
+        text = (f'ARG BASE_IMAGE=base/db:1@{DIGEST}\nFROM --platform=$BUILDPLATFORM debian:13@{DIGEST} AS grids\n'
+                f'FROM grids AS check\nFROM scratch\nFROM ${{BASE_IMAGE}}\n')
         self.assertEqual([f'base/db:1@{DIGEST}', f'debian:13@{DIGEST}'],
                          [image for _, image in shipped_images.references('Dockerfile', text)])
 

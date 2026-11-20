@@ -28,6 +28,7 @@ on:
       - 'docs/get-started/linux-packages.md'
       - 'docs/get-started/windows-packages.md'
       - 'docker/proj-grids/Dockerfile'
+      - 'docker/compose/docker-compose.production.yml'
       - 'scripts/docker/test_compose_release_lifecycle_polling.py'
       - 'scripts/docker/*readiness_diagnostics.py'
       - 'scripts/docker/*compose_contract_migrations.py'
