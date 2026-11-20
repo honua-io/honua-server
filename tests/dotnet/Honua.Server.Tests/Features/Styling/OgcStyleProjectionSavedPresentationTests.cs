@@ -85,6 +85,38 @@ public sealed class OgcStyleProjectionSavedPresentationTests
         result.StorageLayerId.Should().Be(StorageLayerId);
     }
 
+    [UnitTest]
+    public async Task UpdateStyle_LayerStyleWithStrictHandling_EnforcesStrictStandaloneValidation()
+    {
+        var styles = Substitute.For<ILayerStyleService>();
+        var projection = Projection(drawingInfo: null, styles);
+
+        // Missing sources/source/source-layer or empty layers is rejected in strict mode on collection-keyed styles.
+        var result = await projection.UpdateStyleAsync(
+            "bng_points",
+            """{"version":8,"layers":[{"id":"p","type":"circle","paint":{"circle-color":"#123456"}}]}""",
+            strict: true);
+
+        result.Status.Should().Be(OgcStyleUpdateStatus.Invalid);
+        await styles.DidNotReceiveWithAnyArgs().UpdateStyleAsync(
+            default!, default, default, default, default, default, default);
+    }
+
+    [UnitTest]
+    public async Task GetStylesheet_Sld11Encoding_EmitsSymbologyEncoding11Elements()
+    {
+        var stylesheet = await Projection(drawingInfo: null).GetStylesheetAsync("bng_points", OgcStyleEncoding.Sld11);
+
+        stylesheet.Should().NotBeNull();
+        stylesheet!.MediaType.Should().Be("application/vnd.ogc.sld+xml;version=1.1");
+        stylesheet.Content.Should().Contain("version=\"1.1.0\"");
+        stylesheet.Content.Should().Contain("xmlns:se=\"http://www.opengis.net/se\"");
+        stylesheet.Content.Should().Contain("<se:FeatureTypeStyle>");
+        stylesheet.Content.Should().Contain("<se:Rule>");
+        stylesheet.Content.Should().Contain("<se:SvgParameter name=\"fill\">#123456</se:SvgParameter>");
+        stylesheet.Content.Should().NotContain("CssParameter");
+    }
+
     private OgcStyleProjection Projection(string? drawingInfo, ILayerStyleService? styles = null)
     {
         var extensions = drawingInfo is null

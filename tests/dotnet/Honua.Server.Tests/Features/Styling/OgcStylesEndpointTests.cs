@@ -224,6 +224,9 @@ public sealed partial class OgcStylesEndpointTests : IAsyncLifetime
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("StyledLayerDescriptor");
         body.Should().Contain("version=\"1.1.0\"");
+        body.Should().Contain("xmlns:se=\"http://www.opengis.net/se\"");
+        body.Should().Contain("se:SvgParameter");
+        body.Should().NotContain("CssParameter");
     }
 
     [IntegrationTest]

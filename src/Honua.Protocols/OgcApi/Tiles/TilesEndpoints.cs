@@ -515,21 +515,24 @@ internal static partial class TilesEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
-        var isRaster = OgcTilesUtilities.IsRasterTileFormat(format, request, defaultToRaster);
-
-        if (!isRaster)
+        if (!string.IsNullOrWhiteSpace(format) &&
+            !string.Equals(format, "mvt", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(format, "png", StringComparison.OrdinalIgnoreCase))
         {
-            if (!string.IsNullOrWhiteSpace(format) &&
-                !string.Equals(format, "mvt", StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(format, "png", StringComparison.OrdinalIgnoreCase))
-            {
-                return StandardErrorHelpers.CreateNotAcceptable(context, "Requested tile format is not supported.");
-            }
+            return StandardErrorHelpers.CreateBadRequest(context, "Requested tile format is not supported.");
+        }
 
-            if (!OgcTilesUtilities.AcceptsVectorTiles(request))
+        var isRaster = OgcTilesUtilities.IsRasterTileFormat(format, request, defaultToRaster);
+        if (isRaster)
+        {
+            if (!OgcTilesUtilities.AcceptsRasterTiles(request))
             {
                 return StandardErrorHelpers.CreateNotAcceptable(context, "Requested tile format is not acceptable.");
             }
+        }
+        else if (!OgcTilesUtilities.AcceptsVectorTiles(request))
+        {
+            return StandardErrorHelpers.CreateNotAcceptable(context, "Requested tile format is not acceptable.");
         }
 
         if (!tileMatrixSetRegistry.TryGet(tileMatrixSetId, out var tileMatrixSetEntry))
@@ -560,7 +563,7 @@ internal static partial class TilesEndpoints
         {
             if (zoomLevel < tileLimits.MinTileZoom || zoomLevel > tileLimits.MaxTileZoom)
             {
-                return StandardErrorHelpers.CreateBadRequest(context, $"Tile matrix '{tileMatrix}' is outside supported range.");
+                return StandardErrorHelpers.CreateNotFound(context, $"Tile matrix '{tileMatrix}' is outside supported range.");
             }
 
             validCoords = isGeographic
@@ -571,7 +574,7 @@ internal static partial class TilesEndpoints
         {
             if (gridGeometry.FindLevel(zoomLevel) is not { } customLevel)
             {
-                return StandardErrorHelpers.CreateBadRequest(context, $"Tile matrix '{tileMatrix}' is outside supported range.");
+                return StandardErrorHelpers.CreateNotFound(context, $"Tile matrix '{tileMatrix}' is outside supported range.");
             }
 
             validCoords = tileCol >= 0 && tileRow >= 0 &&
@@ -580,7 +583,7 @@ internal static partial class TilesEndpoints
 
         if (!validCoords)
         {
-            return StandardErrorHelpers.CreateBadRequest(context, $"Invalid tile coordinates: row={tileRow}, col={tileCol}, matrix={tileMatrix}.");
+            return StandardErrorHelpers.CreateNotFound(context, $"Invalid tile coordinates: row={tileRow}, col={tileCol}, matrix={tileMatrix}.");
         }
 
         var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
@@ -593,6 +596,18 @@ internal static partial class TilesEndpoints
         if (layers.Length == 0)
         {
             return StandardErrorHelpers.CreateNotFound(context, "Collection not found.");
+        }
+
+        if (!defaultToRaster &&
+            layers.Length == 1 &&
+            !await SupportsVectorTilesAsync(layers[0], context, cancellationToken).ConfigureAwait(false))
+        {
+            defaultToRaster = true;
+            isRaster = OgcTilesUtilities.IsRasterTileFormat(format, request, defaultToRaster);
+            if (isRaster && !OgcTilesUtilities.AcceptsRasterTiles(request))
+            {
+                return StandardErrorHelpers.CreateNotAcceptable(context, "Requested tile format is not acceptable.");
+            }
         }
 
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
@@ -660,7 +675,7 @@ internal static partial class TilesEndpoints
             var tileBounds = gridGeometry.GetTileBounds(tileCol, tileRow, zoomLevel);
             if (tileBounds is null)
             {
-                return StandardErrorHelpers.CreateBadRequest(context, $"Invalid tile coordinates: row={tileRow}, col={tileCol}, matrix={tileMatrix}.");
+                return StandardErrorHelpers.CreateNotFound(context, $"Invalid tile coordinates: row={tileRow}, col={tileCol}, matrix={tileMatrix}.");
             }
 
             var filterSrid = gridGeometry.Srid;

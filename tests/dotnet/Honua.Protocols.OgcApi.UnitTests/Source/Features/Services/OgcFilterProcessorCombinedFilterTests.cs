@@ -134,6 +134,34 @@ public sealed class OgcFilterProcessorCombinedFilterTests
             .Should().BeTrue("NorthEast (lat, lon) BBOX coordinates are valid after axis-order normalization");
     }
 
+    [UnitTheory]
+    [InlineData("NaN,NaN,NaN,NaN")]
+    [InlineData("-180,-90,NaN,90")]
+    [InlineData("-Infinity,-90,180,90")]
+    [InlineData("-180,-90,Infinity,90")]
+    [InlineData("-180,-90,NaN,180,90,10")]
+    [InlineData("-180,-90,-Infinity,180,90,Infinity")]
+    public async Task ProcessFiltersAsync_NonFiniteBboxOrdinates_AreRejected(string bbox)
+    {
+        var processor = new OgcFilterProcessor(
+            new CapturingFilterService(),
+            new StubCrsRegistry(),
+            NullLogger<OgcFilterProcessor>.Instance);
+
+        var httpContext = new DefaultHttpContext();
+        var result = await processor.ProcessFiltersAsync(
+            httpContext.Request,
+            Resource,
+            filter: null,
+            bbox: bbox,
+            datetime: null,
+            crs: null,
+            CancellationToken.None);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("valid numbers");
+    }
+
     // -------------------------------------------------------------------------
     // Test helpers
     // -------------------------------------------------------------------------

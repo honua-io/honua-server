@@ -521,6 +521,14 @@ internal sealed partial class OgcFilterProcessor
             return BboxParseResult.Failure("Bounding box must contain 4 or 6 comma-separated values.");
         }
 
+        for (var i = 0; i < partCount; i++)
+        {
+            if (!double.IsFinite(parts[i]))
+            {
+                return BboxParseResult.Failure("Bounding box coordinates must be valid numbers.");
+            }
+        }
+
         // A 6-value bbox (minx,miny,minz,maxx,maxy,maxz) is spec-legal per OGC API Features
         // Part 1. This 2D feature surface cannot filter on the vertical (minZ/maxZ) component,
         // so use the horizontal coordinates and ignore Z rather than rejecting the request —

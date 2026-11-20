@@ -317,6 +317,18 @@ internal static class OgcTilesUtilities
         return vectorQuality > 0;
     }
 
+    public static bool AcceptsRasterTiles(HttpRequest request)
+    {
+        var accept = request.Headers.Accept;
+        if (Microsoft.Extensions.Primitives.StringValues.IsNullOrEmpty(accept))
+        {
+            return true;
+        }
+
+        var pngQuality = ContentNegotiationHelpers.GetBestQuality(_pngTileMediaTypes, accept);
+        return pngQuality > 0;
+    }
+
     public static bool IsRasterTileFormat(
         string? format,
         HttpRequest request,

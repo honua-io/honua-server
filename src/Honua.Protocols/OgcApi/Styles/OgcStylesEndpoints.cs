@@ -195,11 +195,27 @@ public static class OgcStylesEndpoints
     }
 
     private static async Task<IResult> GetConformance(
+        HttpContext context,
+        string? f,
         OgcStylesConformanceHandler handler,
         CancellationToken cancellationToken = default)
     {
+        if (!OgcCoreMetadataUtilities.TryPrepareMetadataResponse(
+                context,
+                f,
+                MetadataQueryParameters,
+                out var outputFormat,
+                out var errorResult))
+        {
+            return errorResult!;
+        }
+
         var result = await handler.GetConformanceAsync(cancellationToken).ConfigureAwait(false);
-        return Results.Ok(result);
+        return OgcCommonUtilities.FormatMetadataResponse(
+            result,
+            OgcStylesJsonContext.Default.OgcStylesConformance,
+            outputFormat,
+            "Conformance");
     }
 
     private static async Task<IResult> GetOpenApiSpec(
@@ -236,6 +252,12 @@ public static class OgcStylesEndpoints
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken = default)
     {
+        var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, MetadataQueryParameters);
+        if (validationError is not null)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+        }
+
         if (!TryNegotiateEncoding(context, out var encoding))
         {
             return StandardErrorHelpers.CreateNotAcceptable(
@@ -392,9 +414,8 @@ public static class OgcStylesEndpoints
     {
         var contentType = context.Request.ContentType;
         var isEsri = IsEsriDrawingInfoContentType(contentType);
-        if (!string.IsNullOrWhiteSpace(contentType)
-            && !IsMapboxStyleContentType(contentType)
-            && !isEsri)
+        if (string.IsNullOrWhiteSpace(contentType)
+            || (!IsMapboxStyleContentType(contentType) && !isEsri))
         {
             return StandardErrorHelpers.CreateUnsupportedMediaType(
                 context,
@@ -422,6 +443,7 @@ public static class OgcStylesEndpoints
         }
 
         var strict = IsStrictRequested(context);
+        ApplyPreferenceHeaderIfRequested(context, strict);
 
         var result = isEsri
             ? await projection.UpdateStyleFromDrawingInfoAsync(styleId, body, strict, cancellationToken).ConfigureAwait(false)
@@ -466,8 +488,8 @@ public static class OgcStylesEndpoints
         CancellationToken cancellationToken = default)
     {
         var contentType = context.Request.ContentType;
-        if (!string.IsNullOrWhiteSpace(contentType)
-            && !IsMapboxStyleContentType(contentType))
+        if (string.IsNullOrWhiteSpace(contentType)
+            || !IsMapboxStyleContentType(contentType))
         {
             return StandardErrorHelpers.CreateUnsupportedMediaType(
                 context,
@@ -497,6 +519,7 @@ public static class OgcStylesEndpoints
         }
 
         var strict = IsStrictRequested(context);
+        ApplyPreferenceHeaderIfRequested(context, strict);
         var result = await projection.CreateStyleAsync(requestedStyleId, body, strict, cancellationToken).ConfigureAwait(false);
         var logger = loggerFactory.CreateLogger("Honua.Protocols.Ogc.Api.Styles.OgcStylesEndpoints");
 
@@ -895,7 +918,31 @@ public static class OgcStylesEndpoints
         return context.Request.Headers["Prefer"]
             .Where(prefer => prefer is not null)
             .SelectMany(prefer => prefer!.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
-            .Any(token => token.Replace(" ", string.Empty, StringComparison.Ordinal)
+            .Any(token => token.Split(';', 2)[0].Replace(" ", string.Empty, StringComparison.Ordinal)
                 .Equals("handling=strict", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void ApplyPreferenceHeaderIfRequested(HttpContext context, bool strict)
+    {
+        var preferHeaders = context.Request.Headers["Prefer"];
+        if (preferHeaders.Count == 0)
+        {
+            return;
+        }
+
+        var tokens = preferHeaders
+            .Where(prefer => prefer is not null)
+            .SelectMany(prefer => prefer!.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+            .Select(token => token.Split(';', 2)[0].Replace(" ", string.Empty, StringComparison.Ordinal))
+            .ToArray();
+
+        if (tokens.Any(token => token.Equals("handling=strict", StringComparison.OrdinalIgnoreCase)))
+        {
+            context.Response.Headers["Preference-Applied"] = "handling=strict";
+        }
+        else if (tokens.Any(token => token.Equals("handling=lenient", StringComparison.OrdinalIgnoreCase)))
+        {
+            context.Response.Headers["Preference-Applied"] = strict ? "handling=strict" : "handling=lenient";
+        }
     }
 }

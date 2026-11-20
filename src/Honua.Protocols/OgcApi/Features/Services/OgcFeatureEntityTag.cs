@@ -68,7 +68,8 @@ internal static class OgcFeatureEntityTag
     public static bool MatchesEntityOrRepresentation(
         string precondition,
         string entityETag,
-        IETagService etagService)
+        IETagService etagService,
+        bool allowWeak = false)
     {
         ArgumentNullException.ThrowIfNull(etagService);
 
@@ -77,10 +78,21 @@ internal static class OgcFeatureEntityTag
             return true;
         }
 
+        if (allowWeak && !etagService.IsModified(precondition, entityETag))
+        {
+            return true;
+        }
+
+        var tokens = precondition
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tokens.Any(static token => string.Equals(token, "*", StringComparison.Ordinal)))
+        {
+            return true;
+        }
+
         var entityToken = NormalizeTagToken(entityETag);
         var representationPrefix = string.Concat(RepresentationTagPrefix, entityToken, "-");
-        return precondition
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        return tokens
             .Select(NormalizeTagToken)
             .Any(tag => tag.StartsWith(representationPrefix, StringComparison.Ordinal));
     }

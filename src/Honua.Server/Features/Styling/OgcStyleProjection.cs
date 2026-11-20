@@ -424,6 +424,11 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             (resource, storageLayerId) = (bound.Value.Resource, bound.Value.StorageLayerId);
         }
 
+        if (!TryValidateStandaloneMapLibre(mapLibreStyleJson, strict, out var validationError))
+        {
+            return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, validationError);
+        }
+
         JsonElement parsed;
         try
         {
@@ -1053,7 +1058,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
 
         if (encoding == OgcStyleEncoding.Sld11)
         {
-            sldXml = RewriteSldVersion(sldXml, "1.1.0");
+            sldXml = RewriteToSld11(sldXml);
             return new OgcStylesheet(sldXml, OgcStyleMediaTypes.Sld11, OgcStyleEncoding.Sld11);
         }
 
@@ -1093,12 +1098,45 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         return [.. layers];
     }
 
-    private static string RewriteSldVersion(string sldXml, string version)
+    private static string RewriteToSld11(string sldXml)
     {
         try
         {
             var document = RemoteXmlDocumentParser.Parse(sldXml);
-            document.Root?.SetAttributeValue("version", version);
+            if (document.Root is { } root)
+            {
+                root.SetAttributeValue("version", "1.1.0");
+                root.SetAttributeValue(System.Xml.Linq.XNamespace.Xmlns + "se", SldNamespaces.Se);
+
+                foreach (var element in root.Descendants().ToArray())
+                {
+                    if (element.Name.Namespace != SldNamespaces.SldNs)
+                    {
+                        continue;
+                    }
+
+                    switch (element.Name.LocalName)
+                    {
+                        case "StyledLayerDescriptor":
+                        case "NamedLayer":
+                        case "UserStyle":
+                            break;
+                        case "CssParameter":
+                            element.Name = SldNamespaces.SeNs + "SvgParameter";
+                            break;
+                        case "Title":
+                            element.ReplaceWith(
+                                new System.Xml.Linq.XElement(
+                                    SldNamespaces.SeNs + "Description",
+                                    new System.Xml.Linq.XElement(SldNamespaces.SeNs + "Title", element.Value)));
+                            break;
+                        default:
+                            element.Name = SldNamespaces.SeNs + element.Name.LocalName;
+                            break;
+                    }
+                }
+            }
+
             return document.Declaration + Environment.NewLine + document;
         }
         catch (System.Xml.XmlException)
