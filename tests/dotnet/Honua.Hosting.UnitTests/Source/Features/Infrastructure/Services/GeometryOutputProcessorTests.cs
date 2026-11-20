@@ -74,7 +74,7 @@ public sealed class GeometryOutputProcessorTests
     }
 
     [UnitTest]
-    public void ApplyLimits_RoundsACopyAndLeavesTheSharedGeometryUntouched()
+    public void ApplyLimits_WithSharedGeometry_RoundsACopy()
     {
         var shared = CreatePrecisePointZ();
 
@@ -86,7 +86,7 @@ public sealed class GeometryOutputProcessorTests
     }
 
     [UnitTest]
-    public void ApplyLimitsInPlace_RoundsTheOwnedGeometryItself()
+    public void ApplyLimitsInPlace_WithOwnedGeometry_RoundsInPlace()
     {
         var owned = CreatePrecisePointZ();
 
@@ -98,17 +98,24 @@ public sealed class GeometryOutputProcessorTests
     }
 
     [UnitTest]
-    public void ApplyDimensionFilter_CopiesWhileTheInPlaceVariantMutates()
+    public void ApplyDimensionFilter_WithSharedGeometry_DropsZOnACopy()
     {
         var shared = CreatePrecisePointZ();
-        var owned = CreatePrecisePointZ();
 
         var copied = GeometryOutputProcessor.ApplyDimensionFilter(shared, includeZ: false, includeM: false);
-        var filtered = GeometryOutputProcessor.ApplyDimensionFilterInPlace(owned, includeZ: false, includeM: false);
 
         copied.Should().NotBeSameAs(shared);
         double.IsNaN(copied.Coordinate.Z).Should().BeTrue();
         shared.Z.Should().Be(7.5);
+    }
+
+    [UnitTest]
+    public void ApplyDimensionFilterInPlace_WithOwnedGeometry_DropsZInPlace()
+    {
+        var owned = CreatePrecisePointZ();
+
+        var filtered = GeometryOutputProcessor.ApplyDimensionFilterInPlace(owned, includeZ: false, includeM: false);
+
         filtered.Should().BeSameAs(owned);
         double.IsNaN(owned.Coordinate.Z).Should().BeTrue();
     }
