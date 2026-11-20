@@ -95,7 +95,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
 Observability__Prometheus__Path=/metrics
 ```
 
-2. Point your scraper or collector at the server. `/metrics` requires admin authorization, so the scraper must send the key in the `X-API-Key` header or as `Authorization: ApiKey <key>`. Use the second form for scrapers that can set only the `Authorization` header, such as a Prometheus Operator ServiceMonitor. Keep the key in a Secret:
+2. Point your scraper or collector at the server. `/metrics` requires admin authorization, so the scraper must send the key in the `X-API-Key` header or as `Authorization: ApiKey <key>`. Use the second form for scrapers that can set only the `Authorization` header, such as a Prometheus Operator ServiceMonitor. Use a read-only `admin:read` key (minted as in step 5), not the bootstrap admin password, because an in-cluster scrape sends it over plain HTTP. Keep the key in a Secret:
 
 ```yaml
 endpoints:
