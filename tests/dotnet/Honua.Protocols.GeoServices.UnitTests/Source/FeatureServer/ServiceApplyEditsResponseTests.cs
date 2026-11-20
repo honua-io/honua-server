@@ -61,8 +61,8 @@ public sealed class ServiceApplyEditsResponseTests
             .Should().Be(GeoServicesEditErrorCodes.ValidationFailed);
         FeatureServerEndpoints.ResolveLayerFailureErrorCode(StatusCodes.Status400BadRequest, objectId: null, isAdd: false, isDelete: false)
             .Should().Be(GeoServicesEditErrorCodes.InvalidObjectId);
-        FeatureServerEndpoints.ResolveLayerFailureErrorCode(GeoServicesEditErrorCodes.GeometryCoercionFailed, objectId: null, isAdd: true, isDelete: false)
-            .Should().Be(GeoServicesEditErrorCodes.GeometryCoercionFailed);
+        FeatureServerEndpoints.ResolveLayerFailureErrorCode(GeoServicesEditErrorCodes.ValidationFailed, objectId: null, isAdd: true, isDelete: false)
+            .Should().Be(GeoServicesEditErrorCodes.ValidationFailed);
 
         var deleteFailures = FeatureServerEndpoints.BuildDeleteFailureResults([42L, -1L], "Layer failed", StatusCodes.Status404NotFound);
         deleteFailures.Should().NotBeNull().And.HaveCount(2);
@@ -95,15 +95,15 @@ public sealed class ServiceApplyEditsResponseTests
         BitConverter.GetBytes(2.654321).CopyTo(wkbPointZ, 13);
         BitConverter.GetBytes(99.5).CopyTo(wkbPointZ, 21);
 
-        var feature = new Feature(1, new Dictionary<string, object?>
+        var feature = Feature.Create(1, wkbPointZ, new Dictionary<string, object?>
         {
             ["OBJECTID"] = 1L,
             ["name"] = "Honolulu",
             ["pop"] = 350000
-        }, wkbPointZ);
-        var queryResult = new QueryResult<Feature>([feature]);
+        }.ToImmutableDictionary());
+        var queryResult = QueryResult<Feature>.Create(1, [feature]);
 
-        var limits = new GeometryLimits { CoordinatePrecision = 2 };
+        var limits = new GeometryLimits { MaxCoordinatePrecision = 2 };
         var response = FeatureServerEndpoints.BuildTopFeaturesJsonResponse(
             queryResult,
             resource,
@@ -120,9 +120,10 @@ public sealed class ServiceApplyEditsResponseTests
         var outFeature = response.Features.Should().ContainSingle().Subject;
         outFeature.Attributes.Should().ContainKey("name").WhoseValue.Should().Be("Honolulu");
         outFeature.Attributes.Should().NotContainKey("pop");
-        outFeature.Geometry.Should().ContainKey("x").WhoseValue.Should().Be(1.12);
-        outFeature.Geometry.Should().ContainKey("y").WhoseValue.Should().Be(2.65);
-        outFeature.Geometry.Should().ContainKey("z").WhoseValue.Should().Be(99.5);
+        outFeature.Geometry.Should().NotBeNull();
+        outFeature.Geometry!.X.Should().Be(1.12);
+        outFeature.Geometry.Y.Should().Be(2.65);
+        outFeature.Geometry.Z.Should().Be(99.5);
     }
 
     [UnitTest]
@@ -141,7 +142,7 @@ public sealed class ServiceApplyEditsResponseTests
         {
             Type = BinType.FixedInterval,
             Field = "magnitude",
-            Interval = 1.0
+            IntervalSize = 1.0
         });
         fixedBinFields.Select(f => f.Name).Should().Equal("lowerBoundary", "upperBoundary", "count");
 

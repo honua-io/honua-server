@@ -4,6 +4,7 @@
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Protocols.GeoServices.GPServer;
 using Honua.TestKit.Attributes;
 using NetTopologySuite.Geometries;
@@ -183,7 +184,7 @@ public sealed class GPServerOutputReprojectionTests
             """;
         var dataUri = GeoJsonDataUriPrefix + Convert.ToBase64String(Encoding.UTF8.GetBytes(rawJson));
 
-        var outcome = GPServerOutputReprojection.TryReprojectGeoJsonDataUri(dataUri, 4326, 3857);
+        var outcome = GPServerOutputReprojection.TryReprojectGeoJsonValue(dataUri, 4326, 3857);
 
         outcome.Reprojected.Should().BeTrue();
         outcome.Value.Should().NotBeNull();

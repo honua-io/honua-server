@@ -194,38 +194,16 @@ internal sealed partial class PbfQueryFormatter
     // returnExtentOnly with f=pbf when no features match still emits FeatureCollectionPBuffer extentCountResult.
     public static (byte[] response, string contentType) FormatExtentAsPbf(long count)
     {
-        var extentMsg = new ProtobufWriter(16);
-        try
-        {
-            extentMsg.WriteUInt64Always(2, (ulong)Math.Max(count, 0));
+        using var extentMsg = new ProtobufWriter(16);
+        extentMsg.WriteUInt64Always(2, (ulong)Math.Max(count, 0));
 
-            var queryResult = new ProtobufWriter(extentMsg.Position + 8);
-            try
-            {
-                queryResult.WriteMessage(4, ref extentMsg);
+        using var queryResult = new ProtobufWriter(extentMsg.Position + 8);
+        queryResult.WriteMessage(4, ref extentMsg);
 
-                var outer = new ProtobufWriter(queryResult.Position + 16);
-                try
-                {
-                    outer.WriteString(1, PbfVersion);
-                    outer.WriteMessage(2, ref queryResult);
-                    return (outer.ToArrayAndDispose(), "application/x-protobuf");
-                }
-                catch
-                {
-                    outer.Dispose();
-                    throw;
-                }
-            }
-            finally
-            {
-                queryResult.Dispose();
-            }
-        }
-        finally
-        {
-            extentMsg.Dispose();
-        }
+        using var outer = new ProtobufWriter(queryResult.Position + 16);
+        outer.WriteString(1, PbfVersion);
+        outer.WriteMessage(2, ref queryResult);
+        return (outer.ToArrayAndDispose(), "application/x-protobuf");
     }
 
     public (byte[] response, string contentType) FormatAsPbf(
@@ -401,11 +379,10 @@ internal sealed partial class PbfQueryFormatter
 
     private static void WriteSpatialReference(ref ProtobufWriter writer, int srid, int? requestedOutputSrid)
     {
-        var sr = new ProtobufWriter(32);
+        using var sr = new ProtobufWriter(32);
         sr.WriteUInt32(1, (uint)(requestedOutputSrid ?? srid));
         sr.WriteUInt32(2, (uint)srid);
         writer.WriteMessage(8, ref sr);
-        sr.Dispose();
     }
 
     private static void WriteFeature(

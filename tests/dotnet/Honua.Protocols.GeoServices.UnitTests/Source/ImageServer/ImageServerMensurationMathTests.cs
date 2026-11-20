@@ -408,15 +408,17 @@ public sealed class ImageServerMensurationMathTests
         crsRegistry.ResolveBySridAsync(4326, Arg.Any<CancellationToken>())
             .Returns(new CrsDefinition("EPSG:4326", 4326, AxisOrder.EastNorth, true));
 
-        var datumSelection = new DatumTransformationSelection(
-            Wkid: 108001,
-            Name: "NAD_1983_To_WGS_1984_1",
-            FromSrid: 4269,
-            ToSrid: 4326,
-            TransformForward: true,
-            ProjPipeline: "+proj=noop");
+        var datumSelection = new DatumTransformationSelection
+        {
+            Wkid = 108001,
+            Name = "NAD_1983_To_WGS_1984_1",
+            FromSrid = 4269,
+            ToSrid = 4326,
+            TransformForward = true,
+            ProjPipeline = "+proj=noop"
+        };
         var datumCatalog = Substitute.For<IDatumTransformationCatalog>();
-        datumCatalog.TryGetByWkid(108001, 4269, 4326, out Arg.Any<DatumTransformationSelection>())
+        datumCatalog.TryGetByWkid(108001, 4269, 4326, out Arg.Any<DatumTransformationSelection?>())
             .Returns(callInfo =>
             {
                 callInfo[3] = datumSelection;

@@ -663,7 +663,7 @@ internal sealed class ImageServerMeasureHandler
                 ring[i - 1].X, ring[i - 1].Y, ring[i].X, ring[i].Y);
         }
 
-        if (!ring[0].X.Equals(ring[^1].X) || !ring[0].Y.Equals(ring[^1].Y))
+        if (Math.Abs(ring[0].X - ring[^1].X) > 1e-12 || Math.Abs(ring[0].Y - ring[^1].Y) > 1e-12)
         {
             total += ImageServerMensurationMath.GeodesicDistanceMeters(
                 ring[^1].X, ring[^1].Y, ring[0].X, ring[0].Y);
@@ -707,7 +707,7 @@ internal sealed class ImageServerMeasureHandler
                 ring[i - 1].X, ring[i - 1].Y, ring[i].X, ring[i].Y);
         }
 
-        if (!ring[0].X.Equals(ring[^1].X) || !ring[0].Y.Equals(ring[^1].Y))
+        if (Math.Abs(ring[0].X - ring[^1].X) > 1e-12 || Math.Abs(ring[0].Y - ring[^1].Y) > 1e-12)
         {
             total += ImageServerMensurationMath.PlanarDistanceMeters(
                 ring[^1].X, ring[^1].Y, ring[0].X, ring[0].Y);

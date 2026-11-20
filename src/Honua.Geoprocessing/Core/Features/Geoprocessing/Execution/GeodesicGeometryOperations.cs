@@ -392,7 +392,7 @@ internal static class GeodesicGeometryOperations
             var t1 = cosU2 * sinLambda;
             var t2 = (cosU1 * sinU2) - (sinU1 * cosU2 * cosLambda);
             sinSigma = Math.Sqrt((t1 * t1) + (t2 * t2));
-            if (sinSigma == 0.0)
+            if (Math.Abs(sinSigma) <= 1e-15)
             {
                 return 0.0;
             }

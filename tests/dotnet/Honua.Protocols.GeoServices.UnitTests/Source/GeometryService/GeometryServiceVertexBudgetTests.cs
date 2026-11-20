@@ -253,8 +253,8 @@ public sealed class GeometryServiceVertexBudgetTests
         await handler.HandleProjectAsync(context, CancellationToken.None);
 
         datumCatalog.DidNotReceiveWithAnyArgs().TryGetForEnvelope(
-            default, default, default, default, default, default, out Arg.Any<DatumTransformationSelection>());
-        datumCatalog.Received(1).TryGetDefault(4267, 4269, out Arg.Any<DatumTransformationSelection>());
+            default, default, default, default, default, default, out Arg.Any<DatumTransformationSelection?>());
+        datumCatalog.Received(1).TryGetDefault(4267, 4269, out Arg.Any<DatumTransformationSelection?>());
     }
 
     [UnitTest]
