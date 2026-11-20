@@ -215,7 +215,7 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertEqual(verify['env']['HONUA_EXPECTED_STORE_PROFILE'], 'postgis')
         self.assertNotIn('if', verify)
 
-    def test_store_measurement_uses_heavy_runner_and_separate_profile_caches(self):
+    def test_store_measurement_uses_heavy_runner_and_read_only_profile_cache(self):
         jobs = workflow('store-image-size.yml')['jobs']
         job = jobs['measure']
         selector = jobs['runner-select']
@@ -238,9 +238,28 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertGreater(jit_minutes, 0)
         self.assertLessEqual(jit_minutes, 30)
         build = next(step for step in job['steps'] if step.get('name') == 'Build serving image')
-        self.assertIn('matrix.profile', build['with']['cache-to'])
-        self.assertIn('matrix.compilation', build['with']['cache-to'])
-        self.assertIn('mode=max', build['with']['cache-to'])
+        self.assertEqual(
+            build['with']['cache-from'],
+            'type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:${{ matrix.cache_scope }}')
+        # Per-commit compiler layers are never reused; exporting them only
+        # lengthened every measurement and filled the Actions cache quota.
+        for step in job['steps']:
+            self.assertNotIn('cache-to', step.get('with', {}), step.get('name'))
+
+    def test_store_measurement_builder_keeps_its_cache_between_solves(self):
+        steps = workflow('store-image-size.yml')['jobs']['measure']['steps']
+        setup = next(step for step in steps if step.get('uses', '').startswith('docker/setup-buildx-action@'))
+        config = setup.get('with', {}).get('buildkitd-config-inline', '')
+        self.assertEqual([line.strip() for line in config.splitlines()], ['[worker.oci]', 'gc = false'])
+        self.assertNotIn('cleanup', setup.get('with', {}))
+
+    def test_store_script_tests_run_in_one_measurement_leg(self):
+        job = workflow('store-image-size.yml')['jobs']['measure']
+        legs = [(leg['profile'], leg['compilation']) for leg in job['strategy']['matrix']['include']]
+        self.assertEqual(legs.count(('postgis', 'jit')), 1)
+        tests = next(step for step in job['steps'] if step.get('name') == 'Test measurement and health probe')
+        self.assertEqual(tests.get('if'), "matrix.profile == 'postgis' && matrix.compilation == 'jit'")
+        self.assertNotIn('matrix.', tests['run'])
 
     def test_store_matrix_jobs_use_isolated_local_images(self):
         job = workflow('store-image-size.yml')['jobs']['measure']
