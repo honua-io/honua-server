@@ -127,7 +127,7 @@ public sealed class LayerPublishWireContractTests
         var payload = body.RootElement.GetProperty("data");
         var schema = ResponseDataSchema(spec, "/connections/{id}/layers/jobs/{jobId}", "get", "200");
         AssertDocumentedProperties(schema, payload);
-        Assert.Equal(6, schema.GetProperty("properties").EnumerateObject().Count());
+        Assert.Equal(7, schema.GetProperty("properties").EnumerateObject().Count());
         Assert.Contains(status, schema.GetProperty("properties").GetProperty("status").GetProperty("enum")
             .EnumerateArray().Select(value => value.GetString()));
         Assert.Equal(status, payload.GetProperty("status").GetString());
@@ -137,6 +137,9 @@ public sealed class LayerPublishWireContractTests
         Assert.True(schema.GetProperty("properties").GetProperty("errorMessage").GetProperty("nullable").GetBoolean());
         var actualStorageLayerId = payload.GetProperty("storageLayerId");
         Assert.Equal(storageLayerId, actualStorageLayerId.ValueKind == JsonValueKind.Null ? null : actualStorageLayerId.GetInt32());
+        var layerIdAlias = payload.GetProperty("layerId");
+        Assert.Equal(storageLayerId, layerIdAlias.ValueKind == JsonValueKind.Null ? null : layerIdAlias.GetInt32());
+        Assert.True(schema.GetProperty("properties").GetProperty("layerId").GetProperty("deprecated").GetBoolean());
         Assert.Equal(error, payload.GetProperty("errorMessage").GetString());
     }
 
