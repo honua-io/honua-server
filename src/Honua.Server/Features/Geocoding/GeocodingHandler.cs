@@ -189,7 +189,8 @@ internal sealed class GeocodingHandler(
             // candidates higher on providers that support proximity weighting and is gracefully
             // ignored on providers that do not (SupportsBiasing=false). location/distance are
             // validated up front so malformed values are rejected with a clear error.
-            if (!TryParseBias(context, values, out var biasLocation, out var biasDistanceMeters, out var biasError))
+            var (biasValid, biasLocation, biasDistanceMeters, biasError) = await TryParseBiasAsync(context, values).ConfigureAwait(false);
+            if (!biasValid)
             {
                 return StandardErrorHelpers.CreateBadRequest(context, biasError ?? "Invalid location/distance parameter.");
             }
@@ -496,7 +497,8 @@ internal sealed class GeocodingHandler(
 
             // Forward proximity bias: location/distance bias suggestions towards a point on
             // providers that support proximity weighting, gracefully ignored elsewhere.
-            if (!TryParseBias(context, values, out var biasLocation, out var biasDistanceMeters, out var biasError))
+            var (biasValid, biasLocation, biasDistanceMeters, biasError) = await TryParseBiasAsync(context, values).ConfigureAwait(false);
+            if (!biasValid)
             {
                 return StandardErrorHelpers.CreateBadRequest(context, biasError ?? "Invalid location/distance parameter.");
             }
@@ -1299,33 +1301,24 @@ internal sealed class GeocodingHandler(
     // default spatial reference (the GeoServices bias point convention) and the distance reuses the
     // shared positive-meters validation. A blank location yields no bias (null) even if a distance
     // is present, since a radius without a centre cannot bias results. Invalid values are rejected.
-    private bool TryParseBias(
+    private async ValueTask<(bool IsValid, Honua.Geocoding.Features.Geocoding.Domain.GeocodePoint? BiasLocation, double? BiasDistanceMeters, string? Error)> TryParseBiasAsync(
         HttpContext context,
-        IReadOnlyDictionary<string, StringValues> values,
-        out Honua.Geocoding.Features.Geocoding.Domain.GeocodePoint? biasLocation,
-        out double? biasDistanceMeters,
-        out string? error)
+        IReadOnlyDictionary<string, StringValues> values)
     {
-        biasLocation = null;
-        biasDistanceMeters = null;
-        error = null;
-
         var rawLocation = GetValue(values, "location");
         if (string.IsNullOrWhiteSpace(rawLocation))
         {
-            return true;
+            return (true, null, null, null);
         }
 
         if (!TryParseLocation(rawLocation, out var biasX, out var biasY, out var biasWkid))
         {
-            error = "location must be either 'x,y' or JSON {\"x\":...,\"y\":...}.";
-            return false;
+            return (false, null, null, "location must be either 'x,y' or JSON {\"x\":...,\"y\":...}.");
         }
 
         if (!double.IsFinite(biasX) || !double.IsFinite(biasY))
         {
-            error = "location coordinates must be finite numbers.";
-            return false;
+            return (false, null, null, "location coordinates must be finite numbers.");
         }
 
         var biasLon = biasX;
@@ -1339,13 +1332,12 @@ internal sealed class GeocodingHandler(
             else
             {
                 var transformService = context.RequestServices.GetService<ICoordinateTransformService>();
-                var transformed = transformService?.TransformPointAsync(biasX, biasY, biasWkid.Value, 4326, context.RequestAborted)
-                    .GetAwaiter()
-                    .GetResult();
+                var transformed = transformService is not null
+                    ? await transformService.TransformPointAsync(biasX, biasY, biasWkid.Value, 4326, context.RequestAborted).ConfigureAwait(false)
+                    : null;
                 if (transformed is null)
                 {
-                    error = $"location spatial reference {biasWkid.Value} is not supported for reprojection.";
-                    return false;
+                    return (false, null, null, $"location spatial reference {biasWkid.Value} is not supported for reprojection.");
                 }
 
                 (biasLon, biasLat) = transformed.Value;
@@ -1354,19 +1346,16 @@ internal sealed class GeocodingHandler(
 
         if (!IsValidCoordinate(biasLon, biasLat))
         {
-            error = "location coordinates are outside valid geographic bounds [-180, 180] x [-90, 90].";
-            return false;
+            return (false, null, null, "location coordinates are outside valid geographic bounds [-180, 180] x [-90, 90].");
         }
 
         if (!TryParseDistanceMeters(GetValue(values, "distance"), out var distanceMeters, out var distanceError))
         {
-            error = distanceError ?? "Invalid distance parameter.";
-            return false;
+            return (false, null, null, distanceError ?? "Invalid distance parameter.");
         }
 
-        biasLocation = new Honua.Geocoding.Features.Geocoding.Domain.GeocodePoint(biasLon, biasLat, _options.DefaultSpatialReferenceWkid);
-        biasDistanceMeters = distanceMeters;
-        return true;
+        var biasLocation = new Honua.Geocoding.Features.Geocoding.Domain.GeocodePoint(biasLon, biasLat, _options.DefaultSpatialReferenceWkid);
+        return (true, biasLocation, distanceMeters, null);
     }
 
     private static bool IsValidCoordinate(double longitude, double latitude)

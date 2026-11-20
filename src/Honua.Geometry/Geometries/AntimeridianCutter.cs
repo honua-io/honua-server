@@ -389,18 +389,18 @@ public static class AntimeridianCutter
             return cutGeometry;
         }
 
-        var sourceCoords = shiftedSource.Coordinates;
+        var sourceRings = ExtractLinearCoordinateArrays(shiftedSource);
         return cutGeometry switch
         {
-            Polygon poly => RebuildPolygonWithOrdinates(poly, sourceCoords, hasZ, hasM),
-            LineString line => RebuildLineStringWithOrdinates(line, sourceCoords, hasZ, hasM),
+            Polygon poly => RebuildPolygonWithOrdinates(poly, sourceRings, hasZ, hasM),
+            LineString line => RebuildLineStringWithOrdinates(line, sourceRings, hasZ, hasM),
             MultiPolygon mpoly => cutGeometry.Factory.CreateMultiPolygon(
                 Enumerable.Range(0, mpoly.NumGeometries)
-                    .Select(i => RebuildPolygonWithOrdinates((Polygon)mpoly.GetGeometryN(i), sourceCoords, hasZ, hasM))
+                    .Select(i => RebuildPolygonWithOrdinates((Polygon)mpoly.GetGeometryN(i), sourceRings, hasZ, hasM))
                     .ToArray()),
             MultiLineString mline => cutGeometry.Factory.CreateMultiLineString(
                 Enumerable.Range(0, mline.NumGeometries)
-                    .Select(i => RebuildLineStringWithOrdinates((LineString)mline.GetGeometryN(i), sourceCoords, hasZ, hasM))
+                    .Select(i => RebuildLineStringWithOrdinates((LineString)mline.GetGeometryN(i), sourceRings, hasZ, hasM))
                     .ToArray()),
             GeometryCollection coll => cutGeometry.Factory.CreateGeometryCollection(
                 Enumerable.Range(0, coll.NumGeometries)
@@ -410,30 +410,66 @@ public static class AntimeridianCutter
         };
     }
 
-    private static Polygon RebuildPolygonWithOrdinates(Polygon polygon, Coordinate[] sourceCoords, bool hasZ, bool hasM)
+    private static List<Coordinate[]> ExtractLinearCoordinateArrays(Geometry geometry)
     {
-        var shell = RebuildLinearRingWithOrdinates((LinearRing)polygon.ExteriorRing, sourceCoords, hasZ, hasM);
+        var list = new List<Coordinate[]>();
+        AppendLinearCoordinateArrays(geometry, list);
+        return list;
+    }
+
+    private static void AppendLinearCoordinateArrays(Geometry geometry, List<Coordinate[]> list)
+    {
+        switch (geometry)
+        {
+            case Polygon poly:
+                list.Add(poly.ExteriorRing.Coordinates);
+                for (var i = 0; i < poly.NumInteriorRings; i++)
+                {
+                    list.Add(poly.GetInteriorRingN(i).Coordinates);
+                }
+                break;
+            case LineString line:
+                list.Add(line.Coordinates);
+                break;
+            case GeometryCollection coll:
+                for (var i = 0; i < coll.NumGeometries; i++)
+                {
+                    AppendLinearCoordinateArrays(coll.GetGeometryN(i), list);
+                }
+                break;
+            default:
+                if (geometry.Coordinates.Length > 0)
+                {
+                    list.Add(geometry.Coordinates);
+                }
+                break;
+        }
+    }
+
+    private static Polygon RebuildPolygonWithOrdinates(Polygon polygon, List<Coordinate[]> sourceRings, bool hasZ, bool hasM)
+    {
+        var shell = RebuildLinearRingWithOrdinates((LinearRing)polygon.ExteriorRing, sourceRings, hasZ, hasM);
         var holes = new LinearRing[polygon.NumInteriorRings];
         for (var i = 0; i < polygon.NumInteriorRings; i++)
         {
-            holes[i] = RebuildLinearRingWithOrdinates((LinearRing)polygon.GetInteriorRingN(i), sourceCoords, hasZ, hasM);
+            holes[i] = RebuildLinearRingWithOrdinates((LinearRing)polygon.GetInteriorRingN(i), sourceRings, hasZ, hasM);
         }
 
         return polygon.Factory.CreatePolygon(shell, holes);
     }
 
-    private static LinearRing RebuildLinearRingWithOrdinates(LinearRing ring, Coordinate[] sourceCoords, bool hasZ, bool hasM)
-        => ring.Factory.CreateLinearRing(RebuildCoordinates(ring.Coordinates, sourceCoords, hasZ, hasM));
+    private static LinearRing RebuildLinearRingWithOrdinates(LinearRing ring, List<Coordinate[]> sourceRings, bool hasZ, bool hasM)
+        => ring.Factory.CreateLinearRing(RebuildCoordinates(ring.Coordinates, sourceRings, hasZ, hasM));
 
-    private static LineString RebuildLineStringWithOrdinates(LineString line, Coordinate[] sourceCoords, bool hasZ, bool hasM)
-        => line.Factory.CreateLineString(RebuildCoordinates(line.Coordinates, sourceCoords, hasZ, hasM));
+    private static LineString RebuildLineStringWithOrdinates(LineString line, List<Coordinate[]> sourceRings, bool hasZ, bool hasM)
+        => line.Factory.CreateLineString(RebuildCoordinates(line.Coordinates, sourceRings, hasZ, hasM));
 
-    private static Coordinate[] RebuildCoordinates(Coordinate[] coords, Coordinate[] sourceCoords, bool hasZ, bool hasM)
+    private static Coordinate[] RebuildCoordinates(Coordinate[] coords, List<Coordinate[]> sourceRings, bool hasZ, bool hasM)
     {
         var result = new Coordinate[coords.Length];
         for (var i = 0; i < coords.Length; i++)
         {
-            var (z, m) = InterpolateOrdinates(coords[i], sourceCoords, hasZ, hasM);
+            var (z, m) = InterpolateOrdinates(coords[i], sourceRings, hasZ, hasM);
             result[i] = (hasZ, hasM) switch
             {
                 (true, true) => new CoordinateZM(coords[i].X, coords[i].Y, z, m),
@@ -446,7 +482,7 @@ public static class AntimeridianCutter
         return result;
     }
 
-    private static (double Z, double M) InterpolateOrdinates(Coordinate target, Coordinate[] sourceCoords, bool hasZ, bool hasM)
+    private static (double Z, double M) InterpolateOrdinates(Coordinate target, List<Coordinate[]> sourceRings, bool hasZ, bool hasM)
     {
         var z = target.Z;
         var m = target.M;
@@ -456,48 +492,54 @@ public static class AntimeridianCutter
         }
 
         // Exact or near-exact vertex match in shifted space
-        for (var i = 0; i < sourceCoords.Length; i++)
+        foreach (var sourceCoords in sourceRings)
         {
-            var src = sourceCoords[i];
-            if (Math.Abs(src.X - target.X) <= 1e-9 && Math.Abs(src.Y - target.Y) <= 1e-9)
+            for (var i = 0; i < sourceCoords.Length; i++)
             {
-                if (hasZ && double.IsNaN(z)) z = src.Z;
-                if (hasM && double.IsNaN(m)) m = src.M;
-                return (z, m);
+                var src = sourceCoords[i];
+                if (Math.Abs(src.X - target.X) <= 1e-9 && Math.Abs(src.Y - target.Y) <= 1e-9)
+                {
+                    if (hasZ && double.IsNaN(z)) z = src.Z;
+                    if (hasM && double.IsNaN(m)) m = src.M;
+                    return (z, m);
+                }
             }
         }
 
-        // Interpolate along segment crossing X = target.X (e.g. X = 180)
+        // Interpolate along intra-ring segments only (never across separate rings or parts)
         var bestDist = double.PositiveInfinity;
         var bestZ = z;
         var bestM = m;
-        for (var i = 0; i + 1 < sourceCoords.Length; i++)
+        foreach (var sourceCoords in sourceRings)
         {
-            var a = sourceCoords[i];
-            var b = sourceCoords[i + 1];
-            var dx = b.X - a.X;
-            var dy = b.Y - a.Y;
-            var lenSq = (dx * dx) + (dy * dy);
-            if (lenSq <= double.Epsilon)
+            for (var i = 0; i + 1 < sourceCoords.Length; i++)
             {
-                continue;
-            }
-
-            var t = Math.Clamp((((target.X - a.X) * dx) + ((target.Y - a.Y) * dy)) / lenSq, 0d, 1d);
-            var projX = a.X + (t * dx);
-            var projY = a.Y + (t * dy);
-            var dist = ((target.X - projX) * (target.X - projX)) + ((target.Y - projY) * (target.Y - projY));
-            if (dist < bestDist)
-            {
-                bestDist = dist;
-                if (hasZ && double.IsNaN(z))
+                var a = sourceCoords[i];
+                var b = sourceCoords[i + 1];
+                var dx = b.X - a.X;
+                var dy = b.Y - a.Y;
+                var lenSq = (dx * dx) + (dy * dy);
+                if (lenSq <= double.Epsilon)
                 {
-                    bestZ = !double.IsNaN(a.Z) && !double.IsNaN(b.Z) ? a.Z + (t * (b.Z - a.Z)) : (!double.IsNaN(a.Z) ? a.Z : b.Z);
+                    continue;
                 }
 
-                if (hasM && double.IsNaN(m))
+                var t = Math.Clamp((((target.X - a.X) * dx) + ((target.Y - a.Y) * dy)) / lenSq, 0d, 1d);
+                var projX = a.X + (t * dx);
+                var projY = a.Y + (t * dy);
+                var dist = ((target.X - projX) * (target.X - projX)) + ((target.Y - projY) * (target.Y - projY));
+                if (dist < bestDist)
                 {
-                    bestM = !double.IsNaN(a.M) && !double.IsNaN(b.M) ? a.M + (t * (b.M - a.M)) : (!double.IsNaN(a.M) ? a.M : b.M);
+                    bestDist = dist;
+                    if (hasZ && double.IsNaN(z))
+                    {
+                        bestZ = !double.IsNaN(a.Z) && !double.IsNaN(b.Z) ? a.Z + (t * (b.Z - a.Z)) : (!double.IsNaN(a.Z) ? a.Z : b.Z);
+                    }
+
+                    if (hasM && double.IsNaN(m))
+                    {
+                        bestM = !double.IsNaN(a.M) && !double.IsNaN(b.M) ? a.M + (t * (b.M - a.M)) : (!double.IsNaN(a.M) ? a.M : b.M);
+                    }
                 }
             }
         }

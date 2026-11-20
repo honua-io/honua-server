@@ -470,12 +470,13 @@ internal static partial class OracleFeatureQueryBuilder
             SpatialRelationship.EnvelopeIntersects =>
                 $"SDO_FILTER({geomCol}, {filterExpr}) = 'TRUE'",
             // Oracle Spatial requires the indexed table column as the first argument to use
-            // the MDSYS.SPATIAL_INDEX domain index. SDO_RELATE(feature, filter, 'mask=...')
-            // evaluates the topological relationship of the feature relative to the filter.
+            // the MDSYS.SPATIAL_INDEX domain index. In GeoServices/Honua semantics,
+            // SpatialRelationship.Within means filter-within-feature (feature contains/covers filter),
+            // and Contains means filter-contains-feature (feature inside/coveredby filter).
             SpatialRelationship.Within =>
-                $"SDO_RELATE({geomCol}, {filterExpr}, 'mask=INSIDE+COVEREDBY+EQUAL') = 'TRUE'",
-            SpatialRelationship.Contains =>
                 $"SDO_RELATE({geomCol}, {filterExpr}, 'mask=CONTAINS+COVERS+EQUAL') = 'TRUE'",
+            SpatialRelationship.Contains =>
+                $"SDO_RELATE({geomCol}, {filterExpr}, 'mask=INSIDE+COVEREDBY+EQUAL') = 'TRUE'",
             SpatialRelationship.Disjoint =>
                 $"NOT (SDO_RELATE({geomCol}, {filterExpr}, 'mask=ANYINTERACT') = 'TRUE')",
             _ => throw new NotSupportedException(

@@ -363,35 +363,48 @@ internal static partial class FeatureServerEndpoints
             return false;
         }
 
-        switch (unit)
+        try
         {
-            case "milliseconds":
-                interval = TimeSpan.FromMilliseconds(count);
-                return true;
-            case "seconds":
-                interval = TimeSpan.FromSeconds(count);
-                return true;
-            case "minutes":
-                interval = TimeSpan.FromMinutes(count);
-                return true;
-            case "hours":
-                interval = TimeSpan.FromHours(count);
-                return true;
-            case "days":
-                interval = TimeSpan.FromDays(count);
-                return true;
-            case "weeks":
-                interval = TimeSpan.FromDays(count * 7L);
-                return true;
-            case "months":
-                interval = TimeSpan.FromDays(count * 30L);
-                return true;
-            case "years":
-                interval = TimeSpan.FromDays(count * 365L);
-                return true;
-            default:
-                error = $"Unsupported fixedBin.intervalUnit '{unit}'. Must be one of: milliseconds, seconds, minutes, hours, days, weeks, months, years.";
-                return false;
+            switch (unit)
+            {
+                case "milliseconds":
+                    interval = TimeSpan.FromMilliseconds(count);
+                    return true;
+                case "seconds":
+                    interval = TimeSpan.FromSeconds(count);
+                    return true;
+                case "minutes":
+                    interval = TimeSpan.FromMinutes(count);
+                    return true;
+                case "hours":
+                    interval = TimeSpan.FromHours(count);
+                    return true;
+                case "days":
+                    interval = TimeSpan.FromDays(count);
+                    return true;
+                case "weeks":
+                    interval = TimeSpan.FromDays(count * 7L);
+                    return true;
+                case "months":
+                    interval = TimeSpan.FromDays(count * 30L);
+                    return true;
+                case "years":
+                    interval = TimeSpan.FromDays(count * 365L);
+                    return true;
+                default:
+                    error = $"Unsupported fixedBin.intervalUnit '{unit}'. Must be one of: milliseconds, seconds, minutes, hours, days, weeks, months, years.";
+                    return false;
+            }
+        }
+        catch (OverflowException)
+        {
+            error = "fixedBin.intervalCount is too large for the specified intervalUnit.";
+            return false;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            error = "fixedBin.intervalCount is out of range for the specified intervalUnit.";
+            return false;
         }
     }
 

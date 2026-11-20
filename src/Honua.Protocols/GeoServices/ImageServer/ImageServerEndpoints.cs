@@ -3929,7 +3929,7 @@ internal static class ImageServerEndpoints
         if (double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue) &&
             double.IsFinite(doubleValue))
         {
-            return (int)Math.Round(Math.Abs(doubleValue), MidpointRounding.AwayFromZero);
+            return TryRoundPositivePixelSize(Math.Abs(doubleValue));
         }
 
         if (trimmed.Contains(','))
@@ -3941,7 +3941,7 @@ internal static class ImageServerEndpoints
                 double.IsFinite(px) &&
                 double.IsFinite(py))
             {
-                return (int)Math.Round((Math.Abs(px) + Math.Abs(py)) / 2.0, MidpointRounding.AwayFromZero);
+                return TryRoundPositivePixelSize((Math.Abs(px) + Math.Abs(py)) / 2.0);
             }
         }
 
@@ -3956,12 +3956,12 @@ internal static class ImageServerEndpoints
                     var hasY = TryReadJsonDouble(doc.RootElement, "y", out var py);
                     if (hasX && hasY)
                     {
-                        return (int)Math.Round((Math.Abs(px) + Math.Abs(py)) / 2.0, MidpointRounding.AwayFromZero);
+                        return TryRoundPositivePixelSize((Math.Abs(px) + Math.Abs(py)) / 2.0);
                     }
 
                     if (hasX)
                     {
-                        return (int)Math.Round(Math.Abs(px), MidpointRounding.AwayFromZero);
+                        return TryRoundPositivePixelSize(Math.Abs(px));
                     }
                 }
             }
@@ -3972,6 +3972,17 @@ internal static class ImageServerEndpoints
         }
 
         return null;
+
+        static int? TryRoundPositivePixelSize(double magnitude)
+        {
+            if (magnitude <= 0d || magnitude > int.MaxValue)
+            {
+                return null;
+            }
+
+            var rounded = Math.Round(magnitude, MidpointRounding.AwayFromZero);
+            return rounded is >= 1d and <= int.MaxValue ? (int)rounded : 1;
+        }
     }
 
     private static bool TryReadJsonDouble(JsonElement obj, string propertyName, out double value)

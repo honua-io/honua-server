@@ -282,10 +282,11 @@ public sealed class VisibilityAnalysisService
         double totalDistance)
     {
         var hasNoData = false;
+        var adjustedTargetHeight = targetHeight + ComputeCurvatureAndRefractionDropMeters(totalDistance);
 
         // Compare each intermediate terrain sample against the straight sight
-        // line interpolated by distance fraction. The endpoints are the
-        // observer and target themselves and are excluded.
+        // line in the observer's tangent frame (where both intermediate terrain
+        // and the target drop by Earth curvature + atmospheric refraction).
         for (var i = 1; i < samples.Length - 1; i++)
         {
             var sample = samples[i];
@@ -296,7 +297,7 @@ public sealed class VisibilityAnalysisService
             }
 
             var fraction = totalDistance > 0 ? sample.DistanceMeters / totalDistance : 0.0;
-            var sightHeight = observerHeight + (targetHeight - observerHeight) * fraction;
+            var sightHeight = observerHeight + (adjustedTargetHeight - observerHeight) * fraction;
             var adjustedElevation = sample.Elevation.Value + ComputeCurvatureAndRefractionDropMeters(sample.DistanceMeters);
 
             // Small tolerance so floating-point noise on flat terrain does not

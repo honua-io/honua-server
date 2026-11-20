@@ -371,7 +371,7 @@ public class OracleFeatureQueryBuilderTests
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
-    public void BuildSelectQuery_WithinFilter_UsesInsideCoveredbyEqualMaskWithColumnFirst()
+    public void BuildSelectQuery_WithinFilter_UsesContainsCoversEqualMaskWithColumnFirst()
     {
         var mapping = BuildMapping();
         var query = new FeatureQuery
@@ -382,12 +382,12 @@ public class OracleFeatureQueryBuilderTests
         var result = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
         // Oracle Spatial requires the indexed table column first to use MDSYS.SPATIAL_INDEX.
-        Assert.Contains($"SDO_RELATE(\"SHAPE\", {StampedWkb4326}, 'mask=INSIDE+COVEREDBY+EQUAL') = 'TRUE'", result.Sql, StringComparison.Ordinal);
+        Assert.Contains($"SDO_RELATE(\"SHAPE\", {StampedWkb4326}, 'mask=CONTAINS+COVERS+EQUAL') = 'TRUE'", result.Sql, StringComparison.Ordinal);
     }
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
-    public void BuildSelectQuery_ContainsFilter_UsesContainsCoversEqualMaskWithColumnFirst()
+    public void BuildSelectQuery_ContainsFilter_UsesInsideCoveredbyEqualMaskWithColumnFirst()
     {
         var mapping = BuildMapping();
         var query = new FeatureQuery
@@ -398,7 +398,7 @@ public class OracleFeatureQueryBuilderTests
         var result = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
         // Oracle Spatial requires the indexed table column first to use MDSYS.SPATIAL_INDEX.
-        Assert.Contains($"SDO_RELATE(\"SHAPE\", {StampedWkb4326}, 'mask=CONTAINS+COVERS+EQUAL') = 'TRUE'", result.Sql, StringComparison.Ordinal);
+        Assert.Contains($"SDO_RELATE(\"SHAPE\", {StampedWkb4326}, 'mask=INSIDE+COVEREDBY+EQUAL') = 'TRUE'", result.Sql, StringComparison.Ordinal);
     }
 
     [global::Xunit.Trait("Tier", "Fast")]

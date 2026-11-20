@@ -317,23 +317,38 @@ public sealed class VisibilityAnalysisServiceTests
     }
 
     [UnitTest]
-    public void EvaluateSightLine_DistantRidgeDroppedByEarthCurvature_DoesNotObstruct()
+    public void EvaluateSightLine_EarthCurvatureBulgeAtMidpoint_ObstructsAboveCurvedHorizon()
     {
-        // At d = 15,000 m (midpoint of a 30 km path), curvature+refraction drops terrain by
-        // ~(15000^2 * 0.87) / (2 * 6371008.8) = 15.36 m. A 110 m midpoint ridge that would block
-        // a 100 m sightline on a flat Earth drops to ~94.64 m and clears the 100 m sightline.
-        var samples = new ElevationSample[]
+        // Over a 30 km path between two 100 m towers, the target drops by 61.45 m in the
+        // observer's tangent plane (adjustedTargetHeight = 38.55 m, midpoint sightHeight = 69.27 m),
+        // while the midpoint terrain at d = 15 km drops by 15.36 m. Thus the net curved-Earth
+        // bulge at the midpoint is 15.36 m, so a ridge > 84.64 m (e.g. 90 m) obstructs the
+        // sightline while an 80 m ridge clears it.
+        var obstructedSamples = new ElevationSample[]
         {
             new() { DistanceMeters = 0, Elevation = 0, NoData = false },
-            new() { DistanceMeters = 15_000, Elevation = 110, NoData = false },
+            new() { DistanceMeters = 15_000, Elevation = 90, NoData = false },
             new() { DistanceMeters = 30_000, Elevation = 0, NoData = false }
         };
 
-        var (visible, index, _) = VisibilityAnalysisService.EvaluateSightLine(
-            samples, observerHeight: 100, targetHeight: 100, totalDistance: 30_000);
+        var (visibleObstructed, indexObstructed, _) = VisibilityAnalysisService.EvaluateSightLine(
+            obstructedSamples, observerHeight: 100, targetHeight: 100, totalDistance: 30_000);
 
-        visible.Should().BeTrue();
-        index.Should().Be(-1);
+        visibleObstructed.Should().BeFalse();
+        indexObstructed.Should().Be(1);
+
+        var clearSamples = new ElevationSample[]
+        {
+            new() { DistanceMeters = 0, Elevation = 0, NoData = false },
+            new() { DistanceMeters = 15_000, Elevation = 80, NoData = false },
+            new() { DistanceMeters = 30_000, Elevation = 0, NoData = false }
+        };
+
+        var (visibleClear, indexClear, _) = VisibilityAnalysisService.EvaluateSightLine(
+            clearSamples, observerHeight: 100, targetHeight: 100, totalDistance: 30_000);
+
+        visibleClear.Should().BeTrue();
+        indexClear.Should().Be(-1);
     }
 
     [UnitTest]

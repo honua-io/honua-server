@@ -632,7 +632,7 @@ public class SqlServerFeatureQueryBuilderTests
 
         var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
-        Assert.Contains("[shape].STWithin(geometry::STGeomFromWKB(@p0, 4326)) = 1", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("[shape].STContains(geometry::STGeomFromWKB(@p0, 4326)) = 1", result.Sql, StringComparison.Ordinal);
     }
 
     [global::Xunit.Trait("Tier", "Fast")]
@@ -647,7 +647,7 @@ public class SqlServerFeatureQueryBuilderTests
 
         var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
-        Assert.Contains("[shape].STContains(geometry::STGeomFromWKB(@p0, 4326)) = 1", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("[shape].STWithin(geometry::STGeomFromWKB(@p0, 4326)) = 1", result.Sql, StringComparison.Ordinal);
     }
 
     [global::Xunit.Trait("Tier", "Fast")]

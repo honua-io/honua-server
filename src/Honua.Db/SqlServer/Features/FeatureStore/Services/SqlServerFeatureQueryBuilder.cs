@@ -408,11 +408,13 @@ internal static partial class SqlServerFeatureQueryBuilder
             SpatialRelationship.EnvelopeIntersects =>
                 $"{geomCol}.STEnvelope().STIntersects({filterExpr}.STEnvelope()) = 1",
             // Keep the indexed table column as the method receiver so SQL Server utilizes its
-            // spatial index and evaluates the feature's relationship to the filter geometry.
+            // spatial index. In GeoServices/Honua semantics, SpatialRelationship.Within means
+            // the query filter geometry is within the feature (feature contains filter), and
+            // Contains means the query filter geometry contains the feature (feature within filter).
             SpatialRelationship.Within =>
-                $"{geomCol}.STWithin({filterExpr}) = 1",
-            SpatialRelationship.Contains =>
                 $"{geomCol}.STContains({filterExpr}) = 1",
+            SpatialRelationship.Contains =>
+                $"{geomCol}.STWithin({filterExpr}) = 1",
             SpatialRelationship.Disjoint =>
                 $"{geomCol}.STDisjoint({filterExpr}) = 1",
             _ => throw new NotSupportedException(
