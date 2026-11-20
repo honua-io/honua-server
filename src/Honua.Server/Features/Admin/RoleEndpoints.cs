@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using Asp.Versioning.Builder;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -49,10 +50,13 @@ internal static partial class RoleEndpoints
             .WithDisplayName("List Roles")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
+        // Role definitions decide what every holder of the role may do. Assigning a role to a user
+        // already needs credential-management authority, so defining what it grants does too.
         group.MapPost("/", HandleCreateRole)
             .WithDisplayName("Create Role")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
+            .RequireCredentialManagementAuthority();
 
         group.MapGet("/{id:guid}", HandleGetRole)
             .WithDisplayName("Get Role")
@@ -61,13 +65,20 @@ internal static partial class RoleEndpoints
         group.MapPut("/{id:guid}", HandleUpdateRole)
             .WithDisplayName("Update Role")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
-            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
+            .RequireCredentialManagementAuthority();
 
         group.MapDelete("/{id:guid}", HandleDeleteRole)
             .WithDisplayName("Delete Role")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }))
-            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
+            .RequireCredentialManagementAuthority();
 
+        MapPermissionEndpoints(group);
+    }
+
+    private static void MapPermissionEndpoints(IVersionedEndpointRouteBuilder group)
+    {
         group.MapGet("/{id:guid}/permissions", HandleGetPermissions)
             .WithDisplayName("Get Role Permissions")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
@@ -75,7 +86,8 @@ internal static partial class RoleEndpoints
         group.MapPut("/{id:guid}/permissions", HandleSetPermissions)
             .WithDisplayName("Set Role Permissions")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
-            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
+            .RequireCredentialManagementAuthority();
     }
 
     private static RoleResponse ToResponse(RoleDefinition r) => new()

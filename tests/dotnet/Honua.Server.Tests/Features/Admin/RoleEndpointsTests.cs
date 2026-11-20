@@ -208,4 +208,50 @@ public class RoleEndpointsTests : IAsyncLifetime
         Assert.NotNull(result.Data);
         Assert.Equal(2, result.Data.Length);
     }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/roles")]
+    [Endpoint("PUT /api/v1/admin/roles/{id}")]
+    [Endpoint("DELETE /api/v1/admin/roles/{id}")]
+    [Endpoint("PUT /api/v1/admin/roles/{id}/permissions")]
+    public async Task OperationalWriteKey_CannotChangeRoles()
+    {
+        var role = await CreateRoleAsync("operational-target");
+        using var operational = await CreateOperationalClientAsync();
+        var grants = new SetPermissionsRequest
+        {
+            Permissions = [new PermissionGrantRequest { Service = "*", Layer = "*", Operation = "*" }],
+        };
+
+        var create = await operational.PostAsJsonAsync("/api/v1/admin/roles", new CreateRoleRequest { Name = "operational-new" }, _jsonOptions);
+        var update = await operational.PutAsJsonAsync($"/api/v1/admin/roles/{role.RoleId}", new UpdateRoleRequest { Description = "changed" }, _jsonOptions);
+        var permissions = await operational.PutAsJsonAsync($"/api/v1/admin/roles/{role.RoleId}/permissions", grants, _jsonOptions);
+        var delete = await operational.DeleteAsync($"/api/v1/admin/roles/{role.RoleId}");
+
+        Assert.Equal(HttpStatusCode.Forbidden, create.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, update.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, permissions.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, delete.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await _client.GetAsync($"/api/v1/admin/roles/{role.RoleId}")).StatusCode);
+    }
+
+    private async Task<RoleResponse> CreateRoleAsync(string name)
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/roles", new CreateRoleRequest { Name = name }, _jsonOptions);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        return JsonSerializer.Deserialize<ApiResponse<RoleResponse>>(await response.Content.ReadAsStringAsync(), _jsonOptions)!.Data!;
+    }
+
+    // An admin:write key holds general admin authority but not credential-management authority.
+    private async Task<HttpClient> CreateOperationalClientAsync()
+    {
+        var keyResponse = await _client.PostAsJsonAsync(
+            "/api/v1/admin/api-keys",
+            new CreateAdminApiKeyRequest { Name = $"operational-role-key-{Guid.NewGuid():N}", Permissions = ["admin:read", "admin:write", "read:*"] },
+            _jsonOptions);
+        Assert.Equal(HttpStatusCode.Created, keyResponse.StatusCode);
+        var key = JsonSerializer.Deserialize<ApiResponse<AdminApiKeySecretResponse>>(
+            await keyResponse.Content.ReadAsStringAsync(), _jsonOptions)!.Data!.Key;
+        return _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", key));
+    }
 }
