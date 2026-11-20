@@ -290,6 +290,11 @@ internal static partial class FeatureStreamEndpoints
 
         var subscriberSecurity = await ResolveSubscriberSecurityAsync(
             context, snapshot, service, layerIds, context.RequestAborted).ConfigureAwait(false);
+        if (subscriberSecurity.DescribeUnstreamableLayer(hasExplicitLayerScope ? layerIds : null) is { } unstreamableError)
+        {
+            FeatureStreamLog.FilterValidationFailed(logger, unstreamableError);
+            return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateForbidden(context, unstreamableError));
+        }
 
         if (!hasAnyFilter)
         {
@@ -430,6 +435,7 @@ internal static partial class FeatureStreamEndpoints
         var named = new Dictionary<(string Service, int Layer), StreamLayerReadPolicy>();
         var deniedNames = new HashSet<(string Service, int Layer)>();
         var deniedExact = new HashSet<(string Service, int Layer)>();
+        var unstreamablePolicyLayers = new HashSet<int>();
         var policies = new Dictionary<string, StreamLayerReadPolicy>(StringComparer.Ordinal);
         foreach (var service in snapshot.Graph.Services)
         {
@@ -470,6 +476,7 @@ internal static partial class FeatureStreamEndpoints
                     {
                         deniedNames.Add(nameKey);
                         deniedExact.Add((service.Metadata.Id, layer.LayerId));
+                        unstreamablePolicyLayers.Add(layer.LayerId);
                         continue;
                     }
 
@@ -489,7 +496,11 @@ internal static partial class FeatureStreamEndpoints
         }
 
         return new StreamSubscriberSecurity(
-            snapshot.Graph.Services.Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal), exact, named, deniedExact);
+            snapshot.Graph.Services.Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal),
+            exact,
+            named,
+            deniedExact,
+            unstreamablePolicyLayers);
     }
 
     private static bool TryResolveFilterLanguage(string? filterLang, out FilterLanguage language, out string error)

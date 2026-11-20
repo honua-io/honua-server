@@ -14,18 +14,43 @@ internal sealed class StreamSubscriberSecurity
     private PolicyState _state;
     private Func<CancellationToken, Task<StreamSubscriberSecurity>>? _refresh;
     private int _refreshing;
+    private readonly IReadOnlySet<int> _unstreamablePolicyLayers;
 
     public StreamSubscriberSecurity(
         HashSet<string> exactServiceIds,
         IReadOnlyDictionary<(string Service, int Layer), StreamLayerReadPolicy> exactRoutes,
         IReadOnlyDictionary<(string Service, int Layer), StreamLayerReadPolicy> namedRoutes,
-        IReadOnlySet<(string Service, int Layer)>? deniedExactRoutes = null)
+        IReadOnlySet<(string Service, int Layer)>? deniedExactRoutes = null,
+        IReadOnlySet<int>? unstreamablePolicyLayers = null)
     {
         _state = new PolicyState(
             exactServiceIds,
             exactRoutes,
             namedRoutes,
             deniedExactRoutes ?? new HashSet<(string Service, int Layer)>());
+        _unstreamablePolicyLayers = unstreamablePolicyLayers ?? new HashSet<int>();
+    }
+
+    // A readable layer whose row policy cannot be evaluated on stream events (an area
+    // restriction, for example) is denied rather than filtered. A subscription that names such
+    // a layer, with no other readable route for it, would only ever be silent, so it is refused.
+    public string? DescribeUnstreamableLayer(IReadOnlyList<int>? explicitLayerIds)
+    {
+        if (explicitLayerIds is null || _unstreamablePolicyLayers.Count == 0)
+        {
+            return null;
+        }
+
+        var routes = Volatile.Read(ref _state).ExactRoutes.Keys;
+        foreach (var layerId in explicitLayerIds)
+        {
+            if (_unstreamablePolicyLayers.Contains(layerId) && !routes.Any(route => route.Layer == layerId))
+            {
+                return $"Layer {layerId} has a read restriction that feature streams cannot apply (for example, a row-level security area), so the stream would deliver no changes. Read the layer with a feature query instead.";
+            }
+        }
+
+        return null;
     }
 
     public bool HasRowPredicates => Volatile.Read(ref _state).HasRowPredicates;

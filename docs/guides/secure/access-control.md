@@ -117,6 +117,17 @@ must pass row visibility; when a row policy applies and the event has no before-
 the delete is withheld because its visibility cannot be established. Stream routes
 also require access to the publication in the subscriber's effective tenant.
 
+Streams evaluate row policies on each event in memory, which covers claim values and
+attribute filter expressions but not a policy area (`areaGeometry`) or other spatial
+or unsupported predicates. A layer whose policy for the subscriber has one is not
+streamed to that subscriber. A subscription that names such a layer (`layers=` or a
+WebSocket `subscribe` with layer IDs), and has no other readable route for it, is
+refused: SSE answers `403` and WebSocket sends an `error` frame, both naming the
+layer. Read those rows with a feature query (FeatureServer, OGC API Features or
+OData), which applies the area. An unscoped subscription still accepts and simply
+delivers no events from that layer. A policy change that adds an area to a layer
+already being streamed ends the subscription as a revocation.
+
 Offline replica downloads (`synchronizeReplica`, `extractChanges`) judge each update
 and delete against the row image the change log recorded before the change, under the
 caller's current row policy and the replica scope. A delete is delivered only when the
