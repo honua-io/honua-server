@@ -98,6 +98,55 @@ public sealed class GeoPackageExportWriterTests
         }
     }
 
+    [Fact]
+    public async Task WriteAsync_WithEmbeddedEwkbSrid_StripsEwkbSridFromInnerWkbPayload()
+    {
+        var tempPath = CreateTempGeoPackagePath();
+
+        try
+        {
+            var ewkbPoint = new WkbWriter(NetTopologySuite.IO.ByteOrder.LittleEndian, handleSRID: true, emitZ: true, emitM: false)
+                .Write(new Point(new CoordinateZ(10, 20, 30)) { SRID = 4326 });
+
+            await GeoPackageExportWriter.WriteAsync(
+                tempPath,
+                AsAsyncEnumerable(CreateFeature(1, ewkbPoint)),
+                [],
+                ExportGeometryType.Point,
+                4326,
+                "EPSG:4326",
+                null,
+                CancellationToken.None);
+
+            var connectionString = new SqliteConnectionStringBuilder
+            {
+                DataSource = tempPath,
+                Mode = SqliteOpenMode.ReadOnly,
+                Pooling = false
+            }.ToString();
+
+            await using var connection = new SqliteConnection(connectionString);
+            await connection.OpenAsync();
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = "SELECT geom FROM features LIMIT 1";
+            var blob = (byte[])(await cmd.ExecuteScalarAsync())!;
+
+            // 8-byte GeoPackage header + inner WKB without 4-byte embedded EWKB SRID
+            blob.Length.Should().Be(8 + ewkbPoint.Length - 4);
+            var innerWkb = blob.AsSpan(8).ToArray();
+            var innerType = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(innerWkb.AsSpan(1, 4));
+            (innerType & 0x20000000u).Should().Be(0u, "inner WKB payload must not retain the EWKB SRID flag");
+            var parsed = new NetTopologySuite.IO.WKBReader().Read(innerWkb);
+            parsed.Coordinate.X.Should().Be(10);
+            parsed.Coordinate.Y.Should().Be(20);
+            parsed.Coordinate.Z.Should().Be(30);
+        }
+        finally
+        {
+            File.Delete(tempPath);
+        }
+    }
+
     // False positive: the second segment is a generated relative filename, never absolute.
     private static string CreateTempGeoPackagePath()
         => Path.Join(Path.GetTempPath(), $"gpkg-export-{Guid.NewGuid():N}.gpkg");

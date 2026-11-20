@@ -154,6 +154,65 @@ public sealed class AntimeridianCutTests
         result.Geometry.Should().BeSameAs(input);
     }
 
+    [UnitTest]
+    public void Cut_MultiPolygonWithCrossingAndGreenwichSibling_PreservesGreenwichPolygon()
+    {
+        var crossing = (Polygon)Geographic(Crossing);
+        var greenwich = (Polygon)Geographic("POLYGON ((-5 51, 5 51, 5 52, -5 52, -5 51))");
+        var multi = crossing.Factory.CreateMultiPolygon([crossing, greenwich]);
+        multi.SRID = 4326;
+
+        var cut = AntimeridianCutter.Cut(multi);
+
+        cut.Should().BeOfType<MultiPolygon>();
+        cut.NumGeometries.Should().Be(3, "crossing polygon splits into 2 parts while Greenwich polygon stays 1 intact part");
+        cut.Area.Should().BeApproximately(210d, 1d);
+        MaxLongitudeSpan(cut).Should().BeLessThanOrEqualTo(20d);
+    }
+
+    [UnitTest]
+    public void Cut_MultiLineStringWithCrossingAndGreenwichSibling_PreservesGreenwichLine()
+    {
+        var crossingLine = (LineString)Geographic("LINESTRING (170 0, -170 10)");
+        var greenwichLine = (LineString)Geographic("LINESTRING (-5 51, 5 52)");
+        var multi = crossingLine.Factory.CreateMultiLineString([crossingLine, greenwichLine]);
+        multi.SRID = 4326;
+
+        var cut = AntimeridianCutter.Cut(multi);
+
+        cut.Should().BeOfType<MultiLineString>();
+        cut.NumGeometries.Should().Be(3);
+        var preserved = (LineString)cut.GetGeometryN(2);
+        preserved.GetCoordinateN(0).X.Should().Be(-5d);
+        preserved.GetCoordinateN(1).X.Should().Be(5d);
+    }
+
+    [UnitTest]
+    public async Task ApplyEdits_CrossingPolygonWithZAndM_PreservesDimensionsAndSrid()
+    {
+        var validator = CreateValidator(GeometryValidationResult.Success());
+        var factory = new GeometryFactory(new PrecisionModel(), 4326);
+        var ring = factory.CreateLinearRing(
+        [
+            new CoordinateZM(170, 0, 15, 100),
+            new CoordinateZM(-170, 0, 15, 200),
+            new CoordinateZM(-170, 10, 25, 300),
+            new CoordinateZM(170, 10, 25, 400),
+            new CoordinateZM(170, 0, 15, 100)
+        ]);
+        var polygon = factory.CreatePolygon(ring);
+        var input = new WKBWriter(ByteOrder.LittleEndian, handleSRID: true, emitZ: true, emitM: true).Write(polygon);
+
+        var edited = await validator.ValidateGeometryAsync(
+            Resource(MetadataV2SpatialReference.Wgs84), input, CancellationToken.None);
+
+        edited.IsValid.Should().BeTrue();
+        var stored = new WKBReader().Read(edited.Geometry!);
+        stored.Should().BeOfType<MultiPolygon>();
+        stored.SRID.Should().Be(4326);
+        stored.Coordinates.Should().OnlyContain(c => !double.IsNaN(c.Z) && !double.IsNaN(c.M));
+    }
+
     private static Geometry Geographic(string wkt)
     {
         var geometry = new WKTReader().Read(wkt);

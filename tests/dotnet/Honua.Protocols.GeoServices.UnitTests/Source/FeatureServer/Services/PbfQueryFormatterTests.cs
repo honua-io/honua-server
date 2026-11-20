@@ -389,6 +389,64 @@ public sealed partial class PbfQueryFormatterTests
     }
 
     [Fact]
+    public void FormatAsPbf_WithMultiVertexZmLineString_DeltaEncodesZAndMAndResetsPerPart()
+    {
+        var layer = CreateLayer(
+            [new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false }],
+            MetadataV2GeometryType.MultiLineString);
+
+        var line1 = new LineString(
+        [
+            new CoordinateZM(1.0, 2.0, 10.0, 100.0),
+            new CoordinateZM(1.5, 2.5, 12.5, 105.0)
+        ]);
+        var line2 = new LineString(
+        [
+            new CoordinateZM(5.0, 6.0, 20.0, 200.0),
+            new CoordinateZM(5.5, 6.5, 19.0, 195.0)
+        ]);
+        var multiLine = new MultiLineString([line1, line2]);
+        var wkb = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: true).Write(multiLine);
+        var feature = Feature.Create(1, wkb, new Dictionary<string, object?> { ["objectid"] = 1L }.ToImmutableDictionary());
+        var result = QueryResult<Feature>.Create(1, [feature]);
+
+        var (response, _) = _sut.FormatAsPbf(
+            result, layer, returnGeometry: true, outputSrid: null,
+            returnZ: true, returnM: true, geometryPrecision: null,
+            maxAllowableOffset: null, outFields: null);
+
+        var coords = ExtractGeometryCoords(response);
+        coords.Should().Equal(
+            // Part 1 vertex 0 (absolute from 0)
+            1_000_000L, 2_000_000L, 10_000_000L, 100_000_000L,
+            // Part 1 vertex 1 (delta from vertex 0)
+            500_000L, 500_000L, 2_500_000L, 5_000_000L,
+            // Part 2 vertex 0 (restarts from 0)
+            5_000_000L, 6_000_000L, 20_000_000L, 200_000_000L,
+            // Part 2 vertex 1 (delta from part 2 vertex 0)
+            500_000L, 500_000L, -1_000_000L, -5_000_000L);
+    }
+
+    [Fact]
+    public void FormatAsPbf_WithGeometryPrecision_AppliesGeometryLimitsBeforeEncoding()
+    {
+        var layer = CreatePointLayer();
+        var feature = Feature.Create(
+            1,
+            CreatePointWkb(1.234567, 2.345678),
+            new Dictionary<string, object?> { ["objectid"] = 1L }.ToImmutableDictionary());
+        var result = QueryResult<Feature>.Create(1, [feature]);
+
+        var (response, _) = _sut.FormatAsPbf(
+            result, layer, returnGeometry: true, outputSrid: null,
+            returnZ: false, returnM: false, geometryPrecision: 2,
+            maxAllowableOffset: null, outFields: null);
+
+        var coords = ExtractGeometryCoords(response);
+        coords.Should().Equal(1_230_000L, 2_350_000L);
+    }
+
+    [Fact]
     public void FormatAsPbf_WithPolygonGeometry_DoesNotThrow()
     {
         var layer = CreateLayer(

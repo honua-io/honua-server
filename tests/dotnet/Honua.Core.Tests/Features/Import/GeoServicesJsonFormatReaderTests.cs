@@ -3,6 +3,7 @@
 
 using System.Text;
 using Honua.Core.Features.FileImport.Services;
+using NetTopologySuite.Algorithm;
 using NetTopologySuite.Geometries;
 
 namespace Honua.Core.Tests.Features.Import;
@@ -98,5 +99,39 @@ public sealed class GeoServicesJsonFormatReaderTests
         features.Should().ContainSingle();
         features[0].Geometry.Should().BeOfType<LineString>();
         features[0].Geometry!.NumPoints.Should().Be(3);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReadStreamingAsync_MultiRingPolygonWithHolesAndNestedShell_PairsHolesWithSmallestContainingShell()
+    {
+        // Outer shell CW [0..20] (area 400), outer hole CCW [2..18] (area 256),
+        // island shell CW [5..15] (area 100), island hole CCW [7..13] (area 36).
+        const string json = """
+            {"geometryType":"esriGeometryPolygon","spatialReference":{"wkid":4326},"features":[
+            {"attributes":{"id":3},"geometry":{"rings":[
+              [[0,0],[0,20],[20,20],[20,0],[0,0]],
+              [[5,5],[5,15],[15,15],[15,5],[5,5]],
+              [[2,2],[18,2],[18,18],[2,18],[2,2]],
+              [[7,7],[13,7],[13,13],[7,13],[7,7]]
+            ]}}]}
+            """;
+
+        var features = await ReadAsync(json);
+
+        features.Should().ContainSingle();
+        var multi = features[0].Geometry.Should().BeOfType<MultiPolygon>().Subject;
+        multi.NumGeometries.Should().Be(2);
+
+        // Total area = (400 - 256) + (100 - 36) = 144 + 64 = 208
+        multi.Area.Should().BeApproximately(208, 0.001);
+
+        for (var i = 0; i < multi.NumGeometries; i++)
+        {
+            var poly = (Polygon)multi.GetGeometryN(i);
+            poly.NumInteriorRings.Should().Be(1);
+            Orientation.IsCCW(poly.ExteriorRing.CoordinateSequence).Should().BeTrue();
+            Orientation.IsCCW(poly.GetInteriorRingN(0).CoordinateSequence).Should().BeFalse();
+        }
     }
 }

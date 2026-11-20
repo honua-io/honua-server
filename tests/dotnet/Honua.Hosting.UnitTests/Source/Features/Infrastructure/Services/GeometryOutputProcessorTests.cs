@@ -42,6 +42,39 @@ public sealed class GeometryOutputProcessorTests
     }
 
     [UnitTest]
+    public void ApplyLimits_WithHighLatitudeWgs84Geometry_ScalesToleranceWithCosineLatitude()
+    {
+        var limits = new GeometryLimits
+        {
+            MaxVerticesPerGeometry = 0,
+            MaxCoordinatePrecision = -1,
+            SimplifyTolerance = 100d
+        };
+
+        // At equator (lat=0), 100m is ~0.000898 deg (< 0.0012 deg offset), so all 3 vertices are kept.
+        var equatorLine = new GeometryFactory(new PrecisionModel(), 4326).CreateLineString(
+        [
+            new Coordinate(0d, 0d),
+            new Coordinate(0.1d, 0.0012d),
+            new Coordinate(0.2d, 0d)
+        ]);
+        // At lat=75 deg, cos(75 deg) ~ 0.2588, so geometric-mean meters/deg is ~56,593 m/deg and
+        // 100m is ~0.001767 deg (> 0.0012 deg offset), simplifying the middle vertex.
+        var highLatLine = new GeometryFactory(new PrecisionModel(), 4326).CreateLineString(
+        [
+            new Coordinate(0d, 75d),
+            new Coordinate(0.1d, 75.0012d),
+            new Coordinate(0.2d, 75d)
+        ]);
+
+        var equatorResult = GeometryOutputProcessor.ApplyLimits(equatorLine, limits);
+        var highLatResult = GeometryOutputProcessor.ApplyLimits(highLatLine, limits);
+
+        equatorResult!.NumPoints.Should().Be(3);
+        highLatResult!.NumPoints.Should().Be(2);
+    }
+
+    [UnitTest]
     public void ApplyLimits_WithUnsupportedProjectedGeometry_SkipsSimplification()
     {
         var geometry = new GeometryFactory(new PrecisionModel(), 2230).CreateLineString(
@@ -118,6 +151,30 @@ public sealed class GeometryOutputProcessorTests
 
         filtered.Should().BeSameAs(owned);
         double.IsNaN(owned.Coordinate.Z).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void GeoParquetFeatureWriter_ProcessGeometry_With3DPoint_EmitsStrictIsoSqlMmWkb()
+    {
+        var point3D = CreatePrecisePointZ();
+        point3D.SRID = 4326;
+        var inputEwkb = new NetTopologySuite.IO.WKBWriter(
+            NetTopologySuite.IO.ByteOrder.LittleEndian,
+            handleSRID: true,
+            emitZ: true,
+            emitM: false) { Strict = false }.Write(point3D);
+
+        var outputWkb = GeoParquetFeatureWriter.ProcessGeometry(
+            inputEwkb,
+            outputSrid: 4326,
+            geometryLimits: new GeometryLimits(),
+            returnZ: true,
+            returnM: false);
+
+        outputWkb.Should().NotBeNull();
+        // ISO SQL/MM Point Z type code is 1001 (not PostGIS EWKB 0x80000001).
+        var typeCode = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(outputWkb.AsSpan(1, 4));
+        typeCode.Should().Be(1001u);
     }
 
     private static Point CreatePrecisePointZ()

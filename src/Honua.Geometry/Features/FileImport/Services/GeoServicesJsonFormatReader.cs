@@ -4,6 +4,7 @@
 using System.Runtime.CompilerServices;
 using Honua.Core.Features.Import.Domain;
 using System.Text.Json;
+using Honua.Core.Geometries;
 using NetTopologySuite.Algorithm;
 using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
@@ -149,55 +150,158 @@ internal static class GeoServicesJsonFormatReader
 
     private static NtsGeometry? ParsePolygon(JsonElement rings, GeometryFactory factory)
     {
-        // Esri polygons list exterior rings clockwise and interior rings (holes) counter-clockwise,
-        // with holes following their containing exterior ring. Group accordingly into one or more
-        // NTS polygons.
-        var polygons = new List<Polygon>();
-        LinearRing? shell = null;
+        // Esri polygons list exterior rings clockwise and interior rings (holes) counter-clockwise.
+        // Classify rings via Orientation.IsCCW, assign each hole to its smallest-area covering
+        // shell, and normalize the resulting geometry to right-hand-rule (CCW exterior, CW holes).
+        var shells = new List<LinearRing>();
         var holes = new List<LinearRing>();
 
-        void FlushShell()
+        foreach (var coordinates in rings.EnumerateArray().Select(ReadCoordinates))
         {
-            if (shell != null)
-            {
-                polygons.Add(factory.CreatePolygon(shell, holes.ToArray()));
-                holes.Clear();
-                shell = null;
-            }
-        }
-
-        // Not a simple map/select: this loop folds rings into shell/hole state across iterations
-        // (via FlushShell), so an imperative loop is clearer than a LINQ chain here.
-        foreach (var coordinates in (rings.EnumerateArray()).Select(ringElement => ReadCoordinates(ringElement)))
-        {
-            if (coordinates.Length < 4)
+            if (coordinates.Length < 3)
             {
                 continue;
             }
 
             var closed = EnsureClosed(coordinates);
-            var ring = factory.CreateLinearRing(closed);
+            if (closed.Length < 4)
+            {
+                continue;
+            }
 
-            // Signed area > 0 is counter-clockwise (an Esri hole); <= 0 is clockwise (an exterior).
-            if (Area.OfRingSigned(closed) > 0 && shell != null)
+            var ring = factory.CreateLinearRing(closed);
+            if (Orientation.IsCCW(closed))
             {
                 holes.Add(ring);
             }
             else
             {
-                FlushShell();
-                shell = ring;
+                shells.Add(ring);
             }
         }
 
-        FlushShell();
+        if (shells.Count == 0 && holes.Count == 0)
+        {
+            return null;
+        }
 
-        return polygons.Count switch
+        if (shells.Count == 0)
+        {
+            shells.AddRange(holes);
+            holes.Clear();
+        }
+
+        var holeAssignments = new Dictionary<LinearRing, List<LinearRing>>();
+
+        foreach (var hole in holes)
+        {
+            var holePolygon = factory.CreatePolygon(hole);
+            var assignedShell = FindSmallestCoveringShell(
+                shells,
+                factory,
+                shellPolygon => shellPolygon.Covers(holePolygon));
+
+            if (assignedShell == null)
+            {
+                var holePoint = holePolygon.InteriorPoint;
+                assignedShell = FindSmallestCoveringShell(
+                    shells,
+                    factory,
+                    shellPolygon => shellPolygon.Covers(holePoint));
+            }
+
+            if (assignedShell == null)
+            {
+                shells.Add(hole);
+                continue;
+            }
+
+            if (!holeAssignments.TryGetValue(assignedShell, out var assignedHoles))
+            {
+                assignedHoles = new List<LinearRing>();
+                holeAssignments[assignedShell] = assignedHoles;
+            }
+
+            assignedHoles.Add(hole);
+        }
+
+        if (holes.Count == 0 && shells.Count > 1)
+        {
+            var shellsToRemove = new List<LinearRing>();
+
+            foreach (var candidate in shells)
+            {
+                var candidatePolygon = factory.CreatePolygon(candidate);
+                var candidateArea = candidatePolygon.Area;
+                var containingShell = FindSmallestCoveringShell(
+                    shells,
+                    factory,
+                    shellPolygon => shellPolygon.Area > candidateArea &&
+                        (shellPolygon.Covers(candidatePolygon) || shellPolygon.Covers(candidatePolygon.InteriorPoint)),
+                    exclude: candidate);
+
+                if (containingShell == null)
+                {
+                    continue;
+                }
+
+                if (!holeAssignments.TryGetValue(containingShell, out var assignedHoles))
+                {
+                    assignedHoles = new List<LinearRing>();
+                    holeAssignments[containingShell] = assignedHoles;
+                }
+
+                assignedHoles.Add(candidate);
+                shellsToRemove.Add(candidate);
+            }
+
+            if (shellsToRemove.Count != 0)
+            {
+                shells.RemoveAll(shellsToRemove.Contains);
+            }
+        }
+
+        var polygons = shells.Select(shell =>
+        {
+            holeAssignments.TryGetValue(shell, out var assigned);
+            return factory.CreatePolygon(shell, assigned?.ToArray() ?? Array.Empty<LinearRing>());
+        }).ToArray();
+
+        NtsGeometry? result = polygons.Length switch
         {
             0 => null,
             1 => polygons[0],
-            _ => factory.CreateMultiPolygon(polygons.ToArray())
+            _ => factory.CreateMultiPolygon(polygons)
         };
+
+        return result == null ? null : RingOrientationNormalizer.Normalize(result, wantExteriorCcw: true);
+    }
+
+    private static LinearRing? FindSmallestCoveringShell(
+        List<LinearRing> shells,
+        GeometryFactory factory,
+        Func<Polygon, bool> covers,
+        LinearRing? exclude = null)
+    {
+        LinearRing? smallestShell = null;
+        var smallestArea = double.PositiveInfinity;
+
+        foreach (var shell in shells)
+        {
+            if (ReferenceEquals(shell, exclude))
+            {
+                continue;
+            }
+
+            var shellPolygon = factory.CreatePolygon(shell);
+            if (shellPolygon.Area < smallestArea && covers(shellPolygon))
+            {
+                smallestShell = shell;
+                smallestArea = shellPolygon.Area;
+            }
+        }
+
+        return smallestShell;
     }
 
     private static LineString[] ReadPartsAsLineStrings(JsonElement parts, GeometryFactory factory) =>
