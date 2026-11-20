@@ -164,11 +164,21 @@ class PrManagedBuildTests(unittest.TestCase):
         step = required['steps'][0]
         self.assertEqual(step['env']['RUNTIME_PROOFS_RESULT'], '${{ needs.runtime-proofs.result }}')
         script = step['run'].replace("${{ contains(needs.*.result, 'failure') }}", 'false').replace("${{ contains(needs.*.result, 'cancelled') }}", 'false')
-        for result in ('success', 'failure', 'cancelled', 'skipped', ''):
-            env = dict(os.environ, REQUIRE_MANAGED_BUILD='true', BUILD_RESULT='success',
-                       REQUIRE_FORMAT='true', FORMAT_RESULT='success', RUNTIME_PROOFS_RESULT=result)
-            run = subprocess.run(['bash', '-e', '-c', script], env=env, capture_output=True)
-            self.assertEqual(run.returncode == 0, result == 'success', result)
+        # Full runs select every lane; an affected run without runtime inputs may skip.
+        self.assertEqual(step['env']['REQUIRE_RUNTIME_PROOFS'],
+                         "${{ needs.changes.outputs.specialized_lanes == '' || "
+                         "fromJson(needs.changes.outputs.specialized_lanes).runtime }}")
+        self.assertEqual(required['steps'][0], step)
+        self.assertEqual(full['jobs']['runtime-proofs']['if'],
+                         '${{ fromJson(needs.changes.outputs.specialized_lanes).runtime }}')
+        for selected in ('true', 'false'):
+            for result in ('success', 'failure', 'cancelled', 'skipped', ''):
+                env = dict(os.environ, REQUIRE_MANAGED_BUILD='true', BUILD_RESULT='success',
+                           REQUIRE_FORMAT='true', FORMAT_RESULT='success',
+                           REQUIRE_RUNTIME_PROOFS=selected, RUNTIME_PROOFS_RESULT=result)
+                run = subprocess.run(['bash', '-e', '-c', script], env=env, capture_output=True)
+                self.assertEqual(run.returncode == 0, result == 'success' or selected == 'false',
+                                 (selected, result))
         self.assertIn("cron: '23 7 * * *'", CI)
         self.assertIn("cron: '23 13 * * *'", CI)
         self.assertNotIn('Build selected protocol profiles', job('pr-gate'))
@@ -179,7 +189,7 @@ class PrManagedBuildTests(unittest.TestCase):
         self.assertIn('name: PR Gate / Build and tests', producer)
         self.assertIn('- name: Await exact-head review', producer)
         self.assertIn("github.run_attempt == 1", producer)
-        self.assertIn('needs: build', consumer)
+        self.assertIn('needs: [build, changes]', consumer)
         self.assertNotIn('  runtime-proofs:', TEXT)
         self.assertIn('phase: build',producer)
         self.assertIn('producer-attempt: ${{ needs.build.outputs.producer_attempt }}', consumer)

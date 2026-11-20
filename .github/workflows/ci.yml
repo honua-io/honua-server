@@ -3398,9 +3398,12 @@ jobs:
       contents: read
       packages: read
   # Scheduled runtime coverage shares the full-CI managed build producer.
+  # Affected runs prove it only for the inputs of the runtime lane in
+  # scripts/ci/affected-ci-lanes.py; full and scheduled runs select every lane.
   runtime-proofs:
     name: Full CI / Runtime proofs
-    needs: build
+    if: ${{ fromJson(needs.changes.outputs.specialized_lanes).runtime }}
+    needs: [build, changes]
     runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 75
     steps:
@@ -3675,6 +3678,7 @@ jobs:
           REQUIRE_MANAGED_BUILD: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
           REQUIRE_FORMAT: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.build_changes == 'true' }}
           REQUIRE_STORE_IMAGES: ${{ (github.event_name == 'workflow_dispatch' && inputs.full_ci == true) || github.event_name == 'schedule' }}
+          REQUIRE_RUNTIME_PROOFS: ${{ needs.changes.outputs.specialized_lanes == '' || fromJson(needs.changes.outputs.specialized_lanes).runtime }}
           RUNTIME_PROOFS_RESULT: ${{ needs.runtime-proofs.result }}
           BUILD_RESULT: ${{ needs.build.result }}
           FORMAT_RESULT: ${{ needs.format.result }}
@@ -3686,7 +3690,7 @@ jobs:
             echo "::error::Selected managed producer must succeed, got ${BUILD_RESULT}."
             exit 1
           fi
-          if [[ "${REQUIRE_MANAGED_BUILD}" == true && "${RUNTIME_PROOFS_RESULT}" != success ]]; then
+          if [[ "${REQUIRE_MANAGED_BUILD}" == true && "${REQUIRE_RUNTIME_PROOFS}" == true && "${RUNTIME_PROOFS_RESULT}" != success ]]; then
             echo "::error::Selected runtime proofs must succeed, got ${RUNTIME_PROOFS_RESULT}."
             exit 1
           fi

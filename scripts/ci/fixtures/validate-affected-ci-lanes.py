@@ -31,10 +31,73 @@ class AffectedLaneTests(unittest.TestCase):
                 self.assertTrue(all(MODULE.select(paths).values()))
 
     def test_shared_setup_actions_keep_their_consumers(self):
-        for path in ['.github/actions/setup-honua-server/action.yml',
-                     '.github/actions/setup-honua-mcp/action.yml']:
+        consumers = {
+            'setup-honua-server': {'browser', 'mcp', 'postgres'},
+            'setup-honua-mcp': {'mcp', 'postgres'},
+            'setup-dotnet-ci': {'aot', 'postgres', 'browser', 'python', 'mcp', 'runtime'},
+            'configure-postgres-connection': {'docker', 'postgres', 'browser', 'mcp'},
+            'managed-test-artifacts': {'runtime'},
+        }
+        for action, lanes in consumers.items():
+            with self.subTest(action=action):
+                selected = MODULE.select([f'.github/actions/{action}/action.yml'])
+                self.assertEqual(lanes, {lane for lane, value in selected.items() if value})
+
+    def test_action_used_by_no_lane_job_selects_no_lane(self):
+        # 44700868342 ran AOT, MCP, browser and Postgres lanes (46 min) for a format-check edit.
+        selected = MODULE.select(['.github/actions/format-check/action.yml',
+                                  'scripts/ci/fixtures/validate-lean-gate.py'])
+        self.assertFalse(any(selected.values()))
+
+    def test_unknown_or_unreadable_action_fails_closed(self):
+        self.assertTrue(all(MODULE.select(['.github/actions/removed-action/action.yml']).values()))
+        with tempfile.TemporaryDirectory() as temporary:
+            self.assertTrue(all(MODULE.select(['.github/actions/format-check/action.yml'],
+                                              root=Path(temporary)).values()))
+
+    def test_lane_jobs_exist_and_gate_on_their_lane(self):
+        jobs = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)['jobs']
+        closure, _ = MODULE.job_actions(ROOT)
+        self.assertEqual(set(jobs), set(closure))
+        self.assertEqual(set(MODULE.LANES), set(MODULE.LANE_JOBS))
+        gate = {'mcp-llm-smoke': 'needs.mcp-certification.outputs.cert_ran'}
+        for lane, names in MODULE.LANE_JOBS.items():
+            for name in names:
+                with self.subTest(job=name):
+                    self.assertIn(gate.get(name, f'specialized_lanes).{lane}'), jobs[name]['if'])
+
+    def test_aot_ignores_project_files_outside_the_server_closure(self):
+        # 44429459879 ran a 61-minute AOT publish for the custom-code harness.
+        for path in ['docker/worker-customcode-dotnet/harness/warm/Honua.CustomCode.Warm.csproj',
+                     'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj']:
             with self.subTest(path=path):
-                self.assertTrue(all(MODULE.select([path]).values()))
+                self.assertFalse(MODULE.select([path])['aot'])
+        for path in ['src/Honua.Server/Honua.Server.csproj',
+                     'scripts/ci/verify-scene-fixture-publication.py',
+                     'tests/python/test_scene_fixture_publication.py']:
+            with self.subTest(path=path):
+                self.assertTrue(MODULE.select([path])['aot'])
+
+    def test_runtime_proofs_follow_their_inputs(self):
+        # 44397999133 spent 16 minutes on runtime proofs for CI scripts and Python unit tests.
+        skipped = ['scripts/ci/protocol-profile-selection.py',
+                   'tests/python/unit/test_protocol_profile_selection.py',
+                   'tests/dotnet/Honua.Server.Tests/AttachmentEndpointTests.cs',
+                   'tests/dotnet/Honua.Server.Tests/Features/Styling/StyleTests.cs',
+                   'docker/worker-customcode-dotnet/harness/Directory.Packages.props']
+        self.assertFalse(MODULE.select(skipped)['runtime'])
+        for path in ['src/Honua.Import/Readers/Csv.cs', 'docker/worker-gdal/Dockerfile',
+                     'tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerSourceExecutionProofTests.cs',
+                     'tests/dotnet/Honua.Server.Tests/Features/Export/Writers/IndependentVectorExportFixtureTests.cs',
+                     'tests/dotnet/Honua.Server.Tests/Infrastructure/Fixture.cs',
+                     'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj',
+                     'tests/dotnet/Honua.Server.Tests/TestData/ImageryClassify/scene.tif',
+                     'tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/GeoservicesImportFidelityGateTests.cs',
+                     'tests/dotnet/Honua.Core.Tests/Features/Security/StoreProfileWritePolicyTests.cs',
+                     'tests/python/unit/test_import_export_fidelity_proof.py',
+                     'scripts/ci/run-import-export-fidelity-proof.py', 'scripts/client-compat/diff-baselines.py']:
+            with self.subTest(path=path):
+                self.assertTrue(MODULE.select([path])['runtime'])
 
     def test_styling_and_mcp_seed_keep_direct_consumers(self):
         self.assertTrue(MODULE.select(['src/Honua.Server/Features/Styling/StyleEndpoints.cs'])['browser'])
@@ -55,6 +118,7 @@ class AffectedLaneTests(unittest.TestCase):
             'browser': 'tests/js-browser/maplibre.spec.ts',
             'python': 'tests/python/test_query.py', 'mcp': 'src/Honua.Ai/Features/Grounding/Tool.cs',
             'quickstart': 'scripts/docker/quickstart.sh',
+            'runtime': 'src/Honua.Geoprocessing/Core/Executor.cs',
         }
         for lane, path in inputs.items():
             with self.subTest(lane=lane):

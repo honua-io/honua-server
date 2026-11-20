@@ -1042,10 +1042,15 @@ producer's affected project graph. An effective full-CI decision (including a
 router promotion or manual override) builds the whole solution. Consumers reuse the single producer's
 artifacts. Server shards retain descending measured `dispatch_rank` order and
 run at most two at once after the 40-job admission cap (full runs run at most 16). Expensive AOT, Docker,
-Postgres compatibility, browser, Python, MCP and quickstart lanes use
+Postgres compatibility, browser, Python, MCP, quickstart and runtime-proof lanes use
 `scripts/ci/affected-ci-lanes.py` to select their own inputs. Native, container
-and MCP checks conservatively include every runtime source or project change,
-including transitive publish inputs and REST/gRPC backends. Shared seed files
+and MCP checks conservatively include every runtime source change,
+including transitive publish inputs and REST/gRPC backends. AOT ignores project
+files outside `src/`, which the `Honua.Server` publish cannot read. Runtime proofs
+run for `src/`, the GDAL and runtime images, their own tests, fixtures and
+scripts; CI Gate requires them only when selected. A changed composite action
+selects the lanes whose `ci.yml` jobs use it, nested actions included; an action
+no lane job uses selects none, and an unknown action selects every lane. Shared seed files
 select every compatibility lane. Shared inputs,
 unknown paths, missing diff evidence, and the canonical router's `run_all`
 fallback retain full coverage. AOT/MCP selection includes Postgres compatibility
