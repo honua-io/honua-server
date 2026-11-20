@@ -49,8 +49,10 @@ public sealed class StreamSubscriberSecurityTests
             new HashSet<string>(["svc"], StringComparer.Ordinal),
             new Dictionary<(string, int), StreamLayerReadPolicy> { [("svc", 0)] = policy },
             new Dictionary<(string, int), StreamLayerReadPolicy>(),
-            new HashSet<(string, int)>(layers.Select(layer => ("other", layer))),
-            layers.ToHashSet());
+            new HashSet<(string, int)>(layers.Select(layer => ("other", layer))))
+        {
+            UnstreamablePolicyLayers = layers.ToHashSet(),
+        };
     }
 
     [UnitTest]

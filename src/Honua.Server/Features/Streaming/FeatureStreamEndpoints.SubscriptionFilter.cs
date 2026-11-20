@@ -499,8 +499,10 @@ internal static partial class FeatureStreamEndpoints
             snapshot.Graph.Services.Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal),
             exact,
             named,
-            deniedExact,
-            unstreamablePolicyLayers);
+            deniedExact)
+        {
+            UnstreamablePolicyLayers = unstreamablePolicyLayers,
+        };
     }
 
     private static bool TryResolveFilterLanguage(string? filterLang, out FilterLanguage language, out string error)
