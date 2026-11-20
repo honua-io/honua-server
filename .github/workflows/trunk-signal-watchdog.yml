@@ -82,12 +82,31 @@ jobs:
               const attemptStart = Date.parse(run.run_started_at);
               return Math.max(Math.min(...starts), Number.isFinite(attemptStart) ? attemptStart : -Infinity);
             }
+            function runnerLabelKey(job) {
+              if (!Array.isArray(job.labels) || job.labels.length === 0) return '';
+              return job.labels.slice().sort().join(',');
+            }
             async function queueProblem(run) {
               const jobs = await jobsFor(run);
-              const waiting = jobs.filter(job => job.status === 'queued');
-              const stalled = waiting.find(job => now - Date.parse(job.started_at || run.updated_at) > maxQueuedMs);
+              const attemptJobs = jobs.filter(job => job.run_attempt === undefined || job.run_attempt === run.run_attempt);
+              // A large matrix fan-out (e.g. full CI server shards) can legitimately queue tail jobs
+              // past MAX_MINUTES_QUEUED while sibling jobs on the same runner pool are actively
+              // draining; MAX_HOURS_RUN_WITHOUT_RESULT still bounds total run duration. Only same-run-attempt
+              // runner activity counts, so pools starved by other runs or stalled shards still alert.
+              const activePools = new Set(
+                attemptJobs
+                  .filter(job => job.runner_id > 0 && (recentStart(job.started_at, maxQueuedMs) || recentStart(job.completed_at, maxQueuedMs)))
+                  .map(runnerLabelKey)
+                  .filter(Boolean)
+              );
+              const waiting = attemptJobs.filter(job => job.status === 'queued');
+              const stalled = waiting.find(job => {
+                if (now - Date.parse(job.started_at || run.updated_at) <= maxQueuedMs) return false;
+                const pool = runnerLabelKey(job);
+                return !pool || !activePools.has(pool);
+              });
               if (stalled) return `Job ${stalled.name} in ${run.html_url} has been queued since ${stalled.started_at || run.updated_at}.`;
-              if (jobs.length === 0 && now - Date.parse(run.updated_at) > maxQueuedMs) {
+              if (attemptJobs.length === 0 && now - Date.parse(run.updated_at) > maxQueuedMs) {
                 return `Run ${run.html_url} (${run.display_title}) has been queued since ${run.updated_at}.`;
               }
               return null;

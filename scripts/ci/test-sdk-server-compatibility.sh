@@ -73,13 +73,31 @@ jq -e '
 ' "$TMP_DIR/full-report/sdk-compatibility-summary.json" >/dev/null \
   || fail "full report must retain complete 3x3 enforcement"
 
+historical_checkout="$TMP_DIR/historical-checkout"
+preserved_assets="$TMP_DIR/compat-assets"
+mkdir -p "$historical_checkout" "$preserved_assets/scripts/ci" "$preserved_assets/tests/python/shared"
+cp "$RUNNER" "$TMP_DIR/run-sdk-server-compatibility.sh"
+cp "$ROOT_DIR/scripts/ci/owned-server.py" "$preserved_assets/scripts/ci/owned-server.py"
+cp "$ROOT_DIR/tests/python/shared/process_ports.py" "$preserved_assets/tests/python/shared/process_ports.py"
+
+preserved_port="$(
+    cd "$historical_checkout" && \
+    CI=true python3 "$preserved_assets/scripts/ci/owned-server.py" port --variable HONUA_SDK_MIGRATION_SERVER_PORT --ci-default 5001
+)"
+[[ "$preserved_port" == "5001" ]] \
+  || fail "preserved owned-server.py must resolve shared.process_ports outside the repository root"
+
 historical_results="$TMP_DIR/historical-results"
-SDK_COMPATIBILITY_CLASSIFY_ONLY=true \
-HONUA_SDK_MIGRATION_AUTOMATION_REQUIRED=false \
-HONUA_SDK_COMPAT_SERVER_LABEL=trunk-previous-1 \
-HONUA_SDK_COMPAT_SDK_LABEL=sdk-previous-1 \
-SDK_COMPATIBILITY_RESULTS_DIR="$historical_results" \
-bash "$RUNNER"
+(
+    cd "$historical_checkout"
+    SDK_COMPATIBILITY_CLASSIFY_ONLY=true \
+    HONUA_SDK_MIGRATION_AUTOMATION_REQUIRED=false \
+    HONUA_SDK_COMPAT_SERVER_LABEL=trunk-previous-1 \
+    HONUA_SDK_COMPAT_SDK_LABEL=sdk-previous-1 \
+    HONUA_SDK_OWNED_SERVER_SCRIPT="$preserved_assets/scripts/ci/owned-server.py" \
+    SDK_COMPATIBILITY_RESULTS_DIR="$historical_results" \
+    bash "$TMP_DIR/run-sdk-server-compatibility.sh"
+)
 
 jq -e '
   .migration_automation.required == false
@@ -89,12 +107,23 @@ jq -e '
 ' "$historical_results/migration-automation.json" >/dev/null \
   || fail "historical runner evidence must record additive migration surfaces as not applicable"
 
-if SDK_COMPATIBILITY_CLASSIFY_ONLY=true \
+if (
+    cd "$historical_checkout"
+    SDK_COMPATIBILITY_CLASSIFY_ONLY=true \
     HONUA_SDK_MIGRATION_AUTOMATION_REQUIRED=true \
+    HONUA_SDK_OWNED_SERVER_SCRIPT="$preserved_assets/scripts/ci/owned-server.py" \
     SDK_COMPATIBILITY_RESULTS_DIR="$TMP_DIR/current-results" \
-    bash "$RUNNER" >/dev/null 2>&1; then
+    bash "$TMP_DIR/run-sdk-server-compatibility.sh" >/dev/null 2>&1
+); then
     fail "current capability cell must not pass through classify-only"
 fi
+
+grep -Fq 'compatibility-source/scripts/ci/owned-server.py' "$WORKFLOW" \
+  || fail "workflow must preserve owned-server.py from the compatibility checkout"
+grep -Fq 'compatibility-source/tests/python/shared/process_ports.py' "$WORKFLOW" \
+  || fail "workflow must preserve process_ports.py alongside owned-server.py"
+grep -Fq 'HONUA_SDK_OWNED_SERVER_SCRIPT: ${{ runner.temp }}/compat-assets/scripts/ci/owned-server.py' "$WORKFLOW" \
+  || fail "workflow must pass the preserved owned-server.py script to historical server checkouts"
 
 grep -Fq 'compatibility-source/tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/Fixtures/GeoServer/CatalogApplySlice.json' "$WORKFLOW" \
   || fail "workflow must source the GeoServer fixture from the compatibility checkout"
@@ -115,6 +144,12 @@ if grep -Fq 'rest/services/ServiceRequest/FeatureServer' "$RUNNER"; then
 fi
 grep -Fq "global-json-file: sdk/honua-sdk-dotnet/global.json" "$WORKFLOW" \
   || fail "workflow must install the .NET SDK pinned by the honua-sdk-dotnet checkout"
+if grep -Fq '"10.0.100"' "$WORKFLOW"; then
+    fail "workflow must not overwrite historical net11.0 server checkouts with a .NET 10 global.json"
+fi
+if grep -Fq "|| '10.0.x'" "$WORKFLOW"; then
+    fail "workflow must not force .NET 10 for historical net11.0 server checkouts"
+fi
 grep -Fq "run: python3 scripts/ci/prepare-dotnet-toolchain.py" "$WORKFLOW" \
   || fail "workflow must provision the honua-sdk-dotnet workload set before the .NET leg"
 grep -Fq 'cp "$dotnet_global_json" "$smoke_dir/global.json"' "$RUNNER" \

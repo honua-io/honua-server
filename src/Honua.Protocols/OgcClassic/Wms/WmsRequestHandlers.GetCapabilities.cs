@@ -338,9 +338,10 @@ internal static partial class WmsRequestHandlers
     private static async Task<string> BuildWmsCapabilities(
         HttpContext context,
         MetadataV2Service service,
-        IReadOnlyList<WmsLayer> accessibleLayers,
+        WmsCapabilitiesLayers layers,
         string version)
     {
+        var accessibleLayers = layers.Accessible;
         var isWms111 = IsWms111Version(version);
         var crsElementName = isWms111 ? "SRS" : "CRS";
         var wmsEndpoint = BaseUrlResolver.PreserveToken(
@@ -540,6 +541,7 @@ internal static partial class WmsRequestHandlers
             sb.AppendLine("      </Layer>");
         }
 
+        AppendWmsChallengeLayers(sb, layers.Challenge, version);
         sb.AppendLine("    </Layer>");
         sb.AppendLine("  </Capability>");
         sb.Append(isWms111 ? "</WMT_MS_Capabilities>" : "</WMS_Capabilities>").AppendLine();

@@ -122,6 +122,8 @@ public sealed partial class OgcStylesEndpointTests : IAsyncLifetime
             .EnumerateArray()
             .Select(parameter => parameter.GetProperty("$ref").GetString())
             .Should().Contain(["#/components/parameters/validate", "#/components/parameters/prefer"]);
+        updateOperation.GetProperty("responses").TryGetProperty("412", out _).Should().BeTrue();
+        paths.TryGetProperty("/ogc/styles/{styleId}/impact", out _).Should().BeTrue();
     }
 
     [IntegrationTest]

@@ -27,6 +27,22 @@ internal interface ILayerStyleService
         string? revisedBy = null,
         string? changeSummary = null,
         CancellationToken cancellationToken = default);
+
+    // Stores the MapLibre style only while the layer's style_version still equals
+    // update.ExpectedVersion; PreconditionFailed (nothing stored) when another save landed first.
+    Task<LayerStyleUpdateResult> UpdateMapLibreStyleIfVersionAsync(
+        MetadataV2Object resource,
+        ConditionalLayerStyle update,
+        CancellationToken cancellationToken = default);
+}
+
+internal sealed record ConditionalLayerStyle
+{
+    public required int LayerId { get; init; }
+
+    public required JsonElement MapLibreStyle { get; init; }
+
+    public required int ExpectedVersion { get; init; }
 }
 
 internal sealed record LayerStyleSnapshot(
@@ -41,7 +57,8 @@ internal enum LayerStyleUpdateStatus
 {
     Updated,
     NotFound,
-    Invalid
+    Invalid,
+    PreconditionFailed
 }
 
 internal sealed record LayerStyleUpdateResult(

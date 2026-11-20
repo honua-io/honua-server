@@ -444,6 +444,43 @@ public sealed class OgcProcessesCiteEchoFixtureTests
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Operation(Operations.JobResults)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
+    public async Task CiteProfile_EchoFixture_SyncAndAsyncDocumentResultsShareOneShape()
+    {
+        const string execution =
+            """{"inputs":{"literal":"teststring"},"outputs":{"literal":{"transmissionMode":"value"}},"response":"document"}""";
+        var fixture = CreateFixture();
+        await PostgresJobHost.StartAsync(fixture);
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            client.Timeout = TimeSpan.FromSeconds(45);
+
+            using var submit = await PostExecutionAsync(client, execution);
+            submit.StatusCode.Should().Be(HttpStatusCode.Created);
+            var jobId = await ReadJobIdAsync(submit);
+            using var terminal = await PollUntilSucceededAsync(client, jobId);
+            using var asyncResults = JsonDocument.Parse(await client.GetStringAsync($"/ogc/processes/jobs/{jobId}/results"));
+
+            using var body = new StringContent(execution, Encoding.UTF8, "application/json");
+            using var syncResponse = await client.PostAsync("/ogc/processes/processes/honua-cite-echo/execution", body);
+            syncResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var syncResults = JsonDocument.Parse(await syncResponse.Content.ReadAsStringAsync());
+
+            asyncResults.RootElement.GetProperty("literal").GetString().Should().Be("teststring");
+            JsonElement.DeepEquals(syncResults.RootElement, asyncResults.RootElement).Should().BeTrue(
+                $"sync results {syncResults.RootElement} must match async results {asyncResults.RootElement}");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     [Theory]
     [InlineData("{\"literal\":1}", "literal")]
     [InlineData("{\"literal\":\"ok\",\"object\":\"text\"}", "object")]

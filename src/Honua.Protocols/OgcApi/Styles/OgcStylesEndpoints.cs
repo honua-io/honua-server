@@ -7,6 +7,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
+using Honua.Core.Features.Styling;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
@@ -28,7 +29,7 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Protocols.Ogc.Api.Styles;
 
-public static class OgcStylesEndpoints
+public static partial class OgcStylesEndpoints
 {
     private const string SldBaseMediaType = "application/vnd.ogc.sld+xml";
 
@@ -84,6 +85,8 @@ public static class OgcStylesEndpoints
             .Produces(StatusCodes.Status406NotAcceptable)
             .CacheOutput("OgcStylesStylesheet");
 
+        MapSharedStyleImpact(group);
+
         group.MapGet("/{styleId}/metadata", GetStyleMetadata)
             .WithDisplayName("Get Style Metadata")
             .WithName("GetStyleMetadata")
@@ -101,6 +104,7 @@ public static class OgcStylesEndpoints
             .Produces(StatusCodes.Status204NoContent)
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status412PreconditionFailed)
             .Produces(StatusCodes.Status413PayloadTooLarge)
             .Produces(StatusCodes.Status415UnsupportedMediaType)
             .RequireAdminAuthorization();
@@ -288,7 +292,7 @@ public static class OgcStylesEndpoints
             ? StyleEndpointUrlResolver.Resolve(visibleContent, StyleUrlContext.From(context))
             : visibleContent;
 
-        return Results.Content(content, stylesheet.MediaType, Encoding.UTF8);
+        return new VersionedTextResult(content, stylesheet.MediaType, StoredStyleEntityTag(stylesheet));
     }
 
     private static async Task<IResult> GetStyleMetadata(
@@ -444,13 +448,16 @@ public static class OgcStylesEndpoints
 
         var strict = IsStrictRequested(context);
         ApplyPreferenceHeaderIfRequested(context, strict);
+        var save = new StyleSave { StyleId = styleId, Body = body, IsDrawingInfo = isEsri, Options = new OgcStyleWriteOptions { Strict = strict } };
+        var (rejection, result) = await SaveStyleAsync(save, context, projection).ConfigureAwait(false);
+        if (rejection is not null)
+        {
+            return rejection;
+        }
 
-        var result = isEsri
-            ? await projection.UpdateStyleFromDrawingInfoAsync(styleId, body, strict, cancellationToken).ConfigureAwait(false)
-            : await projection.UpdateStyleAsync(styleId, body, strict, cancellationToken).ConfigureAwait(false);
         var logger = loggerFactory.CreateLogger("Honua.Protocols.Ogc.Api.Styles.OgcStylesEndpoints");
 
-        switch (result.Status)
+        switch (result!.Status)
         {
             case OgcStyleUpdateStatus.Updated:
                 OgcStylesLog.StyleUpdated(logger, styleId);
@@ -468,6 +475,9 @@ public static class OgcStylesEndpoints
             case OgcStyleUpdateStatus.NotFound:
                 OgcStylesLog.StyleNotFound(logger, styleId);
                 return StandardErrorHelpers.CreateNotFound(context, $"Style '{styleId}' not found.");
+            case OgcStyleUpdateStatus.PreconditionFailed:
+                OgcStylesLog.StyleUpdateRejected(logger, styleId, "a concurrent save landed first");
+                return StaleStyle(context);
             default:
                 OgcStylesLog.StyleUpdateRejected(logger, styleId, result.ErrorMessage ?? "invalid");
                 var detail = result.ErrorMessage ?? "Style is invalid.";

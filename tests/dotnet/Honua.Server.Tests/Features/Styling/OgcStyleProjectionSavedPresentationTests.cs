@@ -79,7 +79,7 @@ public sealed class OgcStyleProjectionSavedPresentationTests
             .Returns(new LayerStyleUpdateResult(LayerStyleUpdateStatus.Updated, null, null));
 
         var result = await Projection(SavedDrawingInfo, styles)
-            .UpdateStyleAsync("bng_points", """{"version":8,"sources":{},"layers":[]}""", strict: false);
+            .UpdateStyleAsync("bng_points", """{"version":8,"sources":{},"layers":[]}""", new OgcStyleWriteOptions());
 
         result.Status.Should().Be(OgcStyleUpdateStatus.Updated);
         result.StorageLayerId.Should().Be(StorageLayerId);

@@ -131,6 +131,33 @@ Where a legend cannot faithfully represent the style, the response carries a `Wa
 header describing the limitation instead of silently showing a misleading swatch. Legends
 are capped at 64 entries; truncation is reported the same way.
 
+### Layers the caller cannot read
+
+By default, WMS capabilities list only the layers the caller can read, and a
+`GetMap`, `GetFeatureInfo` or `GetLegendGraphic` request that names any other
+layer gets `LayerNotDefined`. A service where the caller can read no layer at all
+answers `401` (unauthenticated) or `403`. Every access denial is an XML
+service exception with that status, even when `EXCEPTIONS` asks for an image.
+
+Set `options.wmsProtectedLayers` on the canonical metadata service to `"challenge"`
+when desktop clients need to see that a protected layer exists before signing in.
+Capabilities then also list each protected layer by name only (the name is the
+title; no abstract, keywords, extent, dimension or legend), and a request that
+names one answers `401` with a `WWW-Authenticate` challenge, or `403` for a
+signed-in caller without access, whatever the `EXCEPTIONS` format. Layers of
+another tenant are never listed. The option applies to WMS only; WMTS, WFS and
+WCS keep listing readable layers only.
+`"hide"` (or no option) keeps the default. Values are case-insensitive strings;
+other values fail metadata graph validation.
+
+```json
+{
+  "options": {
+    "wmsProtectedLayers": "challenge"
+  }
+}
+```
+
 ## WFS operations
 
 All WFS versions share `GET/POST /wfs`. WFS 2.0 operations:

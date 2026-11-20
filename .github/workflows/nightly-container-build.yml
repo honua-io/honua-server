@@ -1283,6 +1283,30 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.console-token.outputs.token }}
         run: python3 scripts/docker/fetch_quickstart_console.py --output artifacts/console.zip
+      # The quickstart also pulls third-party images (database, Console web, build bases), listed
+      # by scripts/docker/shipped_images.py. A tag can move after review, so every one must be
+      # pinned by digest. They get the release gate below as a report: several current pins have
+      # fixable findings with no clean upstream digest yet, and Honua-built replacements are being
+      # added. Remove continue-on-error once those replacements are pinned.
+      - name: Require digest pins for third-party install images
+        run: python3 scripts/docker/shipped_images.py
+      - name: Scan third-party install images on fixable HIGH/CRITICAL vulnerabilities
+        continue-on-error: true
+        # A report must not spend the publish job's budget: the quickstart is packaged after it.
+        timeout-minutes: 10
+        env:
+          TRIVY_IMAGE: aquasec/trivy:0.68.1@sha256:a93fd67162843c0f749002af9245fe9a2e5edc41445bd71d3949c803e95ef05b
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
+        run: |
+          images="$(python3 scripts/docker/shipped_images.py --list)"
+          status=0
+          for image in $images; do
+            if ! scripts/ci/trivy-release-gate.sh "$image"; then
+              echo "::warning::$image has fixable HIGH/CRITICAL findings"
+              status=1
+            fi
+          done
+          exit "$status"
       - name: Package immutable customer quickstart
         env:
           SERVER_IMAGE: ${{ needs.manifest-aot.outputs.image }}

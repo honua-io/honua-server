@@ -868,6 +868,11 @@ public static partial class MetadataV2GraphValidator
             {
                 errors.Add($"service '{service.Metadata.Id}' options.{MetadataV2MapServerDrawing.OptionName} must be 'cached' or 'dynamic'.");
             }
+
+            if (MetadataV2WmsProtectedLayers.ResolveMode(service) is null)
+            {
+                errors.Add($"service '{service.Metadata.Id}' options.{MetadataV2WmsProtectedLayers.OptionName} must be 'hide' or 'challenge'.");
+            }
         }
 
         foreach (var configured in services

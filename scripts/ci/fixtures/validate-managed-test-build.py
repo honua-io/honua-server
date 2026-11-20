@@ -273,6 +273,29 @@ class ManagedBuildTests(unittest.TestCase):
                 with self.assertRaises((ValueError, TypeError)):
                     self.invoke('projects', '--matrix-file', str(matrix))
 
+    def test_repo_solution_includes_all_project_references_of_members(self):
+        repo_root = SCRIPT.parents[2]
+        members = {
+            path.replace('\\', '/')
+            for path in managed.re.findall(
+                r'^Project\([^\n]+? = "[^"]+", "([^"]+\.csproj)"',
+                (repo_root / 'Honua.sln').read_text(),
+                managed.re.MULTILINE,
+            )
+        }
+        allowed = members | set(managed.STANDALONE_PROJECTS)
+        missing = set()
+        for member in members:
+            csproj = repo_root / member
+            if not csproj.is_file():
+                continue
+            for ref in managed.re.findall(r'<ProjectReference\s+Include="([^"]+\.csproj)"', csproj.read_text()):
+                target = (csproj.parent / ref.replace('\\', '/')).resolve()
+                rel = target.relative_to(repo_root.resolve()).as_posix()
+                if rel not in allowed:
+                    missing.add((member, rel))
+        self.assertEqual(set(), missing, f'Referenced projects missing from Honua.sln: {sorted(missing)}')
+
 
 if __name__ == '__main__':
     unittest.main()
