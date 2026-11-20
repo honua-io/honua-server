@@ -7,6 +7,8 @@ using System.Text;
 using System.Text.Json;
 using Azure.Core;
 using Azure.Identity;
+using Honua.Core.Features.Infrastructure.Logging;
+using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.ControlPlane;
 
@@ -112,6 +114,14 @@ internal sealed partial class AzureBatchDataPlaneClient : IAzureBatchClient
     private const string ApiVersion = "2024-07-01.20.0";
     private static readonly TimeSpan IncompleteJobCleanupTimeout = TimeSpan.FromSeconds(5);
     private static readonly Uri DataPlaneScope = new("https://batch.core.windows.net/.default");
+
+    // Public, China and US Government cloud Batch account hosts.
+    private static readonly string[] AccountHostSuffixes =
+    [
+        ".batch.azure.com",
+        ".batch.chinacloudapi.cn",
+        ".batch.usgovcloudapi.net",
+    ];
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<AzureBatchDataPlaneClient> _logger;
@@ -326,6 +336,12 @@ internal sealed partial class AzureBatchDataPlaneClient : IAzureBatchClient
         byte[]? payload,
         CancellationToken cancellationToken)
     {
+        // Checked before a token is acquired so a misconfigured account URL never receives one.
+        if (ValidateAccountUrl(url) is { } accountUrlError)
+        {
+            throw new InvalidOperationException(accountUrlError);
+        }
+
         AccessToken accessToken;
         try
         {
@@ -375,7 +391,7 @@ internal sealed partial class AzureBatchDataPlaneClient : IAzureBatchClient
 
         var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         throw new HttpRequestException(
-            $"Azure Batch data-plane request failed with status {(int)response.StatusCode}: {body}",
+            $"Azure Batch data-plane request failed with status {(int)response.StatusCode}: {ProviderErrorBodyRedactor.Redact(body)}",
             null,
             response.StatusCode);
     }
@@ -569,6 +585,11 @@ internal sealed partial class AzureBatchDataPlaneClient : IAzureBatchClient
         writer.Flush();
         return stream.ToArray();
     }
+
+    internal static string? ValidateAccountUrl(string? accountUrl)
+        => ProviderEndpointPolicy.Validate(accountUrl, AccountHostSuffixes) is { } error
+            ? $"Azure Batch account URL {error}"
+            : null;
 
     private static string NormalizeAccountUrl(string accountUrl)
     {
