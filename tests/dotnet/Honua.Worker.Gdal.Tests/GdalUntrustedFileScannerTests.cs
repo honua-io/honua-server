@@ -8,12 +8,12 @@ using Honua.Worker.Gdal.Execution;
 
 namespace Honua.Worker.Gdal.Tests;
 
-public sealed class GdalUntrustedEntryScannerTests
+public sealed class GdalUntrustedFileScannerTests
 {
     [UnitTest]
     public void FindRefusal_RefusesIndirectionMarkerInOneChunk()
     {
-        var scanner = new GdalUntrustedEntryScanner(64);
+        var scanner = new GdalUntrustedFileScanner(64);
 
         var reason = scanner.FindRefusal(Encoding.UTF8.GetBytes("<ogrvrtdatasource>"));
 
@@ -23,7 +23,7 @@ public sealed class GdalUntrustedEntryScannerTests
     [UnitTest]
     public void FindRefusal_RefusesVsiPrefixSplitAcrossChunks()
     {
-        var scanner = new GdalUntrustedEntryScanner(8);
+        var scanner = new GdalUntrustedFileScanner(8);
 
         scanner.FindRefusal(Encoding.UTF8.GetBytes("abc /vsi")).Should().BeNull();
         var reason = scanner.FindRefusal(Encoding.UTF8.GetBytes("curl/x  "));
@@ -34,7 +34,7 @@ public sealed class GdalUntrustedEntryScannerTests
     [UnitTest]
     public void FindRefusal_AcceptsOrdinaryDataWithAngleBracketsAndSlashes()
     {
-        var scanner = new GdalUntrustedEntryScanner(16);
+        var scanner = new GdalUntrustedFileScanner(16);
         var text = Encoding.UTF8.GetBytes("<kml><Placemark><name>a/b</name></Placemark></kml> 1/2 <gml:pos>");
 
         for (var offset = 0; offset < text.Length; offset += 16)
@@ -54,7 +54,7 @@ public sealed class GdalUntrustedEntryScannerTests
             var bytes = Encoding.UTF8.GetBytes(new string('a', (64 * 1024) - 3) + "/vsicurl/https://example.invalid/x");
             await File.WriteAllBytesAsync(path, bytes);
 
-            var reason = await GdalUntrustedEntryScanner.ScanFileAsync(path, CancellationToken.None);
+            var reason = await GdalUntrustedFileScanner.ScanFileAsync(path, CancellationToken.None);
 
             reason.Should().Contain("/vsicurl");
         }
@@ -67,7 +67,7 @@ public sealed class GdalUntrustedEntryScannerTests
     [UnitTest]
     public void FindRefusal_RejectsChunkLargerThanTheWindow()
     {
-        var scanner = new GdalUntrustedEntryScanner(4);
+        var scanner = new GdalUntrustedFileScanner(4);
 
         var oversized = () => scanner.FindRefusal(new byte[5]);
 

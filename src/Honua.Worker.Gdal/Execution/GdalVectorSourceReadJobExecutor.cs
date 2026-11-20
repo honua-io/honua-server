@@ -352,7 +352,7 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
             return null;
         }
 
-        var reason = await GdalUntrustedEntryScanner.ScanFileAsync(dataset, cancellationToken).ConfigureAwait(false);
+        var reason = await GdalUntrustedFileScanner.ScanFileAsync(dataset, cancellationToken).ConfigureAwait(false);
         return reason is null
             ? null
             : "Archive entry '" + Path.GetRelativePath(extractRoot, dataset) + "' is refused: " + reason + ".";

@@ -176,23 +176,23 @@ internal static class GdalUntrustedInputGuard
 
 // Applies GdalUntrustedInputGuard to an extracted file in chunks, so a VRT, service description or VSI
 // reference that arrived inside a ZIP is refused like a bare upload. A match may straddle two chunks.
-internal sealed class GdalUntrustedEntryScanner
+internal sealed class GdalUntrustedFileScanner
 {
     private const int ChunkSize = 64 * 1024;
-    private readonly int carryLength = GdalUntrustedInputGuard.LongestRefusedLength - 1;
-    private readonly byte[] window;
-    private readonly int chunkSize;
-    private int carried;
+    private readonly int _carryLength = GdalUntrustedInputGuard.LongestRefusedLength - 1;
+    private readonly byte[] _window;
+    private readonly int _chunkSize;
+    private int _carried;
 
-    public GdalUntrustedEntryScanner(int chunkSize)
+    public GdalUntrustedFileScanner(int chunkSize)
     {
-        this.chunkSize = chunkSize;
-        window = new byte[chunkSize + GdalUntrustedInputGuard.LongestRefusedLength];
+        _chunkSize = chunkSize;
+        _window = new byte[chunkSize + GdalUntrustedInputGuard.LongestRefusedLength];
     }
 
     public static async Task<string?> ScanFileAsync(string path, CancellationToken cancellationToken)
     {
-        var scanner = new GdalUntrustedEntryScanner(ChunkSize);
+        var scanner = new GdalUntrustedFileScanner(ChunkSize);
         var buffer = new byte[ChunkSize];
         await using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, ChunkSize, useAsync: true);
         int read;
@@ -210,17 +210,17 @@ internal sealed class GdalUntrustedEntryScanner
 
     public string? FindRefusal(ReadOnlySpan<byte> chunk)
     {
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(chunk.Length, chunkSize);
-        chunk.CopyTo(window.AsSpan(carried));
-        var length = carried + chunk.Length;
-        var reason = GdalUntrustedInputGuard.FindRefused(window.AsSpan(0, length));
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(chunk.Length, _chunkSize);
+        chunk.CopyTo(_window.AsSpan(_carried));
+        var length = _carried + chunk.Length;
+        var reason = GdalUntrustedInputGuard.FindRefused(_window.AsSpan(0, length));
         if (reason is not null)
         {
             return reason;
         }
 
-        carried = Math.Min(carryLength, length);
-        window.AsSpan(length - carried, carried).CopyTo(window);
+        _carried = Math.Min(_carryLength, length);
+        _window.AsSpan(length - _carried, _carried).CopyTo(_window);
         return null;
     }
 }
