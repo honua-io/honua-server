@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Globalization;
 using System.IO.Pipelines;
 using System.Text.Json;
 using Honua.Core.Configuration;
@@ -1233,11 +1232,13 @@ internal sealed class StreamingQueryFormatter
 
         // Ensure objectId is always present in attributes
         var objectIdWritten = false;
+        var hasObjectIdAliasKey = false;
         if (feature.Attributes != null)
         {
             foreach (var kvp in feature.Attributes)
             {
                 var fieldName = kvp.Key;
+                hasObjectIdAliasKey |= fieldName.Equals("OBJECTID", StringComparison.OrdinalIgnoreCase);
 
                 // Skip fields not in outFields if specified
                 if (outFieldLookup != null && !outFieldLookup.Contains(fieldName))
@@ -1269,8 +1270,7 @@ internal sealed class StreamingQueryFormatter
         // path byte-for-byte equivalent for that common default projection.
         if (outFieldLookup is null &&
             objectIdFieldName.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) &&
-            (feature.Attributes is null || !feature.Attributes.Keys.Any(
-                static key => key.Equals("OBJECTID", StringComparison.OrdinalIgnoreCase))))
+            !hasObjectIdAliasKey)
         {
             writer.WriteNumber("OBJECTID", GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName));
         }
@@ -1409,10 +1409,8 @@ internal sealed class StreamingQueryFormatter
         if (value is not null
             && temporalFieldTypes is not null
             && temporalFieldTypes.TryGetValue(propertyName, out var temporalType)
-            && GeoServicesFieldConventions.TryConvertTemporalValue(value, temporalType, out var converted))
+            && GeoServicesFieldConventions.TryWriteTemporalValue(writer, propertyName, value, temporalType))
         {
-            writer.WritePropertyName(propertyName);
-            JsonSerializer.Serialize(writer, converted, FeatureServerJsonContext.Default.Object);
             cancellationToken.ThrowIfCancellationRequested();
             return;
         }
@@ -1450,7 +1448,7 @@ internal sealed class StreamingQueryFormatter
                 writer.WriteNumber(propertyName, dto.ToUnixTimeMilliseconds());
                 break;
             case DateOnly dateOnly:
-                writer.WriteString(propertyName, dateOnly.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+                GeoServicesFieldConventions.WriteCalendarDate(writer, propertyName, dateOnly);
                 break;
             // GeoServices has no array or object field type, so a column whose values are
             // complex is published as esriFieldTypeString and the value has to agree. The

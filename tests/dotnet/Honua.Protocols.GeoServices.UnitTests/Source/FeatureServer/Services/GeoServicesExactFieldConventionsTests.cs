@@ -2,9 +2,12 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Reflection;
+using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.FeatureServer;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
@@ -37,6 +40,42 @@ public sealed class GeoServicesExactFieldConventionsTests
                 "2024-01-01T14:00:00+02:00", MetadataV2FieldType.TimestampOffset, out var converted)
             .Should().BeTrue();
         converted.Should().Be(new DateTimeOffset(2024, 1, 1, 12, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds());
+    }
+
+    [UnitTheory]
+    [InlineData(MetadataV2FieldType.Decimal, "-1234.500")]
+    [InlineData(MetadataV2FieldType.DateTime, "2024-01-01T14:00:00+02:00")]
+    [InlineData(MetadataV2FieldType.TimestampOffset, 1_704_110_400_000L)]
+    [InlineData(MetadataV2FieldType.Date, "2024-06-15T23:30:00Z")]
+    [InlineData(MetadataV2FieldType.Date, "not a date")]
+    public void TryWriteTemporalValue_WritesTheSerializedConvertedValue(MetadataV2FieldType type, object value)
+    {
+        WriteProperty(writer =>
+            {
+                if (GeoServicesFieldConventions.TryWriteTemporalValue(writer, "value", value, type))
+                {
+                    return;
+                }
+                writer.WriteNull("value");
+            })
+            .Should().Be(WriteProperty(writer =>
+            {
+                writer.WritePropertyName("value");
+                var converted = GeoServicesFieldConventions.TryConvertTemporalValue(value, type, out var result) ? result : null;
+                JsonSerializer.Serialize(writer, converted, FeatureServerJsonContext.Default.Object);
+            }));
+    }
+
+    private static string WriteProperty(Action<Utf8JsonWriter> write)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            write(writer);
+            writer.WriteEndObject();
+        }
+        return Encoding.UTF8.GetString(stream.ToArray());
     }
 
     [UnitTest]
