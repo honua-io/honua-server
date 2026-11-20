@@ -17,6 +17,7 @@ internal sealed class DuckDBSpatialBootstrap : IDisposable
     private readonly ImmutableArray<DuckDBExternalSourcePlan> _externalSourcePlans;
     private readonly ILogger<DuckDBSpatialBootstrap> _logger;
     private readonly SemaphoreSlim _installLock = new(1, 1);
+    private readonly SemaphoreSlim _prepareLock = new(1, 1);
     private readonly HashSet<string> _installedExtensions = new(StringComparer.OrdinalIgnoreCase);
 
     public DuckDBSpatialBootstrap(string? extensionPath, ILogger<DuckDBSpatialBootstrap> logger)
@@ -47,6 +48,46 @@ internal sealed class DuckDBSpatialBootstrap : IDisposable
     }
 
     public async Task EnsureSpatialExtensionAsync(DbConnection connection, CancellationToken cancellationToken)
+    {
+        // A file database is shared across connections: once one connection locked it,
+        // its extensions and settings are already in place and SET would fail. Shared
+        // instances are prepared one connection at a time; :memory: instances are private.
+        var shared = !IsInMemory(connection.DataSource);
+        if (shared)
+        {
+            await _prepareLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            if (!await DuckDBConnectionLockdown.IsLockedAsync(connection, cancellationToken).ConfigureAwait(false))
+            {
+                await PrepareInstanceAsync(connection, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            if (shared)
+            {
+                _prepareLock.Release();
+            }
+        }
+
+        // Temp views are connection-scoped; they bind after the lockdown, so every
+        // connection proves the configured sources are inside the allow-list.
+        foreach (var plan in _externalSourcePlans)
+        {
+            await ExecuteNonQueryAsync(
+                    connection,
+                    new DuckDBBootstrapSqlCommand(
+                        plan.CreateViewSql,
+                        $"create DuckDB external source view '{plan.ViewName}' for layer {plan.LayerId}"),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async Task PrepareInstanceAsync(DbConnection connection, CancellationToken cancellationToken)
     {
         // SET extension_directory is connection-scoped — apply on every fresh connection
         // when an offline extension path is configured so LOAD can locate the artifact.
@@ -81,21 +122,21 @@ internal sealed class DuckDBSpatialBootstrap : IDisposable
             await ExecuteNonQueryAsync(connection, command, cancellationToken).ConfigureAwait(false);
         }
 
-        foreach (var plan in _externalSourcePlans)
+        var tempDirectory = await DuckDBConnectionLockdown.ReadTempDirectoryAsync(connection, cancellationToken)
+            .ConfigureAwait(false);
+        var lockdown = DuckDBConnectionLockdown.BuildCommands(
+            _externalSourcePlans.SelectMany(plan => plan.SourcePaths),
+            tempDirectory);
+        foreach (var command in lockdown)
         {
-            await ExecuteNonQueryAsync(
-                    connection,
-                    new DuckDBBootstrapSqlCommand(
-                        plan.CreateViewSql,
-                        $"create DuckDB external source view '{plan.ViewName}' for layer {plan.LayerId}"),
-                    cancellationToken)
-                .ConfigureAwait(false);
+            await ExecuteNonQueryAsync(connection, command, cancellationToken).ConfigureAwait(false);
         }
     }
 
     public void Dispose()
     {
         _installLock.Dispose();
+        _prepareLock.Dispose();
     }
 
     private async Task EnsureExtensionInstalledAsync(
@@ -132,6 +173,9 @@ internal sealed class DuckDBSpatialBootstrap : IDisposable
             _installLock.Release();
         }
     }
+
+    private static bool IsInMemory(string? dataSource)
+        => string.IsNullOrEmpty(dataSource) || dataSource.StartsWith(":memory:", StringComparison.OrdinalIgnoreCase);
 
     private static async Task ExecuteNonQueryAsync(
         DbConnection connection,
