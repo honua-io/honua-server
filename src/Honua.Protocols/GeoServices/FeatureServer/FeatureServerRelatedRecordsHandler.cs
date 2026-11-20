@@ -163,7 +163,7 @@ internal sealed class FeatureServerRelatedRecordsHandler(
             ImmutableArray<OrderByClause>? relatedOrderBy;
             try
             {
-                relatedOrderBy = FeatureServerOrderByFields.ParseCallerOrderBy(
+                relatedOrderBy = CallerOrderByFields.ParseCallerOrderBy(
                     validatedParams.OrderByFields,
                     resolvedRelatedResource);
             }

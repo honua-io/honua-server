@@ -16,6 +16,7 @@ using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Primitives;
 
@@ -523,7 +524,7 @@ internal static partial class FeatureServerEndpoints
         => topFilter.GroupByFields
             .Concat(topFilter.OrderByFields.Select(clause => clause.Field))
             .FirstOrDefault(field => resource.FindVisibleSchemaField(field) is null &&
-                (!FeatureServerOrderByFields.AllowedCoreOrderByFields.Contains(field) || resource.IsHiddenSchemaField(field)));
+                (!CallerOrderByFields.AllowedCoreOrderByFields.Contains(field) || resource.IsHiddenSchemaField(field)));
 
     private static ImmutableArray<OrderByClause> ParseOrderByFields(string orderByFieldsStr)
     {

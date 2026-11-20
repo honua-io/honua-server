@@ -1895,7 +1895,7 @@ internal static partial class FeatureServerEndpoints
         {
             try
             {
-                FeatureServerOrderByFields.ParseCallerOrderBy(sqlExpression, resource);
+                CallerOrderByFields.ParseCallerOrderBy(sqlExpression, resource);
                 return (true, null);
             }
             catch (InvalidOperationException ex)

@@ -6,11 +6,11 @@ using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
-using Honua.Infrastructure.Validation;
 
-namespace Honua.Protocols.GeoServices.FeatureServer;
+namespace Honua.Infrastructure.Validation;
 
-internal static class FeatureServerOrderByFields
+// Shared by every protocol that takes a caller-supplied sort (FeatureServer orderByFields, gRPC order_by).
+internal static class CallerOrderByFields
 {
     internal static readonly FrozenSet<string> AllowedCoreOrderByFields = new[]
         {

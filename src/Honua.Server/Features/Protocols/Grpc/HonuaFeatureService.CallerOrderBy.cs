@@ -5,7 +5,7 @@ using System.Collections.Immutable;
 using Grpc.Core;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Protocols.GeoServices.FeatureServer;
+using Honua.Infrastructure.Validation;
 
 namespace Honua.Server.Features.Protocols.Grpc;
 
@@ -21,7 +21,7 @@ internal sealed partial class HonuaFeatureService
     {
         try
         {
-            return FeatureServerOrderByFields.ParseCallerOrderBy(orderBy, resource.WithSchemaFieldsHidden(maskedFields));
+            return CallerOrderByFields.ParseCallerOrderBy(orderBy, resource.WithSchemaFieldsHidden(maskedFields));
         }
         catch (InvalidOperationException ex)
         {
