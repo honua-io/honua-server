@@ -38,9 +38,9 @@ internal sealed partial class Wfs20Handler
         string? filter,
         string? resourceId,
         string? srsName,
-        CancellationToken cancellationToken = default,
         string? sortBy = null,
-        string? resultType = null)
+        string? resultType = null,
+        CancellationToken cancellationToken = default)
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
             "wfs20.get_property_value", ActivityKind.Internal);

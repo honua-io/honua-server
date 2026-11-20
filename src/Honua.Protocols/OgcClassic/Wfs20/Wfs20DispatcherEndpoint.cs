@@ -571,14 +571,14 @@ internal static class Wfs20DispatcherEndpoint
                     storedQueryTypeName,
                     outputFormat,
                     count,
-                    cancellationToken,
                     startIndex,
                     sortBy,
                     bbox,
                     resourceId,
                     propertyName,
                     srsName,
-                    resultType);
+                    resultType,
+                    cancellationToken);
             }
 
             // Handle the request
@@ -657,7 +657,7 @@ internal static class Wfs20DispatcherEndpoint
             // Handle the request
             return await handler.HandleGetPropertyValueAsync(
                 context, typeNames, valueReference, valueReferenceSpecified, outputFormat, count, startIndex, bbox, filter, resourceId, srsName,
-                cancellationToken, sortBy, resultType);
+                sortBy, resultType, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

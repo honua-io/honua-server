@@ -362,14 +362,14 @@ internal sealed partial class Wfs20Handler
         string? typeNames,
         string? outputFormat,
         string? count,
-        CancellationToken cancellationToken = default,
         string? startIndex = null,
         string? sortBy = null,
         string? bbox = null,
         string? resourceId = null,
         string? propertyName = null,
         string? srsName = null,
-        string? resultType = null)
+        string? resultType = null,
+        CancellationToken cancellationToken = default)
     {
         if (!IsGetFeatureByIdStoredQuery(storedQueryId))
         {

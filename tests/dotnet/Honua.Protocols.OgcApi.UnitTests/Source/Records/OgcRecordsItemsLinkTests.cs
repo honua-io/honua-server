@@ -3,7 +3,6 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Protocols.Ogc.Api.Common.SpatialReference;
 using Honua.Protocols.Ogc.Api.Coverages.Handlers;
 using Honua.Protocols.Ogc.Api.Records;
 using Honua.TestKit.Attributes;

@@ -2859,7 +2859,7 @@ internal sealed partial class Wcs20Handler
         envelope = default!;
         error = default;
 
-        if (allowEqualBounds && (minX == maxX || minY == maxY))
+        if (allowEqualBounds && (Math.Abs(minX - maxX) <= 1e-12 || Math.Abs(minY - maxY) <= 1e-12))
         {
             var resolvedMinX = axisOrder == AxisOrder.NorthEast ? minY : minX;
             var resolvedMinY = axisOrder == AxisOrder.NorthEast ? minX : minY;

@@ -318,7 +318,8 @@ public sealed class MapServerImageContractTests
         var badResult = await (Task<IResult>)handleFind.Invoke(null, [badContext])!;
         await badResult.ExecuteAsync(badContext);
         badContext.Response.Body.Position = 0;
-        var badBody = await new StreamReader(badContext.Response.Body).ReadToEndAsync();
+        using var badReader = new StreamReader(badContext.Response.Body, leaveOpen: true);
+        var badBody = await badReader.ReadToEndAsync();
         badBody.Should().Contain("400");
         badBody.Should().Contain("Invalid layerDefs parameter.");
 

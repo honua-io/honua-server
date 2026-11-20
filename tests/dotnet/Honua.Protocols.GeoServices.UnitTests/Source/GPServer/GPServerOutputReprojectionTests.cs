@@ -4,7 +4,7 @@
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Infrastructure.Crs;
+using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.GeoServices.GPServer;
 using Honua.TestKit.Attributes;
 using NetTopologySuite.Geometries;
@@ -199,7 +199,7 @@ public sealed class GPServerOutputReprojectionTests
 
         var features = root.GetProperty("features");
         features.GetArrayLength().Should().Be(2);
-        var (expectedX0, expectedY0) = CoordinateTransformer.TransformPoint(-122.4194, 37.7749, 4326, 3857);
+        var (expectedX0, expectedY0) = WebMercatorMath.LonLatToWebMercator(-122.4194, 37.7749);
         var coords0 = features[0].GetProperty("geometry").GetProperty("coordinates");
         coords0[0].GetDouble().Should().BeApproximately(expectedX0, 1e-3);
         coords0[1].GetDouble().Should().BeApproximately(expectedY0, 1e-3);

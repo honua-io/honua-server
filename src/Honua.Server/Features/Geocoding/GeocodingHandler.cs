@@ -1327,7 +1327,7 @@ internal sealed class GeocodingHandler(
         {
             if (Honua.Core.Features.Shared.Models.SpatialReferenceExtensions.IsWebMercatorSrid(biasWkid.Value))
             {
-                (biasLon, biasLat) = Honua.Core.Features.Shared.Geometry.WebMercatorMath.WebMercatorToLonLat(biasX, biasY);
+                (biasLon, biasLat) = Honua.Core.Features.Shared.Models.WebMercatorMath.WebMercatorToLonLat(biasX, biasY);
             }
             else
             {
