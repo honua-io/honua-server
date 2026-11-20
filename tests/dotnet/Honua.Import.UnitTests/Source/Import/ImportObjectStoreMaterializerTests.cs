@@ -22,12 +22,12 @@ public sealed class ImportObjectStoreMaterializerTests
         var request = Source("roads.zip");
 
         var result = await ImportObjectStoreMaterializer.MaterializeAsync(
-            request,
-            new BytesReader(body),
-            storage,
-            AllowBucket(),
-            CancellationToken.None,
-            contentLength: SixGiB);
+            Materialize(request, new BytesReader(body)) with
+            {
+                CloudStorage = storage,
+                ContentLength = SixGiB,
+            },
+            CancellationToken.None);
 
         result.DeleteCloudFile.Should().BeTrue();
         result.DisposeStream.Should().BeFalse();
@@ -47,10 +47,7 @@ public sealed class ImportObjectStoreMaterializerTests
         await using var body = new ForwardOnlyStream([1]);
 
         await ImportObjectStoreMaterializer.MaterializeAsync(
-            Source("roads.gpkg"),
-            new BytesReader(body),
-            storage,
-            AllowBucket(),
+            Materialize(Source("roads.gpkg"), new BytesReader(body)) with { CloudStorage = storage },
             CancellationToken.None);
 
         storage.Upload!.SizeBytes.Should().BeNull();
@@ -64,12 +61,12 @@ public sealed class ImportObjectStoreMaterializerTests
         await using var body = new MemoryStream([1, 2, 3]);
 
         var result = await ImportObjectStoreMaterializer.MaterializeAsync(
-            Source("parcels.geojson"),
-            new BytesReader(body),
-            storage,
-            AllowBucket(),
-            CancellationToken.None,
-            contentLength: SixGiB);
+            Materialize(Source("parcels.geojson"), new BytesReader(body)) with
+            {
+                CloudStorage = storage,
+                ContentLength = SixGiB,
+            },
+            CancellationToken.None);
 
         result.DeleteCloudFile.Should().BeFalse();
         result.DisposeStream.Should().BeTrue();
@@ -78,25 +75,83 @@ public sealed class ImportObjectStoreMaterializerTests
         await result.Request.FileStream!.DisposeAsync();
     }
 
+    [UnitTest]
+    public async Task DeletedConnection_IsRefusedBeforeAnyRead()
+    {
+        var reader = new BytesReader(new MemoryStream([1]));
+        var source = Materialize(Source("parcels.geojson"), reader) with { Connections = new StaticConnectionResolver() };
+
+        var refused = await Assert.ThrowsAsync<ImportObjectStoreException>(
+            () => ImportObjectStoreMaterializer.MaterializeAsync(source, CancellationToken.None));
+
+        refused.Code.Should().Be(ImportObjectStoreProblems.Forbidden);
+        refused.Message.Should().Contain("deleted");
+        reader.Opens.Should().Be(0);
+    }
+
+    [UnitTheory]
+    [InlineData("s3://bucket/other/parcels.geojson")]
+    [InlineData("s3://another-bucket/layers/parcels.geojson")]
+    [InlineData("s3://bucket/layers/../secret.geojson")]
+    public async Task KeyNoLongerUnderTheConnection_IsRefusedBeforeAnyRead(string sourceUri)
+    {
+        var reader = new BytesReader(new MemoryStream([1]));
+        var request = Source("parcels.geojson") with { ObjectStoreUri = sourceUri };
+
+        var refused = await Assert.ThrowsAsync<ImportObjectStoreException>(
+            () => ImportObjectStoreMaterializer.MaterializeAsync(Materialize(request, reader), CancellationToken.None));
+
+        refused.Code.Should().Be(ImportObjectStoreProblems.Forbidden);
+        reader.Opens.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task ResolvedObject_IsReadThroughItsConnection()
+    {
+        var reader = new BytesReader(new MemoryStream([1]));
+
+        var result = await ImportObjectStoreMaterializer.MaterializeAsync(
+            Materialize(Source("parcels.geojson"), reader),
+            CancellationToken.None);
+
+        reader.Location!.Connection.Id.Should().Be(StaticConnectionResolver.Customer.Id);
+        reader.Location.Key.Should().Be("layers/parcels.geojson");
+        await result.Request.FileStream!.DisposeAsync();
+    }
+
+    private static ImportObjectStoreMaterializer.Source Materialize(ImportRequest request, IImportObjectStoreReader reader)
+        => new()
+        {
+            Request = request,
+            Reader = reader,
+            Connections = new StaticConnectionResolver(StaticConnectionResolver.Customer),
+        };
+
     private static ImportRequest Source(string fileName)
         => new()
         {
             ObjectStoreUri = "s3://bucket/layers/" + fileName,
             ObjectStoreETag = "\"pin\"",
+            ObjectStoreConnectionId = StaticConnectionResolver.Customer.Id.ToString(),
             FileName = fileName,
             TableName = "layers",
         };
 
-    private static ImportObjectStoreOptions AllowBucket()
-        => new() { AllowedBuckets = ["bucket"] };
-
     private sealed class BytesReader(Stream body) : IImportObjectStoreReader
     {
+        public int Opens { get; private set; }
+
+        public ImportObjectLocation? Location { get; private set; }
+
         public Task<ImportObjectHead> HeadAsync(ImportObjectLocation location, CancellationToken cancellationToken)
             => throw new NotSupportedException();
 
         public Task<Stream> OpenReadAsync(ImportObjectLocation location, string etag, CancellationToken cancellationToken)
-            => Task.FromResult(body);
+        {
+            Opens++;
+            Location = location;
+            return Task.FromResult(body);
+        }
     }
 
     private sealed class ForwardOnlyStream(byte[] data) : Stream

@@ -19,7 +19,7 @@ process; it is the layout `honua-gp-devkit init --language dotnet` scaffolds
 
 ## Prerequisites
 
-- .NET 10 SDK. The harness loads the process assembly by reflection; neither
+- .NET 11 SDK. The harness loads the process assembly by reflection; neither
   needs an AOT build.
 - A project created by the installed `Honua.Geoprocessing.Cli` tool's
   `honua-gp-devkit init --language dotnet --name parcel-summary` command. The
@@ -35,9 +35,9 @@ the harness local mode exactly as the launch configuration does:
 
 ```bash
 dotnet build tests/SummaryTool.Tests/SummaryTool.Tests.csproj
-dotnet exec --depsfile tests/SummaryTool.Tests/bin/Debug/net10.0/SummaryTool.Tests.deps.json \
-  tests/SummaryTool.Tests/bin/Debug/net10.0/Honua.CustomCode.Harness.dll local \
-  --assembly-dir process/bin/Debug/net10.0 \
+dotnet exec --depsfile tests/SummaryTool.Tests/bin/Debug/net11.0/SummaryTool.Tests.deps.json \
+  tests/SummaryTool.Tests/bin/Debug/net11.0/Honua.CustomCode.Harness.dll local \
+  --assembly-dir process/bin/Debug/net11.0 \
   --entrypoint SummaryTool::Honua.Templates.SummaryTool \
   --params fixtures/params.json --input features=fixtures/input.geojson \
   --output .honua/runs

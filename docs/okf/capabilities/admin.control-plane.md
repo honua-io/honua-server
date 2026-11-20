@@ -16,9 +16,9 @@ General administrative CRUD surfaces (connections, metadata, services, users, ro
 | Capability key | `admin.control-plane` |
 | Category | ControlPlane |
 | Edition | Community |
-| Surface maturity | 3 experimental, 427 implemented |
-| Registry entries | 430 |
-| Proving tests | 1910 |
+| Surface maturity | 3 experimental, 430 implemented |
+| Registry entries | 433 |
+| Proving tests | 1993 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

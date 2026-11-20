@@ -106,12 +106,13 @@ every tool call still requires its usual authorization.
 ```json
 {
   "name": "honua-local-agent",
+  "kind": "agent",
   "permissions": ["agent", "admin:read", "admin:write", "read:*"],
   "expiresAt": null
 }
 ```
 
-`agent` marks the key as an agent credential (see [Agent changes need one human approval](#agent-changes-need-one-human-approval)). `admin:read` and `admin:write` cover the administrative tools; `read:*` grants data reads (`honua_list_layers`, `honua_query_features`, `honua_render_map`, catalog grounding) across every service. Name the data authority explicitly: a key without a full-admin grant is scope-governed, and `admin:read` alone cannot read any layer — resource access then requires a matching `read:` grant and is otherwise denied, so `tools/call honua_list_layers` returns an empty list. For a read-only agent use `["admin:read", "read:*"]`; to confine data reads, replace `read:*` with `read:{service}`, `read:{service}/*` or `read:{service}/{layer}` grants. Access policies, field masks and row-level filters still apply. See the [grant grammar](../../reference/admin-api/users-roles-licensing.md#grant-grammar).
+`"kind": "agent"` makes it an agent key, which always carries the `agent` grant (the server adds the grant when it is missing); the key's `kind` is shown when keys are listed. The `agent` grant marks the key as an agent credential (see [Agent changes need one human approval](#agent-changes-need-one-human-approval)). `admin:read` and `admin:write` cover the administrative tools; `read:*` grants data reads (`honua_list_layers`, `honua_query_features`, `honua_render_map`, catalog grounding) across every service. Name the data authority explicitly: a key without a full-admin grant is scope-governed, and `admin:read` alone cannot read any layer — resource access then requires a matching `read:` grant and is otherwise denied, so `tools/call honua_list_layers` returns an empty list. For a read-only agent use `["agent", "admin:read", "read:*"]`; to confine data reads, replace `read:*` with `read:{service}`, `read:{service}/*` or `read:{service}/{layer}` grants. Access policies, field masks and row-level filters still apply. See the [grant grammar](../../reference/admin-api/users-roles-licensing.md#grant-grammar).
 
 ### Agent changes need one human approval
 
@@ -121,8 +122,9 @@ Give an agent its own key with the `agent` grant, never the bootstrap admin pass
 - The administrator exemption from approval does not apply, even when the key also carries `admin` or `admin:write`. A direct admin REST call to change an access policy or publish a layer is refused with `type: "urn:honua:approval-required"`, and the message says how to submit the change for approval.
 - Any other change made by calling a REST route directly that is under `/api/v1/admin` or `/api/v1/console`, or that requires administrator authority (`POST`, `PUT`, `PATCH` or `DELETE`), is refused the same way, with policy `operator.agent.admin-route`. Make the change through `POST /api/v1/operations/{operationId}/submit` or the matching MCP tool, which runs it or files a proposal as the operation policy decides; if no operation covers the change, ask a person. Reads are not affected. The exceptions are routes that apply their own agent rule, such as creating or editing a Console content item the agent keeps personal, and routes that change nothing, such as connection tests, validation and preview calls, source discovery and scans, and the permission check `POST /api/v1/console/actions/check`. Deleting a Console content item, commenting on a shared map, running a published workflow, and writes that require administrator authority outside the admin API (SensorThings writes, field collection sync, spec apply, OGC style changes, temporal rollback, enrichment dataset changes) are made by a person.
 - A Studio publication an agent requests is a proposal too, even when the caller is an administrator.
-- Some changes are refused for an agent and must be made by a person in Console: a layer's access settings, enabling, disabling or refreshing a layer, role permissions, OAuth scopes, and publishing, republishing or rolling back Console content publications or changing their sharing.
-- The key cannot create, rotate or revoke API keys, so it cannot mint itself a key without the `agent` grant.
+- Some changes are refused for an agent and must be made by a person in Console: a layer's access settings, enabling, disabling or refreshing a layer, role permissions, OAuth scopes and OAuth client registration (also from a proposal an agent made), and publishing, republishing or rolling back Console content publications or changing their sharing.
+- The key cannot create, rotate or revoke API keys directly. A key created from a proposal the agent made is an agent key even after a person approves it (`"kind": "standard"` is refused), and the agent cannot rotate a standard key, so it cannot obtain an API key without the `agent` grant.
+- The server recognizes an agent only by the `/mcp` endpoint or an agent key. A person's token, the bootstrap admin password or a standard key used by an agent against the REST API looks like that person, and none of these rules apply. Give an agent only an agent key.
 
 This rule is built in and applies whether or not `Operations:Policy` is enabled and whatever the `OperatorApproval` settings are; operator policy rules cannot remove it.
 
@@ -186,6 +188,10 @@ Each tool descriptor also carries MCP behavior `annotations` (`title`, `readOnly
 
 Every successful tool result returns its data twice: as `structuredContent` and as the same serialized JSON in a `text` content block, so clients that pass only `content` to the model still see the full result. For large results, tools that provide a summary send it as a one-line text block before the JSON.
 
+### Review what an agent read
+
+Each tool call and resource read by an authenticated caller writes one record to the audit feed. A platform administrator reads them at `GET /api/v1/admin/observability/audit?resourceType=mcp`, narrowed with `actor=<actor>` to one key or user (`actorAgent` matches calls made with an `agent`-grant key) and with `action=mcp.tool.call` or `action=mcp.resource.read`. A record names the tool or the resource URI without its query, the outcome (`Success`, `Failure` or `Denied`) and, for a tool call, the service, layer, job, style or item identifiers it was given, never query text or results. Refused calls also keep their existing authorization records. Records follow the audit feed's retention.
+
 ## What the tools do
 
 ### Plan, validate, and run geoprocessing
@@ -204,6 +210,7 @@ Once a plan validates:
 - `honua_list_jobs` — poll the submitted `jobId` to `Succeeded`, `Failed`, or `Cancelled`; follow `nextCursor` when present. Submission alone does not establish completion.
 - `honua_get_job_results` — retrieve the terminal result package by `jobId`, including typed artifact references. Check the artifact content before reporting a successful analysis. Both tools are available in default discovery.
 - `honua_cancel_job` — requests cancellation by `jobId`.
+- With `Mcp:ServerInitiatedStreamEnabled=true`, a session holding `GET /mcp` also receives job status as `notifications/message` (level `info`, or `error` for a failed job; logger `honua.jobs`, `data` with `jobId`, `uri`, `status`, `phase`, `progress` and `total`) after `honua_execute_plan` returns. These are not `notifications/progress`: the job outlives the tool call, so there is no request progress token to match. Send `logging/setLevel` with `notice` or higher to receive only failures, or `critical` or higher to stop them. With the shared session store (the system database) the level holds on every server instance; with stateless session tokens or in-memory sessions it holds only on the instance that received it.
 - `honua_diagnose_job` — read-only diagnosis of a job you can read: `observed` facts (status, timestamps, heartbeat, structured failure, release identity, artifacts) kept apart from `inferred` explanations (canonical phase, liveness verdict, failure classification, recovery, retry disposition), with `evidence.missing` and `evidence.truncated` listed. A returned diagnosis is never proof the job succeeded; read `observed.status`.
 - `honua_job_evidence` — the bounded evidence behind a diagnosis: sanitized steps, the most recent events (`events`, maximum 500) and artifact availability, with no inferred layer. Both tools read the same projection as `GET /api/v1/admin/jobs/{jobId}/diagnostics`; see [Diagnose a remote geoprocessing job](../query-analyze/gp-job-diagnostics.md).
 
@@ -480,7 +487,7 @@ So a non-agent automation key with `admin:write` can publish without any operato
 
 | Setting | Default | Purpose |
 |---|---|---|
-| `Mcp:ServerInitiatedStreamEnabled` | `false` | Offer the optional server-initiated `GET /mcp` SSE stream (progress / `*/list_changed`). Off by default: `GET /mcp` returns `405 Method Not Allowed` + `Allow: POST, DELETE` per the Streamable-HTTP spec, so spec-compliant SDK clients skip the stream instead of hanging it at a buffering ingress. `initialize` advertises `tools.listChanged` and `resources.listChanged` only when this is on, because that is the only channel that can deliver the notification. `honua_execute_plan` starts its job-store progress poll only when this is on, for the same reason. |
+| `Mcp:ServerInitiatedStreamEnabled` | `false` | Offer the optional server-initiated `GET /mcp` SSE stream (job status / `*/list_changed`). Off by default: `GET /mcp` returns `405 Method Not Allowed` + `Allow: POST, DELETE` per the Streamable-HTTP spec, so spec-compliant SDK clients skip the stream instead of hanging it at a buffering ingress. `initialize` advertises `tools.listChanged`, `resources.listChanged` and `logging` only when this is on, because that is the only channel that can deliver the notification. `honua_execute_plan` starts its job-store status poll only when this is on, for the same reason. |
 | `Mcp:SessionIdleTimeout` | `00:30:00` | Sliding idle TTL. Every request (or an opened GET stream) on a session refreshes the window; an untouched session expires and is swept. Expired ids return `404`, so clients re-initialize cleanly. |
 | `Mcp:MaxSessions` | `10000` | Maximum concurrently tracked sessions. Bounds memory on a public endpoint. |
 | `Mcp:MaxAnonymousSessions` | `1000` | Maximum concurrently tracked anonymous sessions, counted inside `Mcp:MaxSessions`. An anonymous `initialize` only ever evicts another anonymous session. An authenticated `initialize` evicts anonymous sessions when the global table is full, and never another principal's session. |
@@ -527,7 +534,7 @@ The MCP surface is the same set of tools and resources everywhere; one configura
 | Profile | Key config | Progress delivery | `honua_plan_analysis` | Notes |
 |---|---|---|---|---|
 | **Baseline serverless** (recommended default) | `Mcp:ServerInitiatedStreamEnabled=false` | Poll `honua://jobs/{jobId}` for job state (no server push); `GET /mcp` → `405` | `engine:"fixture"` — a canned capability demo; hand-author plans from `honua://catalog/processes` and confirm with `honua_validate_plan` | Works behind buffering ingress (CloudFront → API Gateway HTTP API → Lambda); the SDK skips the optional standalone stream. |
-| **Streaming-capable** | `Mcp:ServerInitiatedStreamEnabled=true` behind non-buffering ingress | Server-initiated `GET /mcp` SSE pushes progress + `*/list_changed` | Unchanged by this switch (always `engine:"fixture"`) | Enable only behind nginx (`proxy_buffering off`), an ALB, or a direct connection — never a buffering serverless gateway. |
+| **Streaming-capable** | `Mcp:ServerInitiatedStreamEnabled=true` behind non-buffering ingress | Server-initiated `GET /mcp` SSE pushes job status + `*/list_changed` | Unchanged by this switch (always `engine:"fixture"`) | Enable only behind nginx (`proxy_buffering off`), an ALB, or a direct connection — never a buffering serverless gateway. |
 
 Both profiles change only *how* the surface behaves, not *which* tools and resources it advertises. The read-only pre-flight tools (`honua_validate_plan`, `honua_dry_run_plan`) report the same execution reality in every profile — including that a job runs a single process, so multi-step or sync-only plans are flagged rather than silently under-executed.
 

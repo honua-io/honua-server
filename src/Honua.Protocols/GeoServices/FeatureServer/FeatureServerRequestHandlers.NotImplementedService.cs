@@ -44,20 +44,39 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
-        var definitions = accessibleLayers!
-            .Select(layer => GeoServicesContingentValueMapper.Map(
-                layer.PublicLayerId,
-                layer.Resource.ContingentValueGroups))
-            .Where(definition => definition is not null)
-            .Select(definition => definition!)
-            .OrderBy(definition => definition.Id)
-            .ToArray();
+        var definitions = await MapVisibleContingentValuesAsync(context, accessibleLayers!).ConfigureAwait(false);
 
         scope.SetSuccess(definitions.Length);
         return Results.Json(
             new QueryContingentValuesResponse { ContingentValuesDefinitions = definitions },
             FeatureServerJsonContext.Default.QueryContingentValuesResponse,
             contentType: "application/json");
+    }
+
+    private static async Task<ContingentValuesDefinition[]> MapVisibleContingentValuesAsync(
+        HttpContext context, (int PublicLayerId, MetadataV2Object Resource)[] layers)
+    {
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var definitions = new List<ContingentValuesDefinition>();
+        foreach (var layer in layers)
+        {
+            var groups = await VisibleContingentValueGroupsAsync(context, layer.Resource, cancellationToken).ConfigureAwait(false);
+            if (GeoServicesContingentValueMapper.Map(layer.PublicLayerId, groups) is { } definition)
+            {
+                definitions.Add(definition);
+            }
+        }
+
+        return [.. definitions.OrderBy(definition => definition.Id)];
+    }
+
+    // A group over a hidden or caller-masked field would name that field and list its values.
+    private static async Task<IReadOnlyList<MetadataV2ContingentValueGroup>> VisibleContingentValueGroupsAsync(
+        HttpContext context, MetadataV2Object resource, CancellationToken cancellationToken)
+    {
+        var withheld = await GeoServicesWithheldFields.WithheldFieldNamesAsync(context, resource, cancellationToken)
+            .ConfigureAwait(false);
+        return [.. resource.ContingentValueGroups.Where(group => !group.Fields.Any(field => withheld.Contains(field.Trim())))];
     }
 
     private static async Task<IResult> HandleSharedTemplates(

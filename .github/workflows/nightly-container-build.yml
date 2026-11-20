@@ -1226,10 +1226,11 @@ jobs:
       # The customer quickstart pins this executor, so it gets the release gate the serving
       # images get: no tag and no quickstart until its digest has no HIGH/CRITICAL finding
       # with an upstream fix (see scripts/ci/trivy-release-gate.sh). The scan reads the
-      # runner's platform (linux/amd64); both platforms copy the same docker and compose
-      # release. An executor published before this gate is scanned again when its candidate
-      # is rerun. A failure holds the nightly candidate until the CLI pin is bumped or an
-      # exception is recorded in .trivyignore-release.
+      # runner's platform (linux/amd64); both platforms copy the same docker release and
+      # compile the same pinned Compose source. An executor published before this gate is
+      # scanned again when its candidate is rerun. A failure holds the nightly candidate
+      # until the CLI or Compose source pin is bumped or an exception is recorded in
+      # .trivyignore-release.
       - name: Gate executor on fixable HIGH/CRITICAL vulnerabilities
         env:
           CANDIDATE: ghcr.io/honua-io/honua-server@${{ steps.executor.outputs.digest }}

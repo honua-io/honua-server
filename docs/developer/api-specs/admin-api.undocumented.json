@@ -19,6 +19,11 @@
       "reason": "error-only-guard-route"
     },
     {
+      "method": "GET",
+      "path": "/api/v1/admin/deploy/operations/{operationId}/approval-review/{action}",
+      "reason": "private-interactive-approval"
+    },
+    {
       "method": "POST",
       "path": "/api/v1/admin/dev/fixtures/operate-observability/{profile}",
       "reason": "non-production-fixture"

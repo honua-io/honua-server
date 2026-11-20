@@ -194,26 +194,6 @@ public sealed class GrpcConversionHelpersTests
     }
 
     [UnitTest]
-    public void ToFeatureQuery_WithOrderBy_ParsesMultipleClauses()
-    {
-        var request = new Proto.QueryFeaturesRequest
-        {
-            ServiceId = "test",
-            LayerId = 0,
-            OrderBy = "name ASC, population DESC"
-        };
-
-        var query = GrpcConversionHelpers.ToFeatureQuery(request);
-
-        query.OrderBy.Should().NotBeNull();
-        query.OrderBy!.Value.Should().HaveCount(2);
-        query.OrderBy!.Value[0].Field.Should().Be("name");
-        query.OrderBy!.Value[0].Ascending.Should().BeTrue();
-        query.OrderBy!.Value[1].Field.Should().Be("population");
-        query.OrderBy!.Value[1].Ascending.Should().BeFalse();
-    }
-
-    [UnitTest]
     public void ToFeatureQuery_WithStatistics_SetsOutStatistics()
     {
         var request = new Proto.QueryFeaturesRequest

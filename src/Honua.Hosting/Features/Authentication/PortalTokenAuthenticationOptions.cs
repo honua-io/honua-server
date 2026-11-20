@@ -15,6 +15,11 @@ public sealed class PortalTokenAuthenticationOptions
 
     public bool RequireHttps { get; set; } = true;
 
+    // Off by default: a password or portal token in a generateToken URL is recorded by every
+    // proxy, load balancer and access log on the path. Turn on only for a legacy client that
+    // cannot send a POST form body.
+    public bool AllowQueryStringCredentials { get; set; }
+
     public int DefaultExpirationMinutes { get; set; } = DefaultExpirationMinutesValue;
 
     // A requested lifetime is clamped to this ceiling and to the source credential's expiry, so a short-lived key cannot mint a long-lived token.

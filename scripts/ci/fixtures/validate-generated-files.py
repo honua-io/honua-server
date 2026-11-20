@@ -31,7 +31,7 @@ def create_fake_pull_api(base):
         'fi\n'
         'if [[ "$1 $2 $3 $4" == "api --method POST repos/honua-io/honua-server/pulls" ]]; then\n'
         f'  echo 42 > {gh_state}\n'
-        '  echo "https://example.invalid/pull/42"\n'
+        '  echo 42\n'
         '  exit 0\n'
         'fi\n'
         'if [[ "$1 $2" == "api repos/honua-io/honua-server/pulls/42" ]]; then\n'
@@ -47,6 +47,7 @@ def create_fake_pull_api(base):
         f'  rm {gh_state}\n'
         '  exit 0\n'
         'fi\n'
+        'case "$*" in "api --method POST repos/honua-io/honua-server/issues/42/labels "*|"api --method PATCH repos/honua-io/honua-server/pulls/42 -f body="*) exit 0;; esac\n'
         'echo "unexpected gh invocation: $*" >&2\n'
         'exit 1\n'
     )
@@ -459,7 +460,8 @@ class GeneratedFilesContracts(unittest.TestCase):
         (repo / paths[0]).write_text('{"fresh": true}\n')
         second = run('bash', 'scripts/ci/publish-generated-files.sh')
         self.assertIn('Updated existing generated-files PR #42', second.stdout)
-        self.assertNotIn('--method POST', gh_calls.read_text())
+        self.assertNotIn('--method POST repos/honua-io/honua-server/pulls ', gh_calls.read_text())
+        self.assert_bundle_exception_applied(gh_calls.read_text())
         self.assertEqual(
             run('git', '--git-dir', str(remote), 'rev-parse', 'refs/heads/trunk').stdout.strip(),
             trunk_before,
@@ -491,10 +493,20 @@ class GeneratedFilesContracts(unittest.TestCase):
         self.assertIn('-f base=trunk', create_call)
         self.assertIn('-f head=automation/regenerate-generated-files', create_call)
         self.assertIn('Refs #3213', create_call)
+        self.assert_bundle_exception_applied(gh_calls.read_text())
 
         self.assertIn(f'Generated-From: {trunk_before}',
                       run('git', 'log', '-1', '--format=%B', branch_sha).stdout)
 
+
+    def assert_bundle_exception_applied(self, calls):
+        # The automation PAT is a user, not a Bot, so Repository hygiene's
+        # bundle rule needs the label plus the exact body line. The body edit
+        # comes after the label: its `edited` event re-runs hygiene with both.
+        label = calls.index('api --method POST repos/honua-io/honua-server/issues/42/labels -f labels[]=bundle-exception')
+        edit = calls.index('api --method PATCH repos/honua-io/honua-server/pulls/42 -f body=')
+        self.assertLess(label, edit)
+        self.assertRegex(calls[edit:], r'(?m)^Bundle-exception: blocking red — \S')
 
     def assert_stale_publication_attempts(self, run, fixture):
         repo, remote, base = fixture.repo, fixture.remote, fixture.base

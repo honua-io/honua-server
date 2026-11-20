@@ -95,7 +95,10 @@ internal static class DuckDBExternalSourceSql
                 layer.Id,
                 layer.Table,
                 sql,
-                requiredExtensions.ToImmutable()));
+                requiredExtensions.ToImmutable())
+            {
+                SourcePaths = [.. GetConfiguredPaths(layer.ExternalSource)],
+            });
         }
 
         return plans.ToImmutable();
@@ -245,7 +248,7 @@ internal static class DuckDBExternalSourceSql
         }
 
         commands.Add(new DuckDBBootstrapSqlCommand(
-            FormattableString.Invariant($"SET {settingName} = {QuoteLiteral(value)}"),
+            FormattableString.Invariant($"SET GLOBAL {settingName} = {QuoteLiteral(value)}"),
             description));
     }
 
@@ -261,7 +264,7 @@ internal static class DuckDBExternalSourceSql
         }
 
         commands.Add(new DuckDBBootstrapSqlCommand(
-            FormattableString.Invariant($"SET {settingName} = {value.Value.ToString(CultureInfo.InvariantCulture).ToLowerInvariant()}"),
+            FormattableString.Invariant($"SET GLOBAL {settingName} = {value.Value.ToString(CultureInfo.InvariantCulture).ToLowerInvariant()}"),
             description));
     }
 }

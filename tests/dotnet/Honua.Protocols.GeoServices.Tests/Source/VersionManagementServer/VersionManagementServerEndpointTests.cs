@@ -18,7 +18,8 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementSer
 
 [Collection("Database")]
 [Protocol(TestProtocols.VersionManagementServer)]
-public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
+public sealed class VersionManagementServerEndpointTests
+    : IClassFixture<VersionManagementServerEndpointTests.VersioningHost>, IAsyncLifetime
 {
     // Full literal route prefix. Kept inline (not a single const) at each request site so the
     // EndpointRegistry coverage scanner — which matches the literal route template inside each
@@ -28,15 +29,24 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
     // GeoServices version GUIDs are registry-format: braced, upper-case hex.
     private const string RegistryGuidPattern = "^\\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\\}$";
 
-    private readonly WebAppFixture _fixture = new();
+    private readonly VersioningHost _host;
+    private readonly WebAppFixture _fixture;
 
-    public async Task InitializeAsync()
+    public VersionManagementServerEndpointTests(VersioningHost host)
     {
-        _fixture.WithTestLicense(HonuaEdition.Enterprise);
-        await _fixture.InitializeAsync();
+        _host = host;
+        _fixture = host.Application;
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    // Five cases publish the managed branch-versioned layout, which changes the metadata graph, so
+    // every case starts from the graph the host was seeded with.
+    public Task InitializeAsync() => _host.RestoreSeededStateAsync();
+
+    public Task DisposeAsync() => Task.CompletedTask;
+
+    // One Enterprise host serves every case. Versions, edits and reconcile jobs are keyed by each
+    // case's own version.
+    public sealed class VersioningHost() : SeededMetadataHost(new WebAppFixture().WithTestLicense(HonuaEdition.Enterprise));
 
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]

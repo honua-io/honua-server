@@ -17,22 +17,20 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
-public sealed class McpEndpointIntegrationTests : IAsyncLifetime
+// One default host serves every case: each case opens its own MCP sessions (the per-principal
+// cap evicts least-recently-used sessions, never the one a case just opened), stores only uniquely
+// named temporary artifacts, and changes no host configuration, tool, prompt or resource registration.
+public sealed class McpEndpointIntegrationTests : IClassFixture<WebAppFixture>
 {
     private const string JsonMediaType = "application/json";
 
-    private readonly WebAppFixture _fixture = new();
-    private HttpClient _client = null!;
+    private readonly WebAppFixture _fixture;
+    private readonly HttpClient _client;
 
-    public async Task InitializeAsync()
+    public McpEndpointIntegrationTests(WebAppFixture fixture)
     {
-        await _fixture.InitializeAsync();
-        _client = _fixture.Client;
-    }
-
-    public async Task DisposeAsync()
-    {
-        await _fixture.DisposeAsync();
+        _fixture = fixture;
+        _client = fixture.Client;
     }
 
     [IntegrationTest]

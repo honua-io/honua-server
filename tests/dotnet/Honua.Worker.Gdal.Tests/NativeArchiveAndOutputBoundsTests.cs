@@ -212,6 +212,40 @@ public sealed class NativeArchiveAndOutputBoundsTests : IDisposable
     }
 
     [UnitTest]
+    public async Task SourceOgr_VrtContentInDataset_IsRefusedBeforeOgrRuns()
+    {
+        // OGR sniffs content, so VRT XML under a .gml name would open as a VRT. Deflated, so the marker is
+        // visible only after extraction, not in the archive bytes the upload guard saw.
+        var vrt = Encoding.UTF8.GetBytes("<OGRVRTDataSource><OGRVRTLayer name=\"x\"><SrcDataSource>/etc/passwd</SrcDataSource></OGRVRTLayer></OGRVRTDataSource>");
+        var zip = CreateZip(CompressionLevel.Optimal, ("data/roads.gml", vrt));
+        zip.AsSpan().IndexOf("<OGRVRTDataSource"u8).Should().BeLessThan(0);
+        var runner = WriteGeoJsonOutput();
+
+        var result = await ExecuteSourceOgrAsync(runner, zip, Options());
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("roads.gml").And.Contain("<OGRVRTDataSource");
+        runner.Invocations.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task SourceOgr_VsiPathInProjectFile_StillReachesOgr()
+    {
+        // Only the dataset OGR opens is scanned; a QGIS project beside it routinely names /vsizip/ paths.
+        var project = Encoding.UTF8.GetBytes("<qgis><datasource>/vsizip/roads.zip/roads.shp</datasource></qgis>");
+        var zip = CreateZip(
+            CompressionLevel.Optimal,
+            ("roads.geojson", Encoding.UTF8.GetBytes(GeoJson)),
+            ("roads.qgs", project));
+        var runner = WriteGeoJsonOutput();
+
+        var result = await ExecuteSourceOgrAsync(runner, zip, Options());
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        runner.Invocations.Should().ContainSingle();
+    }
+
+    [UnitTest]
     public async Task SourceOgr_BoundedZip_StillReachesOgr()
     {
         var zip = CreateZip(CompressionLevel.NoCompression, ("roads.geojson", Encoding.UTF8.GetBytes(GeoJson)));

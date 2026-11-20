@@ -949,7 +949,10 @@ public sealed partial class FeatureServerQueryExecutorTests
             // services.example.com. An address literal is vetted without contacting a resolver.
             ConnectionString = "https://93.184.216.34/arcgis/rest/services/roads/FeatureServer"
         };
-        var store = new GeoServicesRestFeatureStore(upstream, NullLogger<GeoServicesRestFeatureStore>.Instance);
+        var store = new GeoServicesRestFeatureStore(
+            upstream,
+            NullLogger<GeoServicesRestFeatureStore>.Instance,
+            new LayerReadSecurityResolver(null, null, null, null));
         var reader = ((IBindableFeatureDataProvider)store).CreateReaderForBinding(new FeatureProviderBinding(
             service,
             resource,

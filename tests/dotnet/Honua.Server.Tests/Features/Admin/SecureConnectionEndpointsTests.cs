@@ -35,13 +35,15 @@ public partial class SecureConnectionEndpointsTests : IClassFixture<SecureConnec
         PropertyNameCaseInsensitive = true
     };
     private readonly DefaultApplicationHost _defaultApplication;
+    private readonly PortContractHost _portContractHost;
     private WebAppFixture _fixture = null!;
     private HttpClient _client = null!;
     private ISecureConnectionRegistry _registry = null!;
 
-    public SecureConnectionEndpointsTests(DefaultApplicationHost defaultApplication)
+    public SecureConnectionEndpointsTests(DefaultApplicationHost defaultApplication, PortContractHost portContractHost)
     {
         _defaultApplication = defaultApplication;
+        _portContractHost = portContractHost;
     }
 
     private static WebAppFixture CreateFixture() => new WebAppFixture()
@@ -517,93 +519,74 @@ public partial class SecureConnectionEndpointsTests : IClassFixture<SecureConnec
     public async Task ConnectionPort_OmittedDefaultsAndExplicitAssertions_AreEnforced(
         bool draft, bool external, int? declaredPort, int storedPort, bool accepted, bool explicitNull)
     {
-        var driver = new CapturingConnectionDriver();
-        var secrets = Substitute.For<IRequestSecretReferenceResolver>();
-        secrets.Evaluate(Arg.Any<string>()).Returns(RequestSecretReferenceDecision.Permitted());
-        secrets.ResolveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns("Host=localhost;Port=6432;Database=test;Username=test;Password=test;SSL Mode=Require");
-        var localFixture = CreateAllowlistFixture(["localhost"], false, out _)
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<IRequestSecretReferenceResolver>();
-                services.AddSingleton(secrets);
-                services.RemoveAll<IConnectionDriverRegistry>();
-                services.AddSingleton<IConnectionDriverRegistry>(new ConnectionDriverRegistry([driver]));
-            });
-        await localFixture.InitializeAsync();
-        try
+        var localFixture = await _portContractHost.BorrowAsync();
+        var driver = _portContractHost.Driver;
+        using var client = localFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+        localFixture.Services.GetRequiredService<IConnectionDriverRegistry>()
+            .Find(DataProviderNames.Postgis).Should().BeSameAs(driver);
+        var name = $"port-contract-{Guid.NewGuid():N}";
+        var request = new Dictionary<string, object?>
         {
-            using var client = localFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
-            localFixture.Services.GetRequiredService<IConnectionDriverRegistry>()
-                .Find(DataProviderNames.Postgis).Should().BeSameAs(driver);
-            var name = $"port-contract-{Guid.NewGuid():N}";
-            var request = new Dictionary<string, object?>
-            {
-                ["name"] = name,
-                ["host"] = "localhost",
-                ["databaseName"] = "test",
-                ["username"] = "test",
-                ["sslRequired"] = true,
-                ["sslMode"] = "Require"
-            };
-            if (declaredPort.HasValue || explicitNull)
-            {
-                request["port"] = declaredPort;
-            }
-            if (external)
-            {
-                request["secretReference"] = "env:TEST_CONNECTION";
-                request["secretType"] = "environment";
-            }
-            else
-            {
-                request["password"] = "test";
-            }
-            using var content = new StringContent(JsonSerializer.Serialize(request), Encoding.UTF8, "application/json");
-            using var response = await client.PostAsync(
-                draft ? "/api/v1/admin/connections/test" : "/api/v1/admin/connections", content);
-            response.StatusCode.Should().Be(accepted
-                ? (draft ? HttpStatusCode.OK : HttpStatusCode.Created)
-                : HttpStatusCode.BadRequest);
-            driver.ProbeCount.Should().Be(draft && accepted ? 1 : 0);
-            if (draft && accepted)
-            {
-                driver.LastProbedPort.Should().Be(external ? 6432 : storedPort);
-                var result = JsonSerializer.Deserialize<ApiResponse<ConnectionTestResult>>(
-                    await response.Content.ReadAsStringAsync(), _jsonOptions);
-                result!.Data!.IsHealthy.Should().BeTrue();
-            }
-            using var scope = localFixture.Services.CreateScope();
-            var registry = scope.ServiceProvider.GetRequiredService<ISecureConnectionRegistry>();
-            var connections = await registry.GetAllConnectionsAsync();
-            if (!draft && accepted)
-            {
-                var stored = connections.Single(c => c.Name == name);
-                stored.Port.Should().Be(storedPort);
-                stored.IsEncrypted.Should().Be(!external);
-                stored.Validate().Should().BeTrue();
-                var byId = await registry.GetConnectionAsync(stored.ConnectionId);
-                byId.Should().NotBeNull();
-                byId!.Port.Should().Be(storedPort);
-                byId.IsEncrypted.Should().Be(!external);
-                byId.Validate().Should().BeTrue();
-                if (!external)
-                {
-                    driver.LastPort.Should().Be(storedPort);
-                }
-            }
-            else
-            {
-                connections.Should().NotContain(c => c.Name == name);
-            }
-            if (draft && accepted && !external)
+            ["name"] = name,
+            ["host"] = "localhost",
+            ["databaseName"] = "test",
+            ["username"] = "test",
+            ["sslRequired"] = true,
+            ["sslMode"] = "Require"
+        };
+        if (declaredPort.HasValue || explicitNull)
+        {
+            request["port"] = declaredPort;
+        }
+        if (external)
+        {
+            request["secretReference"] = "env:TEST_CONNECTION";
+            request["secretType"] = "environment";
+        }
+        else
+        {
+            request["password"] = "test";
+        }
+        using var content = new StringContent(JsonSerializer.Serialize(request), Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync(
+            draft ? "/api/v1/admin/connections/test" : "/api/v1/admin/connections", content);
+        response.StatusCode.Should().Be(accepted
+            ? (draft ? HttpStatusCode.OK : HttpStatusCode.Created)
+            : HttpStatusCode.BadRequest);
+        driver.ProbeCount.Should().Be(draft && accepted ? 1 : 0);
+        if (draft && accepted)
+        {
+            driver.LastProbedPort.Should().Be(external ? 6432 : storedPort);
+            var result = JsonSerializer.Deserialize<ApiResponse<ConnectionTestResult>>(
+                await response.Content.ReadAsStringAsync(), _jsonOptions);
+            result!.Data!.IsHealthy.Should().BeTrue();
+        }
+        using var scope = localFixture.Services.CreateScope();
+        var registry = scope.ServiceProvider.GetRequiredService<ISecureConnectionRegistry>();
+        var connections = await registry.GetAllConnectionsAsync();
+        if (!draft && accepted)
+        {
+            var stored = connections.Single(c => c.Name == name);
+            stored.Port.Should().Be(storedPort);
+            stored.IsEncrypted.Should().Be(!external);
+            stored.Validate().Should().BeTrue();
+            var byId = await registry.GetConnectionAsync(stored.ConnectionId);
+            byId.Should().NotBeNull();
+            byId!.Port.Should().Be(storedPort);
+            byId.IsEncrypted.Should().Be(!external);
+            byId.Validate().Should().BeTrue();
+            if (!external)
             {
                 driver.LastPort.Should().Be(storedPort);
             }
         }
-        finally
+        else
         {
-            await localFixture.DisposeAsync();
+            connections.Should().NotContain(c => c.Name == name);
+        }
+        if (draft && accepted && !external)
+        {
+            driver.LastPort.Should().Be(storedPort);
         }
     }
 
@@ -1193,7 +1176,7 @@ public partial class SecureConnectionEndpointsTests : IClassFixture<SecureConnec
         }
     }
 
-    private WebAppFixture CreateAllowlistFixture(
+    private static WebAppFixture CreateAllowlistFixture(
         string[] allowedHosts,
         bool blockPrivateAddresses,
         out CapturingAuditLog audit)
@@ -1262,7 +1245,7 @@ public partial class SecureConnectionEndpointsTests : IClassFixture<SecureConnec
         }
     }
 
-    private sealed class CapturingConnectionDriver : IConnectionDriver
+    internal sealed class CapturingConnectionDriver : IConnectionDriver
     {
         public SslMode LastSslMode { get; private set; } = SslMode.Require;
 
@@ -1288,6 +1271,15 @@ public partial class SecureConnectionEndpointsTests : IClassFixture<SecureConnec
             ProbeCount++;
             LastProbedPort = new Npgsql.NpgsqlConnectionStringBuilder(connectionString).Port;
             return Task.FromResult(ConnectionHealthStatus.Healthy);
+        }
+
+        // Back to a fresh driver's state, for a host shared across cases.
+        public void Reset()
+        {
+            LastSslMode = SslMode.Require;
+            ProbeCount = 0;
+            LastPort = 0;
+            LastProbedPort = 0;
         }
     }
 

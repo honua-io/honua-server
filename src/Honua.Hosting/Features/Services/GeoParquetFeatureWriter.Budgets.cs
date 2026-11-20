@@ -114,6 +114,9 @@ public static partial class GeoParquetFeatureWriter
 
         public bool LimitExceeded { get; private set; }
 
+        // The scratch file behind the payload, for tests that assert it is deleted on dispose.
+        internal string? ScratchPath => (spool as FileStream)?.Name;
+
         // Set when the scratch volume refused a write. The native encoder can wrap the managed
         // IOException, so the writer reads this flag rather than the exception it receives.
         public bool StorageFull { get; private set; }

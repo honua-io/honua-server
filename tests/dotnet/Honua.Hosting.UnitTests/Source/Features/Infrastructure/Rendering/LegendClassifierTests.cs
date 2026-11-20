@@ -34,6 +34,33 @@ public class LegendClassifierTests
         result.UnrepresentableReason.Should().BeNull();
     }
 
+    private const string ZoningByKind = """
+        {
+          "id": "zoning", "type": "fill",
+          "paint": { "fill-color": ["match", ["get", "kind"], "residential", "#00ff00", "#cccccc"] }
+        }
+        """;
+
+    [UnitTest]
+    public void Classify_WithheldClassField_ReturnsOnlyTheLayerFallback()
+    {
+        var result = LegendClassifier.Classify(
+            ParseLayer(ZoningByKind), new HashSet<string>(["KIND"], StringComparer.OrdinalIgnoreCase));
+
+        result.Classes.Should().ContainSingle().Which.Label.Should().Be("Default");
+        result.Classes[0].Properties.Should().BeEmpty();
+        result.IsDataDriven.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Classify_OtherFieldWithheld_KeepsTheClasses()
+    {
+        var result = LegendClassifier.Classify(
+            ParseLayer(ZoningByKind), new HashSet<string>(["owner"], StringComparer.OrdinalIgnoreCase));
+
+        result.Classes.Select(c => c.Label).Should().Equal("residential", "Other");
+    }
+
     [UnitTest]
     public void Classify_MatchExpression_ReturnsOneClassPerLabelPlusFallback()
     {

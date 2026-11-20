@@ -78,10 +78,7 @@ internal sealed class GeoServicesQueryParameterAdapter(
             // UnifiedQuery validation (which likewise only knows the layer schema) out of the
             // way; the statistics executor never reads the value set on this path.
             var orderBy = string.IsNullOrWhiteSpace(queryParams.OutStatistics)
-                ? OrderByParsing.ParseFeatureServerOrderBy(
-                    queryParams.OrderByFields,
-                    resource,
-                    FeatureServerOrderByFields.AllowedCoreOrderByFields)
+                ? CallerOrderByFields.ParseCallerOrderBy(queryParams.OrderByFields, resource)
                 : null;
 
             QueryFilter? filter = null;

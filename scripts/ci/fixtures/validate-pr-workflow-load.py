@@ -394,6 +394,25 @@ class PullRequestLoadTests(unittest.TestCase):
         self.assertFalse(evaluate(condition, event, {"needs": needs}))
         needs["detect"]["outputs"]["selected"] = '["fixture"]'
         self.assertFalse(evaluate(condition, event, {"needs": needs, "cancelled": True}))
+        self.assertNotIn("matrix.", condition)
+
+    def test_pull_request_detection_drops_lambda_after_the_policy_case(self):
+        steps = workflow("serving-image-boundary.yml")["jobs"]["detect"]["steps"]
+        run = next(step["run"] for step in steps if "chosen=()" in step.get("run", ""))
+        start = run.index("chosen=()")
+        fragment = run[start:run.index("emit", start)]
+        fragment = fragment.replace("${{ github.event_name }}", "$EVENT_NAME")
+        self.assertIn('docker/Dockerfile.lambda.aot', run)
+        for event_name, expected in (
+            ("pull_request", "generic\n"),
+            ("workflow_dispatch", "generic\nlambda\n"),
+            ("push", "generic\nlambda\n"),
+        ):
+            completed = subprocess.run(
+                ["bash", "-c", "generic=true\nlambda=true\n" + fragment + "printf '%s\\n' \"${chosen[@]}\""],
+                check=True, capture_output=True, text=True, env={**os.environ, "EVENT_NAME": event_name},
+            )
+            self.assertEqual(completed.stdout, expected, event_name)
 
     def test_auto_merge_control_admits_draft_cleanup_only(self):
         condition = workflow("auto-merge-ready.yml")["jobs"]["enable"]["if"]

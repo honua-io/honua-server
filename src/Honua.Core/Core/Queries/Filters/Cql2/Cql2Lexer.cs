@@ -245,31 +245,19 @@ public sealed class Cql2Lexer
         while (_position < _input.Length)
         {
             var ch = _input[_position];
-            if (ch == '\'')
+            var escapedQuote = ch == '\'' && PeekNext() == '\'';
+            if (ch == '\'' && !escapedQuote)
             {
-                if (PeekNext() == '\'') // Escaped quote
-                {
-                    value.Append('\'');
-                    _position += 2;
-                }
-                else
-                {
-                    _position++; // Skip closing quote
-                    terminated = true;
-                    break;
-                }
+                _position++; // Skip closing quote
+                terminated = true;
+                break;
             }
-            else
-            {
-                // Enforce the string-literal length cap early so an unbounded literal
-                // cannot pin a multi-megabyte StringBuilder in memory before validation.
-                if (value.Length >= FilterParserGuard.MaxStringLiteralLength)
-                {
-                    FilterParserGuard.EnsureStringLiteralLength(value.Length + 1, "CQL2 string literal");
-                }
-                value.Append(ch);
-                _position++;
-            }
+
+            // Enforce the string-literal length cap on every decoded character, escaped
+            // quotes included, so the literal can never grow past it before validation.
+            FilterParserGuard.EnsureStringLiteralLength(value.Length + 1, "CQL2 string literal");
+            value.Append(ch);
+            _position += escapedQuote ? 2 : 1;
         }
 
         if (!terminated)

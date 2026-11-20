@@ -170,6 +170,7 @@ internal sealed class ServicePublishExecutor
             TargetSrid = GetInt(request, "srid"),
             GeometryColumn = GetOptional(request, "geometryColumn"),
             PrimaryKey = GetOptional(request, "primaryKey"),
+            ExactTypes = GetBool(request, "exactTypes"),
             Fields = request.Fields,
             ConnectionEndpointFingerprint = GetOptional(request, ConnectionEndpointFingerprint.MetadataKey),
             CommittedSinkPublication = request.VerifiedCommittedSinkPublication
@@ -214,6 +215,7 @@ internal sealed class ServicePublishExecutor
             GeometryType = GetOptional(request, "geometryType"),
             Srid = GetInt(request, "srid"),
             PrimaryKey = GetOptional(request, "primaryKey"),
+            ExactTypes = GetBool(request, "exactTypes"),
             Fields = request.Fields,
             ServiceName = request.ServiceName,
             FolderId = request.Parameters.TryGetValue("folderId", out var folderId)
@@ -670,6 +672,11 @@ internal sealed class ServicePublishExecutor
         => request.Parameters.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value)
             ? value
             : null;
+
+    private static bool GetBool(OperationRequest request, string name)
+        => request.Parameters.TryGetValue(name, out var value)
+            && bool.TryParse(value, out var parsed)
+            && parsed;
 
     private static int? GetInt(OperationRequest request, string name)
         => request.Parameters.TryGetValue(name, out var value)

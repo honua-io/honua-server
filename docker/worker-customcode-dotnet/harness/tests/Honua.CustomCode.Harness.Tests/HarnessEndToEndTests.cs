@@ -135,6 +135,47 @@ public sealed class HarnessEndToEndTests
         (await new Harness(options).RunAsync(env)).Should().Be(Harness.ExitHarnessError);
     }
 
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task Run_RedemptionCode_IsExchangedOnceAndTheClientUsesTheCapability()
+    {
+        var env = JobEnv();
+        env.Remove("HONUA_JOB_TOKEN");
+        env["HONUA_JOB_REDEMPTION_CODE"] = new string('c', 64);
+        env["HONUA_JOB_ID"] = "job-1";
+        env["HONUA_JOB_ATTEMPT"] = "1";
+        env["CUSTOMCODE_ENTRYPOINT"] = $"TestAsm::{typeof(ProbeTool).FullName}";
+        ProbeTool.ObservedEnv = env;
+        ProbeTool.ArtifactToWrite = null;
+        var options = BuildOptions(env, out _);
+        var redemptions = new List<(RedemptionTarget Target, string Code)>();
+        options.CapabilityRedeemer = (target, code) =>
+        {
+            redemptions.Add((target, code));
+            return "redeemed-capability";
+        };
+
+        (await new Harness(options).RunAsync(env)).Should().Be(Harness.ExitOk);
+
+        redemptions.Should().Equal((new RedemptionTarget("https://api.honua.test", "job-1", "1"), new string('c', 64)));
+        ProbeTool.ObservedClient.Should().BeOfType<TestScopedClient>().Which.Token.Should().Be("redeemed-capability");
+        env.Should().NotContainKey("HONUA_JOB_REDEMPTION_CODE");
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task Run_RefusedRedemption_NeverFetchesSource()
+    {
+        var env = JobEnv();
+        env.Remove("HONUA_JOB_TOKEN");
+        env["HONUA_JOB_REDEMPTION_CODE"] = new string('c', 64);
+        var options = BuildOptions(env, out _);
+        options.CapabilityRedeemer = (_, _) => throw new InvalidOperationException("Job capability redemption refused (HTTP 401).");
+        options.SourceFetch = new SourceFetch((_, _) => throw new InvalidOperationException("user source must not execute"));
+
+        (await new Harness(options).RunAsync(env)).Should().Be(Harness.ExitHarnessError);
+    }
+
     private sealed class TestScopedClient(string token)
     {
         public string Token { get; } = token;

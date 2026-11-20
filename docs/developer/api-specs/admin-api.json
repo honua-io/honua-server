@@ -352,6 +352,9 @@
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
@@ -2832,7 +2835,7 @@
           "Import"
         ],
         "summary": "Import a Geospatial File from Object Storage",
-        "description": "Imports one supported object from an allow-listed s3:// bucket using the host identity. The request carries no credentials. Large objects return a background job without an in-request download.",
+        "description": "Imports one supported object through an object storage connection. The key must lie under the connection prefix; raw s3:// sources are refused. Large objects return a background job without an in-request download.",
         "operationId": "uploadImportFileFromObjectStore",
         "requestBody": {
           "required": true,
@@ -13668,6 +13671,17 @@
             }
           },
           {
+            "name": "layerId",
+            "in": "query",
+            "required": false,
+            "deprecated": true,
+            "description": "Deprecated alias of serviceLayerIndex, accepted from published clients. When both are sent they must agree.",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
             "name": "destinationType",
             "in": "query",
             "required": false,
@@ -24350,6 +24364,138 @@
           }
         }
       }
+    },
+    "/connections/object-storage/setup": {
+      "post": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "Start an Object Storage Connection",
+        "description": "Mints a single-use external id, bound to the caller, for the customer role that will grant Honua read-only access to one bucket prefix, with an optional CloudFormation quick-create link.",
+        "operationId": "createObjectStorageConnectionSetup",
+        "parameters": [
+          {
+            "name": "bucket",
+            "in": "query",
+            "required": true,
+            "description": "S3 bucket name",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "prefix",
+            "in": "query",
+            "required": false,
+            "description": "Key prefix",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Setup values",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseObjectStorageSetupResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "No object storage connection store on this host.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/connections/{id}/objects": {
+      "get": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "Browse Connection Objects",
+        "description": "Lists one folder level (delimiter '/') under an object storage connection, up to 200 entries, with each object's kind detected from its first bytes.",
+        "operationId": "listConnectionObjects",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Connection UUID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "prefix",
+            "in": "query",
+            "required": false,
+            "description": "Folder under the connection prefix; defaults to the connection prefix.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One folder level",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseObjectStorageBrowseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "description": "Object storage is not available on this host.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -24876,17 +25022,28 @@
       "ImportFileFromObjectStoreRequest": {
         "type": "object",
         "required": [
-          "sourceUri",
           "tableName"
         ],
         "properties": {
+          "connectionId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Object storage connection to read from."
+          },
+          "key": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "Object key; must lie under the connection prefix."
+          },
           "sourceUri": {
             "type": "string",
-            "description": "s3://bucket/key object to import. Credentials, queries, and fragments are rejected."
+            "deprecated": true,
+            "description": "Not accepted. Import through a connection with connectionId and key."
           },
           "assumeRoleArn": {
             "type": "string",
-            "description": "Optional allow-listed role ARN. The host assumes it with the configured external id. Omit to use the host identity."
+            "deprecated": true,
+            "description": "Not accepted. The connection carries its role."
           },
           "tableName": {
             "type": "string",
@@ -25930,6 +26087,30 @@
           "createdBy": {
             "type": "string",
             "description": "Creator identity"
+          },
+          "kind": {
+            "type": "string",
+            "description": "object-storage for S3 connections; omitted for database connections."
+          },
+          "bucket": {
+            "type": "string",
+            "description": "Object storage: bucket name."
+          },
+          "prefix": {
+            "type": "string",
+            "description": "Object storage: key prefix the connection is limited to."
+          },
+          "region": {
+            "type": "string",
+            "description": "Object storage: AWS region."
+          },
+          "roleArn": {
+            "type": "string",
+            "description": "Object storage: customer role assumed for reads; omitted for built-in connections."
+          },
+          "builtIn": {
+            "type": "boolean",
+            "description": "Object storage: true for the installation's own read-only data and public prefixes."
           }
         }
       },
@@ -26629,6 +26810,37 @@
             ],
             "default": "Require",
             "description": "SSL mode"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "database",
+              "object-storage"
+            ],
+            "description": "object-storage creates an S3 connection from bucket, prefix, region, roleArn and externalId; other fields are ignored."
+          },
+          "bucket": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 63,
+            "description": "Object storage: S3 bucket name."
+          },
+          "prefix": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "Object storage: key prefix the connection is limited to."
+          },
+          "region": {
+            "type": "string",
+            "description": "Object storage: AWS region of the bucket."
+          },
+          "roleArn": {
+            "type": "string",
+            "description": "Object storage: arn:aws:iam::<account>:role/honua-connection-*."
+          },
+          "externalId": {
+            "type": "string",
+            "description": "Object storage: the external id returned by the setup endpoint. Single use; it cannot be changed later."
           }
         }
       },
@@ -26702,6 +26914,12 @@
             "type": "integer",
             "format": "int32",
             "description": "Layer ID"
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
           },
           "layerName": {
             "type": "string",
@@ -26974,6 +27192,11 @@
             "type": "boolean",
             "default": false,
             "description": "Declares attachment support for the published resource. Does not enable editing."
+          },
+          "exactTypes": {
+            "type": "boolean",
+            "default": false,
+            "description": "Opt in to exact decimal and offset-timestamp field types. The primary key and temporal column stay on the default mapping."
           },
           "folderId": {
             "type": "string",
@@ -28188,6 +28411,20 @@
           "isActive": {
             "type": "boolean",
             "description": "Whether connection is active"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Object storage: new display name."
+          },
+          "region": {
+            "type": "string",
+            "description": "Object storage: AWS region of the bucket."
+          },
+          "roleArn": {
+            "type": "string",
+            "description": "Object storage: arn:aws:iam::<account>:role/honua-connection-*."
           }
         }
       },
@@ -28678,6 +28915,14 @@
             },
             "default": []
           },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "agent"
+            ],
+            "description": "Key type, lowercase. An `agent` key always carries the `agent` grant, which is added when missing. Omitted, the type follows the grants. An API key issued to an agent caller, or from a proposal an agent made, is always an agent key, and `standard` is refused for it."
+          },
           "expiresAt": {
             "type": "string",
             "format": "date-time",
@@ -28758,6 +29003,14 @@
           "keyPrefix": {
             "type": "string",
             "description": "Non-secret prefix used to recognize the key."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "agent"
+            ],
+            "description": "`agent` when the key carries the `agent` grant, otherwise `standard`."
           },
           "permissions": {
             "type": "array",
@@ -28862,6 +29115,14 @@
               "expired",
               "revoked"
             ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "agent"
+            ],
+            "description": "`agent` when the key carries the `agent` grant, otherwise `standard`."
           },
           "permissions": {
             "type": "array",
@@ -29242,6 +29503,12 @@
           "serviceLayerIndex": {
             "type": "integer",
             "format": "int32"
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of serviceLayerIndex. Published clients still read this name.",
+            "deprecated": true
           },
           "layerName": {
             "type": "string"
@@ -39821,6 +40088,12 @@
             "format": "int32",
             "description": "Layer identifier."
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "document": {
             "allOf": [
               {
@@ -39882,6 +40155,12 @@
             "format": "int32",
             "description": "Global storage-layer id of the related resource, distinct from its service-local publication index. Returns -1 if no storage-layer handle exists."
           },
+          "relatedLayerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of relatedStorageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "role": {
             "type": "string",
             "description": "Relationship role, typically origin or destination."
@@ -39925,6 +40204,12 @@
             "format": "int32",
             "description": "Layer identifier."
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "relationships": {
             "type": "array",
             "description": "Persisted relationships.",
@@ -39960,7 +40245,6 @@
         "required": [
           "id",
           "name",
-          "relatedStorageLayerId",
           "originField",
           "destinationField"
         ],
@@ -39981,7 +40265,13 @@
           "relatedStorageLayerId": {
             "type": "integer",
             "format": "int32",
-            "description": "Global storage-layer id of the related resource, distinct from its service-local publication index."
+            "description": "Global storage-layer id of the related resource, distinct from its service-local publication index. Required, under this name or its deprecated alias relatedLayerId."
+          },
+          "relatedLayerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated input alias of relatedStorageLayerId, accepted from published clients. Send relatedStorageLayerId; when both are sent they must agree.",
+            "deprecated": true
           },
           "role": {
             "type": "string",
@@ -40129,6 +40419,12 @@
             "format": "int32",
             "description": "Layer identifier."
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "fields": {
             "type": "array",
             "description": "Field configurations in resource schema-field order.",
@@ -40238,6 +40534,12 @@
             "format": "int32",
             "description": "Layer identifier."
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "permanentFilter": {
             "allOf": [
               {
@@ -40329,6 +40631,12 @@
             "type": "integer",
             "format": "int32",
             "description": "Layer identifier."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
           },
           "layerName": {
             "type": "string",
@@ -43419,7 +43727,6 @@
         "description": "Create/replace payload for a scheduled Share export definition.",
         "required": [
           "serviceName",
-          "serviceLayerIndex",
           "destinationType",
           "format",
           "schedule"
@@ -43438,7 +43745,13 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0,
-            "description": "Service-local layer id. Must be zero or greater."
+            "description": "Service-local layer id. Must be zero or greater. Required, under this name or its deprecated alias layerId."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated input alias of serviceLayerIndex, accepted from published clients. Send serviceLayerIndex; when both are sent they must agree.",
+            "deprecated": true
           },
           "displayName": {
             "type": "string",
@@ -43498,6 +43811,12 @@
           "serviceLayerIndex": {
             "type": "integer",
             "format": "int32"
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of serviceLayerIndex. Published clients still read this name.",
+            "deprecated": true
           },
           "displayName": {
             "type": "string",
@@ -43670,6 +43989,12 @@
           "serviceLayerIndex": {
             "type": "integer",
             "format": "int32"
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of serviceLayerIndex. Published clients still read this name.",
+            "deprecated": true
           }
         }
       },
@@ -50387,7 +50712,7 @@
           },
           "DescriptorKey": {
             "type": "string",
-            "description": "Storage key of the version's publication descriptor (publication-descriptor v1)."
+            "description": "Storage key of the version's STAC collection document (collection.json)."
           },
           "PointerKey": {
             "type": "string",
@@ -50518,6 +50843,11 @@
               "type": "string"
             },
             "description": "Attribute fields to publish. Empty means all discovered columns."
+          },
+          "exactTypes": {
+            "type": "boolean",
+            "default": false,
+            "description": "Preview the exact decimal and offset-timestamp field types."
           }
         }
       },
@@ -50714,9 +51044,16 @@
       "LayerExtentRefreshLayerSummary": {
         "type": "object",
         "properties": {
+          "storageLayerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Layer ID"
+          },
           "layerId": {
             "type": "integer",
-            "format": "int32"
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
           },
           "layerName": {
             "type": "string"
@@ -50753,9 +51090,16 @@
       "MaterializedFeatureRefreshSummary": {
         "type": "object",
         "properties": {
+          "storageLayerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Layer ID"
+          },
           "layerId": {
             "type": "integer",
-            "format": "int32"
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
           },
           "layerName": {
             "type": "string"
@@ -50944,6 +51288,20 @@
             ],
             "description": "Normalized comparison applied between the attribute and the claim value(s)."
           },
+          "filterExpression": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Additional CQL2 text predicate combined with the claim constraint."
+          },
+          "areaGeometry": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 65536,
+            "description": "WGS84 GeoJSON polygon or multipolygon text constraining readable geometry."
+          },
           "description": {
             "type": "string",
             "nullable": true
@@ -51001,6 +51359,20 @@
             "nullable": true,
             "maxLength": 16,
             "description": "Accepts `in` (default when omitted or blank), `equals`, `eq`, or `=`. Any other value returns 400."
+          },
+          "filterExpression": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Additional CQL2 text predicate combined with the claim constraint."
+          },
+          "areaGeometry": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 65536,
+            "description": "WGS84 GeoJSON polygon or multipolygon text constraining readable geometry."
           },
           "description": {
             "type": "string",
@@ -51788,6 +52160,7 @@
       "MetadataV2EditingPatch": {
         "type": "object",
         "nullable": true,
+        "additionalProperties": false,
         "properties": {
           "globalIdField": {
             "type": "string",
@@ -51813,6 +52186,26 @@
             "type": "boolean",
             "nullable": true,
             "description": "Delete policy for the selected publication; null preserves it."
+          },
+          "creatorField": {
+            "type": "string",
+            "nullable": true,
+            "description": "String field that records the creating user; null preserves it and an empty string clears it."
+          },
+          "createdAtField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Date, DateTime, String, BigInteger or Double field that records the creation time; null preserves it and an empty string clears it."
+          },
+          "editorField": {
+            "type": "string",
+            "nullable": true,
+            "description": "String field that records the last editing user; null preserves it and an empty string clears it."
+          },
+          "updatedAtField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Date, DateTime, String, BigInteger or Double field that records the last edit time; null preserves it and an empty string clears it."
           }
         }
       },
@@ -51904,14 +52297,18 @@
       },
       "LayerRelationshipBatchUpdateItem": {
         "type": "object",
-        "required": [
-          "storageLayerId"
-        ],
         "description": "Complete desired relationship set for one global storage-layer id.",
         "properties": {
           "storageLayerId": {
             "type": "integer",
-            "format": "int32"
+            "format": "int32",
+            "description": "Required, under this name or its deprecated alias layerId."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated input alias of storageLayerId, accepted from published clients. Send storageLayerId; when both are sent they must agree.",
+            "deprecated": true
           },
           "relationships": {
             "type": "array",
@@ -52036,7 +52433,14 @@
             "type": "integer",
             "format": "int32",
             "nullable": true,
-            "description": "Published layer identifier after the transaction commits."
+            "description": "Published layer identifier after the transaction commits. Null on a Failed job."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
           },
           "errorMessage": {
             "type": "string",
@@ -54023,6 +54427,132 @@
             "items": {
               "$ref": "#/components/schemas/SettingsRevisionResponse"
             }
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ObjectStorageSetupResponse": {
+        "type": "object",
+        "required": [
+          "externalId",
+          "roleNamePrefix"
+        ],
+        "properties": {
+          "externalId": {
+            "type": "string",
+            "description": "Single-use external id for the customer role trust policy. Expires after 24 hours unless used by create."
+          },
+          "quickCreateUrl": {
+            "type": "string",
+            "nullable": true,
+            "description": "CloudFormation quick-create link for the read-only role, when a template URL is configured."
+          },
+          "roleNamePrefix": {
+            "type": "string",
+            "description": "Required name prefix of the customer role.",
+            "example": "honua-connection-"
+          }
+        }
+      },
+      "ApiResponseObjectStorageSetupResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ObjectStorageSetupResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ObjectStorageObject": {
+        "type": "object",
+        "required": [
+          "key",
+          "kind"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cog",
+              "geotiff",
+              "pmtiles",
+              "geoparquet",
+              "other"
+            ],
+            "description": "Detected from the first bytes of the object."
+          },
+          "lastModified": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "ObjectStorageBrowseResponse": {
+        "type": "object",
+        "required": [
+          "bucket",
+          "prefix",
+          "folders",
+          "objects",
+          "truncated"
+        ],
+        "properties": {
+          "bucket": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "folders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "objects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ObjectStorageObject"
+            }
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the folder holds more than one page (200 entries)."
+          }
+        }
+      },
+      "ApiResponseObjectStorageBrowseResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ObjectStorageBrowseResponse"
           },
           "message": {
             "type": "string"

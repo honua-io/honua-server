@@ -643,9 +643,10 @@ public static partial class GeoParquetFeatureWriter
             MetadataV2FieldType.Integer => "INTEGER",
             MetadataV2FieldType.BigInteger => "BIGINT",
             MetadataV2FieldType.Double => "DOUBLE PRECISION",
+            MetadataV2FieldType.Decimal => "NUMERIC",
             MetadataV2FieldType.Float => "REAL",
             MetadataV2FieldType.Boolean => "BOOLEAN",
-            MetadataV2FieldType.DateTime => "TIMESTAMP WITH TIME ZONE",
+            MetadataV2FieldType.DateTime or MetadataV2FieldType.TimestampOffset => "TIMESTAMP WITH TIME ZONE",
             MetadataV2FieldType.Date => "DATE",
             MetadataV2FieldType.Time => "TIME",
             MetadataV2FieldType.Json => "JSONB",
@@ -1064,7 +1065,7 @@ public static partial class GeoParquetFeatureWriter
     private static DoubleArray BuildDoubleAttributeArray(ImmutableArray<Feature> features, string fieldName, ILogger? logger = null)
     {
         var builder = new DoubleArray.Builder();
-        ForEachAttribute(features, fieldName, v => builder.Append(Convert.ToDouble(v)), () => builder.AppendNull(), logger);
+        ForEachAttribute(features, fieldName, v => builder.Append(Convert.ToDouble(v, CultureInfo.InvariantCulture)), () => builder.AppendNull(), logger);
         return builder.Build();
     }
 

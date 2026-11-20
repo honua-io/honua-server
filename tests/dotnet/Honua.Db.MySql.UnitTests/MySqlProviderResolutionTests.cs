@@ -187,7 +187,7 @@ public sealed class MySqlProviderResolutionTests
             registry,
             performanceMonitor: null,
             NullLogger<MySqlFeatureDataAccess>.Instance);
-        return new MySqlFeatureStore(queryBuilder, dataAccess);
+        return new MySqlFeatureStore(queryBuilder, dataAccess, new LayerReadSecurityResolver(null, null, null, null));
     }
 
     private sealed class ThrowingConnectionProvider : IAdoNetDatabaseConnectionProvider

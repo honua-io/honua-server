@@ -5,7 +5,7 @@ Admission bounds the job count before fanout. Full runs retain their normal
 width; optional affected runs use at most two heavy shard runners. A selective
 affected run does not schedule the router's no-path-match smoke shards, and it
 skips the Honua.Core package proof when every changed file is docs, workflow,
-CI script or test. The twice-daily full run keeps both.
+CI script, repository metadata or test. The twice-daily full run keeps both.
 """
 import json
 import re
@@ -16,8 +16,14 @@ AFFECTED_RUN_TITLE_PREFIX = "CI affected "
 AFFECTED_WIDTH = 2
 # Anything outside this set can change the packed Core package or the server
 # build it checks. Unknown paths fail closed to running the job.
+# Repository metadata that no build, test or package reads. The ci.yml
+# change filter keeps the same pattern in REPO_METADATA.
+REPO_METADATA = (
+    r"\.github/(codeql/|ISSUE_TEMPLATE/|CODEOWNERS$|actionlint\.yaml$"
+    r"|dependabot\.yml$|hygiene\.json$|pull_request_template\.md$)"
+)
 CORE_PACKAGE_SKIP = re.compile(
-    r"^(docs/|README\.md$|\.github/workflows/[^/]+\.yml$|scripts/ci/|tests/|test/)"
+    rf"^(docs/|README\.md$|\.github/workflows/[^/]+\.yml$|{REPO_METADATA}|scripts/ci/|tests/|test/)"
 )
 
 

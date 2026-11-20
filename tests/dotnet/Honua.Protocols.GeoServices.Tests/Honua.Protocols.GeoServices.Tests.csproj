@@ -70,5 +70,6 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../Shared/ProtocolUnits/GeoServices/GPServerSoapRequestFixtures.cs" Link="Shared/GPServerSoapRequestFixtures.cs" />
+    <Compile Include="../Shared/ParquetUnitSupport/ArrowParquetTestReader.cs" Link="Shared/ArrowParquetTestReader.cs" />
   </ItemGroup>
 </Project>

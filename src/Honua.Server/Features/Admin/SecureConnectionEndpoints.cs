@@ -53,32 +53,39 @@ internal static partial class SecureConnectionEndpoints
 
         // Connection CRUD operations
         group.MapGet("/", HandleGetConnections)
+            .AddEndpointFilter(ObjectStorageConnectionDispatch.ListAsync)
             .WithDisplayName("List Secure Connections")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapGet("/{id:guid}", HandleGetConnection)
+            .AddEndpointFilter(ObjectStorageConnectionDispatch.GetAsync)
             .WithDisplayName("Get Secure Connection")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapPost("/", HandleCreateConnection)
+            .AddEndpointFilter(ObjectStorageConnectionDispatch.CreateAsync)
             .WithDisplayName("Create Secure Connection")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
         group.MapPost("/test", HandleTestDraftConnection)
+            .AddEndpointFilter(ObjectStorageConnectionDispatch.TestDraftAsync)
             .WithDisplayName("Test Secure Connection Draft")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .WithRouteAgentRule("Tests a connection and changes nothing; the attempt is audited.");
 
         group.MapPut("/{id:guid}", HandleUpdateConnection)
+            .AddEndpointFilter(ObjectStorageConnectionDispatch.UpdateAsync)
             .WithDisplayName("Update Secure Connection")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
 
         group.MapDelete("/{id:guid}", HandleDeleteConnection)
+            .AddEndpointFilter(ObjectStorageConnectionDispatch.DeleteAsync)
             .WithDisplayName("Delete Secure Connection")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
 
         // Connection testing and health
         group.MapPost("/{id:guid}/test", HandleTestConnection)
+            .AddEndpointFilter(ObjectStorageConnectionDispatch.TestAsync)
             .WithDisplayName("Test Connection Health")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .WithRouteAgentRule("Tests a connection and changes nothing; the attempt is audited.");

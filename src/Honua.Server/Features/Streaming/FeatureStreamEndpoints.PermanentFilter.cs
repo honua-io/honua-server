@@ -15,6 +15,16 @@ internal static partial class FeatureStreamEndpoints
     {
         try
         {
+            for (var index = 0; index < predicates.Count; index++)
+            {
+                if (!InMemoryFilterEvaluator.TryValidateStreamingExpression(predicates[index], out _))
+                {
+                    return false;
+                }
+
+                predicates[index] = CanonicalizePermanentFilter(predicates[index], resource);
+            }
+
             AppendPermanentFilterPredicate(resource, filterExpressionService, predicates);
             return true;
         }

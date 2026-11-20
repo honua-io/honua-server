@@ -708,6 +708,9 @@ internal sealed partial class McpSessionManager
 
         public DateTimeOffset LastAccessUtc { get; private set; }
 
+        // This node's copy of the logging/setLevel choice; the shared record is authoritative.
+        public string? LogLevel { get; set; }
+
         public void Touch(DateTimeOffset now) => LastAccessUtc = now;
 
         // This node holds a stream or work bound to the session's lifetime.

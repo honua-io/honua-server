@@ -3,16 +3,23 @@
 
 using System.Net.WebSockets;
 using System.Security.Claims;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Routing;
 
 namespace Honua.Infrastructure.Authentication;
 
 internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
 {
     internal static readonly TimeSpan RevalidationInterval = TimeSpan.FromSeconds(1);
+
+    // Extra time a resource check gets on top of the credential check's interval.
+    internal static readonly TimeSpan ResourceRevalidationBudget = TimeSpan.FromSeconds(3);
+
     internal const string AuthorizationEnded = "authorization-ended";
 
     // Coordinate revalidation failure with normal endpoint completion.
@@ -126,11 +133,15 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
         {
             try
             {
+                // A resource check reads storage, so it extends the deadline; stopping the stream still cancels it.
+                var checkBudget = context.GetEndpoint()?.Metadata.GetMetadata<ILiveStreamResourceAuthorization>() is null
+                    ? RevalidationInterval
+                    : RevalidationInterval + ResourceRevalidationBudget;
                 using var timer = new PeriodicTimer(RevalidationInterval);
                 while (await timer.WaitForNextTickAsync(monitorStop.Token).ConfigureAwait(false))
                 {
                     using var deadline = CancellationTokenSource.CreateLinkedTokenSource(monitorStop.Token);
-                    deadline.CancelAfter(RevalidationInterval);
+                    deadline.CancelAfter(checkBudget);
                     var authorized = await RevalidateAsync(context, scheme, deadline.Token).ConfigureAwait(false);
                     // Endpoint completion cancels an in-flight check too. That is
                     // normal shutdown, not a reason to append an SSE frame to a
@@ -170,6 +181,35 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
         }
     }
 
+    private static async Task<bool> IsResourceStillAuthorizedAsync(
+        HttpContext original, HttpContext check, ILiveStreamResourceAuthorization resource)
+    {
+        check.Request.RouteValues = new RouteValueDictionary(original.Request.RouteValues);
+        CarryResolvedTenant(original, check);
+        return await resource.IsAuthorizedAsync(check, check.RequestAborted).ConfigureAwait(false);
+    }
+
+    // The check runs in a fresh scope that tenant middleware never saw: carry the tenant the stream's request resolved.
+    private static void CarryResolvedTenant(HttpContext original, HttpContext check)
+    {
+        if (original.RequestServices.GetService<ITenantContext>() is not RequestTenantContext resolved
+            || check.RequestServices.GetService<ITenantContext>() is not RequestTenantContext fresh)
+        {
+            return;
+        }
+
+        if (resolved.IncludesLegacyUnassigned)
+        {
+            fresh.SetSingleTenantDefault(resolved.TenantId);
+        }
+        else
+        {
+            fresh.Set(resolved.TenantId, resolved.Source);
+        }
+
+        CanonicalSecurityActor.StampRequestBinding(check.User, resolved.TenantId);
+    }
+
     internal static async Task<bool> RevalidateAsync(HttpContext original, string scheme, CancellationToken cancellationToken)
     {
         try
@@ -192,8 +232,15 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
             check.Connection.ClientCertificate = original.Connection.ClientCertificate;
             check.Features.Set(new LiveStreamRevalidationFeature());
             var result = await check.AuthenticateAsync(scheme).WaitAsync(cancellationToken).ConfigureAwait(false);
-            return result.Succeeded && result.Principal?.Identity?.IsAuthenticated == true
-                && Claims(original.User).SequenceEqual(Claims(result.Principal));
+            if (!result.Succeeded || result.Principal?.Identity?.IsAuthenticated != true
+                || !Claims(original.User).SequenceEqual(Claims(result.Principal)))
+            {
+                return false;
+            }
+
+            check.User = result.Principal;
+            return original.GetEndpoint()?.Metadata.GetMetadata<ILiveStreamResourceAuthorization>() is not { } resource
+                || await IsResourceStillAuthorizedAsync(original, check, resource).ConfigureAwait(false);
         }
         catch (Exception error) when (error is not OutOfMemoryException)
         {

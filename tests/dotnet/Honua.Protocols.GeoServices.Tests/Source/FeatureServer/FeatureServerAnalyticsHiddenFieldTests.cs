@@ -132,4 +132,17 @@ public sealed class FeatureServerAnalyticsHiddenFieldTests(FeatureServerAnalytic
         await response.AssertGeoServicesErrorAsync((int)HttpStatusCode.BadRequest);
         body.Should().NotContain("sample");
     }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryH3)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryH3")]
+    public async Task QueryH3_WhereNamesHiddenField_Returns400()
+    {
+        const string payload = """{"resolution":{"indexResolution":7,"model":"h3"},"summaries":[{"id":"featureCount","kind":"count"}],"where":"category = 'a'","f":"json"}""";
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+        using var response = await _fixture.Client.PostAsync($"{LayerPath}/queryH3", content);
+        var body = await response.Content.ReadAsStringAsync();
+        await response.AssertGeoServicesErrorAsync((int)HttpStatusCode.BadRequest);
+        body.Should().NotContain("sample");
+    }
 }

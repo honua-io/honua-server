@@ -5,6 +5,7 @@
   "description": "Argument shape for the analysis/geoprocessing geocode tool (advertised name honua_geocode_address). Resolves a freeform address to ranked candidates. x-honua-reference-shape: this shape tracks the reference implementation.",
   "x-honua-reference-shape": true,
   "type": "object",
+  "additionalProperties": false,
   "required": ["address"],
   "properties": {
     "address": {

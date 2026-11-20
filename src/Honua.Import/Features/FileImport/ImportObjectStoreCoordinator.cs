@@ -15,9 +15,7 @@ internal static class ImportObjectStoreCoordinator
 
     internal sealed record Command
     {
-        public required string SourceUri { get; init; }
-
-        public string? AssumeRoleArn { get; init; }
+        public required ImportObjectLocation Location { get; init; }
 
         public required string TableName { get; init; }
 
@@ -58,47 +56,46 @@ internal static class ImportObjectStoreCoordinator
 
         public string? AuditSourceUri { get; init; }
 
-        public string? AuditRoleArn { get; init; }
+        public string? AuditConnectionId { get; init; }
 
         public required string Outcome { get; init; }
 
         public bool DisposeStream { get; init; }
 
         public bool DeleteLocalFile { get; init; }
+
+        public ImportObjectStoreAudit.Entry ToAudit(string outcome, string? jobId = null) => new()
+        {
+            SourceUri = AuditSourceUri,
+            ETag = ETag,
+            SizeBytes = SizeBytes,
+            ConnectionId = AuditConnectionId,
+            JobId = jobId,
+            Outcome = outcome,
+        };
+    }
+
+    internal sealed record Host
+    {
+        public required ImportLimits Limits { get; init; }
+
+        public IImportObjectStoreReader? Reader { get; init; }
+
+        public bool CanAcceptBackground { get; init; }
+
+        public required Func<string, bool> FormatSupported { get; init; }
     }
 
     public static async Task<Admission> EvaluateAsync(
         Command command,
-        ImportObjectStoreOptions options,
-        ImportLimits limits,
-        IImportObjectStoreReader? reader,
-        bool canAcceptBackground,
-        Func<string, bool> formatSupported,
+        Host host,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(command);
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(limits);
-        ArgumentNullException.ThrowIfNull(formatSupported);
-
-        if (!ImportObjectStorePolicy.TryAdmit(
-                command.SourceUri,
-                command.AssumeRoleArn,
-                options,
-                out var location,
-                out var problem))
-        {
-            var embedsCredentials = problem?.Detail == "sourceUri must not embed credentials.";
-            return new Admission
-            {
-                Problem = problem,
-                AuditSourceUri = embedsCredentials ? null : command.SourceUri.Trim(),
-                AuditRoleArn = embedsCredentials ? null : TrimOrNull(command.AssumeRoleArn),
-                Outcome = OutcomeFor(problem),
-            };
-        }
-
-        var admitted = location!;
+        ArgumentNullException.ThrowIfNull(host);
+        var limits = host.Limits;
+        var reader = host.Reader;
+        var admitted = command.Location;
         if (reader is null)
         {
             return Denied(admitted, Unavailable(ReaderUnavailableDetail), ImportObjectStoreAudit.Unavailable);
@@ -131,7 +128,7 @@ internal static class ImportObjectStoreCoordinator
         }
 
         var fileName = ImportObjectStoreFormats.FileNameFor(admitted.Key, head.ContentType);
-        if (!formatSupported(fileName))
+        if (!host.FormatSupported(fileName))
         {
             return Denied(
                 admitted,
@@ -149,7 +146,7 @@ internal static class ImportObjectStoreCoordinator
             || head.SizeBytes > limits.BackgroundJobThresholdBytes;
         if (background)
         {
-            if (!canAcceptBackground)
+            if (!host.CanAcceptBackground)
             {
                 return Denied(
                     admitted,
@@ -165,7 +162,7 @@ internal static class ImportObjectStoreCoordinator
                 SizeBytes = head.SizeBytes,
                 ETag = head.ETag,
                 AuditSourceUri = admitted.SourceUri,
-                AuditRoleArn = admitted.AssumeRoleArn,
+                AuditConnectionId = admitted.Connection.Id.ToString(),
                 Outcome = ImportObjectStoreAudit.Queued,
             };
         }
@@ -188,7 +185,7 @@ internal static class ImportObjectStoreCoordinator
                 SizeBytes = head.SizeBytes,
                 ETag = head.ETag,
                 AuditSourceUri = admitted.SourceUri,
-                AuditRoleArn = admitted.AssumeRoleArn,
+                AuditConnectionId = admitted.Connection.Id.ToString(),
                 Outcome = ImportObjectStoreAudit.Succeeded,
                 DisposeStream = true,
             };
@@ -216,7 +213,7 @@ internal static class ImportObjectStoreCoordinator
             SizeBytes = head.SizeBytes,
             ETag = head.ETag,
             AuditSourceUri = admitted.SourceUri,
-            AuditRoleArn = admitted.AssumeRoleArn,
+            AuditConnectionId = admitted.Connection.Id.ToString(),
             Outcome = ImportObjectStoreAudit.Succeeded,
             DeleteLocalFile = true,
         };
@@ -233,7 +230,7 @@ internal static class ImportObjectStoreCoordinator
             SizeBytes = head?.SizeBytes,
             ETag = head?.ETag,
             AuditSourceUri = location.SourceUri,
-            AuditRoleArn = location.AssumeRoleArn,
+            AuditConnectionId = location.Connection.Id.ToString(),
             Outcome = outcome,
         };
 
@@ -261,7 +258,7 @@ internal static class ImportObjectStoreCoordinator
             OverwriteExisting = command.OverwriteExisting,
             ObjectStoreUri = location.SourceUri,
             ObjectStoreETag = head.ETag,
-            ObjectStoreRoleArn = location.AssumeRoleArn,
+            ObjectStoreConnectionId = location.Connection.Id.ToString(),
             ObjectStoreContentType = head.ContentType,
         };
 
@@ -270,7 +267,7 @@ internal static class ImportObjectStoreCoordinator
         {
             ObjectStoreUri = null,
             ObjectStoreETag = null,
-            ObjectStoreRoleArn = null,
+            ObjectStoreConnectionId = null,
             ObjectStoreContentType = null,
         };
 
@@ -305,30 +302,14 @@ internal static class ImportObjectStoreCoordinator
         };
     }
 
-    private static string OutcomeFor(ImportObjectStoreProblem? problem)
-        => problem?.Code switch
-        {
-            ImportObjectStoreProblems.Forbidden => ImportObjectStoreAudit.Forbidden,
-            ImportObjectStoreProblems.NotFound => ImportObjectStoreAudit.NotFound,
-            ImportObjectStoreProblems.TooLarge => ImportObjectStoreAudit.TooLarge,
-            ImportObjectStoreProblems.Changed => ImportObjectStoreAudit.Changed,
-            ImportObjectStoreProblems.UnsupportedScheme => ImportObjectStoreAudit.UnsupportedScheme,
-            _ => problem?.StatusCode == StatusCodes.Status503ServiceUnavailable
-                ? ImportObjectStoreAudit.Unavailable
-                : ImportObjectStoreAudit.Failed,
-        };
-
     private static string OutcomeFor(ImportObjectStoreException exception)
         => exception.Code switch
         {
             ImportObjectStoreProblems.NotFound => ImportObjectStoreAudit.NotFound,
             ImportObjectStoreProblems.Changed => ImportObjectStoreAudit.Changed,
-            ImportObjectStoreProblems.Forbidden => ImportObjectStoreAudit.Forbidden,
+            ImportObjectStoreProblems.Forbidden or ImportObjectStoreProblems.RequesterPays => ImportObjectStoreAudit.Forbidden,
             _ => ImportObjectStoreAudit.Failed,
         };
-
-    private static string? TrimOrNull(string? value)
-        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static void TryDelete(string path)
     {

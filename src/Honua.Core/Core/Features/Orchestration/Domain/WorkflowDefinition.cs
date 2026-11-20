@@ -26,4 +26,12 @@ public sealed record WorkflowDefinition
 
     // A triggered run inherits the publisher's row and field security snapshot; a definition without one is refused rather than run as the admin orchestrator.
     public JobSecurityContext? AuthorSecurityContext { get; init; }
+
+    // Binds the stored author snapshot to this workflow with the shared key ring, so an edited definition is not trusted.
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? AuthorSecurityContextSeal { get; init; }
+
+    // A stored author snapshot whose seal did not verify on this node. It is not used, and is written back unchanged.
+    [System.Text.Json.Serialization.JsonIgnore]
+    public JobSecurityContext? UnverifiedAuthorSecurityContext { get; init; }
 }

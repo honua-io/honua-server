@@ -272,7 +272,8 @@ internal static partial class FeatureServerEndpoints
 
         if (parseResult.Expression != null)
         {
-            var translationResult = filterService.Translate(parseResult.Expression, resource);
+            // The caller's where may not name a hidden field; it is refused like an undeclared one.
+            var translationResult = filterService.Translate(parseResult.Expression, resource.WithoutHiddenSchemaFields());
             if (!translationResult.IsSuccess)
             {
                 errorResult = StandardErrorHelpers.CreateBadRequest(context,

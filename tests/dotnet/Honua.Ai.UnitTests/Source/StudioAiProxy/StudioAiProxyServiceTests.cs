@@ -433,7 +433,8 @@ public sealed partial class StudioAiProxyServiceTests
                 ReleaseId = "release-9",
                 EndpointIdentity = "candidate-proxy",
                 ActionId = "deploy",
-                RunNonce = "nonce"
+                RunNonce = "nonce",
+                RequestedBy = "apikey:api-key:00000000-0000-0000-0000-000000000007"
             },
             Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "deploy" }]
         };
@@ -610,7 +611,8 @@ public sealed partial class StudioAiProxyServiceTests
             ReleaseId = "release-9",
             EndpointIdentity = "candidate-proxy",
             ActionId = "compose-map",
-            RunNonce = "nonce"
+            RunNonce = "nonce",
+            RequestedBy = "apikey:api-key:00000000-0000-0000-0000-000000000007"
         },
         Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }]
     };

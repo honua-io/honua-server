@@ -41,6 +41,12 @@ internal static partial class AdminLayerAuthoringEndpoints
         IMetadataV2GraphStore graphStore, OutputCacheInvalidationService cacheInvalidator,
         CancellationToken cancellationToken)
     {
+        if (request.Layers?.FirstOrDefault(item => item?.StorageLayerIdError is not null) is { } unidentified)
+        {
+            return (null, ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest,
+                unidentified.StorageLayerIdError!));
+        }
+
         if (request.Layers is null || request.Layers.Count is < 1 or > MaxRelationshipBatchLayers
             || request.Layers.Any(item => item is null)
             || request.Layers.Select(item => item.StorageLayerId).Distinct().Count() != request.Layers.Count)

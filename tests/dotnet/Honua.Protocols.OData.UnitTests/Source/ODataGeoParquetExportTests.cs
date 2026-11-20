@@ -10,6 +10,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.OData;
 using Honua.TestKit.Attributes;
+using Honua.Tests.ParquetUnitSupport;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -59,7 +60,7 @@ public sealed class ODataGeoParquetExportTests
             new GeometryLimits());
 
         using var stream = new MemoryStream(payload.ToArray());
-        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var reader = ArrowParquetTestReader.Open(stream);
         using var batchReader = reader.GetRecordBatchReader();
         var batch = await batchReader.ReadNextRecordBatchAsync();
         batch.Should().NotBeNull();

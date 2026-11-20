@@ -165,7 +165,7 @@ internal sealed class DatabricksStatementClient
         var nextLink = response.Result?.NextChunkInternalLink;
         while (!string.IsNullOrWhiteSpace(nextLink))
         {
-            using var message = new HttpRequestMessage(HttpMethod.Get, nextLink);
+            using var message = new HttpRequestMessage(HttpMethod.Get, ResolveChunkLink(nextLink));
             ApplyAuthorization(message);
 
             using var httpResponse = await _httpClient.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
@@ -176,6 +176,21 @@ internal sealed class DatabricksStatementClient
         }
 
         return rows;
+    }
+
+    // A chunk link is followed only on the configured workspace origin, so the workspace token is
+    // never attached to a request for another host or scheme.
+    private Uri ResolveChunkLink(string nextLink)
+    {
+        var workspace = _httpClient.BaseAddress
+            ?? throw new InvalidOperationException("Databricks result chunk links need a configured workspace host.");
+        var resolved = new Uri(workspace, nextLink);
+        if (Uri.Compare(workspace, resolved, UriComponents.SchemeAndServer, UriFormat.Unescaped, StringComparison.OrdinalIgnoreCase) != 0)
+        {
+            throw new InvalidOperationException("Databricks returned a result chunk link outside the configured workspace host.");
+        }
+
+        return resolved;
     }
 
     private static void AppendRows(List<JsonElement[]> rows, DatabricksStatementResult? result)

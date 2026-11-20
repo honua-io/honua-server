@@ -90,7 +90,14 @@ public enum OgcStyleUpdateStatus
 public sealed record OgcStyleUpdateResult(
     OgcStyleUpdateStatus Status,
     string? ErrorMessage,
-    IReadOnlyList<string>? UnsupportedSymbolizers = null);
+    IReadOnlyList<string>? UnsupportedSymbolizers = null)
+{
+    // The storage layer whose style was written, when the style belongs to a layer.
+    public int? StorageLayerId { get; init; }
+
+    // Layers that present a catalog style through their associations.
+    public IReadOnlyList<int> AssociatedLayerIds { get; init; } = [];
+}
 
 public enum OgcStyleCreateStatus
 {
@@ -112,4 +119,8 @@ public enum OgcStyleDeleteStatus
     Forbidden
 }
 
-public sealed record OgcStyleDeleteResult(OgcStyleDeleteStatus Status, string? ErrorMessage);
+public sealed record OgcStyleDeleteResult(OgcStyleDeleteStatus Status, string? ErrorMessage)
+{
+    // Layers that presented the deleted catalog style through their associations.
+    public IReadOnlyList<int> AssociatedLayerIds { get; init; } = [];
+}

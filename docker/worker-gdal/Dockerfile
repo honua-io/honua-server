@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 #
 # Honua heavyweight GP/ETL worker image (honua-worker-etl) — ADR-0038.
 #
@@ -264,15 +264,16 @@ ARG DOTNET_RUNTIME_VERSION
 ARG PDAL_VERSION
 ARG HONUA_GIT_SHA=
 
-# Non-root runtime user.
+# Non-root runtime user. It owns only its scratch root: application files stay
+# root-owned, so a compromised job cannot rewrite the worker or its scripts.
 RUN groupadd --gid 1001 --system honua \
  && useradd --uid 1001 --gid 1001 --system --no-create-home --shell /usr/sbin/nologin honua \
  && mkdir -p /app /tmp/honua-gdal-worker \
- && chown -R 1001:1001 /app /tmp/honua-gdal-worker
+ && chown 1001:1001 /tmp/honua-gdal-worker
 
 WORKDIR /app
-COPY --from=build --chown=1001:1001 /app .
-COPY --chown=1001:1001 LICENSE THIRD-PARTY-NOTICES.md /app/
+COPY --from=build /app .
+COPY LICENSE THIRD-PARTY-NOTICES.md /app/
 # Qualification-only read-only OS/store observer. It refuses execution without
 # an explicit mounted policy; it is invoked by governed ECS Exec, never the job.
 COPY --chown=0:0 --chmod=0444 scripts/qualification/gp_native_observer.py /app/gp_native_observer.py

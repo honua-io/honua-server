@@ -32,19 +32,21 @@ The .NET 11 SDK is also needed when running the devkit from source.
 ## 1. Start the server
 
 ```bash
+export HONUA_ADMIN_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml up --build -d
 docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml ps
 ```
 
 Open `http://localhost:8080/healthz/ready` and wait for `Ready`. The stack starts
 PostGIS and the serving host. Managed GP runs in the serving host;
-PostGIS holds durable jobs and results. Compose enables a Development Pro grant
+PostGIS holds durable jobs and results. The admin API key is the random value you
+exported; keep it in your shell for the steps below. Compose enables a Development Pro grant
 so Pro processes run without a signed license file.
 
 ## 2. Submit and verify a buffer
 
 ```bash
-python ../honua-samples/samples/gp-local-dev/submit-buffer.py
+KEY="$HONUA_ADMIN_PASSWORD" python ../honua-samples/samples/gp-local-dev/submit-buffer.py
 ```
 
 The sample discovers `geometry.buffer`, submits it through the installed SDK,
@@ -54,16 +56,18 @@ waits up to 120 seconds, and checks the result's bounds and area. It buffers
 The sample prints the job ID and complete result for inspection.
 
 To target a different local port or identity, set `BASE` and `KEY`. The defaults
-are `http://localhost:8080` and Compose's `quickstart-admin-password`.
+are `http://localhost:8080`; `KEY` is the admin API key you exported as `HONUA_ADMIN_PASSWORD` before starting the stack.
 The shell wrapper `../honua-samples/samples/gp-local-dev/submit-buffer.sh` runs the same sample
 and accepts a `PYTHON` interpreter override.
 
 The SDK lifecycle is:
 
 ```python
+import os
+
 from honua_sdk import HonuaClient
 
-with HonuaClient("http://localhost:8080", api_key="quickstart-admin-password") as client:
+with HonuaClient("http://localhost:8080", api_key=os.environ["HONUA_ADMIN_PASSWORD"]) as client:
     gp = client.geoprocessing()
     job = gp.submit_inputs("geometry.buffer", {
         "wkb": "AQEAAAAAAAAAAAAAAAAAAAAAAAAA",

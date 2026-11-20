@@ -119,6 +119,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(ITestOutputHelper outpu
         await RejectParameterTamperAsync(receipts);
         await RejectCandidateMismatchAsync(receipts);
         await RejectTenantMismatchAsync(receipts);
+        await RejectRequesterMismatchAsync(receipts);
         await RejectEvidenceTamperAsync("target-mismatch", evidence => evidence with { TargetId = "candidate-b" }, receipts);
         await RejectEvidenceTamperAsync("descriptor-revision-mismatch", evidence => evidence with { DescriptorRevision = "changed" }, receipts);
         await RejectEvidenceTamperAsync("policy-revision-mismatch", evidence => evidence with { PolicyRevision = "changed" }, receipts);
@@ -138,6 +139,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(ITestOutputHelper outpu
         {
             "allow-deploy", "allow-metadata-release", "direct-execution", "opaque-extra-field",
             "unsupported-descriptor", "parameter-tamper", "candidate-mismatch", "tenant-mismatch",
+            "requester-mismatch",
             "target-mismatch", "descriptor-revision-mismatch", "policy-revision-mismatch",
             "payload-digest-mismatch", "noninteractive-proposer-approval", "human-capability-expired", "revoked-before-call",
             "revoked-before-approval", "unauthorized-approver", "cross-tenant-read", "sequential-replay",
@@ -364,6 +366,18 @@ public sealed class ProposalEvidenceSecurityJourneyTests(ITestOutputHelper outpu
         var tenantBSession = await InitializeMcpAsync(tenantBClient);
         var context = tenantA with { Client = tenantBClient, SessionId = tenantBSession };
         await AssertCallRejectedAsync("tenant-mismatch", context, receipts);
+    }
+
+    // A second administrator key in the same tenant cannot present another key's signed transcript.
+    private async Task RejectRequesterMismatchAsync(List<JourneyReceipt> receipts)
+    {
+        var requester = await CreateSelectionContextAsync(
+            ProposeDeployOperationTool.ToolName, ValidDeployArguments(), Candidate, descriptorOverride: null);
+        var otherKey = await CreateKeyAsync($"other-proposer-{Guid.NewGuid():N}", ["admin:*"]);
+        var otherClient = CreateClient(otherKey.Key, TenantA);
+        var otherSession = await InitializeMcpAsync(otherClient);
+        var context = requester with { Client = otherClient, SessionId = otherSession };
+        await AssertCallRejectedAsync("requester-mismatch", context, receipts);
     }
 
     private async Task RejectEvidenceTamperAsync(

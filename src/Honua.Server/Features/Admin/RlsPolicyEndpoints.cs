@@ -4,7 +4,9 @@
 using System.ComponentModel.DataAnnotations;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Authorization.Services;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
@@ -70,6 +72,8 @@ internal static partial class RlsPolicyEndpoints
         Attribute = p.Attribute,
         ClaimType = p.ClaimType,
         Comparison = p.Comparison == RlsComparison.Equals ? "equals" : "in",
+        FilterExpression = p.FilterExpression,
+        AreaGeometry = p.AreaGeometry,
         Description = p.Description,
         CreatedAt = p.CreatedAt,
         UpdatedAt = p.UpdatedAt,
@@ -135,6 +139,7 @@ internal static partial class RlsPolicyEndpoints
             CreateRlsPolicyRequest request,
             [FromServices] IRlsPolicyStore store,
             [FromServices] ReadPolicyEnforceabilityChecker enforceability,
+            [FromServices] IFilterExpressionService filters,
             [FromServices] ILogger<RlsPolicyEndpointsLog> logger,
             HttpContext context)
     {
@@ -151,6 +156,16 @@ internal static partial class RlsPolicyEndpoints
             {
                 return TypedResults.BadRequest(
                     ApiResponse<object>.Failure("Comparison must be 'in' or 'equals'."));
+            }
+
+            try
+            {
+                RlsPolicyRestrictions.Parse(filters, request.FilterExpression, request.AreaGeometry, "geometry");
+            }
+            catch (ArgumentException)
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                    "Policy restrictions must contain a valid filter and a nonempty WGS84 polygon or multipolygon."));
             }
 
             // Refuse a policy that a targeted layer's provider cannot enforce; accepting it would
@@ -174,6 +189,8 @@ internal static partial class RlsPolicyEndpoints
                 Attribute = request.Attribute.Trim(),
                 ClaimType = request.ClaimType.Trim(),
                 Comparison = comparison,
+                FilterExpression = request.FilterExpression,
+                AreaGeometry = request.AreaGeometry,
                 Description = request.Description,
             };
 

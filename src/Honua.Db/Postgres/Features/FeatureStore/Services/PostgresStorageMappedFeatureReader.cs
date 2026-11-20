@@ -692,11 +692,19 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             }
             else
             {
-                parts.Add(ValidateAndQuoteIdentifier(field.Name));
+                parts.Add(ColumnValueExpression(field));
             }
         }
 
         return $"jsonb_build_object({string.Join(", ", parts)})";
+    }
+
+    // An exact decimal leaves as its canonical text so jsonb never rounds it through a number.
+    // timestamptz already serialises as RFC 3339 text inside jsonb, so it keeps the column.
+    private static string ColumnValueExpression(MetadataV2Field field)
+    {
+        var column = ValidateAndQuoteIdentifier(field.Name);
+        return field.Type == MetadataV2FieldType.Decimal ? $"{column}::text" : column;
     }
 
     private static bool IsObjectIdField(string fieldName)

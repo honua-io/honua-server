@@ -1369,6 +1369,11 @@ internal static partial class FeatureStreamEndpoints
 
         var subscriberSecurity = await ResolveSubscriberSecurityAsync(
             context, snapshot, service, layerIds, cancellationToken).ConfigureAwait(false);
+        if (subscriberSecurity.DescribeUnstreamableLayer(hasExplicitLayerScope ? layerIds : null) is { } unstreamableError)
+        {
+            return (null, unstreamableError);
+        }
+
         var filter = new StreamSubscriptionFilter(
             serviceId: serviceId,
             serviceIdIsExact: serviceIdIsExact,

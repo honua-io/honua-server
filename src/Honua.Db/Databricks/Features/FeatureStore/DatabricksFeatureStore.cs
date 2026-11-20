@@ -31,13 +31,13 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
 
     private readonly DatabricksLayerMappingRegistry _mappings;
     private readonly IDatabricksFeatureDataAccess _dataAccess;
-    private readonly LayerReadSecurityResolver? _readSecurity;
+    private readonly LayerReadSecurityResolver _readSecurity;
     private readonly FeatureProviderBinding? _binding;
 
     public DatabricksFeatureStore(
         DatabricksLayerMappingRegistry mappings,
         IDatabricksFeatureDataAccess dataAccess,
-        LayerReadSecurityResolver? readSecurity = null)
+        LayerReadSecurityResolver readSecurity)
         : this(mappings, dataAccess, readSecurity, binding: null)
     {
     }
@@ -45,12 +45,12 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
     private DatabricksFeatureStore(
         DatabricksLayerMappingRegistry mappings,
         IDatabricksFeatureDataAccess dataAccess,
-        LayerReadSecurityResolver? readSecurity,
+        LayerReadSecurityResolver readSecurity,
         FeatureProviderBinding? binding)
     {
         _mappings = mappings ?? throw new ArgumentNullException(nameof(mappings));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
-        _readSecurity = readSecurity;
+        _readSecurity = readSecurity ?? throw new ArgumentNullException(nameof(readSecurity));
         _binding = binding;
     }
 
@@ -171,12 +171,9 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
 
     private async Task<DatabricksLayerMapping> ResolveMappingAsync(int layerId, CancellationToken cancellationToken)
     {
-        if (_readSecurity is not null)
-        {
-            await _readSecurity
-                .EnsureNoUnenforcedPolicyAsync("Databricks", layerId, _binding?.Resource, rejectPermanentFilter: true, cancellationToken)
-                .ConfigureAwait(false);
-        }
+        await _readSecurity
+            .EnsureNoUnenforcedPolicyAsync("Databricks", layerId, _binding?.Resource, rejectPermanentFilter: true, cancellationToken)
+            .ConfigureAwait(false);
 
         return _mappings.Resolve(layerId, _binding);
     }

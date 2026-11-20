@@ -1,0 +1,54 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net11.0": {
+      "MaxRev.Gdal.Core": {
+        "type": "Direct",
+        "requested": "[3.12.4.520, )",
+        "resolved": "3.12.4.520",
+        "contentHash": "EfZGoJqcySSewub5FJ+J/h87ZfMTZ/umuEqS4wU/wTT1G8veYhSrGjXkoIIpAS05ST4De6jEfVxDvDnBnJlM9Q=="
+      },
+      "MaxRev.Gdal.LinuxRuntime.Minimal": {
+        "type": "Direct",
+        "requested": "[3.12.4.520, )",
+        "resolved": "3.12.4.520",
+        "contentHash": "pEP8UVyT1xi9HJ0tuUUBUDj8VPfbcfFlC2oOKpFimRDVMcoHgG7Nd2ItPjt6Bs9B9/UBgRF8LlpCV0blCglRMw==",
+        "dependencies": {
+          "MaxRev.Gdal.LinuxRuntime.Minimal.arm64": "3.12.4.520",
+          "MaxRev.Gdal.LinuxRuntime.Minimal.x64": "3.12.4.520"
+        }
+      },
+      "MaxRev.Gdal.LinuxRuntime.Minimal.arm64": {
+        "type": "Transitive",
+        "resolved": "3.12.4.520",
+        "contentHash": "zZn9YmiQAUllozPf6VeOea/XxFmPe4THFOXOaryXPHJPgKFHBpnz6wuSkyRtcg/ZQrSzMgFdroRxuyF+8W1t1A=="
+      },
+      "MaxRev.Gdal.LinuxRuntime.Minimal.x64": {
+        "type": "Transitive",
+        "resolved": "3.12.4.520",
+        "contentHash": "4ggVXh8zGsk+t4g7ex/h2LTST235DqyJrp8NfX2bCNUUwqFrkX2l9STA+2TD68W1MOoNY5c4JiH7SE5itxhSyA=="
+      },
+      "honua.customcode.sdk": {
+        "type": "Project"
+      }
+    },
+    "net11.0/linux-x64": {
+      "MaxRev.Gdal.Core": {
+        "type": "Direct",
+        "requested": "[3.12.4.520, )",
+        "resolved": "3.12.4.520",
+        "contentHash": "EfZGoJqcySSewub5FJ+J/h87ZfMTZ/umuEqS4wU/wTT1G8veYhSrGjXkoIIpAS05ST4De6jEfVxDvDnBnJlM9Q=="
+      },
+      "MaxRev.Gdal.LinuxRuntime.Minimal.arm64": {
+        "type": "Transitive",
+        "resolved": "3.12.4.520",
+        "contentHash": "zZn9YmiQAUllozPf6VeOea/XxFmPe4THFOXOaryXPHJPgKFHBpnz6wuSkyRtcg/ZQrSzMgFdroRxuyF+8W1t1A=="
+      },
+      "MaxRev.Gdal.LinuxRuntime.Minimal.x64": {
+        "type": "Transitive",
+        "resolved": "3.12.4.520",
+        "contentHash": "4ggVXh8zGsk+t4g7ex/h2LTST235DqyJrp8NfX2bCNUUwqFrkX2l9STA+2TD68W1MOoNY5c4JiH7SE5itxhSyA=="
+      }
+    }
+  }
+}

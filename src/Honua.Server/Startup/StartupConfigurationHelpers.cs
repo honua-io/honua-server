@@ -341,7 +341,7 @@ internal static class StartupConfigurationHelpers
             .LoadBootstrapSnapshotAsync(
                 configuration,
                 loggerFactory,
-                honorDevGrant: !environment.IsProduction(),
+                honorDevGrant: LicensingRegistration.IsDevGrantEnvironment(environment),
                 secretResolvers: secretResolvers)
             .ConfigureAwait(false);
     }

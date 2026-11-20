@@ -58,10 +58,8 @@ public sealed class EndpointRegistryDriftTests
         "/openapi.json",
     };
 
-    private static readonly HashSet<(string Method, string Path)> SourceExclusions = new()
-    {
-        ("GET", "/__test/cross-server-consume/proxy"),
-    };
+    // Routes declared under the audited features that are intentionally not catalogued; none today.
+    private static readonly HashSet<(string Method, string Path)> SourceExclusions = [];
 
     private static readonly HashSet<(string Method, string Path)> KnownNonFeatureRegistryEntries = new()
     {

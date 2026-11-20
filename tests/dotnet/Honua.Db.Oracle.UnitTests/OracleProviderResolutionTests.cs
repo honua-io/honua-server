@@ -371,7 +371,7 @@ public class OracleProviderResolutionTests
         var probe = new AcceptingProbe();
         var guard = new OracleSpatialGuard(probe, NullLogger<OracleSpatialGuard>.Instance);
 
-        return new OracleFeatureStore(dataAccess, guard, v2Provider, readSecurity);
+        return new OracleFeatureStore(dataAccess, guard, v2Provider, readSecurity ?? new LayerReadSecurityResolver(null, null, null, null));
     }
 
     private sealed class AcceptingProbe : IOracleSpatialMetadataProbe

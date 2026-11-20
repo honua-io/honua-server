@@ -47,6 +47,8 @@ internal sealed class PostgresCoreSchemaMigrationManifest
 
     public PostgresAttachmentMigrationContract? Attachments { get; init; }
 
+    public IReadOnlyList<HonuaResidentTableBinding> ResidentTables { get; init; } = [];
+
     public IReadOnlySet<string>? KnownMigrationNames { get; init; }
 
     public string MetadataV2SnapshotMigration { get; }
