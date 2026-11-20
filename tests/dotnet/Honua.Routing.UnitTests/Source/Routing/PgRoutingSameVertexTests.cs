@@ -105,6 +105,31 @@ public sealed class PgRoutingSameVertexTests
         Assert.Equal(0, allocation.ImpedanceMinutes, precision: 3);
     }
 
+    [Fact]
+    public async Task SolveLocationAllocation_UsesReversedEdgesSql_AndGeographyVertexSnap()
+    {
+        var session = new ScriptedRoutingSession();
+        var provider = CreateProvider(session);
+
+        var result = await provider.SolveLocationAllocationAsync(
+            new LocationAllocationSolveRequest(
+                [new RoutePoint(0, 0)],
+                [new DemandPoint(new RoutePoint(0.01, 0))]),
+            CancellationToken.None);
+
+        var allocation = Assert.Single(result.Allocations);
+        Assert.Equal(0, allocation.AllocatedFacilityId);
+        Assert.Contains(
+            session.Sql,
+            sql => sql.Contains("the_geom::geography <->", StringComparison.Ordinal));
+        Assert.Contains(
+            session.BoundParameters,
+            p => p.TryGetValue("edges_sql", out var edgesSqlObj)
+                 && edgesSqlObj is string edgesSql
+                 && edgesSql.Contains("reverse_cost", StringComparison.Ordinal)
+                 && edgesSql.IndexOf("reverse_cost", StringComparison.Ordinal) < edgesSql.IndexOf("AS cost", StringComparison.Ordinal));
+    }
+
     private static PgRoutingProvider CreateProvider(ScriptedRoutingSession session)
         => new(new SingleSessionFactory(session), NullLogger<PgRoutingProvider>.Instance);
 
@@ -122,6 +147,8 @@ public sealed class PgRoutingSameVertexTests
     private sealed class ScriptedRoutingSession : IDatabaseSession
     {
         public List<string> Sql { get; } = [];
+
+        public List<IReadOnlyDictionary<string, object?>> BoundParameters { get; } = [];
 
         public string ConnectionString => "scripted";
 
@@ -162,6 +189,10 @@ public sealed class PgRoutingSameVertexTests
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             Sql.Add(sql);
+            if (parameters is IReadOnlyDictionary<string, object?> dict)
+            {
+                BoundParameters.Add(dict);
+            }
             foreach (var values in RowsFor(sql, parameters))
             {
                 cancellationToken.ThrowIfCancellationRequested();

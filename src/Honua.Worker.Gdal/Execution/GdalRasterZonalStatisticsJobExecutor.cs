@@ -85,9 +85,13 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
         }
 
         FeatureCollection zones;
+        string? zonesCrsName;
+        int? zonesSrid;
         try
         {
-            using var reader = new StringReader(Encoding.UTF8.GetString(zonesBytes));
+            var zonesJsonText = Encoding.UTF8.GetString(zonesBytes);
+            zonesCrsName = TryExtractGeoJsonCrsName(zonesJsonText, out zonesSrid);
+            using var reader = new StringReader(zonesJsonText);
             zones = new GeoJsonReader().Read<FeatureCollection>(reader.ReadToEnd())
                 ?? throw new InvalidOperationException("GeoJSON parser returned null.");
         }
@@ -96,6 +100,19 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
             Log.ZonesParseFailed(logger, job.OperationId, ex);
             return JobExecutionResult.Failed(
                 "Invalid zonal statistics inputs: 'zones' could not be parsed as a GeoJSON FeatureCollection.");
+        }
+
+        if ((GdalJobInputReader.TryGetInput(parameters, "zonesSrid", out var zonesSridRaw)
+             || GdalJobInputReader.TryGetInput(parameters, "srid", out zonesSridRaw))
+            && !string.IsNullOrWhiteSpace(zonesSridRaw))
+        {
+            if (!int.TryParse(zonesSridRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedZonesSrid) || parsedZonesSrid <= 0)
+            {
+                return JobExecutionResult.Failed(
+                    $"Invalid zonal statistics inputs: 'zonesSrid' value '{zonesSridRaw}' is not a positive integer.");
+            }
+            zonesSrid = parsedZonesSrid;
+            zonesCrsName = $"EPSG:{parsedZonesSrid.ToString(CultureInfo.InvariantCulture)}";
         }
 
         if (zones.Count == 0)
@@ -197,9 +214,13 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
                 // Both second segments are generated relative literals (an internal
                 // zero-based loop counter, never user input), so neither can be rooted
                 // and silently discard workspace.
+                if (zonesSrid is > 0 && geometry.SRID <= 0)
+                {
+                    geometry.SRID = zonesSrid.Value;
+                }
                 var cutlinePath = Path.Join(workspace, $"cutline-{zoneIndex}.geojson");
                 var clippedPath = Path.Join(workspace, $"clipped-{zoneIndex}.tif");
-                var cutlineGeoJson = GdalRasterClipJobExecutor.WriteCutlineGeoJson(geometry);
+                var cutlineGeoJson = GdalRasterClipJobExecutor.WriteCutlineGeoJson(geometry, zonesCrsName);
                 await File.WriteAllTextAsync(cutlinePath, cutlineGeoJson, Encoding.UTF8, cancellationToken)
                     .ConfigureAwait(false);
 
@@ -512,6 +533,83 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
 
         private static readonly IReadOnlyDictionary<string, double?> EmptyDictionary =
             new Dictionary<string, double?>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    internal static string? TryExtractGeoJsonCrsName(string geoJsonText, out int? srid)
+    {
+        srid = null;
+        if (string.IsNullOrWhiteSpace(geoJsonText))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(geoJsonText);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            if (root.TryGetProperty("crs", out var crsElement) &&
+                crsElement.ValueKind == JsonValueKind.Object &&
+                crsElement.TryGetProperty("properties", out var crsProps) &&
+                crsProps.ValueKind == JsonValueKind.Object &&
+                crsProps.TryGetProperty("name", out var crsNameElement) &&
+                crsNameElement.ValueKind == JsonValueKind.String)
+            {
+                var name = crsNameElement.GetString()?.Trim();
+                if (!string.IsNullOrEmpty(name))
+                {
+                    if (TryParseSridFromCrsName(name, out var parsedSrid))
+                    {
+                        srid = parsedSrid;
+                    }
+                    return name;
+                }
+            }
+
+            if (root.TryGetProperty("honua:spatialReference", out var honuaSr) &&
+                honuaSr.ValueKind == JsonValueKind.Object)
+            {
+                if ((honuaSr.TryGetProperty("srid", out var sridProp) ||
+                     honuaSr.TryGetProperty("wkid", out sridProp) ||
+                     honuaSr.TryGetProperty("latestWkid", out sridProp)) &&
+                    sridProp.ValueKind == JsonValueKind.Number &&
+                    sridProp.TryGetInt32(out var honuaSrid) &&
+                    honuaSrid > 0)
+                {
+                    srid = honuaSrid;
+                    return $"EPSG:{honuaSrid.ToString(CultureInfo.InvariantCulture)}";
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        return null;
+    }
+
+    private static bool TryParseSridFromCrsName(string crsName, out int srid)
+    {
+        srid = 0;
+        if (int.TryParse(crsName, NumberStyles.Integer, CultureInfo.InvariantCulture, out srid) && srid > 0)
+        {
+            return true;
+        }
+
+        var idx = crsName.LastIndexOfAny([':', '/']);
+        if (idx >= 0 && idx + 1 < crsName.Length &&
+            int.TryParse(crsName[(idx + 1)..], NumberStyles.Integer, CultureInfo.InvariantCulture, out srid) &&
+            srid > 0)
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static partial class Log

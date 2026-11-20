@@ -151,6 +151,37 @@ public sealed class GeometryAreaJobExecutorTests
         await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
     }
 
+    [UnitTest]
+    public async Task ExecuteAsync_GeodesicGeographicPolygon_PublishesSquareMeters()
+    {
+        var executor = CreateExecutor();
+        var context = Substitute.For<IJobExecutionContext>();
+        context.OperationId.Returns("op-geodesic-area");
+
+        string? publishedUri = null;
+        context
+            .When(c => c.PublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
+            .Do(call => publishedUri = call.ArgAt<string>(0));
+
+        // 1° × 1° square at the equator: ~111,319.49 m × 110,574.30 m ≈ 1.2309e10 m².
+        var box = WkbBase64(BuildBoxPolygon(0, 0, 1, 1));
+        var record = CreateJobRecord(
+            processId: GeometryAreaJobExecutor.HandledProcessId,
+            includeInputs: true,
+            wkb: box,
+            srid: "4326");
+        record.Spec.Parameters[$"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.geodesic"] = "true";
+
+        var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        var bytes = Convert.FromBase64String(publishedUri![ScalarDataUriPrefix.Length..]);
+        using var doc = JsonDocument.Parse(bytes);
+        var root = doc.RootElement;
+        root.GetProperty("unit").GetString().Should().Be("square-meters");
+        root.GetProperty("value").GetDouble().Should().BeApproximately(1.23087e10, 5e7);
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------

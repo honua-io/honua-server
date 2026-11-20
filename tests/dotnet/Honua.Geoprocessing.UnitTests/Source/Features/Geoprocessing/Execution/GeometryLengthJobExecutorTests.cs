@@ -133,6 +133,37 @@ public sealed class GeometryLengthJobExecutorTests
         await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
     }
 
+    [UnitTest]
+    public async Task ExecuteAsync_GeodesicGeographicLineString_PublishesMeters()
+    {
+        var executor = CreateExecutor();
+        var context = Substitute.For<IJobExecutionContext>();
+        context.OperationId.Returns("op-geodesic-length");
+
+        string? publishedUri = null;
+        context
+            .When(c => c.PublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
+            .Do(call => publishedUri = call.ArgAt<string>(0));
+
+        // 1° along the equator on WGS-84 is 2 * π * 6378137 / 360 ≈ 111,319.490793 m.
+        var line = WkbBase64(BuildLineString(new Coordinate(0, 0), new Coordinate(1, 0)));
+        var record = CreateJobRecord(
+            processId: GeometryLengthJobExecutor.HandledProcessId,
+            includeInputs: true,
+            wkb: line,
+            srid: "4326");
+        record.Spec.Parameters[$"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.geodesic"] = "true";
+
+        var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        var bytes = Convert.FromBase64String(publishedUri![ScalarDataUriPrefix.Length..]);
+        using var doc = JsonDocument.Parse(bytes);
+        var root = doc.RootElement;
+        root.GetProperty("unit").GetString().Should().Be("meters");
+        root.GetProperty("value").GetDouble().Should().BeApproximately(111_319.49, 1.0);
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------

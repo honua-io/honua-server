@@ -1575,6 +1575,28 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         Assert.Equal(1000.0, fakeProvider.LastSuggestRequest.BiasDistanceMeters);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_WithWebMercatorBiasLocation_TransformsToWgs84()
+    {
+        var fakeProvider = new FakeGeocodeProvider(DefaultCapabilities);
+        using var factory = CreateFactory(fakeProvider);
+        using var client = factory.CreateClient();
+
+        var (mercX, mercY) = WebMercatorMath.LonLatToWebMercator(-157.8583, 21.3069);
+        var locationJson = $"{{\"x\":{mercX.ToString("R", System.Globalization.CultureInfo.InvariantCulture)},\"y\":{mercY.ToString("R", System.Globalization.CultureInfo.InvariantCulture)},\"spatialReference\":{{\"wkid\":3857}}}}";
+
+        using var response = await client.GetAsync(
+            $"/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=Honolulu&location={Uri.EscapeDataString(locationJson)}&distance=5000&f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(fakeProvider.LastForwardRequest?.BiasLocation);
+        Assert.Equal(-157.8583, fakeProvider.LastForwardRequest!.BiasLocation!.X, precision: 4);
+        Assert.Equal(21.3069, fakeProvider.LastForwardRequest.BiasLocation.Y, precision: 4);
+        Assert.Equal(4326, fakeProvider.LastForwardRequest.BiasLocation.SpatialReferenceWkid);
+    }
+
     private static string? GetLastForwardCategory(WebApplicationFactory<Program> factory)
     {
         var provider = (FakeGeocodeProvider)factory.Services

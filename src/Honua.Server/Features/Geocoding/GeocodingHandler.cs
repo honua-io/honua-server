@@ -189,7 +189,7 @@ internal sealed class GeocodingHandler(
             // candidates higher on providers that support proximity weighting and is gracefully
             // ignored on providers that do not (SupportsBiasing=false). location/distance are
             // validated up front so malformed values are rejected with a clear error.
-            if (!TryParseBias(values, out var biasLocation, out var biasDistanceMeters, out var biasError))
+            if (!TryParseBias(context, values, out var biasLocation, out var biasDistanceMeters, out var biasError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context, biasError ?? "Invalid location/distance parameter.");
             }
@@ -496,7 +496,7 @@ internal sealed class GeocodingHandler(
 
             // Forward proximity bias: location/distance bias suggestions towards a point on
             // providers that support proximity weighting, gracefully ignored elsewhere.
-            if (!TryParseBias(values, out var biasLocation, out var biasDistanceMeters, out var biasError))
+            if (!TryParseBias(context, values, out var biasLocation, out var biasDistanceMeters, out var biasError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context, biasError ?? "Invalid location/distance parameter.");
             }
@@ -1221,6 +1221,7 @@ internal sealed class GeocodingHandler(
     // shared positive-meters validation. A blank location yields no bias (null) even if a distance
     // is present, since a radius without a centre cannot bias results. Invalid values are rejected.
     private bool TryParseBias(
+        HttpContext context,
         IReadOnlyDictionary<string, StringValues> values,
         out Honua.Geocoding.Features.Geocoding.Domain.GeocodePoint? biasLocation,
         out double? biasDistanceMeters,
@@ -1236,9 +1237,45 @@ internal sealed class GeocodingHandler(
             return true;
         }
 
-        if (!TryParseLocation(rawLocation, out var biasX, out var biasY))
+        if (!TryParseLocation(rawLocation, out var biasX, out var biasY, out var biasWkid))
         {
             error = "location must be either 'x,y' or JSON {\"x\":...,\"y\":...}.";
+            return false;
+        }
+
+        if (!double.IsFinite(biasX) || !double.IsFinite(biasY))
+        {
+            error = "location coordinates must be finite numbers.";
+            return false;
+        }
+
+        var biasLon = biasX;
+        var biasLat = biasY;
+        if (biasWkid.HasValue && biasWkid.Value != 4326 && biasWkid.Value != 0)
+        {
+            if (Honua.Core.Features.Shared.Models.SpatialReferenceExtensions.IsWebMercatorSrid(biasWkid.Value))
+            {
+                (biasLon, biasLat) = Honua.Core.Features.Shared.Geometry.WebMercatorMath.WebMercatorToLonLat(biasX, biasY);
+            }
+            else
+            {
+                var transformService = context.RequestServices.GetService<ICoordinateTransformService>();
+                var transformed = transformService?.TransformPointAsync(biasX, biasY, biasWkid.Value, 4326, context.RequestAborted)
+                    .GetAwaiter()
+                    .GetResult();
+                if (transformed is null)
+                {
+                    error = $"location spatial reference {biasWkid.Value} is not supported for reprojection.";
+                    return false;
+                }
+
+                (biasLon, biasLat) = transformed.Value;
+            }
+        }
+
+        if (!IsValidCoordinate(biasLon, biasLat))
+        {
+            error = "location coordinates are outside valid geographic bounds [-180, 180] x [-90, 90].";
             return false;
         }
 
@@ -1248,10 +1285,18 @@ internal sealed class GeocodingHandler(
             return false;
         }
 
-        biasLocation = new Honua.Geocoding.Features.Geocoding.Domain.GeocodePoint(biasX, biasY, _options.DefaultSpatialReferenceWkid);
+        biasLocation = new Honua.Geocoding.Features.Geocoding.Domain.GeocodePoint(biasLon, biasLat, _options.DefaultSpatialReferenceWkid);
         biasDistanceMeters = distanceMeters;
         return true;
     }
+
+    private static bool IsValidCoordinate(double longitude, double latitude)
+        => double.IsFinite(longitude)
+            && double.IsFinite(latitude)
+            && longitude >= -180.0
+            && longitude <= 180.0
+            && latitude >= -90.0
+            && latitude <= 90.0;
 
     // Parses the reverseGeocode featureTypes parameter (a comma-delimited list of
     // Esri feature-type tokens, e.g. "PointAddress,StreetAddress"). Missing/blank

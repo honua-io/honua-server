@@ -74,8 +74,13 @@ public static class SceneQuadtreePartitioner
         {
             // Leaf: carries every member feature in ascending original order.
             var leafFeatures = MaterializeFeatures(features, memberIndices);
+            var leafWest = west;
+            var leafSouth = south;
+            var leafEast = east;
+            var leafNorth = north;
+            ExpandBoundsToFeatures(leafFeatures, ref leafWest, ref leafSouth, ref leafEast, ref leafNorth);
             return new SceneTileNode(
-                west, south, east, north,
+                leafWest, leafSouth, leafEast, leafNorth,
                 geometricError: LeafGeometricError(depth, geometricError),
                 depth,
                 leafFeatures,
@@ -120,8 +125,13 @@ public static class SceneQuadtreePartitioner
         if (nonEmptyQuadrants <= 1)
         {
             var leafFeatures = MaterializeFeatures(features, memberIndices);
+            var leafWest = west;
+            var leafSouth = south;
+            var leafEast = east;
+            var leafNorth = north;
+            ExpandBoundsToFeatures(leafFeatures, ref leafWest, ref leafSouth, ref leafEast, ref leafNorth);
             return new SceneTileNode(
-                west, south, east, north,
+                leafWest, leafSouth, leafEast, leafNorth,
                 geometricError: LeafGeometricError(depth, geometricError),
                 depth,
                 leafFeatures,
@@ -143,12 +153,57 @@ public static class SceneQuadtreePartitioner
         // the sample is deterministic and spatially spread.
         var sample = SampleFeatures(features, memberIndices, options.InteriorSampleCount);
 
+        var nodeWest = west;
+        var nodeSouth = south;
+        var nodeEast = east;
+        var nodeNorth = north;
+        ExpandBoundsToFeatures(sample, ref nodeWest, ref nodeSouth, ref nodeEast, ref nodeNorth);
+        ExpandBoundsToChildren(children, ref nodeWest, ref nodeSouth, ref nodeEast, ref nodeNorth);
+
         return new SceneTileNode(
-            west, south, east, north,
+            nodeWest, nodeSouth, nodeEast, nodeNorth,
             geometricError,
             depth,
             sample,
             children);
+    }
+
+    private static void ExpandBoundsToFeatures(
+        IReadOnlyList<SceneFeature> features,
+        ref double west,
+        ref double south,
+        ref double east,
+        ref double north)
+    {
+        for (var i = 0; i < features.Count; i++)
+        {
+            var vertices = features[i].Geometry.Vertices;
+            for (var v = 0; v < vertices.Count; v++)
+            {
+                var vertex = vertices[v];
+                if (vertex.Longitude < west) west = vertex.Longitude;
+                if (vertex.Latitude < south) south = vertex.Latitude;
+                if (vertex.Longitude > east) east = vertex.Longitude;
+                if (vertex.Latitude > north) north = vertex.Latitude;
+            }
+        }
+    }
+
+    private static void ExpandBoundsToChildren(
+        IReadOnlyList<SceneTileNode> children,
+        ref double west,
+        ref double south,
+        ref double east,
+        ref double north)
+    {
+        for (var i = 0; i < children.Count; i++)
+        {
+            var child = children[i];
+            if (child.West < west) west = child.West;
+            if (child.South < south) south = child.South;
+            if (child.East > east) east = child.East;
+            if (child.North > north) north = child.North;
+        }
     }
 
     private static double LeafGeometricError(int depth, double inheritedGeometricError)

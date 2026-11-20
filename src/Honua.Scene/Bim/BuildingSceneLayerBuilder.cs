@@ -109,8 +109,9 @@ public static class BuildingSceneLayerBuilder
         genericKeys.Sort(StringComparer.Ordinal);
         var schemas = BuildSchemas(genericKeys);
 
-        // 3. Hand off to the shared GLB writer (geometry -> ECEF, triangulation,
-        //    EXT_structural_metadata table) and the shared tileset writer.
+        // 3. Hand off to the shared GLB writer (geometry -> ECEF -> glTF 2.0 Y-up
+        //    (X_ecef, Z_ecef, -Y_ecef), triangulation, EXT_structural_metadata table)
+        //    and the shared tileset writer.
         var warnings = new List<string>();
         var glb = GeometryTileBuilder.BuildGlb(
             features,
