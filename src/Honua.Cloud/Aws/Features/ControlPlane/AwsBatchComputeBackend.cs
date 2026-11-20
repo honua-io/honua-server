@@ -9,6 +9,7 @@ using Amazon.Runtime;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Logging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 
@@ -425,7 +426,7 @@ internal sealed partial class AwsBatchComputeBackend(
 
         var jobQueue = GetRequiredParameter(parameters, AwsBatchParameterKeys.JobQueueArn);
         var region = GetOptionalParameter(parameters, AwsBatchParameterKeys.Region);
-        var serviceUrl = GetOptionalParameter(parameters, AwsBatchParameterKeys.ServiceUrl);
+        var serviceUrl = GetServiceUrl(parameters);
 
         Dictionary<string, string>? resolvedParameters = null;
         var environmentOverrides = BuildEnvironmentOverrides(job);
@@ -498,7 +499,7 @@ internal sealed partial class AwsBatchComputeBackend(
             // deterministic JobName as a discovery key under the pending marker so the
             // reconciler can verify acceptance via ListJobs on the next cycle instead of
             // stamping the durable record terminal Failed.
-            Log.BatchJobSubmissionUncertain(logger, job.OperationId, jobName, ex.Message);
+            Log.BatchJobSubmissionUncertain(logger, job.OperationId, jobName, ProviderError(ex));
 
             return new BatchComputeSubmissionResult
             {
@@ -515,7 +516,7 @@ internal sealed partial class AwsBatchComputeBackend(
             // Queued retries. Pure AmazonClientException (identity/transport) is always
             // uncertain and takes the branch above, so only resolved service-level
             // rejections reach this catch.
-            Log.BatchJobSubmissionFailed(logger, job.OperationId, jobName, ex.Message);
+            Log.BatchJobSubmissionFailed(logger, job.OperationId, jobName, ProviderError(ex));
 
             return new BatchComputeSubmissionResult
             {
@@ -547,6 +548,12 @@ internal sealed partial class AwsBatchComputeBackend(
 
         var providerId = job.ProviderOperationId;
         var region = GetOptionalParameter(job.Spec.Parameters, AwsBatchParameterKeys.Region);
+        if (RefusedServiceUrl(job.Spec.Parameters) is { } refusal)
+        {
+            // No provider call can be made, so finalize instead of faulting every reconcile poll.
+            return RefusedEndpointObservation(providerId, ExecutionJobStatus.Failed, refusal);
+        }
+
         var serviceUrl = GetOptionalParameter(job.Spec.Parameters, AwsBatchParameterKeys.ServiceUrl);
 
         if (string.IsNullOrWhiteSpace(providerId))
@@ -616,7 +623,7 @@ internal sealed partial class AwsBatchComputeBackend(
             // v4, so both must be caught here; if either threw through, the reconciler's
             // generic catch would stamp the record terminal Failed even though the AWS
             // Batch job could still be running.
-            Log.BatchJobObservationFailed(logger, job.OperationId, providerId, ex.Message);
+            Log.BatchJobObservationFailed(logger, job.OperationId, providerId, ProviderError(ex));
             return new BatchComputeObservation
             {
                 Status = job.Status,
@@ -743,7 +750,7 @@ internal sealed partial class AwsBatchComputeBackend(
         }
         catch (Exception ex) when (IsProviderRequestException(ex, cancellationToken))
         {
-            Log.BatchJobObservationFailed(logger, job.OperationId, pendingJobName, ex.Message);
+            Log.BatchJobObservationFailed(logger, job.OperationId, pendingJobName, ProviderError(ex));
             return new BatchComputeObservation
             {
                 Status = job.Status,
@@ -771,6 +778,12 @@ internal sealed partial class AwsBatchComputeBackend(
 
         var providerId = job.ProviderOperationId;
         var region = GetOptionalParameter(job.Spec.Parameters, AwsBatchParameterKeys.Region);
+        if (RefusedServiceUrl(job.Spec.Parameters) is { } refusal)
+        {
+            // No provider call can be made, so finalize instead of faulting every reconcile poll.
+            return RefusedEndpointObservation(providerId, ExecutionJobStatus.Cancelled, refusal);
+        }
+
         var serviceUrl = GetOptionalParameter(job.Spec.Parameters, AwsBatchParameterKeys.ServiceUrl);
 
         if (string.IsNullOrWhiteSpace(providerId))
@@ -866,7 +879,7 @@ internal sealed partial class AwsBatchComputeBackend(
             // SDK blip during a user cancel would surface as an unhandled 500 to the
             // caller and stamp the durable record terminal Failed via the reconciler's
             // generic catch.
-            Log.BatchJobCancellationFailed(logger, job.OperationId, providerId, ex.Message);
+            Log.BatchJobCancellationFailed(logger, job.OperationId, providerId, ProviderError(ex));
             return new BatchComputeObservation
             {
                 Status = job.Status,
@@ -951,7 +964,7 @@ internal sealed partial class AwsBatchComputeBackend(
         }
         catch (Exception ex) when (IsProviderRequestException(ex, cancellationToken))
         {
-            Log.BatchJobCancellationFailed(logger, job.OperationId, pendingJobName, ex.Message);
+            Log.BatchJobCancellationFailed(logger, job.OperationId, pendingJobName, ProviderError(ex));
             return new BatchComputeObservation
             {
                 Status = job.Status,
@@ -1057,6 +1070,30 @@ internal sealed partial class AwsBatchComputeBackend(
 
         return value.Trim();
     }
+
+    // Rejected before any client is built: the SDK would otherwise sign requests for an endpoint
+    // that is plain HTTP or outside the AWS partitions.
+    private static string? GetServiceUrl(IReadOnlyDictionary<string, string> parameters)
+        => RefusedServiceUrl(parameters) is { } refusal
+            ? throw new InvalidOperationException(refusal)
+            : GetOptionalParameter(parameters, AwsBatchParameterKeys.ServiceUrl);
+
+    private static string? RefusedServiceUrl(IReadOnlyDictionary<string, string> parameters)
+        => GetOptionalParameter(parameters, AwsBatchParameterKeys.ServiceUrl) is { } serviceUrl
+            && AwsSdkBatchJobClient.ValidateServiceUrl(serviceUrl) is { } error
+                ? $"AWS Batch parameter '{AwsBatchParameterKeys.ServiceUrl}' {error}"
+                : null;
+
+    private static BatchComputeObservation RefusedEndpointObservation(string? providerId, ExecutionJobStatus status, string refusal)
+        => new()
+        {
+            Status = status,
+            ProviderOperationId = providerId,
+            PercentComplete = 100,
+            Message = refusal
+        };
+
+    private static string ProviderError(Exception ex) => ProviderErrorBodyRedactor.Redact(ex.Message);
 
     private static string? GetOptionalParameter(IReadOnlyDictionary<string, string> parameters, string key)
         => parameters.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
