@@ -74,16 +74,18 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
         using var stalled = new StudioAiProxyStallingStream("data: {\"type\":\"message_start\",\"message\":{\"model\":\"m\"}}\n\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\"}}\n\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"partial\"}}\n\n");
         var handler = new StudioAiProxySequenceHttpMessageHandler(
             () => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(stalled) });
+        // The deadline fires when the stream stalls after the partial text, not after real time passes.
         var adapter = new AnthropicStudioAiProxyAdapter(
             new StudioAiProxyMockHttpClientFactory(handler), new StudioAiProxyApiKeyResolver(),
-            NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
+            NullLogger<AnthropicStudioAiProxyAdapter>.Instance)
+        {
+            TimeProvider = new StudioAiProxyTriggeredTimeProvider(stalled.Stalled),
+        };
         var options = DefaultOptions();
         options.TimeoutSeconds = 1;
 
-        var stopwatch = Stopwatch.StartNew();
         var events = await CollectAsync(adapter, options, ToolFreeRequest());
 
-        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
         events.Count(e => e.Type == StudioAiChatEventType.Error).Should().Be(1);
         events.Should().Contain(e => e.Type == StudioAiChatEventType.TextDelta && e.Text == "partial");
         events.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop);
