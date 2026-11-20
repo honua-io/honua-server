@@ -26,8 +26,8 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 
-def owned_volume(compose, project, destination, hosts):
-    """Names the one project-owned named volume every host mounts at destination."""
+def shared_volume(compose, destination, hosts):
+    """Names the one named volume every host mounts at destination."""
     names = set()
     for host in hosts:
         container = run(*compose, "ps", "-q", host).decode().strip()
@@ -38,11 +38,13 @@ def owned_volume(compose, project, destination, hosts):
         names.add(mounts[0]["Name"])
     if len(names) != 1:
         raise ValueError(f"every host must share one volume at {destination}")
-    volume = names.pop()
+    return names.pop()
+
+
+def require_project_volume(volume, project):
     labels = json.loads(run("docker", "volume", "inspect", volume))[0]["Labels"]
     if labels.get("com.docker.compose.project") != project:
         raise ValueError("refusing a volume not owned by this qualification project")
-    return volume
 
 
 def recover(compose_file, project, object_root, backup_dir):
@@ -65,8 +67,10 @@ def recover(compose_file, project, object_root, backup_dir):
         if (len(mounts) != 1 or mounts[0]["Type"] != "bind"
                 or Path(mounts[0]["Source"]).resolve() != object_root):
             raise ValueError("output directory must be the actual shared mount of every qualification host")
-    database = owned_volume(compose, project, "/var/lib/postgresql/data", ("postgres",))
-    key_ring = owned_volume(compose, project, KEY_RING, ("server", "server-peer"))
+    database = shared_volume(compose, "/var/lib/postgresql/data", ("postgres",))
+    key_ring = shared_volume(compose, KEY_RING, ("server", "server-peer"))
+    for volume in (database, key_ring):
+        require_project_volume(volume, project)
     output_store = {"store": "gp-output", "volume": str(object_root), "type": "bind"}
     inventory = [{"store": "postgres", "volume": database, "type": "volume"},
                  {"store": "data-protection-keys", "volume": key_ring, "type": "volume"}, output_store]
@@ -85,6 +89,9 @@ def recover(compose_file, project, object_root, backup_dir):
     run(*compose, "stop", "postgres")
     for item in inventory:
         item["files_before"] = file_inventory(item)
+        if item["store"] == "data-protection-keys" and not item["files_before"].strip():
+            # An unused ring means the servers keep their keys elsewhere, and restored jobs would not verify.
+            raise RuntimeError("data-protection-keys: the shared key ring holds no key")
         archive = mounted(item, "tar -C /volume -cpf - .")
         path = backup_dir / (item["store"] + ".tar")
         path.write_bytes(archive)

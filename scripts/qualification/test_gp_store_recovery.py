@@ -60,8 +60,11 @@ class FakeDocker:
 
     def helper(self, args, kwargs):
         mount = args[args.index("--mount") + 1]
-        store = {"src=database,": "postgres", "src=keys,": "data-protection-keys"}.get(
-            next((src for src in ("src=database,", "src=keys,") if src in mount), ""), "gp-output")
+        store = "gp-output"
+        if "src=database," in mount:
+            store = "postgres"
+        elif "src=keys," in mount:
+            store = "data-protection-keys"
         if args[args.index("--entrypoint") + 1] == "tar":
             self.test.assertEqual(kwargs["input"], (store + " archive").encode())
             self.restored.add(store)
@@ -70,6 +73,8 @@ class FakeDocker:
 
     def helper_command(self, store, command):
         if command.startswith("cd /volume"):
+            if self.failure == "empty-key-ring" and store == "data-protection-keys":
+                return b""
             if self.failure == "inventory-corrupt" and store in self.restored:
                 return b"different restored inventory"
             return (store + " checksum file\n").encode()
@@ -130,6 +135,7 @@ class RecoveryTests(unittest.TestCase):
                                  ("surviving-volume", "postgres volume survived destruction"),
                                  ("surviving-key-ring", "data-protection-keys volume survived destruction"),
                                  ("split-key-ring", "share one volume"),
+                                 ("empty-key-ring", "holds no key"),
                                  ("nonempty-destination", "not empty"),
                                  ("archive-corrupt", "checksum changed"),
                                  ("inventory-corrupt", "inventory differs")):

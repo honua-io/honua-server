@@ -85,7 +85,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      # Started after the primary so two empty rings never each create a first key.
+      # The primary creates the first key as it starts, before it reports healthy, so the
+      # peer reads that key instead of creating a second one in an empty ring.
       server:
         condition: service_healthy
     healthcheck:
