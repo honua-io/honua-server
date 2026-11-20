@@ -728,7 +728,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
     // drawingInfo column is rewritten in the same statement from the document being
     // stored, so it can never outlive the canonical style it mirrors. Reads still derive
     // the Esri encoding from the canonical style rather than trusting that cache.
-    // Returns the layers associated with the style, or null when the style no longer exists.
+    // Returns the layers associated with the style, or null when the store has no such style.
     private async Task<IReadOnlyList<int>?> PersistCatalogStyleAsync(
         StyleCatalogRecord existing,
         string mapLibreStyleJson,
