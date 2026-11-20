@@ -156,6 +156,64 @@ public sealed class ODataQueryHandlerTests
         all.Should().ContainSingle();
     }
 
+    [UnitTest]
+    public void BuildContextUrl_WithSelectAndExpand_FormatsNavigationPropertiesWithParentheses()
+    {
+        var contextUrl = ODataUtilityService.BuildContextUrl(
+            "http://localhost",
+            "Features",
+            isSingle: false,
+            select: "ObjectId,name",
+            expand: "Parcels,Owners()");
+
+        contextUrl.Should().Be("http://localhost/odata/$metadata#Features(ObjectId,name,Parcels(),Owners())");
+    }
+
+    [UnitTest]
+    public async Task HandleGetLayersAsync_WithTopZero_ReturnsEmptyValueArrayAndNoNextLink()
+    {
+        using var provider = CreateProvider(["OData"]);
+        var graphProvider = provider.GetRequiredService<IMetadataV2GraphProvider>();
+        var services = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
+            .AddSingleton(graphProvider)
+            .AddSingleton(Substitute.For<Honua.Core.Features.FeatureStore.Abstractions.IFeatureReader>())
+            .AddSingleton(Substitute.For<Honua.Core.Features.Geometry.Abstractions.IGeometryService>())
+            .AddSingleton(Substitute.For<Honua.Core.Features.Infrastructure.Abstractions.ICrsRegistry>())
+            .AddSingleton<Honua.Core.Features.Validation.Abstractions.ICommonQueryValidator, Honua.Core.Features.Validation.CommonQueryValidator>()
+            .AddSingleton<ODataValidationService>()
+            .AddSingleton<Honua.Protocols.OData.ODataFeatureProviderResolver>()
+            .AddSingleton<ODataQuerySearchService>()
+            .AddSingleton(Substitute.For<Honua.Core.Features.Infrastructure.Caching.IResponseCache>())
+            .AddSingleton(Substitute.For<Honua.Core.Features.Caching.IETagService>())
+            .AddSingleton(new Honua.Core.Configuration.CacheOptions())
+            .AddSingleton<Honua.Protocols.OData.ODataQueryDependencies>()
+            .AddSingleton<Honua.Protocols.OData.ODataQueryHandler>()
+            .BuildServiceProvider();
+
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services,
+            Response = { Body = new MemoryStream() }
+        };
+        context.Request.Scheme = "http";
+        context.Request.Host = new HostString("localhost");
+        context.Request.Path = "/odata/Layers";
+        context.Request.QueryString = new QueryString("?$top=0&$count=true");
+
+        var handler = services.GetRequiredService<Honua.Protocols.OData.ODataQueryHandler>();
+        var result = await handler.HandleGetLayersAsync(context, top: "0", count: "true");
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.Response.Body.Position = 0;
+        using var doc = await System.Text.Json.JsonDocument.ParseAsync(context.Response.Body);
+        doc.RootElement.GetProperty("value").GetArrayLength().Should().Be(0);
+        doc.RootElement.GetProperty("@odata.count").GetInt64().Should().Be(1);
+        doc.RootElement.TryGetProperty("@odata.nextLink", out _).Should().BeFalse();
+    }
+
     private static async Task<ServiceProvider> CreateTenantProviderAsync(string? tenantId, bool includeVisibleSibling)
     {
         using var baseline = CreateProvider(["OData"]);

@@ -204,11 +204,27 @@ public static partial class OgcMapsEndpoints
     }
 
     private static async Task<IResult> GetConformance(
+        HttpContext context,
+        string? f,
         OgcMapsConformanceHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var result = await handler.GetConformanceAsync(cancellationToken);
-        return Results.Ok(result);
+        if (!OgcCoreMetadataUtilities.TryPrepareMetadataResponse(
+                context,
+                f,
+                MetadataQueryParameters,
+                out var outputFormat,
+                out var errorResult))
+        {
+            return errorResult!;
+        }
+
+        var result = await handler.GetConformanceAsync(cancellationToken).ConfigureAwait(false);
+        return OgcCommonUtilities.FormatMetadataResponse(
+            result,
+            OgcMapsJsonContext.Default.OgcMapsConformance,
+            outputFormat,
+            "Conformance");
     }
 
     private static async Task<IResult> GetOpenApiSpec(

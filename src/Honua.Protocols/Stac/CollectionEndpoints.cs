@@ -165,6 +165,14 @@ internal static class CollectionEndpoints
             collectionId);
         StacLog.CollectionRequested(logger, collectionId);
 
+        var validationError = StacFilterHelpers.ValidateQueryParameters(
+            context.Request, StacConstants.AllowedQueryParameters.Collections);
+        if (validationError is not null)
+        {
+            StacTelemetry.SetFailed(activity, "invalid_query_parameters");
+            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+        }
+
         try
         {
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -215,6 +223,14 @@ internal static class CollectionEndpoints
         HttpContext context,
         [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
     {
+        var validationError = StacFilterHelpers.ValidateQueryParameters(
+            context.Request, StacConstants.AllowedQueryParameters.Catalog);
+        if (validationError is not null)
+        {
+            return Task.FromResult(StandardErrorHelpers.CreateBadRequest(
+                context, validationError.Value ?? "Invalid query parameters."));
+        }
+
         try
         {
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
@@ -240,6 +256,13 @@ internal static class CollectionEndpoints
         HttpContext context,
         [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
     {
+        var validationError = StacFilterHelpers.ValidateQueryParameters(
+            context.Request, StacConstants.AllowedQueryParameters.Collections);
+        if (validationError is not null)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+        }
+
         try
         {
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
