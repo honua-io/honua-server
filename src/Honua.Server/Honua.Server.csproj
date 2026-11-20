@@ -45,7 +45,7 @@
     <DefaultItemExcludes>$(DefaultItemExcludes);Features/Infrastructure/Hosting/Modules/ODataProtocolModule.cs</DefaultItemExcludes>
   </PropertyGroup>
   <PropertyGroup Condition="'$(HonuaIncludeScene)' != 'true'">
-    <DefaultItemExcludes>$(DefaultItemExcludes);Features/Admin/SceneDatasetEndpoints.cs;Features/Admin/SceneGenerationEndpoints.cs;Features/Admin/SceneBimIngestEndpoints.cs;Features/Admin/ScenePointCloudIngestEndpoints.cs;Features/Admin/Scene/GeoprocessingPointCloudDecompressor.cs;Features/Infrastructure/Scene/SceneGenerationServiceCollectionExtensions.cs</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Features/Admin/SceneDatasetEndpoints.cs;Features/Admin/SceneAssetRootPolicy.cs;Features/Admin/SceneGenerationEndpoints.cs;Features/Admin/SceneBimIngestEndpoints.cs;Features/Admin/ScenePointCloudIngestEndpoints.cs;Features/Admin/Scene/GeoprocessingPointCloudDecompressor.cs;Features/Infrastructure/Scene/SceneGenerationServiceCollectionExtensions.cs</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -155,6 +155,7 @@
   </ItemGroup>
   <ItemGroup Condition="'$(HonuaIncludeScene)' != 'true'">
     <Compile Remove="Features\Admin\SceneDatasetEndpoints.cs" />
+    <Compile Remove="Features\Admin\SceneAssetRootPolicy.cs" />
     <Compile Remove="Features\Admin\SceneGenerationEndpoints.cs" />
     <Compile Remove="Features\Admin\SceneBimIngestEndpoints.cs" />
     <Compile Remove="Features\Admin\ScenePointCloudIngestEndpoints.cs" />
