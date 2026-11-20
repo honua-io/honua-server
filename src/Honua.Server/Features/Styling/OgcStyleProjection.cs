@@ -608,9 +608,9 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             return new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, error);
         }
 
-        var updated = await PersistCatalogStyleAsync(existing, mapLibreStyleJson, cancellationToken).ConfigureAwait(false);
-        return updated
-            ? new OgcStyleUpdateResult(OgcStyleUpdateStatus.Updated, null)
+        var associatedLayerIds = await PersistCatalogStyleAsync(existing, mapLibreStyleJson, cancellationToken).ConfigureAwait(false);
+        return associatedLayerIds is not null
+            ? new OgcStyleUpdateResult(OgcStyleUpdateStatus.Updated, null) { AssociatedLayerIds = associatedLayerIds }
             : new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
     }
 
@@ -703,9 +703,9 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
                 warnings);
         }
 
-        var updated = await PersistCatalogStyleAsync(existing, conversion.MapLibreStyleJson, cancellationToken).ConfigureAwait(false);
-        return updated
-            ? new OgcStyleUpdateResult(OgcStyleUpdateStatus.Updated, null, warnings)
+        var associatedLayerIds = await PersistCatalogStyleAsync(existing, conversion.MapLibreStyleJson, cancellationToken).ConfigureAwait(false);
+        return associatedLayerIds is not null
+            ? new OgcStyleUpdateResult(OgcStyleUpdateStatus.Updated, null, warnings) { AssociatedLayerIds = associatedLayerIds }
             : new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found.");
     }
 
@@ -728,7 +728,8 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
     // drawingInfo column is rewritten in the same statement from the document being
     // stored, so it can never outlive the canonical style it mirrors. Reads still derive
     // the Esri encoding from the canonical style rather than trusting that cache.
-    private async Task<bool> PersistCatalogStyleAsync(
+    // Returns the layers associated with the style, or null when the style no longer exists.
+    private async Task<IReadOnlyList<int>?> PersistCatalogStyleAsync(
         StyleCatalogRecord existing,
         string mapLibreStyleJson,
         CancellationToken cancellationToken)
@@ -748,9 +749,10 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             .ConfigureAwait(false);
         if (updated is null)
         {
-            return false;
+            return null;
         }
 
+        var associatedLayerIds = await ListAssociatedLayerIdsAsync(existing.StyleId).ConfigureAwait(false);
         if (_styleGraphSync is not null)
         {
             // The catalog write above has already committed and incremented style_version, so
@@ -763,28 +765,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             // longer abort this path: the write is already durable, and the endpoint still
             // has to observe Updated so it can evict its output cache.
             var postCommitToken = CancellationToken.None;
-            IReadOnlyList<StyleLayerAssociation> associations;
-            try
-            {
-                associations = await _independentStyleCatalog
-                    .ListAssociationsAsync(postCommitToken)
-                    .ConfigureAwait(false);
-            }
-            // Intentional broad catch: a post-commit synchronization failure must not be
-            // reported as a failed edit, including cancellation raised by a dependency.
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                LayerStyleLog.StandaloneStyleGraphSyncFailed(_logger, existing.StyleId, ex);
-                associations = [];
-            }
-
-            foreach (var layerId in associations
-                         .Where(association => string.Equals(
-                             association.StyleId,
-                             existing.StyleId,
-                             StringComparison.Ordinal))
-                         .Select(association => association.LayerId)
-                         .Distinct())
+            foreach (var layerId in associatedLayerIds)
             {
                 try
                 {
@@ -799,7 +780,29 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             }
         }
 
-        return true;
+        return associatedLayerIds;
+    }
+
+    // Post-commit and best-effort: a failed listing must not report a committed edit as failed.
+    private async Task<IReadOnlyList<int>> ListAssociatedLayerIdsAsync(string styleId)
+    {
+        try
+        {
+            var associations = await _independentStyleCatalog!
+                .ListAssociationsAsync(CancellationToken.None)
+                .ConfigureAwait(false);
+            return associations
+                .Where(association => string.Equals(association.StyleId, styleId, StringComparison.Ordinal))
+                .Select(association => association.LayerId)
+                .Distinct()
+                .ToArray();
+        }
+        // Intentional broad catch: a post-commit failure, including cancellation raised by a dependency.
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            LayerStyleLog.StandaloneStyleGraphSyncFailed(_logger, styleId, ex);
+            return [];
+        }
     }
 
     private static bool TryValidateDrawingInfoShape(JsonElement drawingInfo, out string error)
@@ -959,7 +962,10 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             }
         }
 
-        return new OgcStyleDeleteResult(OgcStyleDeleteStatus.Deleted, null);
+        return new OgcStyleDeleteResult(OgcStyleDeleteStatus.Deleted, null)
+        {
+            AssociatedLayerIds = deleteResult.AssociatedLayerIds,
+        };
     }
 
     // Lightweight validation for a standalone (not-yet-layer-bound) MapLibre style.

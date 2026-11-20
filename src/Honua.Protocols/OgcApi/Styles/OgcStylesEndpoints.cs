@@ -433,7 +433,7 @@ public static class OgcStylesEndpoints
             case OgcStyleUpdateStatus.Updated:
                 OgcStylesLog.StyleUpdated(logger, styleId);
                 await EvictStylesOutputCacheAsync(context, logger).ConfigureAwait(false);
-                await EvictStyledLayerAsync(context, logger, result.StorageLayerId).ConfigureAwait(false);
+                await EvictStyledLayersAsync(context, logger, StyledLayers(result)).ConfigureAwait(false);
                 // Surface lossy-conversion warnings non-blockingly so the client can show them (the canonical
                 // MapLibre was still stored). Mirrors the unsupportedSymbolizers[] contract.
                 if (result.UnsupportedSymbolizers is { Count: > 0 })
@@ -543,6 +543,7 @@ public static class OgcStylesEndpoints
             case OgcStyleDeleteStatus.Deleted:
                 OgcStylesLog.StyleDeleted(logger, styleId);
                 await EvictStylesOutputCacheAsync(context, logger).ConfigureAwait(false);
+                await EvictStyledLayersAsync(context, logger, result.AssociatedLayerIds).ConfigureAwait(false);
                 return Results.NoContent();
             case OgcStyleDeleteStatus.Forbidden:
                 return StandardErrorHelpers.CreateForbidden(context, result.ErrorMessage ?? $"Style '{styleId}' cannot be deleted through this surface.");
@@ -573,27 +574,36 @@ public static class OgcStylesEndpoints
         }
     }
 
-    // A layer style write can retire the layer's saved presentation, which FeatureServer and
-    // MapServer metadata, tiles and cached map output advertise, so evict the layer as the
-    // endpoint that sets that presentation does.
-    private static async Task EvictStyledLayerAsync(HttpContext context, ILogger logger, int? storageLayerId)
+    // A layer style write can retire the layer's saved presentation, and a catalog style write
+    // or delete changes what its associated layers present. FeatureServer and MapServer metadata,
+    // tiles and cached map output advertise both, so evict each layer as the endpoint that sets
+    // a saved presentation does.
+    private static async Task EvictStyledLayersAsync(HttpContext context, ILogger logger, IEnumerable<int> layerIds)
     {
         var invalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
-        if (storageLayerId is not { } layerId || invalidator is null)
+        if (invalidator is null)
         {
             return;
         }
 
-        try
+        foreach (var layerId in layerIds.Distinct())
         {
-            await invalidator.InvalidateServiceCatalogAsync(null, [layerId], CancellationToken.None).ConfigureAwait(false);
-        }
-        // Best effort, as for the styles tag above: the style write has committed.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            OgcStylesLog.StyledLayerCacheEvictionFailed(logger, layerId, ex);
+            try
+            {
+                await invalidator.InvalidateServiceCatalogAsync(null, [layerId], CancellationToken.None).ConfigureAwait(false);
+            }
+            // Best effort, as for the styles tag above: the style write has committed.
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                OgcStylesLog.StyledLayerCacheEvictionFailed(logger, layerId, ex);
+            }
         }
     }
+
+    private static IEnumerable<int> StyledLayers(OgcStyleUpdateResult result)
+        => result.StorageLayerId is { } storageLayerId
+            ? result.AssociatedLayerIds.Append(storageLayerId)
+            : result.AssociatedLayerIds;
 
     private static ImmutableArray<Link> BuildStylesheetLinks(string baseUrl, string styleId)
     {
