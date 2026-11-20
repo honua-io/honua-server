@@ -329,6 +329,24 @@ internal sealed partial class FeatureServerQueryExecutor
             return;
         }
 
+        if (query.Limit is int idsLimit and >= 0 and < int.MaxValue)
+        {
+            var probedIds = await QueryObjectIdsWithValidationAsync(
+                reader,
+                storageLayerId,
+                query with { Limit = checked(idsLimit + 1) },
+                cancellationToken).ConfigureAwait(false);
+            var bounded = probedIds.IsDefault ? ImmutableArray<long>.Empty : probedIds;
+            var exceeded = bounded.Length > idsLimit;
+            await WriteObjectIdsAsync(
+                exceeded ? bounded[..idsLimit] : bounded,
+                objectIdFieldName,
+                context,
+                cancellationToken,
+                exceeded).ConfigureAwait(false);
+            return;
+        }
+
         var objectIds = await QueryObjectIdsWithValidationAsync(
             reader,
             storageLayerId,
@@ -537,7 +555,7 @@ internal sealed partial class FeatureServerQueryExecutor
         FeatureQuery query,
         CancellationToken cancellationToken)
     {
-        var ceiling = query.Limit is int limit && limit > 0 && limit < MaxNonStreamingObjectIds
+        var ceiling = query.Limit is int limit && limit >= 0 && limit < MaxNonStreamingObjectIds
             ? limit
             : MaxNonStreamingObjectIds;
         var ids = await reader

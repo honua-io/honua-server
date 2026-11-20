@@ -644,6 +644,79 @@ public sealed partial class PbfQueryFormatterTests
         act.Should().NotThrow();
     }
 
+    [Fact]
+    public void FormatAsPbf_WithRequestedOutputSridAlias_EchoesRequestedWkidAndCanonicalLatestWkid()
+    {
+        var layer = CreatePointLayer();
+        var result = CreateSinglePointResult();
+
+        var (payload, _) = _sut.FormatAsPbf(
+            result,
+            layer,
+            returnGeometry: true,
+            outputSrid: 3857,
+            returnZ: false,
+            returnM: false,
+            geometryPrecision: null,
+            maxAllowableOffset: null,
+            outFields: null,
+            quantizationTransform: null,
+            requestedOutputSrid: 102100);
+
+        var featureResult = GetFirstLengthDelimitedField(GetFirstLengthDelimitedField(payload, 2), 1);
+        var spatialRef = GetFirstLengthDelimitedField(featureResult, 8);
+        GetFirstVarintField(spatialRef, 1).Should().Be(102100UL);
+        GetFirstVarintField(spatialRef, 2).Should().Be(3857UL);
+    }
+
+    [Fact]
+    public void FormatAsPbf_WithBinaryBlobAttribute_EncodesInProtobufBytesValueField8()
+    {
+        var layer = CreateLayer(
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false },
+                new MetadataV2Field { Name = "payload", Type = MetadataV2FieldType.Binary, Nullable = true }
+            ],
+            MetadataV2GeometryType.Point);
+        var rawBytes = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF };
+        var feature = Feature.Create(
+            1,
+            null,
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 1L,
+                ["payload"] = rawBytes
+            }.ToImmutableDictionary());
+
+        var (payload, _) = _sut.FormatAsPbf(
+            QueryResult<Feature>.Create(1, [feature]),
+            layer,
+            returnGeometry: false,
+            outputSrid: null,
+            returnZ: false,
+            returnM: false,
+            geometryPrecision: null,
+            maxAllowableOffset: null,
+            outFields: ["payload"]);
+
+        System.Text.Encoding.UTF8.GetString(payload).Should().NotContain("System.Byte[]");
+        var featureResult = GetFirstLengthDelimitedField(GetFirstLengthDelimitedField(payload, 2), 1);
+        var outputFeature = GetFirstLengthDelimitedField(featureResult, 15);
+        var blobValueMsg = GetFirstLengthDelimitedField(outputFeature, 1, 1);
+        GetFirstLengthDelimitedField(blobValueMsg, 8).Should().Equal(rawBytes);
+    }
+
+    [Fact]
+    public void FormatExtentAsPbf_WithoutEnvelope_EmitsExtentCountResultWithZeroCount()
+    {
+        var (payload, contentType) = PbfQueryFormatter.FormatExtentAsPbf(count: 0);
+
+        contentType.Should().Be("application/x-protobuf");
+        var queryResult = GetFirstLengthDelimitedField(payload, 2);
+        var extentResult = GetFirstLengthDelimitedField(queryResult, 4);
+        GetFirstVarintField(extentResult, 2).Should().Be(0UL);
+    }
+
     // ── Helpers ─────────────────────────────────────────────────
 
     private static MetadataV2Object CreatePointLayer() =>

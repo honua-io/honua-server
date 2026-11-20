@@ -191,6 +191,43 @@ internal sealed partial class PbfQueryFormatter
         }
     }
 
+    // returnExtentOnly with f=pbf when no features match still emits FeatureCollectionPBuffer extentCountResult.
+    public static (byte[] response, string contentType) FormatExtentAsPbf(long count)
+    {
+        var extentMsg = new ProtobufWriter(16);
+        try
+        {
+            extentMsg.WriteUInt64Always(2, (ulong)Math.Max(count, 0));
+
+            var queryResult = new ProtobufWriter(extentMsg.Position + 8);
+            try
+            {
+                queryResult.WriteMessage(4, ref extentMsg);
+
+                var outer = new ProtobufWriter(queryResult.Position + 16);
+                try
+                {
+                    outer.WriteString(1, PbfVersion);
+                    outer.WriteMessage(2, ref queryResult);
+                    return (outer.ToArrayAndDispose(), "application/x-protobuf");
+                }
+                catch
+                {
+                    outer.Dispose();
+                    throw;
+                }
+            }
+            finally
+            {
+                queryResult.Dispose();
+            }
+        }
+        finally
+        {
+            extentMsg.Dispose();
+        }
+    }
+
     public (byte[] response, string contentType) FormatAsPbf(
         QueryResult<Feature> result,
         MetadataV2Object resource,
@@ -201,7 +238,8 @@ internal sealed partial class PbfQueryFormatter
         int? geometryPrecision,
         double? maxAllowableOffset,
         string[]? outFields,
-        QuantizationTransform? quantizationTransform = null)
+        QuantizationTransform? quantizationTransform = null,
+        int? requestedOutputSrid = null)
     {
         var effectiveLimits = GeometryOutputProcessor.CreateEffectiveLimits(
             _geometryLimits,
@@ -229,7 +267,8 @@ internal sealed partial class PbfQueryFormatter
                 returnM,
                 effectiveLimits,
                 outFields,
-                quantizationTransform);
+                quantizationTransform,
+                requestedOutputSrid);
             writer.EndMessage(featurePosition);
             writer.EndMessage(queryPosition);
             return (writer.ToArrayAndDispose(), "application/x-protobuf");
@@ -251,13 +290,15 @@ internal sealed partial class PbfQueryFormatter
         bool returnM,
         GeometryLimits geometryLimits,
         string[]? outFields,
-        QuantizationTransform? quantizationTransform)
+        QuantizationTransform? quantizationTransform,
+        int? requestedOutputSrid = null)
     {
         var encoding = WriteFeatureHeader(ref writer, result, new FeatureHeaderOptions
         {
             Resource = resource,
             ObjectIdFieldName = objectIdFieldName,
             Srid = srid,
+            RequestedOutputSrid = requestedOutputSrid,
             ReturnGeometry = returnGeometry,
             ReturnZ = returnZ,
             ReturnM = returnM,
@@ -309,11 +350,7 @@ internal sealed partial class PbfQueryFormatter
 
         if (hasGeometry)
         {
-            var sr = new ProtobufWriter(32);
-            sr.WriteUInt32(1, (uint)srid);
-            sr.WriteUInt32(2, (uint)srid);
-            writer.WriteMessage(8, ref sr);
-            sr.Dispose();
+            WriteSpatialReference(ref writer, srid, options.RequestedOutputSrid);
         }
 
         // hasZ/hasM (fields 10/11) must describe the coordinate stride actually
@@ -360,6 +397,15 @@ internal sealed partial class PbfQueryFormatter
         double scale = ComputeScale(geometryLimits, quantizationTransform);
         return new FeatureEncoding(queryFields, fieldIndex, objectIdFieldName, returnGeometry,
             effectiveZ, effectiveM, geometryLimits, scale, quantizationTransform, srid);
+    }
+
+    private static void WriteSpatialReference(ref ProtobufWriter writer, int srid, int? requestedOutputSrid)
+    {
+        var sr = new ProtobufWriter(32);
+        sr.WriteUInt32(1, (uint)(requestedOutputSrid ?? srid));
+        sr.WriteUInt32(2, (uint)srid);
+        writer.WriteMessage(8, ref sr);
+        sr.Dispose();
     }
 
     private static void WriteFeature(
@@ -467,6 +513,12 @@ internal sealed partial class PbfQueryFormatter
                 break;
             case ulong ul:
                 writer.WriteUInt64Always(7, ul);    // uint64_value
+                break;
+            case byte[] bytes:
+                writer.WriteBytes(8, bytes);        // bytes_value
+                break;
+            case ReadOnlyMemory<byte> rom:
+                writer.WriteBytes(8, rom.Span);     // bytes_value
                 break;
             case bool b:
                 writer.WriteBoolAlways(9, b);       // bool_value
