@@ -2098,3 +2098,33 @@ minute and the failed-password block now apply, per case.
 Shard filters are unchanged, so every case runs in the same shards on selected PR
 runs and twice-daily full trunk runs. No workflow, shard definition, required
 check name or aggregate `needs` changed.
+
+### Credential-expiry cases start with a 3-second lifetime
+
+Expiry cases in `FeatureStreamEndpointsTests` (OData poll, default-tenant OData read,
+WebSocket and SSE stream, Kestrel close), `SensorThingsStreamEndpointsTests`
+(`ObservationsStream` over WebSocket and SSE) and `McpModernBearerAuthenticationTests`
+(zero-skew reuse) issued portal credentials or JWTs that lived 6 to 30 seconds and
+waited them out on the real clock. The product checks expiry against the real
+clock, so the tests still do, but the credential under test now lives 3 seconds.
+Each case warms the host with a separate long-lived credential first.
+`ExpiringCredentials` in `Honua.TestKit` runs the step that needs the credential
+valid. If a slow runner outlives the credential before that step finishes, the
+helper repeats the step with a 10-second and then a 30-second lifetime, so no case
+asserts on a credential that ended before its setup. The stream cases record every
+frame received during setup, including frames from discarded attempts. After setup
+they check those frames again for the other tenant's data and for the marked change
+or observation, so a retry cannot hide a leak. Every assertion is unchanged.
+
+Measured on the build host (Release, the same 66 cases, 66/66 passing on every
+run, head twice and base once):
+- The six FeatureStream expiry cases: 127.3 to 63.8-66.4 seconds.
+- The two SensorThings expiry cases: 44.3 to 10.3-10.4 seconds.
+- The MCP zero-skew case: 33.9 to 9.1-10.0 seconds.
+- The revocation twins are unchanged.
+
+These cases run in Server Features Streaming Endpoints 1, 2 and 4, Server Features
+Streaming Transports, SensorThings 5 and MCP and Sessions 1. Shard filters are
+unchanged, so every case runs in the same shards on selected PR runs and
+twice-daily full trunk runs. No workflow, shard definition, required check name or
+aggregate `needs` changed.
