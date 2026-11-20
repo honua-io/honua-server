@@ -61,7 +61,9 @@ def verify(pin, summary):
             or artifact["sha256_before"] != artifact["sha256_after"]):
         raise ValueError("restored GP bytes do not match the server-read checksum")
     stores = recovery["recovery"]["substrates"]
-    if len(stores) != 2 or {s["store"] for s in stores} != {"postgres", "gp-output"}:
+    # The servers' shared key ring seals the job records, so it is restored with the database.
+    durable = {"postgres", "data-protection-keys", "gp-output"}
+    if len(stores) != len(durable) or {s["store"] for s in stores} != durable:
         raise ValueError("recovery did not restore every GP durable store")
     for store in stores:
         if (store["original_destroyed"] is not True or store["restored_into_empty_store"] is not True
