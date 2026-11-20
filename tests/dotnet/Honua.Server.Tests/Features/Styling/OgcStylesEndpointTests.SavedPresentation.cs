@@ -5,6 +5,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -17,7 +18,8 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Styling;
 
 // An OGC Styles write retires the layer's saved presentation (the Console drawingInfo override)
-// and evicts the layer's cached service output, as the endpoint that set the override does.
+// and evicts the layer's cached service output, as the endpoint that set the override does. A
+// catalog style write or delete evicts the layers associated with the style the same way.
 public sealed partial class OgcStylesEndpointTests
 {
     private const string SavedPresentation =
@@ -31,12 +33,7 @@ public sealed partial class OgcStylesEndpointTests
     public async Task PutStyle_LayerWithSavedPresentation_RetiresItAndEvictsTheLayer()
     {
         var cache = Substitute.For<IOutputCacheStore>();
-        await using var fixture = new WebAppFixture().ConfigureServices(services =>
-        {
-            services.RemoveAll<IOutputCacheStore>();
-            services.AddSingleton(cache);
-        });
-        await fixture.InitializeAsync();
+        await using var fixture = await CreateFixtureWithCacheAsync(cache);
         var client = fixture.CreateAdminClient();
         await SeedTestLayerStyleAsync(client);
         var styleId = fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[WebAppFixture.TestLayerId].Metadata.Name;
@@ -56,6 +53,45 @@ public sealed partial class OgcStylesEndpointTests
         (await MapServerSymbolRedAsync(client)).Should().NotBe(240);
         (await client.GetStringAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}"))
             .Should().NotMatchRegex(@"(?i)(240\s*,\s*170\s*,\s*0|#f0aa00)");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /ogc/styles/{styleId}")]
+    [Endpoint("DELETE /ogc/styles/{styleId}")]
+    public async Task CatalogStyleWriteAndDelete_EvictTheAssociatedLayer()
+    {
+        var cache = Substitute.For<IOutputCacheStore>();
+        await using var fixture = await CreateFixtureWithCacheAsync(cache);
+        var client = fixture.CreateAdminClient();
+        await SeedTestLayerStyleAsync(client);
+        var styleId = $"shared-{Guid.NewGuid():N}";
+        using (var scope = fixture.Services.CreateScope())
+        {
+            var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+            (await catalog.CreateStyleAsync(styleId, BuildDefaultStyleJson(), title: "Shared")).Should().NotBeNull();
+            (await catalog.AssociateLayerAsync(WebAppFixture.TestLayerId, styleId, ordinal: 1)).Should().BeTrue();
+        }
+
+        cache.ClearReceivedCalls();
+        using var content = new StringContent(BuildDefaultStyleJson(), Encoding.UTF8, MapboxStyleMediaType);
+        (await client.PutAsync($"/ogc/styles/{styleId}", content)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        await cache.Received().EvictByTagAsync($"layer:{WebAppFixture.TestLayerId}", Arg.Any<CancellationToken>());
+
+        cache.ClearReceivedCalls();
+        (await client.DeleteAsync($"/ogc/styles/{styleId}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        await cache.Received().EvictByTagAsync($"layer:{WebAppFixture.TestLayerId}", Arg.Any<CancellationToken>());
+    }
+
+    private static async Task<WebAppFixture> CreateFixtureWithCacheAsync(IOutputCacheStore cache)
+    {
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IOutputCacheStore>();
+            services.AddSingleton(cache);
+        });
+        await fixture.InitializeAsync();
+        return fixture;
     }
 
     private static async Task<int?> MapServerSymbolRedAsync(HttpClient client)

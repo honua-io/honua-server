@@ -13671,6 +13671,17 @@
             }
           },
           {
+            "name": "layerId",
+            "in": "query",
+            "required": false,
+            "deprecated": true,
+            "description": "Deprecated alias of serviceLayerIndex, accepted from published clients. When both are sent they must agree.",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
             "name": "destinationType",
             "in": "query",
             "required": false,
@@ -29493,6 +29504,12 @@
             "type": "integer",
             "format": "int32"
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of serviceLayerIndex. Published clients still read this name.",
+            "deprecated": true
+          },
           "layerName": {
             "type": "string"
           },
@@ -40071,6 +40088,12 @@
             "format": "int32",
             "description": "Layer identifier."
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "document": {
             "allOf": [
               {
@@ -40132,6 +40155,12 @@
             "format": "int32",
             "description": "Global storage-layer id of the related resource, distinct from its service-local publication index. Returns -1 if no storage-layer handle exists."
           },
+          "relatedLayerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of relatedStorageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "role": {
             "type": "string",
             "description": "Relationship role, typically origin or destination."
@@ -40175,6 +40204,12 @@
             "format": "int32",
             "description": "Layer identifier."
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "relationships": {
             "type": "array",
             "description": "Persisted relationships.",
@@ -40210,7 +40245,6 @@
         "required": [
           "id",
           "name",
-          "relatedStorageLayerId",
           "originField",
           "destinationField"
         ],
@@ -40231,7 +40265,13 @@
           "relatedStorageLayerId": {
             "type": "integer",
             "format": "int32",
-            "description": "Global storage-layer id of the related resource, distinct from its service-local publication index."
+            "description": "Global storage-layer id of the related resource, distinct from its service-local publication index. Required, under this name or its deprecated alias relatedLayerId."
+          },
+          "relatedLayerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated input alias of relatedStorageLayerId, accepted from published clients. Send relatedStorageLayerId; when both are sent they must agree.",
+            "deprecated": true
           },
           "role": {
             "type": "string",
@@ -40379,6 +40419,12 @@
             "format": "int32",
             "description": "Layer identifier."
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "fields": {
             "type": "array",
             "description": "Field configurations in resource schema-field order.",
@@ -40488,6 +40534,12 @@
             "format": "int32",
             "description": "Layer identifier."
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "permanentFilter": {
             "allOf": [
               {
@@ -40579,6 +40631,12 @@
             "type": "integer",
             "format": "int32",
             "description": "Layer identifier."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
           },
           "layerName": {
             "type": "string",
@@ -43669,7 +43727,6 @@
         "description": "Create/replace payload for a scheduled Share export definition.",
         "required": [
           "serviceName",
-          "serviceLayerIndex",
           "destinationType",
           "format",
           "schedule"
@@ -43688,7 +43745,13 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0,
-            "description": "Service-local layer id. Must be zero or greater."
+            "description": "Service-local layer id. Must be zero or greater. Required, under this name or its deprecated alias layerId."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated input alias of serviceLayerIndex, accepted from published clients. Send serviceLayerIndex; when both are sent they must agree.",
+            "deprecated": true
           },
           "displayName": {
             "type": "string",
@@ -43748,6 +43811,12 @@
           "serviceLayerIndex": {
             "type": "integer",
             "format": "int32"
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of serviceLayerIndex. Published clients still read this name.",
+            "deprecated": true
           },
           "displayName": {
             "type": "string",
@@ -43920,6 +43989,12 @@
           "serviceLayerIndex": {
             "type": "integer",
             "format": "int32"
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of serviceLayerIndex. Published clients still read this name.",
+            "deprecated": true
           }
         }
       },
@@ -52222,14 +52297,18 @@
       },
       "LayerRelationshipBatchUpdateItem": {
         "type": "object",
-        "required": [
-          "storageLayerId"
-        ],
         "description": "Complete desired relationship set for one global storage-layer id.",
         "properties": {
           "storageLayerId": {
             "type": "integer",
-            "format": "int32"
+            "format": "int32",
+            "description": "Required, under this name or its deprecated alias layerId."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated input alias of storageLayerId, accepted from published clients. Send storageLayerId; when both are sent they must agree.",
+            "deprecated": true
           },
           "relationships": {
             "type": "array",

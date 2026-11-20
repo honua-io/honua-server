@@ -12,7 +12,16 @@ public sealed class LayerRelationshipBatchUpdateRequest
 
 public sealed class LayerRelationshipBatchUpdateItem
 {
-    public required int StorageLayerId { get; init; }
+    private int? _storageLayerId;
+    private int? _legacyLayerId;
+
+    public int StorageLayerId { get => _storageLayerId ?? _legacyLayerId ?? LegacyIdAlias.Absent; init => _storageLayerId = value; }
+
+    // Deprecated input alias of storageLayerId; published clients still send layerId.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? LayerId { get => null; init => _legacyLayerId = value; }
+
+    internal string? StorageLayerIdError => LegacyIdAlias.StorageLayerId.Error(_storageLayerId, _legacyLayerId);
 
     public IReadOnlyList<LayerRelationshipUpdateItem> Relationships { get; init; } = Array.Empty<LayerRelationshipUpdateItem>();
 }
@@ -29,13 +38,27 @@ public sealed class LayerRelationshipUpdateRequest
 
 public sealed class LayerRelationshipUpdateItem
 {
+    private int? _relatedStorageLayerId;
+    private int? _legacyRelatedLayerId;
+
     public required string Id { get; init; }
 
     public required string Name { get; init; }
 
     public string? Description { get; init; }
 
-    public required int RelatedStorageLayerId { get; init; }
+    public int RelatedStorageLayerId
+    {
+        get => _relatedStorageLayerId ?? _legacyRelatedLayerId ?? LegacyIdAlias.Absent;
+        init => _relatedStorageLayerId = value;
+    }
+
+    // Deprecated input alias of relatedStorageLayerId; published clients still send relatedLayerId.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? RelatedLayerId { get => null; init => _legacyRelatedLayerId = value; }
+
+    internal string? RelatedStorageLayerIdError
+        => LegacyIdAlias.RelatedStorageLayerId.Error(_relatedStorageLayerId, _legacyRelatedLayerId);
 
     public string Role { get; init; } = "origin";
 
@@ -56,6 +79,9 @@ public sealed class LayerRelationshipResponse
 {
     public int StorageLayerId { get; init; }
 
+    // Deprecated wire alias of StorageLayerId; published clients still read layerId.
+    public int LayerId => StorageLayerId;
+
     public IReadOnlyList<LayerRelationshipItem> Relationships { get; init; } = Array.Empty<LayerRelationshipItem>();
 }
 
@@ -68,6 +94,9 @@ public sealed class LayerRelationshipItem
     public string? Description { get; init; }
 
     public int RelatedStorageLayerId { get; init; }
+
+    // Deprecated wire alias of RelatedStorageLayerId; published clients still read relatedLayerId.
+    public int RelatedLayerId => RelatedStorageLayerId;
 
     public required string Role { get; init; }
 
@@ -86,6 +115,9 @@ public sealed class LayerRelationshipItem
 public sealed class LayerAuthoringDocumentResponse
 {
     public int StorageLayerId { get; init; }
+
+    // Deprecated wire alias of StorageLayerId; published clients still read layerId.
+    public int LayerId => StorageLayerId;
 
     public System.Text.Json.JsonElement? Document { get; init; }
 }
