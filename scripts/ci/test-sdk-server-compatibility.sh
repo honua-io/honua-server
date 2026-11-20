@@ -144,6 +144,12 @@ if grep -Fq 'rest/services/ServiceRequest/FeatureServer' "$RUNNER"; then
 fi
 grep -Fq "global-json-file: sdk/honua-sdk-dotnet/global.json" "$WORKFLOW" \
   || fail "workflow must install the .NET SDK pinned by the honua-sdk-dotnet checkout"
+if grep -Fq '"10.0.100"' "$WORKFLOW"; then
+    fail "workflow must not overwrite historical net11.0 server checkouts with a .NET 10 global.json"
+fi
+if grep -Fq "|| '10.0.x'" "$WORKFLOW"; then
+    fail "workflow must not force .NET 10 for historical net11.0 server checkouts"
+fi
 grep -Fq "run: python3 scripts/ci/prepare-dotnet-toolchain.py" "$WORKFLOW" \
   || fail "workflow must provision the honua-sdk-dotnet workload set before the .NET leg"
 grep -Fq 'cp "$dotnet_global_json" "$smoke_dir/global.json"' "$RUNNER" \
