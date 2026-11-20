@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 # Built from the exact serving candidate, never a moving channel tag.
 ARG HONUA_SERVER_IMAGE
-ARG DOCKER_CLI_IMAGE=docker:29.9.3-cli@sha256:5a7af0dcb0e46c803efe9b45371dd21cb500e5b4453250394ac6f06d49b6e6f1
+ARG DOCKER_CLI_IMAGE=docker:29.10.0-cli@sha256:34507eb5069d8be82c95dd3b6987d4250fd5fee49b82e2509b7d7a7030740d6d
 ARG GO_IMAGE=golang:1.27.4-alpine3.23@sha256:f70850ef6ce341e8b6427f677049145d63c0b7ce002d4d7e3d464828b1b96dcd
 FROM ${DOCKER_CLI_IMAGE} AS docker-cli
 RUN mkdir -p /run/honua-compose && chown 1002:1001 /run/honua-compose && \
