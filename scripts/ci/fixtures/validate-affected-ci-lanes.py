@@ -55,6 +55,7 @@ class AffectedLaneTests(unittest.TestCase):
             'browser': 'tests/js-browser/maplibre.spec.ts',
             'python': 'tests/python/test_query.py', 'mcp': 'src/Honua.Ai/Features/Grounding/Tool.cs',
             'quickstart': 'scripts/docker/quickstart.sh',
+            'runtime': 'scripts/ci/run-import-export-fidelity-proof.py',
         }
         for lane, path in inputs.items():
             with self.subTest(lane=lane):
@@ -83,6 +84,40 @@ class AffectedLaneTests(unittest.TestCase):
                      'tests/python/test_scene_fixture_publication.py']:
             with self.subTest(aot_input=path):
                 self.assertTrue(MODULE.select([path])['aot'])
+
+    def test_runtime_lane_selects_proof_inputs_and_skips_unrelated_scripts(self):
+        for path in [
+            'src/Honua.Server/Program.cs',
+            'docker/worker-gdal/Dockerfile',
+            'docker/runtime/entrypoint.sh',
+            'tests/fixtures/sample.gpkg',
+            'tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerSourceExecutionProofTests.cs',
+            'tests/dotnet/Honua.Server.Tests/Infrastructure/TestServerFixture.cs',
+            'tests/dotnet/Honua.Server.Tests/Features/Export/Writers/IndependentVectorExportFixtureTests.cs',
+            'tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/StreamingFileImportStagingTableTests.cs',
+            'tests/dotnet/Honua.Db.Postgres.Tests/Features/Security/StoreProfileWritePolicyTests.cs',
+            'tests/dotnet/Honua.Core.Tests/Features/Security/StoreProfileWritePolicyTests.cs',
+            'tests/python/unit/test_import_export_fidelity_proof.py',
+            'tests/python/unit/test_diff_baselines.py',
+            'scripts/ci/fixtures/import-export-fidelity-baseline.json',
+            'scripts/ci/run-import-export-fidelity-proof.py',
+            'scripts/ci/decode-vector-export-proof.py',
+            'scripts/ci/prepull-pr-gate-proof-images.sh',
+        ]:
+            with self.subTest(runtime_input=path):
+                self.assertTrue(MODULE.select([path])['runtime'])
+        self.assertFalse(MODULE.select([
+            'scripts/ci/affected-ci-lanes.py',
+            'tests/python/unit/test_other.py',
+        ])['runtime'])
+        jobs = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)['jobs']
+        runtime_if = jobs['runtime-proofs']['if']
+        self.assertIn("needs.changes.outputs.full_ci == 'true'", runtime_if)
+        self.assertIn('fromJson(needs.changes.outputs.specialized_lanes).runtime', runtime_if)
+        self.assertIn('changes', jobs['runtime-proofs']['needs'])
+        gate_env = jobs['ci-gate']['steps'][0]['env']
+        self.assertIn('fromJson(needs.changes.outputs.specialized_lanes).runtime', gate_env['REQUIRE_RUNTIME_PROOFS'])
+        self.assertIn("needs.changes.outputs.full_ci == 'true'", gate_env['REQUIRE_RUNTIME_PROOFS'])
 
     def test_mcp_backend_changes_keep_certification(self):
         for path in ['src/Honua.Server/Features/Protocols/Grpc/HonuaFeatureService.cs',

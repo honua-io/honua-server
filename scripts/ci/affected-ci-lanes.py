@@ -15,6 +15,18 @@ LANES = {
     'python': r'(^tests/python/|^src/Honua[.]Protocols/|^src/Honua[.]Server/Features/(Protocols/|FeatureServer|Ogc))',
     'mcp': r'(^src/|^tests/mcp-certification/|Mcp|MCP|(^|/)mcp/)',
     'quickstart': r'(^samples/|^scripts/.*quickstart|^docker/|(^|/)Dockerfile)',
+    'runtime': (
+        r'(^src/|^docker/(worker-gdal|runtime)/|^tests/fixtures/'
+        r'|^tests/dotnet/Honua[.]Server[.]Tests/(Features/(Geoprocessing/(Execution|Inference|LocalRunner)|Export/Writers)/'
+        r'|(Infrastructure|Hosting|Startup|Seed|TestData)/|DatabaseCollection[.]cs$|DatabaseShardCollections[.]cs$|Honua[.]Server[.]Tests[.]csproj$)'
+        r'|^tests/dotnet/Honua[.]Db[.]Postgres[.]Tests/(Features/(Import|Metadata|Security)/|Shared/|DatabaseCollection[.]cs$|CoreMigrationTestFixture[.]cs$|TestCoreSchemaMigrations[.]cs$|Honua[.]Postgres[.]Tests[.]csproj$)'
+        r'|^tests/dotnet/Honua[.]Core[.]Tests/(Features/Security/|Fixtures/|Honua[.]Core[.]Tests[.]csproj$)'
+        r'|^tests/python/unit/(test_import_export_fidelity_proof|test_diff_baselines)[.]py$'
+        r'|^scripts/ci/fixtures/import-export-fidelity-baseline[.]json$'
+        r'|^scripts/ci/(run-import-export-fidelity-proof[.]py|decode-vector-export-proof[.]py'
+        r'|prepull-testcontainers-postgis[.]sh|prepull-pr-gate-proof-images[.]sh'
+        r'|managed-test-build[.]py|server-test-shard-free-disk[.]sh)$)'
+    ),
 }
 # Changes to common runtime/contracts/build inputs or shared seeds invalidate
 # every compatibility assumption. Unknown top-level inputs also fail closed. The canonical shard
