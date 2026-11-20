@@ -18,6 +18,13 @@ public sealed class GeometryOutputProcessorTests
         SimplifyTolerance = 10d
     };
 
+    private static readonly GeometryLimits _roundingLimits = new()
+    {
+        MaxVerticesPerGeometry = 0,
+        MaxCoordinatePrecision = 2,
+        SimplifyTolerance = null
+    };
+
     [UnitTest]
     public void ApplyLimits_WithWgs84Geometry_ConvertsMetersToDegreesBeforeSimplifying()
     {
@@ -65,4 +72,47 @@ public sealed class GeometryOutputProcessorTests
         result.Should().NotBeNull();
         result!.NumPoints.Should().Be(2);
     }
+
+    [UnitTest]
+    public void ApplyLimits_RoundsACopyAndLeavesTheSharedGeometryUntouched()
+    {
+        var shared = CreatePrecisePointZ();
+
+        var result = (Point)GeometryOutputProcessor.ApplyLimits(shared, _roundingLimits)!;
+
+        result.Should().NotBeSameAs(shared);
+        result.X.Should().Be(1.12);
+        shared.X.Should().Be(1.123456);
+    }
+
+    [UnitTest]
+    public void ApplyLimitsInPlace_RoundsTheOwnedGeometryItself()
+    {
+        var owned = CreatePrecisePointZ();
+
+        var result = GeometryOutputProcessor.ApplyLimitsInPlace(owned, _roundingLimits);
+
+        result.Should().BeSameAs(owned);
+        owned.X.Should().Be(1.12);
+        owned.Y.Should().Be(2.99);
+    }
+
+    [UnitTest]
+    public void ApplyDimensionFilter_CopiesWhileTheInPlaceVariantMutates()
+    {
+        var shared = CreatePrecisePointZ();
+        var owned = CreatePrecisePointZ();
+
+        var copied = GeometryOutputProcessor.ApplyDimensionFilter(shared, includeZ: false, includeM: false);
+        var filtered = GeometryOutputProcessor.ApplyDimensionFilterInPlace(owned, includeZ: false, includeM: false);
+
+        copied.Should().NotBeSameAs(shared);
+        double.IsNaN(copied.Coordinate.Z).Should().BeTrue();
+        shared.Z.Should().Be(7.5);
+        filtered.Should().BeSameAs(owned);
+        double.IsNaN(owned.Coordinate.Z).Should().BeTrue();
+    }
+
+    private static Point CreatePrecisePointZ()
+        => new GeometryFactory().CreatePoint(new CoordinateZ(1.123456, 2.987654, 7.5));
 }

@@ -93,6 +93,7 @@ internal static class GeometryOutputProcessor
         return ApplyDimensionFilterInPlace((Geometry)geometry.Copy(), includeZ, includeM);
     }
 
+    // Same precondition as ApplyLimitsInPlace: the caller decoded the geometry and shares it with no one.
     public static Geometry ApplyDimensionFilterInPlace(Geometry owned, bool includeZ, bool includeM)
     {
         if (includeZ && includeM)
