@@ -66,8 +66,8 @@ jobs:
     name: Measure ${{ matrix.profile }} (${{ matrix.compilation }})
     if: ${{ always() && !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(needs.runner-select.outputs.runner || '"ubuntu-24.04"') || 'ubuntu-latest' }}
-    # Cold native code generation needs the nightly AOT budget to finish
-    # and export its layer cache; JIT builds retain their shorter ceiling.
+    # Cold native code generation needs the nightly AOT budget; JIT builds
+    # retain their shorter ceiling.
     timeout-minutes: ${{ matrix.compilation == 'aot' && 180 || 30 }}
     env:
       IMAGE: honua-store-measure:${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.profile }}-${{ matrix.compilation }}
@@ -129,12 +129,11 @@ jobs:
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
-          # Registry cache warms cold jobs; the PR-scoped Actions cache retains
-          # intermediate compiler layers without granting registry write access.
-          cache-from: |
-            type=gha,scope=store-image-${{ matrix.profile }}-${{ matrix.compilation }}
-            type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:${{ matrix.cache_scope }}
-          cache-to: type=gha,scope=store-image-${{ matrix.profile }}-${{ matrix.compilation }},mode=max
+          # Read-only registry cache warms the base, apt and restore layers.
+          # No cache export: COPY . . changes on every commit, so exported
+          # compiler layers were never reused, while the mode=max upload took
+          # 4.5-8 min per job and about 6.5 GB a day of Actions cache.
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:${{ matrix.cache_scope }}
       - name: Export compressed image size evidence
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:

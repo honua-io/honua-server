@@ -215,7 +215,7 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertEqual(verify['env']['HONUA_EXPECTED_STORE_PROFILE'], 'postgis')
         self.assertNotIn('if', verify)
 
-    def test_store_measurement_uses_heavy_runner_and_separate_profile_caches(self):
+    def test_store_measurement_uses_heavy_runner_and_read_only_profile_cache(self):
         jobs = workflow('store-image-size.yml')['jobs']
         job = jobs['measure']
         selector = jobs['runner-select']
@@ -238,9 +238,13 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertGreater(jit_minutes, 0)
         self.assertLessEqual(jit_minutes, 30)
         build = next(step for step in job['steps'] if step.get('name') == 'Build serving image')
-        self.assertIn('matrix.profile', build['with']['cache-to'])
-        self.assertIn('matrix.compilation', build['with']['cache-to'])
-        self.assertIn('mode=max', build['with']['cache-to'])
+        self.assertEqual(
+            build['with']['cache-from'],
+            'type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:${{ matrix.cache_scope }}')
+        # Per-commit compiler layers are never reused; exporting them only
+        # lengthened every measurement and filled the Actions cache quota.
+        for step in job['steps']:
+            self.assertNotIn('cache-to', step.get('with', {}), step.get('name'))
 
     def test_store_matrix_jobs_use_isolated_local_images(self):
         job = workflow('store-image-size.yml')['jobs']['measure']
