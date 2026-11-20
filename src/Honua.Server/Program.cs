@@ -1093,6 +1093,8 @@ builder.Services.AddEnterpriseIdentity(builder.Configuration);
 builder.Services.AddSecurityHeaders(builder.Configuration);
 // Configure security audit log sink
 builder.Services.AddHonuaAuditLog();
+// Operator switches that widen the audit trail (AuditLog:Policy); both off by default.
+builder.Services.AddHonuaAuditPolicy(builder.Configuration);
 // SIEM export connectors (Splunk HEC / Microsoft Sentinel / S3 / syslog) + audit retention and
 // data-residency controls. Off by default (AuditLog:Export:Enabled=false); registers
 // the dispatcher (retry/backoff + dead-letter), residency guard, retention pruner, and any enabled

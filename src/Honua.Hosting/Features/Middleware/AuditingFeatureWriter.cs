@@ -3,6 +3,7 @@
 
 using System.Data;
 using System.Globalization;
+using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -13,18 +14,57 @@ namespace Honua.Infrastructure.Middleware;
 internal sealed class AuditingFeatureWriter(
     IFeatureWriter inner,
     IAuditLog auditLog,
-    IHttpContextAccessor httpContextAccessor) : IFeatureWriter
+    FeatureWriteAuditScope scope) : IFeatureWriter
 {
     private readonly IFeatureWriter _inner = inner ?? throw new ArgumentNullException(nameof(inner));
     private readonly IAuditLog _auditLog = auditLog ?? throw new ArgumentNullException(nameof(auditLog));
-    private readonly IHttpContextAccessor _httpContextAccessor = httpContextAccessor
-        ?? throw new ArgumentNullException(nameof(httpContextAccessor));
+    private readonly IHttpContextAccessor _httpContextAccessor = scope?.HttpContextAccessor
+        ?? throw new ArgumentNullException(nameof(scope));
+    private readonly Func<AuditPolicyOptions> _policy = scope.Policy ?? throw new ArgumentNullException(nameof(scope));
+
+    private bool RecordSingleWrites => _policy().RecordSingleFeatureWrites;
 
     public Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
-        => _inner.CreateAsync(layerId, feature, cancellationToken);
+        => RecordSingleWrites
+            ? WriteAndAuditAsync(new SingleFeatureWrite("feature.create", layerId, feature), _inner.CreateAsync, cancellationToken)
+            : _inner.CreateAsync(layerId, feature, cancellationToken);
 
     public Task<Feature> UpdateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
-        => _inner.UpdateAsync(layerId, feature, cancellationToken);
+        => RecordSingleWrites
+            ? WriteAndAuditAsync(new SingleFeatureWrite("feature.update", layerId, feature), _inner.UpdateAsync, cancellationToken)
+            : _inner.UpdateAsync(layerId, feature, cancellationToken);
+
+    private async Task<Feature> WriteAndAuditAsync(
+        SingleFeatureWrite write,
+        Func<int, Feature, CancellationToken, Task<Feature>> apply,
+        CancellationToken cancellationToken)
+    {
+        Feature written;
+        try
+        {
+            written = await apply(write.LayerId, write.Feature, cancellationToken).ConfigureAwait(false);
+        }
+        // Intentional: same rationale as DeleteAsync below — audit the failure broadly
+        // before rethrowing unchanged.
+        catch
+        {
+            await RecordAsync(
+                write.Action,
+                write.LayerId,
+                AuditOutcome.Failure,
+                ObjectIdDetails(write.Feature.Id),
+                CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
+
+        // The write is applied: record it even if the caller has gone away.
+        await RecordAsync(write.Action, write.LayerId, AuditOutcome.Success, ObjectIdDetails(written.Id), CancellationToken.None)
+            .ConfigureAwait(false);
+        return written;
+    }
+
+    private static string ObjectIdDetails(long featureId)
+        => string.Create(CultureInfo.InvariantCulture, $"{{\"objectId\":{featureId}}}");
 
     public async Task<bool> DeleteAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
     {
@@ -117,16 +157,12 @@ internal sealed class AuditingFeatureWriter(
         CancellationToken cancellationToken)
     {
         var deleteCount = CountDeletes(editBatch);
-
-        // Only audit when the batch is destructive (contains deletes) or is a bulk
-        // mutation (more than one operation). Single create/update writes are not
-        // forensic events of interest for the destructive-write matrix row.
-        if (deleteCount == 0 && editBatch.TotalOperations <= 1)
+        if (!ShouldAuditBatch(editBatch, deleteCount))
         {
             return Task.CompletedTask;
         }
 
-        var action = deleteCount > 0 ? "feature.bulk-edit.delete" : "feature.bulk-edit";
+        var action = BatchAction(editBatch, deleteCount);
         var details = string.Create(
             CultureInfo.InvariantCulture,
             $"{{\"created\":{result.CreatedCount},\"updated\":{result.UpdatedCount},\"deleted\":{result.DeletedCount},\"rolledBack\":{(result.WasRolledBack ? "true" : "false")}}}");
@@ -142,18 +178,35 @@ internal sealed class AuditingFeatureWriter(
     private Task EmitBulkEditFailureAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken)
     {
         var deleteCount = CountDeletes(editBatch);
-        if (deleteCount == 0 && editBatch.TotalOperations <= 1)
+        if (!ShouldAuditBatch(editBatch, deleteCount))
         {
             return Task.CompletedTask;
         }
 
-        var action = deleteCount > 0 ? "feature.bulk-edit.delete" : "feature.bulk-edit";
+        var action = BatchAction(editBatch, deleteCount);
         return RecordAsync(
             action,
             layerId,
             AuditOutcome.Failure,
             details: "{\"error\":true}",
             cancellationToken);
+    }
+
+    // A batch with deletes or more than one operation is always audited. A single create or
+    // update is audited only when the operator turned on RecordSingleFeatureWrites.
+    private bool ShouldAuditBatch(FeatureEditBatch editBatch, int deleteCount)
+        => deleteCount > 0
+            || editBatch.TotalOperations > 1
+            || (editBatch.TotalOperations == 1 && RecordSingleWrites);
+
+    private static string BatchAction(FeatureEditBatch editBatch, int deleteCount)
+    {
+        if (deleteCount > 0)
+        {
+            return "feature.bulk-edit.delete";
+        }
+
+        return editBatch.TotalOperations > 1 ? "feature.bulk-edit" : "feature.edit";
     }
 
     private static int CountDeletes(FeatureEditBatch editBatch)
@@ -215,6 +268,8 @@ internal sealed class AuditingFeatureWriter(
             // Auditing must never break the edit path. Sinks log their own errors.
         }
     }
+
+    private readonly record struct SingleFeatureWrite(string Action, int LayerId, Feature Feature);
 
     private sealed class AuditingFeatureWriterTransaction(
         AuditingFeatureWriter owner,
