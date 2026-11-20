@@ -162,6 +162,37 @@ public class SceneDatasetEndpointsTests(SceneDatasetEndpointsTests.SceneHost hos
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    [IntegrationTheory]
+    [Endpoint("POST /api/v1/admin/scenes")]
+    [InlineData("/proc/self")]
+    [InlineData("/run/secrets")]
+    [InlineData(".")]
+    [InlineData("/var/lib/honua/scenes-elsewhere")]
+    [InlineData("/var/lib/honua/scenes")]
+    public async Task Register_AssetRootOutsideSceneDirectories_Returns400Problem(string assetRoot)
+    {
+        var request = BuildValidRequest(NewSceneId("outside-root"));
+        request.AssetRoot = assetRoot;
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/scenes", request, _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/scenes/{id}")]
+    public async Task Update_AssetRootOutsideSceneDirectories_Returns400Problem()
+    {
+        var initial = await CreateAsync(BuildValidRequest(NewSceneId("upd-root")));
+
+        var response = await _client.PutAsJsonAsync(
+            $"/api/v1/admin/scenes/{initial.DatasetId}",
+            new UpdateSceneDatasetRequest { AssetRoot = "/proc/self" },
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/scenes")]
     public async Task Register_BadCrsToken_Returns400Problem()
