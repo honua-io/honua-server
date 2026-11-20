@@ -19,23 +19,24 @@ public sealed class AdminLayerIdAliasWireContractTests
         TypeInfoResolver = new DefaultJsonTypeInfoResolver(),
     };
 
-    public static TheoryData<string, object, string, string> Replies() => new()
+    public static TheoryData<string, object, string> Replies() => new()
     {
-        { "LayerRelationshipResponse", new LayerRelationshipResponse { StorageLayerId = 41 }, "storageLayerId", "layerId" },
-        { "LayerRelationshipItem", RelationshipItem(), "relatedStorageLayerId", "relatedLayerId" },
-        { "LayerAuthoringDocumentResponse", new LayerAuthoringDocumentResponse { StorageLayerId = 41 }, "storageLayerId", "layerId" },
-        { "LayerFieldConfigurationResponse", new LayerFieldConfigurationResponse { StorageLayerId = 41 }, "storageLayerId", "layerId" },
-        { "LayerFilterConfigurationResponse", new LayerFilterConfigurationResponse { StorageLayerId = 41 }, "storageLayerId", "layerId" },
-        { "LayerValidationResponse", new LayerValidationResponse { StorageLayerId = 41, LayerName = "Roads", Status = "valid" }, "storageLayerId", "layerId" },
-        { "LayerMetadataResponse", new LayerMetadataResponse { ServiceLayerIndex = 41, LayerName = "Roads" }, "serviceLayerIndex", "layerId" },
-        { "ShareExportDefinitionResponse", ExportDefinition(), "serviceLayerIndex", "layerId" },
-        { "ShareItemRefResponse", new ShareItemRefResponse { ServiceName = "roads", ServiceLayerIndex = 41 }, "serviceLayerIndex", "layerId" },
+        { "LayerRelationshipResponse", new LayerRelationshipResponse { StorageLayerId = 41 }, "storageLayerId" },
+        { "LayerRelationshipItem", RelationshipItem(), "relatedStorageLayerId" },
+        { "LayerAuthoringDocumentResponse", new LayerAuthoringDocumentResponse { StorageLayerId = 41 }, "storageLayerId" },
+        { "LayerFieldConfigurationResponse", new LayerFieldConfigurationResponse { StorageLayerId = 41 }, "storageLayerId" },
+        { "LayerFilterConfigurationResponse", new LayerFilterConfigurationResponse { StorageLayerId = 41 }, "storageLayerId" },
+        { "LayerValidationResponse", new LayerValidationResponse { StorageLayerId = 41, LayerName = "Roads", Status = "valid" }, "storageLayerId" },
+        { "LayerMetadataResponse", new LayerMetadataResponse { ServiceLayerIndex = 41, LayerName = "Roads" }, "serviceLayerIndex" },
+        { "ShareExportDefinitionResponse", ExportDefinition(), "serviceLayerIndex" },
+        { "ShareItemRefResponse", new ShareItemRefResponse { ServiceName = "roads", ServiceLayerIndex = 41 }, "serviceLayerIndex" },
     };
 
     [UnitTheory]
     [MemberData(nameof(Replies))]
-    public void Reply_KeepsTheDeprecatedLayerIdAlias(string schemaName, object reply, string property, string alias)
+    public void Reply_KeepsTheDeprecatedLayerIdAlias(string schemaName, object reply, string property)
     {
+        var alias = property == "relatedStorageLayerId" ? "relatedLayerId" : "layerId";
         using var wire = JsonDocument.Parse(JsonSerializer.Serialize(reply, reply.GetType(), Wire));
         Assert.Equal(41, wire.RootElement.GetProperty(property).GetInt32());
         Assert.Equal(41, wire.RootElement.GetProperty(alias).GetInt32());
