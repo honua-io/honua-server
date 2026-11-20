@@ -46,7 +46,7 @@ internal static class OgcRecordMetadataFormats
             var requested = FromFormatParameter(f);
             return requested.ErrorStatus is null && !Supports(requested.Format, kind)
                 ? new(requested.Format, StatusCodes.Status406NotAcceptable,
-                    $"This record describes a {kind.ToString().ToLowerInvariant()}; the ISO encodings describe datasets. Available: geojson, dcat.")
+                    $"This record describes a {kind.ToString().ToLowerInvariant()}; the ISO encodings describe datasets. Available: json, geojson, dcat.")
                 : requested;
         }
 

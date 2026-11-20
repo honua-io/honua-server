@@ -75,17 +75,20 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
         var handler = new StudioAiProxySequenceHttpMessageHandler(
             () => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(stalled) });
         // The deadline fires when the stream stalls after the partial text, not after real time passes.
+        var clock = new StudioAiProxyTriggeredTimeProvider(stalled.Stalled);
         var adapter = new AnthropicStudioAiProxyAdapter(
             new StudioAiProxyMockHttpClientFactory(handler), new StudioAiProxyApiKeyResolver(),
             NullLogger<AnthropicStudioAiProxyAdapter>.Instance)
         {
-            TimeProvider = new StudioAiProxyTriggeredTimeProvider(stalled.Stalled),
+            TimeProvider = clock,
         };
         var options = DefaultOptions();
         options.TimeoutSeconds = 1;
 
-        var events = await CollectAsync(adapter, options, ToolFreeRequest());
+        // A missing deadline would stall forever; the outer bound turns that into a failure.
+        var events = await CollectAsync(adapter, options, ToolFreeRequest()).WaitAsync(TimeSpan.FromSeconds(60));
 
+        clock.DueTimes.Should().Contain(TimeSpan.FromSeconds(1));
         events.Count(e => e.Type == StudioAiChatEventType.Error).Should().Be(1);
         events.Should().Contain(e => e.Type == StudioAiChatEventType.TextDelta && e.Text == "partial");
         events.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop);

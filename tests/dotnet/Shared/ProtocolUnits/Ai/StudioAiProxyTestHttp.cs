@@ -128,8 +128,14 @@ internal sealed class StudioAiProxyStallingStream : Stream
 // wall-clock time.
 internal sealed class StudioAiProxyTriggeredTimeProvider(Task trigger) : TimeProvider
 {
+    private readonly System.Collections.Concurrent.ConcurrentQueue<TimeSpan> _dueTimes = new();
+
+    // The delays timers were created with, so a test can check the deadline it configured.
+    public IReadOnlyCollection<TimeSpan> DueTimes => _dueTimes;
+
     public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
     {
+        _dueTimes.Enqueue(dueTime);
         var timer = new TriggeredTimer();
         if (dueTime != Timeout.InfiniteTimeSpan)
         {
