@@ -581,22 +581,21 @@ public static class OgcStylesEndpoints
     private static async Task EvictStyledLayersAsync(HttpContext context, ILogger logger, IEnumerable<int> layerIds)
     {
         var invalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
-        if (invalidator is null)
+        var distinctLayerIds = layerIds.Distinct().ToArray();
+        if (invalidator is null || distinctLayerIds.Length == 0)
         {
             return;
         }
 
-        foreach (var layerId in layerIds.Distinct())
+        // One call, so a style shared by many layers sweeps the global tags and purges the CDN once.
+        try
         {
-            try
-            {
-                await invalidator.InvalidateServiceCatalogAsync(null, [layerId], CancellationToken.None).ConfigureAwait(false);
-            }
-            // Best effort, as for the styles tag above: the style write has committed.
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                OgcStylesLog.StyledLayerCacheEvictionFailed(logger, layerId, ex);
-            }
+            await invalidator.InvalidateServiceCatalogAsync(null, distinctLayerIds, CancellationToken.None).ConfigureAwait(false);
+        }
+        // Best effort, as for the styles tag above: the style write has committed.
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            OgcStylesLog.StyledLayerCacheEvictionFailed(logger, distinctLayerIds.Length, ex);
         }
     }
 
