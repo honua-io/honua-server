@@ -11,6 +11,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 ACTION_PATH_PREFIX = '.github/actions/'
 LOCAL_ACTION_USES_PREFIX = './.github/actions/'
+MIN_ACTION_PATH_PARTS = 2
 
 # Native publishing, container publishing and MCP live backends consume the
 # runtime dependency graph. Keep all runtime inputs until a proven closure exists.
@@ -24,11 +25,15 @@ LANES = {
     'quickstart': r'(^samples/|^scripts/.*quickstart|^docker/|(^|/)Dockerfile)',
     'runtime': (
         r'(^src/|^docker/(worker-gdal|runtime)/|^tests/fixtures/'
+        r'|^tests/baselines/client-compat/'
+        r'|^docs/gis/(data/client-certification-matrix[.]v1[.]json|CROSS_CLIENT_CERTIFICATION_MATRIX[.]md)$'
         r'|^tests/dotnet/Honua[.]Server[.]Tests/(Features/(Geoprocessing/(Execution|Inference|LocalRunner)|Export/Writers)/'
+        r'|Features/Eval/McpQueryWildcardPostgresIntegrationTests[.]cs$'
         r'|(Infrastructure|Hosting|Startup|Seed|TestData)/|DatabaseCollection[.]cs$|DatabaseShardCollections[.]cs$|Honua[.]Server[.]Tests[.]csproj$)'
         r'|^tests/dotnet/Honua[.]Db[.]Postgres[.]Tests/(Features/(Import|Metadata|Security)/|Shared/|DatabaseCollection[.]cs$|CoreMigrationTestFixture[.]cs$|TestCoreSchemaMigrations[.]cs$|Honua[.]Postgres[.]Tests[.]csproj$)'
         r'|^tests/dotnet/Honua[.]Core[.]Tests/(Features/Security/|Fixtures/|Honua[.]Core[.]Tests[.]csproj$)'
         r'|^tests/python/unit/(test_import_export_fidelity_proof|test_diff_baselines)[.]py$'
+        r'|^scripts/client-compat/diff-baselines[.]py$'
         r'|^scripts/ci/fixtures/import-export-fidelity-baseline[.]json$'
         r'|^scripts/ci/(run-import-export-fidelity-proof[.]py|decode-vector-export-proof[.]py'
         r'|prepull-testcontainers-postgis[.]sh|prepull-pr-gate-proof-images[.]sh'
@@ -126,7 +131,7 @@ def _lane_action_map(repo_root):
 def _changed_action_name(path):
     rest = path[len(ACTION_PATH_PREFIX):]
     parts = [part for part in rest.split('/') if part]
-    if len(parts) < 2:
+    if len(parts) < MIN_ACTION_PATH_PARTS:
         return None
     return parts[0]
 

@@ -68,6 +68,29 @@ class AffectedLaneTests(unittest.TestCase):
             (broken / 'action.yml').write_text('runs: [unterminated\n')
             self.assertTrue(all(MODULE.select(['.github/actions/broken/action.yml'], repo_root=root).values()))
 
+    def test_cyclic_composite_actions_terminate_and_select_consuming_lane(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / '.github/workflows').mkdir(parents=True)
+            (root / '.github/workflows/ci.yml').write_text(
+                'jobs:\n'
+                + ''.join(
+                    f'  {job_id}:\n    steps:\n      - uses: ./.github/actions/cycle-a\n'
+                    if lane == 'runtime'
+                    else f'  {job_id}:\n    steps: []\n'
+                    for lane, job_ids in MODULE.LANE_JOBS.items()
+                    for job_id in job_ids
+                )
+            )
+            for name, target in [('cycle-a', 'cycle-b'), ('cycle-b', 'cycle-a')]:
+                action_dir = root / '.github/actions' / name
+                action_dir.mkdir(parents=True)
+                (action_dir / 'action.yml').write_text(
+                    f'runs:\n  using: composite\n  steps:\n    - uses: ./.github/actions/{target}\n'
+                )
+            cyclic = MODULE.select(['.github/actions/cycle-b/action.yml'], repo_root=root)
+            self.assertEqual({lane for lane, enabled in cyclic.items() if enabled}, {'runtime'})
+
     def test_lane_jobs_exist_in_ci_yml_and_gate_on_their_lane(self):
         jobs = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)['jobs']
         self.assertEqual(set(MODULE.LANE_JOBS), set(MODULE.LANES))
@@ -140,6 +163,7 @@ class AffectedLaneTests(unittest.TestCase):
             'docker/runtime/entrypoint.sh',
             'tests/fixtures/sample.gpkg',
             'tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerSourceExecutionProofTests.cs',
+            'tests/dotnet/Honua.Server.Tests/Features/Eval/McpQueryWildcardPostgresIntegrationTests.cs',
             'tests/dotnet/Honua.Server.Tests/Infrastructure/TestServerFixture.cs',
             'tests/dotnet/Honua.Server.Tests/Features/Export/Writers/IndependentVectorExportFixtureTests.cs',
             'tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/StreamingFileImportStagingTableTests.cs',
@@ -147,6 +171,10 @@ class AffectedLaneTests(unittest.TestCase):
             'tests/dotnet/Honua.Core.Tests/Features/Security/StoreProfileWritePolicyTests.cs',
             'tests/python/unit/test_import_export_fidelity_proof.py',
             'tests/python/unit/test_diff_baselines.py',
+            'tests/baselines/client-compat/qgis/sample.cert.json',
+            'docs/gis/data/client-certification-matrix.v1.json',
+            'docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md',
+            'scripts/client-compat/diff-baselines.py',
             'scripts/ci/fixtures/import-export-fidelity-baseline.json',
             'scripts/ci/run-import-export-fidelity-proof.py',
             'scripts/ci/decode-vector-export-proof.py',
