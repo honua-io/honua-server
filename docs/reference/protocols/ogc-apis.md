@@ -166,6 +166,16 @@ Read-only catalog discovery over published services and layers (record ids `laye
 
 `/items` parameters: `limit` (cap 1000), `offset`, `ids`, `type` (`service`/`dataset`), `externalIds`, `q`, `bbox`, `datetime`. Record create/update/delete, harvesting, facets, and CQL filtering are not implemented.
 
+A single record (`.../items/{recordId}`) is also served in standard metadata encodings, written from the record's resolved descriptive metadata. Ask for one with `f=` or the matching `Accept` type. The GeoJSON record links each encoding as `alternate`.
+
+| `f=` | Media type | Records |
+| --- | --- | --- |
+| `iso19139` | `application/vnd.iso.19139+xml` | Datasets (`layer:`) |
+| `iso19115-3` | `application/vnd.iso.19115-3+xml` | Datasets (`layer:`) |
+| `dcat` | `application/ld+json` (DCAT-AP 3) | Datasets and services |
+
+Without `f=`, the highest-quality `Accept` type the record can be served as wins. `application/geo+json`, `application/json`, `application/*` and `*/*` select GeoJSON, and a service record skips the ISO types. An `Accept` header with nothing available returns `406`, as does `f=iso19139` or `f=iso19115-3` for a service record. An unknown `f=` returns `400`. Characters XML cannot carry are replaced with U+FFFD in the ISO encodings.
+
 ## OGC API - Environmental Data Retrieval (EDR) — Preview
 
 The `/edr` surface is Preview in release 2026.1 and requires
