@@ -140,9 +140,12 @@ jobs:
         env:
           CANDIDATE: ghcr.io/honua-io/honua-server@${{ steps.build.outputs.digest }}
           SMOKE: ${{ matrix.image.smoke }}
+        # The local image store keeps one image per digest reference, so each platform's pull
+        # is removed before the next one can take the same reference.
         run: |
           for platform in linux/amd64 linux/arm64; do
             docker run --rm --platform "$platform" --entrypoint sh "$CANDIDATE" -c "$SMOKE"
+            docker image rm "$CANDIDATE"
           done
       # Installs offer both CPU architectures, so each platform of the index is gated.
       - name: Gate both platforms on fixable HIGH/CRITICAL vulnerabilities
