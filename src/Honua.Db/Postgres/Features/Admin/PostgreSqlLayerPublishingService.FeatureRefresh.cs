@@ -306,9 +306,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
             command.Parameters.Add("@schema", NpgsqlDbType.Text).Value =
                 string.IsNullOrWhiteSpace(schema) ? DBNull.Value : schema;
             command.Parameters.AddWithValue("@table", table);
-            command.Parameters.AddWithValue("@pointView", MixedGeometryFamilyViewName(table, "Point"));
-            command.Parameters.AddWithValue("@lineView", MixedGeometryFamilyViewName(table, "LineString"));
-            command.Parameters.AddWithValue("@polygonView", MixedGeometryFamilyViewName(table, "Polygon"));
+            command.Parameters.AddWithValue("@pointView", GeometryFamilyViews.ViewName(table, "Point"));
+            command.Parameters.AddWithValue("@lineView", GeometryFamilyViews.ViewName(table, "LineString"));
+            command.Parameters.AddWithValue("@polygonView", GeometryFamilyViews.ViewName(table, "Polygon"));
             command.Parameters.AddWithValue("@catalogSrid", CatalogExtentSrid);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (true)

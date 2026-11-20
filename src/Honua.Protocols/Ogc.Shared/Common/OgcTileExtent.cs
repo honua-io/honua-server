@@ -17,9 +17,13 @@ internal static class OgcTileExtent
         return (longitude.Min, latitude.Min, longitude.Max, latitude.Max);
     }
 
+    // A reprojected single point arrives padded by the extent margin on each side; that is
+    // still a degenerate axis. The extra millionth absorbs floating-point subtraction error.
+    private const double DegenerateAxisWidth = 2 * OgcExtentTransformer.ReprojectedExtentMarginDegrees * (1 + 1e-6);
+
     private static (double Min, double Max) ExpandAxis((double Min, double Max) axis, double span, double limit)
     {
-        if (axis.Min != axis.Max)
+        if (axis.Max - axis.Min > DegenerateAxisWidth)
         {
             return axis;
         }

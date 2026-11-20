@@ -29,11 +29,16 @@ public sealed partial class LayerPublishingIntegrationTests
                 INSERT INTO public.{table} (id, name, geom) VALUES
                     (1, 'point', ST_SetSRID(ST_Point(1, 2), 4326)),
                     (2, 'line', ST_SetSRID(ST_MakeLine(ST_Point(0, 0), ST_Point(3, 4)), 4326)),
-                    (3, 'empty', NULL);
+                    (3, 'empty', NULL),
+                    (4, 'lines', ST_GeomFromText('MULTILINESTRING((5 5, 6 6), (7 7, 8 8))', 4326));
                 """);
 
-            await PublishMixedFamilyAndAssertSingleFeatureAsync(table, "Point", "point");
-            await PublishMixedFamilyAndAssertSingleFeatureAsync(table, "LineString", "line");
+            await PublishMixedFamilyAndAssertFeaturesAsync(MixedFamilyRequest(table, "Point"), "Point", ["point"]);
+            await PublishMixedFamilyAndAssertFeaturesAsync(
+                MixedFamilyRequest(table, "LineString"), "MultiLineString", ["line", "lines"]);
+
+            var repeated = await PostPublishLayerAsync(MixedFamilyRequest(table, "Point"));
+            repeated.StatusCode.Should().Be(HttpStatusCode.Conflict, repeated.Payload);
 
             var rejected = await PostPublishLayerAsync(MixedFamilyRequest(table, "Polygon"));
             rejected.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -64,16 +69,20 @@ public sealed partial class LayerPublishingIntegrationTests
         Enabled = true
     };
 
-    private async Task PublishMixedFamilyAndAssertSingleFeatureAsync(string table, string family, string name)
+    // A family with any multi-part row declares the Multi type.
+    private async Task PublishMixedFamilyAndAssertFeaturesAsync(
+        PublishLayerRequest request, string declaredType, string[] names)
     {
-        var layer = await PublishLayerAsync(MixedFamilyRequest(table, family));
+        var family = request.GeometryType!;
+        var layer = await PublishLayerAsync(request);
         _layerId = layer.StorageLayerId;
-        layer.GeometryType.Should().Be(family);
+        layer.GeometryType.Should().Be(declaredType);
 
         using var items = JsonDocument.Parse(await ReadOgcItemsAsync("limit=10"));
-        var features = items.RootElement.GetProperty("features");
-        features.GetArrayLength().Should().Be(1);
-        features[0].GetProperty("geometry").GetProperty("type").GetString().Should().Be(family);
-        features[0].GetProperty("properties").GetProperty("name").GetString().Should().Be(name);
+        var features = items.RootElement.GetProperty("features").EnumerateArray().ToList();
+        features.Select(feature => feature.GetProperty("properties").GetProperty("name").GetString())
+            .Should().BeEquivalentTo(names);
+        features.Select(feature => feature.GetProperty("geometry").GetProperty("type").GetString())
+            .Should().OnlyContain(type => type!.EndsWith(family, StringComparison.Ordinal));
     }
 }

@@ -16,6 +16,7 @@ using Honua.Core.Queries.Filters;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Admin;
@@ -468,9 +469,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
             MIN(NULLIF(ST_SRID(geom), 0)) FILTER (WHERE geom IS NOT NULL)::int,
             MAX(NULLIF(ST_SRID(geom), 0)) FILTER (WHERE geom IS NOT NULL)::int,
             ARRAY[
-                COUNT(*) FILTER (WHERE GeometryType(geom) IN ({GeometryFamilyTypeList("Point")})),
-                COUNT(*) FILTER (WHERE GeometryType(geom) IN ({GeometryFamilyTypeList("LineString")})),
-                COUNT(*) FILTER (WHERE GeometryType(geom) IN ({GeometryFamilyTypeList("Polygon")}))
+                COUNT(*) FILTER (WHERE GeometryType(geom) IN ({GeometryFamilyViews.TypeList("Point")})),
+                COUNT(*) FILTER (WHERE GeometryType(geom) IN ({GeometryFamilyViews.TypeList("LineString")})),
+                COUNT(*) FILTER (WHERE GeometryType(geom) IN ({GeometryFamilyViews.TypeList("Polygon")}))
             ]::bigint[]
         FROM source;
         """;
@@ -581,31 +582,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
         };
     }
 
-    private static string MixedGeometryFamilyViewName(string table, string family)
-    {
-        var suffix = family switch
-        {
-            "Point" => "__honua_pt",
-            "LineString" => "__honua_ln",
-            "Polygon" => "__honua_pg",
-            _ => throw new LayerPublishingException(
-                LayerPublishingErrorKind.Validation,
-                $"Geometry type '{family}' cannot be published from a mixed table.")
-        };
-        var stemLength = Math.Min(table.Length, 63 - suffix.Length);
-        return string.Concat(table.AsSpan(0, stemLength), suffix);
-    }
-
-    private static string GeometryFamilyTypeList(string family) => family switch
-    {
-        "Point" => "'POINT','POINTZ','POINTM','POINTZM','MULTIPOINT','MULTIPOINTZ','MULTIPOINTM','MULTIPOINTZM'",
-        "LineString" => "'LINESTRING','LINESTRINGZ','LINESTRINGM','LINESTRINGZM','MULTILINESTRING','MULTILINESTRINGZ','MULTILINESTRINGM','MULTILINESTRINGZM'",
-        "Polygon" => "'POLYGON','POLYGONZ','POLYGONM','POLYGONZM','MULTIPOLYGON','MULTIPOLYGONZ','MULTIPOLYGONM','MULTIPOLYGONZM'",
-        _ => throw new LayerPublishingException(
-            LayerPublishingErrorKind.Validation,
-            $"Geometry type '{family}' cannot be published from a mixed table.")
-    };
-
     // A requested family on a mixed table turns the mixed-geometry error into a warning
     // that names the rows that will publish, or a clearer error when there are none.
     private static void SelectGeometryFamily(
@@ -661,23 +637,56 @@ internal sealed partial class PostgreSqlLayerPublishingService
         GeometryFamilyView view,
         CancellationToken cancellationToken)
     {
-        if (!IsSafeIdentifier(view.ViewName))
+        var connection = transaction.Connection!;
+        if (!IsSafeIdentifier(view.ViewName) ||
+            await GeometryFamilyViews.NameTakenByOtherAsync(
+                new GeometryFamilyViews.TableScope
+                {
+                    Connection = connection,
+                    Transaction = transaction,
+                    Schema = view.Schema,
+                    Table = view.SourceTable
+                },
+                view.ViewName,
+                cancellationToken).ConfigureAwait(false))
         {
             throw new LayerPublishingException(
                 LayerPublishingErrorKind.Validation,
-                $"Table '{view.SourceTable}' cannot carry a per-type view name.");
+                $"Table '{view.SourceTable}' cannot carry the per-type view name '{view.ViewName}'; rename the table.");
         }
 
-        var schema = SqlIdentifier.QuoteIdentifier(view.Schema);
+        var sql = GeometryFamilyViews.CreateSql(
+            view.Schema, view.SourceTable, new GeometryFamilyViews.FamilyFilter(view.Family, view.GeometryColumn));
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        try
+        {
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.InsufficientPrivilege)
+        {
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Validation,
+                $"Publishing one geometry type needs permission to create a view in schema '{view.Schema}'.");
+        }
+
+        return view.ViewName;
+    }
+
+    // A family view that serves any multi-part row declares the Multi type.
+    private static async Task<string> DeclaredFamilyTypeAsync(
+        NpgsqlTransaction transaction,
+        GeometryFamilyView view,
+        CancellationToken cancellationToken)
+    {
         var sql = $"""
-            CREATE OR REPLACE VIEW {schema}.{SqlIdentifier.QuoteIdentifier(view.ViewName)} AS
-            SELECT *
-            FROM {schema}.{SqlIdentifier.QuoteIdentifier(view.SourceTable)}
-            WHERE GeometryType({SqlIdentifier.QuoteIdentifier(view.GeometryColumn)}) IN ({GeometryFamilyTypeList(view.Family)})
+            SELECT EXISTS (
+                SELECT 1
+                FROM {SqlIdentifier.QuoteIdentifier(view.Schema)}.{SqlIdentifier.QuoteIdentifier(view.ViewName)}
+                WHERE GeometryType({SqlIdentifier.QuoteIdentifier(view.GeometryColumn)}) LIKE 'MULTI%')
             """;
         await using var command = new NpgsqlCommand(sql, transaction.Connection, transaction);
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        return view.ViewName;
+        var hasMulti = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is true;
+        return hasMulti ? "Multi" + view.Family : view.Family;
     }
 
     private static string NormalizeGeometryType(string raw)

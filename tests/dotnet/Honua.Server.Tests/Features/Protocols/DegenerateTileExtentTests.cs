@@ -150,6 +150,17 @@ public sealed class OgcTileExtentTests
         line.MaxLat.Should().Be(21);
     }
 
+    [UnitTest]
+    public void ExpandDegenerateAxes_ReprojectedPointWithMargin_StillUsesOneFinestTile()
+    {
+        var padded = OgcExtentTransformer.ExpandReprojectedCrs84(-156.45, 20.88, -156.45, 20.88);
+
+        var extent = OgcTileExtent.ExpandDegenerateAxes(padded, 18);
+
+        (extent.MaxLon - extent.MinLon).Should().BeApproximately(0.001373291015625, 1e-12);
+        (extent.MaxLat - extent.MinLat).Should().BeApproximately(0.001373291015625, 1e-12);
+    }
+
     [UnitTheory]
     [InlineData(-1, 0)]
     [InlineData(25, 24)]

@@ -461,9 +461,11 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             .ConfigureAwait(false);
 
         // One type from a mixed table publishes through its own view, so each type is its own layer.
+        var sourceTable = table;
         if (!isManagedStore && GeometryFamilyViewFor(validation, request.GeometryType) is { } familyView)
         {
             table = await CreateGeometryFamilyViewAsync(transaction, familyView, cancellationToken).ConfigureAwait(false);
+            geometryType = await DeclaredFamilyTypeAsync(transaction, familyView, cancellationToken).ConfigureAwait(false);
         }
 
         var serviceCreated = await EnsureServiceAsync(connection, transaction, serviceName, srid, request.ConnectionId, cancellationToken);
@@ -494,7 +496,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                     .Select(column => column.Name).ToArray());
 
         var storageCoordinateEpoch = await ResolveImportedStorageEpochAsync(
-            connection, transaction, request, schema, table, geometryColumn, storageSrid,
+            connection, transaction, request, schema, sourceTable, geometryColumn, storageSrid,
             storage.StorageSrid, cancellationToken);
 
         if (storage.IsManagedStore)
@@ -883,7 +885,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         // layer over the same table is not a conflict.
         if (!request.ManagedStore)
         {
-            await AddExistingLayerCheckAsync(connection, schema, table, checks, cancellationToken, transaction)
+            // A layer published from one geometry type of a mixed table is keyed by its view.
+            var publishedFamily = checks.Any(check => check.Code == "mixed-geometry" && check.Severity == SeverityWarning)
+                ? MixedGeometryFamily(request.GeometryType)
+                : null;
+            var layerTable = publishedFamily is null ? table : GeometryFamilyViews.ViewName(table, publishedFamily);
+            await AddExistingLayerCheckAsync(connection, schema, layerTable, checks, cancellationToken, transaction)
                 .ConfigureAwait(false);
         }
 
@@ -1250,7 +1257,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         public required string Family { get; init; }
 
-        public string ViewName => MixedGeometryFamilyViewName(SourceTable, Family);
+        public string ViewName => GeometryFamilyViews.ViewName(SourceTable, Family);
     }
 
     private readonly record struct ResolvedPublishValidation(
