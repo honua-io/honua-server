@@ -127,18 +127,24 @@ internal static class ShareAdminEndpoints
     // older client with the unfiltered list.
     private static (int? Index, string? Error) ResolveServiceLayerIndexFilter(HttpContext context, int? serviceLayerIndex)
     {
-        var legacy = context.Request.Query["layerId"].ToString();
-        if (legacy.Length == 0)
+        var legacyValues = context.Request.Query["layerId"];
+        if (legacyValues.Count == 0)
         {
             return (serviceLayerIndex, null);
         }
 
-        if (!int.TryParse(legacy, NumberStyles.Integer, CultureInfo.InvariantCulture, out var legacyIndex))
+        if (legacyValues.Count > 1
+            || !int.TryParse(legacyValues[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var legacyIndex))
         {
-            return (null, "layerId must be an integer; send serviceLayerIndex instead.");
+            return (null, "layerId must be a single integer; send serviceLayerIndex instead.");
         }
 
-        return (serviceLayerIndex ?? legacyIndex, LegacyIdAlias.ServiceLayerIndex.Error(serviceLayerIndex ?? legacyIndex, legacyIndex));
+        if (serviceLayerIndex is { } index && index != legacyIndex)
+        {
+            return (null, LegacyIdAlias.ServiceLayerIndex.Error(index, legacyIndex));
+        }
+
+        return (legacyIndex, null);
     }
 
     private static async Task<IResult> HandleListDefinitions(

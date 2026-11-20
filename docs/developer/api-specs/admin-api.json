@@ -40245,7 +40245,6 @@
         "required": [
           "id",
           "name",
-          "relatedStorageLayerId",
           "originField",
           "destinationField"
         ],
@@ -40266,7 +40265,7 @@
           "relatedStorageLayerId": {
             "type": "integer",
             "format": "int32",
-            "description": "Global storage-layer id of the related resource, distinct from its service-local publication index."
+            "description": "Global storage-layer id of the related resource, distinct from its service-local publication index. Required, under this name or its deprecated alias relatedLayerId."
           },
           "relatedLayerId": {
             "type": "integer",
@@ -43728,7 +43727,6 @@
         "description": "Create/replace payload for a scheduled Share export definition.",
         "required": [
           "serviceName",
-          "serviceLayerIndex",
           "destinationType",
           "format",
           "schedule"
@@ -43747,7 +43745,7 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0,
-            "description": "Service-local layer id. Must be zero or greater."
+            "description": "Service-local layer id. Must be zero or greater. Required, under this name or its deprecated alias layerId."
           },
           "layerId": {
             "type": "integer",
@@ -52299,14 +52297,12 @@
       },
       "LayerRelationshipBatchUpdateItem": {
         "type": "object",
-        "required": [
-          "storageLayerId"
-        ],
         "description": "Complete desired relationship set for one global storage-layer id.",
         "properties": {
           "storageLayerId": {
             "type": "integer",
-            "format": "int32"
+            "format": "int32",
+            "description": "Required, under this name or its deprecated alias layerId."
           },
           "layerId": {
             "type": "integer",
