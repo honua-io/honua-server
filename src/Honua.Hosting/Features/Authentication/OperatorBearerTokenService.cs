@@ -24,10 +24,15 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
         JwtRegisteredClaimNames.Iat,
         JwtRegisteredClaimNames.Jti,
         SessionBindingClaimType,
+        AdminPasswordVersionClaimType,
     };
 
     // Present on bearers minted from a browser session; the request path refuses the bearer once that session ends.
     internal const string SessionBindingClaimType = "honua_session_binding";
+
+    // Present on bearers minted from the administrator password; the request path refuses the
+    // bearer once the password it was minted from is rotated (the marker portal tokens minted from the password use).
+    internal const string AdminPasswordVersionClaimType = "honua_admin_password_version";
 
     private readonly OperatorBearerOptions _options = options.Value;
 
@@ -38,7 +43,7 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
     public OperatorBearerIssuance? Issue(
         IReadOnlyList<AdminAuthSessionClaim> sessionClaims,
         DateTimeOffset sessionExpiresAt,
-        string? sessionBinding = null)
+        OperatorBearerBinding binding = default)
     {
         ArgumentNullException.ThrowIfNull(sessionClaims);
 
@@ -55,7 +60,7 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
             return null;
         }
 
-        var token = SignJwt(CreateClaims(sessionClaims, sessionBinding), now, expiresAt);
+        var token = SignJwt(CreateClaims(sessionClaims, binding), now, expiresAt);
         return new OperatorBearerIssuance(token, expiresAt);
     }
 
@@ -87,8 +92,11 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
             return null;
         }
 
-        var binding = result.ClaimsIdentity.FindFirst(SessionBindingClaimType)?.Value;
-        return new OperatorBearerValidation(claims, string.IsNullOrEmpty(binding) ? null : binding);
+        return new OperatorBearerValidation(
+            claims,
+            new OperatorBearerBinding(
+                NullIfEmpty(result.ClaimsIdentity.FindFirst(SessionBindingClaimType)?.Value),
+                NullIfEmpty(result.ClaimsIdentity.FindFirst(AdminPasswordVersionClaimType)?.Value)));
     }
 
     private TokenValidationParameters CreateValidationParameters() =>
@@ -129,15 +137,22 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
         }
     }
 
-    private static List<Claim> CreateClaims(IReadOnlyList<AdminAuthSessionClaim> sessionClaims, string? sessionBinding)
+    private static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
+
+    private static List<Claim> CreateClaims(IReadOnlyList<AdminAuthSessionClaim> sessionClaims, OperatorBearerBinding binding)
     {
         var claims = sessionClaims
             .Where(claim => !ReservedClaimTypes.Contains(claim.Type))
             .Select(claim => new Claim(claim.Type, claim.Value))
             .ToList();
-        if (!string.IsNullOrEmpty(sessionBinding))
+        if (!string.IsNullOrEmpty(binding.Session))
         {
-            claims.Add(new Claim(SessionBindingClaimType, sessionBinding));
+            claims.Add(new Claim(SessionBindingClaimType, binding.Session));
+        }
+
+        if (!string.IsNullOrEmpty(binding.AdminPasswordVersion))
+        {
+            claims.Add(new Claim(AdminPasswordVersionClaimType, binding.AdminPasswordVersion));
         }
 
         return claims;
@@ -170,4 +185,8 @@ internal sealed class OperatorBearerTokenService(IOptions<OperatorBearerOptions>
 
 internal sealed record OperatorBearerIssuance(string Token, DateTimeOffset ExpiresAt);
 
-internal sealed record OperatorBearerValidation(IReadOnlyList<AdminAuthSessionClaim> Claims, string? SessionBinding);
+internal sealed record OperatorBearerValidation(IReadOnlyList<AdminAuthSessionClaim> Claims, OperatorBearerBinding Binding);
+
+// What a bearer is revoked with: the browser session it was minted from, or the administrator
+// password version it was minted from.
+internal readonly record struct OperatorBearerBinding(string? Session = null, string? AdminPasswordVersion = null);

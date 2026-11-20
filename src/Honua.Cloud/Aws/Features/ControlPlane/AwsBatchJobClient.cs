@@ -1,9 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.RegularExpressions;
 using Amazon.Batch;
 using Amazon.Batch.Model;
 using Honua.Cloud.Aws.Features;
+using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.ControlPlane;
 
@@ -97,8 +99,11 @@ internal interface IAwsBatchJobClient
         CancellationToken cancellationToken = default);
 }
 
-internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient
+internal sealed partial class AwsSdkBatchJobClient : IAwsBatchJobClient
 {
+    // Commercial and China partition endpoints; GovCloud and FIPS hosts also end in amazonaws.com.
+    private static readonly string[] ServiceHostSuffixes = [".amazonaws.com", ".amazonaws.com.cn"];
+
     public async Task<AwsBatchSubmitResult> SubmitJobAsync(
         AwsBatchJobSubmission submission,
         string? region,
@@ -383,6 +388,11 @@ internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient
     // emulation is a LocalStack Pro feature, so this override is primarily for paid/real coverage.
     internal static AmazonBatchClient CreateClient(string? region, string? serviceUrl, bool submitting = false)
     {
+        if (!string.IsNullOrWhiteSpace(serviceUrl) && ValidateServiceUrl(serviceUrl) is { } serviceUrlError)
+        {
+            throw new ArgumentException($"AWS Batch service URL {serviceUrlError}", nameof(serviceUrl));
+        }
+
         var config = new AmazonBatchConfig();
         if (submitting)
         {
@@ -395,4 +405,19 @@ internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient
 
         return new AmazonBatchClient(config);
     }
+
+    // Signed requests carry the job's environment overrides, so the endpoint must be an AWS Batch
+    // service host (regional, FIPS or interface VPC endpoint), not any host under amazonaws.com.
+    internal static string? ValidateServiceUrl(string serviceUrl)
+        => ProviderEndpointPolicy.Validate(serviceUrl, ServiceHostSuffixes)
+            ?? (IsLoopbackOrBatchHost(serviceUrl) ? null : "host must be an AWS Batch service endpoint.");
+
+    private static bool IsLoopbackOrBatchHost(string serviceUrl)
+        => Uri.TryCreate(serviceUrl.Trim(), UriKind.Absolute, out var uri)
+            && (uri.IsLoopback || BatchServiceHost().IsMatch(uri.IdnHost.TrimEnd('.')));
+
+    [GeneratedRegex(
+        @"^(?:fips\.)?batch(?:-fips)?\.[a-z0-9-]+\.amazonaws\.com(?:\.cn)?$|^[a-z0-9-]+\.batch\.[a-z0-9-]+\.vpce\.amazonaws\.com(?:\.cn)?$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex BatchServiceHost();
 }

@@ -71,15 +71,9 @@ internal sealed partial class AzureBatchComputeBackend(
         var poolId = RequireParameter(parameters, ParamPoolId);
         var commandLine = GetParameter(parameters, ParamCommandLine) ?? DefaultCommandLine;
         var containerImage = GetParameter(parameters, ParamContainerImage) ?? job.Spec.Artifact?.Trim();
-        var imageContractVersion = ResolveImageMaxSupportedContractVersion(containerImage);
-        if (job.Spec.ContractVersion > imageContractVersion)
+        if (RejectSubmission(job, accountUrl, containerImage) is { } rejected)
         {
-            return new BatchComputeSubmissionResult
-            {
-                Status = ExecutionJobStatus.Failed,
-                Message = $"Azure Batch worker image '{containerImage ?? "<none>"}' supports execution contract "
-                    + $"version {imageContractVersion}, but the job requires version {job.Spec.ContractVersion}."
-            };
+            return rejected;
         }
 
         var submission = new AzureBatchJobSubmission
@@ -167,18 +161,19 @@ internal sealed partial class AzureBatchComputeBackend(
         // a terminal Failed observation (mirroring the Kubernetes backend's classification) so the
         // reconciler can finalize the job instead of an InvalidOperationException faulting every
         // reconcile poll and leaving the record non-terminal forever.
-        if (GetParameter(parameters, ParamAccountUrl) is not { } accountUrl)
+        if (AccountUrlRefusal(parameters) is { } accountUrlError)
         {
-            var missingParameterError = MissingParameterMessage(ParamAccountUrl);
-            Log.JobObservationFailed(logger, job.OperationId, providerJobId, missingParameterError);
+            Log.JobObservationFailed(logger, job.OperationId, providerJobId, accountUrlError);
             return new BatchComputeObservation
             {
                 Status = ExecutionJobStatus.Failed,
                 ProviderOperationId = providerJobId,
                 PercentComplete = 100,
-                Message = missingParameterError
+                Message = accountUrlError
             };
         }
+
+        var accountUrl = GetParameter(parameters, ParamAccountUrl)!;
 
         try
         {
@@ -210,18 +205,19 @@ internal sealed partial class AzureBatchComputeBackend(
 
         // Terminal misconfiguration: there is no reachable provider job to terminate or drain, so
         // finalize the cancellation instead of throwing out of the cancellation path.
-        if (GetParameter(parameters, ParamAccountUrl) is not { } accountUrl)
+        if (AccountUrlRefusal(parameters) is { } accountUrlError)
         {
-            var missingParameterError = MissingParameterMessage(ParamAccountUrl);
-            Log.JobCancellationFailed(logger, job.OperationId, providerJobId, missingParameterError);
+            Log.JobCancellationFailed(logger, job.OperationId, providerJobId, accountUrlError);
             return new BatchComputeObservation
             {
                 Status = ExecutionJobStatus.Cancelled,
                 ProviderOperationId = providerJobId,
                 PercentComplete = 100,
-                Message = missingParameterError
+                Message = accountUrlError
             };
         }
+
+        var accountUrl = GetParameter(parameters, ParamAccountUrl)!;
 
         try
         {
@@ -512,6 +508,31 @@ internal sealed partial class AzureBatchComputeBackend(
 
         return settings;
     }
+
+    private BatchComputeSubmissionResult? RejectSubmission(ExecutionJobRecord job, string accountUrl, string? containerImage)
+    {
+        var imageContractVersion = ResolveImageMaxSupportedContractVersion(containerImage);
+        var message = AzureBatchDataPlaneClient.ValidateAccountUrl(accountUrl)
+            ?? (job.Spec.ContractVersion > imageContractVersion
+                ? $"Azure Batch worker image '{containerImage ?? "<none>"}' supports execution contract "
+                    + $"version {imageContractVersion}, but the job requires version {job.Spec.ContractVersion}."
+                : null);
+
+        return message is null
+            ? null
+            : new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Failed,
+                Message = message
+            };
+    }
+
+    // A missing or policy-violating account URL is terminal misconfiguration: the data-plane client
+    // refuses to send a token to it, so retrying every reconcile poll could never succeed.
+    private static string? AccountUrlRefusal(IReadOnlyDictionary<string, string> parameters)
+        => GetParameter(parameters, ParamAccountUrl) is { } accountUrl
+            ? AzureBatchDataPlaneClient.ValidateAccountUrl(accountUrl)
+            : MissingParameterMessage(ParamAccountUrl);
 
     private int ResolveImageMaxSupportedContractVersion(string? image)
     {

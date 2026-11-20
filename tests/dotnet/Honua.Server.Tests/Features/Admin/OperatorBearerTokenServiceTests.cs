@@ -31,7 +31,7 @@ public sealed class OperatorBearerTokenServiceTests
         var validation = await service.TryValidateAsync(issuance!.Token);
 
         validation.Should().NotBeNull();
-        validation!.SessionBinding.Should().BeNull();
+        validation!.Binding.Should().Be(default(OperatorBearerBinding));
         var claims = validation.Claims;
         claims.Should().Contain(c => c.Type == "name" && c.Value == "Operator Admin");
         claims.Should().Contain(c => c.Type == ClaimTypes.Role && c.Value == "admin");
@@ -141,12 +141,29 @@ public sealed class OperatorBearerTokenServiceTests
             .Append(new AdminAuthSessionClaim { Type = OperatorBearerTokenService.SessionBindingClaimType, Value = "from-session" })
             .ToArray();
 
-        var bound = await service.TryValidateAsync(service.Issue(spoofed, DateTimeOffset.UtcNow.AddMinutes(10), "binding-1")!.Token);
+        var bound = await service.TryValidateAsync(service.Issue(spoofed, DateTimeOffset.UtcNow.AddMinutes(10), new OperatorBearerBinding(Session: "binding-1"))!.Token);
         var unbound = await service.TryValidateAsync(service.Issue(spoofed, DateTimeOffset.UtcNow.AddMinutes(10))!.Token);
 
-        bound!.SessionBinding.Should().Be("binding-1");
+        bound!.Binding.Session.Should().Be("binding-1");
         bound.Claims.Should().NotContain(c => c.Type == OperatorBearerTokenService.SessionBindingClaimType);
-        unbound!.SessionBinding.Should().BeNull("a session claim cannot choose the binding");
+        unbound!.Binding.Session.Should().BeNull("a session claim cannot choose the binding");
+    }
+
+    [UnitTest]
+    public async Task Issue_WithAdminPasswordVersion_CarriesItOutsideTheClaims()
+    {
+        var service = CreateService();
+        var spoofed = SampleClaims
+            .Append(new AdminAuthSessionClaim { Type = OperatorBearerTokenService.AdminPasswordVersionClaimType, Value = "from-claims" })
+            .ToArray();
+
+        var bound = await service.TryValidateAsync(
+            service.Issue(spoofed, DateTimeOffset.UtcNow.AddMinutes(10), new OperatorBearerBinding(AdminPasswordVersion: "v1"))!.Token);
+        var unbound = await service.TryValidateAsync(service.Issue(spoofed, DateTimeOffset.UtcNow.AddMinutes(10))!.Token);
+
+        bound!.Binding.AdminPasswordVersion.Should().Be("v1");
+        bound.Claims.Should().NotContain(c => c.Type == OperatorBearerTokenService.AdminPasswordVersionClaimType);
+        unbound!.Binding.AdminPasswordVersion.Should().BeNull("a session claim cannot choose the password version");
     }
 
     [Fact]

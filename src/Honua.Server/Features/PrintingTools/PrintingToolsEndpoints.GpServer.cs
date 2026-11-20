@@ -331,6 +331,11 @@ internal static partial class PrintingToolsEndpoints
             return CreateSoapFault("Print job was not found.", StatusCodes.Status404NotFound, soap);
         }
 
+        if (!CanCancelJob(print, context))
+        {
+            return CreateSoapFault("Only the job's submitter or an administrator can cancel it.", StatusCodes.Status403Forbidden, soap);
+        }
+
         if (print.Status is OperationStatus.Queued or OperationStatus.Processing)
         {
             context.RequestServices.GetRequiredService<PrintJobCancellationTokens>().Cancel(jobId);

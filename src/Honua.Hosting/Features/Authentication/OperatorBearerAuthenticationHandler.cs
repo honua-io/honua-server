@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using System.Text.Encodings.Web;
+using Honua.Core.Features.Authorization.Abstractions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -44,9 +45,14 @@ internal sealed class OperatorBearerAuthenticationHandler(
             return AuthenticateResult.Fail("The operator bearer is invalid or expired.");
         }
 
-        if (validation.SessionBinding is { } binding && !await IsSessionLiveAsync(binding).ConfigureAwait(false))
+        if (validation.Binding.Session is { } binding && !await IsSessionLiveAsync(binding).ConfigureAwait(false))
         {
             return AuthenticateResult.Fail("The operator bearer's session has ended.");
+        }
+
+        if (validation.Binding.AdminPasswordVersion is { } version && !await IsAdminPasswordCurrentAsync(version).ConfigureAwait(false))
+        {
+            return AuthenticateResult.Fail("The administrator password this operator bearer was issued from has changed.");
         }
 
         return CreateResult(validation.Claims);
@@ -80,6 +86,17 @@ internal sealed class OperatorBearerAuthenticationHandler(
         var sessions = Context.RequestServices.GetService<AdminAuthSessionStore>();
         return sessions is not null
             && await sessions.IsOperatorBearerBindingLiveAsync(binding, Context.RequestAborted).ConfigureAwait(false);
+    }
+
+    // Fails closed like the session check: a bearer minted from the administrator password is refused
+    // once the password is rotated or when its authority cannot be read, the rule portal tokens minted from the password follow.
+    private async Task<bool> IsAdminPasswordCurrentAsync(string version)
+    {
+        var validator = Context.RequestServices.GetService<IPortalTokenSourceValidator>();
+        return validator is not null
+            && await validator.IsStillValidAsync(
+                new PortalTokenSourceRecord { Kind = PortalCredentialSourceKind.AdminPassword, Version = version },
+                Context.RequestAborted).ConfigureAwait(false);
     }
 
     // Challenge and forbidden handlers guard HasStarted because ASP.NET challenges each scheme in turn and a preceding scheme may already have written the response.
