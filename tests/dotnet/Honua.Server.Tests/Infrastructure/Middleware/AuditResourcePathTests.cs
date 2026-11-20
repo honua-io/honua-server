@@ -2,11 +2,15 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.AuditLog;
 using Honua.Infrastructure.Middleware;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Routing.Patterns;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
 
@@ -38,6 +42,32 @@ public sealed class AuditResourcePathTests
         var context = BuildContext("/wps/conformance/results/{token}", "/wps/conformance/results/live-value");
 
         AuditResourcePath.Resolve(context).Should().Be("/wps/conformance/results/{token}");
+    }
+
+    [UnitTest]
+    public void Resolve_WhenCredentialIsNotAWholeSegment_RecordsTheTemplate()
+    {
+        var context = BuildContext("/api/v1/attachments/downloads/{token}.png", "/api/v1/attachments/downloads/live-value.png");
+        context.Request.RouteValues["token"] = "live-value";
+
+        AuditResourcePath.Resolve(context).Should().Be("/api/v1/attachments/downloads/{token}.png");
+    }
+
+    [UnitTest]
+    public void CurrentPolicy_WhenTheConfiguredValueCannotBind_FallsBackToTheDefault()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["AuditLog:Policy:RecordSuccessfulReads"] = "sometimes" })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddHonuaAuditPolicy(configuration);
+        using var provider = services.BuildServiceProvider();
+        var monitor = provider.GetRequiredService<IOptionsMonitor<AuditPolicyOptions>>();
+
+        var read = () => monitor.CurrentValue;
+
+        read.Should().Throw<InvalidOperationException>();
+        AuditInstrumentationServiceCollectionExtensions.CurrentPolicy(monitor).RecordSuccessfulReads.Should().BeFalse();
     }
 
     private static DefaultHttpContext BuildContext(string template, string path)

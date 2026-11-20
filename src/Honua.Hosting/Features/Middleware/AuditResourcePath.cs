@@ -34,16 +34,16 @@ internal static class AuditResourcePath
                 continue;
             }
 
-            if (context.Request.RouteValues.TryGetValue(parameter.Name, out var value)
-                && value?.ToString() is { Length: > 0 } credential)
+            // A value that is missing, or is not a whole path segment (catch-all, mixed segment,
+            // other encoding), cannot be redacted in place, so record the template instead.
+            if (!context.Request.RouteValues.TryGetValue(parameter.Name, out var value)
+                || value?.ToString() is not { Length: > 0 } credential
+                || RedactSegment(path, credential, "{" + parameter.Name + "}") is not { } redactedPath)
             {
-                path = RedactSegment(path, credential, "{" + parameter.Name + "}");
-            }
-            else
-            {
-                // The value cannot be located in the path, so record the template instead.
                 return endpoint.RoutePattern.RawText ?? string.Empty;
             }
+
+            path = redactedPath;
         }
 
         return path;
@@ -52,18 +52,22 @@ internal static class AuditResourcePath
     internal static bool IsCredentialParameter(string name)
         => CredentialSuffixes.Any(suffix => name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
 
-    private static string RedactSegment(string path, string credential, string placeholder)
+    // Returns the path with every segment equal to the credential replaced, or null when no
+    // segment matched.
+    private static string? RedactSegment(string path, string credential, string placeholder)
     {
         var segments = path.Split('/');
+        var redacted = false;
         for (var index = 0; index < segments.Length; index++)
         {
             if (string.Equals(segments[index], credential, StringComparison.Ordinal)
                 || string.Equals(Uri.UnescapeDataString(segments[index]), credential, StringComparison.Ordinal))
             {
                 segments[index] = placeholder;
+                redacted = true;
             }
         }
 
-        return string.Join('/', segments);
+        return redacted ? string.Join('/', segments) : null;
     }
 }

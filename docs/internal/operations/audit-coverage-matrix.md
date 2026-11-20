@@ -214,7 +214,7 @@ Every HTTP audit row (matrix rows, `auth.failure`/`auth.denied`, and `data.read`
 builds `ResourceId` through `AuditResourcePath`. A route value whose parameter name ends
 in `token`, `secret`, `signature` or `password` (share links, download links) is
 replaced by its `{name}` placeholder. Identifiers such as `{tokenId}` are kept. If the
-value cannot be found in the path, the row records the route template instead.
+value is not a whole path segment, the row records the route template instead.
 
 ## Out of scope (this slice)
 
