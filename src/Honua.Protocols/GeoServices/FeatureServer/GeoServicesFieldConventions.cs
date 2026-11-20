@@ -7,6 +7,8 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
+internal readonly record struct TemporalAttribute(string Name, object Value, MetadataV2FieldType FieldType);
+
 internal static class GeoServicesFieldConventions
 {
     // String fields never emit a null or non-positive length, because arcpy maps that to 0 and then rejects every insert as field length exceeded.
@@ -193,9 +195,9 @@ internal static class GeoServicesFieldConventions
     }
 
     // Writes what TryConvertTemporalValue would return without boxing the value or formatting a string.
-    internal static bool TryWriteTemporalValue(
-        Utf8JsonWriter writer, string propertyName, object value, MetadataV2FieldType fieldType)
+    internal static bool TryWriteTemporalValue(Utf8JsonWriter writer, TemporalAttribute attribute)
     {
+        var (propertyName, value, fieldType) = attribute;
         if (fieldType == MetadataV2FieldType.Decimal && ExactAttributeValues.ToFiniteDouble(value) is { } number)
         {
             writer.WriteNumber(propertyName, number);
@@ -218,7 +220,7 @@ internal static class GeoServicesFieldConventions
     internal static void WriteCalendarDate(Utf8JsonWriter writer, string propertyName, DateOnly date)
     {
         Span<char> text = stackalloc char[CalendarDateLength];
-        date.TryFormat(text, out var written, CalendarDateFormat, CultureInfo.InvariantCulture);
+        _ = date.TryFormat(text, out var written, CalendarDateFormat, CultureInfo.InvariantCulture);
         writer.WriteString(propertyName, text[..written]);
     }
 

@@ -1409,7 +1409,7 @@ internal sealed class StreamingQueryFormatter
         if (value is not null
             && temporalFieldTypes is not null
             && temporalFieldTypes.TryGetValue(propertyName, out var temporalType)
-            && GeoServicesFieldConventions.TryWriteTemporalValue(writer, propertyName, value, temporalType))
+            && GeoServicesFieldConventions.TryWriteTemporalValue(writer, new TemporalAttribute(propertyName, value, temporalType)))
         {
             cancellationToken.ThrowIfCancellationRequested();
             return;

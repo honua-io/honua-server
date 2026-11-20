@@ -52,7 +52,7 @@ public sealed class GeoServicesExactFieldConventionsTests
     {
         WriteProperty(writer =>
             {
-                if (GeoServicesFieldConventions.TryWriteTemporalValue(writer, "value", value, type))
+                if (GeoServicesFieldConventions.TryWriteTemporalValue(writer, new TemporalAttribute("value", value, type)))
                 {
                     return;
                 }
