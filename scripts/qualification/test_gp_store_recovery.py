@@ -16,7 +16,7 @@ spec.loader.exec_module(recovery)
 
 @dataclass
 class FakeDocker:
-    """Answers the drill's docker calls for one postgres volume and one bound output store."""
+    """Answers the drill's docker calls for the postgres and key-ring volumes and one bound output store."""
 
     test: unittest.TestCase
     project: str
@@ -43,19 +43,25 @@ class FakeDocker:
             return action[2].encode()
         if action == ("config", "--format", "json"):
             return json.dumps({"services": {"postgres": {"image": "postgres-helper"}}}).encode()
-        if action == ("create", "postgres") and self.failure == "archive-corrupt":
+        if action == ("create", "postgres", "server") and self.failure == "archive-corrupt":
             (self.backup / "postgres.tar").write_bytes(b"corrupted archive")
         return b""
 
     def inspect_container(self, service):
-        mount = ({"Destination": "/var/lib/postgresql/data", "Type": "volume", "Name": "database"}
-                 if service == "postgres" else
-                 {"Destination": "/var/lib/honua/gp-outputs", "Type": "bind", "Source": str(self.root)})
-        return json.dumps([{"Mounts": [mount]}]).encode()
+        if service == "postgres":
+            return json.dumps([{"Mounts": [{"Destination": "/var/lib/postgresql/data", "Type": "volume",
+                                            "Name": "database"}]}]).encode()
+        mounts = [{"Destination": "/var/lib/honua/gp-outputs", "Type": "bind", "Source": str(self.root)}]
+        if service != "worker":
+            split = self.failure == "split-key-ring" and service == "server-peer"
+            mounts.append({"Destination": recovery.KEY_RING, "Type": "volume",
+                           "Name": "peer-keys" if split else "keys"})
+        return json.dumps([{"Mounts": mounts}]).encode()
 
     def helper(self, args, kwargs):
         mount = args[args.index("--mount") + 1]
-        store = "postgres" if "src=database," in mount else "gp-output"
+        store = {"src=database,": "postgres", "src=keys,": "data-protection-keys"}.get(
+            next((src for src in ("src=database,", "src=keys,") if src in mount), ""), "gp-output")
         if args[args.index("--entrypoint") + 1] == "tar":
             self.test.assertEqual(kwargs["input"], (store + " archive").encode())
             self.restored.add(store)
@@ -76,8 +82,10 @@ class FakeDocker:
 
     def inspect_destroyed(self, args, **_):
         self.calls.append(tuple(args))
-        self.test.assertEqual(args, ["docker", "volume", "inspect", "database"])
-        return subprocess.CompletedProcess(args, 0 if self.failure == "surviving-volume" else 1)
+        self.test.assertIn(args[-1], ("database", "keys"))
+        self.test.assertEqual(args[:-1], ["docker", "volume", "inspect"])
+        survived = (self.failure, args[-1]) in (("surviving-volume", "database"), ("surviving-key-ring", "keys"))
+        return subprocess.CompletedProcess(args, 0 if survived else 1)
 
 
 class RecoveryTests(unittest.TestCase):
@@ -92,12 +100,13 @@ class RecoveryTests(unittest.TestCase):
             with patch.object(recovery, "run", side_effect=docker.run), \
                     patch.object(recovery.subprocess, "run", side_effect=docker.inspect_destroyed):
                 result = recovery.recover(Path("compose.yaml"), project, root, backup)
-            self.assertEqual({p.name for p in backup.iterdir()}, {"postgres.tar", "gp-output.tar"})
+            self.assertEqual({p.name for p in backup.iterdir()},
+                             {"postgres.tar", "data-protection-keys.tar", "gp-output.tar"})
         return result, docker.calls
 
     def test_restores_every_physical_store_after_destroying_originals(self):
         result, calls = self.exercise()
-        self.assertEqual([s["store"] for s in result["substrates"]], ["postgres", "gp-output"])
+        self.assertEqual([s["store"] for s in result["substrates"]], ["postgres", "data-protection-keys", "gp-output"])
         for store in result["substrates"]:
             self.assertTrue(store["original_destroyed"])
             self.assertTrue(store["restored_into_empty_store"])
@@ -106,7 +115,7 @@ class RecoveryTests(unittest.TestCase):
         actions = [c[6:] for c in calls if c[:2] == ("docker", "compose")]
         self.assertEqual(actions[-5:], [("stop", "server", "server-peer", "worker"),
                                        ("stop", "postgres"), ("down", "--volumes", "--remove-orphans"),
-                                       ("create", "postgres"), ("up", "-d")])
+                                       ("create", "postgres", "server"), ("up", "-d")])
         self.assertEqual({"server", "server-peer", "worker", "postgres"},
                          {action[2] for action in actions if action[:2] == ("ps", "-q")})
         archive = next(i for i, c in enumerate(calls) if c[-1] == "tar -C /volume -cpf - .")
@@ -114,11 +123,13 @@ class RecoveryTests(unittest.TestCase):
         destroyed = next(i for i, c in enumerate(calls) if c[-3:] == ("down", "--volumes", "--remove-orphans"))
         emptied = next(i for i, c in enumerate(calls) if c[-1] == "find /volume -mindepth 1 -delete")
         self.assertLess(destroyed, emptied)
-        self.assertEqual(sum(c[-1] == "find /volume -mindepth 1 -print -quit" for c in calls), 2)
+        self.assertEqual(sum(c[-1] == "find /volume -mindepth 1 -print -quit" for c in calls), 3)
 
     def test_refuses_foreign_surviving_dirty_or_corrupt_stores(self):
         for failure, message in (("foreign-volume", "not owned"),
-                                 ("surviving-volume", "survived destruction"),
+                                 ("surviving-volume", "postgres volume survived destruction"),
+                                 ("surviving-key-ring", "data-protection-keys volume survived destruction"),
+                                 ("split-key-ring", "share one volume"),
                                  ("nonempty-destination", "not empty"),
                                  ("archive-corrupt", "checksum changed"),
                                  ("inventory-corrupt", "inventory differs")):
