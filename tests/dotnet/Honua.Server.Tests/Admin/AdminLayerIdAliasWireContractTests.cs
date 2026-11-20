@@ -48,6 +48,45 @@ public sealed class AdminLayerIdAliasWireContractTests
         Assert.True(properties.GetProperty(alias).GetProperty("deprecated").GetBoolean());
     }
 
+    [UnitTheory]
+    [InlineData("""{"layerId":5}""", 5, null)]
+    [InlineData("""{"storageLayerId":5}""", 5, null)]
+    [InlineData("""{"storageLayerId":5,"layerId":5}""", 5, null)]
+    [InlineData("""{"storageLayerId":5,"layerId":6}""", 5, "disagree")]
+    [InlineData("""{}""", -1, "storageLayerId is required")]
+    public void BatchRequest_AcceptsTheDeprecatedLayerIdName(string json, int expected, string? error)
+    {
+        var item = JsonSerializer.Deserialize(json, LayerAuthoringJsonContext.Default.LayerRelationshipBatchUpdateItem)!;
+
+        Assert.Equal(expected, item.StorageLayerId);
+        AssertError(error, item.StorageLayerIdError);
+        Assert.DoesNotContain("\"layerId\"", JsonSerializer.Serialize(item, LayerAuthoringJsonContext.Default.LayerRelationshipBatchUpdateItem));
+    }
+
+    [UnitTheory]
+    [InlineData(""","relatedLayerId":9""", 9, null)]
+    [InlineData(""","relatedStorageLayerId":9,"relatedLayerId":3""", 9, "disagree")]
+    [InlineData("", -1, "relatedStorageLayerId is required")]
+    public void RelationshipRequest_AcceptsTheDeprecatedRelatedLayerIdName(string idMembers, int expected, string? error)
+    {
+        var json = $$"""{"id":"rel","name":"Inspections","originField":"id","destinationField":"asset_id"{{idMembers}}}""";
+        var item = JsonSerializer.Deserialize(json, LayerAuthoringJsonContext.Default.LayerRelationshipUpdateItem)!;
+
+        Assert.Equal(expected, item.RelatedStorageLayerId);
+        AssertError(error, item.RelatedStorageLayerIdError);
+    }
+
+    private static void AssertError(string? expected, string? actual)
+    {
+        if (expected is null)
+        {
+            Assert.Null(actual);
+            return;
+        }
+
+        Assert.Contains(expected, actual);
+    }
+
     private static LayerRelationshipItem RelationshipItem() => new()
     {
         Id = "rel",

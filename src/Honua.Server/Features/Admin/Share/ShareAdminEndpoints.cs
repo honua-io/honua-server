@@ -11,6 +11,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.ControlPlane;
 using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
+using Honua.Server.Features.Admin.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -122,6 +123,24 @@ internal static class ShareAdminEndpoints
             .Produces<ShareTrafficSeriesResponse>();
     }
 
+    // layerId is the deprecated name of the serviceLayerIndex filter. Ignoring it would answer an
+    // older client with the unfiltered list.
+    private static (int? Index, string? Error) ResolveServiceLayerIndexFilter(HttpContext context, int? serviceLayerIndex)
+    {
+        var legacy = context.Request.Query["layerId"].ToString();
+        if (legacy.Length == 0)
+        {
+            return (serviceLayerIndex, null);
+        }
+
+        if (!int.TryParse(legacy, NumberStyles.Integer, CultureInfo.InvariantCulture, out var legacyIndex))
+        {
+            return (null, "layerId must be an integer; send serviceLayerIndex instead.");
+        }
+
+        return (serviceLayerIndex ?? legacyIndex, LegacyIdAlias.ServiceLayerIndex.Error(serviceLayerIndex ?? legacyIndex, legacyIndex));
+    }
+
     private static async Task<IResult> HandleListDefinitions(
         HttpContext context,
         [FromServices] IShareExportStore store,
@@ -134,6 +153,14 @@ internal static class ShareAdminEndpoints
         [FromQuery] string? cursor = null,
         [FromQuery] int? limit = null)
     {
+        var (resolvedIndex, filterError) = ResolveServiceLayerIndexFilter(context, serviceLayerIndex);
+        if (filterError is not null)
+        {
+            return BadRequest(context, filterError);
+        }
+
+        serviceLayerIndex = resolvedIndex;
+
         if (!TryValidateCursor(cursor, out var cursorError))
         {
             return BadRequest(context, cursorError);
@@ -784,6 +811,12 @@ internal static class ShareAdminEndpoints
         if (string.IsNullOrWhiteSpace(request.ServiceName))
         {
             problem = BadRequest(context, "serviceName is required.");
+            return false;
+        }
+
+        if (request.ServiceLayerIndexError is { } indexError)
+        {
+            problem = BadRequest(context, indexError);
             return false;
         }
 

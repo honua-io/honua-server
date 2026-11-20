@@ -13671,6 +13671,17 @@
             }
           },
           {
+            "name": "layerId",
+            "in": "query",
+            "required": false,
+            "deprecated": true,
+            "description": "Deprecated alias of serviceLayerIndex, accepted from published clients. When both are sent they must agree.",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
             "name": "destinationType",
             "in": "query",
             "required": false,
@@ -40257,6 +40268,12 @@
             "format": "int32",
             "description": "Global storage-layer id of the related resource, distinct from its service-local publication index."
           },
+          "relatedLayerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated input alias of relatedStorageLayerId, accepted from published clients. Send relatedStorageLayerId; when both are sent they must agree.",
+            "deprecated": true
+          },
           "role": {
             "type": "string",
             "default": "origin",
@@ -43731,6 +43748,12 @@
             "format": "int32",
             "minimum": 0,
             "description": "Service-local layer id. Must be zero or greater."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated input alias of serviceLayerIndex, accepted from published clients. Send serviceLayerIndex; when both are sent they must agree.",
+            "deprecated": true
           },
           "displayName": {
             "type": "string",
@@ -52284,6 +52307,12 @@
           "storageLayerId": {
             "type": "integer",
             "format": "int32"
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated input alias of storageLayerId, accepted from published clients. Send storageLayerId; when both are sent they must agree.",
+            "deprecated": true
           },
           "relationships": {
             "type": "array",
