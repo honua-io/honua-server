@@ -14,11 +14,18 @@ public static partial class GeoParquetFeatureWriter
     private static void ValidateEncodingLimits(GeoParquetLimits limits)
     {
         if (limits.MaxRowsPerBatch is < 1 or > 10000 || limits.MaxEstimatedBatchBytes < 1 ||
-            limits.MaxEstimatedInputBytes < 1 || limits.MaxResponseBytes < 1)
+            limits.MaxEstimatedInputBytes < 1 || limits.MaxResponseBytes < 1 ||
+            limits.RowsPerRowGroup is < 1 or > GeoParquetLimits.SpecMaxRowsPerRowGroup ||
+            (limits.MaxArtifactBytes is long artifactBytes &&
+             (artifactBytes < 1 || artifactBytes > Array.MaxLength)))
         {
-            throw new ArgumentOutOfRangeException(nameof(limits), "GeoParquet encoding budgets must be positive and batches cannot exceed 10000 rows.");
+            throw new ArgumentOutOfRangeException(nameof(limits),
+                "GeoParquet encoding budgets must be positive, batches cannot exceed 10000 rows, and a row group cannot exceed 150000 rows.");
         }
     }
+
+    private static long OutputByteCap(GeoParquetLimits limits)
+        => limits.MaxArtifactBytes ?? limits.MaxResponseBytes;
 
     private static List<(int Offset, int Count)> PlanBatches(
         ImmutableArray<Feature> features, GeoParquetLimits limits, int columnCount = 0)

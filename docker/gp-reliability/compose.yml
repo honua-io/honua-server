@@ -62,6 +62,10 @@ services:
       Geoprocessing__OutputStaging__OrphanRetention: 00:00:02
     volumes:
       - ${HONUA_GP_OBJECT_ROOT:-/tmp/honua-gp-reliability-objects}:/var/lib/honua/gp-outputs
+      # Development hosts keep the data-protection key ring in this directory instead of the
+      # PostgreSQL ring. Job submitter snapshots are sealed with it, so every server of the
+      # replica set, and every replacement, must read one ring, as a production cluster does.
+      - dataprotection-keys:/tmp/honua/.aspnet/DataProtection-Keys
     depends_on:
       postgres:
         condition: service_healthy
@@ -77,8 +81,13 @@ services:
     environment: *honua-environment
     volumes:
       - ${HONUA_GP_OBJECT_ROOT:-/tmp/honua-gp-reliability-objects}:/var/lib/honua/gp-outputs
+      - dataprotection-keys:/tmp/honua/.aspnet/DataProtection-Keys
     depends_on:
       postgres:
+        condition: service_healthy
+      # The primary creates the first key as it starts, before it reports healthy, so the
+      # peer reads that key instead of creating a second one in an empty ring.
+      server:
         condition: service_healthy
     healthcheck:
       interval: 2s
@@ -121,3 +130,4 @@ services:
 
 volumes:
   postgres-data:
+  dataprotection-keys:

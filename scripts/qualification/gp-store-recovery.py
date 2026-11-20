@@ -4,6 +4,8 @@
 Never use this destructive drill against a customer deployment. The caller owns the
 unique Compose project and bind-mounted output directory. All application writers and
 PostgreSQL are stopped before the physical backup, and no original volume survives.
+The servers' shared data-protection key ring is restored with the database, because the
+job records in it are sealed with that ring.
 """
 
 import argparse
@@ -13,6 +15,8 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
+KEY_RING = "/tmp/honua/.aspnet/DataProtection-Keys"
+
 
 def run(*args, **kwargs):
     return subprocess.run(args, check=True, stdout=subprocess.PIPE, **kwargs).stdout
@@ -20,6 +24,27 @@ def run(*args, **kwargs):
 
 def now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def shared_volume(compose, destination, hosts):
+    """Names the one named volume every host mounts at destination."""
+    names = set()
+    for host in hosts:
+        container = run(*compose, "ps", "-q", host).decode().strip()
+        details = json.loads(run("docker", "inspect", container))[0]
+        mounts = [m for m in details["Mounts"] if m["Destination"] == destination]
+        if len(mounts) != 1 or mounts[0]["Type"] != "volume":
+            raise ValueError(f"{host} must mount one named persistent volume at {destination}")
+        names.add(mounts[0]["Name"])
+    if len(names) != 1:
+        raise ValueError(f"every host must share one volume at {destination}")
+    return names.pop()
+
+
+def require_project_volume(volume, project):
+    labels = json.loads(run("docker", "volume", "inspect", volume))[0]["Labels"]
+    if labels.get("com.docker.compose.project") != project:
+        raise ValueError("refusing a volume not owned by this qualification project")
 
 
 def recover(compose_file, project, object_root, backup_dir):
@@ -42,17 +67,13 @@ def recover(compose_file, project, object_root, backup_dir):
         if (len(mounts) != 1 or mounts[0]["Type"] != "bind"
                 or Path(mounts[0]["Source"]).resolve() != object_root):
             raise ValueError("output directory must be the actual shared mount of every qualification host")
-    container = run(*compose, "ps", "-q", "postgres").decode().strip()
-    details = json.loads(run("docker", "inspect", container))[0]
-    mounts = [m for m in details["Mounts"] if m["Destination"] == "/var/lib/postgresql/data"]
-    if len(mounts) != 1 or mounts[0]["Type"] != "volume":
-        raise ValueError("postgres must use one named persistent volume")
-    volume = mounts[0]["Name"]
-    labels = json.loads(run("docker", "volume", "inspect", volume))[0]["Labels"]
-    if labels.get("com.docker.compose.project") != project:
-        raise ValueError("refusing a volume not owned by this qualification project")
+    database = shared_volume(compose, "/var/lib/postgresql/data", ("postgres",))
+    key_ring = shared_volume(compose, KEY_RING, ("server", "server-peer"))
+    for volume in (database, key_ring):
+        require_project_volume(volume, project)
     output_store = {"store": "gp-output", "volume": str(object_root), "type": "bind"}
-    inventory = [{"store": "postgres", "volume": volume, "type": "volume"}, output_store]
+    inventory = [{"store": "postgres", "volume": database, "type": "volume"},
+                 {"store": "data-protection-keys", "volume": key_ring, "type": "volume"}, output_store]
     helper = json.loads(run(*compose, "config", "--format", "json"))["services"]["postgres"]["image"]
 
     def mounted(item, *command, **kwargs):
@@ -68,6 +89,9 @@ def recover(compose_file, project, object_root, backup_dir):
     run(*compose, "stop", "postgres")
     for item in inventory:
         item["files_before"] = file_inventory(item)
+        if item["store"] == "data-protection-keys" and not item["files_before"].strip():
+            # An unused ring means the servers keep their keys elsewhere, and restored jobs would not verify.
+            raise RuntimeError("data-protection-keys: the shared key ring holds no key")
         archive = mounted(item, "tar -C /volume -cpf - .")
         path = backup_dir / (item["store"] + ".tar")
         path.write_bytes(archive)
@@ -81,10 +105,11 @@ def recover(compose_file, project, object_root, backup_dir):
         result = subprocess.run(["docker", "volume", "inspect", item["volume"]],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if result.returncode == 0:
-            raise RuntimeError("original database volume survived destruction")
+            raise RuntimeError(f'original {item["store"]} volume survived destruction')
     mounted(output_store, "find /volume -mindepth 1 -delete")
     destroyed = now()
-    run(*compose, "create", "postgres")
+    # Creating the primary server also recreates the key-ring volume it shares with the peer.
+    run(*compose, "create", "postgres", "server")
     for item in inventory:
         if mounted(item, "find /volume -mindepth 1 -print -quit").strip():
             raise RuntimeError(f'{item["store"]}: restore destination is not empty')

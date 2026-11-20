@@ -112,7 +112,7 @@ internal static class ProtocolRequestClassifier
         }
 
         var versionSegment = segments[0];
-        if (!versionSegment.StartsWith("v", StringComparison.OrdinalIgnoreCase))
+        if (versionSegment is not ['v' or 'V', ..])
         {
             return false;
         }

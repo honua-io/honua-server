@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics;
 using Honua.Core.Features.Infrastructure.Monitoring;
 
 namespace Honua.TestKit.Infrastructure;
@@ -38,6 +39,10 @@ public sealed class NoopPerformanceMonitor : IPerformanceMonitor
     }
 
     public void RecordHistogram(string name, double value, IDictionary<string, string>? tags = null)
+    {
+    }
+
+    public void RecordHistogram(string name, double value, TagList tags)
     {
     }
 
