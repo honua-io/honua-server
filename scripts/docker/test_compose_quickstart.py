@@ -20,6 +20,7 @@ from quickstart_testing import EXECUTOR, PACKAGE_IMAGES, ROOT, SERVER, WORKER, Q
 from test_console_edge_quickstart import ConsoleEdgeTests  # noqa: F401
 from test_console_package_quickstart import ConsolePackageTests  # noqa: F401
 from test_console_quickstart import ConsoleLifecycleTests  # noqa: F401
+from test_shipped_images import ShippedImageTests  # noqa: F401
 
 
 class ComposeQuickstartTests(QuickstartFixture, unittest.TestCase):
@@ -49,7 +50,7 @@ class ComposeQuickstartTests(QuickstartFixture, unittest.TestCase):
             self.assertEqual(0, result.returncode, result.stderr)
             postgres = json.loads(result.stdout)['services']['postgres']
             self.assertEqual('missing', postgres['pull_policy'])
-            self.assertEqual('pgrouting/pgrouting:17-3.5-3.7.3', postgres['build']['args']['BASE_IMAGE'])
+            self.assertEqual('pgrouting/pgrouting:17-3.5-3.7.3@sha256:5e6767abbd1fd9ead84c9988aa31bac71ca292ef8a1fc2e4a5ee2b613ac6a7bb', postgres['build']['args']['BASE_IMAGE'])
             for name in ('Dockerfile', 'grids.txt', 'fetch-grids.sh'):
                 self.assertEqual((ROOT / 'docker/proj-grids' / name).read_bytes(),
                                  (path / 'docker/proj-grids' / name).read_bytes())

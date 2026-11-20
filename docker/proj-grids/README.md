@@ -32,7 +32,7 @@ docker compose -f docker/proj-grids/compose.yml up -d --build
 To build the same base as the customer deployment:
 
 ```bash
-docker build --build-arg BASE_IMAGE=pgrouting/pgrouting:17-3.5-3.7.3 \
+docker build --build-arg BASE_IMAGE=pgrouting/pgrouting:17-3.5-3.7.3@sha256:5e6767abbd1fd9ead84c9988aa31bac71ca292ef8a1fc2e4a5ee2b613ac6a7bb \
   -t honua-postgis-proj-grids:17-3.5-3.7.3 docker/proj-grids
 ```
 
