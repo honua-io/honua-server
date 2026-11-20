@@ -142,17 +142,31 @@ public sealed class AuditingFeatureWriterTests
     }
 
     [UnitTest]
-    public async Task Update_WithSingleWriteAuditOn_WhenInnerThrows_RecordsFailureAndRethrows()
+    public async Task SingleWrites_WithSingleWriteAuditOn_WhenInnerThrows_RecordFailureAndRethrow()
     {
         _policy.RecordSingleFeatureWrites = true;
         _inner.ThrowOnWrite = true;
 
-        var act = async () => await _writer.UpdateAsync(5, NewFeature(id: 9));
+        var update = async () => await _writer.UpdateAsync(5, NewFeature(id: 9));
+        var create = async () => await _writer.CreateAsync(5, NewFeature());
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
-        var evt = _auditLog.Events.Should().ContainSingle().Subject;
-        evt.Action.Should().Be("feature.update");
-        evt.Outcome.Should().Be(AuditOutcome.Failure);
+        await update.Should().ThrowAsync<InvalidOperationException>();
+        await create.Should().ThrowAsync<InvalidOperationException>();
+        _auditLog.Events.Select(static e => e.Action).Should().Equal("feature.update", "feature.create");
+        _auditLog.Events.Should().OnlyContain(static e => e.Outcome == AuditOutcome.Failure);
+    }
+
+    [UnitTest]
+    public async Task Create_WithSingleWriteAuditOn_RecordsEvenWhenTheCallerCancelsAfterTheWrite()
+    {
+        _policy.RecordSingleFeatureWrites = true;
+        using var cancellation = new CancellationTokenSource();
+        _inner.AfterWrite = cancellation.Cancel;
+
+        await _writer.CreateAsync(2, NewFeature(id: 4), cancellation.Token);
+
+        _auditLog.Events.Should().ContainSingle().Which.Action.Should().Be("feature.create");
+        _auditLog.Tokens.Should().ContainSingle().Which.CanBeCanceled.Should().BeFalse();
     }
 
     [UnitTest]
@@ -267,8 +281,18 @@ public sealed class AuditingFeatureWriterTests
         public FeatureEditResult EditResult { get; set; } =
             FeatureEditResult.Success(0, 0, 0);
 
+        public Action? AfterWrite { get; set; }
+
         public Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
-            => Task.FromResult(feature);
+        {
+            if (ThrowOnWrite)
+            {
+                return Task.FromException<Feature>(new InvalidOperationException("create failed"));
+            }
+
+            AfterWrite?.Invoke();
+            return Task.FromResult(feature);
+        }
 
         public Task<Feature> UpdateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
             => ThrowOnWrite
@@ -345,9 +369,12 @@ public sealed class AuditingFeatureWriterTests
     {
         public List<AuditEvent> Events { get; } = new();
 
+        public List<CancellationToken> Tokens { get; } = new();
+
         public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
         {
             Events.Add(auditEvent);
+            Tokens.Add(cancellationToken);
             return Task.FromResult<string?>("audit-test");
         }
     }

@@ -57,7 +57,8 @@ internal sealed class AuditingFeatureWriter(
             throw;
         }
 
-        await RecordAsync(write.Action, write.LayerId, AuditOutcome.Success, ObjectIdDetails(written.Id), cancellationToken)
+        // The write is applied: record it even if the caller has gone away.
+        await RecordAsync(write.Action, write.LayerId, AuditOutcome.Success, ObjectIdDetails(written.Id), CancellationToken.None)
             .ConfigureAwait(false);
         return written;
     }

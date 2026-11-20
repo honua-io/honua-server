@@ -13,6 +13,7 @@ using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Routing.Patterns;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
@@ -279,6 +280,48 @@ public sealed class AuditLogMiddlewareUnitTests
         await InvokeAsync(missingRead, finalStatus: StatusCodes.Status404NotFound);
 
         _audit.Events.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task ReadAudit_WithPolicySectionAbsent_RecordsNothing()
+    {
+        var context = BuildContext("GET", "/ogc/features/collections/{id}/items", authenticated: true);
+        var services = new ServiceCollection();
+        services.AddSingleton<IAuditLog>(_audit);
+        services.AddHonuaAuditPolicy(new ConfigurationBuilder().Build());
+        context.RequestServices = services.BuildServiceProvider();
+
+        await InvokeAsync(context, finalStatus: StatusCodes.Status200OK);
+
+        _audit.Events.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task ReadAudit_HeadRequestOnCredentialRoute_RecordsPathWithoutTheCredential()
+    {
+        var context = EnableReadAuditing(BuildContext("HEAD", "/api/v1/attachments/downloads/{token}", authenticated: true));
+        context.Request.Path = "/api/v1/attachments/downloads/live-download-credential";
+        context.Request.RouteValues["token"] = "live-download-credential";
+
+        await InvokeAsync(context, finalStatus: StatusCodes.Status200OK);
+
+        var evt = _audit.Events.Should().ContainSingle().Subject;
+        evt.Action.Should().Be("data.read");
+        evt.ResourceId.Should().Be("/api/v1/attachments/downloads/{token}");
+    }
+
+    [UnitTest]
+    public async Task Denial_OnCredentialRoute_RecordsPathWithoutTheCredential()
+    {
+        var context = BuildContext("GET", "/api/v1/console/share/link/{token}", authenticated: true);
+        context.Request.Path = "/api/v1/console/share/link/live-share-credential";
+        context.Request.RouteValues["token"] = "live-share-credential";
+
+        await InvokeAsync(context, finalStatus: StatusCodes.Status403Forbidden);
+
+        var evt = _audit.Events.Should().ContainSingle().Subject;
+        evt.Action.Should().Be(HttpAuditEventFactory.AuthDeniedAction);
+        evt.ResourceId.Should().Be("/api/v1/console/share/link/{token}");
     }
 
     [Fact]

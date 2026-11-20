@@ -165,8 +165,9 @@ internal sealed class AuditLogMiddleware(RequestDelegate next, IAuditActionResol
             return null;
         }
 
-        var policy = context.RequestServices.GetService<IOptionsMonitor<AuditPolicyOptions>>()?.CurrentValue;
-        return policy?.RecordSuccessfulReads == true ? SuccessfulReadDescriptor : null;
+        var policy = AuditInstrumentationServiceCollectionExtensions.CurrentPolicy(
+            context.RequestServices.GetService<IOptionsMonitor<AuditPolicyOptions>>());
+        return policy.RecordSuccessfulReads ? SuccessfulReadDescriptor : null;
     }
 
     private static string? ResolveRoutePattern(HttpContext context)

@@ -198,11 +198,23 @@ Two switches widen the trail. Both are off by default.
 | `AuditLog:Policy:RecordSingleFeatureWrites=true` | Every single-feature create or update at the `IFeatureWriter` boundary, and a one-operation edit batch or transaction | `DataDelete` (the feature-write row type) | `feature.create`, `feature.update`, `feature.edit` | written → `Success`; exception → `Failure`; batch `result.IsSuccess` |
 | `AuditLog:Policy:RecordSuccessfulReads=true` | A successful (2xx) `GET`/`HEAD` on any routed endpoint by an **authenticated** caller | `DataExport` | `data.read` | always `Success` (failed reads keep the 401/403 rows) |
 
-Single-write rows carry `{"objectId":N}` only. Read rows use the request path as
-`ResourceId` (never the query string) and the usual status/method/tenant details.
-Anonymous reads are never recorded by this switch, so unauthenticated traffic cannot
-drive audit volume. Expect one row per authenticated request (tiles included) with
-reads on; size the audit store and export accordingly.
+Single-write rows carry `{"objectId":N}` only. Read rows have `ResourceType`
+`http-route`, use the request path as `ResourceId` (never the query string) and carry
+the usual status/method/tenant details. A read whose route already has a row in this
+matrix keeps that row's action (for example `GET /sharing/rest/generateToken` stays
+`auth.token.issue`). Reads of the audit feed itself are recorded too, which shows who
+read the trail. Anonymous reads are never recorded by this switch, so unauthenticated
+traffic cannot drive audit volume. Expect one row per authenticated request (tiles
+included) with reads on; size the audit store and export accordingly. A value that is
+not `true`/`false` fails startup.
+
+### Credentials in the path
+
+Every HTTP audit row (matrix rows, `auth.failure`/`auth.denied`, and `data.read`)
+builds `ResourceId` through `AuditResourcePath`. A route value whose parameter name ends
+in `token`, `secret`, `signature` or `password` (share links, download links) is
+replaced by its `{name}` placeholder. Identifiers such as `{tokenId}` are kept. If the
+value cannot be found in the path, the row records the route template instead.
 
 ## Out of scope (this slice)
 

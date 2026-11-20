@@ -29,8 +29,25 @@ public static class AuditInstrumentationServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
-        services.AddOptions<AuditPolicyOptions>().Bind(configuration.GetSection(AuditPolicyOptions.SectionName));
+        // ValidateOnStart binds at boot, so a malformed value fails startup instead of the first write.
+        services.AddOptions<AuditPolicyOptions>()
+            .Bind(configuration.GetSection(AuditPolicyOptions.SectionName))
+            .ValidateOnStart();
         return services;
+    }
+
+    // Reads the current policy. A reload that cannot bind keeps the default policy rather than
+    // failing a request or a write that has already been applied.
+    internal static AuditPolicyOptions CurrentPolicy(IOptionsMonitor<AuditPolicyOptions>? monitor)
+    {
+        try
+        {
+            return monitor?.CurrentValue ?? DefaultPolicy;
+        }
+        catch (InvalidOperationException)
+        {
+            return DefaultPolicy;
+        }
     }
 
     // Call this after the provider has registered IFeatureWriter, or later writes miss this audit decorator.
@@ -59,7 +76,7 @@ public static class AuditInstrumentationServiceCollectionExtensions
                 return new AuditingFeatureWriter(
                     inner,
                     auditLog,
-                    new FeatureWriteAuditScope(httpContextAccessor, () => policy?.CurrentValue ?? DefaultPolicy));
+                    new FeatureWriteAuditScope(httpContextAccessor, () => CurrentPolicy(policy)));
             },
             innerDescriptor.Lifetime));
 
