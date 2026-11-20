@@ -1408,7 +1408,7 @@ internal sealed partial class SpecGroundingService
     }
 
     private static string Singularize(string value)
-        => value.EndsWith("s", StringComparison.OrdinalIgnoreCase)
+        => value is [.., 's' or 'S']
             ? value[..^1]
             : value;
 

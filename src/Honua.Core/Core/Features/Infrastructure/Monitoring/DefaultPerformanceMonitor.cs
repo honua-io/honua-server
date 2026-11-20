@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Globalization;
 using Honua.Core.Features.Infrastructure.Logging;
 using Microsoft.Extensions.Logging;
@@ -12,6 +13,8 @@ namespace Honua.Core.Features.Infrastructure.Monitoring;
 
 internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, ICacheMetricsSnapshotProvider, IHttpRequestMetricsSnapshotProvider
 {
+    // Meter.CreateHistogram looks the instrument up under a lock on every call; resolve each name once.
+    private static readonly ConcurrentDictionary<string, Histogram<double>> Histograms = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CacheOperationCounters> _cacheCounters = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, LatencyTracker> _operationLatencyTrackers = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _gcLock = new();
@@ -47,15 +50,15 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
 
     public void RecordHttpRequest(string method, string endpoint, int statusCode, TimeSpan duration)
     {
-        var tags = new KeyValuePair<string, object?>[]
+        var tags = new TagList
         {
-            new("method", method),
-            new("endpoint", endpoint),
-            new("status_code", statusCode.ToString(CultureInfo.InvariantCulture))
+            { "method", method },
+            { "endpoint", endpoint },
+            { "status_code", statusCode.ToString(CultureInfo.InvariantCulture) }
         };
 
-        PerformanceMetrics.HttpRequestDuration.Record(duration.TotalMilliseconds, tags);
-        PerformanceMetrics.HttpRequestCount.Add(1, tags);
+        PerformanceMetrics.HttpRequestDuration.Record(duration.TotalMilliseconds, in tags);
+        PerformanceMetrics.HttpRequestCount.Add(1, in tags);
         _requestMetrics.RecordRequest(statusCode, duration.TotalMilliseconds);
     }
 
@@ -192,11 +195,13 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
     }
 
     public void RecordHistogram(string name, double value, IDictionary<string, string>? tags = null)
-    {
-        var tagPairs = ConvertTags(tags);
-        var histogram = PerformanceMetrics.CreateHistogram(name);
-        histogram.Record(value, tagPairs);
-    }
+        => ResolveHistogram(name).Record(value, ConvertTags(tags));
+
+    public void RecordHistogram(string name, double value, TagList tags)
+        => ResolveHistogram(name).Record(value, in tags);
+
+    private static Histogram<double> ResolveHistogram(string name)
+        => Histograms.GetOrAdd(name, static histogramName => PerformanceMetrics.CreateHistogram(histogramName));
 
     public void RecordGeospatialOperation(string operationType, TimeSpan duration, int coordinateCount, int? fromSrid = null, int? toSrid = null)
     {
