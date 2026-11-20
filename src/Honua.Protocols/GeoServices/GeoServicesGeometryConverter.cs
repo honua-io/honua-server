@@ -65,12 +65,12 @@ internal static partial class GeoServicesGeometryConverter
 
         if (geometryLimits != null)
         {
-            geometry = GeometryOutputProcessor.ApplyLimits(geometry, geometryLimits) ?? geometry;
+            geometry = GeometryOutputProcessor.ApplyLimitsInPlace(geometry, geometryLimits) ?? geometry;
         }
 
         if (!includeZ || !includeM)
         {
-            geometry = GeometryOutputProcessor.ApplyDimensionFilter(geometry, includeZ, includeM);
+            geometry = GeometryOutputProcessor.ApplyDimensionFilterInPlace(geometry, includeZ, includeM);
         }
 
         if (srid.HasValue)

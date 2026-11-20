@@ -698,10 +698,10 @@ internal sealed class QueryFormatter
             return null;
         }
 
-        geometry = GeometryOutputProcessor.ApplyLimits(geometry, geometryLimits) ?? geometry;
+        geometry = GeometryOutputProcessor.ApplyLimitsInPlace(geometry, geometryLimits) ?? geometry;
         if (!returnZ || !returnM)
         {
-            geometry = GeometryOutputProcessor.ApplyDimensionFilter(geometry, returnZ, returnM);
+            geometry = GeometryOutputProcessor.ApplyDimensionFilterInPlace(geometry, returnZ, returnM);
         }
         return ConvertGeometryToGeoJsonGeometry(geometry);
     }
