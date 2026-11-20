@@ -31,10 +31,58 @@ class AffectedLaneTests(unittest.TestCase):
                 self.assertTrue(all(MODULE.select(paths).values()))
 
     def test_shared_setup_actions_keep_their_consumers(self):
-        for path in ['.github/actions/setup-honua-server/action.yml',
-                     '.github/actions/setup-honua-mcp/action.yml']:
-            with self.subTest(path=path):
-                self.assertTrue(all(MODULE.select([path]).values()))
+        server = MODULE.select(['.github/actions/setup-honua-server/action.yml'])
+        self.assertEqual(
+            {lane for lane, enabled in server.items() if enabled},
+            {'browser', 'mcp', 'postgres'},
+        )
+        mcp = MODULE.select(['.github/actions/setup-honua-mcp/action.yml'])
+        self.assertEqual(
+            {lane for lane, enabled in mcp.items() if enabled},
+            {'mcp', 'postgres'},
+        )
+
+    def test_composite_action_selection_handles_unused_nested_and_fail_closed(self):
+        self.assertFalse(any(MODULE.select(['.github/actions/format-check/action.yml']).values()))
+        self.assertEqual(
+            {lane for lane, enabled in MODULE.select(['.github/actions/managed-test-artifacts/action.yml']).items() if enabled},
+            {'runtime'},
+        )
+        dotnet = MODULE.select(['.github/actions/setup-dotnet-ci/action.yml'])
+        self.assertEqual(
+            {lane for lane, enabled in dotnet.items() if enabled},
+            {'aot', 'browser', 'mcp', 'postgres', 'python', 'runtime'},
+        )
+        for fail_closed_path in [
+            '.github/actions/does-not-exist/action.yml',
+            '.github/actions/README.md',
+        ]:
+            with self.subTest(path=fail_closed_path):
+                self.assertTrue(all(MODULE.select([fail_closed_path]).values()))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / '.github/workflows').mkdir(parents=True)
+            (root / '.github/workflows/ci.yml').write_text((ROOT / '.github/workflows/ci.yml').read_text())
+            broken = root / '.github/actions/broken'
+            broken.mkdir(parents=True)
+            (broken / 'action.yml').write_text('runs: [unterminated\n')
+            self.assertTrue(all(MODULE.select(['.github/actions/broken/action.yml'], repo_root=root).values()))
+
+    def test_lane_jobs_exist_in_ci_yml_and_gate_on_their_lane(self):
+        jobs = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)['jobs']
+        self.assertEqual(set(MODULE.LANE_JOBS), set(MODULE.LANES))
+        mapped_jobs = {}
+        for lane, job_ids in MODULE.LANE_JOBS.items():
+            self.assertTrue(job_ids, f'Lane {lane} must map to at least one ci.yml job')
+            gate_token = f'fromJson(needs.changes.outputs.specialized_lanes).{lane}'
+            for job_id in job_ids:
+                self.assertIn(job_id, jobs)
+                self.assertIn(gate_token, jobs[job_id].get('if', ''))
+                mapped_jobs[job_id] = lane
+        for job_id, job in jobs.items():
+            condition = job.get('if', '')
+            if 'specialized_lanes).' in condition:
+                self.assertIn(job_id, mapped_jobs, f'ci.yml job {job_id} gates on specialized_lanes but is missing from LANE_JOBS')
 
     def test_styling_and_mcp_seed_keep_direct_consumers(self):
         self.assertTrue(MODULE.select(['src/Honua.Server/Features/Styling/StyleEndpoints.cs'])['browser'])
