@@ -203,7 +203,9 @@ in browser storage:
 
 The browser obtains a CSRF token before signing in and retains it in memory.
 Successful sign-in sets an opaque HttpOnly, Secure, SameSite=Strict cookie lasting
-30 minutes. A fresh CSRF token is required after sign-in because tokens are bound
+30 minutes. Outside the Development and Test environments the session cookies are
+always marked Secure, including behind a TLS-terminating proxy whose forwarded
+headers are not trusted. A fresh CSRF token is required after sign-in because tokens are bound
 to the current identity. Cookie-authenticated writes, bearer issuance, and logout
 require that token in the `X-Honua-CSRF` header. Logout removes the server-side
 session as well as the browser cookie.
@@ -227,7 +229,8 @@ credentials omitted. The request must have an explicitly allowed Origin. The
 response contains an operator bearer and its expiry without setting cookies.
 Keep the bearer in memory and send it in the Authorization header; its lifetime
 is bounded by the configured operator bearer maximum and 30 minutes. Sign in again
-after expiry. Credentialed CORS never expands wildcard origins. Cookies remain
+after expiry. Rotating the administrator password ends every bearer minted from the
+old password on its next request, the same way it ends portal tokens minted from it. Credentialed CORS never expands wildcard origins. Cookies remain
 same-origin; CORS does not authorize cross-origin cookie writes.
 
 The operator bearer carries the administrator session's claims and reaches the
