@@ -112,6 +112,6 @@ internal static class LicensingRegistration
               "bypass every edition gate without a signed license. Remove it or install a signed license.";
     }
 
-    private static bool IsDevGrantEnvironment(IHostEnvironment environment) =>
+    internal static bool IsDevGrantEnvironment(IHostEnvironment environment) =>
         environment.IsDevelopment() || environment.IsEnvironment("Test");
 }
