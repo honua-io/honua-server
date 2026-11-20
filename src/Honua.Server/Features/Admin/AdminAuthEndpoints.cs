@@ -263,7 +263,7 @@ internal static class AdminAuthEndpoints
 
         var binding = await sessionStore.BindOperatorBearerAsync(sessionId!, session.ExpiresAt, context.RequestAborted)
             .ConfigureAwait(false);
-        var issuance = bearerTokenService.Issue(session.Claims, session.ExpiresAt, binding);
+        var issuance = bearerTokenService.Issue(session.Claims, session.ExpiresAt, new OperatorBearerBinding(Session: binding));
         if (issuance is null)
         {
             return StandardErrorHelpers.CreateServiceUnavailable(
@@ -854,9 +854,13 @@ internal static class AdminAuthEndpoints
 
     // Behind a TLS-terminating proxy whose forwarded headers are not trusted the request looks
     // like HTTP; a configured https public base URL still keeps the session cookie off plain
-    // HTTP. (Browser-session writes there still need trusted forwarded headers.)
+    // HTTP. Outside Development and Test the cookie is always Secure: the CSRF, password and OIDC
+    // callback endpoints refuse plain HTTP everywhere, so only SAML sign-in changes (it needs HTTPS
+    // at the browser there).
     internal static bool UseSecureSessionCookie(HttpContext context)
         => context.Request.IsHttps
+           || (context.RequestServices.GetService<IHostEnvironment>() is { } environment
+               && !environment.IsDevelopment() && !environment.IsEnvironment("Test"))
            || BaseUrlResolver.GetBaseUrl(context).StartsWith("https://", StringComparison.OrdinalIgnoreCase);
 
     private static void SetCookie(HttpResponse response, string name, string value, CookieOptions options)

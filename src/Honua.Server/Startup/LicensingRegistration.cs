@@ -23,14 +23,9 @@ internal static class LicensingRegistration
             configuration.GetSection(LicenseOptions.SectionName));
         var mode = LicenseOptions.ParseMode(configuration[$"{LicenseOptions.SectionName}:Mode"]);
         var devGrantEdition = configuration[$"{LicenseOptions.SectionName}:DevGrantEdition"];
-        // The dev-grant guard applies in every mode, including Disabled, and allows only the
-        // Development and Test environments so a renamed production environment cannot use it.
-        if (!string.IsNullOrWhiteSpace(devGrantEdition) && !IsDevGrantEnvironment(environment))
+        if (DevGrantRefusal(configuration, environment) is { } refusal)
         {
-            throw new InvalidOperationException(
-                $"{LicenseOptions.SectionName}:DevGrantEdition is a test/dev-only license override and is accepted " +
-                $"only in the Development and Test environments (current: '{environment.EnvironmentName}'); it would " +
-                "bypass every edition gate without a signed license. Remove it or install a signed license.");
+            throw new InvalidOperationException(refusal);
         }
 
         if (mode == LicenseMode.Disabled)
@@ -104,6 +99,19 @@ internal static class LicensingRegistration
             sp.GetRequiredService<FileBackedLicenseService>());
     }
 
-    private static bool IsDevGrantEnvironment(IHostEnvironment environment) =>
+    // The dev-grant guard applies in every mode, including Disabled, and allows only the
+    // Development and Test environments so a renamed production environment cannot use it.
+    // The entry point reports a refusal through StartupRefusal before registration.
+    internal static string? DevGrantRefusal(IConfiguration configuration, IHostEnvironment environment)
+    {
+        var devGrantEdition = configuration[$"{LicenseOptions.SectionName}:DevGrantEdition"];
+        return string.IsNullOrWhiteSpace(devGrantEdition) || IsDevGrantEnvironment(environment)
+            ? null
+            : $"{LicenseOptions.SectionName}:DevGrantEdition is a test/dev-only license override and is accepted " +
+              $"only in the Development and Test environments (current: '{environment.EnvironmentName}'); it would " +
+              "bypass every edition gate without a signed license. Remove it or install a signed license.";
+    }
+
+    internal static bool IsDevGrantEnvironment(IHostEnvironment environment) =>
         environment.IsDevelopment() || environment.IsEnvironment("Test");
 }
