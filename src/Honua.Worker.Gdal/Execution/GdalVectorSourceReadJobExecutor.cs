@@ -307,6 +307,7 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
                 await using var output = new FileStream(
                     destination, FileMode.Create, FileAccess.Write, FileShare.None, 64 * 1024, useAsync: true);
                 var entryWritten = 0L;
+                var scanner = new GdalUntrustedEntryScanner(buffer.Length);
                 while (true)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -314,6 +315,11 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
                     if (read <= 0)
                     {
                         break;
+                    }
+
+                    if (!scanner.Admit(buffer.AsSpan(0, read), out var refusal))
+                    {
+                        return new ZipExtraction(string.Empty, "Archive entry '" + entry.FullName + "': " + refusal + ".");
                     }
 
                     entryWritten += read;

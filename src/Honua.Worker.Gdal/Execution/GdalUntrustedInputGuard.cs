@@ -130,4 +130,82 @@ internal static class GdalUntrustedInputGuard
 
     private static byte ToLowerAscii(byte b)
         => b is >= (byte)'A' and <= (byte)'Z' ? (byte)(b + 32) : b;
+
+    /// <summary>
+    /// Finds the first refused marker or prefix in <paramref name="window"/> that starts before
+    /// <paramref name="startLimit"/>. Every marker begins with '&lt;' and every prefix with '/', so only
+    /// those bytes are compared, which keeps a scan of extracted archive entries linear.
+    /// </summary>
+    internal static bool TryFindRefused(ReadOnlySpan<byte> window, int startLimit, out string reason)
+    {
+        var offset = 0;
+        while (offset < startLimit)
+        {
+            var hit = window[offset..startLimit].IndexOfAny((byte)'<', (byte)'/');
+            if (hit < 0)
+            {
+                break;
+            }
+
+            var candidate = window[(offset + hit)..];
+            if (StartsWithAny(candidate, IndirectionXmlMarkers, out var marker)
+                || StartsWithAny(candidate, DangerousVsiPrefixes, out marker))
+            {
+                reason = $"archive entry references '{marker}', which is refused on the untrusted-input path";
+                return true;
+            }
+
+            offset += hit + 1;
+        }
+
+        reason = "";
+        return false;
+    }
+
+    internal static int LongestRefusedLength { get; } =
+        Math.Max(IndirectionXmlMarkers.Max(m => m.Length), DangerousVsiPrefixes.Max(p => p.Length));
+
+    private static bool StartsWithAny(ReadOnlySpan<byte> candidate, string[] needles, out string matched)
+    {
+        foreach (var needle in needles)
+        {
+            if (candidate.Length >= needle.Length && IndexOfAsciiIgnoreCase(candidate[..needle.Length], needle) == 0)
+            {
+                matched = needle;
+                return true;
+            }
+        }
+
+        matched = "";
+        return false;
+    }
+}
+
+/// <summary>
+/// Applies <see cref="GdalUntrustedInputGuard"/> to one extracted archive entry as it streams, so a
+/// VRT, service description or VSI reference inside a ZIP is refused like a bare upload.
+/// </summary>
+internal sealed class GdalUntrustedEntryScanner
+{
+    private readonly int carryLength = GdalUntrustedInputGuard.LongestRefusedLength - 1;
+    private readonly byte[] window;
+    private int carried;
+
+    public GdalUntrustedEntryScanner(int chunkSize)
+        => window = new byte[chunkSize + GdalUntrustedInputGuard.LongestRefusedLength];
+
+    /// <summary>Scans the next chunk; a match may straddle the previous chunk.</summary>
+    public bool Admit(ReadOnlySpan<byte> chunk, out string reason)
+    {
+        chunk.CopyTo(window.AsSpan(carried));
+        var length = carried + chunk.Length;
+        if (GdalUntrustedInputGuard.TryFindRefused(window.AsSpan(0, length), length, out reason))
+        {
+            return false;
+        }
+
+        carried = Math.Min(carryLength, length);
+        window.AsSpan(length - carried, carried).CopyTo(window);
+        return true;
+    }
 }
