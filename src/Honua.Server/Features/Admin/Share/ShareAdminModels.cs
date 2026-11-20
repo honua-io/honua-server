@@ -30,6 +30,8 @@ internal sealed record ShareExportDefinitionResponse
     public string? ResourceId { get; init; }
     public required string ServiceName { get; init; }
     public required int ServiceLayerIndex { get; init; }
+    // Deprecated wire alias of ServiceLayerIndex; published clients still read layerId.
+    public int LayerId => ServiceLayerIndex;
     public string? DisplayName { get; init; }
     public required string DestinationType { get; init; }
     public required string DestinationStatus { get; init; }
@@ -106,4 +108,6 @@ internal sealed record ShareItemRefResponse
     public string? ResourceId { get; init; }
     public required string ServiceName { get; init; }
     public required int ServiceLayerIndex { get; init; }
+    // Deprecated wire alias of ServiceLayerIndex; published clients still read layerId.
+    public int LayerId => ServiceLayerIndex;
 }

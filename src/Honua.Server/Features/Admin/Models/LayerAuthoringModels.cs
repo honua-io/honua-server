@@ -56,6 +56,9 @@ public sealed class LayerRelationshipResponse
 {
     public int StorageLayerId { get; init; }
 
+    // Deprecated wire alias of StorageLayerId; published clients still read layerId.
+    public int LayerId => StorageLayerId;
+
     public IReadOnlyList<LayerRelationshipItem> Relationships { get; init; } = Array.Empty<LayerRelationshipItem>();
 }
 
@@ -68,6 +71,9 @@ public sealed class LayerRelationshipItem
     public string? Description { get; init; }
 
     public int RelatedStorageLayerId { get; init; }
+
+    // Deprecated wire alias of RelatedStorageLayerId; published clients still read relatedLayerId.
+    public int RelatedLayerId => RelatedStorageLayerId;
 
     public required string Role { get; init; }
 
@@ -86,6 +92,9 @@ public sealed class LayerRelationshipItem
 public sealed class LayerAuthoringDocumentResponse
 {
     public int StorageLayerId { get; init; }
+
+    // Deprecated wire alias of StorageLayerId; published clients still read layerId.
+    public int LayerId => StorageLayerId;
 
     public System.Text.Json.JsonElement? Document { get; init; }
 }

@@ -29493,6 +29493,12 @@
             "type": "integer",
             "format": "int32"
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of serviceLayerIndex. Published clients still read this name.",
+            "deprecated": true
+          },
           "layerName": {
             "type": "string"
           },
@@ -40071,6 +40077,12 @@
             "format": "int32",
             "description": "Layer identifier."
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "document": {
             "allOf": [
               {
@@ -40132,6 +40144,12 @@
             "format": "int32",
             "description": "Global storage-layer id of the related resource, distinct from its service-local publication index. Returns -1 if no storage-layer handle exists."
           },
+          "relatedLayerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of relatedStorageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "role": {
             "type": "string",
             "description": "Relationship role, typically origin or destination."
@@ -40174,6 +40192,12 @@
             "type": "integer",
             "format": "int32",
             "description": "Layer identifier."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
           },
           "relationships": {
             "type": "array",
@@ -40379,6 +40403,12 @@
             "format": "int32",
             "description": "Layer identifier."
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "fields": {
             "type": "array",
             "description": "Field configurations in resource schema-field order.",
@@ -40488,6 +40518,12 @@
             "format": "int32",
             "description": "Layer identifier."
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "permanentFilter": {
             "allOf": [
               {
@@ -40579,6 +40615,12 @@
             "type": "integer",
             "format": "int32",
             "description": "Layer identifier."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
           },
           "layerName": {
             "type": "string",
@@ -43749,6 +43791,12 @@
             "type": "integer",
             "format": "int32"
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of serviceLayerIndex. Published clients still read this name.",
+            "deprecated": true
+          },
           "displayName": {
             "type": "string",
             "nullable": true
@@ -43920,6 +43968,12 @@
           "serviceLayerIndex": {
             "type": "integer",
             "format": "int32"
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of serviceLayerIndex. Published clients still read this name.",
+            "deprecated": true
           }
         }
       },

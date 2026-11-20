@@ -69,6 +69,9 @@ internal sealed class LayerMetadataResponse
 
     public required int ServiceLayerIndex { get; init; }
 
+    // Deprecated wire alias of ServiceLayerIndex; published clients still read layerId.
+    public int LayerId => ServiceLayerIndex;
+
     public required string LayerName { get; init; }
 
     public string? License { get; init; }
