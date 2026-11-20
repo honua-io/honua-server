@@ -140,9 +140,15 @@ jobs:
         env:
           CANDIDATE: ghcr.io/honua-io/honua-server@${{ steps.build.outputs.digest }}
           SMOKE: ${{ matrix.image.smoke }}
+        # Each platform runs by its own manifest digest: the image store refuses a second
+        # platform pulled under the same index digest.
         run: |
+          index="$(docker buildx imagetools inspect --raw "$CANDIDATE")"
           for platform in linux/amd64 linux/arm64; do
-            docker run --rm --platform "$platform" --entrypoint sh "$CANDIDATE" -c "$SMOKE"
+            child="$(jq -er --arg arch "${platform#linux/}" \
+              '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest]
+               | if length == 1 then .[0] else error("no single manifest for \($arch)") end' <<<"$index")"
+            docker run --rm --platform "$platform" --entrypoint sh "${CANDIDATE%@*}@${child}" -c "$SMOKE"
           done
       # Installs offer both CPU architectures, so each platform of the index is gated.
       - name: Gate both platforms on fixable HIGH/CRITICAL vulnerabilities
