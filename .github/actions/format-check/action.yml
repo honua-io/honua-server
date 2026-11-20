@@ -109,8 +109,10 @@ runs:
         echo "count=${count}" >> "${GITHUB_OUTPUT}"
         echo "filter=${filter}" >> "${GITHUB_OUTPUT}"
 
+    # A skipped test-roots step has a null count, and null != '0' is false
+    # (both sides become 0), so test the skip first or the source pass never runs.
     - name: Restore analyzer build scope
-      if: inputs.analyzer-build == 'true' && steps.analyzer-build-scope.outputs.mode != 'none' && steps.test-roots.outputs.count != '0'
+      if: inputs.analyzer-build == 'true' && steps.analyzer-build-scope.outputs.mode != 'none' && (steps.test-roots.outcome == 'skipped' || steps.test-roots.outputs.count != '0')
       shell: bash
       env:
         GATE_BUILD_MODE: ${{ steps.analyzer-build-scope.outputs.mode }}
@@ -127,7 +129,7 @@ runs:
 
     # Composite-action steps do not support `timeout-minutes`.
     - name: Build with analyzers (warnings as errors)
-      if: inputs.analyzer-build == 'true' && steps.analyzer-build-scope.outputs.mode != 'none' && steps.test-roots.outputs.count != '0'
+      if: inputs.analyzer-build == 'true' && steps.analyzer-build-scope.outputs.mode != 'none' && (steps.test-roots.outcome == 'skipped' || steps.test-roots.outputs.count != '0')
       shell: bash
       env:
         ANALYZER_PARTITION: ${{ inputs.analyzer-partition }}
