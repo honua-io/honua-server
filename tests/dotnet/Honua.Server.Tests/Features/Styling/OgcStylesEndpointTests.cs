@@ -28,7 +28,7 @@ namespace Honua.Server.Tests.Features.Styling;
 
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiStyles)]
-public sealed class OgcStylesEndpointTests : IAsyncLifetime
+public sealed partial class OgcStylesEndpointTests : IAsyncLifetime
 {
     private const string MapboxStyleMediaType = "application/vnd.mapbox.style+json";
     private const string Sld10MediaType = "application/vnd.ogc.sld+xml;version=1.0";

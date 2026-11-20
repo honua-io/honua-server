@@ -195,8 +195,13 @@ internal sealed class LayerStyleService : ILayerStyleService
         }
 
         // The style write has committed; a cancelled request must not leave the override in front of it.
-        await AdminLayerConfigurationTargets.WriteAsync(_graphStore, storageLayerId, WithoutSavedPresentation, CancellationToken.None)
+        var target = await AdminLayerConfigurationTargets.WriteAsync(
+                _graphStore, storageLayerId, WithoutSavedPresentation, CancellationToken.None)
             .ConfigureAwait(false);
+        if (target.IsAmbiguous || target.Resource is null)
+        {
+            LayerStyleLog.SavedPresentationNotRetired(_logger, storageLayerId);
+        }
     }
 
     private static MetadataV2Object WithoutSavedPresentation(MetadataV2Object resource)
