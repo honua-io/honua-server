@@ -1,7 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Buffers.Binary;
 using System.Collections.Immutable;
+using System.Globalization;
+using System.Text.Json;
 using Google.Protobuf;
 using Grpc.Core;
 using Google.Protobuf.Collections;
@@ -164,14 +167,14 @@ internal static class GrpcConversionHelpers
             return null;
         }
 
-        if (spatialReference.Wkid > 0)
-        {
-            return spatialReference.Wkid;
-        }
-
         if (spatialReference.LatestWkid > 0)
         {
             return spatialReference.LatestWkid;
+        }
+
+        if (spatialReference.Wkid > 0)
+        {
+            return spatialReference.Wkid;
         }
 
         return null;
@@ -359,10 +362,60 @@ internal static class GrpcConversionHelpers
                 av.BoolValue = b;
                 break;
             case DateTime dt:
-                av.DatetimeValue = new DateTimeOffset(dt, TimeSpan.Zero).ToUnixTimeMilliseconds();
+                var utcDt = dt.Kind switch
+                {
+                    DateTimeKind.Local => dt.ToUniversalTime(),
+                    DateTimeKind.Unspecified => DateTime.SpecifyKind(dt, DateTimeKind.Utc),
+                    _ => dt
+                };
+                av.DatetimeValue = new DateTimeOffset(utcDt, TimeSpan.Zero).ToUnixTimeMilliseconds();
                 break;
             case DateTimeOffset dto:
                 av.DatetimeValue = dto.ToUnixTimeMilliseconds();
+                break;
+            case DateOnly dateOnly:
+                av.StringValue = GrpcTypedValues.FormatDate(dateOnly);
+                break;
+            case TimeOnly timeOnly:
+                av.StringValue = GrpcTypedValues.FormatTime(timeOnly);
+                break;
+            case Guid guid:
+                av.StringValue = guid.ToString("D", CultureInfo.InvariantCulture);
+                break;
+            case JsonElement jsonElement:
+                switch (jsonElement.ValueKind)
+                {
+                    case JsonValueKind.Null:
+                    case JsonValueKind.Undefined:
+                        av.NullValue = Proto.NullValue.NullValue;
+                        break;
+                    case JsonValueKind.String:
+                        av.StringValue = jsonElement.GetString() ?? string.Empty;
+                        break;
+                    case JsonValueKind.Number:
+                        if (jsonElement.TryGetInt64(out var lVal))
+                        {
+                            av.Int64Value = lVal;
+                        }
+                        else if (jsonElement.TryGetDouble(out var dVal))
+                        {
+                            av.DoubleValue = dVal;
+                        }
+                        else
+                        {
+                            av.StringValue = jsonElement.GetRawText();
+                        }
+                        break;
+                    case JsonValueKind.True:
+                        av.BoolValue = true;
+                        break;
+                    case JsonValueKind.False:
+                        av.BoolValue = false;
+                        break;
+                    default:
+                        av.StringValue = jsonElement.GetRawText();
+                        break;
+                }
                 break;
             case byte[] bytes:
                 av.BytesValue = ByteString.CopyFrom(bytes);
@@ -372,6 +425,9 @@ internal static class GrpcConversionHelpers
                 break;
             case decimal dec:
                 av.DoubleValue = (double)dec;
+                break;
+            case IFormattable formattable:
+                av.StringValue = formattable.ToString(null, CultureInfo.InvariantCulture);
                 break;
             default:
                 av.StringValue = GrpcTypedValues.ToInvariantText(value);
@@ -513,8 +569,18 @@ internal static class GrpcConversionHelpers
         return proto;
     }
 
-    private static Proto.Geometry ToProtoGeometry(byte[] wkb, GeometryLimits? geometryLimits)
+    internal static Proto.Geometry ToProtoGeometry(byte[] wkb, GeometryLimits? geometryLimits)
     {
+        var requiresSimplification = geometryLimits is { SimplifyTolerance: > 0 };
+        int? coordinatePrecision = geometryLimits is { MaxCoordinatePrecision: >= 0 }
+            ? Math.Clamp(geometryLimits.MaxCoordinatePrecision, 0, 15)
+            : null;
+
+        if (!requiresSimplification && TryParseWkbToProtoGeometry(wkb, coordinatePrecision, out var directProto))
+        {
+            return directProto;
+        }
+
         var geometry = WkbReader.Read(wkb);
         if (geometryLimits != null)
         {
@@ -594,6 +660,632 @@ internal static class GrpcConversionHelpers
 
         return proto;
     }
+
+    private const uint EwkbZFlag = 0x80000000u;
+    private const uint EwkbMFlag = 0x40000000u;
+    private const uint EwkbSridFlag = 0x20000000u;
+    private const int MaxWkbCollectionDepth = 32;
+
+    internal static bool TryParseWkbToProtoGeometry(
+        ReadOnlySpan<byte> wkb,
+        int? coordinatePrecision,
+        out Proto.Geometry proto)
+    {
+        proto = new Proto.Geometry();
+        int? clampedPrecision = coordinatePrecision.HasValue
+            ? Math.Clamp(coordinatePrecision.Value, 0, 15)
+            : null;
+        var offset = 0;
+        return TryReadWkbGeometry(wkb, ref offset, clampedPrecision, proto) && offset == wkb.Length;
+    }
+
+    private static bool TryReadWkbGeometry(
+        ReadOnlySpan<byte> wkb,
+        ref int offset,
+        int? precision,
+        Proto.Geometry proto)
+    {
+        if (!TryReadWkbHeader(wkb, ref offset, out var littleEndian, out var baseType, out var hasZ, out var hasM))
+        {
+            return false;
+        }
+
+        switch (baseType)
+        {
+            case 1:
+                if (!TryReadWkbPoint(wkb, ref offset, littleEndian, hasZ, hasM, precision, out var pt))
+                {
+                    return false;
+                }
+
+                if (pt != null)
+                {
+                    proto.Point = pt;
+                }
+                return true;
+
+            case 2:
+                if (!TryReadWkbCoordSequence(wkb, ref offset, littleEndian, hasZ, hasM, precision, out var lineSeq))
+                {
+                    return false;
+                }
+
+                var polyline = new Proto.PolylineGeometry();
+                polyline.Paths.Add(lineSeq);
+                proto.Polyline = polyline;
+                return true;
+
+            case 3:
+                if (!TryReadWkbPolygonBody(wkb, ref offset, littleEndian, hasZ, hasM, precision, out var poly))
+                {
+                    return false;
+                }
+
+                proto.Polygon = poly;
+                return true;
+
+            case 4:
+                if (!TryReadWkbMultiPoint(wkb, ref offset, littleEndian, precision, out var mp))
+                {
+                    return false;
+                }
+
+                proto.MultiPoint = mp;
+                return true;
+
+            case 5:
+                if (!TryReadWkbMultiLineString(wkb, ref offset, littleEndian, precision, out var mlPoly))
+                {
+                    return false;
+                }
+
+                proto.Polyline = mlPoly;
+                return true;
+
+            case 6:
+                if (!TryReadWkbMultiPolygon(wkb, ref offset, littleEndian, precision, out var mpoly))
+                {
+                    return false;
+                }
+
+                proto.MultiPolygon = mpoly;
+                return true;
+
+            case 7:
+                return TryReadWkbGeometryCollection(wkb, ref offset, littleEndian, precision, proto);
+
+            default:
+                return false;
+        }
+    }
+
+    private static bool TryReadWkbHeader(
+        ReadOnlySpan<byte> wkb,
+        ref int offset,
+        out bool littleEndian,
+        out uint baseType,
+        out bool hasZ,
+        out bool hasM)
+    {
+        littleEndian = true;
+        baseType = 0;
+        hasZ = false;
+        hasM = false;
+
+        if (wkb.Length - offset < 5)
+        {
+            return false;
+        }
+
+        var byteOrder = wkb[offset];
+        if (byteOrder is not 0 and not 1)
+        {
+            return false;
+        }
+
+        littleEndian = byteOrder == 1;
+        var rawType = ReadUInt32(wkb.Slice(offset + 1, 4), littleEndian);
+        offset += 5;
+
+        hasZ = (rawType & EwkbZFlag) != 0;
+        hasM = (rawType & EwkbMFlag) != 0;
+        var hasSrid = (rawType & EwkbSridFlag) != 0;
+
+        baseType = rawType & 0xFFFFu;
+        if (baseType is >= 3000 and < 4000)
+        {
+            hasZ = true;
+            hasM = true;
+            baseType -= 3000;
+        }
+        else if (baseType is >= 2000 and < 3000)
+        {
+            hasM = true;
+            baseType -= 2000;
+        }
+        else if (baseType is >= 1000 and < 2000)
+        {
+            hasZ = true;
+            baseType -= 1000;
+        }
+
+        if (hasSrid)
+        {
+            if (wkb.Length - offset < 4)
+            {
+                return false;
+            }
+
+            offset += 4;
+        }
+
+        return true;
+    }
+
+    private static bool TryReadWkbPoint(
+        ReadOnlySpan<byte> wkb,
+        ref int offset,
+        bool littleEndian,
+        bool hasZ,
+        bool hasM,
+        int? precision,
+        out Proto.PointGeometry? point)
+    {
+        point = null;
+        var coordBytes = 16 + (hasZ ? 8 : 0) + (hasM ? 8 : 0);
+        if (wkb.Length - offset < coordBytes)
+        {
+            return false;
+        }
+
+        var x = ReadDouble(wkb.Slice(offset, 8), littleEndian);
+        var y = ReadDouble(wkb.Slice(offset + 8, 8), littleEndian);
+        offset += 16;
+
+        var z = double.NaN;
+        if (hasZ)
+        {
+            z = ReadDouble(wkb.Slice(offset, 8), littleEndian);
+            offset += 8;
+        }
+
+        var m = double.NaN;
+        if (hasM)
+        {
+            m = ReadDouble(wkb.Slice(offset, 8), littleEndian);
+            offset += 8;
+        }
+
+        if (double.IsNaN(x) || double.IsNaN(y))
+        {
+            return true;
+        }
+
+        var pt = new Proto.PointGeometry
+        {
+            X = RoundOrdinate(x, precision),
+            Y = RoundOrdinate(y, precision)
+        };
+        if (hasZ && !double.IsNaN(z))
+        {
+            pt.Z = RoundOrdinate(z, precision);
+        }
+
+        if (hasM && !double.IsNaN(m))
+        {
+            pt.M = RoundOrdinate(m, precision);
+        }
+
+        point = pt;
+        return true;
+    }
+
+    private static bool TryReadWkbCoordSequence(
+        ReadOnlySpan<byte> wkb,
+        ref int offset,
+        bool littleEndian,
+        bool hasZ,
+        bool hasM,
+        int? precision,
+        out Proto.CoordinateSequence sequence)
+    {
+        sequence = null!;
+        if (!TryReadWkbCount(wkb, ref offset, littleEndian, out var count))
+        {
+            return false;
+        }
+
+        var coordBytes = 16 + (hasZ ? 8 : 0) + (hasM ? 8 : 0);
+        if ((long)count * coordBytes > wkb.Length - offset)
+        {
+            return false;
+        }
+
+        sequence = new Proto.CoordinateSequence { Coords = { Capacity = count } };
+        for (var i = 0; i < count; i++)
+        {
+            var x = ReadDouble(wkb.Slice(offset, 8), littleEndian);
+            var y = ReadDouble(wkb.Slice(offset + 8, 8), littleEndian);
+            offset += 16;
+
+            var c = new Proto.Coordinate
+            {
+                X = RoundOrdinate(x, precision),
+                Y = RoundOrdinate(y, precision)
+            };
+
+            if (hasZ)
+            {
+                var z = ReadDouble(wkb.Slice(offset, 8), littleEndian);
+                offset += 8;
+                if (!double.IsNaN(z))
+                {
+                    c.Z = RoundOrdinate(z, precision);
+                }
+            }
+
+            if (hasM)
+            {
+                var m = ReadDouble(wkb.Slice(offset, 8), littleEndian);
+                offset += 8;
+                if (!double.IsNaN(m))
+                {
+                    c.M = RoundOrdinate(m, precision);
+                }
+            }
+
+            sequence.Coords.Add(c);
+        }
+
+        return true;
+    }
+
+    private static bool TryReadWkbPolygonBody(
+        ReadOnlySpan<byte> wkb,
+        ref int offset,
+        bool littleEndian,
+        bool hasZ,
+        bool hasM,
+        int? precision,
+        out Proto.PolygonGeometry polygon)
+    {
+        polygon = null!;
+        if (!TryReadWkbCount(wkb, ref offset, littleEndian, out var ringCount))
+        {
+            return false;
+        }
+
+        if ((long)ringCount * 4 > wkb.Length - offset)
+        {
+            return false;
+        }
+
+        polygon = new Proto.PolygonGeometry();
+        if (ringCount == 0)
+        {
+            polygon.Rings.Add(new Proto.CoordinateSequence());
+            return true;
+        }
+
+        for (var i = 0; i < ringCount; i++)
+        {
+            if (!TryReadWkbCoordSequence(wkb, ref offset, littleEndian, hasZ, hasM, precision, out var ring))
+            {
+                return false;
+            }
+
+            polygon.Rings.Add(ring);
+        }
+
+        return true;
+    }
+
+    private static bool TryReadWkbMultiPoint(
+        ReadOnlySpan<byte> wkb,
+        ref int offset,
+        bool littleEndian,
+        int? precision,
+        out Proto.MultiPointGeometry multiPoint)
+    {
+        multiPoint = null!;
+        if (!TryReadWkbCount(wkb, ref offset, littleEndian, out var count))
+        {
+            return false;
+        }
+
+        if ((long)count * 21 > wkb.Length - offset)
+        {
+            return false;
+        }
+
+        multiPoint = new Proto.MultiPointGeometry();
+        for (var i = 0; i < count; i++)
+        {
+            if (!TryReadWkbHeader(wkb, ref offset, out var childLe, out var childType, out var childZ, out var childM)
+                || childType != 1
+                || !TryReadWkbPoint(wkb, ref offset, childLe, childZ, childM, precision, out var pt))
+            {
+                return false;
+            }
+
+            if (pt != null)
+            {
+                multiPoint.Points.Add(pt);
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TryReadWkbMultiLineString(
+        ReadOnlySpan<byte> wkb,
+        ref int offset,
+        bool littleEndian,
+        int? precision,
+        out Proto.PolylineGeometry polyline)
+    {
+        polyline = null!;
+        if (!TryReadWkbCount(wkb, ref offset, littleEndian, out var count))
+        {
+            return false;
+        }
+
+        if ((long)count * 9 > wkb.Length - offset)
+        {
+            return false;
+        }
+
+        polyline = new Proto.PolylineGeometry();
+        for (var i = 0; i < count; i++)
+        {
+            if (!TryReadWkbHeader(wkb, ref offset, out var childLe, out var childType, out var childZ, out var childM)
+                || childType != 2
+                || !TryReadWkbCoordSequence(wkb, ref offset, childLe, childZ, childM, precision, out var seq))
+            {
+                return false;
+            }
+
+            polyline.Paths.Add(seq);
+        }
+
+        return true;
+    }
+
+    private static bool TryReadWkbMultiPolygon(
+        ReadOnlySpan<byte> wkb,
+        ref int offset,
+        bool littleEndian,
+        int? precision,
+        out Proto.MultiPolygonGeometry multiPolygon)
+    {
+        multiPolygon = null!;
+        if (!TryReadWkbCount(wkb, ref offset, littleEndian, out var count))
+        {
+            return false;
+        }
+
+        if ((long)count * 9 > wkb.Length - offset)
+        {
+            return false;
+        }
+
+        multiPolygon = new Proto.MultiPolygonGeometry();
+        for (var i = 0; i < count; i++)
+        {
+            if (!TryReadWkbHeader(wkb, ref offset, out var childLe, out var childType, out var childZ, out var childM)
+                || childType != 3
+                || !TryReadWkbPolygonBody(wkb, ref offset, childLe, childZ, childM, precision, out var poly))
+            {
+                return false;
+            }
+
+            multiPolygon.Polygons.Add(poly);
+        }
+
+        return true;
+    }
+
+    private static bool TryReadWkbGeometryCollection(
+        ReadOnlySpan<byte> wkb,
+        ref int offset,
+        bool littleEndian,
+        int? precision,
+        Proto.Geometry proto)
+    {
+        List<Proto.PointGeometry>? points = null;
+        List<Proto.CoordinateSequence>? paths = null;
+        List<Proto.PolygonGeometry>? polygons = null;
+
+        if (!TryFlattenWkbCollectionBody(
+            wkb,
+            ref offset,
+            littleEndian,
+            precision,
+            depth: 0,
+            ref points,
+            ref paths,
+            ref polygons))
+        {
+            return false;
+        }
+
+        var hasPoints = points is { Count: > 0 };
+        var hasPaths = paths is { Count: > 0 };
+        var hasPolygons = polygons is { Count: > 0 };
+        var distinctKinds = (hasPoints ? 1 : 0) + (hasPaths ? 1 : 0) + (hasPolygons ? 1 : 0);
+        if (distinctKinds != 1)
+        {
+            return true;
+        }
+
+        if (hasPoints)
+        {
+            var mp = new Proto.MultiPointGeometry();
+            mp.Points.AddRange(points!);
+            proto.MultiPoint = mp;
+        }
+        else if (hasPaths)
+        {
+            var pl = new Proto.PolylineGeometry();
+            pl.Paths.AddRange(paths!);
+            proto.Polyline = pl;
+        }
+        else if (hasPolygons)
+        {
+            var mpoly = new Proto.MultiPolygonGeometry();
+            mpoly.Polygons.AddRange(polygons!);
+            proto.MultiPolygon = mpoly;
+        }
+
+        return true;
+    }
+
+    private static bool TryFlattenWkbCollectionBody(
+        ReadOnlySpan<byte> wkb,
+        ref int offset,
+        bool littleEndian,
+        int? precision,
+        int depth,
+        ref List<Proto.PointGeometry>? points,
+        ref List<Proto.CoordinateSequence>? paths,
+        ref List<Proto.PolygonGeometry>? polygons)
+    {
+        if (depth > MaxWkbCollectionDepth || !TryReadWkbCount(wkb, ref offset, littleEndian, out var count))
+        {
+            return false;
+        }
+
+        if ((long)count * 5 > wkb.Length - offset)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < count; i++)
+        {
+            if (!TryReadWkbHeader(wkb, ref offset, out var childLe, out var childType, out var childZ, out var childM))
+            {
+                return false;
+            }
+
+            switch (childType)
+            {
+                case 1:
+                    if (!TryReadWkbPoint(wkb, ref offset, childLe, childZ, childM, precision, out var pt))
+                    {
+                        return false;
+                    }
+
+                    if (pt != null)
+                    {
+                        (points ??= []).Add(pt);
+                    }
+                    break;
+
+                case 2:
+                    if (!TryReadWkbCoordSequence(wkb, ref offset, childLe, childZ, childM, precision, out var seq))
+                    {
+                        return false;
+                    }
+
+                    (paths ??= []).Add(seq);
+                    break;
+
+                case 3:
+                    if (!TryReadWkbPolygonBody(wkb, ref offset, childLe, childZ, childM, precision, out var poly))
+                    {
+                        return false;
+                    }
+
+                    (polygons ??= []).Add(poly);
+                    break;
+
+                case 4:
+                    if (!TryReadWkbMultiPoint(wkb, ref offset, childLe, precision, out var mp))
+                    {
+                        return false;
+                    }
+
+                    (points ??= []).AddRange(mp.Points);
+                    break;
+
+                case 5:
+                    if (!TryReadWkbMultiLineString(wkb, ref offset, childLe, precision, out var ml))
+                    {
+                        return false;
+                    }
+
+                    (paths ??= []).AddRange(ml.Paths);
+                    break;
+
+                case 6:
+                    if (!TryReadWkbMultiPolygon(wkb, ref offset, childLe, precision, out var mpoly))
+                    {
+                        return false;
+                    }
+
+                    (polygons ??= []).AddRange(mpoly.Polygons);
+                    break;
+
+                case 7:
+                    if (!TryFlattenWkbCollectionBody(
+                        wkb,
+                        ref offset,
+                        childLe,
+                        precision,
+                        depth + 1,
+                        ref points,
+                        ref paths,
+                        ref polygons))
+                    {
+                        return false;
+                    }
+                    break;
+
+                default:
+                    return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TryReadWkbCount(
+        ReadOnlySpan<byte> wkb,
+        ref int offset,
+        bool littleEndian,
+        out int count)
+    {
+        count = 0;
+        if (wkb.Length - offset < 4)
+        {
+            return false;
+        }
+
+        var raw = ReadUInt32(wkb.Slice(offset, 4), littleEndian);
+        if (raw > int.MaxValue)
+        {
+            return false;
+        }
+
+        offset += 4;
+        count = (int)raw;
+        return true;
+    }
+
+    private static uint ReadUInt32(ReadOnlySpan<byte> span, bool littleEndian)
+        => littleEndian
+            ? BinaryPrimitives.ReadUInt32LittleEndian(span)
+            : BinaryPrimitives.ReadUInt32BigEndian(span);
+
+    private static double ReadDouble(ReadOnlySpan<byte> span, bool littleEndian)
+        => littleEndian
+            ? BinaryPrimitives.ReadDoubleLittleEndian(span)
+            : BinaryPrimitives.ReadDoubleBigEndian(span);
+
+    private static double RoundOrdinate(double value, int? precision)
+        => precision.HasValue
+            ? Math.Round(value, precision.Value, MidpointRounding.AwayFromZero)
+            : value;
 
     private static Proto.CoordinateSequence ToCoordinateSequence(
         NetTopologySuite.Geometries.CoordinateSequence coords)
@@ -763,19 +1455,7 @@ internal static class GrpcConversionHelpers
     }
 
     private static int? ResolveSpatialFilterSrid(Proto.SpatialReference? spatialReference)
-    {
-        if (spatialReference == null)
-        {
-            return null;
-        }
-
-        if (spatialReference.Wkid > 0)
-        {
-            return spatialReference.Wkid;
-        }
-
-        return spatialReference.LatestWkid > 0 ? spatialReference.LatestWkid : null;
-    }
+        => TryResolveOutputSrid(spatialReference);
 
     private static void TryProjectGeometryCollection(GeometryCollection collection, Proto.Geometry proto)
     {

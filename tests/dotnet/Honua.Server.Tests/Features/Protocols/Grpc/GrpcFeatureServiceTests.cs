@@ -1574,12 +1574,55 @@ public sealed partial class GrpcFeatureServiceTests
         var response = await _sut.QueryFeatures(request, CreateCallContext());
 
         response.SpatialReference.Wkid.Should().Be(3857);
+        response.SpatialReference.LatestWkid.Should().Be(3857);
         await _featureReader.Received(1).QueryAsync(
             0,
             Arg.Is<FeatureQuery>(q =>
                 q.OutputSrid == 3857 &&
                 q.SpatialReferenceSrid == SpatialReference.WGS84.ToSrid()),
             Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_WithLegacyOutSrWkid_PreservesRequestedWkidAndResolvedLatestWkid()
+    {
+        var features = ImmutableArray.Create(Feature.Create(1, null));
+        _featureReader.QueryAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1, features));
+
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            OutSr = new Proto.SpatialReference { Wkid = 102100, LatestWkid = 3857 }
+        };
+
+        var response = await _sut.QueryFeatures(request, CreateCallContext());
+
+        response.SpatialReference.Wkid.Should().Be(102100);
+        response.SpatialReference.LatestWkid.Should().Be(3857);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_WithOutFieldsSubset_FiltersResponseFieldsToMatchOutFields()
+    {
+        var features = ImmutableArray.Create(
+            Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty.Add("name", "Park")));
+        _featureReader.QueryAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1, features));
+
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0
+        };
+        request.OutFields.Add("name");
+
+        var response = await _sut.QueryFeatures(request, CreateCallContext());
+
+        response.Fields.Select(f => f.Name).Should().Equal("name");
     }
 
     [UnitTest]
