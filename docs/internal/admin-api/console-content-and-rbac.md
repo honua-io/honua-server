@@ -437,6 +437,11 @@ eligibility (and, for STAC, publication) before disclosing anything; private,
 ineligible, missing, and unpublished resources all return an identical generic
 `404` that never leaks the item id, title, or existence:
 
+- `GET /open-data/datasets` — anonymous list of eligible open-data page
+  projections in item-id order (`items[]` of `{itemType, page}`, `nextCursor`).
+  `limit` defaults to 25 and is capped at 50. `cursor` is the opaque
+  `nextCursor` of the previous page; it names the last item returned, so paging
+  never reveals how many ineligible items exist, and no total is returned.
 - `GET /open-data/datasets/{id}` — anonymous open-data page projection.
 - `GET /open-data/datasets/{id}/data.json` — DCAT-US 3.0/data.json document.
 - `GET /open-data/datasets/{id}/schema.org` — Schema.org `Dataset` JSON-LD.
