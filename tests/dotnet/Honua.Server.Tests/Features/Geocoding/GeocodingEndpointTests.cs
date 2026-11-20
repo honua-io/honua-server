@@ -749,6 +749,9 @@ public sealed class GeocodingEndpointTests : IClassFixture<GeocodingEndpointTest
         });
         using var reverseResponse = await client.PostAsync("/rest/services/GeocodeServer/reverseGeocode", reverseContent);
         Assert.Equal(HttpStatusCode.OK, reverseResponse.StatusCode);
+
+        using var gpMessagesResponse = await client.GetAsync("/rest/services/default/GPServer/Buffer/jobs/nonexistent/messages?f=json");
+        Assert.NotEqual(HttpStatusCode.MethodNotAllowed, gpMessagesResponse.StatusCode);
     }
 
     [IntegrationTest]

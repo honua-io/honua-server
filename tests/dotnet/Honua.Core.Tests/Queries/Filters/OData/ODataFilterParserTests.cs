@@ -922,7 +922,7 @@ public class ODataFilterParserTests
     [Fact]
     public void Parse_AntimeridianCrossingGeographyPolygonWithPlanarSelfIntersection_SucceedsForGeographyAndRejectsForGeometry()
     {
-        const string wkt = "POLYGON((170 -10, -175 0, 170 10, 175 0, 170 -10))";
+        const string wkt = "POLYGON((170 0, -175 -10, -170 0, -175 10, 175 -1, 170 0))";
 
         var geographyResult = _parser.Parse($"geo.intersects(Geometry, geography'{wkt}')");
         geographyResult.Should().BeOfType<SpatialPredicate>();

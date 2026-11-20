@@ -165,7 +165,7 @@ internal static class CollectionEndpoints
             collectionId);
         StacLog.CollectionRequested(logger, collectionId);
 
-        var validationError = StacFilterHelpers.ValidateQueryParameters(
+        var validationError = OgcCommonUtilities.ValidateQueryParameters(
             context.Request, StacConstants.AllowedQueryParameters.Collections);
         if (validationError is not null)
         {
@@ -223,7 +223,7 @@ internal static class CollectionEndpoints
         HttpContext context,
         [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
     {
-        var validationError = StacFilterHelpers.ValidateQueryParameters(
+        var validationError = OgcCommonUtilities.ValidateQueryParameters(
             context.Request, StacConstants.AllowedQueryParameters.Catalog);
         if (validationError is not null)
         {
@@ -256,7 +256,7 @@ internal static class CollectionEndpoints
         HttpContext context,
         [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
     {
-        var validationError = StacFilterHelpers.ValidateQueryParameters(
+        var validationError = OgcCommonUtilities.ValidateQueryParameters(
             context.Request, StacConstants.AllowedQueryParameters.Collections);
         if (validationError is not null)
         {

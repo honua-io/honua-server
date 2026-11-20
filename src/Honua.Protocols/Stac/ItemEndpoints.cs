@@ -259,7 +259,7 @@ internal static class ItemEndpoints
             itemId);
         StacLog.ItemRequested(logger, collectionId, itemId);
 
-        var validationError = StacFilterHelpers.ValidateQueryParameters(
+        var validationError = OgcCommonUtilities.ValidateQueryParameters(
             context.Request, StacConstants.AllowedQueryParameters.Catalog);
         if (validationError is not null)
         {

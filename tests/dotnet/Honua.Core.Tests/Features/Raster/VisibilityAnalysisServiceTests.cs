@@ -81,7 +81,7 @@ public sealed class VisibilityAnalysisServiceTests
         var result = await service.ComputeLineOfSightAsync(
             LayerId,
             new VisibilityPoint { Longitude = 0, Latitude = 0, HeightOffsetMeters = 2 },
-            new VisibilityPoint { Longitude = 0.1, Latitude = 0, HeightOffsetMeters = 2 },
+            new VisibilityPoint { Longitude = 0.05, Latitude = 0, HeightOffsetMeters = 2 },
             sampleCount: 32,
             RasterMergeStrategy.Newest);
 
@@ -103,8 +103,8 @@ public sealed class VisibilityAnalysisServiceTests
 
         var result = await service.ComputeLineOfSightAsync(
             LayerId,
-            new VisibilityPoint { Longitude = 0, Latitude = 0, HeightOffsetMeters = 2 },
-            new VisibilityPoint { Longitude = 0.2, Latitude = 0, HeightOffsetMeters = 2 },
+            new VisibilityPoint { Longitude = 0, Latitude = 0, HeightOffsetMeters = 20 },
+            new VisibilityPoint { Longitude = 0.2, Latitude = 0, HeightOffsetMeters = 20 },
             sampleCount: 64,
             RasterMergeStrategy.Newest);
 

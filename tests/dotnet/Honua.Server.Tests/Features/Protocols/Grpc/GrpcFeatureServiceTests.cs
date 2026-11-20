@@ -1598,7 +1598,8 @@ public sealed partial class GrpcFeatureServiceTests
             OutSr = new Proto.SpatialReference { Wkid = 102100, LatestWkid = 3857 }
         };
 
-        var response = await _sut.QueryFeatures(request, CreateCallContext());
+        using var callContext = CreateCallContext();
+        var response = await _sut.QueryFeatures(request, callContext);
 
         response.SpatialReference.Wkid.Should().Be(102100);
         response.SpatialReference.LatestWkid.Should().Be(3857);
@@ -1620,7 +1621,8 @@ public sealed partial class GrpcFeatureServiceTests
         };
         request.OutFields.Add("name");
 
-        var response = await _sut.QueryFeatures(request, CreateCallContext());
+        using var callContext = CreateCallContext();
+        var response = await _sut.QueryFeatures(request, callContext);
 
         response.Fields.Select(f => f.Name).Should().Equal("name");
     }

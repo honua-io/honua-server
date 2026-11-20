@@ -833,17 +833,15 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         // Collection-keyed style PUT with Prefer: handling=strict rejects a lenient style omitting sources/source/source-layer
         // and echoes Preference-Applied: handling=strict.
         const string lenientStyle = """{"version":8,"layers":[{"id":"points","type":"circle","paint":{"circle-color":"#ff0000"}}]}""";
-        using (var strictPut = new HttpRequestMessage(HttpMethod.Put, $"/ogc/styles/{Uri.EscapeDataString(styleId)}")
+        using var strictPut = new HttpRequestMessage(HttpMethod.Put, $"/ogc/styles/{Uri.EscapeDataString(styleId)}")
         {
             Content = new StringContent(lenientStyle, Encoding.UTF8, MapboxStyleMediaType)
-        })
-        {
-            strictPut.Headers.TryAddWithoutValidation("Prefer", "handling=strict");
-            var strictResponse = await client.SendAsync(strictPut);
-            strictResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            strictResponse.Headers.TryGetValues("Preference-Applied", out var applied).Should().BeTrue();
-            applied.Should().Contain("handling=strict");
-        }
+        };
+        strictPut.Headers.TryAddWithoutValidation("Prefer", "handling=strict");
+        var strictResponse = await client.SendAsync(strictPut);
+        strictResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        strictResponse.Headers.TryGetValues("Preference-Applied", out var applied).Should().BeTrue();
+        applied.Should().Contain("handling=strict");
     }
 
     // --- Helpers ---

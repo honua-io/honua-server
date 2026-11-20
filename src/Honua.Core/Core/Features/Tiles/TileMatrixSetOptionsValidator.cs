@@ -125,7 +125,7 @@ public sealed class TileMatrixSetOptionsValidator : OptionsValidator<TileMatrixS
             if (double.IsFinite(level.ScaleDenominator) && level.ScaleDenominator > 0 &&
                 double.IsFinite(level.CellSize) && level.CellSize > 0)
             {
-                var isGeographic = GeographicSridClassifier.IsGeographicSrid(entry.Srid);
+                var isGeographic = GeographicSridClassifier.IsGeographicOrUnlistedGeographicRangeSrid(entry.Srid);
                 var metersPerUnit = entry.MetersPerUnit ??
                     (isGeographic
                         ? SpatialConstants.WebMercatorExtent / 180.0

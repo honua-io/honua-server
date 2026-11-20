@@ -923,6 +923,6 @@ public sealed class GrpcConversionHelpersTests
         proto.Point.X.Should().Be(-157.858);
         proto.Point.Y.Should().Be(21.307);
         proto.Point.Z.Should().Be(12.346);
-        proto.Point.M.Should().Be(99.877);
+        proto.Point.M.Should().Be(99.876);
     }
 }

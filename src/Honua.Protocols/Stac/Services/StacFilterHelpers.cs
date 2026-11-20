@@ -316,11 +316,6 @@ internal static class StacFilterHelpers
     private static bool IsOpenIntervalBound(string value)
         => string.Equals(value, "..", StringComparison.Ordinal);
 
-    public static Microsoft.AspNetCore.Http.HttpResults.BadRequest<string>? ValidateQueryParameters(
-        HttpRequest request,
-        IReadOnlySet<string> allowedParameters)
-        => Honua.Protocols.Ogc.Common.OgcCommonUtilities.ValidateQueryParameters(request, allowedParameters);
-
     private static bool TryParseRfc3339DateTime(string value, out DateTimeOffset timestamp)
     {
         var normalized = value.Trim();
