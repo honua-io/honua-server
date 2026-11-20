@@ -91,7 +91,7 @@ internal sealed class LayerPublishJobService(
         }
 
         var existingLayerId = await publishingService.FindPublishedSourceLayerAsync(
-            connectionString, request.Schema, request.Table, cancellationToken).ConfigureAwait(false);
+            connectionString, request, cancellationToken).ConfigureAwait(false);
         if (existingLayerId.HasValue)
         {
             throw new LayerPublishingException(

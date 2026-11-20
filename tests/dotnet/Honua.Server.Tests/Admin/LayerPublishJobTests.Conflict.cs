@@ -25,7 +25,8 @@ public sealed partial class LayerPublishJobTests
     public async Task Submit_AboveThresholdAlreadyPublished_IsConflictBeforeQueueing(LayerPublishRunnerMode mode)
     {
         var publisher = LargeTablePublisher();
-        publisher.FindPublishedSourceLayerAsync(Connection, "public", "roads", Arg.Any<CancellationToken>())
+        publisher.FindPublishedSourceLayerAsync(
+                Connection, Arg.Is<LayerPublishRequest>(request => request.Table == "roads"), Arg.Any<CancellationToken>())
             .Returns(42);
         var queue = Substitute.For<IJobQueue>();
 
@@ -42,7 +43,7 @@ public sealed partial class LayerPublishJobTests
     public async Task Submit_AboveThresholdEditableCopy_SkipsTheDuplicateCheck()
     {
         var publisher = LargeTablePublisher();
-        publisher.FindPublishedSourceLayerAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        publisher.FindPublishedSourceLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(42);
         var request = new LayerPublishRequest { Schema = "public", Table = "roads", LayerName = "Roads", CreateEditableCopy = true };
 
@@ -51,7 +52,7 @@ public sealed partial class LayerPublishJobTests
 
         Assert.Equal(LayerPublishAdmissionKind.Unavailable, admission.Kind);
         await publisher.DidNotReceive().FindPublishedSourceLayerAsync(
-            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]

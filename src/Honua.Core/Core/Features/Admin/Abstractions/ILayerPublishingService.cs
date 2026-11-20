@@ -41,8 +41,7 @@ public interface ILayerPublishingService
     // a duplicate at admission, as the synchronous path does.
     Task<int?> FindPublishedSourceLayerAsync(
         string connectionString,
-        string schema,
-        string table,
+        LayerPublishRequest request,
         CancellationToken cancellationToken = default)
         => Task.FromResult<int?>(null);
 

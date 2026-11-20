@@ -175,19 +175,19 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
     public async Task<int?> FindPublishedSourceLayerAsync(
         string connectionString,
-        string schema,
-        string table,
+        LayerPublishRequest request,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
-        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
-        ArgumentException.ThrowIfNullOrWhiteSpace(table);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Schema);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Table);
 
         try
         {
             await using var connection = new NpgsqlConnection(connectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-            return await FindExistingLayerAsync(connection, null, schema.Trim(), table.Trim(), cancellationToken)
+            return await FindExistingLayerAsync(connection, null, request.Schema.Trim(), request.Table.Trim(), cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (PostgresException exception) when (exception.SqlState is PostgresErrorCodes.UndefinedTable or PostgresErrorCodes.InvalidSchemaName)
