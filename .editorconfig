@@ -365,18 +365,6 @@ dotnet_diagnostic.CA1822.severity = suggestion
 # CA1848: Use LoggerMessage delegates
 dotnet_diagnostic.CA1848.severity = warning
 
-# Allocation rules: errors at every analysis level so hot paths keep them.
-# CA1825 zero-length arrays, CA1845/CA1846 span-based concat and slicing,
-# CA1859 concrete types, CA1865-CA1867 char overloads, CA1870 cached SearchValues.
-dotnet_diagnostic.CA1825.severity = error
-dotnet_diagnostic.CA1845.severity = error
-dotnet_diagnostic.CA1846.severity = error
-dotnet_diagnostic.CA1859.severity = error
-dotnet_diagnostic.CA1865.severity = error
-dotnet_diagnostic.CA1866.severity = error
-dotnet_diagnostic.CA1867.severity = error
-dotnet_diagnostic.CA1870.severity = error
-
 # CA2007: Do not directly await a Task (library code)
 dotnet_diagnostic.CA2007.severity = none
 
@@ -391,3 +379,15 @@ dotnet_diagnostic.CS8618.severity = suggestion
 [*.cs]
 dotnet_diagnostic.CTJ001.severity = suggestion
 dotnet_diagnostic.CTJ002.severity = suggestion
+
+# Allocation rules: errors at every analysis level so hot paths keep them.
+# CA1825 zero-length arrays, CA1845/CA1846 span-based concat and slicing,
+# CA1859 concrete types, CA1865-CA1867 char overloads, CA1870 cached SearchValues.
+dotnet_diagnostic.CA1825.severity = error
+dotnet_diagnostic.CA1845.severity = error
+dotnet_diagnostic.CA1846.severity = error
+dotnet_diagnostic.CA1859.severity = error
+dotnet_diagnostic.CA1865.severity = error
+dotnet_diagnostic.CA1866.severity = error
+dotnet_diagnostic.CA1867.severity = error
+dotnet_diagnostic.CA1870.severity = error
