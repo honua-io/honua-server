@@ -106,13 +106,17 @@ class ManagedWorkflowTests(unittest.TestCase):
 
     def test_ci_gate_selected_skips_fail_and_docs_dependabot_skips_remain_valid(self):
         shell = self.gate_shell('ci-gate')
-        base = dict(REQUIRE_MANAGED_BUILD='true', REQUIRE_FORMAT='true',
+        base = dict(REQUIRE_MANAGED_BUILD='true', REQUIRE_RUNTIME_PROOFS='true', REQUIRE_FORMAT='true',
                     BUILD_RESULT='success', FORMAT_RESULT='success', RUNTIME_PROOFS_RESULT='success')
         self.assertEqual(0, self.execute_guard(shell, **base))
         for lane in ['BUILD_RESULT', 'FORMAT_RESULT', 'RUNTIME_PROOFS_RESULT']:
             for result in ['skipped', 'cancelled', 'failure']:
                 with self.subTest(lane=lane, result=result):
                     self.assertNotEqual(0, self.execute_guard(shell, **(base | {lane: result})))
+        # Affected runs that do not select the runtime lane allow runtime-proofs to skip.
+        self.assertEqual(0, self.execute_guard(shell, **(base | {
+            'REQUIRE_RUNTIME_PROOFS': 'false', 'RUNTIME_PROOFS_RESULT': 'skipped',
+        })))
         # Docs-only/dependabot selection deliberately requires neither lane.
         self.assertEqual(0, self.execute_guard(shell, REQUIRE_MANAGED_BUILD='false',
             REQUIRE_FORMAT='false', BUILD_RESULT='skipped', FORMAT_RESULT='skipped'))
