@@ -290,6 +290,7 @@ internal static partial class FeatureStreamEndpoints
 
         var subscriberSecurity = await ResolveSubscriberSecurityAsync(
             context, snapshot, service, layerIds, context.RequestAborted).ConfigureAwait(false);
+        // 403, not 400: the request is well formed, but the subscriber's read policy forbids streaming the layer.
         if (subscriberSecurity.DescribeUnstreamableLayer(hasExplicitLayerScope ? layerIds : null) is { } unstreamableError)
         {
             FeatureStreamLog.FilterValidationFailed(logger, unstreamableError);

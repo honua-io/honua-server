@@ -29,6 +29,7 @@ internal sealed class StreamSubscriberSecurity
     }
 
     // Readable layers whose row policy for this subscriber cannot be applied to stream events.
+    // Read only at subscribe time: a refresh replaces the routes but not this set.
     public IReadOnlySet<int> UnstreamablePolicyLayers { get; init; } = new HashSet<int>();
 
     // A readable layer whose row policy cannot be evaluated on stream events (an area

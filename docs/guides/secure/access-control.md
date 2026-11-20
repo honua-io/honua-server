@@ -123,9 +123,11 @@ or unsupported predicates. A layer whose policy for the subscriber has one is no
 streamed to that subscriber. A subscription that names such a layer (`layers=` or a
 WebSocket `subscribe` with layer IDs), and has no other readable route for it, is
 refused: SSE answers `403` and WebSocket sends an `error` frame, both naming the
-layer. Read those rows with a feature query (FeatureServer, OGC API Features or
-OData), which applies the area. An unscoped subscription still accepts and simply
-delivers no events from that layer. A policy change that adds an area to a layer
+layer. This applies to the whole subscription, so `layers=0,1` is refused when
+only layer 1 has such a policy; subscribe to the other layers separately. Read those
+rows with a feature query (FeatureServer, OGC API Features or OData), which applies
+the area. A subscription that names no layers (unscoped, or scoped only to a
+service) is still accepted and delivers no events from that layer. A policy change that adds an area to a layer
 already being streamed ends the subscription as a revocation.
 
 Offline replica downloads (`synchronizeReplica`, `extractChanges`) judge each update
