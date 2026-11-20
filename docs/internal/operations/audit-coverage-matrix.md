@@ -185,9 +185,24 @@ the protocol that initiated the edit does not matter.
 
 `ResourceType` is `feature`; `ResourceId` is the storage layer id. `Details`
 carries operation counts (`created`/`updated`/`deleted`/`rolledBack`) — never the
-feature payloads. Single-feature creates and single-feature updates are **not**
-treated as destructive-write audit events; they remain covered by mutation
+feature payloads. By default, single-feature creates and single-feature updates are
+**not** treated as destructive-write audit events; they remain covered by mutation
 metrics/logging.
+
+### Operator audit policy (`AuditLog:Policy`)
+
+Two switches widen the trail. Both are off by default.
+
+| Setting | Records | EventType | Action | Outcome source |
+|---|---|---|---|---|
+| `AuditLog:Policy:RecordSingleFeatureWrites=true` | Every single-feature create or update at the `IFeatureWriter` boundary, and a one-operation edit batch or transaction | `DataDelete` (the feature-write row type) | `feature.create`, `feature.update`, `feature.edit` | written → `Success`; exception → `Failure`; batch `result.IsSuccess` |
+| `AuditLog:Policy:RecordSuccessfulReads=true` | A successful (2xx) `GET`/`HEAD` on any routed endpoint by an **authenticated** caller | `DataExport` | `data.read` | always `Success` (failed reads keep the 401/403 rows) |
+
+Single-write rows carry `{"objectId":N}` only. Read rows use the request path as
+`ResourceId` (never the query string) and the usual status/method/tenant details.
+Anonymous reads are never recorded by this switch, so unauthenticated traffic cannot
+drive audit volume. Expect one row per authenticated request (tiles included) with
+reads on; size the audit store and export accordingly.
 
 ## Out of scope (this slice)
 

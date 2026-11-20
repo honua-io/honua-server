@@ -1,17 +1,26 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Middleware;
 
 internal sealed class AuditLogMiddleware(RequestDelegate next, IAuditActionResolver actionResolver)
 {
+    private static readonly AuditActionDescriptor SuccessfulReadDescriptor = new()
+    {
+        EventType = AuditEventType.DataExport,
+        Action = "data.read",
+        ResourceType = "http-route",
+    };
+
     private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
     private readonly IAuditActionResolver _actionResolver = actionResolver ?? throw new ArgumentNullException(nameof(actionResolver));
 
@@ -123,7 +132,8 @@ internal sealed class AuditLogMiddleware(RequestDelegate next, IAuditActionResol
             return null;
         }
 
-        var descriptor = _actionResolver.Resolve(context.Request.Method, routePattern);
+        var descriptor = _actionResolver.Resolve(context.Request.Method, routePattern)
+            ?? ResolveSuccessfulReadDescriptor(context, effectiveStatus);
         if (descriptor is null)
         {
             return null;
@@ -137,6 +147,26 @@ internal sealed class AuditLogMiddleware(RequestDelegate next, IAuditActionResol
         }
 
         return descriptor;
+    }
+
+    // With AuditLog:Policy:RecordSuccessfulReads on, a successful read by an authenticated
+    // caller on a routed endpoint is recorded as a data access. Anonymous reads are never
+    // recorded here, so unauthenticated traffic cannot drive audit volume.
+    private static AuditActionDescriptor? ResolveSuccessfulReadDescriptor(HttpContext context, int effectiveStatus)
+    {
+        if (!HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method))
+        {
+            return null;
+        }
+
+        if (!HttpAuditEventFactory.IsSuccessStatus(effectiveStatus)
+            || context.User?.Identity?.IsAuthenticated != true)
+        {
+            return null;
+        }
+
+        var policy = context.RequestServices.GetService<IOptionsMonitor<AuditPolicyOptions>>()?.CurrentValue;
+        return policy?.RecordSuccessfulReads == true ? SuccessfulReadDescriptor : null;
     }
 
     private static string? ResolveRoutePattern(HttpContext context)

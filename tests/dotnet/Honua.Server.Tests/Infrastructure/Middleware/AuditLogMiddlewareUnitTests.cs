@@ -5,9 +5,11 @@ using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Security;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Routing.Patterns;
@@ -246,6 +248,39 @@ public sealed class AuditLogMiddlewareUnitTests
         _audit.Events.Should().BeEmpty();
     }
 
+    [UnitTest]
+    public async Task SuccessfulRead_WithReadAuditOn_RecordsAuthenticatedCallerOnly()
+    {
+        var signedIn = EnableReadAuditing(BuildContext("GET", "/ogc/features/collections/{id}/items", authenticated: true));
+        var anonymous = EnableReadAuditing(BuildContext("GET", "/ogc/features/collections/{id}/items", authenticated: false));
+        signedIn.Request.QueryString = new QueryString("?token=not-recorded");
+
+        await InvokeAsync(signedIn, finalStatus: StatusCodes.Status200OK);
+        await InvokeAsync(anonymous, finalStatus: StatusCodes.Status200OK);
+
+        var evt = _audit.Events.Should().ContainSingle().Subject;
+        evt.EventType.Should().Be(AuditEventType.DataExport);
+        evt.Action.Should().Be("data.read");
+        evt.Outcome.Should().Be(AuditOutcome.Success);
+        evt.Actor.Should().Be("operator@example.com");
+        evt.ResourceId.Should().Be("/ogc/features/collections/id/items");
+        (evt.Details ?? string.Empty).Should().NotContain("not-recorded");
+    }
+
+    [UnitTest]
+    public async Task ReadAudit_OffByDefault_AndNeverAppliesToWritesOrFailedReads()
+    {
+        var defaultPolicy = BuildContext("GET", "/ogc/features/collections/{id}/items", authenticated: true);
+        var unmatchedWrite = EnableReadAuditing(BuildContext("POST", "/ogc/features/collections/{id}/items", authenticated: true));
+        var missingRead = EnableReadAuditing(BuildContext("GET", "/ogc/features/collections/{id}/items", authenticated: true));
+
+        await InvokeAsync(defaultPolicy, finalStatus: StatusCodes.Status200OK);
+        await InvokeAsync(unmatchedWrite, finalStatus: StatusCodes.Status201Created);
+        await InvokeAsync(missingRead, finalStatus: StatusCodes.Status404NotFound);
+
+        _audit.Events.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task AuditedRoute_WhenPipelineThrows_RecordsFailureAndRethrows()
     {
@@ -372,6 +407,15 @@ public sealed class AuditLogMiddlewareUnitTests
             displayName: routePattern);
         context.SetEndpoint(endpoint);
 
+        return context;
+    }
+
+    private DefaultHttpContext EnableReadAuditing(DefaultHttpContext context)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IAuditLog>(_audit);
+        services.AddOptions<AuditPolicyOptions>().Configure(static policy => policy.RecordSuccessfulReads = true);
+        context.RequestServices = services.BuildServiceProvider();
         return context;
     }
 

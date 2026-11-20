@@ -5,18 +5,31 @@ using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Middleware;
 
 public static class AuditInstrumentationServiceCollectionExtensions
 {
+    private static readonly AuditPolicyOptions DefaultPolicy = new();
+
     public static IServiceCollection AddHonuaAuditActionResolver(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
         services.AddHttpContextAccessor();
         services.TryAddSingleton<IAuditActionResolver, DefaultAuditActionResolver>();
+        return services;
+    }
+
+    // Binds the operator audit switches (AuditLog:Policy). Both default to off.
+    public static IServiceCollection AddHonuaAuditPolicy(this IServiceCollection services, IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+        services.AddOptions<AuditPolicyOptions>().Bind(configuration.GetSection(AuditPolicyOptions.SectionName));
         return services;
     }
 
@@ -42,7 +55,12 @@ public static class AuditInstrumentationServiceCollectionExtensions
                 var inner = (IFeatureWriter)CreateInner(sp, innerDescriptor);
                 var auditLog = sp.GetService<IAuditLog>() ?? NullAuditLog.Instance;
                 var httpContextAccessor = sp.GetRequiredService<IHttpContextAccessor>();
-                return new AuditingFeatureWriter(inner, auditLog, httpContextAccessor);
+                var policy = sp.GetService<IOptionsMonitor<AuditPolicyOptions>>();
+                return new AuditingFeatureWriter(
+                    inner,
+                    auditLog,
+                    httpContextAccessor,
+                    () => policy?.CurrentValue ?? DefaultPolicy);
             },
             innerDescriptor.Lifetime));
 
