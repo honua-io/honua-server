@@ -103,7 +103,9 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/store-image-context"
           git archive HEAD | tar -x -C "$RUNNER_TEMP/store-image-context"
+      # These script tests read no matrix value; one leg proves them.
       - name: Test measurement and health probe
+        if: matrix.profile == 'postgis' && matrix.compilation == 'jit'
         run: |
           python3 scripts/ci/test-measure-serving-image.py
           python3 scripts/ci/test-image-layer-size.py
