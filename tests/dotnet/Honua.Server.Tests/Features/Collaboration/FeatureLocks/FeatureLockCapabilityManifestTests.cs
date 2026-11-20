@@ -22,10 +22,10 @@ namespace Honua.Server.Tests.Features.Collaboration.FeatureLocks;
 // is supplied, that cross-node leases need the PostgreSQL store, and that the GeoServices applyEdits surface honours
 // no client-supplied version token. Both composition paths are covered (the hand-curated roster and the
 // registry-derived projection), because the two must stay wire-identical.
-[Collection("Database")]
 [Protocol(Honua.TestKit.Constants.ProtocolNames.Streaming)]
 [Operation(Honua.TestKit.Constants.Operations.Metadata)]
-public sealed class FeatureLockCapabilityManifestTests
+public sealed class FeatureLockCapabilityManifestTests(FeatureLockCapabilityManifestTests.SharedStoreHosts hosts)
+    : IClassFixture<FeatureLockCapabilityManifestTests.SharedStoreHosts>
 {
     private const string LocksCapability = "collaboration.feature-locks";
     private const string CrossNodeCapability = "collaboration.feature-locks.cross-node";
@@ -37,8 +37,7 @@ public sealed class FeatureLockCapabilityManifestTests
     [Endpoint("GET /api/v1/capabilities/manifest")]
     public async Task Manifest_OutOfTheBox_ReportsLeasesEnforcedButUngrantable(bool fromRegistry)
     {
-        await using var fixture = CreateFixture(allowWrite: false, fromRegistry: fromRegistry);
-        await fixture.InitializeAsync();
+        var fixture = await hosts.GetAsync(fromRegistry ? "registry" : "curated");
         using var client = fixture.CreateAdminClient();
 
         using var document = await GetManifestAsync(client);
@@ -64,8 +63,7 @@ public sealed class FeatureLockCapabilityManifestTests
     [Endpoint("GET /api/v1/capabilities/manifest")]
     public async Task Manifest_WhenAnAuthorizerIsSupplied_ReportsLeasesAvailable(bool fromRegistry)
     {
-        await using var fixture = CreateFixture(allowWrite: true, fromRegistry: fromRegistry);
-        await fixture.InitializeAsync();
+        var fixture = await hosts.GetAsync(fromRegistry ? "registry authorizer" : "curated authorizer");
         using var client = fixture.CreateAdminClient();
 
         using var document = await GetManifestAsync(client);
@@ -89,8 +87,7 @@ public sealed class FeatureLockCapabilityManifestTests
     {
         // Configured with a real authorizer on purpose: neither gap may become "supported"
         // just because the deployment turned collaborative editing on.
-        await using var fixture = CreateFixture(allowWrite: true, fromRegistry: fromRegistry);
-        await fixture.InitializeAsync();
+        var fixture = await hosts.GetAsync(fromRegistry ? "registry authorizer" : "curated authorizer");
         using var client = fixture.CreateAdminClient();
 
         using var document = await GetManifestAsync(client);
@@ -118,16 +115,23 @@ public sealed class FeatureLockCapabilityManifestTests
     public async Task Manifest_CrossNodeAvailability_FollowsSelectedStoreAndAuthorizer(string hostShape, string? expectedReason)
     {
         var shape = hostShape.Split(' ');
-        var fixture = CreateFixture(shape.Contains("authorizer"), shape.Contains("registry"));
-        if (!shape.Contains("shared-store"))
+        if (shape.Contains("shared-store"))
         {
-            fixture = fixture.ConfigureServices(services =>
+            await AssertCrossNodeAsync(await hosts.GetAsync(hostShape), expectedReason);
+            return;
+        }
+
+        await using var fixture = CreateFixture(shape.Contains("authorizer"), shape.Contains("registry"))
+            .ConfigureServices(services =>
             {
                 services.AddSingleton<IFeatureLockService, InMemoryFeatureLockService>();
             });
-        }
-        await using var lifetime = fixture;
         await fixture.InitializeAsync();
+        await AssertCrossNodeAsync(fixture, expectedReason);
+    }
+
+    private static async Task AssertCrossNodeAsync(WebAppFixture fixture, string? expectedReason)
+    {
         using var client = fixture.CreateAdminClient();
         using var document = await GetManifestAsync(client);
         var crossNode = Capability(document, CrossNodeCapability);
@@ -146,13 +150,11 @@ public sealed class FeatureLockCapabilityManifestTests
     {
         // The hand-curated roster and the registry projection are two spellings of one wire
         // document. If they drift, the disposition a client reads depends on a config flag.
-        await using var curatedFixture = CreateFixture(allowWrite: false, fromRegistry: false);
-        await curatedFixture.InitializeAsync();
+        var curatedFixture = await hosts.GetAsync("curated");
         using var curatedClient = curatedFixture.CreateAdminClient();
         using var curated = await GetManifestAsync(curatedClient);
 
-        await using var derivedFixture = CreateFixture(allowWrite: false, fromRegistry: true);
-        await derivedFixture.InitializeAsync();
+        var derivedFixture = await hosts.GetAsync("registry");
         using var derivedClient = derivedFixture.CreateAdminClient();
         using var derived = await GetManifestAsync(derivedClient);
 
@@ -217,5 +219,49 @@ public sealed class FeatureLockCapabilityManifestTests
             string operation,
             CancellationToken cancellationToken) =>
             ValueTask.FromResult(FeatureLockAuthorizationResult.AllowWrite());
+    }
+
+    // One host per shared-store shape (composition path, and whether an authorizer that can grant
+    // leases is registered). The manifest is read-only, so every case of a shape reads the same
+    // host; shapes with the in-memory store keep their own hosts.
+    public sealed class SharedStoreHosts : IAsyncLifetime
+    {
+        private readonly Dictionary<string, WebAppFixture> _applications = new(StringComparer.Ordinal);
+
+        public Task InitializeAsync() => Task.CompletedTask;
+
+        public async Task<WebAppFixture> GetAsync(string hostShape)
+        {
+            var shape = hostShape.Split(' ');
+            var allowWrite = shape.Contains("authorizer");
+            var fromRegistry = shape.Contains("registry");
+            var key = $"{(fromRegistry ? "registry" : "curated")}/{(allowWrite ? "authorizer" : "denying")}";
+            if (_applications.TryGetValue(key, out var started))
+            {
+                return started;
+            }
+
+            var application = CreateFixture(allowWrite, fromRegistry);
+            try
+            {
+                await application.InitializeAsync();
+            }
+            catch
+            {
+                await application.DisposeAsync();
+                throw;
+            }
+
+            _applications[key] = application;
+            return application;
+        }
+
+        public async Task DisposeAsync()
+        {
+            foreach (var application in _applications.Values)
+            {
+                await application.DisposeAsync();
+            }
+        }
     }
 }

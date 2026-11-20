@@ -41,7 +41,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
     private static async Task<int?> FindExistingLayerAsync(
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
+        NpgsqlTransaction? transaction,
         string schema,
         string table,
         CancellationToken cancellationToken)
@@ -171,6 +171,36 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<int?> FindPublishedSourceLayerAsync(
+        string connectionString,
+        LayerPublishRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Schema);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Table);
+        var schema = request.Schema.Trim();
+        if (!CommittedSinkSchemaGate.Allows(_schemaConfiguration, _schemaContext?.CurrentSchema, schema))
+        {
+            // The publish itself answers 404 for a schema outside this tenant; reveal nothing here.
+            return null;
+        }
+
+        try
+        {
+            await using var connection = new NpgsqlConnection(connectionString);
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            return await FindExistingLayerAsync(connection, null, schema, request.Table.Trim(), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (PostgresException exception) when (exception.SqlState is PostgresErrorCodes.UndefinedTable or PostgresErrorCodes.InvalidSchemaName)
+        {
+            // No layer catalog on this connection yet, so nothing has been published from it.
+            return null;
+        }
     }
 
     public async Task<long> CountSourceRowsAsync(

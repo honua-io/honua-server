@@ -240,7 +240,7 @@ causes and fields of `DurableJobSubstrateOptions`, and the control-plane Lambda 
 workflow operation store and must move to the PostgreSQL one in the same change that deletes
 `RedisWorkflowOperationStore`. `operations.proposals` becomes available through
 `CapabilityManifestOptionsSnapshot.ProposalStoreAvailable` once the PostgreSQL proposal store is
-registered; `CapabilityManifestEndpointTests.Manifest_WithNoRedis_ReportsProposalsAvailable` proves
+registered; `CapabilityManifestEndpointTests.ProductionJobSubstrate.GetManifest_WithSystemDatabaseOnly_ReportsProposalsAvailable` proves
 it.
 
 ## Alternatives considered

@@ -144,7 +144,8 @@ internal sealed partial class Wfs20Handler
                     cancellationToken);
             }
 
-            var selectedTypes = ResolveRequestedFeatureTypes(publishedTypes, requestedTypes);
+            var selectedTypes = await WithCallerMasksAsync(
+                context, ResolveRequestedFeatureTypes(publishedTypes, requestedTypes), cancellationToken).ConfigureAwait(false);
             var wfsUrl = $"{BaseUrlResolver.GetBaseUrl(context)}/wfs";
             if (selectedTypes.Length == 0)
             {
@@ -362,6 +363,15 @@ internal sealed partial class Wfs20Handler
                 "typeNames");
         }
 
+        // Only the requested types are masked; published order is kept, because it orders the features and their paging.
+        var requestedXmlTypes = xmlQueries.SelectMany(query => Wfs20Utilities.ParseTypeNames(query.TypeNames)).ToArray();
+        var requestedPublicationIds = ResolveRequestedFeatureTypes(publishedTypes, requestedXmlTypes)
+            .Select(static featureType => featureType.Publication.Metadata.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        publishedTypes = await WithCallerMasksAsync(
+            context,
+            [.. publishedTypes.Where(featureType => requestedPublicationIds.Contains(featureType.Publication.Metadata.Id))],
+            cancellationToken).ConfigureAwait(false);
         var planSet = await BuildXmlQueryPlansAsync(
             publishedTypes,
             xmlQueries,

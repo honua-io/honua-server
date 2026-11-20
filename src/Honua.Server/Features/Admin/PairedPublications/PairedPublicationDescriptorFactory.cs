@@ -20,9 +20,6 @@ internal sealed record StoredPair(
 
 internal static class PairedPublicationDescriptorFactory
 {
-    internal const string DescriptorFileName = "descriptor.json";
-    internal const string StacItemFileName = "item.json";
-
     public static string PmtilesFileName(PairedPublicationRun run) => $"{run.PublicationId}.pmtiles";
 
     public static string GeoparquetFileName(PairedPublicationRun run) => $"{run.PublicationId}.parquet";
@@ -57,53 +54,38 @@ internal static class PairedPublicationDescriptorFactory
             Identity = new PublicationIdentity(published.IdentityField, published.IdentityField, published.IdentityField),
             Geometry = new PublicationGeometry("geometry", "wkb", capture.GeometryTypes),
             Artifacts = new PublicationArtifacts(published.Artifacts.Pmtiles, published.Artifacts.Geoparquet),
-            Validation = published.Validation,
-            Links = new PublicationLinks(StacItemFileName) { Self = DescriptorFileName }
+            Validation = published.Validation
         };
     }
 
-    // A STAC item with role-tagged assets, so a catalog browser opens the pair without Honua.
-    public static JsonObject StacItem(PublicationDescriptor descriptor)
+    // The Version's one document: a STAC collection that also carries the Dataset's description and licence,
+    // links its README.md and AGENTS.md, lists the style and thumbnail as assets and names who produced and hosts the data.
+    public static JsonObject Collection(ExportCompanionInput companions)
     {
-        var (west, south, east, north) = (descriptor.Bounds[0], descriptor.Bounds[1], descriptor.Bounds[2], descriptor.Bounds[3]);
-        return new JsonObject
+        var license = companions.Metadata.License;
+        var collection = ExportCollectionDocument.Write(companions.Descriptor, new ExportCollectionMetadata(
+            companions.Description, string.IsNullOrWhiteSpace(license) ? null : license.Trim()));
+        collection["providers"] = ExportStacFacts.Providers(companions);
+        var links = collection["links"]!.AsArray();
+        links.Add(Link("agents", ExportCompanionFiles.AgentsFileName));
+        links.Add(Link("describedby", ExportCompanionFiles.ReadmeFileName));
+        var assets = collection["assets"]!.AsObject();
+        assets["style"] = Asset(ExportCompanionFiles.StyleFileName, ExportCompanionFiles.StyleMediaType, "style");
+        if (companions.Thumbnail is not null)
         {
-            ["type"] = "Feature",
-            ["stac_version"] = "1.1.0",
-            ["id"] = $"{descriptor.PublicationId}-{descriptor.Version}",
-            ["bbox"] = new JsonArray(west, south, east, north),
-            ["geometry"] = new JsonObject
-            {
-                ["type"] = "Polygon",
-                ["coordinates"] = new JsonArray(new JsonArray(
-                    new JsonArray(west, south), new JsonArray(east, south), new JsonArray(east, north),
-                    new JsonArray(west, north), new JsonArray(west, south)))
-            },
-            ["properties"] = StacProperties(descriptor),
-            ["links"] = new JsonArray(new JsonObject
-            {
-                ["rel"] = "describedby",
-                ["href"] = DescriptorFileName,
-                ["type"] = "application/json"
-            }),
-            ["assets"] = new JsonObject
-            {
-                ["pmtiles"] = Asset(descriptor.Artifacts.Pmtiles.Href, PmtilesPublicationArtifact.MediaTypeValue, "visual"),
-                ["geoparquet"] = Asset(descriptor.Artifacts.Geoparquet.Href, GeoparquetPublicationArtifact.MediaTypeValue, "data")
-            }
-        };
-    }
-
-    private static JsonObject StacProperties(PublicationDescriptor descriptor)
-    {
-        var properties = new JsonObject { ["datetime"] = descriptor.Capture.CapturedAt.ToString("O", CultureInfo.InvariantCulture) };
-        if (descriptor.Title is not null)
-        {
-            properties["title"] = descriptor.Title;
+            assets["thumbnail"] = Asset(ExportThumbnail.FileName, ExportThumbnail.MediaType, "thumbnail");
         }
 
-        return properties;
+        return collection;
     }
+
+    // Portolan wants the plain markdown media type on these links.
+    private static JsonObject Link(string rel, string href) => new()
+    {
+        ["rel"] = rel,
+        ["href"] = href,
+        ["type"] = "text/markdown"
+    };
 
     private static JsonObject Asset(string href, string mediaType, string role) => new()
     {

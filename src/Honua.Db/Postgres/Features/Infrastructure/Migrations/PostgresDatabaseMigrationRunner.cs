@@ -113,7 +113,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 includeRasterProviderMigrations,
                 _includeConfiguredSchemaAdoption,
                 _migrations.ConfiguredSchemaAdoptionMigration,
-                attachmentSchema, _migrations.Attachments);
+                attachmentSchema, _migrations.Attachments,
+                _migrations.ResidentTables);
             var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
             var readerVerified = await VerifyReaderCompatibilityAsync(
                 upgrader, migrationsAssembly, usesCanonicalMigrationRoots, connection,
@@ -319,7 +320,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 includeRasterProviderMigrations,
                 _includeConfiguredSchemaAdoption,
                 _migrations.ConfiguredSchemaAdoptionMigration,
-                attachmentSchema, _migrations.Attachments);
+                attachmentSchema, _migrations.Attachments,
+                _migrations.ResidentTables);
             var upgrader = CreateUpgrader();
             var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
             var readerVerified = await VerifyReaderCompatibilityAsync(
@@ -544,7 +546,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         bool includeConfiguredSchemaAdoption,
         string configuredSchemaAdoptionMigration,
         string? attachmentSchema = null,
-        PostgresAttachmentMigrationContract? attachmentContract = null)
+        PostgresAttachmentMigrationContract? attachmentContract = null,
+        IReadOnlyList<HonuaResidentTableBinding>? residentTableBindings = null)
     {
         var builder = DeployChanges.To
             .PostgresqlDatabase(connectionString)
@@ -561,6 +564,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         var migrationAssemblies = includeRasterProviderMigrations
             ? new[] { typeof(PostgresDatabaseMigrationRunner).Assembly, migrationsAssembly }
             : new[] { migrationsAssembly };
+        var bindsResidentTablesToHonua = !string.Equals(metadataSchemaVariable,
+            SchemaSearchPath.ValidateAndQuote(HonuaResidentTableScriptProvider.ResidentSchema), StringComparison.Ordinal);
 
         foreach (var assembly in migrationAssemblies)
         {
@@ -571,8 +576,11 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 name => name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase) &&
                     (includeConfiguredSchemaAdoption ||
                      !string.Equals(name, configuredSchemaAdoptionMigration, StringComparison.Ordinal)));
-            IScriptProvider selectedProvider = attachmentSchema is null ? provider :
-                new AttachmentSchemaScriptProvider(provider, attachmentSchema, migrationsAssembly,
+            IScriptProvider schemaBoundProvider = bindsResidentTablesToHonua && residentTableBindings is { Count: > 0 }
+                ? new HonuaResidentTableScriptProvider(provider, residentTableBindings)
+                : provider;
+            IScriptProvider selectedProvider = attachmentSchema is null ? schemaBoundProvider :
+                new AttachmentSchemaScriptProvider(schemaBoundProvider, attachmentSchema, migrationsAssembly,
                     attachmentContract ?? throw new InvalidOperationException("Canonical attachment identities were not supplied."));
             builder.WithScripts(selectedProvider);
         }

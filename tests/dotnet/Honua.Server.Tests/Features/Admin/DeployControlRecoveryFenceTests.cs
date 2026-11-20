@@ -33,8 +33,8 @@ namespace Honua.Server.Tests.Features.Admin;
 public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
 {
     private const string TargetId = "fence-target";
-    private const string Issuer = "https://recovery-fence.test";
-    private const string Audience = "recovery-fence-client";
+    private const string Issuer = AdminAuthEndpointsTests.TestOidcIssuer;
+    private const string Audience = AdminAuthEndpointsTests.TestOidcAudience;
     private const string SigningKey = "recovery-fence-cross-tenant-signing-key-32!";
 
     // Two tenant-bound platform administrators, exactly as the live reproduction
@@ -44,12 +44,15 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
     private static readonly FencePrincipal TenantCAdmin = new("ops-c", "tenant-c", ["admin"]);
 
     private readonly FenceWorkflowOperationStore _store = new();
+    private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
     public DeployControlRecoveryFenceTests()
     {
-        _fixture = new WebAppFixture()
+        // Promotion requires a current review from an interactive admin session; explicit bearer
+        // credentials create, submit and recover operations.
+        _fixture = HumanApprovalHttpClient.Configure(new WebAppFixture(), _identityProvider)
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IDatabaseMigrationRunner>();
@@ -72,6 +75,9 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
                 builder.UseSetting("Oidc:RequireHttps", "true");
                 builder.UseSetting("Oidc:TokenValidation:SymmetricSigningKey", SigningKey);
                 builder.UseSetting("Oidc:TokenValidation:EnableTokenReplayProtection", "false");
+                builder.UseSetting("Oidc:TokenValidation:ValidateIssuer", "true");
+                builder.UseSetting("Oidc:TokenValidation:ValidateAudience", "true");
+                builder.UseSetting("Oidc:TokenValidation:ValidateIssuerSigningKey", "true");
                 builder.UseSetting("Oidc:Generic:Enabled", "true");
                 builder.UseSetting("Oidc:Generic:Authority", Issuer);
                 builder.UseSetting("Oidc:Generic:ClientId", Audience);
@@ -84,7 +90,11 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
         _client = _fixture.CreateAdminClient();
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        using var identityProvider = _identityProvider;
+        await _fixture.DisposeAsync();
+    }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/deploy/operations/{operationId}")]
@@ -277,7 +287,7 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
         // tenant must not return 200 and roll tenant-a back.
         using var tenantA = CreateBearerClient(TenantAPlatformAdmin);
         using var tenantB = CreateBearerClient(TenantBPlatformAdmin);
-        var activation = await CreateProtectedActivationAsync(tenantA);
+        var activation = await CreateProtectedActivationAsync(tenantA, TenantAPlatformAdmin.TenantId);
         activation.Protection.GetProperty("actor").GetString().Should().Be(TenantAPlatformAdmin.Subject);
         activation.Protection.GetProperty("tenantId").GetString().Should().Be(TenantAPlatformAdmin.TenantId);
         var before = await GetOperationAsync(activation.OperationId);
@@ -306,7 +316,7 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
         // binding, and silence is not a way around it.
         using var tenantA = CreateBearerClient(TenantAPlatformAdmin);
         using var tenantB = CreateBearerClient(TenantBPlatformAdmin);
-        var activation = await CreateProtectedActivationAsync(tenantA);
+        var activation = await CreateProtectedActivationAsync(tenantA, TenantAPlatformAdmin.TenantId);
         var before = await GetOperationAsync(activation.OperationId);
 
         var response = await tenantB.PostAsJsonAsync(
@@ -328,7 +338,7 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
         // The legitimate same-tenant path: the principal the grant was sealed for, quoting its own grant
         // including its tenant, is admitted.
         using var tenantA = CreateBearerClient(TenantAPlatformAdmin);
-        var activation = await CreateProtectedActivationAsync(tenantA);
+        var activation = await CreateProtectedActivationAsync(tenantA, TenantAPlatformAdmin.TenantId);
 
         var response = await tenantA.PostAsJsonAsync(
             $"/api/v1/admin/deploy/operations/{activation.OperationId}/rollback",
@@ -348,7 +358,7 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
         // It can actuate no compensation, so it is shown none of the grant's identity.
         using var tenantA = CreateBearerClient(TenantAPlatformAdmin);
         using var tenantC = CreateBearerClient(TenantCAdmin);
-        var activation = await CreateProtectedActivationAsync(tenantA);
+        var activation = await CreateProtectedActivationAsync(tenantA, TenantAPlatformAdmin.TenantId);
 
         var single = await tenantC.GetAsync($"/api/v1/admin/deploy/operations/{activation.OperationId}");
         single.StatusCode.Should().Be(HttpStatusCode.OK, await single.Content.ReadAsStringAsync());
@@ -571,14 +581,13 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
         return operationId;
     }
 
-    private async Task<ProtectedActivation> CreateProtectedActivationAsync(HttpClient? client = null)
+    private async Task<ProtectedActivation> CreateProtectedActivationAsync(HttpClient? client = null, string? tenantId = null)
     {
-        client ??= _client;
         var candidateRevision = $"rev-candidate-{Guid.NewGuid():N}";
         var operationId = await CreateSubmittedOperationAsync(candidateRevision, client);
 
-        var promoteResponse = await client.PostAsJsonAsync(
-            $"/api/v1/admin/deploy/operations/{operationId}/promote", new { reason = "cutover" });
+        using var reviewer = await AuthenticateReviewerAsync(tenantId);
+        using var promoteResponse = await reviewer.ReviewDeployAsync(operationId, "promote");
         promoteResponse.StatusCode.Should().Be(HttpStatusCode.OK, await promoteResponse.Content.ReadAsStringAsync());
 
         var operation = await GetOperationAsync(operationId);
@@ -586,6 +595,14 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
         protection.ValueKind.Should().Be(JsonValueKind.Object, "promotion opens a protection window");
         return new ProtectedActivation(operationId, candidateRevision, protection);
     }
+
+    // The reviewer belongs to the requester's tenant because a review is bound to the operation's tenant.
+    // The sealed recovery grant still names the requester: promotion records the reviewer as approver only.
+    private Task<HumanApprovalHttpClient> AuthenticateReviewerAsync(string? tenantId) =>
+        HumanApprovalHttpClient.AuthenticateAsync(
+            _fixture,
+            _identityProvider,
+            new HumanApprovalIdentity("fence-reviewer", tenantId, ["admin", "platform_admin"]));
 
     private HttpClient CreateBearerClient(FencePrincipal principal)
     {

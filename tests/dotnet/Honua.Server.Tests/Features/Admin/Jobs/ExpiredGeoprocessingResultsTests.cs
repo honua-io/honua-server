@@ -21,7 +21,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin.Jobs;
 
-[Collection("Database")]
 [Protocol(TestProtocols.OgcApiProcesses)]
 [Operation(Operations.JobResults)]
 public sealed class ExpiredGeoprocessingResultsTests

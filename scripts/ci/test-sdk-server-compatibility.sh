@@ -139,4 +139,7 @@ jq -e '
   and ([.observations[] | select(.capability_key == "serve.geoservices-featureserver") | .surface] | unique) == ["feature-server"]
 ' "$release_results/fragment.json" >/dev/null || fail "release fragment must materialize all 99 cells and retain the unavailable .NET coordinate"
 
+grep -Fq 'dotnet new console --framework net11.0' "$RUNNER" \
+  || fail "the smoke consumer must support the current net11-only SDK projects"
+
 echo "SDK compatibility matrix and runner tests passed."

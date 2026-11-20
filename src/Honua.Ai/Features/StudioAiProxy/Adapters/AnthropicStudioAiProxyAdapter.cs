@@ -27,6 +27,9 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
     private readonly ILogger<AnthropicStudioAiProxyAdapter> _logger;
     private readonly AnthropicContinuationStore _continuations;
 
+    // The clock behind the provider deadline; tests replace it to fire the deadline deterministically.
+    internal TimeProvider TimeProvider { get; init; } = TimeProvider.System;
+
     public AnthropicStudioAiProxyAdapter(
         IHttpClientFactory httpClientFactory,
         StudioAiProxyApiKeyResolver apiKeyResolver,
@@ -127,8 +130,8 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
             CharSet = "utf-8"
         };
 
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(TimeSpan.FromSeconds(options.TimeoutSeconds));
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(options.TimeoutSeconds), TimeProvider);
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         state.Timer.Start();
 
         var (response, sendTimedOut, requestError) = await StudioAiProxyHttpStreamHelpers

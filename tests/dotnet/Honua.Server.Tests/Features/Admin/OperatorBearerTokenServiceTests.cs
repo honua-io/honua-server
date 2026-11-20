@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Infrastructure.Authentication;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Admin;
@@ -27,10 +28,12 @@ public sealed class OperatorBearerTokenServiceTests
         var issuance = service.Issue(SampleClaims, DateTimeOffset.UtcNow.AddMinutes(10));
 
         issuance.Should().NotBeNull();
-        var claims = await service.TryValidateAsync(issuance!.Token);
+        var validation = await service.TryValidateAsync(issuance!.Token);
 
-        claims.Should().NotBeNull();
-        claims!.Should().Contain(c => c.Type == "name" && c.Value == "Operator Admin");
+        validation.Should().NotBeNull();
+        validation!.Binding.Should().Be(default(OperatorBearerBinding));
+        var claims = validation.Claims;
+        claims.Should().Contain(c => c.Type == "name" && c.Value == "Operator Admin");
         claims.Should().Contain(c => c.Type == ClaimTypes.Role && c.Value == "admin");
         claims.Should().Contain(c => c.Type == ClaimTypes.NameIdentifier && c.Value == "operator-1");
     }
@@ -128,6 +131,39 @@ public sealed class OperatorBearerTokenServiceTests
         var claims = await disabled.TryValidateAsync(issuance!.Token);
 
         claims.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task Issue_WithSessionBinding_CarriesItOutsideTheClaims()
+    {
+        var service = CreateService();
+        var spoofed = SampleClaims
+            .Append(new AdminAuthSessionClaim { Type = OperatorBearerTokenService.SessionBindingClaimType, Value = "from-session" })
+            .ToArray();
+
+        var bound = await service.TryValidateAsync(service.Issue(spoofed, DateTimeOffset.UtcNow.AddMinutes(10), new OperatorBearerBinding(Session: "binding-1"))!.Token);
+        var unbound = await service.TryValidateAsync(service.Issue(spoofed, DateTimeOffset.UtcNow.AddMinutes(10))!.Token);
+
+        bound!.Binding.Session.Should().Be("binding-1");
+        bound.Claims.Should().NotContain(c => c.Type == OperatorBearerTokenService.SessionBindingClaimType);
+        unbound!.Binding.Session.Should().BeNull("a session claim cannot choose the binding");
+    }
+
+    [UnitTest]
+    public async Task Issue_WithAdminPasswordVersion_CarriesItOutsideTheClaims()
+    {
+        var service = CreateService();
+        var spoofed = SampleClaims
+            .Append(new AdminAuthSessionClaim { Type = OperatorBearerTokenService.AdminPasswordVersionClaimType, Value = "from-claims" })
+            .ToArray();
+
+        var bound = await service.TryValidateAsync(
+            service.Issue(spoofed, DateTimeOffset.UtcNow.AddMinutes(10), new OperatorBearerBinding(AdminPasswordVersion: "v1"))!.Token);
+        var unbound = await service.TryValidateAsync(service.Issue(spoofed, DateTimeOffset.UtcNow.AddMinutes(10))!.Token);
+
+        bound!.Binding.AdminPasswordVersion.Should().Be("v1");
+        bound.Claims.Should().NotContain(c => c.Type == OperatorBearerTokenService.AdminPasswordVersionClaimType);
+        unbound!.Binding.AdminPasswordVersion.Should().BeNull("a session claim cannot choose the password version");
     }
 
     [Fact]

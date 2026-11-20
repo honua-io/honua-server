@@ -267,6 +267,14 @@ Stage 3 details:
 
 ## PR Lane (Required Checks)
 
+Besides the required checks below and the required Clean code check, every
+`pull_request` or `pull_request_target` workflow is optional and path-filtered,
+apart from two cheap control workflows that run on every event: auto-merge
+ready pull requests and Close external pull requests. Runner label lint reads only
+`.github/workflows`, so it runs only when a pull request or trunk push changes
+that directory. A new optional pull request workflow needs a `paths` filter
+naming what can change its result.
+
 These workflows are merge-blocking for all PRs to trunk:
 
 | Workflow | What it validates | Path filter |
@@ -391,7 +399,10 @@ producer so these checks do not wait for artifact publication. The required
 boot/migration smoke remains on the producer after pristine artifact publication.
 Full CI owns remote-source, raster, layer, geometry/calculate-field, imagery,
 GDAL/PDAL and import/export fidelity proofs, including the existing receipt
-tripwires. Protocol-profile compilation also runs in full CI.
+tripwires. Protocol-profile compilation also runs in full CI: full and scheduled
+runs select every profile with `protocol-profile-selection.py --all`. A range
+selection compares trunk with itself there and would build only `all`, which
+is what full run 44309947920 did.
 
 ### Import-fidelity gates: correctness and performance
 
@@ -515,23 +526,36 @@ This changes no job count, test selection, required context or runner routing.
 
 ## Full-CI producer admission
 
-`Build & Format Check` has separate, producer-only admission. The hosted
-`CI producer / Runner select` job defaults to `ubuntu-latest`. MAIN can enable
-`HONUA_CI_PRODUCER_RUNNER=honua-build` only after compatible-pool preflight.
-Same-repository events can assume `HONUA_CI_PRODUCER_READ_ROLE_ARN` via OIDC,
-using `HONUA_PR_GATE_RUNNER_REGION`. That role needs only
-`autoscaling:DescribeAutoScalingGroups` and `ssm:GetParameter` for
-`/honua-lane-build-host/gate-runner/heartbeat`; its trust must cover the intended
-trunk schedule/dispatch events. It must have no wake or host-mutation rights.
-Fork events never request credentials or self-hosted admission.
+`Build & Format Check` runs where `CI producer / Runner select` says, and that
+job calls the shared `advisory-runner-select.yml`. On trunk schedules and
+dispatches it picks an idle `honua-heavy` runner (an 8-vCPU slice) while more
+than two heavy runners stay idle for PR Gate. Otherwise, and for any read
+failure, it stays on `ubuntu-latest`. The selector reads the build-host heartbeat
+with the existing `HONUA_PR_GATE_WAKE_ROLE_ARN` OIDC role and never wakes,
+waits or retries. A snapshot is admission evidence, not a reservation, so a
+later queue remains possible: if heavy runners go away after selection (spot
+replacement, or other advisory callers taking the slack), this critical-path
+job waits in the self-hosted queue. Before this the producer was hosted on every trunk
+run: Build steps took 12-30 min and the job 21-46 min (13-18 Nov). The earlier
+opt-in `HONUA_CI_PRODUCER_RUNNER=honua-build` route was removed, because its
+read role was never provisioned.
 
-The selector makes one current InService instance read and one heartbeat read.
-It requires the same instance, an integer timestamp no more than 90 seconds old
-and not in the future, and integer gate `idle >= 2`. Heavy-pool idle counts do
-not qualify. Missing configuration, credentials, checkout, API access, malformed
-proof, stale proof, or busy/stopped capacity falls back hosted. There is no
-wake, wait, polling or retry loop. A snapshot is admission evidence, not a
-capacity reservation; a later queue remains possible.
+Selective (affected) dispatches build the producer graph with
+`RunAnalyzers=false`; scheduled and `full_ci` runs keep the analyzer build.
+PR Gate's analyzer partitions already checked each landed PR's affected
+projects on its merge ref, and ci.yml's `Format Check` still runs
+`dotnet format` in the same affected run. Warnings-as-errors still applies to
+compiler diagnostics and source generators still run; the PR Gate producer
+already publishes its managed outputs from this no-analyzer build mode under
+the same build-properties label. An analyzer finding that only appears when
+several landed PRs combine is left to the scheduled full run. Selected
+protocol-profile builds keep analyzers for Honua.Server, whose profile
+constants change. Referenced projects are first resolved in the producer's
+no-analyzer mode and then reused with `BuildProjectReferences=false`; PR Gate
+analyzed them on each PR. A single `RunAnalyzers=true` profile build would
+recompile all 29 referenced projects: affected run 44379685745 spent 10.2 of
+16.3 profile minutes on that (6.4-7.0 min before the producer dropped
+analyzers).
 
 The producer skips hosted sudo cleanup on self-hosted runners and installs its
 SDK into `${{ runner.temp }}/honua-ci-producer-sdk`. Every producer restore,
@@ -561,18 +585,47 @@ gate runners. Heavy-pool readiness remains independent of gate-pool admission.
 The producer takes one snapshot; the existing PR selector retains its bounded
 wake/wait orchestration. Both sparse checkouts include the shared validator.
 
+### Host NuGet fallback folder
+
+Build-host runners start every job with an empty home. They export
+`HONUA_NUGET_FALLBACK`, a package folder that only the host can write. A
+no-credential host account fills it from trunk's package closure (honua-iac
+`install-nuget-fallback.sh`). When a job passes `host-package-fallback: 'true'`,
+`setup-dotnet-ci` resolves the link to one generation and sets
+`NUGET_FALLBACK_PACKAGES` to it. The job then skips the ~1.7 GB NuGet cache
+archive, and NuGet downloads only the packages the folder lacks (GitHub
+Packages ids are never in it). If the variable is unset, the target is missing
+or writable, or it holds no package, the job restores the cache archive as
+before. Hosted runners never set the variable. Only the `ci.yml` `server-tests`
+shards and the `PR Gate / Affected shard` jobs opt in, because both re-check
+package imports after consuming managed outputs. `fast-server-tests` stays out:
+a fully consumed group goes straight to its test phase. Producers stay out as
+well, since a producer must keep its static web asset roots under the
+package folder it packages. A consumed `obj` folder names the producer's
+`~/.nuget/packages`, which the fallback leaves mostly empty, so on the fallback
+even a fully consumed shard runs `managed-test-build.py fallback`: it restores
+only projects whose package imports are missing and compiles nothing. A shard
+restored from the exact-head shard cache gets the same restore-only check,
+because that payload's `obj` came from whichever job wrote the cache. Measured
+18 Nov 2026: Setup .NET took 77-86 s on build-host runners against 31 s hosted,
+about 50 s of it the archive.
+
 ## PR Gate compute runner selection
 
 `PR Gate / Runner select` decides where `pr-gate` (Build and tests) and
 `server-test-producer` run, and which start jobs move to idle heavy runners. The
-selector itself, Format and source Analyzers use the fork-guarded
-`HONUA_LIGHT_RUNNER` JSON selector with `ubuntu-latest` fallback. Both
+selector, Format and source Analyzers, affected-shard selection, the
+affected-shard aggregate, CI router validation and the required aggregate stay
+on `ubuntu-latest` for every pull request. `HONUA_LIGHT_RUNNER` does not place
+them. That pool also runs hygiene, review and the other light workflows, and a
+selector waiting on it leaves idle `honua-build` runners unused. Both
 test-analyzer rows and the four Fast/architecture matrix jobs use `ubuntu-latest`
 unless the selector planned them onto the heavy pool (below); test analyzers never
 use the light pool, even during light-pool qualification. All eight keep their
-existing check names and coverage. `HONUA_LIGHT_RUNNER` is the operator
-availability switch: keep it unset while the light pool is unhealthy; new jobs
-then fall back to hosted runners. Forks always use hosted runners. Routing does
+existing check names and coverage. `HONUA_LIGHT_RUNNER` remains the operator
+switch for those non-gate light workflows: keep it unset while the light pool
+is unhealthy and they fall back to hosted runners. Forks always use hosted
+runners. Routing does
 not move an already queued job when pool health changes. With the repository variable
 `HONUA_PR_GATE_RUNNER` unset, its steps skip and the two producers stay on
 `ubuntu-latest`. Set it to `honua-build` to use the ephemeral runners on the lane
@@ -612,17 +665,22 @@ host and read its heartbeat, nothing else) and runs
   which carries no job condition.
 
 A manual PR Gate dispatch on `trunk` can set the boolean `qualify_light` input
-(default `false`) to qualify the light pool while `HONUA_LIGHT_RUNNER` stays unset.
+(default `false`) to place the PR Gate control jobs on the light pool.
 Only `workflow_dispatch` on `refs/heads/trunk` honors this override. It pins the
-`honua-light` runner group and label for the six existing light jobs; it accepts
-no runner label input. Both test-analyzer rows remain hosted; producer,
-heavy-shard and Fast/architecture routing stays unchanged. Other refs and events retain the normal variable and fork
-guards. Qualification is an operator-run health check; the input does not enable
-normal routing or change repository settings. Record ten consecutive green runs
-and their actual runner assignments before restoring the availability variable.
+`honua-light` runner group and label; it accepts no runner label input. Shard
+selection and the affected-shard aggregate run only on pull requests, so a
+dispatch qualifies runner select, Format and source Analyzers, CI router
+validation and the required aggregate. Both test-analyzer rows remain hosted;
+producer, heavy-shard and Fast/architecture routing stays unchanged. Other refs
+and events keep these jobs on `ubuntu-latest`. Qualification is an operator-run
+health check; the input does not enable normal routing or change repository
+settings. The authored inventory template records this placement. A pull
+request that edits `pr-gate.yml` cannot also submit the generated inventory
+page, because that workflow is a generated-file verification input; the trunk
+generator publishes the page.
 
-Draft Format and admission/control jobs also use the fork-guarded light selector;
-with `HONUA_LIGHT_RUNNER` unset they stay hosted. Runner select, the format/analyzer
+Draft Format and the admission/control jobs stay on `ubuntu-latest` on a pull request.
+Runner select, the format/analyzer
 matrix, affected-shard selection, the affected-shard aggregate, CI router validation
 and the required aggregate each set `TMPDIR`, `TEMP` and `TMP` to that job's
 `RUNNER_TEMP` before any other step. Verdict fixtures select the named verdict
@@ -966,7 +1024,9 @@ or attest test execution. Callers must treat an execution or parsing failure
 as requiring revalidation. Commit local changes before using this mode.
 
 `pre-pr-check.sh --affected-tests` restores once, builds the affected unit-test
-closure without analyzers, then runs unit tests by default. Pass `--integration`
+closure without analyzers, then runs unit tests by default. A markdown file under
+`scripts/ci/` does not by itself select every isolated unit; executable files there,
+anything under `.github/`, and the shared build files still do. Pass `--integration`
 with `--affected-tests` to include affected integration shards. The independent
 PR Format check retains analyzer coverage. Positively classified docs/CI-only
 changes use the existing governance checks without starting a .NET build;
@@ -1475,12 +1535,20 @@ before publishing change outputs; neither cancellation nor a failed cancellation
 Admitted affected runs use two concurrent server shards. A selective run whose
 router reason is `no_path_match` schedules none of those default smoke shards.
 Honua.Core package compatibility, which uses the heavy pool, runs on a selective
-dispatch only when a changed file sits outside docs, workflows, `scripts/ci/` and
-tests. An empty path list still runs it. A skipped Core package does not cancel a selected AOT or MCP lane; a failed
-Core package or Postgres compatibility job still does. All trusted indices
-use the configured `honua-heavy` pool, so a run holds at most two heavy runners
+dispatch only when a changed file sits outside docs, workflows, `scripts/ci/`,
+repository metadata and tests. Repository metadata (`.github/codeql/`, issue
+templates, CODEOWNERS, Dependabot, actionlint, hygiene and PR template files)
+starts no managed build or integration lane on any `ci.yml` run: affected run
+44254098776 spent a 30-minute producer build plus Format, GDAL and Core package
+jobs on a range whose only build input was `.github/codeql/pr-paths.txt`. An
+empty path list still runs it. A skipped Core package does not cancel a selected AOT or MCP lane; a failed
+Core package or Postgres compatibility job still does. All trusted affected
+indices use the configured `honua-heavy` pool, so a run holds at most two heavy runners
 for shards; side jobs use `HONUA_CI_HEAVY_RUNNER`, which is unset (hosted) today,
-except the Core package job, which follows `HONUA_HEAVY_RUNNER`. Full server
+except the Core package job, which follows `HONUA_HEAVY_RUNNER`. Full runs
+(the `run-name` rule) put every server-test index on free standard
+`ubuntu-latest` runners: run 44271438677 finished all 225 shards in a 78-minute
+server phase there, against 193-327 minutes on the six heavy runners. Full server
 matrices retain their 16-job limit. A single pool prevents admitted hosted shards
 waiting for capacity from exhausting that limit while heavy runners remain idle.
 Full run 43709972683 had 13 waiting hosted shards plus three executing shards at
@@ -1691,6 +1759,8 @@ trusted trunk code and revalidates the source run before requesting one failed-j
 rerun. Only attempt 1 qualifies, and every failed non-summary job must have the
 `honua-heavy` label and the canonical runner shutdown message in its logs.
 Successful jobs remain completed; failed jobs and their dependents run once more.
+Full-run server shards run on hosted runners, so in a full run this covers
+the heavy Core package and Native AOT jobs.
 Manual cancellations, selective runs, mixed product failures, unreadable logs and
 second interruptions do not retry. Summary failures qualify only in known dependent-verdict steps; independent foundation/artifact failures remain failures. Required job names and dependency contracts
 are unchanged. Manual full trunk runs use the `CI full` title prefix and selective trunk runs retain `CI affected`, so a dispatch nonce cannot change the mode; merge-train
@@ -1758,6 +1828,19 @@ Both manual rollback and MCP lifecycle startup share the service-state allowlist
 GitHub-managed Code Quality is switched off for this repository, so there is no
 managed analysis to supersede and no helper workflow for it; `codeql.yml` is the
 only CodeQL analysis of C# (Roslyn analyzers still run as errors in the build).
+Pull requests run that analysis only for the paths in `.github/codeql/pr-paths.txt`
+(auth, admin endpoints, connections and secrets, import and object storage, SQL
+building, operation approval, the MCP and Studio AI surface, outbound HTTP
+proxies, sharing, sessions, exports, and workflows; s-sec-server reviewed it).
+Trunk push still scans `src/**`, and the Monday schedule
+remains the full instrumented scan. Serving Image Boundary builds the PostGIS
+image on a pull request and leaves Lambda native-AOT to nightly and deploy.
+Review Gate Attestation stays two jobs: identity resolution has to finish before
+the attestation can serialize on the pull request number. Attempt 1 of PR Gate
+still attests, because that completion is what review-first uses to observe or
+release the admission run. A later PR Gate attempt does not attest again when
+the newest Review Gate status for that head is already success. A later review
+event still re-attests through the bridge.
 CodeQL, Compose Release Lifecycle, Store Image Size and Serving Image Boundary
 cancel superseded PR runs through their per-PR concurrency groups.
 
@@ -1776,10 +1859,11 @@ Image measurement exports stay outside the Docker build context: `.dockerignore`
 
 ## Lightweight workflow routing and compatibility
 
-The lightweight workflow callers use the same fork-guarded `HONUA_LIGHT_RUNNER`
-JSON selector and `ubuntu-latest` fallback as PR Gate control jobs. This includes
-Repository hygiene, Clean code, Runner label lint, Review Gate Attestation,
-Review Event Bridge and OpenAPI drift/governance.
+The lightweight workflow callers (Repository hygiene, Clean code, Runner label
+lint, Review Gate Attestation, Review Event Bridge and OpenAPI drift/governance)
+use the fork-guarded `HONUA_LIGHT_RUNNER` JSON selector and `ubuntu-latest`
+fallback. PR Gate control jobs do not: they stay on `ubuntu-latest` except for
+a trunk `qualify_light` dispatch.
 Reusable workflow pins must include the shared selector support. Each local
 shell job exports `TMPDIR`, `TEMP` and `TMP` from `RUNNER_TEMP` before checkout.
 The variable remains an operator availability switch for newly admitted jobs.
@@ -1804,8 +1888,11 @@ hygiene job.
 
 ### Advisory image and CodeQL runner selection
 
-CodeQL C# analysis, Store Image Size and Serving Image Boundary call the shared
-`advisory-runner-select.yml` before allocating compute. Same-repository PRs use
+CodeQL C# analysis, Store Image Size, Serving Image Boundary and the full-CI
+producer call the shared `advisory-runner-select.yml` before allocating
+compute. The selector job itself runs on `ubuntu-latest`: honua-light hosts
+offer only the snap AWS CLI, which snap-confine refuses inside the runner
+sandbox, so every selection there fell back as "host unreadable". Same-repository PRs use
 trusted base scripts and the existing OIDC role to read the build-host instance
 and heartbeat. Scheduled and manually dispatched runs on the repository default
 branch use scripts pinned to the triggering commit. Other dispatch refs remain
@@ -1962,6 +2049,30 @@ interval fell from 446.067028 to 314.676740 seconds, saving 131.390288 seconds
 (2.19 test-run runner-minutes). Queue and build time are excluded. Full-shard
 job savings remain unmeasured: the shard also includes
 `OperatorBearerTokenServiceTests` and CI setup.
+
+### Admin authentication parallel case groups
+
+xUnit runs the cases of one test class in sequence, and `AdminAuthEndpointsTests`
+was also in the `Database` collection, which disables parallel execution. Its 80
+cases each start their own application, so the class ran end to end in one
+sequence. Each partial file now holds its cases in a nested class
+(`BrowserSessions`, `CallbackErrors`, `FailedAttempts`, `GrpcBrowserSessions`,
+`WebSocketOrigin`), and the outer class leaves the `Database` collection, so the
+six groups run in parallel. No class uses the collection fixture. Every case still
+creates its own application and isolated database schema; stub identity providers
+and clocks are created per case where used, and no assertion changes. Rate-limit and failed-attempt state stays per
+application, so parallel groups do not share it.
+
+The nested names keep the `AdminAuthEndpointsTests` prefix, so the shard filter
+`FullyQualifiedName~Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests`
+selects the same 80 cases in the Server Features Admin Authentication and
+Credentials shard on selected PR runs and twice-daily full trunk runs. Runner
+count, required check names, aggregate dependencies, workflows and shard
+definitions are unchanged.
+
+Before, on hosted full trunk run 44183857476, the class summed 618.9 seconds and
+the shard's TRX start-to-finish interval was 648.9 seconds for the 79 cases it
+then held: the cases ran one at a time. The parallel saving is not yet measured.
 
 ### ImageServer raw pixel host lifetime
 
@@ -2431,3 +2542,648 @@ job: wall 633 to 419-438 seconds; DeploymentCapabilityProfileIntegrationTests
 80.4 to 43.0-43.7 seconds and CapabilityManifestEndpointTests 305.0 to
 225.7-241.8 seconds, while the unchanged classes in the same job also ran
 148.5 to 102-110 seconds, so part of that difference is host load.
+
+### Sharing REST token host lifetime
+
+`SharingRestTokenTests` shares one application with the protected-service graph
+and token settings across every case that used the default token configuration,
+instead of starting one per case. A startup filter stamps the request client
+address; each case now gets its own TEST-NET-3 address, so failed attempts that
+the authentication failure limiter counts per source never carry over between
+cases, and IP-bound tokens still bind to the address of the case that issued
+them. Each case issues, exchanges or revokes only its own tokens and keys. Cases
+that need other settings or a replaced credential verifier keep their own
+applications.
+
+The class stays in Server Features Sharing 1 on selected PR runs and full trunk
+runs. No workflow, shard filter, required check, aggregate dependency or runner
+count changes. Build-host class 45/45 identical passing cases in one job, 297.2
+to 34.7-34.8 seconds (process wall 345 to 62-71 seconds).
+
+### Sharing community and REST read host lifetime
+
+`SharingCommunityTests` shares one application with the durable PostgreSQL
+portal sharing stores; the portal sharing tables are created once, and each case
+deletes all rows from `portal_item_shares` and `portal_community_groups` before
+it starts, so every case still begins from empty sharing tables. The case that
+needs the store binding removed keeps its own application.
+`SharingRestReadTests` shares one application across the default-graph cases,
+which only send anonymous GET and HEAD requests; none of the endpoints they call
+(sharing info, portal URI list, portals/self, search, content items and
+`/rest/info`) is output-cached. The configured-public-root and
+disabled-entitlement cases keep their own applications.
+
+Both classes stay in Server Features Sharing 2 on selected PR runs and full
+trunk runs. No workflow, shard filter, required check, aggregate dependency or
+runner count changes. One build-host job, all 83 cases of the three Sharing
+classes identical and passing: SharingCommunityTests 114.6 to 10.3-10.9 seconds,
+SharingRestReadTests 121.3 to 16.1-17.5 seconds, SharingRestTokenTests 326.4 to
+36.3-38.9 seconds; process wall 584 to 106-121 seconds.
+
+### API key token parameter host lifetime
+
+`ApiKeyTokenParameterTests` shares one application across the class. Each case
+creates only its own keys and never revokes or lists shared ones. Key names are
+not unique in the store;
+lookup is by key material. The in-process transport leaves the client address
+unset, and the authentication failure limiter ignores a request with no client
+address, so the expected invalid-token responses do not lock later cases out.
+The protected layer's access metadata is set once when the host starts.
+`ApiKeyTokenParameterPrincipalTests` does not use this host.
+
+The class stays split across Security and Authorization 2 and 3 on selected PR
+runs and full trunk runs. No workflow, shard filter, required check, aggregate
+dependency or runner count changes. One build-host job, 24/24 identical passing
+cases, zero skipped: class span 163.3 to 3.9-4.0 seconds (process wall 186 to
+63 and 29 seconds). Whole-job shard savings were not measured.
+
+### Patch concurrency host lifetime
+
+`PatchConcurrencyTests` shares two Pro applications with the OData seed across
+the class instead of one per case. One keeps the product field-mask source,
+because only that source takes the combined row and field read path; the other
+registers the test's mutable mask. Each case inserts and edits only its own
+feature, and starts by installing a fresh write barrier and clearing the test
+mask. `OgcPatch_PublicIdentifierAndMaskedField_UsesCompleteSnapshot` changes
+the layer schema and keeps its own application.
+
+The class stays in Core Mutation Concurrency on selected PR runs and full
+trunk runs. No workflow, shard filter, required check, aggregate dependency or
+runner count changes. One build-host job, 43/43 passing cases, zero skipped:
+class span 199.8 to 15.2-15.6 seconds (process wall 212 to 38-43 seconds).
+
+### GPServer SOAP job host lifetime
+
+`GPServerSoapEndpointsTests` built one application per job case to inject a
+fresh job-service substitute. The class fixture now holds one job-service
+substitute and one terminal-service substitute, registered as singletons so
+every consumer, including the real singleton terminal service, sees the same
+object, and two lazily started applications: one with the job substitute and
+the real terminal service, one with both substitutes. Each case clears the
+substitutes it uses (returns, callbacks and received calls) and configures
+them again, so every assertion is unchanged.
+
+The class stays split across GeoServices GPServer SOAP and SOAP Progress on
+selected PR runs and full trunk runs. No workflow, shard filter, required
+check, aggregate dependency or runner count changes. One build-host job, 81/81
+passing cases, zero skipped: class span 243.7 to 23.0-24.2 seconds (process
+wall 248 to 27-28 seconds).
+
+### Collaboration co-editing host lifetime
+
+`CollaborationLiveCoEditingTests` started at least one database-less application per case.
+The class fixture now holds two lazily started applications with the default
+settings: one with the restart-durable operation log and one without. Every case
+creates its own draft, and session, operation log and checkpoint state is keyed
+by map, so a case never reads another case's map; the per-map participant limits
+are unaffected. Cases that change settings, decorate the operation log or supply
+a Studio store keep their own applications.
+
+The class stays in Server Features Collaboration Mobile and Identity 2 on
+selected PR runs and full trunk runs. No workflow, shard filter, required check,
+aggregate dependency or runner count changes. One build-host job, 24/24 passing
+cases, zero skipped: class span 118.1 to 57.2-58.0 seconds (process wall 123 to
+63-64 seconds).
+
+### SensorThings stream host lifetime
+
+`SensorThingsStreamEndpointsTests` shares one multi-tenant application across
+the class instead of one per case. Stream cases open their own connections and
+read from the live tail or from a cursor taken in the same case, so observations
+ingested by an earlier case are never expected; the tenant-collision case seeds
+and drops its own schema.
+
+The class stays in SensorThings 5 on selected PR runs and full trunk runs. No
+workflow, shard filter, required check, aggregate dependency or runner count
+changes. One build-host job, 25/25 passing cases, zero skipped: class span 179.7
+to 67.1 seconds on both head runs (process wall 194 to 83-84 seconds).
+
+### Alert admin host lifetime
+
+`AlertAdminEndpointsTests` built its webhook-only application for every case,
+including the seven cases that then boot eight private applications with
+another channel policy or stubbed stores. The webhook-only application is now one class
+fixture: its cases scope every zone and rule to a fresh service id and probe
+missing ids far above the sequence, and each case still creates its own admin
+client. Application boots per run drop from 29 to 9; every assertion is kept.
+
+The class stays in its admin shard on selected PR runs and full trunk runs. No
+workflow, shard filter, required check, aggregate dependency or runner count
+changes. Before: 80.4 seconds summed case time in full trunk run 44013566836.
+
+### Isolated-host classes leave the serial database collection
+
+The `Database` xUnit collection sets `DisableParallelization = true`: its classes run
+one at a time and nothing else runs beside them. Nine classes were in it although
+none injects the collection fixture and every application they start is
+configured, so each owns its host and isolated schema:
+`ExperimentalCapabilityGatingIntegrationTests`,
+`DeploymentCapabilityProfileIntegrationTests` and
+`DeploymentCapabilityProfileManifestTests` (Server Features Capabilities);
+`SharingOAuth2Tests`, `PortalFacadeDiscoveryContractTests`,
+`SharingOAuth2IntrospectionTests` and `SharingOAuth2CallbackE2ETests` (Server
+Features Sharing OAuth and Portal); `ProposalEndpointsTests` and
+`InvestigationEndpointsTests` (Server Features Admin Governance and Sharing 2;
+method-name matches also run some proposal cases in Server Features Admin Layer
+Management 2 and Server Features Admin Authorization 2). Before the change they
+were audited for shared state: no static mutable fields, environment, culture or
+file-system writes, fixed ports, shared-server fixtures, production job-substrate
+hosts or sub-second timing windows. They now run in parallel with the other
+classes in their shards. Cases, fixtures and assertions are unchanged; only the
+collection attribute is removed.
+
+`CapabilityManifestEndpointTests` leaves the collection too. Its one case that
+starts a production job-substrate host moves to the nested
+`ProductionJobSubstrate` class in the serial `JobSubstrate` collection, because
+those hosts share the job tables and must run one at a time; only its name and
+an assertion message change wording. The rollback cases, which build their own
+hosts over substitutes, become the nested `RollbackTargets` class and run in
+parallel with the default-application cases. Their bodies are unchanged.
+
+Shard filters select by class or method name, so every case stays in the same
+shards on selected PR runs and twice-daily full trunk runs. No workflow, shard
+definition, required check, aggregate dependency or runner count changes. Before,
+on hosted full trunk run 44183857476, the serial collection classes summed 492 of
+the 514-second TRX interval in Server Features Capabilities (198 of them outside
+`CapabilityManifestEndpointTests`), 239 of 530 seconds in Sharing OAuth and
+Portal, and 230 of 678 seconds in Admin Governance and Sharing 2. The parallel
+saving is not yet measured.
+
+### Shared-table audit for the database collection exits
+
+Isolated `WebAppFixture` hosts get their own schema for feature and metadata data,
+but every host uses the same test database, and system tables (progress, users,
+SCIM groups, security tokens, token replay, audit log, alert and ops-health
+history) stay in the shared `honua` schema. A fixture configured only through
+`ReplaceRequestService` also counts as unconfigured and uses the process-wide
+shared server. A class leaves the serial `Database` collection only when its
+assertions cannot see rows that another parallel class writes to those tables.
+
+Fourteen more classes pass that audit and leave the collection:
+`ObservabilityEndpointsTests`, `ObservabilityEventEndpointsTests`,
+`OpsObservabilityEndpointsTests` and `ObservabilityAlertEndpointsTests` (Server
+Features Admin Operations Endpoints); `ScimProvisioningEndpointsTests`,
+`IdentityEntitlementGateTests`, `SamlBridgeEndpointsTests`,
+`AdminLogoutDependencyLossTests` and `ScimAuthenticationSecurityTests` (Server
+Features Identity); `ServiceSettingsAttachmentAuthoringTests`,
+`OpsIncidentEndpointsTests`, `AgentSettingsApprovalTests`,
+`ProcessLocalAdminStoreGuardEndpointTests` and `ExpiredGeoprocessingResultsTests`
+(Server Features Admin Integrations and Automation 4). Their shared-table writes
+use names, ids or keys unique to the class, and their assertions are scoped to
+them. The audit also rechecked the classes above and `AdminAuthEndpointsTests`
+against the shared tables and found no collision.
+
+These stay serial: `OperationsProgressEndpointsTests` (shared server, exact
+Upload and Import counts over the shared progress table),
+`CacheOperationsEndpointsTests` (shared server; invalidates every cache),
+`AlertPreviewFloorTests` (creates and drops a trigger on the shared
+`honua.audit_log`), `CommunityOpsHealthEndpointsTests`, `OidcEntitlementGateTests`
+(uses the collection fixture), and every production job-substrate host.
+
+Cases, fixtures and assertions are unchanged, and every case stays in the same
+shards on selected PR runs and twice-daily full trunk runs. No workflow, shard
+definition, required check, aggregate dependency or runner count changes. Before,
+on hosted full trunk run 44183857476, the moved classes summed 137 seconds of the
+882-second Admin Operations Endpoints TRX interval, 169 of 380 seconds in
+Identity, and 97 of 515 seconds in Admin Integrations and Automation 4, each run
+one class at a time. The parallel saving is not yet measured.
+
+### More isolated-host classes leave the serial database collection
+
+Six more classes drop `[Collection("Database")]`: `FeatureLockCapabilityManifestTests`
+and `MobileAuthAndDiagnosticsEndpointsTests` (Collaboration Mobile Identity 1),
+`AlertEntitlementGateTests`, `PublishedRouteEndpointsTests` and
+`CatalogDiscoveryEndpointsTests` (Console Alerts 2), and `EndpointRegistryDriftTests`
+(STAC API Governance 2). None injects the collection fixture. The first five build
+isolated hosts and either only read, use in-memory stores, or write shared alert
+rules under per-test service ids that no case counts. `EndpointRegistryDriftTests`
+only reads endpoint data sources and source files from the shared host. Only the
+attribute is removed; cases, fixtures and assertions are unchanged.
+
+These stay serial: `FieldCollectionSyncEndpointsTests` (asserts the global maximum
+field-collection generation and bumps the shared `sync_generation` sequence),
+`ApiSurfaceComplianceTests` (5-second per-query timing assertion), the two feature
+stream snapshot and conformance classes (they assert the first change and exact
+sequence on layer 0 of the shared `honua.feature_changes` table), and the import
+classes that run import DDL in the shared `honua_data` schema or write fixed
+`honua.tile_caches` ids.
+
+Shard filters select by class or method name, so every case stays in the same
+shards on selected PR runs and twice-daily full trunk runs. No workflow, shard
+definition, required check, aggregate dependency or runner count changes. Before,
+on hosted full trunk run 44183857476, the moved classes summed 127 of 415 seconds
+in Collaboration Mobile Identity 1, 85 of 456 seconds in Console Alerts 2, and 180
+of 320 seconds in STAC API Governance 2, each run one class at a time. The
+parallel saving is not yet measured.
+
+### Feature stream cases share one host per repeated configuration
+
+`FeatureStreamEndpointsTests` cases on the class's shared Pro host take about 0
+seconds each; cases that build their own host take 9 to 12 seconds, almost all of
+it host start. Cases that repeat a configuration now share one keyed variant host
+on `FeatureStreamProHost`, started on first use, so a shard whose filter skips
+those cases never starts it. Each acquisition drops sessions an earlier case left, and variants keep the class
+host's one-hour heartbeat so no scheduled frame lands in an ordered read.
+The ten subscriber-policy cases use two variants (each anchors its cursor on its
+own change); dev auth off, Community edition, the service-level access catalog and
+the service-only filter catalog use one each for nine cases that read only their
+own requests or events; and the
+eight expired-cursor executions share one host over the fixed 50 to 60
+retention-window fake store, which none of them appends to. About 20 host starts
+are removed; assertions are unchanged. Cases that mutate metadata, policies,
+limits or their own event store keep their own host.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check, aggregate dependency or runner count changes. Before, on hosted full trunk
+run 44183857476, the class took 599 seconds in Server Features Streaming
+Transports and 101, 170 and 232 seconds in Streaming Endpoints 1, 2 and 4.
+
+### Retry-failure cases check the backoff instead of sleeping through it
+
+On hosted full trunk run 44250783964 the three
+`RoutingAsyncWebToolTests.SubmitJob_ProviderException_FailsDurablyWithoutPartialResults`
+cases took 91 to 102 seconds each, 284 of the 292-second class span in GeoServices
+GPServer and NAServer 1. Almost all of it was the default retry policy's 30- and
+60-second backoff. `RoutingPgRoutingQueuedJobTests.ProviderFailure_FailsDurablyWithoutPartialResults`
+on the routing nightly waits the same 90 seconds for each of its three tasks.
+Both now use `ScheduledRetryExpediter` (Honua.TestKit). After each failed attempt
+it asserts that the requeued job's stored `next_retry_at` equals the policy's
+`ComputeDelay(attempt + 1)`, a check these tests did not make before. It then
+makes that one retry due now, the state the backoff would reach on its own. The
+real worker still claims, runs and fails every attempt, and the terminal status,
+attempt count, error and empty artifacts are asserted as before.
+
+`EndpointRegistryDriftTests.AllEndpointRegistryEntries_AreBackedByHttpRequests`
+took 86 seconds in STAC API Governance 2. It built a path regex for every
+(registry endpoint, test method body) pair through `Regex.IsMatch`, whose static
+cache holds 15 patterns, so every pattern was parsed again for every body. Each
+endpoint's pattern and each verb's call-site patterns are now built once, and
+the verb result is shared per body. The matching rules are byte-identical. The
+class's read-only host is now one class fixture instead of one host per case.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs, twice-daily full trunk runs and the routing nightly. No workflow, shard
+definition, required check name or aggregate `needs` changed.
+
+### Proposal endpoint cases share one host
+
+On hosted full trunk run 44250783964 `ProposalEndpointsTests` started one
+`WebAppFixture` for each of its 74 cases: 131 seconds of case time across a
+324-second class span in Server Features Admin Governance and Sharing 2, the
+slowest server shard of that run. One class-fixture host now serves every case.
+Each case starts with the guardrail tier, executor and notifier counts and
+identity-provider token that a fresh host had. Proposals, operation instances,
+API keys and console content persist, and each case seeds and reads its own ids.
+`ListProposals_ReturnsActiveProposals` now looks for its own seeded proposal by
+id instead of accepting any non-empty list.
+
+The admin sign-in endpoints admit five requests a minute per client address, and
+the class signs in eleven times. Each browser session therefore gets its own
+address from a test-only header that the class host maps in a startup filter
+registered after the sign-in helper's fixed per-host address. The shared helper
+itself is unchanged.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
+
+### MCP endpoint, modern-bearer and guidance cases share one host per class
+
+On hosted full trunk run 44250783964 three MCP classes started a host for every
+case. `McpEndpointIntegrationTests` took 112 seconds of case time over a
+262-second span in MCP Endpoints. `McpModernBearerAuthenticationTests` took 70
+over 127 seconds in MCP and Sessions 1. `McpAuthenticationGuidanceTests` took 26
+over 62 seconds in MCP and Sessions 2. All three run in the serial Database
+collection, so these host starts ran one after another. Each class now has one
+class-fixture host and stays in its collection.
+- MCP endpoint cases open their own sessions. The per-principal cap of 32 evicts
+  the least-recently-used session, never one a case just opened.
+- Modern-bearer cases mint their own tokens. Each gets a fresh `jti` unless a
+  case pins a fresh id, so one case's replay record cannot admit or refuse
+  another case's token. The zero-skew expiry case keeps its own host.
+- Guidance cases only read responses on fresh clients.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
+
+### Read-only toolbox and OGC Maps validation cases share one host per class
+
+On hosted full trunk run 44250783964 these three classes started a host for every
+case, inside serial collections:
+- `ToolboxTranslationEndpointTests`: 34 cases, 66 seconds, Migration 1.
+- `OgcMapsParameterValidationTests`: 22 cases, 46 seconds, OGC API Maps
+  Rendering and Records 2.
+- `OgcMapsErrorHandlingTests`: 23 cases, 34 seconds, OGC API Maps Rendering and
+  Records 1.
+
+Their cases only POST manifests to the stateless translation validator (which
+reads the process catalog and stores nothing) or render and read with GET. Each
+class now has one class-fixture host. The toolbox host keeps its small
+edit-payload cap, and the maps classes use the default host they used before.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
+
+### Versioning and middleware-header cases share one host per class
+
+On hosted full trunk run 44250783964 these classes started a host for every case
+in the serial Database collection:
+- `VersionManagementServerEndpointTests`: 42 cases, 86 seconds of case time over
+  a 204-second span, GeoServices Versioning 1.
+- `CorrelationIdMiddlewareTests`: 12 cases, 23 seconds, Admin and
+  Infrastructure 1.
+- `Infrastructure.Middleware.SecurityHeadersMiddlewareTests`: 6 cases, Admin and
+  Infrastructure 4.
+
+Each class now has one class-fixture host.
+
+Versioning cases create, lock, reconcile and post their own versions; every
+write to the global versioning tables is keyed by that case's version id. Five
+cases publish the managed branch-versioned layout, which renames the test
+service in the metadata graph. Every case therefore first restores the graph
+the host was seeded with, and the revision only moves forward.
+
+The middleware cases send their own request headers and read the response
+headers.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
+
+### Admin authentication browser sessions share one host per configuration
+
+On hosted full trunk run 44271438677 the Server Features Admin Authentication
+and Credentials shard ran `AdminAuthEndpointsTests` with an application per
+case:
+- `AdminAuthEndpointsTests+BrowserSessions`: 27 cases, 240 seconds of case time.
+- `AdminAuthEndpointsTests+GrpcBrowserSessions`: 12 cases, 133 seconds.
+- `AdminAuthEndpointsTests`: 33 cases, 266 seconds; 7 of them use the default
+  application.
+
+These classes now take one class-fixture host per configuration: the default
+application, the password-token application and the generic OIDC callback
+application. `BrowserSessions` boots 4 applications instead of 27,
+`GrpcBrowserSessions` 2 instead of 12, and the outer class 27 instead of 33.
+Cases with their own configuration or stub identity provider keep their own
+application.
+
+Every case uses fresh clients, so cookies, CSRF tokens and sessions stay per
+case, and each client gets its own client address from a test-only header that
+the host maps in a startup filter (the same technique as
+`ProposalEndpointsTests`, now shared as `PerClientAddress`). The in-process
+transport otherwise leaves the address empty, which skips the per-address
+limits; with an address per client, the sign-in endpoints' five requests a
+minute and the failed-password block now apply, per case.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
+
+### Shared default host survives between serial cases
+
+`WebAppFixtureSharedBootstrapMixin` used to dispose the shared default host and
+its Postgres fixture as soon as the last `WebAppFixture` released it. A serial
+collection whose cases each own a default fixture holds no other reference, so
+every case booted a new host: 132 such classes on trunk, 1357 cases and about
+2555 s of case time on a full run. The last release now schedules disposal after
+a 30-second idle grace and the next acquire cancels it, so consecutive cases and
+classes reuse one host. Cases stay isolated by the schema each fixture creates
+on initialization and drops on disposal, which is how parallel classes already
+share the host. Process-wide singleton state now also carries from one serial
+case to the next, as it already did whenever a parallel class held the host; a
+reused host clears any graph swap a case armed for its next read. The
+process-exit handler disposes a host still in its grace on a best-effort basis
+(10-second limit; Testcontainers' reaper removes a container left behind).
+
+`SharedHostCleanupTests` release an idle host explicitly before their cold-start
+and reference-count assertions, assert that a caller inside the grace reuses the
+same host, and assert that the grace on its own disposes the host. Measured on
+the build host for the same 80 cases, `AttachmentEndpointTests` and
+`OgcStylesEndpointTests` went from 170.0 s to 16.8 s of case time.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
+
+### Raster store substitutes borrow a switched host
+
+`ImageServerEndpointsTests`, `GeoservicesCatalogEndpointTests` and
+`ImageServerWmtsMatrixSetTests` booted a new host in 60 cases whose only difference
+from a host the class already had was the `IRasterStore` substitute. TestKit's
+`SwitchedServiceHost<T>` registers a `ServiceSwitch<T>` (a forwarding proxy) in
+place of the service, and such a case now borrows the class host with its own
+substitute. Borrowing and returning restore the seeded catalog under a new
+revision, so revision-keyed output and tile caches never serve one case's
+response to another; the WMTS matrix-set class keeps one host per configuration
+and deletes its stored tiles through the storage service on every borrow. Cases
+that register anything besides the store keep their own hosts, and every
+assertion is unchanged.
+
+Measured on the build host (Release, the same 182 cases): case time went from
+1078.0 s to 198.5 s (`ImageServerEndpointsTests` 692.9 to 103.7 s,
+`GeoservicesCatalogEndpointTests` 313.8 to 88.2 s, `ImageServerWmtsMatrixSetTests`
+71.3 to 6.6 s) and wall time from 810 s to 375 s. On hosted full run 44271438677
+the three classes took 461.2 s of case time.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
+
+### Per-case hosts in secure-connection, persisted-export and OIDC admission tests
+
+`SecureConnectionEndpointsTests` built a new host for each of the 25 rows of its
+port-contract theory, although every row uses the same allowlist, secret resolver
+and capturing driver and creates its connection under a unique name. The rows now
+borrow one lazily started class host, and the capturing driver is reset on every
+borrow so a row sees only its own probe. `PersistedExportProgressTests` created a
+schema harness for every case and a host for six of them; a class fixture now owns
+the database adapter, one harness and one lazily started host, and every case
+still seeds and asserts on its own record ids. `PostgresOidcProviderAdmissionTests`
+seeds its unreadable provider once and starts one host per edition (two instead of
+four); every case is refused before anything is written. Every assertion is
+unchanged.
+
+Measured on the build host (Release, the same 68 cases): `SecureConnectionEndpointsTests`
+216.9 to 67.9 s and `PostgresOidcProviderAdmissionTests` 29.8 to 17.1 s of case
+time. `PersistedExportProgressTests` stayed at 12.7 s there because a host boots in
+about 1.5 s on that machine; on hosted full run 44271438677 its host cases took
+11.5 to 18.8 s each (92.8 s for the class), which is the time the shared host
+removes. On that run the three classes took 354.5 s of case time.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
+
+### Shared job hosts in GP ownership and vector parity tests, feature-lock manifest shapes
+
+`GPServerDurableRuntimeTests` started an identical Postgres job host for each of the
+five operations of its SOAP ownership theory. The theory now lives in the nested
+`OwnershipTests` class, in the same job-substrate collection, with one class host.
+It has to be a separate class: starting a durable host truncates the shared job
+tables and every durable host runs job workers, so a shared host must never be
+alive while another case runs its own. `VectorProcessParityIntegrationTests` built
+the same production-substrate host for eleven process cases; they now borrow one
+lazily started host that clears the job tables when it starts and stops, and the
+one case that needs a different host releases it first. In
+`FeatureLockCapabilityManifestTests`, the twelve cases whose host has the shared
+lock store read the manifest from one host per shape (composition path and
+authorizer, four hosts); rows with the in-memory store keep their own hosts.
+Every case still submits or reads only its own job or manifest, and every
+assertion is unchanged. A job that never finishes now stays on the shared host,
+so later cases in that class can time out behind it; that adds failures, never a
+false pass.
+
+Measured on the build host (Release, the same 52 cases, all passing): the
+ownership theory went from 79.3 to 7.1 s, `FeatureLockCapabilityManifestTests`
+from 195.3 to 49.4 s and `VectorProcessParityIntegrationTests` from 87.4 to 35.2 s
+of case time (362.0 to 91.7 s). On hosted full run 44271438677 the three took
+38, 105.6 and 87.9 s.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
+
+### Shared hosts in MCP bearer, MCP scope and Studio AI proxy tests
+
+`McpBearerAuthenticationTests`, `McpScopeAuthorizationTests` and
+`StudioAiProxyEndpointsTests` started a new application for every case. The 34 MCP
+bearer cases, including the 8 that then start a host of their own configuration,
+now share one class host for the default configuration, and the 8 scope cases share
+one. Each case mints its own tokens and opens its own sessions, well under the
+32-session per-principal cap; the in-process client has no remote address, so the
+failed-attempt limiter never counts it; the API-key case issues and revokes a key of
+its own. The Studio AI proxy tests keep one class host per end-user authorization
+setting (two instead of 31). Borrowing a host empties the captured audit log and
+clears any admission denial or financial setup, and admission send counters are
+read relative to the start of the case. Cases with another configuration still own
+their hosts, and every assertion is unchanged.
+
+Measured on the build host (Release, the same 68 cases, 68/68 passing before and
+after): the test run went from 235 s to 51 s for the two MCP classes and from 148 s
+to 4 s for the Studio AI proxy class. Case time went from 96.8 to 46.7 s
+(`McpBearerAuthenticationTests`), 17.8 to 2.6 s (`McpScopeAuthorizationTests`) and
+68.4 to 4.6 s (`StudioAiProxyEndpointsTests`); host start-up in a class fixture is
+not counted as case time. On hosted full run 44271438677 the three classes took
+168.0 s of case time.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
+
+### Pooled control-plane schemas
+
+`ControlPlaneStateHarness` serves 38 store test classes (212 cases on hosted full
+run 44271438677, 1934.7 s of case time, almost all in
+`caching-file-storage-styling-infrastructure`). Every case created a schema, ran the
+job substrate migration and 13 control-plane migrations and dropped the schema
+again, and each of those steps takes the fixture's global schema-mutation lock, so
+cases from every class queued behind each other. `ControlPlaneSchemaPool` now keeps
+a finished case's schema for the next case when its catalog still matches a freshly
+migrated one (relations, columns in order, defaults, constraints, indexes, triggers
+and their enabled state, rules, routines, views, policies, grants, sequence
+settings and types, with the schema name normalised). Before reuse, one transaction
+truncates every table, inserts the rows the migrations insert again (the
+configuration generation row) and puts every sequence back where a fresh schema has
+it. A schema whose catalog changed, or that cannot be reset, is dropped as before.
+`ControlPlaneSchemaPoolTests` checks that a reused schema holds exactly the rows and
+sequence positions of a fresh one, that a changed schema is dropped and that a
+harness disposed twice is handed out once. Every store assertion is unchanged.
+
+Measured on the build host (Release, the same 240 cases, all passing before and
+after, plus the 3 new cases): case time went from 1619.6 s to 837.8 s and the test
+run from 1 m 40 s to 1 m 9 s.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
+
+### Shared hosts in gRPC spec, GP alias and attachment authoring tests
+
+`GrpcSpecServiceIntegrationTests` built a Pro-licensed server in its constructor, so
+each of its 17 Pro cases started one. They now share one class host. The spec
+artifact cache is in memory and lives as long as the host, and a cache hit reports
+the node as `Cached`, not `Succeeded`. So the two cases that apply with
+`ReadWrite` each take a node id of their own (the id is part of the content hash)
+and still miss the cache. The Community-licence case keeps its own host.
+
+`GPServerEsriTaskAliasEndpointTests` started a server for each replaced-service
+case: 7 with a recording job service, 3 with a synchronous execute service and 3
+with the alias-colliding catalog. A class fixture now starts one host per
+configuration on first use, and clears the recording service before each case
+takes it. The case that needs the colliding catalog and the recording service
+together keeps its own host.
+
+`ServiceSettingsAttachmentAuthoringTests` started a server for every case. Its four
+editing-graph cases with the default output cache now share one
+`SeededMetadataHost`. Before each case it drops any queued graph swap, restores the
+seeded graph under a new revision and evicts cached service metadata. The
+output-cache case and the non-editing case keep their own hosts. Every assertion
+is unchanged.
+
+Measured on the build host (Release, the same 49 cases, 49/49 passing before and
+after): case time went from 118.0 to 9.3 s (`GrpcSpecServiceIntegrationTests`),
+108.0 to 18.8 s (`ServiceSettingsAttachmentAuthoringTests`) and 82.2 to 28.8 s
+(`GPServerEsriTaskAliasEndpointTests`), 308.2 to 56.9 s in all. The test run went
+from 117 s to 28 s for the two server classes and from 82 s to 28 s for the
+GeoServices class. On hosted full run 44271438677 the three took 272.7 s of case
+time.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
+
+### Shared hosts in sharing OAuth2, introspection and portal discovery tests
+
+`SharingOAuth2Tests` and `PortalFacadeDiscoveryContractTests` built their server
+through the class's own `IAsyncLifetime`, so each of their 27 and 23 cases started
+one. Each class now shares one class-fixture host. Every case seeds its own
+authorization code or issues its own token, `PortalOAuthStore` and the token issuer
+cap nothing per principal, and neither the OAuth2 token endpoint nor
+`generateToken` is rate-limited, so no case sees another's codes or tokens.
+`SharingOAuth2IntrospectionTests` started a server for each of its 6 cases. It now
+starts one host per token format (opaque and JWT) on first use; the case that
+checks disabled introspection keeps its own host. Cases with another configuration
+still build their own hosts, and every assertion is unchanged.
+
+Measured on the build host (Release, the same 56 cases, 56/56 passing before and
+after): case time went from 128.8 to 38.3 s (`SharingOAuth2Tests`), 77.4 to 3.0 s
+(`PortalFacadeDiscoveryContractTests`) and 71.5 to 34.0 s
+(`SharingOAuth2IntrospectionTests`), 277.7 to 75.3 s in all; the test run went from
+6 m 16 s to 51 s. On hosted full run 44401872530 the three took 237.0 s of case time.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
+
+### Credential-expiry cases start with a 3-second lifetime
+
+Expiry cases in `FeatureStreamEndpointsTests` (OData poll, default-tenant OData read,
+WebSocket and SSE stream, Kestrel close), `SensorThingsStreamEndpointsTests`
+(`ObservationsStream` over WebSocket and SSE) and `McpModernBearerAuthenticationTests`
+(zero-skew reuse) issued portal credentials or JWTs that lived 6 to 30 seconds and
+waited them out on the real clock. The product checks expiry against the real
+clock, so the tests still do, but the credential under test now lives 3 seconds.
+Each case warms the host with a separate long-lived credential first.
+`ExpiringCredentials` in `Honua.TestKit` runs the step that needs the credential
+valid. If a slow runner outlives the credential before that step finishes, the
+helper repeats the step with a 10-second and then a 30-second lifetime, so no case
+asserts on a credential that ended before its setup. The stream cases record every
+frame received during setup, including frames from discarded attempts. After setup
+they check those frames again for the other tenant's data and for the marked change
+or observation, so a retry cannot hide a leak. Every assertion is unchanged.
+
+Measured on the build host (Release, the same 66 cases, 66/66 passing on every
+run, head twice and base once):
+- The six FeatureStream expiry cases: 127.3 to 63.8-66.4 seconds.
+- The two SensorThings expiry cases: 44.3 to 10.3-10.4 seconds.
+- The MCP zero-skew case: 33.9 to 9.1-10.0 seconds.
+- The revocation twins are unchanged.
+
+These cases run in Server Features Streaming Endpoints 1, 2 and 4, Server Features
+Streaming Transports, SensorThings 5 and MCP and Sessions 1. Shard filters are
+unchanged, so every case runs in the same shards on selected PR runs and
+twice-daily full trunk runs. No workflow, shard definition, required check name or
+aggregate `needs` changed.

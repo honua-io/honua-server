@@ -38,6 +38,10 @@ public static class IdentityServiceCollectionExtensions
         services.TryAddSingleton<Honua.Infrastructure.Security.ITokenReplayStore, Honua.Infrastructure.Security.InMemoryTokenReplayStore>();
         services.TryAddSingleton<SamlAssertionReplayCache>();
         services.TryAddSingleton<SamlAssertionValidator>();
+        services.TryAddSingleton<SamlLogoutRequestValidator>();
+        services.TryAddSingleton<SamlRequestCorrelation>();
+        services.TryAddSingleton<SamlSessionIndex>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<Honua.Infrastructure.Security.IExternalIdentityProviderSource, SamlIdentityProviderSource>());
 
         return services;
     }

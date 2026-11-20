@@ -252,6 +252,11 @@ internal static partial class AdminLayerAuthoringEndpoints
                 return ([], $"Relationship '{item.Id}' role must be origin or destination.");
             }
 
+            if (item.RelatedStorageLayerIdError is { } idError)
+            {
+                return ([], $"Relationship '{item.Id}': {idError}");
+            }
+
             var (targetResource, targetError) = ResolveRelationshipResource(item.RelatedStorageLayerId, snapshot);
             if (targetError is not null || targetResource is null)
             {

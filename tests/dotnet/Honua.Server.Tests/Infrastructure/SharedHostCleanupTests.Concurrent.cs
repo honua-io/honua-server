@@ -14,6 +14,7 @@ public sealed partial class SharedHostCleanupTests
     [IntegrationTest]
     public async Task EnsureInitializedAsync_ConcurrentColdStart_HoldsBootstrapLockUntilHostStarts()
     {
+        await WebAppFixtureSharedBootstrapMixin.ReleaseIdleNowAsync();
         await using var anchor = new AsyncDisposalScope(new PostgresFixture());
         await anchor.Fixture.InitializeAsync();
         var referencesBefore = PostgresReferenceCount();
@@ -33,6 +34,7 @@ public sealed partial class SharedHostCleanupTests
         {
             await startup.ReleaseReferencesAsync(owner, waiters);
         }
+        await WebAppFixtureSharedBootstrapMixin.ReleaseIdleNowAsync();
         Assert.Equal(referencesBefore, PostgresReferenceCount());
     }
 

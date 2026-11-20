@@ -69,7 +69,7 @@ public static class ContentPublicLinkVerifier
             return false;
         }
 
-        if (link.ExpiresAt is { } expiresAt && expiresAt <= now)
+        if (PublicLinkLifetime.HasEnded(link.ExpiresAt, link.CreatedAt, now))
         {
             return false;
         }

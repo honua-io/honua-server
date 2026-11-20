@@ -80,6 +80,19 @@ public sealed class MetadataStandardWriterTests
         missing.Should().BeEmpty();
     }
 
+    [UnitTheory]
+    [Operation(Operations.Metadata)]
+    [InlineData(0.5, "0.5")]
+    [InlineData(1e30, "1000000000000000019884624838656")]
+    public void Dcat_SpatialResolution_IsAnXsdDecimalWithoutExponent(double meters, string expected)
+    {
+        var record = CrosswalkFixtures.FullRecord() with { SpatialResolution = new MetadataV2SpatialResolution { DistanceMeters = meters } };
+
+        var json = DcatApWriter.Write(record, ItemUrl);
+
+        json["dcat:spatialResolutionInMeters"]!["@value"]!.GetValue<string>().Should().Be(expected);
+    }
+
     [UnitTest]
     [Operation(Operations.Metadata)]
     public void Write_FullyPopulatedDataset_DcatCarriesEveryCrosswalkTarget()

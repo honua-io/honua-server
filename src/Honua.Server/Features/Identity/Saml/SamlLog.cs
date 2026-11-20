@@ -21,4 +21,8 @@ internal static partial class SamlLog
     [LoggerMessage(EventId = 4623, Level = LogLevel.Warning,
         Message = "SAML single-logout request rejected. Reason={Reason}")]
     public static partial void SingleLogoutRejected(ILogger logger, string reason);
+
+    [LoggerMessage(EventId = 4624, Level = LogLevel.Warning,
+        Message = "SAML single-logout ended the session, but its request could not be marked used.")]
+    public static partial void SingleLogoutNotMarkedUsed(ILogger logger);
 }

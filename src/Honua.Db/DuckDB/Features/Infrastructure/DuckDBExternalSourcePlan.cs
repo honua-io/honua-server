@@ -9,4 +9,8 @@ internal sealed record DuckDBExternalSourcePlan(
     int LayerId,
     string ViewName,
     string CreateViewSql,
-    ImmutableArray<string> RequiredExtensions);
+    ImmutableArray<string> RequiredExtensions)
+{
+    // Paths the view reads; the connection lockdown allows exactly these.
+    public ImmutableArray<string> SourcePaths { get; init; } = [];
+}

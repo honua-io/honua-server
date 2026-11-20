@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Queries.Filters;
 
 namespace Honua.Server.Features.Streaming;
@@ -27,6 +28,32 @@ internal sealed class StreamSubscriberSecurity
             deniedExactRoutes ?? new HashSet<(string Service, int Layer)>());
     }
 
+    // Readable layers whose row policy for this subscriber cannot be applied to stream events.
+    // Read only at subscribe time: a refresh replaces the routes but not this set.
+    public IReadOnlySet<int> UnstreamablePolicyLayers { get; init; } = new HashSet<int>();
+
+    // A readable layer whose row policy cannot be evaluated on stream events (an area
+    // restriction, for example) is denied rather than filtered. A subscription that names such
+    // a layer, with no other readable route for it, would only ever be silent, so it is refused.
+    public string? DescribeUnstreamableLayer(IReadOnlyList<int>? explicitLayerIds)
+    {
+        if (explicitLayerIds is null || UnstreamablePolicyLayers.Count == 0)
+        {
+            return null;
+        }
+
+        var routes = Volatile.Read(ref _state).ExactRoutes.Keys;
+        foreach (var layerId in explicitLayerIds)
+        {
+            if (UnstreamablePolicyLayers.Contains(layerId) && !routes.Any(route => route.Layer == layerId))
+            {
+                return $"Layer {layerId} has a read restriction that feature streams cannot apply (for example, a row-level security area), so the stream would deliver no changes. Read the layer with a feature query instead.";
+            }
+        }
+
+        return null;
+    }
+
     public bool HasRowPredicates => Volatile.Read(ref _state).HasRowPredicates;
 
     public bool IsRefreshable => Volatile.Read(ref _refresh) is not null;
@@ -39,6 +66,16 @@ internal sealed class StreamSubscriberSecurity
 
     private static bool AllowsRow(StreamLayerReadPolicy policy, IReadOnlyDictionary<string, JsonElement>? attributes)
     {
+        if (!policy.SupportsStreaming)
+        {
+            return false;
+        }
+
+        if (policy.RequiredFields.Any(field => attributes?.ContainsKey(field) != true))
+        {
+            return false;
+        }
+
         foreach (var predicate in policy.Predicates)
         {
             if (attributes is null || !InMemoryFilterEvaluator.Evaluate(predicate, attributes))
@@ -245,4 +282,11 @@ internal enum StreamSubscriberSecurityRefreshOutcome
 
 internal sealed record StreamLayerReadPolicy(
     IReadOnlyList<FilterExpression> Predicates,
-    HashSet<string> MaskedFields);
+    HashSet<string> MaskedFields)
+{
+    public IReadOnlyList<string> RequiredFields { get; } = Predicates
+        .SelectMany(FeatureQuerySecurity.CollectFieldReferences).Distinct(StringComparer.Ordinal).ToArray();
+
+    public bool SupportsStreaming { get; } = Predicates.All(static predicate =>
+        InMemoryFilterEvaluator.TryValidateStreamingExpression(predicate, out _));
+}

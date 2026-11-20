@@ -6,6 +6,7 @@ using System.IO.Compression;
 using System.Text;
 using System.Globalization;
 using System.Collections.Immutable;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Services;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Geometries.Utilities;
@@ -40,7 +41,7 @@ internal static class ShapefileExportWriter
         // is a fixed-format hex string (no separators, never rooted), so this combine cannot
         // silently drop Path.GetTempPath().
         var scratchDir = Path.Join(Path.GetTempPath(), "honua-export", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(scratchDir);
+        ExportScratch.Create(scratchDir);
 
         try
         {
@@ -464,6 +465,8 @@ internal static class ShapefileExportWriter
             ExportFieldType.Boolean when value is string s &&
                 bool.TryParse(s, out var parsedBool) => parsedBool,
             ExportFieldType.DateTime or ExportFieldType.Date => NormalizeDbfDateValue(value),
+            // An exact decimal arrives as canonical text; the DBF numeric column takes the double.
+            ExportFieldType.Double when value is string text && ExactAttributeValues.ToFiniteDouble(text) is { } number => number,
             ExportFieldType.String
                 or ExportFieldType.Time
                 or ExportFieldType.Json

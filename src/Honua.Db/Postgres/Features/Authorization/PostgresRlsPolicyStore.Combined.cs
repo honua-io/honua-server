@@ -102,7 +102,7 @@ internal sealed partial class PostgresRlsPolicyStore
         await using var batch = new NpgsqlBatch(connection.Connection) { EnableErrorBarriers = false };
         batch.BatchCommands.Add(CreatePolicyCommand(
             $"""
-            SELECT policy_id, role, service, layer, attribute, claim_type, comparison, description, created_at, updated_at
+            SELECT policy_id, role, service, layer, attribute, claim_type, comparison, description, created_at, updated_at, filter_expression, area_geometry
             FROM {_table}
             {predicate}
             """,
@@ -135,6 +135,8 @@ internal sealed partial class PostgresRlsPolicyStore
                 Description = reader.IsDBNull(7) ? null : reader.GetString(7),
                 CreatedAt = reader.GetFieldValue<DateTimeOffset>(8),
                 UpdatedAt = reader.GetFieldValue<DateTimeOffset>(9),
+                FilterExpression = reader.IsDBNull(10) ? null : reader.GetString(10),
+                AreaGeometry = reader.IsDBNull(11) ? null : reader.GetString(11),
             };
             if (rowIds.Add(policy.PolicyId))
             {

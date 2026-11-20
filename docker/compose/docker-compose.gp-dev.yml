@@ -4,8 +4,8 @@
 #
 # Brings up the MINIMAL stack needed to submit a geoprocessing job, watch it
 # run, and fetch results locally — with NO AWS / Azure Batch / cloud creds and
-# NO manual license step. Mirrors the zero-override pattern of the root
-# docker-compose.yml: every setting has a sensible `${VAR:-default}` dev value.
+# NO manual license step. Every setting has a `${VAR:-default}` dev value except the
+# admin API key: export HONUA_ADMIN_PASSWORD (a random value) before starting.
 #
 # How local GP actually executes (grounded in the code, not guessed):
 #   * The serving image (honua) registers BOTH the durable job orchestration
@@ -51,7 +51,7 @@ x-gp-dev-environment: &gp-dev-environment
   Licensing__DevGrantEdition: "${HONUA_DEV_GRANT_EDITION:-Pro}"
   # Admin password doubles as the X-API-Key for authenticated calls. The
   # admin role holds the process-execute grant the GP submit path requires.
-  HONUA_ADMIN_PASSWORD: "${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
+  HONUA_ADMIN_PASSWORD: "${HONUA_ADMIN_PASSWORD:?Export HONUA_ADMIN_PASSWORD as a random admin API key first}"
   Security__ConnectionEncryption__MasterKey: "${HONUA_CONNECTION_ENCRYPTION_MASTER_KEY:-honua-compose-dev-master-key-0123456789}"
   Security__ConnectionEncryption__Salt: "${HONUA_CONNECTION_ENCRYPTION_SALT:-aG9udWEtY29tcG9zZS1kZXYtc2FsdC0yMDI2}"
   # Registered COGs are admitted by the API-side bounded range reader before a

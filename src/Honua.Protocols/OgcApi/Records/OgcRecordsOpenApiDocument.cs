@@ -137,12 +137,15 @@ internal static class OgcRecordsOpenApiDocument
         writer.WriteStartArray("parameters");
         WritePathParameter(writer, "collectionId");
         WritePathParameter(writer, "recordId");
-        WriteQueryParameter(writer, "f", "Response format (json or geojson).", "string");
+        WriteQueryParameter(writer, "f", "Response format: json, geojson, iso19139, iso19115-3 or dcat (DCAT-AP JSON-LD).", "string");
         writer.WriteEndArray();
         writer.WriteStartObject("responses");
-        WriteResponse(writer, "200", "The record.", GeoJson);
+        WriteResponse(writer, "200", "The record, as GeoJSON or in a negotiated metadata encoding.",
+            GeoJson, OgcRecordMetadataFormats.Iso19139MediaType, OgcRecordMetadataFormats.Iso19115Part3MediaType,
+            OgcRecordMetadataFormats.DcatMediaType);
         WriteResponse(writer, "400", "Invalid request.", ProblemJson);
         WriteResponse(writer, "404", "Record collection or record not found.", ProblemJson);
+        WriteResponse(writer, "406", "None of the accepted media types is available.", ProblemJson);
         writer.WriteEndObject();
         writer.WriteEndObject();
         writer.WriteEndObject();
@@ -173,16 +176,20 @@ internal static class OgcRecordsOpenApiDocument
         writer.WriteEndObject();
     }
 
-    private static void WriteResponse(Utf8JsonWriter writer, string status, string description, string mediaType)
+    private static void WriteResponse(Utf8JsonWriter writer, string status, string description, params string[] mediaTypes)
     {
         writer.WriteStartObject(status);
         writer.WriteString("description", description);
         writer.WriteStartObject("content");
-        writer.WriteStartObject(mediaType);
-        writer.WriteStartObject("schema");
-        writer.WriteString("type", "object");
-        writer.WriteEndObject();
-        writer.WriteEndObject();
+        foreach (var mediaType in mediaTypes)
+        {
+            writer.WriteStartObject(mediaType);
+            writer.WriteStartObject("schema");
+            writer.WriteString("type", mediaType.EndsWith("+xml", StringComparison.Ordinal) ? "string" : "object");
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+        }
+
         writer.WriteEndObject();
         writer.WriteEndObject();
     }

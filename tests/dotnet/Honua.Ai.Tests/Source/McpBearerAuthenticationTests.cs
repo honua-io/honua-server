@@ -22,7 +22,8 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 [Operation(Operations.Security)]
-public sealed partial class McpBearerAuthenticationTests : IAsyncLifetime
+public sealed partial class McpBearerAuthenticationTests(McpBearerAuthenticationTests.BearerHost host)
+    : IClassFixture<McpBearerAuthenticationTests.BearerHost>
 {
     private const string JsonMediaType = "application/json";
     private const string PublicBaseUrl = "https://mcp.example.com";
@@ -34,47 +35,48 @@ public sealed partial class McpBearerAuthenticationTests : IAsyncLifetime
     private const string OperatorAudience = "honua-admin-api";
     private const string OperatorSigningKey = "mcp-operator-bearer-test-signing-key-at-least-32-bytes";
 
-    private readonly WebAppFixture _fixture = new WebAppFixture()
-        .UseSeed("tests/seed/server.yaml")
-        .ConfigureWebHost(builder =>
-        {
-            builder.UseEnvironment("Test");
-            // Disable the dev-auth bypass so a request is only authenticated by the
-            // credential it actually presents — the whole point of this suite.
-            builder.UseSetting("HONUA_DEV_AUTH", "false");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-admin-key");
-            builder.UseSetting("Public:BaseUrl", PublicBaseUrl);
-            builder.UseSetting("MultiTenancy:Enabled", "true");
+    private readonly WebAppFixture _fixture = host.Fixture;
+    private readonly HttpClient _client = host.Fixture.Client;
 
-            // Reuse the multi-authority OIDC stack — a single generic
-            // provider validated against a static symmetric key so tokens can be
-            // minted in-process. Issuer/audience/lifetime validation stay at their
-            // secure defaults (true).
-            builder.UseSetting("Oidc:Enabled", "true");
-            builder.UseSetting("Oidc:RequireHttps", "true");
-            builder.UseSetting("Oidc:TokenValidation:SymmetricSigningKey", SigningKey);
-            builder.UseSetting("Oidc:TokenValidation:EnableTokenReplayProtection", "false");
-            builder.UseSetting("Oidc:TokenValidation:ValidIssuers:0", SecondIssuer);
-            builder.UseSetting("Oidc:Generic:Enabled", "true");
-            builder.UseSetting("Oidc:Generic:Authority", Issuer);
-            builder.UseSetting("Oidc:Generic:ClientId", Audience);
-            builder.UseSetting("Oidc:Generic:DisplayName", "Test IdP");
-            builder.UseSetting("Authentication:OperatorBearer:Enabled", "true");
-            builder.UseSetting("Authentication:OperatorBearer:SigningKey", OperatorSigningKey);
-            builder.UseSetting("Mcp:ServerInitiatedStreamEnabled", "true");
-        });
-
-    private HttpClient _client = null!;
-
-    public async Task InitializeAsync()
+    // One host serves every case that uses the default configuration. Each case mints its own tokens and opens
+    // its own sessions (at most a few per subject, under the per-principal session cap) and the in-process
+    // client has no remote address, so no failed-attempt limit carries from one case to another. The API-key
+    // case issues and revokes a key of its own. Cases that need another configuration still own their host.
+    public sealed class BearerHost : IAsyncLifetime
     {
-        await _fixture.InitializeAsync();
-        _client = _fixture.Client;
-    }
+        internal WebAppFixture Fixture { get; } = new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                // Disable the dev-auth bypass so a request is only authenticated by the
+                // credential it actually presents — the whole point of this suite.
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-admin-key");
+                builder.UseSetting("Public:BaseUrl", PublicBaseUrl);
+                builder.UseSetting("MultiTenancy:Enabled", "true");
 
-    public async Task DisposeAsync()
-    {
-        await _fixture.DisposeAsync();
+                // Reuse the multi-authority OIDC stack — a single generic
+                // provider validated against a static symmetric key so tokens can be
+                // minted in-process. Issuer/audience/lifetime validation stay at their
+                // secure defaults (true).
+                builder.UseSetting("Oidc:Enabled", "true");
+                builder.UseSetting("Oidc:RequireHttps", "true");
+                builder.UseSetting("Oidc:TokenValidation:SymmetricSigningKey", SigningKey);
+                builder.UseSetting("Oidc:TokenValidation:EnableTokenReplayProtection", "false");
+                builder.UseSetting("Oidc:TokenValidation:ValidIssuers:0", SecondIssuer);
+                builder.UseSetting("Oidc:Generic:Enabled", "true");
+                builder.UseSetting("Oidc:Generic:Authority", Issuer);
+                builder.UseSetting("Oidc:Generic:ClientId", Audience);
+                builder.UseSetting("Oidc:Generic:DisplayName", "Test IdP");
+                builder.UseSetting("Authentication:OperatorBearer:Enabled", "true");
+                builder.UseSetting("Authentication:OperatorBearer:SigningKey", OperatorSigningKey);
+                builder.UseSetting("Mcp:ServerInitiatedStreamEnabled", "true");
+            });
+
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
     }
 
     [IntegrationTest]

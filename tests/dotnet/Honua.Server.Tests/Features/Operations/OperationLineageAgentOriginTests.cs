@@ -5,6 +5,7 @@ using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Server.Features.Admin;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
@@ -52,6 +53,29 @@ public sealed class OperationLineageAgentOriginTests
         var hop = await ForwardAsync(store, OriginOn("/mcp"), approved);
 
         AgentPrincipal.IsAgent(hop.User).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task ApprovedReplayOfAnAgentProposal_IssuesAgentCredentials()
+    {
+        var store = new OperationLineageAttestationStore(TimeProvider.System);
+        var approved = new OperationPolicyContext { ApprovedProposalId = "proposal-agent", Roles = ["agent"] };
+
+        var hop = await ForwardAsync(store, OriginOn("/api/v1/admin/proposals/proposal-agent/approve"), approved);
+
+        AgentPrincipal.IsAgent(hop.User).Should().BeFalse("the approval gate does not apply to the replay twice");
+        AdminApiKeyKind.CallerOf(hop).Should().Be(AdminApiKeyCaller.Agent);
+    }
+
+    [UnitTest]
+    public async Task ApprovedReplayOfAHumanProposal_IssuesStandardCredentials()
+    {
+        var store = new OperationLineageAttestationStore(TimeProvider.System);
+        var approved = new OperationPolicyContext { ApprovedProposalId = "proposal-human", Roles = ["admin"] };
+
+        var hop = await ForwardAsync(store, OriginOn("/api/v1/admin/proposals/proposal-human/approve"), approved);
+
+        AdminApiKeyKind.CallerOf(hop).Should().Be(AdminApiKeyCaller.Person);
     }
 
     [UnitTest]

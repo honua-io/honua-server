@@ -486,4 +486,36 @@ public class LimitsOptionsValidatorTests
 
         Assert.True(result.Succeeded, string.Join("; ", result.Failures ?? Array.Empty<string>()));
     }
+
+    [UnitTest]
+    public void Validate_MaxOverlayCandidatePairsBelowRange_ReturnsFail()
+    {
+        var options = new LimitsOptions
+        {
+            Geometry = new GeometryLimits { MaxOverlayCandidatePairs = 999 }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Failures ?? Array.Empty<string>(),
+            f => f.Contains("MaxOverlayCandidatePairs", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public void Validate_MaxOverlayCandidatePairsAboveInt32Max_ReturnsFailWithoutThrowing()
+    {
+        var options = new LimitsOptions
+        {
+            Geometry = new GeometryLimits { MaxOverlayCandidatePairs = long.MaxValue }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Failures ?? Array.Empty<string>(),
+            f => f.Contains("MaxOverlayCandidatePairs", StringComparison.Ordinal));
+    }
 }

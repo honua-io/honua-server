@@ -656,12 +656,14 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/deploy/operations/{operationId}/approval-review/{action}")]
     [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/promote")]
     public async Task PromoteDeployOperation_WhenParkedInReconciling_ForcesCutover()
     {
         var promoteStore = new InMemoryWorkflowOperationStore();
         var backend = new PromotableDeployBackend();
-        var promoteFixture = new WebAppFixture()
+        using var identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
+        var promoteFixture = HumanApprovalHttpClient.Configure(new WebAppFixture(), identityProvider)
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IDatabaseMigrationRunner>();
@@ -678,14 +680,21 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
         try
         {
             await promoteFixture.InitializeAsync();
-            var client = promoteFixture.CreateAdminClient();
+            using var human = await HumanApprovalHttpClient.AuthenticateAsync(promoteFixture, identityProvider);
 
             var operationId = $"deploy-{Guid.NewGuid():N}";
             await promoteStore.TryCreateAsync(CreateParkedOperation(operationId));
 
-            var response = await client.PostAsJsonAsync(
-                $"/api/v1/admin/deploy/operations/{operationId}/promote",
-                new { reason = "Operator forcing cutover; telemetry unavailable" });
+            using var machine = promoteFixture.CreateAdminClient();
+            using var denied = await machine.PostAsJsonAsync(
+                $"/api/v1/admin/deploy/operations/{operationId}/promote", new { reason = "Promote" });
+            denied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            using var deniedReview = await machine.GetAsync(
+                $"/api/v1/admin/deploy/operations/{operationId}/approval-review/promote");
+            deniedReview.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            backend.PromoteCalls.Should().Be(0);
+            var snapshot = await human.OpenDeployReviewAsync(operationId, "promote");
+            using var response = await human.SubmitDeployReviewAsync(operationId, "promote", snapshot);
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());

@@ -4,6 +4,7 @@
   "title": "execute_plan inputSchema",
   "description": "Argument shape for the execute_plan tool (Analyze, Publish Data; handoff returns an ExecutionJob reference for Analyze). Reference advertised name: honua_execute_plan. Submission rejects a missing planId or empty steps, so the executable plan REQUIRES planId and at least one step (contrast validate_plan). See planning.md §5.2.",
   "type": "object",
+  "additionalProperties": false,
   "required": ["plan"],
   "properties": {
     "plan": { "$ref": "#/$defs/executablePlan" },

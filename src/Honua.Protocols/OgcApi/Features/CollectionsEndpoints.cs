@@ -452,7 +452,9 @@ internal static class CollectionsEndpoints
                 return validation.ErrorResult!;
             }
 
-            var resource = validation.Resource!;
+            // A field the caller's mask withholds is not a queryable for that caller.
+            var resource = await CallerVisibleSchema.HideMaskedFieldsAsync(context, validation.Resource!, effectiveToken)
+                .ConfigureAwait(false);
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var queryablesId = $"{baseUrl}/ogc/features/collections/{Uri.EscapeDataString(collectionId)}/queryables";
@@ -841,9 +843,11 @@ internal static class CollectionsEndpoints
             MetadataV2FieldType.Integer => ("integer", null),
             MetadataV2FieldType.BigInteger => ("integer", null),
             MetadataV2FieldType.Double => ("number", "double"),
+            MetadataV2FieldType.Decimal => ("number", null),
             MetadataV2FieldType.Float => ("number", "float"),
             MetadataV2FieldType.Boolean => ("boolean", null),
             MetadataV2FieldType.DateTime => ("string", "date-time"),
+            MetadataV2FieldType.TimestampOffset => ("string", "date-time"),
             MetadataV2FieldType.Date => ("string", "date"),
             MetadataV2FieldType.Time => ("string", "time"),
             MetadataV2FieldType.Uuid => ("string", "uuid"),

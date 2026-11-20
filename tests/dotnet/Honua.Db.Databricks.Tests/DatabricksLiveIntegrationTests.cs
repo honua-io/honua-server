@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Db.Databricks.Features.FeatureStore;
 using Honua.Db.Databricks.Features.FeatureStore.Services;
 using Honua.Db.Databricks.Features.Infrastructure;
@@ -31,7 +32,8 @@ public sealed class DatabricksLiveIntegrationTests
         var registry = new DatabricksLayerMappingRegistry([layer]);
         var store = new DatabricksFeatureStore(
             registry,
-            new DatabricksFeatureDataAccess(statementClient));
+            new DatabricksFeatureDataAccess(statementClient),
+            new LayerReadSecurityResolver(null, null, null, null));
 
         var result = await store.QueryAsync(layer.LayerId, new FeatureQuery { Limit = 5 }, CancellationToken.None);
 

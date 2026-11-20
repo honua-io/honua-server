@@ -782,7 +782,8 @@ internal sealed partial class FeatureServerQueryHandler
         return fieldType is MetadataV2FieldType.Integer
             or MetadataV2FieldType.BigInteger
             or MetadataV2FieldType.Double
-            or MetadataV2FieldType.Float;
+            or MetadataV2FieldType.Float
+            or MetadataV2FieldType.Decimal;
     }
 
     private static bool TryParseClassificationMethod(string value, out ClassificationMethod method)

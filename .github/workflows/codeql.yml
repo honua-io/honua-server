@@ -1,13 +1,18 @@
 name: CodeQL
 
 on:
-  # Tier: PR gate, trunk, and weekly full scan.
-  # - pull_request and push to trunk: use C# no-build extraction and the default
-  #   high-precision query suite; superseded trunk pushes cancel each other.
-  # - schedule: performs a full instrumented build with security-extended
-  #   queries to catch lower-confidence findings and dependency churn.
-  #   It also covers test code, which never ships, so test-only PRs skip the
-  #   PR lane.
+  # Tier: security-path pull requests, trunk, and the weekly full scan.
+  # - pull_request: C# no-build extraction on the paths in
+  #   .github/codeql/pr-paths.txt (auth, admin endpoints, connections and
+  #   secrets, import and object storage, SQL building, operation approval,
+  #   the MCP and Studio AI surface, outbound HTTP proxies, sharing, sessions,
+  #   exports, workflows). That file
+  #   is the only list; scripts/ci/codeql-pr-paths.test.py fails when this
+  #   block drifts. Other source changes wait for the trunk push or the weekly
+  #   scan, which also covers test code.
+  # - push to trunk: the same no-build suite on src/** and the build graph.
+  #   Superseded trunk pushes cancel each other.
+  # - schedule: a full instrumented build with security-extended queries.
   push:
     branches: [trunk]
     paths:
@@ -21,12 +26,76 @@ on:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     branches: [trunk]
     paths:
-      - 'src/**'
-      - 'Directory.Packages.props'
-      - 'Directory.Build.props'
-      - 'Honua.sln'
+      - 'src/Honua.Hosting/Features/Authentication/**'
+      - 'src/Honua.Server/Features/Infrastructure/Authentication/**'
+      - 'src/Honua.Server/Features/Mobile/Auth/**'
+      - 'src/Honua.Core/Core/Features/Authorization/**'
+      - 'src/Honua.Db/Postgres/Features/Authorization/**'
+      - 'src/Honua.Core/Abstractions/Features/Security/**'
+      - 'src/Honua.Core/Core/Features/Identity/**'
+      - 'src/Honua.Core/Core/Features/Security/**'
+      - 'src/Honua.Db/Databricks/Features/Security/**'
+      - 'src/Honua.Db/MySql/Features/Security/**'
+      - 'src/Honua.Db/Oracle/Features/Security/**'
+      - 'src/Honua.Db/Postgres/Features/Identity/**'
+      - 'src/Honua.Db/Postgres/Features/Security/**'
+      - 'src/Honua.Db/Redshift/Features/Security/**'
+      - 'src/Honua.Db/Snowflake/Features/Security/**'
+      - 'src/Honua.Db/SqlServer/Features/Security/**'
+      - 'src/Honua.Hosting/Features/Security/**'
+      - 'src/Honua.Server/Features/Identity/**'
+      - 'src/Honua.Server/Features/Infrastructure/Security/**'
+      - 'src/Honua.Server/Features/Admin/**'
+      - 'src/Honua.Core/Core/Features/Admin/**'
+      - 'src/Honua.Db/Postgres/Features/Admin/**'
+      - 'src/Honua.Db/MySql/Features/Infrastructure/**'
+      - 'src/Honua.Db/Postgres/Features/Infrastructure/**'
+      - 'src/Honua.Db/Postgres.Shared/Features/Infrastructure/**'
+      - 'src/Honua.Db/SqlServer/Features/Infrastructure/**'
+      - 'src/Honua.Core/Core/Features/Import/**'
+      - 'src/Honua.Core/Core/Features/FileImport/**'
+      - 'src/Honua.Import/**'
+      - 'src/Honua.Server/Features/Import/**'
+      - 'src/Honua.Server/Features/FileStorage/**'
+      - 'src/Honua.Server/Features/Infrastructure/FileStorage/**'
+      - 'src/Honua.Hosting/Features/FileStorage/**'
+      - 'src/Honua.Io/Features/FileStorage/**'
+      - 'src/Honua.Cloud/**'
+      - 'src/Honua.Geometry/Features/FileImport/**'
+      - 'src/Honua.Db/Postgres/Features/FileImport/**'
+      - 'src/Honua.Core/Abstractions/Queries/**'
+      - 'src/Honua.Core/Core/Features/Infrastructure/Sql/**'
+      - 'src/Honua.Core/Core/Queries/**'
+      - 'src/Honua.Db/Databricks/Queries/**'
+      - 'src/Honua.Db/DuckDB/Queries/**'
+      - 'src/Honua.Db/DuckDB/Features/Infrastructure/**'
+      - 'src/Honua.Db/MySql/Queries/**'
+      - 'src/Honua.Db/Oracle/Queries/**'
+      - 'src/Honua.Db/Postgres/Queries/**'
+      - 'src/Honua.Db/Postgres/Features/FeatureStore/**'
+      - 'src/Honua.Db/Postgres/Features/Raster/**'
+      - 'src/Honua.Db/Redshift/Queries/**'
+      - 'src/Honua.Db/Snowflake/Queries/**'
+      - 'src/Honua.Db/SqlServer/Queries/**'
+      - 'src/Honua.Db/SqlServer/Features/FeatureStore/**'
+      - 'src/Honua.Db/MySql/Features/FeatureStore/**'
+      - 'src/Honua.Protocols/OData/**'
+      - 'src/Honua.Server/Features/Operations/**'
+      - 'src/Honua.Server/Features/ControlPlane/**'
+      - 'src/Honua.Core/Core/Features/Operations/**'
+      - 'src/Honua.Core/Core/Features/ControlPlane/**'
+      - 'src/Honua.Ai/Features/Protocols/Mcp/**'
+      - 'src/Honua.Ai/Features/StudioAiProxy/**'
+      - 'src/Honua.Server/Features/Infrastructure/Http/**'
+      - 'src/Honua.Core/Core/Features/Infrastructure/Http/**'
+      - 'src/Honua.Server/Features/Protocols/Tiles/PMTilesProxy/**'
+      - 'src/Honua.Server/Features/Portal/Sharing/**'
+      - 'src/Honua.Protocols/GeoServices/Sharing/**'
+      - 'src/Honua.Core/Core/Features/Infrastructure/Session/**'
+      - 'src/Honua.Io/Features/Export/**'
+      - '.github/workflows/**'
+      - '.github/actions/**'
       - '.github/codeql/**'
-      - '.github/workflows/codeql.yml'
   schedule:
     # Run weekly on Monday at 00:00 UTC
     - cron: '0 0 * * 1'

@@ -60,6 +60,10 @@ internal sealed class PostgresJobSubstrateHarness : IAsyncDisposable
         return new PostgresJobSubstrateHarness(fixture, dataSource, schema, new JobStoreOptions());
     }
 
+    // The substrate over a schema that already holds it, such as one a test schema pool hands back.
+    public static PostgresJobSubstrateHarness Adopt(IIsolatedSchemaFixture fixture, string schema)
+        => new(fixture, fixture.DataSource, schema, new JobStoreOptions());
+
     // A job store instance of its own over this schema, as each server node has.
     public PostgresExecutionJobStore CreateNodeJobStore()
         => new(Database, _options, NullLogger<PostgresExecutionJobStore>.Instance);

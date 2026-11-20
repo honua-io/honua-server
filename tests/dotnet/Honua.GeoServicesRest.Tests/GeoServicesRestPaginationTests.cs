@@ -230,7 +230,10 @@ public sealed class GeoServicesRestPaginationTests
     private static IFeatureReader CreateReader(IGeoServicesRestFeatureClient client, out GeoServicesRestFeatureStore provider)
     {
         var connection = CreateConnection();
-        provider = new GeoServicesRestFeatureStore(client, NullLogger<GeoServicesRestFeatureStore>.Instance);
+        provider = new GeoServicesRestFeatureStore(
+            client,
+            NullLogger<GeoServicesRestFeatureStore>.Instance,
+            new LayerReadSecurityResolver(null, null, null, null));
         return ((IBindableFeatureDataProvider)provider).CreateReaderForBinding(CreateBinding(provider, connection));
     }
 

@@ -504,7 +504,7 @@ public sealed class FileBackedLicenseServiceTests
         var result = await service.UploadLicenseAsync(stream, CancellationToken.None);
 
         result.Success.Should().BeFalse();
-        result.Message.Should().Be("License validation failed: Malformed.");
+        result.Message.Should().Be("License validation failed: Malformed (invalid-size).");
         stream.BytesRead.Should().Be(MaxLicenseFileBytes + 1);
         File.Exists(licensePath).Should().BeFalse();
         logger.Entries.Should().Contain(entry =>

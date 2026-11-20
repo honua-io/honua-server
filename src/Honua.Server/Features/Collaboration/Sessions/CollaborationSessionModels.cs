@@ -386,6 +386,10 @@ internal interface ISavedMapCollaborationAuthorizer
         string mapId,
         ClaimsPrincipal principal,
         CancellationToken cancellationToken);
+
+    // Checks an open session against the map's current permissions, reading through the given request.
+    ValueTask<SavedMapCollaborationAuthorizationResult> ReauthorizeAsync(HttpContext context, string mapId)
+        => AuthorizeJoinAsync(mapId, context.User, context.RequestAborted);
 }
 
 internal interface ICollaborationSessionClock

@@ -50,7 +50,9 @@ public sealed class CustomCodeArtifactIngestorTests(DatabaseFixtureAdapter datab
         provisioning.Status.Should().Be(ExecutionJobStatus.Provisioning);
         provisioning.AttemptCount.Should().Be(0);
         var capability = provisioning.Spec.Parameters["env.HONUA_JOB_TOKEN"];
-        client.LastSubmission!.EnvironmentOverrides.Single(entry => entry.Name == "HONUA_JOB_TOKEN").Value.Should().Be(capability);
+        var code = provisioning.Spec.Parameters["env.HONUA_JOB_REDEMPTION_CODE"];
+        client.LastSubmission!.EnvironmentOverrides.Single(entry => entry.Name == "HONUA_JOB_REDEMPTION_CODE").Value.Should().Be(code);
+        client.LastSubmission.EnvironmentOverrides.Should().NotContain(entry => entry.Name == "HONUA_JOB_TOKEN");
         (await issuer.ValidateAsync(capability, job.OperationId, CancellationToken.None))!.Attempt.Should().Be(1);
         client.NextListJobsResult = [new AwsBatchJobState { JobId = "accepted-before-crash", Status = "RUNNING" }];
         var reconciler = new ExecutionJobReconciler(jobs, [backend], progress, NullLogger<ExecutionJobReconciler>.Instance,

@@ -64,9 +64,11 @@ internal sealed record ExecutionJobRow(
     public static readonly string ActiveStatusList =
         $"'{nameof(ExecutionJobStatus.Queued)}', '{nameof(ExecutionJobStatus.Provisioning)}', '{nameof(ExecutionJobStatus.Running)}'";
 
-    public static ExecutionJobRow From(ExecutionJobRecord job)
-        => new(
-            JsonSerializer.Serialize(job, ControlPlaneJsonContext.Default.ExecutionJobRecord),
+    public static ExecutionJobRow From(ExecutionJobRecord job, IExecutionJobSecretProtector secrets)
+    {
+        job = ExecutionJobSubmitterSeal.Seal(job, secrets);
+        return new(
+            JsonSerializer.Serialize(ExecutionJobSecretParameters.Protect(job, secrets), ControlPlaneJsonContext.Default.ExecutionJobRecord),
             job.Spec.Kind.ToString(),
             RuntimeProfiles.Normalize(job.Spec.RuntimeProfile),
             job.Spec.Backend,
@@ -77,6 +79,7 @@ internal sealed record ExecutionJobRow(
             (job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default).Timeout,
             (job.TimeoutPolicy ?? JobTimeoutPolicy.Default).MaxDuration,
             BuildLookupKeys(job));
+    }
 
     public static short PriorityBand(OperationPriority priority)
         => priority switch
@@ -87,8 +90,8 @@ internal sealed record ExecutionJobRow(
             _ => 2
         };
 
-    public static ExecutionJobRecord Read(NpgsqlDataReader reader)
-        => TryRead(reader) ?? throw new InvalidOperationException(
+    public static ExecutionJobRecord Read(NpgsqlDataReader reader, IExecutionJobSecretProtector secrets)
+        => TryRead(reader, secrets) ?? throw new InvalidOperationException(
             $"Execution job {ReadOperationId(reader)} holds a record this build cannot read.");
 
     public static string ReadOperationId(NpgsqlDataReader reader) => reader.GetString(12);
@@ -99,7 +102,7 @@ internal sealed record ExecutionJobRow(
     // Null when the stored record is empty or not a record this build can deserialize, for
     // example after corruption or when a newer build wrote it. Callers that scan many rows skip
     // such a row instead of failing the whole read.
-    public static ExecutionJobRecord? TryRead(NpgsqlDataReader reader)
+    public static ExecutionJobRecord? TryRead(NpgsqlDataReader reader, IExecutionJobSecretProtector secrets)
     {
         ExecutionJobRecord? record;
         try
@@ -116,6 +119,7 @@ internal sealed record ExecutionJobRow(
             return null;
         }
 
+        record = ExecutionJobSubmitterSeal.Verify(ExecutionJobSecretParameters.Unprotect(record, secrets), secrets);
         return record with
         {
             Version = reader.GetInt64(0),

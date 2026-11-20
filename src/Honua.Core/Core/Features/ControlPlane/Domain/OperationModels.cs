@@ -167,6 +167,8 @@ public sealed record OperationAuditInfo
 
     public string? RequestedBy { get; init; }
 
+    public string? RequestedByActorId { get; init; }
+
     public string? TenantId { get; init; }
 
     public string? Reason { get; init; }
@@ -183,6 +185,9 @@ public sealed record OperationAuditInfo
 
     public string? ApprovedBy { get; init; }
 
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public DeployHumanApproval? DeployHumanApproval { get; init; }
+
     public string? RequestFingerprint { get; init; }
 
     public string? ApprovalPolicyRef { get; init; }
@@ -192,6 +197,14 @@ public sealed record OperationAuditInfo
     public CustomCodeOwnerScope? CustomCodeOwnerScope { get; init; }
 
     public JobSecurityContext? SubmitterSecurityContext { get; init; }
+
+    // Binds the stored snapshot to this operation with the shared key ring, so an edited record is not trusted.
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? SubmitterSecurityContextSeal { get; init; }
+
+    // A stored snapshot whose seal did not verify on this node. It is not used, and is written back unchanged.
+    [System.Text.Json.Serialization.JsonIgnore]
+    public JobSecurityContext? UnverifiedSubmitterSecurityContext { get; init; }
 }
 
 public sealed record OperationConcurrencyPolicy
@@ -233,6 +246,9 @@ public sealed record DeployOperationSpec
     public CanaryRampSpec? CanaryRamp { get; init; }
 
     public DateTimeOffset? TrafficExposedAt { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ManualPromotionPending { get; init; }
 
     public DeployProtectionState? Protection { get; init; }
 }

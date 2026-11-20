@@ -73,15 +73,21 @@ internal static partial class AdminApiKeyEndpoints
             [FromServices] ILogger<AdminApiKeyEndpointsLog> logger,
             HttpContext context)
     {
-        if (!TryValidateCreateRequest(request, out var permissions, out var validationMessage) ||
+        if (!TryValidateCreateRequest(request, out var requested, out var validationMessage) ||
             !TryValidateRestrictionLists(request.AllowedReferrers, request.AllowedIpRanges, out var restrictions, out validationMessage))
         {
             return TypedResults.BadRequest(ApiResponse<object>.Failure(validationMessage));
         }
 
+        var kind = ResolveKind(request, requested, context);
+        if (kind.Refusal is { } refusal)
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(refusal));
+        }
+
         var result = await store.CreateAsync(
             request.Name.Trim(),
-            permissions,
+            kind.Permissions,
             request.ExpiresAt,
             ResolveCreator(context),
             restrictions,
@@ -99,12 +105,22 @@ internal static partial class AdminApiKeyEndpoints
             ApiResponse<AdminApiKeySecretResponse>.CreateSuccess(response));
     }
 
-    private static async Task<Results<Ok<ApiResponse<AdminApiKeySecretResponse>>, NotFound<ApiResponse<object>>>> HandleRotateApiKey(
+    // Rotation returns the new secret to the caller, so an agent caller may rotate only an agent key.
+    private static async Task<Results<Ok<ApiResponse<AdminApiKeySecretResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>>> HandleRotateApiKey(
         Guid id,
         [FromServices] IAdminApiKeyStore store,
         [FromServices] ILogger<AdminApiKeyEndpointsLog> logger,
         HttpContext context)
     {
+        var caller = AdminApiKeyKind.CallerOf(context);
+        if (caller == AdminApiKeyCaller.Agent
+            && await store.GetAsync(id, context.RequestAborted) is { } current
+            && !AdminApiKeyKind.MayRotate(caller, current.Permissions))
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                "Validation failed: an agent, or a proposal an agent made, may rotate only agent keys"));
+        }
+
         var result = await store.RotateAsync(id, context.RequestAborted);
         if (result is null)
         {
@@ -196,12 +212,22 @@ internal static partial class AdminApiKeyEndpoints
             Id = record.Id,
             Name = record.Name,
             Status = status,
+            Kind = AdminApiKeyKind.Of(record.Permissions),
             Permissions = record.Permissions,
             CanAuthenticate = string.Equals(status, "active", StringComparison.Ordinal),
         };
 
         return TypedResults.Ok(ApiResponse<AdminApiKeyEffectivePermissionsResponse>.CreateSuccess(response));
     }
+
+    private static AdminApiKeyKindResult ResolveKind(
+        CreateAdminApiKeyRequest request, IReadOnlyList<string> requested, HttpContext context)
+        => AdminApiKeyKind.Resolve(new AdminApiKeyKindRequest
+        {
+            Kind = request.Kind,
+            Permissions = requested,
+            Caller = AdminApiKeyKind.CallerOf(context),
+        });
 
     private static bool TryValidateCreateRequest(
         CreateAdminApiKeyRequest request,
@@ -337,6 +363,7 @@ internal static partial class AdminApiKeyEndpoints
         Id = record.Id,
         Name = record.Name,
         KeyPrefix = record.KeyPrefix,
+        Kind = AdminApiKeyKind.Of(record.Permissions),
         Permissions = record.Permissions,
         Status = GetStatus(record),
         CreatedAt = record.CreatedAt,

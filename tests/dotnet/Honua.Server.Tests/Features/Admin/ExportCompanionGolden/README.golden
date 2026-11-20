@@ -1,0 +1,22 @@
+# County parcels
+
+Parcels for &lt;b&gt;Honolulu&lt;/b&gt;.
+
+Updated \*nightly\*.
+
+| | |
+|---|---|
+| Licence | CC-BY-4.0 |
+| Attribution | City &amp; County of Honolulu |
+| Source | Layer parcels of service county, hosted by Example GIS; published by City and County of Honolulu |
+| Updated | 2026-11-17 12:00:00 UTC |
+| Version | 20261117T120000Z-abcdef12 |
+| Features | 1,234 |
+| Extent (WGS 84) | -158.3, 21.25, -157.6, 21.75 |
+
+## Files
+
+- `parcels.parquet`: GeoParquet with every feature and its public fields. Open it with DuckDB, GeoPandas, QGIS or any GeoParquet reader.
+- `parcels.pmtiles`: PMTiles vector tiles for web maps (tile layer `layer`).
+- `style.json`: a MapLibre style that draws the tiles.
+- `AGENTS.md`: the fields, the coordinate system and ready-to-run queries.

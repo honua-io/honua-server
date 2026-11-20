@@ -357,6 +357,13 @@
       "source": "src/Honua.ServiceDefaults/LambdaTelemetry.cs"
     },
     {
+      "instrument": "honua.mcp.access_audit.dropped",
+      "kind": "Counter",
+      "unit": "{record}",
+      "series": ["honua_mcp_access_audit_dropped_total"],
+      "source": "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpTelemetry.cs"
+    },
+    {
       "instrument": "honua.mcp.boundary.rejection",
       "kind": "Counter",
       "unit": "{rejection}",

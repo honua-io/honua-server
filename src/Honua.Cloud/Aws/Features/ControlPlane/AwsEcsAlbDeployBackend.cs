@@ -575,6 +575,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             blockingReasons.Add("AWS ECS/ALB canary traffic shifting requires telemetry.connection so the rollout can be promoted or rolled back automatically.");
         }
 
+        AppendRevisionFormatPlan(spec, blockingReasons);
         AppendImageConvergencePlan(spec, blockingReasons, warnings);
 
         var alarmReason = AlarmAdmission is null ? null :
@@ -655,6 +656,15 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                     cancellationToken)
                 .ConfigureAwait(false);
             var observedTaskDefinition = canaryServiceState.TaskDefinitionArn;
+            if (!imageConvergence && !IsAllowedServiceRevision(appliedTaskDefinition, observedTaskDefinition))
+            {
+                Log.RevisionOutsideServiceFamily(logger, operation.OperationId, spec.TargetId);
+                return new DeploySubmissionResult
+                {
+                    Status = WorkflowOperationStatus.Failed,
+                    Message = RevisionOutsideServiceFamilyMessage
+                };
+            }
 
             // Snapshot the existing listener-rule weights before mutating them so a
             // mid-deploy failure (most importantly the ECS update below) can restore
@@ -1014,6 +1024,11 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
         try
         {
+            if (await RefusePromotionOutsideServiceFamilyAsync(operation, target, cancellationToken).ConfigureAwait(false) is { } refused)
+            {
+                return refused;
+            }
+
             await EcsClient.UpdateServiceTaskDefinitionAsync(
                     target.Cluster!,
                     target.CanaryService!,
@@ -1497,5 +1512,8 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
         [LoggerMessage(9096, LogLevel.Error, "Failed to restore ALB listener-rule weights after a failed ECS/ALB submission for workflow operation {OperationId} targeting {TargetId}: {ErrorMessage}")]
         public static partial void AlbWeightRestoreFailed(ILogger logger, string operationId, string targetId, string errorMessage);
+
+        [LoggerMessage(9099, LogLevel.Warning, "Refused ECS/ALB workflow operation {OperationId} targeting {TargetId}: the task definition is not a revision of the service's own family")]
+        public static partial void RevisionOutsideServiceFamily(ILogger logger, string operationId, string targetId);
     }
 }

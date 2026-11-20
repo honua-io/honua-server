@@ -26,8 +26,14 @@ class ManagedWorkflowTests(unittest.TestCase):
         for step in ['Restore producer build graph', 'Build (warnings as errors)']:
             section = producer.split(f'- name: {step}\n', 1)[1].split('\n      - name:', 1)[0]
             self.assertIn('BUILD_TARGET:', section)
-            for flag in ['TreatWarningsAsErrors=true', 'RunAnalyzers=true', 'UseSharedCompilation=false']:
+            for flag in ['TreatWarningsAsErrors=true', 'RunAnalyzers="${PRODUCER_RUN_ANALYZERS}"', 'UseSharedCompilation=false']:
                 self.assertIn(flag, section)
+        self.assertIn("PRODUCER_RUN_ANALYZERS: ${{ needs.changes.outputs.full_ci == 'true' && 'true' || 'false' }}", producer)
+        profiles = (ROOT / 'scripts/ci/build-selected-protocol-profiles.py').read_text()
+        self.assertIn('"-p:RunAnalyzers=true", "-p:BuildProjectReferences=false"', profiles)
+        self.assertIn('os.environ.get("PRODUCER_RUN_ANALYZERS", "true").strip().lower() == "false"', profiles)
+        self.assertIn('if [[ "${FULL_CI}" == true ]]; then profile_scope=--all; fi', producer)
+        self.assertIn('protocol-profile-selection.py --dry-run "${profile_scope}"', producer)
         self.assertIn('dotnet-restore-retry.sh \"${BUILD_TARGET}\" -p:Configuration=Release', producer)
         self.assertLess(producer.index('Build (warnings as errors)'), producer.index('mode: publish'))
         self.assertNotIn('dotnet test ', producer)
@@ -45,7 +51,9 @@ class ManagedWorkflowTests(unittest.TestCase):
         shard = job('server-tests')
         self.assertIn('needs: [changes, targeted-shards, build]', shard)
         self.assertLess(shard.index('Consume managed shard'), shard.index('Plan shard-local exact-head cache'))
-        self.assertIn("if: steps.managed-status.outputs.restored != 'true' && steps.shard-cache-materialize.outputs.restored != 'true'", shard)
+        self.assertIn("if: (steps.managed-status.outputs.restored != 'true' || "
+                      "steps.setup-dotnet.outputs.host-package-fallback-used == 'true') && "
+                      "steps.shard-cache-materialize.outputs.restored != 'true'", shard)
         self.assertIn('managed-test-build.py fallback --projects-file', shard)
         self.assertIn('actions/cache/restore@', shard)
         self.assertIn('matrix.advisory != true', shard)

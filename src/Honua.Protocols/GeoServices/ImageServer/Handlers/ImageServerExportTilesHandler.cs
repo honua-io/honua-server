@@ -184,12 +184,16 @@ internal sealed class ImageServerExportTilesHandler
         }
 
         layerId = plan!.LayerId;
-
         if (_storage is null)
         {
             return StandardErrorHelpers.CreateServiceUnavailable(
                 context,
                 "Cloud file storage is not configured. exportTiles requires storage-backed artifacts.");
+        }
+
+        if (context.RequestServices.GetService<ExportTilesArtifactBudget>()?.TryTake(context.User) is { } retryAfter)
+        {
+            return StandardErrorHelpers.CreateTooManyRequests(context, ExportTilesArtifactBudget.RefusedMessage, retryAfter);
         }
 
         ImageServerLog.ExportTilesRequested(_logger, layerId, plan!.Tiles.Length);

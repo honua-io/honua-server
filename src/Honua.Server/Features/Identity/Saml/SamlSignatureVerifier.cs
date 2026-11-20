@@ -166,9 +166,6 @@ internal static class SamlSignatureVerifier
             "http://www.w3.org/2001/04/xmlenc#sha256" => SHA256.HashData(data),
             "http://www.w3.org/2001/04/xmldsig-more#sha384" => SHA384.HashData(data),
             "http://www.w3.org/2001/04/xmlenc#sha512" => SHA512.HashData(data),
-#pragma warning disable CA5350 // SHA-1 retained only for interop with legacy IdPs that still emit it.
-            "http://www.w3.org/2000/09/xmldsig#sha1" => SHA1.HashData(data),
-#pragma warning restore CA5350
             _ => null,
         };
     }
@@ -183,10 +180,6 @@ internal static class SamlSignatureVerifier
             "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256" => HashAlgorithmName.SHA256,
             "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha384" => HashAlgorithmName.SHA384,
             "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha512" => HashAlgorithmName.SHA512,
-#pragma warning disable CA5350 // SHA-1 retained only for interop with legacy IdPs that still emit it.
-            "http://www.w3.org/2000/09/xmldsig#rsa-sha1" => HashAlgorithmName.SHA1,
-            "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha1" => HashAlgorithmName.SHA1,
-#pragma warning restore CA5350
             _ => null,
         };
     }

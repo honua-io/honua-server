@@ -4,7 +4,6 @@
 using System.Collections.Immutable;
 using Google.Protobuf.Collections;
 using Grpc.Core;
-using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
@@ -102,16 +101,8 @@ internal sealed partial class HonuaFeatureService
             return null;
         }
 
-        if (services.GetService<IFieldMaskSource>() is { } masks)
-        {
-            var masked = await masks.ResolveAsync(layer.Resource, cancellationToken).ConfigureAwait(false);
-            if (masked.Any(name => name.Equals(field, StringComparison.OrdinalIgnoreCase)))
-            {
-                return null;
-            }
-        }
-
-        return field;
+        var masked = await MaskedFieldNamesAsync(layer.Resource, services, cancellationToken).ConfigureAwait(false);
+        return masked.Contains(field) ? null : field;
     }
 
     private static string RequireGlobalIdField(string? visibleField)

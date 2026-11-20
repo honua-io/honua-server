@@ -146,25 +146,13 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         }
     }
 
-    private static async Task VerifySubscriberPoliciesAsync(bool webSocket, bool replay, bool restrictRows = true, bool snapshot = false)
+    private async Task VerifySubscriberPoliciesAsync(bool webSocket, bool replay, bool restrictRows = true, bool snapshot = false)
     {
-        var rows = Substitute.For<IRlsPolicyStore>();
-        rows.GetEffectivePoliciesAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(restrictRows ? new RlsPolicy[]
-            {
-                new() { Role = "*", Service = "*", Layer = "*", Attribute = "NAME", ClaimType = ClaimTypes.Role }
-            } : Array.Empty<RlsPolicy>());
-        var fields = Substitute.For<IFieldMaskPolicyStore>();
-        fields.GetEffectivePoliciesAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new FieldMaskPolicy[]
-            {
-                new() { Role = "*", Service = "*", Layer = "*", Attribute = "description" }
-            });
-        var fixture = new WebAppFixture()
-            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
-            .ReplaceService<IRlsPolicyStore>(rows)
-            .ReplaceService<IFieldMaskPolicyStore>(fields);
-        await fixture.InitializeAsync();
+        // Each case anchors its cursor on its own change, so earlier cases' rows and
+        // changes on the shared variant stay out of what it reads.
+        var fixture = await _host.GetVariantAsync(
+            restrictRows ? "subscriber-policies-rows-and-fields" : "subscriber-policies-fields",
+            () => CreateSubscriberPolicyFixture(restrictRows ? [NameRowPolicy] : []));
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -303,8 +291,27 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         }
         finally
         {
-            await fixture.DisposeAsync();
+            FeatureStreamProHost.DropSessions(fixture);
         }
+    }
+
+    private static readonly RlsPolicy NameRowPolicy = new() { Role = "*", Service = "*", Layer = "*", Attribute = "NAME", ClaimType = ClaimTypes.Role };
+
+    private static WebAppFixture CreateSubscriberPolicyFixture(RlsPolicy[] rowPolicies)
+    {
+        var rows = Substitute.For<IRlsPolicyStore>();
+        rows.GetEffectivePoliciesAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(rowPolicies);
+        var fields = Substitute.For<IFieldMaskPolicyStore>();
+        fields.GetEffectivePoliciesAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new FieldMaskPolicy[]
+            {
+                new() { Role = "*", Service = "*", Layer = "*", Attribute = "description" }
+            });
+        return new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ReplaceService<IRlsPolicyStore>(rows)
+            .ReplaceService<IFieldMaskPolicyStore>(fields);
     }
 
     // ─── AC: Client can open a WebSocket connection ─────────────────────
@@ -1205,15 +1212,7 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithoutAuth_ReturnsUnauthorized()
     {
-        var fixture = new WebAppFixture()
-            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-stream-admin-key");
-            });
-
-        await fixture.InitializeAsync();
+        var fixture = await _host.GetVariantAsync("dev-auth-off", CreateDevAuthOffFixture);
 
         try
         {
@@ -1226,7 +1225,7 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         }
         finally
         {
-            await fixture.DisposeAsync();
+            FeatureStreamProHost.DropSessions(fixture);
         }
     }
 
@@ -1234,10 +1233,7 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_CommunityEdition_ReturnsPaymentRequired()
     {
-        var fixture = new WebAppFixture()
-            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Community));
-
-        await fixture.InitializeAsync();
+        var fixture = await _host.GetVariantAsync("community", CreateCommunityFixture);
 
         try
         {
@@ -1250,7 +1246,7 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         }
         finally
         {
-            await fixture.DisposeAsync();
+            FeatureStreamProHost.DropSessions(fixture);
         }
     }
 
@@ -1328,15 +1324,7 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithoutAuthAndEmptyLayersParam_DoesNotBypassUnfilteredGate()
     {
-        var fixture = new WebAppFixture()
-            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-stream-admin-key");
-            });
-
-        await fixture.InitializeAsync();
+        var fixture = await _host.GetVariantAsync("dev-auth-off", CreateDevAuthOffFixture);
 
         try
         {
@@ -1355,7 +1343,7 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         }
         finally
         {
-            await fixture.DisposeAsync();
+            FeatureStreamProHost.DropSessions(fixture);
         }
     }
 
@@ -1647,10 +1635,7 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
     [Endpoint("GET /api/v1/streaming/features/capabilities")]
     public async Task Capabilities_CommunityEdition_DisablesStreamingMetadata()
     {
-        var fixture = new WebAppFixture()
-            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Community));
-
-        await fixture.InitializeAsync();
+        var fixture = await _host.GetVariantAsync("community", CreateCommunityFixture);
 
         try
         {
@@ -1666,7 +1651,7 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         }
         finally
         {
-            await fixture.DisposeAsync();
+            FeatureStreamProHost.DropSessions(fixture);
         }
     }
 
@@ -1674,11 +1659,7 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
     [Endpoint("GET /api/v1/streaming/features/capabilities")]
     public async Task Capabilities_OmitsLayersWhoseServicePolicyDenies()
     {
-        var fixture = new WebAppFixture()
-            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
-            .ReplaceService<IMetadataV2GraphProvider>(ServiceLevelAccessStreamLayerCatalog.BuildMetadataProvider());
-
-        await fixture.InitializeAsync();
+        var fixture = await _host.GetVariantAsync("service-level-access", CreateServiceLevelAccessFixture);
 
         try
         {
@@ -1697,7 +1678,7 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         }
         finally
         {
-            await fixture.DisposeAsync();
+            FeatureStreamProHost.DropSessions(fixture);
         }
     }
 
@@ -1705,11 +1686,7 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithServiceIdAndForeignLayer_ReturnsBadRequest()
     {
-        var fixture = new WebAppFixture()
-            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
-            .ReplaceService<IMetadataV2GraphProvider>(ServiceLevelAccessStreamLayerCatalog.BuildMetadataProvider());
-
-        await fixture.InitializeAsync();
+        var fixture = await _host.GetVariantAsync("service-level-access", CreateServiceLevelAccessFixture);
 
         try
         {
@@ -1728,7 +1705,7 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         }
         finally
         {
-            await fixture.DisposeAsync();
+            FeatureStreamProHost.DropSessions(fixture);
         }
     }
 
@@ -1736,11 +1713,7 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithServiceIdOnly_ScopesSessionToRoutableStorageLayers()
     {
-        var fixture = new WebAppFixture()
-            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
-            .ReplaceService<IMetadataV2GraphProvider>(ServiceOnlyFilterStreamLayerCatalog.BuildMetadataProvider());
-
-        await fixture.InitializeAsync();
+        var fixture = await _host.GetVariantAsync("service-only-filter", CreateServiceOnlyFilterFixture);
 
         try
         {
@@ -1767,7 +1740,7 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         }
         finally
         {
-            await fixture.DisposeAsync();
+            FeatureStreamProHost.DropSessions(fixture);
         }
     }
 
@@ -1775,11 +1748,7 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Stream_WithServiceIdOnlyAndNoRoutableLayers_ReturnsBadRequest()
     {
-        var fixture = new WebAppFixture()
-            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
-            .ReplaceService<IMetadataV2GraphProvider>(ServiceOnlyFilterStreamLayerCatalog.BuildMetadataProvider());
-
-        await fixture.InitializeAsync();
+        var fixture = await _host.GetVariantAsync("service-only-filter", CreateServiceOnlyFilterFixture);
 
         try
         {
@@ -1796,7 +1765,7 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         }
         finally
         {
-            await fixture.DisposeAsync();
+            FeatureStreamProHost.DropSessions(fixture);
         }
     }
 
@@ -1804,11 +1773,7 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task WebSocket_UnfilteredSubscription_ExcludesRetiredRoutes()
     {
-        var fixture = new WebAppFixture()
-            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
-            .ReplaceService<IMetadataV2GraphProvider>(ServiceOnlyFilterStreamLayerCatalog.BuildMetadataProvider());
-
-        await fixture.InitializeAsync();
+        var fixture = await _host.GetVariantAsync("service-only-filter", CreateServiceOnlyFilterFixture);
 
         try
         {
@@ -1862,7 +1827,7 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
         }
         finally
         {
-            await fixture.DisposeAsync();
+            FeatureStreamProHost.DropSessions(fixture);
         }
     }
 
@@ -2468,6 +2433,29 @@ public sealed partial class FeatureStreamEndpointsTests : IClassFixture<FeatureS
     }
 
     private sealed record SseEvent(string EventName, JsonElement Data);
+
+    private static WebAppFixture CreateDevAuthOffFixture()
+        => new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-stream-admin-key");
+            });
+
+    private static WebAppFixture CreateCommunityFixture()
+        => new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Community));
+
+    private static WebAppFixture CreateServiceLevelAccessFixture()
+        => new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ReplaceService<IMetadataV2GraphProvider>(ServiceLevelAccessStreamLayerCatalog.BuildMetadataProvider());
+
+    private static WebAppFixture CreateServiceOnlyFilterFixture()
+        => new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ReplaceService<IMetadataV2GraphProvider>(ServiceOnlyFilterStreamLayerCatalog.BuildMetadataProvider());
 
     private static WebAppFixture CreateLimitedStreamingFixture(int maxConcurrentSessions)
         => new WebAppFixture()

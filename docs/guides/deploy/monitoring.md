@@ -95,7 +95,20 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
 Observability__Prometheus__Path=/metrics
 ```
 
-2. Point your scraper or collector at the server. `/metrics` requires admin authorization, so the scraper must send the `X-API-Key` header. For OTLP export instead of scraping, set the standard `OTEL_*` variables (for example `OTEL_EXPORTER_OTLP_ENDPOINT`) and metrics/traces/logs flow to your collector.
+2. Point your scraper or collector at the server. `/metrics` requires admin authorization, so the scraper must send the key in the `X-API-Key` header or as `Authorization: ApiKey <key>`. Use the second form for scrapers that can set only the `Authorization` header, such as a Prometheus Operator ServiceMonitor. Use a read-only `admin:read` key (minted as in step 5), not the bootstrap admin password, because an in-cluster scrape sends it over plain HTTP. Keep the key in a Secret:
+
+```yaml
+endpoints:
+  - port: http
+    path: /metrics
+    authorization:
+      type: ApiKey
+      credentials:
+        name: honua-metrics-scrape
+        key: api-key
+```
+
+A plain Prometheus `scrape_config` takes the same `authorization` block (`type: ApiKey` plus `credentials_file`). On `/metrics` and the Admin API, `Authorization: Bearer` does not carry an API key. For OTLP export instead of scraping, set the standard `OTEL_*` variables (for example `OTEL_EXPORTER_OTLP_ENDPOINT`) and metrics, traces and logs flow to your collector.
 
 > Verify the configured Prometheus target is **UP** and inspect the scraped `honua_*` series; `/metrics` is a scraper endpoint, not an OpenAPI-explorer operation.
 
