@@ -15,7 +15,8 @@ internal enum SecurityTokenKind
     JobToken,
     TemporaryFile,
     ConsoleEmbedToken,
-    AdminSessionBearerBinding
+    AdminSessionBearerBinding,
+    SamlSessionIndex
 }
 
 internal readonly record struct SecurityTokenKey(SecurityTokenKind Kind, string Value);

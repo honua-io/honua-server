@@ -167,6 +167,46 @@ public class SamlBridgeEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /saml/slo")]
+    public async Task Slo_RepeatedLogoutRequest_LeavesAnotherSessionSignedIn()
+    {
+        var firstSession = await SeedSessionAsync("repeat-user@example.com");
+        var secondSession = await SeedSessionAsync("repeat-user@example.com");
+        var samlRequest = SamlTestAssertions.CreateSignedLogoutRequest(_certificate, "repeat-user@example.com");
+
+        using var firstResponse = await PostLogoutAsync(samlRequest, firstSession);
+        using var repeatedResponse = await PostLogoutAsync(samlRequest, secondSession);
+
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, repeatedResponse.StatusCode);
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var sessionStore = scope.ServiceProvider.GetRequiredService<AdminAuthSessionStore>();
+        Assert.Null(await sessionStore.GetAuthenticatedSessionAsync(firstSession, CancellationToken.None));
+        Assert.NotNull(await sessionStore.GetAuthenticatedSessionAsync(secondSession, CancellationToken.None));
+    }
+
+    private async Task<string> SeedSessionAsync(string nameId)
+    {
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var sessionStore = scope.ServiceProvider.GetRequiredService<AdminAuthSessionStore>();
+        return await sessionStore.CreateAuthenticatedSessionAsync(
+            "saml",
+            "opaque-token",
+            idToken: null,
+            [new AdminAuthSessionClaim { Type = ClaimTypes.NameIdentifier, Value = nameId }],
+            DateTimeOffset.UtcNow.AddMinutes(5),
+            CancellationToken.None);
+    }
+
+    private async Task<HttpResponseMessage> PostLogoutAsync(string samlRequest, string sessionId)
+    {
+        using var client = _fixture.CreateClient(
+            c => c.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}"));
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string> { ["SAMLRequest"] = samlRequest });
+        return await client.PostAsync("/saml/slo", content);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /saml/slo")]
     public async Task Slo_MissingSamlRequest_ReturnsBadRequest()
     {
         using var sloContent = new FormUrlEncodedContent(new Dictionary<string, string> { ["RelayState"] = "x" });

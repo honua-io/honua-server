@@ -25,22 +25,39 @@ public sealed class SamlLogoutRequestValidatorTests
     }
 
     [UnitTest]
-    public void TryConsume_SameRequestIdTwice_SecondIsRefused()
+    public async Task TryClaimAsync_AfterCompletion_IsRefusedForEveryCaller()
     {
         var request = LogoutRequest(_now, id: "_logout-once");
 
-        Assert.True(_validator.TryConsume(request));
-        Assert.False(_validator.TryConsume(request));
+        Assert.True(await _validator.TryClaimAsync(request, "session-a", CancellationToken.None));
+        Assert.True(await _validator.TryCompleteAsync(request, "session-a", CancellationToken.None));
+
+        Assert.False(await _validator.TryClaimAsync(request, "session-a", CancellationToken.None));
+        Assert.False(await _validator.TryClaimAsync(request, "session-b", CancellationToken.None));
+        Assert.False(await _validator.TryClaimAsync(request, null, CancellationToken.None));
     }
 
     [UnitTest]
-    public void Validate_DoesNotConsumeTheRequest()
+    public async Task TryClaimAsync_ClaimedByAnotherCaller_IsRefused()
+    {
+        var request = LogoutRequest(_now, id: "_logout-claimed");
+
+        Assert.True(await _validator.TryClaimAsync(request, "session-a", CancellationToken.None));
+
+        Assert.False(await _validator.TryClaimAsync(request, "session-b", CancellationToken.None));
+        Assert.False(await _validator.TryCompleteAsync(request, "session-b", CancellationToken.None));
+    }
+
+    [UnitTest]
+    public async Task TryClaimAsync_SameCallerBeforeCompletion_MayRetry()
     {
         var request = LogoutRequest(_now, id: "_logout-retry");
 
         Assert.Null(_validator.Validate(request));
+        Assert.True(await _validator.TryClaimAsync(request, "session-a", CancellationToken.None));
         Assert.Null(_validator.Validate(request));
-        Assert.True(_validator.TryConsume(request));
+        Assert.True(await _validator.TryClaimAsync(request, "session-a", CancellationToken.None));
+        Assert.True(await _validator.TryCompleteAsync(request, "session-a", CancellationToken.None));
     }
 
     [UnitTheory]
