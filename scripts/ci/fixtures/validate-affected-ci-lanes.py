@@ -69,6 +69,21 @@ class AffectedLaneTests(unittest.TestCase):
                 self.assertTrue(selected['aot'])
                 self.assertTrue(selected['docker'])
 
+    def test_aot_lane_ignores_non_src_projects_and_keeps_scene_fixture_check(self):
+        for path in ['docker/worker-customcode-dotnet/harness/warm/Harness.csproj',
+                     'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj']:
+            with self.subTest(non_src_project=path):
+                selected = MODULE.select([path])
+                self.assertFalse(selected['aot'])
+                self.assertFalse(selected['postgres'])
+        for path in ['src/Honua.Server/Honua.Server.csproj',
+                     'tests/native/AotSmoke.cs',
+                     'src/Honua.Server/rd.xml',
+                     'scripts/ci/verify-scene-fixture-publication.py',
+                     'tests/python/test_scene_fixture_publication.py']:
+            with self.subTest(aot_input=path):
+                self.assertTrue(MODULE.select([path])['aot'])
+
     def test_mcp_backend_changes_keep_certification(self):
         for path in ['src/Honua.Server/Features/Protocols/Grpc/HonuaFeatureService.cs',
                      'src/Honua.Server/Features/FeatureServer/Query.cs',

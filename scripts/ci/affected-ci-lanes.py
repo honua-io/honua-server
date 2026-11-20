@@ -8,7 +8,7 @@ import subprocess
 # Native publishing, container publishing and MCP live backends consume the
 # runtime dependency graph. Keep all runtime inputs until a proven closure exists.
 LANES = {
-    'aot': r'(^src/|Aot|AOT|[.]rd[.]xml$|[.]csproj$)',
+    'aot': r'(^src/|Aot|AOT|[.]rd[.]xml$|scene[-_]fixture[-_]publication)',
     'docker': r'(^src/|^docker/|(^|/)Dockerfile|^scripts/.*docker)',
     'postgres': r'(Postgres|PostgreSql|PostGIS|Postgis|Migrations?/|^src/Honua[.]Db/|^tests/dotnet/Honua[.]Db[.])',
     'browser': r'(^tests/(js|js-browser|shared)/|^src/Honua[.]Server/Features/(Protocols/|FeatureServer|MapServer|Ogc|Styles|Styling|Tiles)|^src/Honua[.]Protocols/|^src/Honua[.]Server/wwwroot/)',
