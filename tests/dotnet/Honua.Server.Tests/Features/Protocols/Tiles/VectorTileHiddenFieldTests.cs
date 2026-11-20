@@ -90,12 +90,31 @@ public sealed class VectorTileHiddenFieldTests : IClassFixture<VectorTileHiddenF
     [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]
     public async Task ServedTile_FilterOnHiddenField_IsRefused()
     {
-        var where = Uri.EscapeDataString($"{VectorTileHiddenFieldTestsFixture.HiddenField} IS NOT NULL");
+        var hidden = await RefuseFilterAsync(VectorTileHiddenFieldTestsFixture.HiddenField);
+        var undeclared = await RefuseFilterAsync("undeclared_field");
+
+        // The refusal names only the caller's own field, as for a field the layer does not have.
+        undeclared.Should().Contain("Field 'undeclared_field' not found in layer")
+            .And.NotContain(VectorTileHiddenFieldTestsFixture.HiddenField);
+        hidden.Should().Be(undeclared.Replace("undeclared_field", VectorTileHiddenFieldTestsFixture.HiddenField, StringComparison.Ordinal))
+            .And.NotContain(HiddenValue);
+    }
+
+    private async Task<string> RefuseFilterAsync(string field)
+    {
+        var where = Uri.EscapeDataString($"{field} IS NOT NULL");
 
         using var response = await _fixture.Client.GetAsync($"/tiles/0/0/0/0.mvt?where={where}");
 
         response.Content.Headers.ContentType?.MediaType.Should().NotBe(MvtMediaType);
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("not available").And.NotContain(VectorTileHiddenFieldTestsFixture.HiddenField);
+        using var document = JsonDocument.Parse(body);
+        var error = document.RootElement.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(400, body);
+        // CorrelationId and Timestamp differ per request; the remaining details are the refusal.
+        return string.Join('\n', error.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString() ?? string.Empty)
+            .Where(detail => !detail.StartsWith("CorrelationId:", StringComparison.Ordinal)
+                && !detail.StartsWith("Timestamp:", StringComparison.Ordinal)));
     }
 }
