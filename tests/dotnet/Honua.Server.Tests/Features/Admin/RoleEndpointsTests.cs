@@ -235,6 +235,42 @@ public class RoleEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, (await _client.GetAsync($"/api/v1/admin/roles/{role.RoleId}")).StatusCode);
     }
 
+    [IntegrationTheory]
+    [Endpoint("POST /api/v1/admin/roles")]
+    [InlineData("scoped-admin-key")]
+    [InlineData("Scoped-API-Key")]
+    [InlineData("layer-write-key")]
+    [InlineData("approved-operation")]
+    [InlineData("viewer")]
+    [InlineData("agent")]
+    public async Task CreateRole_ReservedName_ReturnsBadRequest(string name)
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/roles", new CreateRoleRequest { Name = name }, _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("reserved", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/roles/{id}/permissions")]
+    public async Task SetPermissions_BuiltInRole_ReturnsBadRequestAndKeepsGrants()
+    {
+        var roles = JsonSerializer.Deserialize<ApiResponse<RoleResponse[]>>(
+            await (await _client.GetAsync("/api/v1/admin/roles")).Content.ReadAsStringAsync(), _jsonOptions);
+        var viewerRole = roles!.Data!.Single(role => role.Name == "viewer").RoleId;
+        var grants = new SetPermissionsRequest
+        {
+            Permissions = [new PermissionGrantRequest { Service = "*", Layer = "*", Operation = "*" }],
+        };
+
+        var response = await _client.PutAsJsonAsync($"/api/v1/admin/roles/{viewerRole}/permissions", grants, _jsonOptions);
+        var after = JsonSerializer.Deserialize<ApiResponse<PermissionGrantResponse[]>>(
+            await (await _client.GetAsync($"/api/v1/admin/roles/{viewerRole}/permissions")).Content.ReadAsStringAsync(), _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.DoesNotContain(after!.Data!, grant => grant.Operation == "*");
+    }
+
     private async Task<RoleResponse> CreateRoleAsync(string name)
     {
         var response = await _client.PostAsJsonAsync("/api/v1/admin/roles", new CreateRoleRequest { Name = name }, _jsonOptions);

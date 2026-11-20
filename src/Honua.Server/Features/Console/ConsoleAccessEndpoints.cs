@@ -434,11 +434,13 @@ internal static class ConsoleAccessEndpoints
             .Select(static role => role.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+    // A server-assigned role name counts as taken: a stored role under it would hand its grants to
+    // every principal the server stamps with that role.
     private static bool HasRoleNameCollision(
         IReadOnlyList<RoleDefinition> roles,
         string requestedName,
         Guid? currentRoleId = null) =>
-        roles.Any(role =>
+        ReservedRoleNames.Contains(requestedName) || roles.Any(role =>
             role.RoleId != currentRoleId &&
             string.Equals(role.Name, requestedName, StringComparison.OrdinalIgnoreCase));
 

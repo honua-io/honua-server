@@ -142,11 +142,9 @@ internal static partial class RoleEndpoints
     {
         try
         {
-            var validationResults = new List<ValidationResult>();
-            if (!Validator.TryValidateObject(request, new ValidationContext(request), validationResults, true))
+            if (CreateRequestError(request) is { } error)
             {
-                var errors = string.Join(", ", validationResults.Select(r => r.ErrorMessage));
-                return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {errors}"));
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(error));
             }
 
             var role = new RoleDefinition
@@ -173,6 +171,17 @@ internal static partial class RoleEndpoints
                 detail: "An internal error occurred while creating the role.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
+    }
+
+    private static string? CreateRequestError(CreateRoleRequest request)
+    {
+        var validationResults = new List<ValidationResult>();
+        if (!Validator.TryValidateObject(request, new ValidationContext(request), validationResults, true))
+        {
+            return $"Validation failed: {string.Join(", ", validationResults.Select(r => r.ErrorMessage))}";
+        }
+
+        return ReservedRoleNames.Contains(request.Name) ? ReservedRoleNames.Refusal(request.Name) : null;
     }
 
     private static async Task<Results<Ok<ApiResponse<RoleResponse>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
@@ -325,7 +334,7 @@ internal static partial class RoleEndpoints
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PermissionGrantResponse>>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
+    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PermissionGrantResponse>>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
         HandleSetPermissions(
             Guid id,
             SetPermissionsRequest request,
@@ -339,6 +348,11 @@ internal static partial class RoleEndpoints
             if (role == null)
             {
                 return TypedResults.NotFound(ApiResponse<object>.Failure("Role not found"));
+            }
+
+            if (role.IsBuiltIn || ReservedRoleNames.Contains(role.Name))
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(ReservedRoleNames.Refusal(role.Name)));
             }
 
             var grants = request.Permissions.Select(p => new PermissionGrant

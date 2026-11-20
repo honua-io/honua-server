@@ -57,6 +57,16 @@ full-administrator credential authority:
 | DELETE | `/api/v1/admin/users/{id}` |
 | POST | `/api/v1/admin/oauth-clients` |
 | DELETE | `/api/v1/admin/oauth-clients/{id}` |
+| PUT | `/api/v1/admin/oauth-scopes` |
+| DELETE | `/api/v1/admin/oauth-scopes/{scope}` |
+| POST | `/api/v1/admin/roles` |
+| PUT | `/api/v1/admin/roles/{id}` |
+| DELETE | `/api/v1/admin/roles/{id}` |
+| PUT | `/api/v1/admin/roles/{id}/permissions` |
+
+Role names the server assigns to principals itself (`admin`, `viewer`, `agent`, `orchestrator`,
+`approved-operation`, `scoped-admin-key`, `scoped-api-key`, `layer-write-key`) cannot be used for a
+new role, here or in Console access, and the permissions of built-in roles cannot be changed.
 
 Full-administrator credential authority is one of:
 
