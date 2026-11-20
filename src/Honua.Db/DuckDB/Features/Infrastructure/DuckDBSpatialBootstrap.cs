@@ -174,8 +174,10 @@ internal sealed class DuckDBSpatialBootstrap : IDisposable
         }
     }
 
+    // Only an unnamed in-memory database is private; DuckDB.NET shares named
+    // ones (:memory:name) across connections like files.
     private static bool IsInMemory(string? dataSource)
-        => string.IsNullOrEmpty(dataSource) || dataSource.StartsWith(":memory:", StringComparison.OrdinalIgnoreCase);
+        => string.IsNullOrEmpty(dataSource) || string.Equals(dataSource, ":memory:", StringComparison.OrdinalIgnoreCase);
 
     private static async Task ExecuteNonQueryAsync(
         DbConnection connection,
