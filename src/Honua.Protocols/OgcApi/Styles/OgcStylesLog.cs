@@ -60,4 +60,10 @@ internal static partial class OgcStylesLog
         Level = LogLevel.Warning,
         Message = "Failed to evict the 'ogc-styles' output cache after a style mutation; cached styles responses may be stale until the TTL expires")]
     public static partial void StylesCacheEvictionFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 5959,
+        Level = LogLevel.Warning,
+        Message = "Failed to evict the cached service output of storage layer {StorageLayerId} after a style write; its metadata and map output may show the previous presentation until the TTL expires")]
+    public static partial void StyledLayerCacheEvictionFailed(ILogger logger, int storageLayerId, Exception exception);
 }

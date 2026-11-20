@@ -26,6 +26,12 @@ internal static partial class LayerStyleLog
     public static partial void ThemeColorParseFailure(ILogger logger, int layerId, string property, string color);
 
     [LoggerMessage(
+        EventId = 6404,
+        Level = LogLevel.Warning,
+        Message = "Style '{StyleId}' names a collection whose storage layer is ambiguous; the write goes to the style catalog and the layer's saved presentation is not retired.")]
+    public static partial void StyleStorageLayerAmbiguous(ILogger logger, string styleId);
+
+    [LoggerMessage(
         EventId = 6405,
         Level = LogLevel.Warning,
         Message = "Failed to synchronize the metadata-v2 style graph for catalog style '{StyleId}'. The catalog update already committed; StyleResourceIds may lag until the next publish.")]

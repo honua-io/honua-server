@@ -69,7 +69,23 @@ public sealed class OgcStyleProjectionSavedPresentationTests
         stylesheet!.Content.Should().Contain(StoredColor);
     }
 
-    private OgcStyleProjection Projection(string? drawingInfo)
+    [UnitTest]
+    public async Task UpdateStyle_LayerStyle_ReportsTheStorageLayerForEviction()
+    {
+        var styles = Substitute.For<ILayerStyleService>();
+        styles.UpdateStyleAsync(
+                Arg.Any<MetadataV2Object>(), StorageLayerId, Arg.Any<JsonElement?>(), Arg.Any<JsonElement?>(),
+                Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new LayerStyleUpdateResult(LayerStyleUpdateStatus.Updated, null, null));
+
+        var result = await Projection(SavedDrawingInfo, styles)
+            .UpdateStyleAsync("bng_points", """{"version":8,"sources":{},"layers":[]}""", strict: false);
+
+        result.Status.Should().Be(OgcStyleUpdateStatus.Updated);
+        result.StorageLayerId.Should().Be(StorageLayerId);
+    }
+
+    private OgcStyleProjection Projection(string? drawingInfo, ILayerStyleService? styles = null)
     {
         var extensions = drawingInfo is null
             ? null
@@ -82,7 +98,7 @@ public sealed class OgcStyleProjectionSavedPresentationTests
                 extensions: extensions)
             .AddStorageBinding("binding-bng", "resource-bng", "public.bng_points", storageLayerId: StorageLayerId)
             .BuildProvider();
-        return new OgcStyleProjection(graph, Substitute.For<ILayerStyleService>(), _styleCatalog, new GeoServicesStyleConverter());
+        return new OgcStyleProjection(graph, styles ?? Substitute.For<ILayerStyleService>(), _styleCatalog, new GeoServicesStyleConverter());
     }
 
     private static List<string> CircleColors(string mapLibreJson)
