@@ -3,7 +3,6 @@
 
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 
 namespace Honua.Infrastructure.Caching;
@@ -20,10 +19,8 @@ internal sealed class ETagService : IETagService
         ArgumentNullException.ThrowIfNull(obj);
         ArgumentNullException.ThrowIfNull(jsonTypeInfo);
 
-        // Serialize the object to JSON bytes for hashing
-        var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(obj, jsonTypeInfo);
-
-        return ComputeETag(jsonBytes);
+        using var payload = ETagJsonPayload.Serialize(obj, jsonTypeInfo);
+        return ComputeETag(payload.WrittenSpan);
     }
 
     public string ComputeETag(ReadOnlySpan<byte> data)
