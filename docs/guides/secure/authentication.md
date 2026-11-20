@@ -47,7 +47,7 @@ the cache between credential changes.
 HONUA_ADMIN_PASSWORD=$ADMIN_PASSWORD
 ```
 
-This is the root credential for `/api/v1/admin/*` (and the JSON metrics/monitoring endpoints). Clients send it in the `X-API-Key` header; failures return `WWW-Authenticate: ApiKey`. Resolve it from a secret manager and rotate it regularly.
+This is the root credential for `/api/v1/admin/*` (and the JSON metrics/monitoring endpoints). Clients send it in the `X-API-Key` header, or as `Authorization: ApiKey <key>` when they can set only the `Authorization` header (a Prometheus Operator ServiceMonitor, for example); failures return `WWW-Authenticate: ApiKey`. Resolve it from a secret manager and rotate it regularly.
 
 Outside Development and Test the server refuses to start without it, unless `Oidc__Enabled=true` and an OIDC provider is fully configured; administrators then sign in through the identity provider. If you keep the password as a break-glass credential next to OIDC, set `Authentication__AdminPassword__LoopbackOnly=true`. The password is then accepted only on a direct loopback connection, from a shell on the host or in the container, on every path that takes it, including `generateToken`. A request that carries a forwarding header (`X-Forwarded-For`, `Forwarded`, `X-Real-IP` and similar) is refused even when its address reads as loopback, so a proxy on the same host must set `X-Forwarded-For`. The setting cannot be used on AWS Lambda. A refusal answers like a wrong password, counts as a failed attempt and is logged at Warning with event id `4123`. Managed API keys are not affected. Tokens and sessions minted from the password on the host stay valid from anywhere until they expire, so sign out or let them expire after break-glass use.
 
@@ -110,7 +110,7 @@ that work and add request restrictions when you create them:
   The secret does not change. The server log names the key id and whether the
   referrer list and the IP list are set, not the patterns or the key.
 - Restrictions apply on every transport the key is accepted on: `X-API-Key`,
-  `Authorization`/`X-Esri-Authorization: Bearer`, the form `token` field and the
+  `Authorization: ApiKey`, `Authorization`/`X-Esri-Authorization: Bearer`, the form `token` field and the
   `token` query parameter. The bootstrap `HONUA_ADMIN_PASSWORD` key is never
   restricted.
 - A restricted key cannot be exchanged for a portal token (`generateToken` or the
