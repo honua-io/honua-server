@@ -8,8 +8,10 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Protocols.Ogc.Api.Processes;
+using Honua.Protocols.Ogc.Common;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 
@@ -217,7 +219,7 @@ public sealed class OgcProcessesConversionHelpersTests
             f: null,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<OgcProcessesEndpointsLog>.Instance);
         var landingValue = landingResult.Should().BeAssignableTo<Microsoft.AspNetCore.Http.IValueHttpResult>().Subject.Value
-            .Should().BeOfType<Honua.Protocols.Ogc.Api.Common.Models.LandingPage>().Subject;
+            .Should().BeOfType<LandingPage>().Subject;
         landingValue.Links.Should().Contain(l => l.Rel == "self" && l.Href == "https://example.com/ogc/processes");
         landingValue.Links.Should().Contain(l => l.Rel == "alternate" && l.Href == "https://example.com/ogc/processes?f=html");
 
@@ -231,7 +233,7 @@ public sealed class OgcProcessesConversionHelpersTests
             f: null,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<OgcProcessesEndpointsLog>.Instance);
         var conformanceValue = conformanceResult.Should().BeAssignableTo<Microsoft.AspNetCore.Http.IValueHttpResult>().Subject.Value
-            .Should().BeOfType<Honua.Protocols.Ogc.Api.Common.Models.ConformanceDeclaration>().Subject;
+            .Should().BeOfType<ConformanceDeclaration>().Subject;
         conformanceValue.Links.Should().NotBeNull();
         conformanceValue.Links!.Value.Should().Contain(l => l.Rel == "self" && l.Href == "https://example.com/ogc/processes/conformance");
         conformanceValue.Links.Value.Should().Contain(l => l.Rel == "alternate" && l.Href == "https://example.com/ogc/processes/conformance?f=html");
@@ -247,8 +249,8 @@ public sealed class OgcProcessesConversionHelpersTests
         context.Request.Path = "/ogc/processes/processes";
         context.Request.QueryString = new Microsoft.AspNetCore.Http.QueryString("?limit=1&offset=1");
 
-        var catalog = NSubstitute.Substitute.For<IOgcProcessesCatalog>();
-        catalog.ListProcesses().Returns([]);
+        var catalog = Substitute.For<IOgcProcessesCatalog>();
+        catalog.ListProcesses().Returns(Array.Empty<ProcessDefinition>());
         var result = ProcessEndpoints.GetProcessList(
             context,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<OgcProcessesEndpointsLog>.Instance,
@@ -256,7 +258,8 @@ public sealed class OgcProcessesConversionHelpersTests
         var list = result.Should().BeAssignableTo<Microsoft.AspNetCore.Http.IValueHttpResult>().Subject.Value
             .Should().BeOfType<Honua.Protocols.Ogc.Api.Processes.Models.OgcProcessList>().Subject;
 
-        list.Links.Should().Contain(l => l.Rel == "prev" && l.Href == "https://example.com/ogc/processes/processes?limit=1");
+        list.Links.Should().NotBeNull();
+        list.Links!.Value.Should().Contain(l => l.Rel == "prev" && l.Href == "https://example.com/ogc/processes/processes?limit=1");
     }
 
     private static ExecutionJobRecord CreateJob(ExecutionJobStatus status)

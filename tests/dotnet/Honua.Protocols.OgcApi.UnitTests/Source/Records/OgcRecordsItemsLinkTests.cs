@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Infrastructure.Services;
 using Honua.Protocols.Ogc.Api.Coverages.Handlers;
 using Honua.Protocols.Ogc.Api.Records;
 using Honua.TestKit.Attributes;
@@ -132,7 +133,7 @@ public sealed class OgcRecordsItemsLinkTests
         OgcCoveragesHandler.FormatContentCrsHeader(outputCrs: null, resultSrid: 4326)
             .Should().Be("<http://www.opengis.net/def/crs/OGC/1.3/CRS84>");
 
-        SpatialReferenceHelpers.TryGetCrsDefinition("EPSG:4326", out var epsg4326).Should().BeTrue();
+        SpatialReferenceHelpers.TryParseCrsDefinition("EPSG:4326", out var epsg4326).Should().BeTrue();
         OgcCoveragesHandler.FormatContentCrsHeader(epsg4326, resultSrid: 4326)
             .Should().Be("<http://www.opengis.net/def/crs/EPSG/0/4326>");
 
