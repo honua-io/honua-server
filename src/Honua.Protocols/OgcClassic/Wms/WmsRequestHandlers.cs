@@ -806,7 +806,7 @@ internal static partial class WmsRequestHandlers
         return (translation.SqlFilter, null);
     }
 
-    private static bool TryParseWmsBbox(
+    internal static bool TryParseWmsBbox(
         string? bbox,
         string normalizedCrs,
         string version,
@@ -842,7 +842,7 @@ internal static partial class WmsRequestHandlers
         return true;
     }
 
-    private static bool TryParseWmsCrs(string? crs, out int srid, out string normalizedCrs)
+    internal static bool TryParseWmsCrs(string? crs, out int srid, out string normalizedCrs)
     {
         srid = 0;
         normalizedCrs = string.Empty;
@@ -853,7 +853,16 @@ internal static partial class WmsRequestHandlers
 
         var trimmed = crs.Trim();
         normalizedCrs = trimmed.ToUpperInvariant();
-        if (string.Equals(trimmed, "CRS:84", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(trimmed, "CRS:84", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "CRS84", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "OGC:CRS84", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "urn:ogc:def:crs:OGC:1.3:CRS84", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "urn:ogc:def:crs:OGC:2:84", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "http://www.opengis.net/def/crs/OGC/1.3/CRS84", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "http://www.opengis.net/def/crs/OGC/0/CRS84", StringComparison.OrdinalIgnoreCase) ||
+            (SpatialReferenceHelpers.TryParseCrsDefinition(trimmed, out var crsDefinition) &&
+             crsDefinition.Srid == 4326 &&
+             crsDefinition.AxisOrder == AxisOrder.EastNorth))
         {
             srid = 4326;
             normalizedCrs = "CRS:84";
@@ -1022,10 +1031,21 @@ internal static partial class WmsRequestHandlers
             return true;
         }
 
+        return IsSupportedWmsXmlExceptionFormat(exceptionsValue) ||
+               IsWmsImageExceptionFormat(exceptionsValue);
+    }
+
+    private static bool IsSupportedWmsXmlExceptionFormat(string? exceptionsValue)
+    {
+        if (string.IsNullOrWhiteSpace(exceptionsValue))
+        {
+            return true;
+        }
+
         return string.Equals(exceptionsValue, "XML", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(exceptionsValue, "text/xml", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(exceptionsValue, WmsSeXmlExceptionMimeType, StringComparison.OrdinalIgnoreCase) ||
-               IsWmsImageExceptionFormat(exceptionsValue);
+               string.Equals(exceptionsValue, "application/xml", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(exceptionsValue, WmsSeXmlExceptionMimeType, StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsWmsImageExceptionFormat(string? exceptionsValue)
@@ -1280,7 +1300,9 @@ internal static partial class WmsRequestHandlers
         }
 
         var exceptionsValue = context is null ? null : GetQueryValue(context.Request.Query, "EXCEPTIONS");
-        if (IsWmsImageExceptionFormat(exceptionsValue))
+        var requestType = context is null ? null : NormalizeWmsRequestType(GetQueryValue(context.Request.Query, "REQUEST"));
+        if (IsWmsImageExceptionFormat(exceptionsValue) &&
+            string.Equals(requestType, "GetMap", StringComparison.OrdinalIgnoreCase))
         {
             return CreateWmsImageException(context, code, message, exceptionsValue);
         }

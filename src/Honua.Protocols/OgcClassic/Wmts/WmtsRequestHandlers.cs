@@ -206,9 +206,10 @@ internal static class WmtsRequestHandlers
             if (!string.Equals(requestType, "GetCapabilities", StringComparison.OrdinalIgnoreCase))
             {
                 return CreateWmtsExceptionReport(context,
-                    "InvalidParameterValue",
+                    "OperationNotSupported",
                     "request",
-                    $"Unsupported REQUEST value '{requestType}'.");
+                    $"Unsupported REQUEST value '{requestType}'.",
+                    StatusCodes.Status501NotImplemented);
             }
 
             if (!IsWmtsCapabilitiesAcceptable(context.Request.Headers.Accept.ToString()))
@@ -867,7 +868,7 @@ internal static class WmtsRequestHandlers
 
         if (pixelI >= gridGeometry.TileWidth)
         {
-            return CreateWmtsExceptionReport(context, "TileOutOfRange", "I", $"I must be less than {gridGeometry.TileWidth}.");
+            return CreateWmtsExceptionReport(context, "PointIJOutOfRange", "I", $"I must be less than {gridGeometry.TileWidth}.");
         }
 
         if (!TryGetRequiredQueryValue(query, "J", out var jValue))
@@ -882,7 +883,7 @@ internal static class WmtsRequestHandlers
 
         if (pixelJ >= gridGeometry.TileHeight)
         {
-            return CreateWmtsExceptionReport(context, "TileOutOfRange", "J", $"J must be less than {gridGeometry.TileHeight}.");
+            return CreateWmtsExceptionReport(context, "PointIJOutOfRange", "J", $"J must be less than {gridGeometry.TileHeight}.");
         }
 
         if (!TryGetRequiredQueryValue(query, "INFOFORMAT", out var infoFormatValue))
@@ -890,7 +891,9 @@ internal static class WmtsRequestHandlers
             return CreateWmtsExceptionReport(context, "MissingParameterValue", "InfoFormat", "INFOFORMAT parameter is required.");
         }
 
-        if (!TryNormalizeFeatureInfoFormat(infoFormatValue, out var infoFormat))
+        if (!TryNormalizeFeatureInfoFormat(infoFormatValue, out var infoFormat) ||
+            (!string.Equals(infoFormat, PlainTextMimeType, StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(infoFormat, JsonMimeType, StringComparison.OrdinalIgnoreCase)))
         {
             return CreateWmtsExceptionReport(context,
                 "InvalidParameterValue",

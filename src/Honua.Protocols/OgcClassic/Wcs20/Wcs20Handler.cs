@@ -677,6 +677,29 @@ internal sealed partial class Wcs20Handler
         var publication = snapshot.FindPublicationByLayerIndex(service.Service.Metadata.Id, layerId);
         if (publication is null)
         {
+            foreach (var candidate in snapshot.Index.PublicationsByService[service.Service.Metadata.Id])
+            {
+                var candidateResource = snapshot.ResolveResource(candidate);
+                if (!snapshot.IsRoutable(candidate) ||
+                    !TenantScopeHelpers.IsPublicationVisible(context, candidate, candidateResource, service.Service) ||
+                    !AccessPolicyHelpers.IsResourceAccessible(context, candidateResource!, service.Service))
+                {
+                    continue;
+                }
+
+                if (snapshot.ResolveStorageLayerId(candidate, candidateResource) == layerId)
+                {
+                    publication = candidate;
+                    if (candidate.IsPrimary)
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (publication is null)
+        {
             return new CoverageResolutionResult(null, null);
         }
 
@@ -2021,7 +2044,7 @@ internal sealed partial class Wcs20Handler
     // supplied per request (SCALESIZE, SCALEFACTOR, SCALEAXES, or SCALEEXTENT);
     // each resolves to explicit output width/height in pixels so the shared raster
     // export pipeline resamples the (possibly subset-trimmed) base grid uniformly.
-    private static bool TryResolveScaling(
+    internal static bool TryResolveScaling(
         IQueryCollection query,
         int baseWidth,
         int baseHeight,
@@ -2082,11 +2105,21 @@ internal sealed partial class Wcs20Handler
         error = default;
 
         if (!double.TryParse(value.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var factor) ||
-            !CoverageScaling.TryResolveFactor(baseWidth, baseHeight, factor, out var resolved))
+            !double.IsFinite(factor) ||
+            factor <= 0)
+        {
+            error = new WcsParameterError(
+                Wcs20Utilities.ExceptionCodes.InvalidScaleFactor,
+                $"SCALEFACTOR '{value}' must be a positive number.",
+                Wcs20Utilities.Parameters.ScaleFactor);
+            return false;
+        }
+
+        if (!CoverageScaling.TryResolveFactor(baseWidth, baseHeight, factor, out var resolved))
         {
             error = new WcsParameterError(
                 Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
-                $"SCALEFACTOR '{value}' must be a positive number.",
+                $"SCALEFACTOR '{value}' exceeds the maximum output grid size.",
                 Wcs20Utilities.Parameters.ScaleFactor);
             return false;
         }
@@ -2116,7 +2149,7 @@ internal sealed partial class Wcs20Handler
         {
             if (!TryParseSingleSubset(token, out var axis, out var factor, out _, out var isSlice) || !isSlice)
             {
-                error = CreateScaleAxesError(token);
+                error = CreateScaleAxesError(token, Wcs20Utilities.ExceptionCodes.InvalidScaleFactor);
                 return false;
             }
 
@@ -2124,7 +2157,13 @@ internal sealed partial class Wcs20Handler
             {
                 if (xFactor.HasValue)
                 {
-                    error = CreateScaleAxesError("duplicate x axis");
+                    error = CreateScaleAxesError("duplicate x axis", Wcs20Utilities.ExceptionCodes.InvalidAxisLabel);
+                    return false;
+                }
+
+                if (!double.IsFinite(factor) || factor <= 0)
+                {
+                    error = CreateScaleAxesError(token, Wcs20Utilities.ExceptionCodes.InvalidScaleFactor);
                     return false;
                 }
 
@@ -2134,7 +2173,13 @@ internal sealed partial class Wcs20Handler
             {
                 if (yFactor.HasValue)
                 {
-                    error = CreateScaleAxesError("duplicate y axis");
+                    error = CreateScaleAxesError("duplicate y axis", Wcs20Utilities.ExceptionCodes.InvalidAxisLabel);
+                    return false;
+                }
+
+                if (!double.IsFinite(factor) || factor <= 0)
+                {
+                    error = CreateScaleAxesError(token, Wcs20Utilities.ExceptionCodes.InvalidScaleFactor);
                     return false;
                 }
 
@@ -2142,14 +2187,14 @@ internal sealed partial class Wcs20Handler
             }
             else
             {
-                error = CreateScaleAxesError(token);
+                error = CreateScaleAxesError(token, Wcs20Utilities.ExceptionCodes.InvalidAxisLabel);
                 return false;
             }
         }
 
         if (!CoverageScaling.TryResolveAxes(baseWidth, baseHeight, xFactor, yFactor, out var resolved))
         {
-            error = CreateScaleAxesError(value);
+            error = CreateScaleAxesError(value, Wcs20Utilities.ExceptionCodes.InvalidParameterValue);
             return false;
         }
 
@@ -2178,9 +2223,9 @@ internal sealed partial class Wcs20Handler
         int? ySize = null;
         foreach (var token in SplitTopLevel(value))
         {
-            if (!TryParseScaleExtentInterval(token, out var axis, out var size))
+            if (!TryParseScaleExtentInterval(token, out var axis, out var size, out var intervalErrorCode))
             {
-                error = CreateScaleExtentError(token);
+                error = CreateScaleExtentError(token, intervalErrorCode);
                 return false;
             }
 
@@ -2188,7 +2233,7 @@ internal sealed partial class Wcs20Handler
             {
                 if (xSize.HasValue)
                 {
-                    error = CreateScaleExtentError("duplicate x axis");
+                    error = CreateScaleExtentError("duplicate x axis", Wcs20Utilities.ExceptionCodes.InvalidAxisLabel);
                     return false;
                 }
 
@@ -2198,7 +2243,7 @@ internal sealed partial class Wcs20Handler
             {
                 if (ySize.HasValue)
                 {
-                    error = CreateScaleExtentError("duplicate y axis");
+                    error = CreateScaleExtentError("duplicate y axis", Wcs20Utilities.ExceptionCodes.InvalidAxisLabel);
                     return false;
                 }
 
@@ -2206,14 +2251,14 @@ internal sealed partial class Wcs20Handler
             }
             else
             {
-                error = CreateScaleExtentError(token);
+                error = CreateScaleExtentError(token, Wcs20Utilities.ExceptionCodes.InvalidAxisLabel);
                 return false;
             }
         }
 
         if (!CoverageScaling.TryResolveExtent(baseWidth, baseHeight, xSize, ySize, out var resolved))
         {
-            error = CreateScaleExtentError(value);
+            error = CreateScaleExtentError(value, Wcs20Utilities.ExceptionCodes.InvalidExtent);
             return false;
         }
 
@@ -2225,16 +2270,32 @@ internal sealed partial class Wcs20Handler
     // SCALEEXTENT uses comma-separated axis(low,high) intervals. The caller
     // tokenises with SplitTopLevel so the comma inside the (low,high) pair is
     // preserved and each token is a complete axis interval.
-    private static bool TryParseScaleExtentInterval(string token, out string axis, out int size)
+    private static bool TryParseScaleExtentInterval(
+        string token,
+        out string axis,
+        out int size,
+        out string exceptionCode)
     {
         axis = string.Empty;
         size = 0;
+        exceptionCode = Wcs20Utilities.ExceptionCodes.InvalidExtent;
 
-        if (!TryParseSingleSubset(token, out axis, out var low, out var high, out var isSlice) ||
-            isSlice ||
+        if (!TryParseSingleSubset(token, out axis, out var low, out var high, out var isSlice))
+        {
+            return false;
+        }
+
+        if (!string.Equals(axis, "x", StringComparison.Ordinal) &&
+            !string.Equals(axis, "y", StringComparison.Ordinal))
+        {
+            exceptionCode = Wcs20Utilities.ExceptionCodes.InvalidAxisLabel;
+            return false;
+        }
+
+        if (isSlice ||
             !NumericTolerance.IsWholeNumber(low) ||
             !NumericTolerance.IsWholeNumber(high) ||
-            high < low)
+            high <= low)
         {
             return false;
         }
@@ -2244,6 +2305,7 @@ internal sealed partial class Wcs20Handler
         var span = high - low + 1;
         if (!double.IsFinite(span) || span <= 0 || span > int.MaxValue)
         {
+            exceptionCode = Wcs20Utilities.ExceptionCodes.InvalidParameterValue;
             return false;
         }
 
@@ -2287,15 +2349,15 @@ internal sealed partial class Wcs20Handler
         }
     }
 
-    private static WcsParameterError CreateScaleAxesError(string token)
+    private static WcsParameterError CreateScaleAxesError(string token, string exceptionCode)
         => new(
-            Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
+            exceptionCode,
             $"SCALEAXES '{token}' must use axis(factor) with a positive factor on the x/E/Long or y/N/Lat axis.",
             Wcs20Utilities.Parameters.ScaleAxes);
 
-    private static WcsParameterError CreateScaleExtentError(string token)
+    private static WcsParameterError CreateScaleExtentError(string token, string exceptionCode)
         => new(
-            Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
+            exceptionCode,
             $"SCALEEXTENT '{token}' must use axis(low,high) grid intervals on the x/E/Long or y/N/Lat axis.",
             Wcs20Utilities.Parameters.ScaleExtent);
 
@@ -2322,10 +2384,28 @@ internal sealed partial class Wcs20Handler
 
             foreach (var token in rawValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
-                if (!TryParseSingleSubset(token, out var axis, out var size, out _, out var isSlice) ||
-                    !isSlice || size <= 0 || !NumericTolerance.IsWholeNumber(size) || size > MaxWcsOutputDimension)
+                if (!TryParseSingleSubset(token, out var axis, out var size, out _, out var isSlice) || !isSlice)
                 {
-                    error = CreateScaleSizeError(token);
+                    error = CreateScaleSizeError(token, Wcs20Utilities.ExceptionCodes.InvalidScaleFactor);
+                    return false;
+                }
+
+                if (!string.Equals(axis, "x", StringComparison.Ordinal) &&
+                    !string.Equals(axis, "y", StringComparison.Ordinal))
+                {
+                    error = CreateScaleSizeError(token, Wcs20Utilities.ExceptionCodes.InvalidAxisLabel);
+                    return false;
+                }
+
+                if (size <= 0 || !NumericTolerance.IsWholeNumber(size))
+                {
+                    error = CreateScaleSizeError(token, Wcs20Utilities.ExceptionCodes.InvalidScaleFactor);
+                    return false;
+                }
+
+                if (size > MaxWcsOutputDimension)
+                {
+                    error = CreateScaleSizeError(token, Wcs20Utilities.ExceptionCodes.InvalidParameterValue);
                     return false;
                 }
 
@@ -2336,26 +2416,21 @@ internal sealed partial class Wcs20Handler
                 {
                     if (width.HasValue)
                     {
-                        error = CreateScaleSizeError("duplicate x axis");
+                        error = CreateScaleSizeError("duplicate x axis", Wcs20Utilities.ExceptionCodes.InvalidAxisLabel);
                         return false;
                     }
 
                     width = target;
                 }
-                else if (string.Equals(axis, "y", StringComparison.Ordinal))
+                else
                 {
                     if (height.HasValue)
                     {
-                        error = CreateScaleSizeError("duplicate y axis");
+                        error = CreateScaleSizeError("duplicate y axis", Wcs20Utilities.ExceptionCodes.InvalidAxisLabel);
                         return false;
                     }
 
                     height = target;
-                }
-                else
-                {
-                    error = CreateScaleSizeError(token);
-                    return false;
                 }
             }
         }
@@ -2363,16 +2438,16 @@ internal sealed partial class Wcs20Handler
         return true;
     }
 
-    private static WcsParameterError CreateScaleSizeError(string token)
+    private static WcsParameterError CreateScaleSizeError(string token, string exceptionCode)
         => new(
-            Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
+            exceptionCode,
             $"SCALESIZE '{token}' must use axis(size) with a positive integer size on the x/E/Long or y/N/Lat axis.",
             Wcs20Utilities.Parameters.ScaleSize);
 
     // WCS 2.0 Range Subsetting extension: RANGESUBSET selects coverage range-type fields,
     // which DescribeCoverage advertises as band1..bandN. Accepts a comma list of field
     // names and band1:bandN intervals.
-    private static bool TryResolveRangeSubset(
+    internal static bool TryResolveRangeSubset(
         IQueryCollection query,
         RasterInfo raster,
         out int[]? bands,
@@ -2437,7 +2512,7 @@ internal sealed partial class Wcs20Handler
 
     private static WcsParameterError CreateRangeSubsetError(string token)
         => new(
-            Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
+            Wcs20Utilities.ExceptionCodes.NoSuchField,
             $"RANGESUBSET field '{token}' is not a valid coverage band. Use band1..bandN.",
             Wcs20Utilities.Parameters.RangeSubset);
 
@@ -2489,7 +2564,10 @@ internal sealed partial class Wcs20Handler
             ? Wcs20Utilities.Parameters.SubsettingCrs
             : Wcs20Utilities.Parameters.BBoxCrs;
 
-        var effectiveSubsettingCrs = suppliedSubsettingCrs ?? nativeSrid.Value.ToString(CultureInfo.InvariantCulture);
+        var effectiveSubsettingCrs = suppliedSubsettingCrs
+            ?? (nativeSrid.Value == 4326
+                ? "CRS:84"
+                : nativeSrid.Value.ToString(CultureInfo.InvariantCulture));
         if (!SpatialReferenceHelpers.TryParseCrsDefinition(effectiveSubsettingCrs, out subsettingCrs))
         {
             error = new WcsParameterError(
@@ -2535,7 +2613,7 @@ internal sealed partial class Wcs20Handler
         return true;
     }
 
-    private static bool TryParseSubsetEnvelope(
+    internal static bool TryParseSubsetEnvelope(
         StringValues subsetValues,
         RasterInfo raster,
         CrsDefinition subsettingCrs,
@@ -2586,11 +2664,11 @@ internal sealed partial class Wcs20Handler
                     return false;
                 }
 
-                if (!isSlice && low >= high)
+                if (isSlice || low > high)
                 {
                     error = new WcsParameterError(
                         Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
-                        "X/E/Long subset lower bound must be less than the upper bound.",
+                        "X/E/Long subset lower bound must be less than or equal to the upper bound.",
                         Wcs20Utilities.Parameters.Subset);
                     return false;
                 }
@@ -2609,11 +2687,11 @@ internal sealed partial class Wcs20Handler
                     return false;
                 }
 
-                if (!isSlice && low >= high)
+                if (isSlice || low > high)
                 {
                     error = new WcsParameterError(
                         Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
-                        "Y/N/Lat subset lower bound must be less than the upper bound.",
+                        "Y/N/Lat subset lower bound must be less than or equal to the upper bound.",
                         Wcs20Utilities.Parameters.Subset);
                     return false;
                 }
@@ -2662,6 +2740,8 @@ internal sealed partial class Wcs20Handler
             resolvedMaxX,
             resolvedMaxY,
             subsettingCrs,
+            AxisOrder.EastNorth,
+            allowEqualBounds: true,
             Wcs20Utilities.Parameters.Subset,
             out envelope,
             out error);
@@ -2719,7 +2799,7 @@ internal sealed partial class Wcs20Handler
         return true;
     }
 
-    private static bool TryParseBboxEnvelope(
+    internal static bool TryParseBboxEnvelope(
         string bbox,
         CrsDefinition subsettingCrs,
         out Envelope envelope,
@@ -2756,6 +2836,8 @@ internal sealed partial class Wcs20Handler
             parsed.MaxX,
             parsed.MaxY,
             subsettingCrs,
+            subsettingCrs.AxisOrder,
+            allowEqualBounds: false,
             Wcs20Utilities.Parameters.BBox,
             out envelope,
             out error);
@@ -2767,12 +2849,42 @@ internal sealed partial class Wcs20Handler
         double maxX,
         double maxY,
         CrsDefinition crs,
+        AxisOrder axisOrder,
+        bool allowEqualBounds,
         string locator,
         out Envelope envelope,
         out WcsParameterError error)
     {
         envelope = default!;
         error = default;
+
+        if (allowEqualBounds && (minX == maxX || minY == maxY))
+        {
+            var resolvedMinX = axisOrder == AxisOrder.NorthEast ? minY : minX;
+            var resolvedMinY = axisOrder == AxisOrder.NorthEast ? minX : minY;
+            var resolvedMaxX = axisOrder == AxisOrder.NorthEast ? maxY : maxX;
+            var resolvedMaxY = axisOrder == AxisOrder.NorthEast ? maxX : maxY;
+
+            if (!RasterParsingHelpers.IsValidCoordinate(resolvedMinX) ||
+                !RasterParsingHelpers.IsValidCoordinate(resolvedMinY) ||
+                !RasterParsingHelpers.IsValidCoordinate(resolvedMaxX) ||
+                !RasterParsingHelpers.IsValidCoordinate(resolvedMaxY) ||
+                resolvedMinX > resolvedMaxX ||
+                resolvedMinY > resolvedMaxY ||
+                (crs.IsGeographic &&
+                 (resolvedMinX < -180.0 || resolvedMaxX > 180.0 ||
+                  resolvedMinY < -90.0 || resolvedMaxY > 90.0)))
+            {
+                error = new WcsParameterError(
+                    Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
+                    "Spatial subset coordinates are invalid for the selected CRS.",
+                    locator);
+                return false;
+            }
+
+            envelope = new Envelope(resolvedMinX, resolvedMaxX, resolvedMinY, resolvedMaxY);
+            return true;
+        }
 
         var bbox = string.Join(
             ',',
@@ -2783,7 +2895,7 @@ internal sealed partial class Wcs20Handler
 
         if (!RasterParsingHelpers.TryParseBoundingBox(
                 bbox,
-                AxisOrder.EastNorth,
+                axisOrder,
                 crs.IsGeographic,
                 out var parsedMinX,
                 out var parsedMinY,
@@ -2962,7 +3074,9 @@ internal sealed partial class Wcs20Handler
     }
 
     private static IResult CreateGetCoverageParameterError(WcsParameterError error)
-        => error.ExceptionCode is Wcs20Utilities.ExceptionCodes.InvalidAxisLabel or Wcs20Utilities.ExceptionCodes.InvalidSubsetting
+        => error.ExceptionCode is Wcs20Utilities.ExceptionCodes.InvalidAxisLabel
+            or Wcs20Utilities.ExceptionCodes.InvalidSubsetting
+            or Wcs20Utilities.ExceptionCodes.NoSuchField
             ? Wcs20ErrorResults.CreateNotFound(error.ExceptionCode, error.Detail, error.Locator)
             : Wcs20ErrorResults.CreateBadRequest(error.ExceptionCode, error.Detail, error.Locator);
 
