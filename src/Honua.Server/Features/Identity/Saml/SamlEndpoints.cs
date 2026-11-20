@@ -191,6 +191,14 @@ internal static partial class SamlEndpoints
             expiresAt: expiresAt,
             cancellationToken: context.RequestAborted).ConfigureAwait(false);
 
+        if (subject.SessionIndex is { } sessionIndex
+            && await IndexSessionAsync(
+                context, new SamlIndexedSession(new SamlSessionReference(subject.NameId, sessionIndex), sessionId, expiresAt))
+                .ConfigureAwait(false) is { } notIndexed)
+        {
+            return notIndexed;
+        }
+
         SetSessionCookie(context, sessionId, expiresAt - now);
 
         SamlLog.SessionEstablished(logger, subject.NameId, subject.Roles.Count);
@@ -271,23 +279,17 @@ internal static partial class SamlEndpoints
             return rejected;
         }
 
-        var logoutError = await TerminateLocalSessionAsync(context, sessionStore).ConfigureAwait(false);
-        if (logoutError is not null)
+        var attempt = await EndSessionOnceAsync(context, logoutRequest, logger).ConfigureAwait(false);
+        if (attempt.Rejection is { } notEnded)
         {
-            return logoutError;
-        }
-
-        if (!context.RequestServices.GetRequiredService<SamlLogoutRequestValidator>().TryConsume(logoutRequest))
-        {
-            SamlLog.SingleLogoutRejected(logger, "replay detected or replay store unavailable");
-            return LogoutRejected(context, "SAML logout request replay was detected.");
+            return notEnded;
         }
 
         var nameId = logoutRequest.Element(XName.Get("NameID", SamlAssertionNs))?.Value?.Trim();
         SamlLog.SingleLogoutProcessed(logger, string.IsNullOrEmpty(nameId) ? "(unknown)" : nameId);
 
         var requestId = logoutRequest.Attribute("ID")?.Value;
-        var logoutResponse = BuildLogoutResponse(opts, requestId);
+        var logoutResponse = BuildLogoutResponse(opts, requestId, attempt.Status);
         var encodedResponse = Convert.ToBase64String(Encoding.UTF8.GetBytes(logoutResponse));
 
         // Relay the LogoutResponse back to the IdP via an auto-submitting HTML form (HTTP-POST
@@ -361,6 +363,117 @@ internal static partial class SamlEndpoints
     private const string SamlAssertionNs = "urn:oasis:names:tc:SAML:2.0:assertion";
     private const string SamlProtocolNs = "urn:oasis:names:tc:SAML:2.0:protocol";
 
+    // A session that an IdP logout request could not find is not issued.
+    private static async Task<IResult?> IndexSessionAsync(HttpContext context, SamlIndexedSession session)
+    {
+        try
+        {
+            await context.RequestServices.GetRequiredService<SamlSessionIndex>()
+                .RecordAsync(session, context.RequestAborted).ConfigureAwait(false);
+            return null;
+        }
+        catch (Exception storeFailure) when (storeFailure is not OutOfMemoryException and not OperationCanceledException)
+        {
+            await context.RequestServices.GetRequiredService<AdminAuthSessionStore>()
+                .RemoveAuthenticatedSessionAsync(session.SessionId, context.RequestAborted).ConfigureAwait(false);
+            return StandardErrorHelpers.CreateServiceUnavailable(
+                context, "Sign-in could not be completed. Retry when the session store is available.", retryable: true);
+        }
+    }
+
+    // The request is claimed for this caller before the session ends, so a replayed request is refused
+    // without ending anyone's session; the same caller may retry after a failed termination.
+    private static async Task<SamlLogoutAttempt> EndSessionOnceAsync(HttpContext context, XElement logoutRequest, ILogger logger)
+    {
+        var validator = context.RequestServices.GetRequiredService<SamlLogoutRequestValidator>();
+        var sessionStore = context.RequestServices.GetRequiredService<AdminAuthSessionStore>();
+        context.Request.Cookies.TryGetValue(AdminAuthSessionStore.AuthSessionCookieName, out var callerSessionId);
+        if (!await validator.TryClaimAsync(logoutRequest, callerSessionId, context.RequestAborted).ConfigureAwait(false))
+        {
+            SamlLog.SingleLogoutRejected(logger, "replay detected or replay store unavailable");
+            return SamlLogoutAttempt.Rejected(LogoutRejected(context, "SAML logout request replay was detected."));
+        }
+
+        // Indexed sessions end before the cookie is cleared, so a failed attempt leaves the cookie in
+        // place and the same browser's retry still matches its claim.
+        var indexed = await TerminateIndexedSessionsAsync(context, logoutRequest, sessionStore).ConfigureAwait(false);
+        if ((indexed.Rejection ?? await TerminateLocalSessionAsync(context, sessionStore).ConfigureAwait(false))
+            is { } terminationError)
+        {
+            return SamlLogoutAttempt.Rejected(terminationError);
+        }
+
+        if (!await validator.TryCompleteAsync(logoutRequest, callerSessionId, context.RequestAborted).ConfigureAwait(false))
+        {
+            // The session has ended; the claim stays bound to this caller, so no other caller can reuse it.
+            SamlLog.SingleLogoutNotMarkedUsed(logger);
+        }
+
+        // With neither the session cookie nor an indexed session found, this SP could not identify the
+        // session, so the IdP is told the logout is partial rather than that it succeeded.
+        return new SamlLogoutAttempt(
+            null, string.IsNullOrEmpty(callerSessionId) ? indexed.Status : SamlLogoutStatus.Success);
+    }
+
+    // The IdP's logout request arrives cross-site without the session cookie, so the sessions it names
+    // by NameID and SessionIndex are found through the index and ended too.
+    private static async Task<SamlLogoutAttempt> TerminateIndexedSessionsAsync(
+        HttpContext context, XElement logoutRequest, AdminAuthSessionStore sessionStore)
+    {
+        try
+        {
+            var ended = 0;
+            foreach (var reference in ReadSessionReferences(logoutRequest))
+            {
+                ended += await EndIndexedSessionsAsync(context, reference, sessionStore).ConfigureAwait(false);
+            }
+
+            return new SamlLogoutAttempt(null, ended > 0 ? SamlLogoutStatus.Success : SamlLogoutStatus.PartialLogout);
+        }
+        catch (Exception storeFailure) when (storeFailure is not OutOfMemoryException and not OperationCanceledException)
+        {
+            return SamlLogoutAttempt.Rejected(StandardErrorHelpers.CreateServiceUnavailable(
+                context,
+                "Session could not be terminated. Retry logout when the session store is available.",
+                retryable: true));
+        }
+    }
+
+    // Returns how many live sessions the index named for this reference and this request ended.
+    private static async Task<int> EndIndexedSessionsAsync(
+        HttpContext context, SamlSessionReference reference, AdminAuthSessionStore sessionStore)
+    {
+        var index = context.RequestServices.GetRequiredService<SamlSessionIndex>();
+        var ended = 0;
+        foreach (var sessionId in await index.FindAsync(reference, context.RequestAborted).ConfigureAwait(false))
+        {
+            ended += await EndSessionIfLiveAsync(sessionStore, sessionId, context.RequestAborted).ConfigureAwait(false);
+        }
+
+        await index.ForgetAsync(reference, context.RequestAborted).ConfigureAwait(false);
+        return ended;
+    }
+
+    // Every named session is revoked, unreadable ones included; only live ones count as found.
+    private static async Task<int> EndSessionIfLiveAsync(
+        AdminAuthSessionStore sessionStore, string sessionId, CancellationToken cancellationToken)
+    {
+        var live = await sessionStore.GetAuthenticatedSessionAsync(sessionId, cancellationToken).ConfigureAwait(false) is not null;
+        await sessionStore.RemoveAuthenticatedSessionAsync(sessionId, cancellationToken).ConfigureAwait(false);
+        return live ? 1 : 0;
+    }
+
+    private static IEnumerable<SamlSessionReference> ReadSessionReferences(XElement logoutRequest)
+    {
+        var nameId = logoutRequest.Element(XName.Get("NameID", SamlAssertionNs))?.Value?.Trim();
+        return string.IsNullOrEmpty(nameId)
+            ? []
+            : logoutRequest.Elements(XName.Get("SessionIndex", SamlProtocolNs))
+                .Select(element => element.Value.Trim())
+                .Where(sessionIndex => sessionIndex.Length > 0)
+                .Select(sessionIndex => new SamlSessionReference(nameId, sessionIndex));
+    }
+
     private static async Task<IResult?> TerminateLocalSessionAsync(HttpContext context, AdminAuthSessionStore sessionStore)
     {
         if (context.Request.Cookies.TryGetValue(AdminAuthSessionStore.AuthSessionCookieName, out var sessionId) &&
@@ -392,7 +505,7 @@ internal static partial class SamlEndpoints
         return null;
     }
 
-    private static string BuildLogoutResponse(SamlAuthenticationOptions opts, string? inResponseTo)
+    private static string BuildLogoutResponse(SamlAuthenticationOptions opts, string? inResponseTo, SamlLogoutStatus status)
     {
         var settings = new XmlWriterSettings
         {
@@ -421,15 +534,30 @@ internal static partial class SamlEndpoints
             }
 
             writer.WriteStartElement("Status", SamlProtocolNs);
-            writer.WriteStartElement("StatusCode", SamlProtocolNs);
-            writer.WriteAttributeString("Value", "urn:oasis:names:tc:SAML:2.0:status:Success");
-            writer.WriteEndElement(); // StatusCode
+            WriteLogoutStatus(writer, status);
             writer.WriteEndElement(); // Status
 
             writer.WriteEndElement(); // LogoutResponse
         }
 
         return output.ToString();
+    }
+
+    private static void WriteLogoutStatus(XmlWriter writer, SamlLogoutStatus status)
+    {
+        writer.WriteStartElement("StatusCode", SamlProtocolNs);
+        if (status == SamlLogoutStatus.Success)
+        {
+            writer.WriteAttributeString("Value", "urn:oasis:names:tc:SAML:2.0:status:Success");
+            writer.WriteEndElement();
+            return;
+        }
+
+        writer.WriteAttributeString("Value", "urn:oasis:names:tc:SAML:2.0:status:Responder");
+        writer.WriteStartElement("StatusCode", SamlProtocolNs);
+        writer.WriteAttributeString("Value", "urn:oasis:names:tc:SAML:2.0:status:PartialLogout");
+        writer.WriteEndElement();
+        writer.WriteEndElement();
     }
 
     private static string BuildAutoPostForm(string destination, string encodedResponse, string? relayState)

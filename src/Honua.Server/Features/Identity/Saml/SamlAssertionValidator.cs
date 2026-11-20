@@ -45,6 +45,9 @@ public sealed class SamlSubject
     public IReadOnlyList<string> Roles { get; init; } = [];
 
     public DateTimeOffset? SessionNotOnOrAfter { get; init; }
+
+    // The IdP's handle for this sign-in; a later logout request names it to end this session.
+    public string? SessionIndex { get; init; }
 }
 
 // Unsigned assertions are rejected, and the signature is checked with primitives rather than the framework signed-XML types.
@@ -281,8 +284,12 @@ internal sealed class SamlAssertionValidator(
             DisplayName = displayName,
             Roles = roles,
             SessionNotOnOrAfter = sessionExpiry,
+            SessionIndex = NullIfBlank(authnStatement?.Attribute("SessionIndex")?.Value),
         }, responseInResponseTo);
     }
+
+    private static string? NullIfBlank(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static Dictionary<string, List<string>> ReadAttributes(XElement assertion)
     {

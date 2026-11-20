@@ -72,7 +72,14 @@ succeed.
 Set `Saml:SingleLogoutServiceUrl` to the SP's own `/saml/slo` endpoint to advertise a
 `SingleLogoutService` (HTTP-POST binding) in SP metadata. When the IdP front-channels a signed
 `LogoutRequest` there, Honua verifies the signature against `Saml:IdpSigningCertificate`,
-terminates the local admin session (store record + cookie), and emits a `LogoutResponse`. Set
+terminates the local admin session (store record + cookie), and emits a `LogoutResponse`.
+The IdP's request arrives cross-site, so the browser usually sends no session cookie with it.
+Honua therefore records each sign-in's `SessionIndex` in the shared store and ends the
+sessions that the request names by `NameID` and `SessionIndex`. If a request carries neither
+a session cookie nor a `SessionIndex`, Honua cannot identify a session and answers with status
+`Responder` / `PartialLogout` instead of `Success`. Each `LogoutRequest` is honoured once. A
+repeat is refused before any session ends, and only the same browser may retry after a store
+outage. Set
 `Saml:IdpSingleLogoutServiceUrl` to relay that `LogoutResponse` back to the IdP via an
 auto-submitting HTTP-POST form; leave it unset to return the `LogoutResponse` directly. Only
 signed `LogoutRequest`s are honored — unsigned or forged logout requests are rejected so they
