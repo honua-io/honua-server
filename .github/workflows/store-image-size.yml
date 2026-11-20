@@ -129,10 +129,11 @@ jobs:
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
-          # Read-only registry cache warms the base, apt and restore layers.
+          # Read-only registry cache; nothing writes the full profile's ref,
+          # so that leg starts cold (its pre-restore steps take seconds).
           # No cache export: COPY . . changes on every commit, so exported
-          # compiler layers were never reused, while the mode=max upload took
-          # 4.5-8 min per job and about 6.5 GB a day of Actions cache.
+          # compiler layers were reused only by same-commit reruns, while the
+          # mode=max upload took 4.5-8 min per job and 6.5 GB a day.
           cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:${{ matrix.cache_scope }}
       - name: Export compressed image size evidence
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
