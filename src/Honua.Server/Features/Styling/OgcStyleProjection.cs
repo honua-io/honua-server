@@ -411,7 +411,6 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         ArgumentNullException.ThrowIfNull(mapLibreStyleJson);
 
         var (resource, storageLayerId, _) = await ResolveStyledResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
-        WarnIfStorageLayerAmbiguous(styleId, resource, storageLayerId);
         if (resource is null || !storageLayerId.HasValue)
         {
             // Phase 2: the styleId may identify a catalog style rather than a collection-keyed
@@ -479,7 +478,6 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         }
 
         var (resource, storageLayerId, _) = await ResolveStyledResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
-        WarnIfStorageLayerAmbiguous(styleId, resource, storageLayerId);
         if (resource is null || !storageLayerId.HasValue)
         {
             // Phase 2: catalog styles accept the negotiated Esri encoding on write too, so
@@ -538,14 +536,6 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             LayerStyleUpdateStatus.NotFound => new OgcStyleUpdateResult(OgcStyleUpdateStatus.NotFound, $"Style '{styleId}' not found."),
             _ => new OgcStyleUpdateResult(OgcStyleUpdateStatus.Invalid, result.ErrorMessage ?? "drawingInfo is invalid.", warnings)
         };
-    }
-
-    private void WarnIfStorageLayerAmbiguous(string styleId, MetadataV2Object? resource, int? storageLayerId)
-    {
-        if (resource is not null && !storageLayerId.HasValue)
-        {
-            LayerStyleLog.StyleStorageLayerAmbiguous(_logger, styleId);
-        }
     }
 
     // A catalog style whose id is not a collection name may be a mirrored layer default. These

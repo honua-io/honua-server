@@ -574,8 +574,8 @@ public static class OgcStylesEndpoints
     }
 
     // A layer style write can retire the layer's saved presentation, which FeatureServer and
-    // MapServer metadata and cached map output advertise, so evict the layer as the admin style
-    // endpoints do.
+    // MapServer metadata, tiles and cached map output advertise, so evict the layer as the
+    // endpoint that sets that presentation does.
     private static async Task EvictStyledLayerAsync(HttpContext context, ILogger logger, int? storageLayerId)
     {
         var invalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
@@ -586,7 +586,7 @@ public static class OgcStylesEndpoints
 
         try
         {
-            await invalidator.InvalidateStorageLayerAsync(layerId, CancellationToken.None).ConfigureAwait(false);
+            await invalidator.InvalidateServiceCatalogAsync(null, [layerId], CancellationToken.None).ConfigureAwait(false);
         }
         // Best effort, as for the styles tag above: the style write has committed.
         catch (Exception ex) when (ex is not OutOfMemoryException)
