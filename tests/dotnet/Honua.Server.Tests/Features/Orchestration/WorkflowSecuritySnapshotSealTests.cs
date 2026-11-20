@@ -107,6 +107,58 @@ public sealed class WorkflowSecuritySnapshotSealTests(DatabaseFixtureAdapter dat
         (await store.GetAsync(other.RunId))!.Audit.SubmitterSecurityContext.Should().BeNull();
     }
 
+    // jsonb stores object keys sorted by length, so step inputs come back in another order than they
+    // were written; the seal must still verify.
+    [IntegrationTest]
+    public async Task Definition_StepInputsReorderedByJsonb_StillVerifies()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = DefinitionStore(harness, new EphemeralDataProtectionProvider());
+        var definition = Definition() with
+        {
+            Steps = [new WorkflowStepDefinition { StepId = "extract", Plan = PlanWithInputs() }],
+        };
+
+        await store.SetAsync(definition);
+
+        (await store.GetAsync(definition.WorkflowId))!.AuthorSecurityContext.Should().BeEquivalentTo(Author);
+    }
+
+    [IntegrationTest]
+    public async Task Run_AuthorizedPlanInputsReorderedByJsonb_StillVerifies()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = RunStore(harness, new EphemeralDataProtectionProvider());
+        var run = Run();
+        run = run with { StepStates = [run.StepStates[0] with { AuthorizedPlan = PlanWithInputs() }] };
+
+        (await store.TryCreateAsync(run)).Should().BeTrue();
+
+        (await store.GetAsync(run.RunId))!.Audit.SubmitterSecurityContext.Should().BeEquivalentTo(Author);
+    }
+
+    private static AnalysisPlan PlanWithInputs() => new()
+    {
+        PlanId = "plan",
+        IntentId = "intent",
+        Steps =
+        [
+            new AnalysisPlanStep
+            {
+                StepId = "sink",
+                Kind = AnalysisPlanStepKind.Geoprocess,
+                ProcessId = "sink.external-postgis",
+                Inputs = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["input"] = "data:application/geo+json;base64,e30=",
+                    ["connectionId"] = "00000000-0000-0000-0000-000000000001",
+                    ["schema"] = "public",
+                    ["table"] = "result",
+                },
+            },
+        ],
+    };
+
     private async Task<PostgresJobSubstrateHarness> CreateHarnessAsync()
     {
         var harness = await PostgresJobSubstrateHarness.CreateAsync(database, nameof(WorkflowSecuritySnapshotSealTests));
