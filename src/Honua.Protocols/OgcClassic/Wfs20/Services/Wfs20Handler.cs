@@ -968,7 +968,7 @@ internal sealed partial class Wfs20Handler
         }
 
         var returnedCount = queryResults.Sum(entry => entry.Features.Length);
-        var xml = WriteXmlDocument(writer =>
+        var result = WriteGmlDocumentResult(writer =>
         {
             writer.WriteStartDocument();
             writer.WriteStartElement("wfs", "FeatureCollection", Wfs20Utilities.WfsNamespace);
@@ -996,7 +996,7 @@ internal sealed partial class Wfs20Handler
             writer.WriteEndDocument();
         });
 
-        return (Results.Content(xml, MediaTypes.Gml, Encoding.UTF8), returnedCount);
+        return (result, returnedCount);
     }
 
     private async Task<(IResult Result, int ReturnedCount)> BuildJsonResultAsync(
@@ -1306,7 +1306,7 @@ internal sealed partial class Wfs20Handler
         {
             writer.WriteStartElement(
                 plan.Descriptor.NamespacePrefix,
-                XmlConvert.EncodeLocalName(geometryPropertyName),
+                EncodeFieldLocalName(geometryPropertyName),
                 plan.Descriptor.NamespaceUri);
             writer.WriteRaw(RelabelCrs84SrsName(feature.GeometryGml, plan.Query, plan.RequestedSrsName));
             writer.WriteEndElement();
@@ -1320,7 +1320,7 @@ internal sealed partial class Wfs20Handler
                 {
                     writer.WriteStartElement(
                         plan.Descriptor.NamespacePrefix,
-                        XmlConvert.EncodeLocalName(field.Name),
+                        EncodeFieldLocalName(field.Name),
                         plan.Descriptor.NamespaceUri);
                     writer.WriteAttributeString("xsi", "nil", Wfs20Utilities.XsiNamespace, XmlConvert.ToString(true));
                     writer.WriteEndElement();
@@ -1331,7 +1331,7 @@ internal sealed partial class Wfs20Handler
 
             writer.WriteStartElement(
                 plan.Descriptor.NamespacePrefix,
-                XmlConvert.EncodeLocalName(field.Name),
+                EncodeFieldLocalName(field.Name),
                 plan.Descriptor.NamespaceUri);
             writer.WriteString(ConvertFieldValueToInvariantString(value, field));
             writer.WriteEndElement();
@@ -1342,6 +1342,29 @@ internal sealed partial class Wfs20Handler
         {
             writer.WriteEndElement();
         }
+    }
+
+    // XmlConvert.EncodeLocalName runs a regex for every call; a name made only of ASCII NCName
+    // characters with no "_x" escape sequence encodes to itself, so return it without the scan.
+    internal static string EncodeFieldLocalName(string name)
+        => IsPlainAsciiNcName(name) ? name : XmlConvert.EncodeLocalName(name);
+
+    private static bool IsPlainAsciiNcName(string name)
+    {
+        if (name.Length == 0 || !(char.IsAsciiLetter(name[0]) || name[0] == '_'))
+        {
+            return false;
+        }
+
+        foreach (var c in name)
+        {
+            if (!(char.IsAsciiLetterOrDigit(c) || c is '_' or '-' or '.'))
+            {
+                return false;
+            }
+        }
+
+        return !name.Contains("_x", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool TryGetGmlNameValue(
@@ -1572,22 +1595,46 @@ internal sealed partial class Wfs20Handler
         return Results.Content(xml, MediaTypes.Gml, Encoding.UTF8);
     }
 
-    private static string WriteXmlDocument(Action<XmlWriter> writeAction)
-    {
-        var settings = new XmlWriterSettings
-        {
-            Indent = true,
-            IndentChars = "  ",
-            NewLineChars = "\n",
-            Encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
-            OmitXmlDeclaration = false
-        };
+    private static readonly string GmlUtf8ContentType = PooledUtf8ContentResult.WithUtf8Charset(MediaTypes.Gml);
 
+    private static XmlWriterSettings CreateXmlDocumentSettings() => new()
+    {
+        Indent = true,
+        IndentChars = "  ",
+        NewLineChars = "\n",
+        Encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+        OmitXmlDeclaration = false
+    };
+
+    internal static string WriteXmlDocument(Action<XmlWriter> writeAction)
+    {
         using var stream = new MemoryStream();
-        using var writer = XmlWriter.Create(stream, settings);
+        using var writer = XmlWriter.Create(stream, CreateXmlDocumentSettings());
         writeAction(writer);
         writer.Flush();
         return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    // Same bytes as Results.Content(WriteXmlDocument(writeAction), MediaTypes.Gml, Encoding.UTF8), written
+    // into a pooled buffer instead of a growing MemoryStream, its copy, a string and a second encoding.
+    internal static PooledUtf8ContentResult WriteGmlDocumentResult(Action<XmlWriter> writeAction)
+    {
+        var buffer = new PooledByteBuffer();
+        try
+        {
+            using (var writer = XmlWriter.Create(buffer, CreateXmlDocumentSettings()))
+            {
+                writeAction(writer);
+                writer.Flush();
+            }
+
+            return new PooledUtf8ContentResult(buffer, GmlUtf8ContentType);
+        }
+        catch
+        {
+            buffer.Dispose();
+            throw;
+        }
     }
 
     private static void WritePagingAttributes(XmlWriter writer, string? next, string? previous)
