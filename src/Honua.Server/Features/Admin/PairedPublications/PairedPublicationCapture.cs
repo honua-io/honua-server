@@ -105,7 +105,7 @@ internal sealed class PairedPublicationCapture
             returnM: false,
             limits.Geometry,
             [.. fields.ParquetFields],
-            encodingLimits: limits.GeoParquet,
+            encodingLimits: GeoParquetLimits.ForArtifact(limits.GeoParquet),
             fileMetadata: fileMetadata);
         return payload.ToArray();
     }

@@ -37,7 +37,7 @@ internal sealed class QueryFormatter
     public QueryFormatter(IOptions<LimitsOptions> limitsOptions, PbfQueryFormatter pbfFormatter, ILogger<QueryFormatter> logger)
     {
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
-        _geoParquetLimits = limitsOptions?.Value?.GeoParquet ?? new GeoParquetLimits();
+        _geoParquetLimits = (limitsOptions?.Value?.GeoParquet ?? new GeoParquetLimits()).ForQuery();
         _pbfFormatter = pbfFormatter;
         _logger = logger;
     }
@@ -949,7 +949,7 @@ internal sealed class StreamingQueryFormatter
     public StreamingQueryFormatter(IOptions<LimitsOptions> limitsOptions)
     {
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
-        _geoParquetLimits = limitsOptions?.Value?.GeoParquet ?? new GeoParquetLimits();
+        _geoParquetLimits = (limitsOptions?.Value?.GeoParquet ?? new GeoParquetLimits()).ForQuery();
     }
 
     public Task StreamAsGeoServicesJsonAsync(
