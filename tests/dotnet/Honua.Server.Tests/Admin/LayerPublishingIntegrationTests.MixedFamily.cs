@@ -25,7 +25,7 @@ public sealed partial class LayerPublishingIntegrationTests
                 CREATE TABLE public.{table} (
                     id integer PRIMARY KEY,
                     name text NOT NULL,
-                    geom geometry);
+                    geom geometry(Geometry, 4326));
                 INSERT INTO public.{table} (id, name, geom) VALUES
                     (1, 'point', ST_SetSRID(ST_Point(1, 2), 4326)),
                     (2, 'line', ST_SetSRID(ST_MakeLine(ST_Point(0, 0), ST_Point(3, 4)), 4326)),

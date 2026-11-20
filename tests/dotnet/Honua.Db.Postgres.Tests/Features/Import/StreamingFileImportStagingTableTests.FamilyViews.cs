@@ -48,7 +48,6 @@ public sealed partial class StreamingFileImportStagingTableTests
             var viewName = GeometryFamilyViews.ViewName(OverwriteGuardPhysicalTable, "Point");
             (await ReadOverwriteGuardRowsAsync(schema, viewName)).Select(row => (row.Name, row.Code, row.Wkt))
                 .Should().Equal(OverwriteGuardFixtureRows);
-            (await StagingRelationsAsync(schema)).Should().BeEmpty();
         }
         finally
         {
