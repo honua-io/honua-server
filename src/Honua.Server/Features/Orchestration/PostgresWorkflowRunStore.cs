@@ -150,7 +150,9 @@ internal sealed class PostgresWorkflowRunStore(
              .. run.StepStates.SelectMany(step => new[]
              {
                  step.StepId,
-                 step.AuthorizedPlan is null ? null : JsonSerializer.Serialize(step.AuthorizedPlan, OrchestrationJsonContext.Default.AnalysisPlan),
+                 step.AuthorizedPlan is null
+                     ? null
+                     : JobSecurityContextDigest.CanonicalJson(JsonSerializer.Serialize(step.AuthorizedPlan, OrchestrationJsonContext.Default.AnalysisPlan)),
              })]);
 
     private static bool IsReconcileComplete(WorkflowRun run)

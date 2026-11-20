@@ -134,6 +134,9 @@ internal sealed partial class PostgresWorkflowDefinitionStore(ControlPlaneStorag
         => JobSecurityContextDigest.Binding(
             "honua.workflow-definition.author.v1",
             definition.WorkflowId,
-            JsonSerializer.Serialize(definition.Steps, OrchestrationJsonContext.Default.IReadOnlyListWorkflowStepDefinition),
-            definition.Trigger is null ? null : JsonSerializer.Serialize(definition.Trigger, OrchestrationJsonContext.Default.WorkflowTrigger));
+            JobSecurityContextDigest.CanonicalJson(
+                JsonSerializer.Serialize(definition.Steps, OrchestrationJsonContext.Default.IReadOnlyListWorkflowStepDefinition)),
+            definition.Trigger is null
+                ? null
+                : JobSecurityContextDigest.CanonicalJson(JsonSerializer.Serialize(definition.Trigger, OrchestrationJsonContext.Default.WorkflowTrigger)));
 }
