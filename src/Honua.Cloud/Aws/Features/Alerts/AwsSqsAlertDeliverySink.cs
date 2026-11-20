@@ -40,17 +40,9 @@ internal sealed class AwsSqsPublisher : ISqsPublisher, IDisposable
         var request = new SendMessageRequest
         {
             QueueUrl = queueUrl,
-            MessageBody = messageBody
+            MessageBody = messageBody,
+            MessageAttributes = BuildMessageAttributes(attributes)
         };
-
-        foreach (var (key, value) in attributes)
-        {
-            request.MessageAttributes[key] = new MessageAttributeValue
-            {
-                DataType = "String",
-                StringValue = value
-            };
-        }
 
         try
         {
@@ -68,6 +60,26 @@ internal sealed class AwsSqsPublisher : ISqsPublisher, IDisposable
         {
             return new SqsPublishResult(false, false, "SQS queue not found.");
         }
+    }
+
+    private static Dictionary<string, MessageAttributeValue>? BuildMessageAttributes(Dictionary<string, string> attributes)
+    {
+        if (attributes.Count == 0)
+        {
+            return null;
+        }
+
+        var messageAttributes = new Dictionary<string, MessageAttributeValue>(attributes.Count, StringComparer.Ordinal);
+        foreach (var (key, value) in attributes)
+        {
+            messageAttributes[key] = new MessageAttributeValue
+            {
+                DataType = "String",
+                StringValue = value
+            };
+        }
+
+        return messageAttributes;
     }
 }
 

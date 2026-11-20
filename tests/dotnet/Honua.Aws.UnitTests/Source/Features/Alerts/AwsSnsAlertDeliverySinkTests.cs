@@ -1,6 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Net;
+using Amazon;
+using Amazon.Runtime;
+using Amazon.SimpleNotificationService;
+using Amazon.SimpleNotificationService.Model;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Alerts;
 using Honua.TestKit.Attributes;
@@ -126,5 +131,42 @@ public sealed class AwsSnsAlertDeliverySinkTests
         var publisher = new FakeSnsPublisher();
         var sink = new AwsSnsAlertDeliverySink(publisher, Options.Create(new AlertDeliveryOptions()), NullLogger<AwsSnsAlertDeliverySink>.Instance);
         Assert.Equal(AlertChannelType.AwsSns, sink.ChannelType);
+    }
+
+    [UnitTest]
+    public async Task AwsSnsPublisher_PublishAsync_PopulatesMessageAttributesOnSdkV4Request()
+    {
+        using var client = new CapturingSnsClient();
+        using var publisher = new AwsSnsPublisher(client);
+
+        var result = await publisher.PublishAsync(
+            "arn:aws:sns:us-east-1:123456:ops-alerts",
+            "{\"event\":\"test\"}",
+            "Honua Alert",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["X-Honua-Alert-Rule"] = "ops-reminder",
+                ["X-Honua-Severity"] = "Warning"
+            },
+            CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        Assert.NotNull(client.LastRequest);
+        Assert.Equal("arn:aws:sns:us-east-1:123456:ops-alerts", client.LastRequest.TopicArn);
+        Assert.NotNull(client.LastRequest.MessageAttributes);
+        Assert.Equal("String", client.LastRequest.MessageAttributes["X-Honua-Alert-Rule"].DataType);
+        Assert.Equal("ops-reminder", client.LastRequest.MessageAttributes["X-Honua-Alert-Rule"].StringValue);
+        Assert.Equal("Warning", client.LastRequest.MessageAttributes["X-Honua-Severity"].StringValue);
+    }
+
+    private sealed class CapturingSnsClient() : AmazonSimpleNotificationServiceClient(new AnonymousAWSCredentials(), RegionEndpoint.USEast1)
+    {
+        public PublishRequest? LastRequest { get; private set; }
+
+        public override Task<PublishResponse> PublishAsync(PublishRequest request, CancellationToken cancellationToken = default)
+        {
+            LastRequest = request;
+            return Task.FromResult(new PublishResponse { HttpStatusCode = HttpStatusCode.OK });
+        }
     }
 }

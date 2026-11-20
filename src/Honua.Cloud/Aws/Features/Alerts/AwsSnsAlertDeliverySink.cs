@@ -43,17 +43,9 @@ internal sealed class AwsSnsPublisher : ISnsPublisher, IDisposable
         {
             TopicArn = topicArn,
             Message = message,
-            Subject = subject
+            Subject = subject,
+            MessageAttributes = BuildMessageAttributes(attributes)
         };
-
-        foreach (var (key, value) in attributes)
-        {
-            request.MessageAttributes[key] = new MessageAttributeValue
-            {
-                DataType = "String",
-                StringValue = value
-            };
-        }
 
         try
         {
@@ -75,6 +67,26 @@ internal sealed class AwsSnsPublisher : ISnsPublisher, IDisposable
         {
             return new SnsPublishResult(false, false, "SNS topic not found.");
         }
+    }
+
+    private static Dictionary<string, MessageAttributeValue>? BuildMessageAttributes(Dictionary<string, string> attributes)
+    {
+        if (attributes.Count == 0)
+        {
+            return null;
+        }
+
+        var messageAttributes = new Dictionary<string, MessageAttributeValue>(attributes.Count, StringComparer.Ordinal);
+        foreach (var (key, value) in attributes)
+        {
+            messageAttributes[key] = new MessageAttributeValue
+            {
+                DataType = "String",
+                StringValue = value
+            };
+        }
+
+        return messageAttributes;
     }
 }
 
