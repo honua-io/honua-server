@@ -845,14 +845,21 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await using var command = connection.CreateCommand();
-            command.Transaction = transaction;
             var targetExists = await ImportTableOwnership.AssertOwnedAsync(connection, schemaName, targetTableName, cancellationToken).ConfigureAwait(false);
             await ImportTableOwnership.AssertExistingOwnedAsync(connection, schemaName, stagingTableName, cancellationToken).ConfigureAwait(false);
-            command.CommandText = (targetExists ? $"DROP TABLE {SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(targetTableName)} RESTRICT; " : string.Empty) +
-                                  $"ALTER TABLE {SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(stagingTableName)} RENAME TO {SqlIdentifier.QuoteIdentifier(targetTableName)}; " +
-                                  $"ALTER INDEX {SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(BuildSpatialIndexName(stagingTableName))} RENAME TO {SqlIdentifier.QuoteIdentifier(BuildSpatialIndexName(targetTableName))}";
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            var familyScope = new GeometryFamilyViews.TableScope
+            {
+                Connection = connection,
+                Transaction = transaction,
+                Schema = schemaName,
+                Table = targetTableName
+            };
+            await GeometryFamilyViews.ReplaceAsync(
+                familyScope,
+                (targetExists ? $"DROP TABLE {SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(targetTableName)} RESTRICT; " : string.Empty) +
+                $"ALTER TABLE {SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(stagingTableName)} RENAME TO {SqlIdentifier.QuoteIdentifier(targetTableName)}; " +
+                $"ALTER INDEX {SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(BuildSpatialIndexName(stagingTableName))} RENAME TO {SqlIdentifier.QuoteIdentifier(BuildSpatialIndexName(targetTableName))}",
+                cancellationToken).ConfigureAwait(false);
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         }
         catch

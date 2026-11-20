@@ -283,7 +283,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 COALESCE(NULLIF(srid, 0), NULLIF(storage_srid, 0), @catalogSrid) AS layer_srid,
                 COALESCE(storage_options ->> 'managedStore', 'false') = 'true' AS managed_store
             FROM honua.layers
-            WHERE table_name = @table
+            WHERE (
+                table_name = @table
+                OR table_name = @pointView
+                OR table_name = @lineView
+                OR table_name = @polygonView)
               AND (@schema IS NULL OR table_schema = @schema)
               AND NULLIF(geometry_column, '') IS NOT NULL
               -- Managed-store layers own their rows; a source-table refresh must never
@@ -302,6 +306,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
             command.Parameters.Add("@schema", NpgsqlDbType.Text).Value =
                 string.IsNullOrWhiteSpace(schema) ? DBNull.Value : schema;
             command.Parameters.AddWithValue("@table", table);
+            command.Parameters.AddWithValue("@pointView", GeometryFamilyViews.ViewName(table, "Point"));
+            command.Parameters.AddWithValue("@lineView", GeometryFamilyViews.ViewName(table, "LineString"));
+            command.Parameters.AddWithValue("@polygonView", GeometryFamilyViews.ViewName(table, "Polygon"));
             command.Parameters.AddWithValue("@catalogSrid", CatalogExtentSrid);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (true)

@@ -16,6 +16,7 @@ using Honua.Core.Queries.Filters;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Admin;
@@ -433,23 +434,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
         CancellationToken cancellationToken,
         NpgsqlTransaction? transaction = null)
     {
-        var sourceTable = $"{SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(table)}";
-        var sourceGeometry = SqlIdentifier.QuoteIdentifier(geometryColumn);
-        var sql = $"""
-            WITH source AS (
-                SELECT {sourceGeometry}::geometry AS geom
-                FROM {sourceTable}
-            )
-            SELECT
-                COUNT(*)::bigint,
-                COUNT(*) FILTER (WHERE geom IS NULL)::bigint,
-                COUNT(*) FILTER (WHERE geom IS NOT NULL AND NOT ST_IsValid(geom))::bigint,
-                COUNT(DISTINCT GeometryType(geom)) FILTER (WHERE geom IS NOT NULL)::int,
-                MIN(NULLIF(ST_SRID(geom), 0)) FILTER (WHERE geom IS NOT NULL)::int,
-                MAX(NULLIF(ST_SRID(geom), 0)) FILTER (WHERE geom IS NOT NULL)::int
-            FROM source;
-            """;
-
+        var sql = GeometryHealthSql(
+            $"{SqlIdentifier.QuoteIdentifier(schema)}.{SqlIdentifier.QuoteIdentifier(table)}",
+            SqlIdentifier.QuoteIdentifier(geometryColumn));
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -463,8 +450,31 @@ internal sealed partial class PostgreSqlLayerPublishingService
             reader.GetInt64(2),
             reader.IsDBNull(3) ? 0 : reader.GetInt32(3),
             reader.IsDBNull(4) ? null : reader.GetInt32(4),
-            reader.IsDBNull(5) ? null : reader.GetInt32(5));
+            reader.IsDBNull(5) ? null : reader.GetInt32(5))
+        {
+            FamilyRowCounts = reader.GetFieldValue<long[]>(6)
+        };
     }
+
+    private static string GeometryHealthSql(string sourceTable, string sourceGeometry) => $"""
+        WITH source AS (
+            SELECT {sourceGeometry}::geometry AS geom
+            FROM {sourceTable}
+        )
+        SELECT
+            COUNT(*)::bigint,
+            COUNT(*) FILTER (WHERE geom IS NULL)::bigint,
+            COUNT(*) FILTER (WHERE geom IS NOT NULL AND NOT ST_IsValid(geom))::bigint,
+            COUNT(DISTINCT GeometryType(geom)) FILTER (WHERE geom IS NOT NULL)::int,
+            MIN(NULLIF(ST_SRID(geom), 0)) FILTER (WHERE geom IS NOT NULL)::int,
+            MAX(NULLIF(ST_SRID(geom), 0)) FILTER (WHERE geom IS NOT NULL)::int,
+            ARRAY[
+                COUNT(*) FILTER (WHERE GeometryType(geom) IN ({GeometryFamilyViews.TypeList("Point")})),
+                COUNT(*) FILTER (WHERE GeometryType(geom) IN ({GeometryFamilyViews.TypeList("LineString")})),
+                COUNT(*) FILTER (WHERE GeometryType(geom) IN ({GeometryFamilyViews.TypeList("Polygon")}))
+            ]::bigint[]
+        FROM source;
+        """;
 
     private static async Task AddExistingLayerCheckAsync(
         NpgsqlConnection connection,
@@ -545,6 +555,153 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Expected = expected,
             Actual = actual
         };
+
+    private static string? MixedGeometryFamily(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        string normalized;
+        try
+        {
+            normalized = NormalizeGeometryType(raw);
+        }
+        catch (LayerPublishingException)
+        {
+            return null;
+        }
+
+        return normalized switch
+        {
+            "Point" or "MultiPoint" => "Point",
+            "LineString" or "MultiLineString" => "LineString",
+            "Polygon" or "MultiPolygon" => "Polygon",
+            _ => null
+        };
+    }
+
+    // A requested family on a mixed table turns the mixed-geometry error into a warning
+    // that names the rows that will publish, or a clearer error when there are none.
+    private static void SelectGeometryFamily(
+        GeometryHealth? health,
+        List<TablePublishValidationCheck> checks,
+        string? family)
+    {
+        var mixedIndex = checks.FindIndex(check => check.Code == "mixed-geometry" && check.Severity == SeverityError);
+        if (family is null || health is not { } value || mixedIndex < 0)
+        {
+            return;
+        }
+
+        var rows = value.RowsOfFamily(family);
+        checks[mixedIndex] = rows > 0
+            ? Warning(
+                "mixed-geometry",
+                $"Publishing only the {family} rows ({rows.ToString(CultureInfo.InvariantCulture)}). Other geometry types remain in the source table.",
+                "1",
+                value.DistinctGeometryTypeCount.ToString(CultureInfo.InvariantCulture))
+            : Error("mixed-geometry", $"Source table has no {family} geometries to publish.", family, "0");
+    }
+
+    private static GeometryFamilyView? GeometryFamilyViewFor(
+        TablePublishValidationResult validation,
+        string? requestedType)
+    {
+        var selected = validation.Checks.Any(check => check.Code == "mixed-geometry" && check.Severity == SeverityWarning);
+        if (!selected)
+        {
+            return null;
+        }
+
+        var family = MixedGeometryFamily(requestedType);
+        if (family is null || string.IsNullOrWhiteSpace(validation.GeometryColumn))
+        {
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Validation,
+                "A geometry column and type are required when the source table mixes geometry types.");
+        }
+
+        return new GeometryFamilyView
+        {
+            Schema = validation.Schema,
+            SourceTable = validation.Table,
+            GeometryColumn = validation.GeometryColumn,
+            Family = family
+        };
+    }
+
+    // Returns the view to publish as the layer's table and the geometry type it declares.
+    // Concurrent first publishes of one family would race on CREATE VIEW, so the view's
+    // publish lock is taken first; the publish path takes it again, which is a no-op.
+    private static async Task<(string Table, string GeometryType)> PrepareGeometryFamilyViewAsync(
+        NpgsqlTransaction transaction,
+        GeometryFamilyView view,
+        CancellationToken cancellationToken)
+    {
+        await AcquireLayerPublishLockAsync(transaction.Connection!, transaction, view.Schema, view.ViewName, cancellationToken)
+            .ConfigureAwait(false);
+        var table = await CreateGeometryFamilyViewAsync(transaction, view, cancellationToken).ConfigureAwait(false);
+        return (table, await DeclaredFamilyTypeAsync(transaction, view, cancellationToken).ConfigureAwait(false));
+    }
+
+    private static async Task<string> CreateGeometryFamilyViewAsync(
+        NpgsqlTransaction transaction,
+        GeometryFamilyView view,
+        CancellationToken cancellationToken)
+    {
+        var connection = transaction.Connection!;
+        if (!IsSafeIdentifier(view.ViewName) ||
+            await GeometryFamilyViews.NameTakenByOtherAsync(
+                new GeometryFamilyViews.TableScope
+                {
+                    Connection = connection,
+                    Transaction = transaction,
+                    Schema = view.Schema,
+                    Table = view.SourceTable
+                },
+                view.ViewName,
+                cancellationToken).ConfigureAwait(false))
+        {
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Validation,
+                $"Table '{view.SourceTable}' cannot carry the per-type view name '{view.ViewName}'; rename the table.");
+        }
+
+        var sql = GeometryFamilyViews.CreateSql(
+            view.Schema, view.SourceTable, new GeometryFamilyViews.FamilyFilter(view.Family, view.GeometryColumn));
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        try
+        {
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.InsufficientPrivilege)
+        {
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Validation,
+                $"Publishing one geometry type needs permission to create a view in schema '{view.Schema}'.");
+        }
+
+        return view.ViewName;
+    }
+
+    // A family view that serves any multi-part row declares the Multi type.
+    private static async Task<string> DeclaredFamilyTypeAsync(
+        NpgsqlTransaction transaction,
+        GeometryFamilyView view,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            SELECT EXISTS (
+                SELECT 1
+                FROM {SqlIdentifier.QuoteIdentifier(view.Schema)}.{SqlIdentifier.QuoteIdentifier(view.ViewName)}
+                WHERE GeometryType({SqlIdentifier.QuoteIdentifier(view.GeometryColumn)}) LIKE 'MULTI%')
+            """;
+        await using var command = new NpgsqlCommand(sql, transaction.Connection, transaction);
+        var hasMulti = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is true;
+        return hasMulti ? "Multi" + view.Family : view.Family;
+    }
 
     private static string NormalizeGeometryType(string raw)
     {
