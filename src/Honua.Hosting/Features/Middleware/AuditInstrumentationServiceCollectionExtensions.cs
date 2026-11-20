@@ -59,8 +59,7 @@ public static class AuditInstrumentationServiceCollectionExtensions
                 return new AuditingFeatureWriter(
                     inner,
                     auditLog,
-                    httpContextAccessor,
-                    () => policy?.CurrentValue ?? DefaultPolicy);
+                    new FeatureWriteAuditScope(httpContextAccessor, () => policy?.CurrentValue ?? DefaultPolicy));
             },
             innerDescriptor.Lifetime));
 

@@ -14,49 +14,50 @@ namespace Honua.Infrastructure.Middleware;
 internal sealed class AuditingFeatureWriter(
     IFeatureWriter inner,
     IAuditLog auditLog,
-    IHttpContextAccessor httpContextAccessor,
-    Func<AuditPolicyOptions> policy) : IFeatureWriter
+    FeatureWriteAuditScope scope) : IFeatureWriter
 {
     private readonly IFeatureWriter _inner = inner ?? throw new ArgumentNullException(nameof(inner));
     private readonly IAuditLog _auditLog = auditLog ?? throw new ArgumentNullException(nameof(auditLog));
-    private readonly IHttpContextAccessor _httpContextAccessor = httpContextAccessor
-        ?? throw new ArgumentNullException(nameof(httpContextAccessor));
-    private readonly Func<AuditPolicyOptions> _policy = policy ?? throw new ArgumentNullException(nameof(policy));
+    private readonly IHttpContextAccessor _httpContextAccessor = scope?.HttpContextAccessor
+        ?? throw new ArgumentNullException(nameof(scope));
+    private readonly Func<AuditPolicyOptions> _policy = scope.Policy ?? throw new ArgumentNullException(nameof(scope));
 
     private bool RecordSingleWrites => _policy().RecordSingleFeatureWrites;
 
     public Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
         => RecordSingleWrites
-            ? WriteAndAuditAsync("feature.create", layerId, feature, _inner.CreateAsync, cancellationToken)
+            ? WriteAndAuditAsync(new SingleFeatureWrite("feature.create", layerId, feature), _inner.CreateAsync, cancellationToken)
             : _inner.CreateAsync(layerId, feature, cancellationToken);
 
     public Task<Feature> UpdateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
         => RecordSingleWrites
-            ? WriteAndAuditAsync("feature.update", layerId, feature, _inner.UpdateAsync, cancellationToken)
+            ? WriteAndAuditAsync(new SingleFeatureWrite("feature.update", layerId, feature), _inner.UpdateAsync, cancellationToken)
             : _inner.UpdateAsync(layerId, feature, cancellationToken);
 
     private async Task<Feature> WriteAndAuditAsync(
-        string action,
-        int layerId,
-        Feature feature,
-        Func<int, Feature, CancellationToken, Task<Feature>> write,
+        SingleFeatureWrite write,
+        Func<int, Feature, CancellationToken, Task<Feature>> apply,
         CancellationToken cancellationToken)
     {
         Feature written;
         try
         {
-            written = await write(layerId, feature, cancellationToken).ConfigureAwait(false);
+            written = await apply(write.LayerId, write.Feature, cancellationToken).ConfigureAwait(false);
         }
         // Intentional: same rationale as DeleteAsync below — audit the failure broadly
         // before rethrowing unchanged.
         catch
         {
-            await RecordAsync(action, layerId, AuditOutcome.Failure, ObjectIdDetails(feature.Id), CancellationToken.None)
-                .ConfigureAwait(false);
+            await RecordAsync(
+                write.Action,
+                write.LayerId,
+                AuditOutcome.Failure,
+                ObjectIdDetails(write.Feature.Id),
+                CancellationToken.None).ConfigureAwait(false);
             throw;
         }
 
-        await RecordAsync(action, layerId, AuditOutcome.Success, ObjectIdDetails(written.Id), cancellationToken)
+        await RecordAsync(write.Action, write.LayerId, AuditOutcome.Success, ObjectIdDetails(written.Id), cancellationToken)
             .ConfigureAwait(false);
         return written;
     }
@@ -266,6 +267,8 @@ internal sealed class AuditingFeatureWriter(
             // Auditing must never break the edit path. Sinks log their own errors.
         }
     }
+
+    private readonly record struct SingleFeatureWrite(string Action, int LayerId, Feature Feature);
 
     private sealed class AuditingFeatureWriterTransaction(
         AuditingFeatureWriter owner,

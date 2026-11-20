@@ -30,7 +30,7 @@ public sealed class AuditingFeatureWriterTests
             authenticationType: "Test"));
         httpContext.Connection.RemoteIpAddress = System.Net.IPAddress.Loopback;
         _httpContextAccessor = new HttpContextAccessor { HttpContext = httpContext };
-        _writer = new AuditingFeatureWriter(_inner, _auditLog, _httpContextAccessor, () => _policy);
+        _writer = new AuditingFeatureWriter(_inner, _auditLog, new FeatureWriteAuditScope(_httpContextAccessor, () => _policy));
     }
 
     [Fact]
