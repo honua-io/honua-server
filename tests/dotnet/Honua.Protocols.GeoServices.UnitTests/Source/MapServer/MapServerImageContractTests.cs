@@ -9,6 +9,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Rendering;
@@ -228,7 +229,7 @@ public sealed class MapServerImageContractTests
                     Metadata = new MetadataV2ObjectMetadata { Id = "svc-find", Name = "parcels" },
                     Protocols = ["MapServer"],
                     SpatialReference = MetadataV2SpatialReference.Wgs84,
-                    AccessPolicy = new MetadataV2AccessPolicy { AllowAnonymous = true }
+                    AccessPolicy = new AccessPolicy { AllowAnonymous = true }
                 }
             ],
             Resources =
@@ -237,7 +238,7 @@ public sealed class MapServerImageContractTests
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "res-0", Name = "Parcels" },
                     Type = MetadataV2ObjectType.FeatureDataset,
-                    AccessPolicy = new MetadataV2AccessPolicy { AllowAnonymous = true },
+                    AccessPolicy = new AccessPolicy { AllowAnonymous = true },
                     SchemaFields =
                     [
                         new MetadataV2Field

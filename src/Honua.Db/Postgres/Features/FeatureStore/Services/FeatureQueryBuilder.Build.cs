@@ -8,6 +8,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.ObjectPool;

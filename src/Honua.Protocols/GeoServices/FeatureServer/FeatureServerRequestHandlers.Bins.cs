@@ -213,15 +213,15 @@ internal static partial class FeatureServerEndpoints
         return Results.Json(response, FeatureServerJsonContext.Default.QueryResponse, contentType: "application/json");
     }
 
-    internal static FieldInfo[] BuildBinFields(MetadataV2Object resource, BinDefinition binDefinition)
+    internal static GeoServicesFieldInfo[] BuildBinFields(MetadataV2Object resource, BinDefinition binDefinition)
     {
-        var fields = new List<FieldInfo>();
+        var fields = new List<GeoServicesFieldInfo>();
         switch (binDefinition.Type)
         {
             case BinType.FixedInterval:
             case BinType.AutoInterval:
             case BinType.FixedBoundaries:
-                fields.Add(new FieldInfo
+                fields.Add(new GeoServicesFieldInfo
                 {
                     Name = "lowerBoundary",
                     Type = "esriFieldTypeDouble",
@@ -229,7 +229,7 @@ internal static partial class FeatureServerEndpoints
                     Editable = false,
                     Nullable = true
                 });
-                fields.Add(new FieldInfo
+                fields.Add(new GeoServicesFieldInfo
                 {
                     Name = "upperBoundary",
                     Type = "esriFieldTypeDouble",
@@ -240,7 +240,7 @@ internal static partial class FeatureServerEndpoints
                 break;
 
             case BinType.Date:
-                fields.Add(new FieldInfo
+                fields.Add(new GeoServicesFieldInfo
                 {
                     Name = "boundary",
                     Type = "esriFieldTypeDate",
@@ -262,7 +262,7 @@ internal static partial class FeatureServerEndpoints
                 }
                 else if (!string.IsNullOrWhiteSpace(binDefinition.Field))
                 {
-                    fields.Add(new FieldInfo
+                    fields.Add(new GeoServicesFieldInfo
                     {
                         Name = binDefinition.Field,
                         Type = "esriFieldTypeString",
@@ -274,18 +274,18 @@ internal static partial class FeatureServerEndpoints
                 break;
         }
 
-        AppendBinStatisticsFields(fields, resource, binDefinition.OutStatistics);
+        AppendBinStatisticsFields(fields, resource, binDefinition.OutStatistics ?? ImmutableArray<StatisticDefinition>.Empty);
         return [.. fields];
     }
 
     internal static void AppendBinStatisticsFields(
-        List<FieldInfo> fields,
+        List<GeoServicesFieldInfo> fields,
         MetadataV2Object resource,
         ImmutableArray<StatisticDefinition> outStatistics)
     {
         if (outStatistics.IsDefaultOrEmpty)
         {
-            fields.Add(new FieldInfo
+            fields.Add(new GeoServicesFieldInfo
             {
                 Name = "count",
                 Type = "esriFieldTypeInteger",
@@ -307,7 +307,7 @@ internal static partial class FeatureServerEndpoints
                 StatisticType.Min or StatisticType.Max => ResolveStatisticFieldType(resource, stat.OnStatisticField),
                 _ => "esriFieldTypeDouble"
             };
-            fields.Add(new FieldInfo
+            fields.Add(new GeoServicesFieldInfo
             {
                 Name = fieldName,
                 Type = fieldType,

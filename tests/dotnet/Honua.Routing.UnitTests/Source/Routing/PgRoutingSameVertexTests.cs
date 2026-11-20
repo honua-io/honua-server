@@ -108,7 +108,7 @@ public sealed class PgRoutingSameVertexTests
     [Fact]
     public async Task SolveLocationAllocation_UsesReversedEdgesSql_AndGeographyVertexSnap()
     {
-        var session = new ScriptedRoutingSession();
+        await using var session = new ScriptedRoutingSession();
         var provider = CreateProvider(session);
 
         var result = await provider.SolveLocationAllocationAsync(

@@ -882,19 +882,17 @@ public sealed class NAServerTranslationUnitTests
         var request = new LocationAllocationSolveRequest(
             Facilities:
             [
-                new Coordinate(-122.4, 37.7, 4326),
-                new Coordinate(-122.3, 37.8, 4326),
+                new RoutePoint(-122.4, 37.7),
+                new RoutePoint(-122.3, 37.8),
             ],
             DemandPoints:
             [
-                new LocationAllocationDemandPoint(new Coordinate(-122.35, 37.75, 4326), Weight: 3),
-                new LocationAllocationDemandPoint(new Coordinate(-122.25, 37.85, 4326), Weight: 2),
+                new DemandPoint(new RoutePoint(-122.35, 37.75), Weight: 3),
+                new DemandPoint(new RoutePoint(-122.25, 37.85), Weight: 2),
             ],
-            TargetFacilityCount: 1,
             ProblemType: LocationAllocationProblemType.MinimizeImpedance,
-            TravelMode: TravelMode.Driving,
-            ImpedanceCutoffMinutes: null,
-            Barriers: null,
+            FacilitiesToFind: 1,
+            ImpedanceCutoff: null,
             OutSrid: 4326);
 
         var result = new LocationAllocationSolveResult(

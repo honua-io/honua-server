@@ -342,21 +342,27 @@ public sealed class ImageServerMensurationMathTests
         };
 
         rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>()).Returns(primaryRaster);
-        rasterStore.GetSensorMetadataAsync(Arg.Any<IReadOnlyList<long>>(), Arg.Any<CancellationToken>())
+        rasterStore.GetSensorMetadataAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<long, RasterSensorMetadata> { [10] = primaryRaster.SensorMetadata! });
         rasterStore.GetPrimaryRasterInfoAsync(2, Arg.Any<CancellationToken>()).Returns(demRaster);
         rasterStore.QueryRastersAsync(2, Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>())
             .Returns([demRaster]);
         rasterStore.ReadClippedBandVectorsAsync(
                 2,
-                Arg.Any<IReadOnlyList<long>>(),
+                Arg.Any<long[]>(),
                 Arg.Any<RasterMergeStrategy>(),
                 Arg.Any<byte[]>(),
                 Arg.Any<int?>(),
-                Arg.Any<IReadOnlyList<int>>(),
-                Arg.Any<long>(),
+                Arg.Any<int[]?>(),
+                Arg.Any<int>(),
                 Arg.Any<CancellationToken>())
-            .Returns(new ClippedBandVectorBatch([[10.0]], BoundingPixelCount: 1, ExceededPixelBudget: false));
+            .Returns(new RasterBandVectorSet
+            {
+                Bands = [1],
+                Pixels = [[10.0]],
+                BoundingPixelCount = 1,
+                ExceededPixelBudget = false
+            });
 
         var handler = new ImageServerCalculateVolumeHandler(
             rasterStore,

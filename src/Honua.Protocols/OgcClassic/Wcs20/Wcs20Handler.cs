@@ -675,10 +675,9 @@ internal sealed partial class Wcs20Handler
         }
 
         var publication = snapshot.FindPublicationByLayerIndex(service.Service.Metadata.Id, layerId);
-        if (publication is null &&
-            snapshot.Index.PublicationsByService.TryGetValue(service.Service.Metadata.Id, out var candidates))
+        if (publication is null)
         {
-            foreach (var candidate in candidates)
+            foreach (var candidate in snapshot.Index.PublicationsByService[service.Service.Metadata.Id])
             {
                 var candidateResource = snapshot.ResolveResource(candidate);
                 if (candidateResource is null ||

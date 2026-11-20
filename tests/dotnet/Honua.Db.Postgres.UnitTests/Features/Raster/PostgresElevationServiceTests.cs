@@ -10,6 +10,7 @@ using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Raster;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
+using NSubstitute;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
@@ -19,9 +20,45 @@ public sealed class PostgresElevationServiceTests
     [Fact]
     public async Task QueryPointAsync_WhenPixelHasDataIsFalse_PreservesNullElevationDespiteBandValue()
     {
-        var store = new StubNoDataRasterStore();
-        var crsRegistry = new StubSupportedCrsRegistry();
-        var connectionProvider = new StubUnusedConnectionProvider();
+        var sampleRaster = new RasterInfo
+        {
+            Id = 42,
+            LayerId = 1,
+            Name = "dem",
+            Width = 10,
+            Height = 10,
+            BandCount = 2,
+            Srid = 4326,
+            PixelType = "32BF",
+            NoDataValue = -9999
+        };
+        var store = Substitute.For<IRasterStore>();
+        store.ListRastersAsync(1, Arg.Any<CancellationToken>()).Returns([sampleRaster]);
+        store.QueryRastersAsync(1, Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>()).Returns([sampleRaster]);
+        store.IdentifyMosaicAsync(
+                1,
+                Arg.Any<long[]>(),
+                RasterMergeStrategy.Newest,
+                10.0,
+                20.0,
+                4326,
+                Arg.Any<RasterIdentifyRendering?>(),
+                Arg.Any<RasterMosaicOrdering>(),
+                Arg.Any<RasterMosaicAttributeSort?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new PixelValueResult
+            {
+                X = 10.0,
+                Y = 20.0,
+                Srid = 4326,
+                HasData = false,
+                BandValues = new Dictionary<int, object?> { [1] = -9999.0, [2] = 123.45 }
+            });
+        var crsRegistry = Substitute.For<ICrsRegistry>();
+        crsRegistry.IsSridSupportedAsync(4326, Arg.Any<CancellationToken>()).Returns(true);
+        crsRegistry.ResolveBySridAsync(4326, Arg.Any<CancellationToken>())
+            .Returns(new CrsDefinition("EPSG:4326", 4326, AxisOrder.EastNorth, true));
+        var connectionProvider = Substitute.For<IAdoNetDatabaseConnectionProvider>();
         var service = new PostgresElevationService(
             connectionProvider,
             crsRegistry,
@@ -80,121 +117,4 @@ public sealed class PostgresElevationServiceTests
             file: null,
             line: null,
             routine: routine);
-
-    private sealed class StubUnusedConnectionProvider : IAdoNetDatabaseConnectionProvider
-    {
-        public Task<NpgsqlConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-    }
-
-    private sealed class StubSupportedCrsRegistry : ICrsRegistry
-    {
-        public ValueTask<CrsDefinition?> ResolveAsync(string? crsIdentifier, CancellationToken cancellationToken = default)
-            => ValueTask.FromResult<CrsDefinition?>(new CrsDefinition("EPSG:4326", 4326, AxisOrder.EastNorth, true));
-
-        public ValueTask<CrsDefinition?> ResolveBySridAsync(int srid, CancellationToken cancellationToken = default)
-            => ValueTask.FromResult<CrsDefinition?>(new CrsDefinition($"EPSG:{srid}", srid, AxisOrder.EastNorth, true));
-
-        public ValueTask<bool> IsSridSupportedAsync(int srid, CancellationToken cancellationToken = default)
-            => ValueTask.FromResult(true);
-
-        public ValueTask<CoordinateSystemEntry[]> ListCoordinateSystemsAsync(string? filter = null, CancellationToken cancellationToken = default)
-            => ValueTask.FromResult(Array.Empty<CoordinateSystemEntry>());
-    }
-
-    private sealed class StubNoDataRasterStore : IRasterStore
-    {
-        private static readonly RasterInfo SampleRaster = new()
-        {
-            Id = 42,
-            LayerId = 1,
-            Name = "dem",
-            Width = 10,
-            Height = 10,
-            BandCount = 2,
-            Srid = 4326,
-            PixelType = "32BF",
-            NoDataValue = -9999
-        };
-
-        public Task<RasterInfo[]> ListRastersAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult<RasterInfo[]>([SampleRaster]);
-
-        public Task<RasterInfo[]> QueryRastersAsync(int layerId, RasterSelectionQuery query, CancellationToken cancellationToken = default)
-            => Task.FromResult<RasterInfo[]>([SampleRaster]);
-
-        public Task<RasterPixelValue> IdentifyMosaicAsync(
-            int layerId,
-            IReadOnlyList<long> rasterIds,
-            RasterMergeStrategy mergeStrategy,
-            double x,
-            double y,
-            int srid,
-            int[]? bands = null,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult(new RasterPixelValue
-            {
-                X = x,
-                Y = y,
-                HasData = false,
-                BandValues = new Dictionary<int, double?> { [1] = -9999.0, [2] = 123.45 }
-            });
-
-        public Task<RasterInfo?> GetPrimaryRasterInfoAsync(int layerId, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<RasterInfo?> GetRasterInfoByIdAsync(int layerId, long rasterId, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<RasterBandInfo[]> GetBandMetadataAsync(long rasterId, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<IReadOnlyDictionary<long, RasterBandInfo[]>> GetBandMetadataBatchAsync(IReadOnlyList<long> rasterIds, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<RasterPixelValue> IdentifyAsync(int layerId, double x, double y, int srid, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<RasterExportResult> ExportAsync(int layerId, RasterExportOptions options, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<RasterExportResult> ExportMosaicAsync(int layerId, IReadOnlyList<long> rasterIds, RasterMergeStrategy mergeStrategy, RasterExportOptions options, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<RasterBandStatistics[]> ComputeStatisticsAsync(int layerId, IReadOnlyList<long> rasterIds, RasterMergeStrategy mergeStrategy, int[]? bands = null, byte[]? aoiWkb = null, int? aoiSrid = null, int? histogramBins = null, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<RasterPixelValue[]> SamplePointsAsync(int layerId, IReadOnlyList<long> rasterIds, RasterMergeStrategy mergeStrategy, IReadOnlyList<(double X, double Y)> points, int srid, int[]? bands = null, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<long> StoreRasterAsync(int layerId, string name, byte[] wkbRaster, DateTimeOffset? acquisitionDate = null, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<bool> DeleteRasterAsync(long rasterId, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<int> DeleteLayerRastersAsync(int layerId, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<long> EstimateExportPixelCountAsync(int layerId, IReadOnlyList<long> rasterIds, RasterExportOptions options, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<long> EstimateStatisticsPixelCountAsync(int layerId, IReadOnlyList<long> rasterIds, byte[]? aoiWkb = null, int? aoiSrid = null, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<IReadOnlyDictionary<long, RasterSensorMetadata>> GetSensorMetadataAsync(IReadOnlyList<long> rasterIds, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<ClippedBandVectorBatch> ReadClippedBandVectorsAsync(int layerId, IReadOnlyList<long> rasterIds, RasterMergeStrategy mergeStrategy, byte[] clipGeometryWkb, int? clipSrid, IReadOnlyList<int> bands, long maxPixels, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<RasterColormapEntry[]> GetColormapAsync(int layerId, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<IReadOnlyDictionary<string, string>> GetKeyPropertiesAsync(int layerId, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task<byte[]?> GetRawRasterBytesAsync(int layerId, long rasterId, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-    }
 }

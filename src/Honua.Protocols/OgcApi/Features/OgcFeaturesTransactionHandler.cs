@@ -2135,8 +2135,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     }
 
     private static object? MergePropertyValueWithExisting(
-        IReadOnlyDictionary<string, object?> existingAttributes,
-        IReadOnlyDictionary<string, MetadataV2Field> fieldsByName,
+        ImmutableDictionary<string, object?> existingAttributes,
+        Dictionary<string, MetadataV2Field> fieldsByName,
         string propertyName,
         object? patchValue)
     {

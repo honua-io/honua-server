@@ -152,7 +152,6 @@ internal static partial class GPServerEndpoints
             .WithDescription("Returns the current status and progress of a GP job")
             .WithTags("GPServer");
 
-        // Job messages
         endpoints.MapGet($"{RouteBase}/{{taskName}}/jobs/{{jobId}}/messages",
                 static (HttpContext context, CancellationToken ct) => HandleJobMessages(context, ct))
             .WithDisplayName("GPServer Job Messages")

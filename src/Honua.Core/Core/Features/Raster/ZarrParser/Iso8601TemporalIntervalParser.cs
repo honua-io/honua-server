@@ -163,7 +163,7 @@ public static class Iso8601TemporalIntervalParser
             return true;
         }
 
-        if (!resolution.StartsWith("P", StringComparison.OrdinalIgnoreCase))
+        if (resolution[0] is not ('P' or 'p'))
         {
             return false;
         }

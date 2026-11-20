@@ -168,7 +168,7 @@ public static class I3sNodePageProjector
     private static double ComputeMaxScreenThresholdSq(double geometricError, I3sOrientedBoundingBox? obb)
     {
         var radiusSquared = 0d;
-        if (obb is { HalfSize.Length: >= 3 })
+        if (obb is { HalfSize.Count: >= 3 })
         {
             var hx = obb.HalfSize[0];
             var hy = obb.HalfSize[1];
@@ -201,10 +201,8 @@ public static class I3sNodePageProjector
 
     public static double[] ComputeEnuToEcefQuaternion(double longitudeRadians, double latitudeRadians)
     {
-        // Local ENU axes (+X East, +Y North, +Z Up) rotate into ECEF via:
-        //   R = R_z(lon + π/2) * R_x(π/2 - lat)
-        // Compose the two half-angle axis rotations q = q_z(β) * q_x(α) where
-        // α = (π/2 - lat) and β = (lon + π/2), returning [x, y, z, w].
+        // Local ENU axes (+X East, +Y North, +Z Up) rotate into ECEF by composing
+        // half-angle rotations around Z (lon + pi/2) and X (pi/2 - lat), returning [x, y, z, w].
         var halfAlpha = (Math.PI * 0.5d - latitudeRadians) * 0.5d;
         var halfBeta = (longitudeRadians + Math.PI * 0.5d) * 0.5d;
 

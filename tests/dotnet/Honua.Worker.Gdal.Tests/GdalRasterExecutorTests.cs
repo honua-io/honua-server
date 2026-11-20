@@ -172,8 +172,6 @@ public sealed class GdalRasterExecutorTests
         extracted.Should().Be("EPSG:3857");
         extractedSrid.Should().Be(3857);
     }
-        json.Should().NotContain("\"crs\":");
-    }
 
     [UnitTest]
     public void RasterClip_CutlineGeoJsonEmitsCrs_WhenBoundarySridSupplied()

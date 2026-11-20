@@ -118,7 +118,7 @@ public sealed class WkbGeometryReaderTests
         // missing data).
         var buffer = new byte[1 + 4 + 4]; // header + count, no actual contents needed
         var span = buffer.AsSpan();
-        span[0] = 1; // little-endian
+        span[0] = 1;
         BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(1, 4), 7u); // GeometryCollection
         BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(5, 4), 0u);
 
@@ -169,7 +169,7 @@ public sealed class WkbGeometryReaderTests
         // EWKB PointZ with SRID flag (0x80000000 | 0x20000000 | 1 = 0xA0000001), SRID = 4326.
         var buffer = new byte[1 + 4 + 4 + 24];
         var span = buffer.AsSpan();
-        span[0] = 1; // little-endian
+        span[0] = 1;
         BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(1, 4), 0xA0000001u);
         BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(5, 4), 4326u);
         BinaryPrimitives.WriteDoubleLittleEndian(span.Slice(9, 8), -122.4194);
@@ -226,7 +226,7 @@ public sealed class WkbGeometryReaderTests
         var size = 1 + 4 + 4 + vertices.Length * (16 + ordinates * 8);
         var buffer = new byte[size];
         var span = buffer.AsSpan();
-        span[0] = 1; // little-endian
+        span[0] = 1;
         var typeWord = ewkbType ?? (uint)isoType!.Value;
         BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(1, 4), typeWord);
         BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(5, 4), (uint)vertices.Length);

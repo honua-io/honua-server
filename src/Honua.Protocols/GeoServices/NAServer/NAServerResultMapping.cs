@@ -310,7 +310,7 @@ internal static class NAServerResultMapping
             if (request is not null && facilityId >= 0 && facilityId < request.Facilities.Count)
             {
                 var coord = request.Facilities[facilityId];
-                facilityGeometry = new NAServerPointGeometry { X = coord.X, Y = coord.Y };
+                facilityGeometry = new NAServerPointGeometry { X = coord.Lon, Y = coord.Lat };
             }
 
             facilityFeatures[i] = new NAServerLaFacilityFeature
@@ -333,7 +333,7 @@ internal static class NAServerResultMapping
             if (request is not null && allocation.DemandPointId >= 0 && allocation.DemandPointId < request.DemandPoints.Count)
             {
                 var coord = request.DemandPoints[allocation.DemandPointId].Location;
-                demandGeometry = new NAServerPointGeometry { X = coord.X, Y = coord.Y };
+                demandGeometry = new NAServerPointGeometry { X = coord.Lon, Y = coord.Lat };
             }
 
             demandFeatures[i] = new NAServerLaDemandPointFeature

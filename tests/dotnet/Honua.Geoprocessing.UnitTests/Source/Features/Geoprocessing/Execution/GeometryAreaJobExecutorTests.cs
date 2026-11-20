@@ -169,8 +169,8 @@ public sealed class GeometryAreaJobExecutorTests
             processId: GeometryAreaJobExecutor.HandledProcessId,
             includeInputs: true,
             wkb: box,
-            srid: "4326");
-        record.Spec.Parameters[$"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.geodesic"] = "true";
+            srid: "4326",
+            geodesic: "true");
 
         var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
 
@@ -225,7 +225,8 @@ public sealed class GeometryAreaJobExecutorTests
         string? processId,
         bool includeInputs,
         string? wkb = null,
-        string? srid = "4326")
+        string? srid = "4326",
+        string? geodesic = null)
     {
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal);
         if (!string.IsNullOrEmpty(processId))
@@ -240,6 +241,10 @@ public sealed class GeometryAreaJobExecutorTests
             if (wkb != null)
             {
                 parameters[prefix + "wkb"] = wkb;
+            }
+            if (geodesic != null)
+            {
+                parameters[prefix + "geodesic"] = geodesic;
             }
             parameters[prefix + "srid"] = srid ?? "4326";
         }

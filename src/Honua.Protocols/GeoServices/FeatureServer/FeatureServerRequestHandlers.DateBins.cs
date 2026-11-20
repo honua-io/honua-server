@@ -220,18 +220,18 @@ internal static partial class FeatureServerEndpoints
 
         var response = new QueryResponse
         {
-            Fields = BuildDateBinFields(resource, outStatistics),
+            Fields = BuildDateBinFields(resource, dateBin.OutStatistics),
             Features = responseFeatures
         };
 
         return Results.Json(response, FeatureServerJsonContext.Default.QueryResponse, contentType: "application/json");
     }
 
-    internal static FieldInfo[] BuildDateBinFields(
+    internal static GeoServicesFieldInfo[] BuildDateBinFields(
         MetadataV2Object resource,
         ImmutableArray<StatisticDefinition> outStatistics)
     {
-        var fields = new List<FieldInfo>
+        var fields = new List<GeoServicesFieldInfo>
         {
             new()
             {

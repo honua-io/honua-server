@@ -169,13 +169,13 @@ public static class SceneQuadtreePartitioner
     }
 
     private static void ExpandBoundsToFeatures(
-        IReadOnlyList<SceneFeature> features,
+        SceneFeature[] features,
         ref double west,
         ref double south,
         ref double east,
         ref double north)
     {
-        for (var i = 0; i < features.Count; i++)
+        for (var i = 0; i < features.Length; i++)
         {
             var vertices = features[i].Geometry.Vertices;
             for (var v = 0; v < vertices.Count; v++)
@@ -190,7 +190,7 @@ public static class SceneQuadtreePartitioner
     }
 
     private static void ExpandBoundsToChildren(
-        IReadOnlyList<SceneTileNode> children,
+        List<SceneTileNode> children,
         ref double west,
         ref double south,
         ref double east,

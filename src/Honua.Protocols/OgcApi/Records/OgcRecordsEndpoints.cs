@@ -1059,9 +1059,9 @@ internal static class OgcRecordsEndpoints
         public required DescriptiveMetadata Descriptive { get; init; }
     }
 
-    private sealed record BboxFilter(double MinX, double MinY, double MaxX, double MaxY);
+    internal sealed record BboxFilter(double MinX, double MinY, double MaxX, double MaxY);
 
-    private sealed record DateTimeFilter(DateTimeOffset? Start, DateTimeOffset? End)
+    internal sealed record DateTimeFilter(DateTimeOffset? Start, DateTimeOffset? End)
     {
         public bool Contains(DateTimeOffset value)
             => (Start is null || value >= Start.Value) && (End is null || value <= End.Value);

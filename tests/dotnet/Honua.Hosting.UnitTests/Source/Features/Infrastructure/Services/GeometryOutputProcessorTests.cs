@@ -162,7 +162,8 @@ public sealed class GeometryOutputProcessorTests
             NetTopologySuite.IO.ByteOrder.LittleEndian,
             handleSRID: true,
             emitZ: true,
-            emitM: false) { Strict = false }.Write(point3D);
+            emitM: false)
+        { Strict = false }.Write(point3D);
 
         var outputWkb = GeoParquetFeatureWriter.ProcessGeometry(
             inputEwkb,

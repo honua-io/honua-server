@@ -98,19 +98,18 @@ public sealed class OgcRecordsItemsLinkTests
     [UnitTest]
     public void OgcCoverageSpatialSubset_SupportsPointSliceEqualBoundsAndAntimeridianWrap()
     {
-        var raster = new RasterInfo(
-            RasterColumns: ["rast"],
-            Srid: 4326,
-            PixelWidth: 1,
-            PixelHeight: 1,
-            BandCount: 1,
-            PixelType: "8BUI",
-            IsTiled: false,
-            TileWidth: 16,
-            TileHeight: 16,
-            OverviewFactors: [],
-            Extent: new RasterBoundingBox(-180, -90, 180, 90, 4326),
-            RasterSize: new RasterDimensions(360, 180));
+        var raster = new RasterInfo
+        {
+            Id = 1,
+            LayerId = 1,
+            Name = "rast",
+            Width = 360,
+            Height = 180,
+            BandCount = 1,
+            PixelType = "8BUI",
+            Srid = 4326,
+            Extent = new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 }
+        };
 
         OgcCoverageSpatialSubset.TryParse(new StringValues("Lon(10),Lat(20)"), raster, 4326, out var pointBounds, out _)
             .Should().BeTrue();

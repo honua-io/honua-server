@@ -247,25 +247,16 @@ public sealed class OgcProcessesConversionHelpersTests
         context.Request.Path = "/ogc/processes/processes";
         context.Request.QueryString = new Microsoft.AspNetCore.Http.QueryString("?limit=1&offset=1");
 
+        var catalog = NSubstitute.Substitute.For<IOgcProcessesCatalog>();
+        catalog.ListProcesses().Returns([]);
         var result = ProcessEndpoints.GetProcessList(
             context,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<OgcProcessesEndpointsLog>.Instance,
-            new EmptyProcessesCatalog());
+            catalog);
         var list = result.Should().BeAssignableTo<Microsoft.AspNetCore.Http.IValueHttpResult>().Subject.Value
             .Should().BeOfType<Honua.Protocols.Ogc.Api.Processes.Models.OgcProcessList>().Subject;
 
         list.Links.Should().Contain(l => l.Rel == "prev" && l.Href == "https://example.com/ogc/processes/processes?limit=1");
-    }
-
-    private sealed class EmptyProcessesCatalog : IOgcProcessesCatalog
-    {
-        public IReadOnlyList<GeoprocessingProcessDefinition> ListProcesses() => [];
-
-        public bool TryGetProcess(string processId, out GeoprocessingProcessDefinition definition)
-        {
-            definition = null!;
-            return false;
-        }
     }
 
     private static ExecutionJobRecord CreateJob(ExecutionJobStatus status)

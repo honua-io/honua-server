@@ -813,18 +813,18 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         var styleId = await SeedAndResolveStyleIdAsync(client);
 
         using (var postMissingContentType = new HttpRequestMessage(HttpMethod.Post, "/ogc/styles")
-               {
-                   Content = new ByteArrayContent(Encoding.UTF8.GetBytes(BuildDefaultStyleJson()))
-               })
+        {
+            Content = new ByteArrayContent(Encoding.UTF8.GetBytes(BuildDefaultStyleJson()))
+        })
         {
             postMissingContentType.Content.Headers.ContentType = null;
             (await client.SendAsync(postMissingContentType)).StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
         }
 
         using (var putMissingContentType = new HttpRequestMessage(HttpMethod.Put, $"/ogc/styles/{Uri.EscapeDataString(styleId)}")
-               {
-                   Content = new ByteArrayContent(Encoding.UTF8.GetBytes(BuildDefaultStyleJson()))
-               })
+        {
+            Content = new ByteArrayContent(Encoding.UTF8.GetBytes(BuildDefaultStyleJson()))
+        })
         {
             putMissingContentType.Content.Headers.ContentType = null;
             (await client.SendAsync(putMissingContentType)).StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
@@ -834,9 +834,9 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
         // and echoes Preference-Applied: handling=strict.
         const string lenientStyle = """{"version":8,"layers":[{"id":"points","type":"circle","paint":{"circle-color":"#ff0000"}}]}""";
         using (var strictPut = new HttpRequestMessage(HttpMethod.Put, $"/ogc/styles/{Uri.EscapeDataString(styleId)}")
-               {
-                   Content = new StringContent(lenientStyle, Encoding.UTF8, MapboxStyleMediaType)
-               })
+        {
+            Content = new StringContent(lenientStyle, Encoding.UTF8, MapboxStyleMediaType)
+        })
         {
             strictPut.Headers.TryAddWithoutValidation("Prefer", "handling=strict");
             var strictResponse = await client.SendAsync(strictPut);
