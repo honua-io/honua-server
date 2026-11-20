@@ -14,6 +14,7 @@ using Honua.Protocols.GeoServices.FeatureServer.Services;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using Honua.TestKit.Attributes;
+using Honua.Tests.ParquetUnitSupport;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
@@ -26,8 +27,8 @@ public sealed partial class GeoParquetQueryFormatterTests
         var resource = CreateResource();
         var result = QueryResult<Feature>.Create(features.Count, features.ToImmutableArray());
         var (before, after) = FormatScatteredAndArtifact(result, resource);
-        using var beforeReader = new ParquetSharp.Arrow.FileReader(new MemoryStream(before));
-        using var afterReader = new ParquetSharp.Arrow.FileReader(new MemoryStream(after));
+        using var beforeReader = ArrowParquetTestReader.Open(before);
+        using var afterReader = ArrowParquetTestReader.Open(after);
         AssertArtifactGroups(beforeReader, afterReader);
         var beforeExtents = await ReadGroupExtentsAsync(beforeReader);
         var afterExtents = await ReadGroupExtentsAsync(afterReader);
@@ -78,7 +79,7 @@ public sealed partial class GeoParquetQueryFormatterTests
         var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
             QueryResult<Feature>.Create(1, [feature]), CreateResource(), true, 4326, false, false, new GeometryLimits(),
             encodingLimits: limits);
-        using var reader = new ParquetSharp.Arrow.FileReader(new MemoryStream(payload));
+        using var reader = ArrowParquetTestReader.Open(payload);
         reader.NumRowGroups.Should().Be(1);
         reader.Schema.Metadata[GeoParquetFeatureWriter.RowOrderMetadataKey]
             .Should().Be(GeoParquetFeatureWriter.HilbertBboxCenterOrder);
@@ -113,7 +114,7 @@ public sealed partial class GeoParquetQueryFormatterTests
         var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
             QueryResult<Feature>.Create(2, features), CreateResource(), true, 4326, false, false, new GeometryLimits(),
             encodingLimits: queryLimits);
-        using var reader = new ParquetSharp.Arrow.FileReader(new MemoryStream(payload));
+        using var reader = ArrowParquetTestReader.Open(payload);
         reader.Schema.Metadata.ContainsKey(GeoParquetFeatureWriter.RowOrderMetadataKey).Should().BeFalse();
         using var batches = reader.GetRecordBatchReader();
         using var batch = await batches.ReadNextRecordBatchAsync();
@@ -134,7 +135,7 @@ public sealed partial class GeoParquetQueryFormatterTests
         var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
             QueryResult<Feature>.Create(3, features), CreateResource(), true, 4326, false, false, new GeometryLimits(),
             encodingLimits: GeoParquetLimits.ForArtifact(8 * 1024 * 1024));
-        using var reader = new ParquetSharp.Arrow.FileReader(new MemoryStream(payload));
+        using var reader = ArrowParquetTestReader.Open(payload);
         using var batches = reader.GetRecordBatchReader();
         var ids = new List<long>();
         while (await batches.ReadNextRecordBatchAsync() is { } batch)
