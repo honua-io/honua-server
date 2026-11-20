@@ -29,18 +29,28 @@ public interface IOgcStyleProjection
         string styleId,
         CancellationToken cancellationToken = default);
 
-    // An update never creates a style.
+    // An update never creates a style. With options.ExpectedVersion the store writes only while
+    // the revision a PUT writes to is still that version (see GetWriteTargetAsync); otherwise
+    // the result is PreconditionFailed and nothing is stored.
     Task<OgcStyleUpdateResult> UpdateStyleAsync(
         string styleId,
         string mapLibreStyleJson,
-        bool strict,
+        OgcStyleWriteOptions options,
         CancellationToken cancellationToken = default);
 
     // DrawingInfo is converted to MapLibre on the server; the console does not convert it.
     Task<OgcStyleUpdateResult> UpdateStyleFromDrawingInfoAsync(
         string styleId,
         string drawingInfoJson,
-        bool strict,
+        OgcStyleWriteOptions options,
+        CancellationToken cancellationToken = default);
+
+    // The store a PUT of this style writes to (the layer row for a collection or mirrored layer
+    // style, else the catalog style) and its current revision, read past any cache; null when
+    // no PUT target exists. A conditional PUT reads it while holding the target's IStyleSaveLock,
+    // checks its precondition, and passes the revision to the update.
+    Task<OgcStyleWriteTarget?> GetWriteTargetAsync(
+        string styleId,
         CancellationToken cancellationToken = default);
 
     Task<OgcStyleCreateResult> CreateStyleAsync(
@@ -117,7 +127,26 @@ public enum OgcStyleUpdateStatus
 
     NotFound,
 
-    Invalid
+    Invalid,
+
+    PreconditionFailed
+}
+
+public sealed record OgcStyleWriteTarget
+{
+    // Same key for every style id that writes to the same store row.
+    public required string LockKey { get; init; }
+
+    public required int Version { get; init; }
+}
+
+public sealed record OgcStyleWriteOptions
+{
+    // Reject a lossy conversion or a non-conforming document instead of storing it.
+    public bool Strict { get; init; }
+
+    // Store only while the PUT target is still this revision; null for an unconditional write.
+    public int? ExpectedVersion { get; init; }
 }
 
 public sealed record OgcStyleUpdateResult(

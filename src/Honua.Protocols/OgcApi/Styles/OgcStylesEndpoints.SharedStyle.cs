@@ -21,6 +21,8 @@ namespace Honua.Protocols.Ogc.Api.Styles;
 
 public static partial class OgcStylesEndpoints
 {
+    private const string ImpactHeader = "X-Honua-Style-Impact";
+
     private static void MapSharedStyleImpact(RouteGroupBuilder group)
     {
         group.MapGet("/{styleId}/impact", GetSharedStyleImpact)
@@ -97,32 +99,83 @@ public static partial class OgcStylesEndpoints
 
     // Headers are optional. A save that sends neither stays the unconditional manage-styles PUT.
     // A presented If-Match or impact hash that is not the current review is 412 and is not stored.
-    private static async Task<IResult?> RejectStaleStyleAsync(
-        string styleId,
+    // A conditional save holds the write target's save lock while it checks the headers and stores,
+    // and the store writes only while the revision read under the lock is current. Of two saves
+    // sent with one entity tag, the second checks after the first has finished, and gets 412.
+    private static async Task<StyleSaveOutcome> SaveStyleAsync(
+        StyleSave save,
         HttpContext context,
         IOgcStyleProjection projection)
     {
-        var hasMatch = context.Request.Headers.ContainsKey(HeaderNames.IfMatch);
-        var hasImpact = context.Request.Headers.ContainsKey("X-Honua-Style-Impact");
-        if (!hasMatch && !hasImpact)
+        if (!context.Request.Headers.ContainsKey(HeaderNames.IfMatch)
+            && !context.Request.Headers.ContainsKey(ImpactHeader))
         {
-            return null;
+            return new StyleSaveOutcome(null, await StoreStyleAsync(save, projection, context.RequestAborted).ConfigureAwait(false));
         }
 
+        var target = await projection.GetWriteTargetAsync(save.StyleId, context.RequestAborted).ConfigureAwait(false);
+        if (target is null)
+        {
+            return new StyleSaveOutcome(StandardErrorHelpers.CreateNotFound(context, $"Style '{save.StyleId}' not found."), null);
+        }
+
+        var saveLock = context.RequestServices.GetRequiredService<IStyleSaveLock>();
+        await using var held = await saveLock.TryAcquireAsync(target.LockKey, context.RequestAborted).ConfigureAwait(false);
+        if (held is null)
+        {
+            return new StyleSaveOutcome(
+                StandardErrorHelpers.CreateConflict(context, "Another save of this style is still in progress. Reload it and try again."),
+                null);
+        }
+
+        var current = await projection.GetWriteTargetAsync(save.StyleId, context.RequestAborted).ConfigureAwait(false);
+        if (current is null
+            || !string.Equals(current.LockKey, target.LockKey, StringComparison.Ordinal)
+            || !await ReviewIsCurrentAsync(save.StyleId, context, projection).ConfigureAwait(false))
+        {
+            return new StyleSaveOutcome(StaleStyle(context), null);
+        }
+
+        var conditional = save with { Options = save.Options with { ExpectedVersion = current.Version } };
+        return new StyleSaveOutcome(null, await StoreStyleAsync(conditional, projection, context.RequestAborted).ConfigureAwait(false));
+    }
+
+    private static async Task<bool> ReviewIsCurrentAsync(string styleId, HttpContext context, IOgcStyleProjection projection)
+    {
+        var headers = context.Request.Headers;
         var impact = await projection.GetSharedStyleImpactAsync(ImpactRequest(context, styleId), context.RequestAborted)
             .ConfigureAwait(false);
-        var presentedImpact = context.Request.Headers["X-Honua-Style-Impact"].ToString();
-        if (impact is null
-            || (hasMatch && !IfMatchAllows(context.Request.Headers.IfMatch, impact.EntityTag))
-            || (hasImpact && !string.Equals(presentedImpact, impact.ImpactHash, StringComparison.Ordinal)))
-        {
-            return StandardErrorHelpers.CreatePreconditionFailed(
-                context,
-                "The shared style changed. Reload it and review the current impact before saving.");
-        }
-
-        return null;
+        return impact is not null
+            && (!headers.ContainsKey(HeaderNames.IfMatch) || IfMatchAllows(headers.IfMatch, impact.EntityTag))
+            && (!headers.ContainsKey(ImpactHeader) || string.Equals(headers[ImpactHeader].ToString(), impact.ImpactHash, StringComparison.Ordinal));
     }
+
+    private static Task<OgcStyleUpdateResult> StoreStyleAsync(
+        StyleSave save,
+        IOgcStyleProjection projection,
+        CancellationToken cancellationToken)
+        => save.IsDrawingInfo
+            ? projection.UpdateStyleFromDrawingInfoAsync(save.StyleId, save.Body, save.Options, cancellationToken)
+            : projection.UpdateStyleAsync(save.StyleId, save.Body, save.Options, cancellationToken);
+
+    private static IResult StaleStyle(HttpContext context) =>
+        StandardErrorHelpers.CreatePreconditionFailed(
+            context,
+            "The shared style changed. Reload it and review the current impact before saving.");
+
+    private sealed record StyleSave
+    {
+        public required string StyleId { get; init; }
+
+        public required string Body { get; init; }
+
+        public bool IsDrawingInfo { get; init; }
+
+        public required OgcStyleWriteOptions Options { get; init; }
+    }
+
+    // Either the response to send now, or the result of the store.
+    private readonly record struct StyleSaveOutcome(IResult? Rejection, OgcStyleUpdateResult? Result);
 
     // The review covers the caller's tenant only, and the save check uses the same scope so the
     // impact hash a caller was shown is the one its save is compared against.

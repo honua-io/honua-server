@@ -76,7 +76,7 @@ Named styles are also exposed through the standards-based OGC API Styles surface
 | GET | `/ogc/styles/{styleId}/impact` | Associations and map or app consumers of the style in the caller's tenant, with the same `ETag` and an impact hash. Requires the same rights as the style PUT. `impactComplete` is false when the scan is capped. |
 | GET | `/ogc/styles/{styleId}/metadata` | Fetch style metadata |
 | POST | `/ogc/styles` | Create a style |
-| PUT | `/ogc/styles/{styleId}` | Replace a style. `If-Match` and `X-Honua-Style-Impact` are optional; when either is sent, a mismatch returns 412 and the body is not stored. A request that sends neither remains an unconditional replace. |
+| PUT | `/ogc/styles/{styleId}` | Replace a style. `If-Match` and `X-Honua-Style-Impact` are optional; when either is sent, a mismatch returns 412 and the body is not stored. Saves that send either header are serialized per stored style, and each is checked against the style as the previous save left it: of two saves sent with the same entity tag, one is stored and the other returns 412. A save that waits more than two seconds for another save of the same style returns 409; reload and retry. A request that sends neither header remains an unconditional replace: it is not checked, and a conditional save does not detect one that commits while it is being checked. |
 | DELETE | `/ogc/styles/{styleId}` | Delete a style |
 
 ## Related guides
