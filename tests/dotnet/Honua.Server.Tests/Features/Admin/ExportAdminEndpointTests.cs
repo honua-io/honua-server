@@ -6,6 +6,8 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Exports;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -171,6 +173,60 @@ public sealed partial class ExportEndpointTests
         var export = await GetExportAsync();
         Text(export, "status").Should().Be(ExportResponse.Unpublished);
         export.GetProperty("versions").EnumerateArray().Select(version => Text(version, "version")).Should().Equal(published.Version);
+        using var current = await _client.GetAsync($"/api/v1/exports/{_exportId}/current.json");
+        current.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("DELETE /api/v1/admin/exports/{exportId}")]
+    [Endpoint("POST /api/v1/admin/tile-operations/jobs/{jobId}/retry")]
+    [Endpoint("GET /api/v1/exports/{exportId}/current.json")]
+    public async Task RetryFailedExportJob_AfterUnpublish_ReturnsConflictAndStaysUnpublished()
+    {
+        var jobStore = _fixture.GetOptionalService<IExecutionJobStore>()!;
+        var progressStore = _fixture.GetOptionalService<IUniversalProgressStore>()!;
+        var batchOptions = _fixture.GetOptionalService<IOptions<TileCacheBatchOptions>>()?.Value ?? new TileCacheBatchOptions();
+        var failedJobId = $"tile-failed-export-{Guid.NewGuid():N}";
+        var request = new TileOperationStartRequest
+        {
+            Operation = TileCacheExecutionSpecBuilder.ExportOperation,
+            ServiceId = WebAppFixture.TestServiceId,
+            LayerId = WebAppFixture.TestLayerId,
+            TileMatrixSetId = "WebMercatorQuad",
+            ExportId = _exportId,
+            IdentityField = IdentityField,
+            MinZoom = 0,
+            MaxZoom = 0
+        };
+        var now = DateTimeOffset.UtcNow;
+        var created = await jobStore.TryCreateAsync(new ExecutionJobRecord
+        {
+            OperationId = failedJobId,
+            Status = ExecutionJobStatus.Failed,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CurrentPhase = "Failed",
+            Spec = TileCacheExecutionSpecBuilder.Build(request, schemaName: null, batchOptions)
+        });
+        created.Should().BeTrue();
+        await progressStore.SetProgressAsync(
+            failedJobId,
+            TileOperationProgress.CreateInitial(failedJobId, request.Operation, request.ServiceId, request.LayerId, request.TileMatrixSetId) with
+            {
+                ExportId = _exportId,
+                Status = OperationStatus.Failed,
+                ErrorMessage = "Simulated failure"
+            },
+            TimeSpan.FromMinutes(5),
+            CancellationToken.None);
+
+        using var deleted = await _client.DeleteAsync($"{ExportsRoute}/{_exportId}");
+        deleted.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var retry = await _client.PostAsync($"{JobsRoute}/{failedJobId}/retry", content: null);
+        retry.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await retry.Content.ReadAsStringAsync()).Should().Contain("/api/v1/admin/exports");
+
         using var current = await _client.GetAsync($"/api/v1/exports/{_exportId}/current.json");
         current.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }

@@ -32,7 +32,7 @@ Layer references also require tenant-visible publications and shared resource ac
 
 ## Protocol compatibility
 
-Modern clients can call `server/discover` without initializing a session. Each request supplies its protocol version and client capabilities in `params._meta`, with the matching `MCP-Protocol-Version` and `Mcp-Method` HTTP headers. Tool calls, resource reads and prompt retrieval also mirror the tool name, resource URI or prompt name in `Mcp-Name`. Discovery lists the revisions accepted through this per-request model; the initialize result describes the legacy revision selected for that session.
+Modern clients can call `server/discover` without initializing a session. Each request supplies its protocol version and client capabilities in `params._meta` under the keys `io.modelcontextprotocol/protocolVersion` and `io.modelcontextprotocol/clientCapabilities` (unqualified `protocolVersion` or `clientCapabilities` keys are rejected with `-32602`), with the matching `MCP-Protocol-Version` and `Mcp-Method` HTTP headers. Tool calls, resource reads and prompt retrieval also mirror the tool name, resource URI or prompt name in `Mcp-Name`. Discovery lists the revisions accepted through this per-request model; the initialize result describes the legacy revision selected for that session.
 
 Modern requests ignore protocol session and event-replay headers. They return complete result envelopes, except a tool that needs more input (see [Clarification and approval in the client](#clarification-and-approval-in-the-client)). Catalog/resource responses include private caching hints with a zero freshness lifetime. Legacy clients retain initialize, sessions, batching and the optional server notification stream.
 
@@ -96,11 +96,12 @@ public Service leaf name, independent of the logical name and display title.
 }
 ```
 
-The `configure` view exposes the administrative publishing, access, sharing, and Studio
-workflow tools. A stock client needs no JSON-RPC `_meta`: keep `?view=configure`
+The `configure` view exposes the administrative connection, import, publishing, access-policy and styling
+tools; Studio authoring and publication use the `setup` view (see [workflow views](#workflow-views-bounded-discovery)). A stock client needs no JSON-RPC `_meta`: keep `?view=configure`
 on the URL, or send `X-Honua-Workflow-View: configure` on each request. Use your
-deployment's port; the packaged quickstart exposes management MCP at
-`http://localhost:18082/mcp?view=configure`. View selection changes discovery only;
+deployment's port; in the packaged quickstart, admin work goes to the serving instance at
+`http://localhost:18080/mcp?view=configure`. The management endpoint on port 18082 is a separate
+instance for release status, upgrades and rollback; use it with `?view=operate`. View selection changes discovery only;
 every tool call still requires its usual authorization.
 
 **Agent API key.** In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `POST /api/v1/admin/api-keys` with this body:
@@ -186,7 +187,7 @@ PY
 
 The script prints the `honua_*` tools in the server's default workflow view (12 discovery tools on a quickstart) and exits non-zero when none is listed, which is what a missing or unknown key produces. Each tool carries a JSON Schema input definition. Which ones appear depends on the deployment profile (see [Which tools and resources appear](#which-tools-and-resources-appear-capability-gating)), so treat `tools/list` as the authoritative inventory rather than counting the families below. From your agent, "list the Honua tools and validate an empty plan" should return a structured violation list (for example `EMPTY_PLAN_ID`), not an error.
 
-Each tool descriptor also carries MCP behavior `annotations` (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`) and a `structuredContentSchema` describing the tool's structured result, so schema-driven clients can reason about safety and validate responses.
+Each tool descriptor also carries MCP behavior `annotations` (`title`, `readOnlyHint` and `destructiveHint`; tools that change state add `idempotentHint`, and the geocoding and routing tools add `openWorldHint`) and an `outputSchema` describing the tool's `structuredContent` result, so schema-driven clients can reason about safety and validate responses.
 
 Every successful tool result returns its data twice: as `structuredContent` and as the same serialized JSON in a `text` content block, so clients that pass only `content` to the model still see the full result. For large results, tools that provide a summary send it as a one-line text block before the JSON.
 

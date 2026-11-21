@@ -23,13 +23,21 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Wmts10)]
-public sealed class OgcClassicWmtsTests : IAsyncLifetime
+public sealed class OgcClassicWmtsTests : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
+    public OgcClassicWmtsTests(WebAppFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    private static async Task<WebAppFixture> CreateDedicatedFixtureAsync()
+    {
+        var fixture = new WebAppFixture();
+        await fixture.InitializeAsync();
+        return fixture;
+    }
 
     [IntegrationTest]
     [Operation(Operations.Wmts)]
@@ -54,12 +62,14 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [Endpoint("GET /ogc/services/{serviceId}/wmts")]
     public async Task Wmts_GetCapabilities_WithWmtsEnabledAndMapServerDisabled_ReturnsXml()
     {
+        await using var fixture = await CreateDedicatedFixtureAsync();
+
         // Protocol gating reads MetadataV2Service.Protocols.
-        _fixture.UpdateV2ServiceMetadata(
+        fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
             enabledProtocols: [ServiceProtocols.Wmts]);
 
-        var response = await _fixture.Client.GetAsync(
+        var response = await fixture.Client.GetAsync(
             $"/ogc/services/{WebAppFixture.TestServiceId}/wmts?SERVICE=WMTS&REQUEST=GetCapabilities");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -466,11 +476,13 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
     public async Task Wmts_GetCapabilities_UnpaintedStyle_OmitsLegendUrl(string styleType)
     {
-        await _fixture.GetService<ILayerStyleCatalog>().SetMapLibreStyleAsync(WebAppFixture.TestLayerId, $$$$"""
+        await using var fixture = await CreateDedicatedFixtureAsync();
+
+        await fixture.GetService<ILayerStyleCatalog>().SetMapLibreStyleAsync(WebAppFixture.TestLayerId, $$$$"""
             {"version":8,"sources":{"honua":{"type":"geojson","data":{"type":"FeatureCollection","features":[]}}},
              "layers":[{"id":"unpainted","type":"{{{{styleType}}}}","source":"honua"}]}
             """);
-        using var response = await _fixture.Client.GetAsync(
+        using var response = await fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var capabilities = XDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -1055,7 +1067,9 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [Endpoint("GET /ogc/services/{serviceId}/wmts")]
     public async Task Wmts_OgcRoute_GetFeatureInfo_WithWmtsEnabledAndMapServerDisabled_ReturnsSeededFeature()
     {
-        _fixture.UpdateV2ServiceMetadata(
+        await using var fixture = await CreateDedicatedFixtureAsync();
+
+        fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
             enabledProtocols: [ServiceProtocols.Wmts]);
 
@@ -1064,7 +1078,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         // tile-pixel -> world -> feature lookup finds it. The existing MapServer-route
         // GetFeatureInfo tests all click I=128/J=128 (lon 0, lat 0) and only assert the body is
         // non-empty, which "No features found." also satisfies — they never proved a hit.
-        var response = await _fixture.Client.GetAsync(
+        var response = await fixture.Client.GetAsync(
             $"/ogc/services/{WebAppFixture.TestServiceId}/wmts?SERVICE=WMTS&REQUEST=GetFeatureInfo&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0&I=41&J=99&INFOFORMAT=text/plain");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -1083,13 +1097,15 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [Endpoint("GET /ogc/services/{serviceId}/wmts")]
     public async Task Wmts_OgcRoute_GetTile_UnknownTileMatrixSet_ReturnsOwsExceptionReport()
     {
-        _fixture.UpdateV2ServiceMetadata(
+        await using var fixture = await CreateDedicatedFixtureAsync();
+
+        fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
             enabledProtocols: [ServiceProtocols.Wmts]);
 
         // A WMTS client must get an OWS ExceptionReport naming the offending parameter, not a
         // JSON problem document, on the OGC-native route as well as on the MapServer alias.
-        var response = await _fixture.Client.GetAsync(
+        var response = await fixture.Client.GetAsync(
             $"/ogc/services/{WebAppFixture.TestServiceId}/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=NoSuchGrid&TILEMATRIX=0&TILEROW=0&TILECOL=0");
 
         var content = await response.Content.ReadAsStringAsync();

@@ -75,4 +75,25 @@ public sealed class UserProjectBuilderTests
         psi.Environment.Should().NotContainKey("HONUA_JOB_TOKEN").And.NotContainKey("HONUA_JOB_REDEMPTION_CODE");
         psi.Environment.Should().ContainKey("PATH");
     }
+
+    [Fact]
+    public void EnsureWritableCliHome_ReplacesMissingHomeWithFallbackDirectory()
+    {
+        var fallback = Directory.CreateTempSubdirectory();
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo("dotnet");
+            psi.Environment["HOME"] = Path.Join(fallback.FullName, "does-not-exist");
+            psi.Environment.Remove("DOTNET_CLI_HOME");
+
+            UserProjectBuilder.EnsureWritableCliHome(psi, fallback.FullName);
+
+            psi.Environment["HOME"].Should().Be(fallback.FullName);
+            psi.Environment["DOTNET_CLI_HOME"].Should().Be(fallback.FullName);
+        }
+        finally
+        {
+            fallback.Delete(recursive: true);
+        }
+    }
 }

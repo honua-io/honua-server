@@ -11,18 +11,18 @@ On the supported AWS deployment CloudFront sits in front of the service. Honua d
 
 ## What is cached
 
-A response is public only when the route is a read of public content, the request is anonymous, and the layer allows anonymous access. Everything else is sent as `private, no-store` and is never stored by the CDN.
+A response is public only when the route is a read of public content, the request is anonymous, and the layer allows anonymous access. Everything else is not shared (`private, no-store`, or `private, must-revalidate` on ETag-enabled read routes such as spatial feature queries) and is never stored by the CDN.
 
 | Response | Browser keeps it | CDN keeps it | Notes |
 | --- | --- | --- | --- |
 | Tile of a public layer | 60 s | 300 s | May be served stale for 60 s while it is refreshed, and for a day if the service is unreachable |
 | Feature query on a public layer | 0 s (revalidates) | 30 s | May be served stale for 30 s while it is refreshed, and for a day if the service is unreachable |
-| Capabilities and metadata documents, TileJSON, style documents | 30 s | 60 s | |
+| Capabilities and metadata documents, TileJSON, publication styles (`/api/styles/{publicationId}.json`) | 30 s | 60 s | OGC API Styles (`/ogc/styles/*`) are not shared |
 | Scene assets of a public scene | 60 s | 300 s | The scene's own cache setting replaces these values |
 | Anything requested with a credential, a secured layer, admin routes, edits | never | never | `private, no-store` |
 | Errors | never | never | `private, no-store` |
 
-WMS and WMTS key-value requests, OGC API Maps, static map images, exports, imported tile packages, and feature queries by an arbitrary extent or spatial predicate are not cached in this release.
+WMS and WMTS key-value requests, OGC API Maps, OGC API Styles (`/ogc/styles/*`), static map images, exports, imported tile packages, and feature queries by an arbitrary extent or spatial predicate are not shared in this release (spatial feature queries return `private, must-revalidate`).
 
 A request counts as credentialed when it carries any of: the `Authorization`, `X-API-Key`, `X-Esri-Authorization`, `X-Honua-Embed-Key`, `X-Honua-Token`, `X-Honua-Tenant` or `X-Honua-Job-Id` header, a forwarded client certificate, an admin session cookie, or a `token` or `key` query parameter.
 

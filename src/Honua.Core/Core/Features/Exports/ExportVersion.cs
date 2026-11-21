@@ -128,7 +128,28 @@ public sealed record ExportValidationCheck(string Name, string Status)
     public string? Detail { get; init; }
 }
 
-public sealed record PublishedExportVersion(string ExportId, string Version, string CaptureId, string CollectionKey, string PointerKey);
+public sealed record PublishedExportVersion(string ExportId, string Version, string CaptureId, string CollectionKey, string PointerKey)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PublicExportDeliveryStatus? Public { get; init; }
+}
+
+public sealed record PublicExportDeliveryStatus(string Status)
+{
+    public const string Promoted = "promoted";
+    public const string PromotedUnreadable = "promoted_unreadable";
+    public const string StaysSignedIn = "stays_signed_in";
+    public const string NotConfigured = "not_configured";
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CollectionUrl { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CatalogUrl { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Reason { get; init; }
+}
 
 public sealed record ExportPointer(string ExportId, string Version, string Collection, DateTimeOffset SwitchedAt);
 

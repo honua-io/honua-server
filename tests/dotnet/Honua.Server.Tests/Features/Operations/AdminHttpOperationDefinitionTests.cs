@@ -95,7 +95,12 @@ public sealed class AdminHttpOperationDefinitionTests
             var descriptor = descriptors.Single(item => item.OperationId == operation.GetProperty("operationId").GetString());
             operation.TryGetProperty("compensation", out var compensation).Should().BeTrue(descriptor.OperationId);
             var readOnly = descriptor.Policy.SideEffectClass == OperationSideEffectClass.ReadOnly;
-            compensation.GetProperty("availability").GetString().Should().Be(readOnly ? "NotApplicable" : "Unavailable");
+            var expectedAvailability = readOnly
+                ? "NotApplicable"
+                : descriptor.OperationId == "service.move"
+                    ? "Supported"
+                    : "Unavailable";
+            compensation.GetProperty("availability").GetString().Should().Be(expectedAvailability, descriptor.OperationId);
             if (!readOnly)
             {
                 compensation.GetProperty("reason").GetString().Should().NotBeNullOrWhiteSpace(descriptor.OperationId);

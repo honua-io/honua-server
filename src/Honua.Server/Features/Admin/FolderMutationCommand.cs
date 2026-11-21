@@ -31,6 +31,13 @@ internal abstract record FolderMutationCommand
         };
     }
 
+    internal sealed record Restore(string ServiceName, IReadOnlyList<ServiceFolderAssignment> Assignments) : FolderMutationCommand
+    {
+        internal override string OperationId => "service.move";
+        internal override FolderMutation Apply(MetadataV2Graph graph, string? tenant)
+            => FolderMutation.Restore(graph, this, tenant);
+    }
+
     internal sealed record Create(string? Name, FolderTitleChange Title) : FolderMutationCommand
     {
         internal override string OperationId => "folder.create";

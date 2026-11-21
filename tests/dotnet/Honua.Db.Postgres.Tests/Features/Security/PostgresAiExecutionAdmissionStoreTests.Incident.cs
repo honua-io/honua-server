@@ -72,7 +72,7 @@ public sealed partial class PostgresAiExecutionAdmissionStoreTests
         decision.Granted.Should().BeTrue();
         await ExecuteAsync($"UPDATE \"{_schema}\".ops_incident_episodes SET {change} WHERE episode_id = '{episode}'");
 
-        (await Store().CommitFinancialSendAsync(decision.Reservation!, default)).Should().BeFalse();
+        (await Store().CommitFinancialSendOrDenyAsync(decision.Reservation!, default)).Should().Be("financial_incident_invalid");
         (await CountAttemptsAsync()).Should().Be(1, "pre-send denial retains the original debt");
     }
 

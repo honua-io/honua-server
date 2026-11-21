@@ -35,6 +35,7 @@ signed = claims({"alg": "HS256", "typ": "JWT"}) + b"." + claims({
     "iss": os.environ["HONUA_GP_OIDC_ISSUER"], "aud": os.environ["HONUA_GP_OIDC_AUDIENCE"],
     "sub": f"gp-qualification-{tenant}", "tenant_id": tenant, "tid": tenant,
     "roles": [os.environ["HONUA_GP_TENANT_ROLE"]],
+    "scope": "honua.mcp.execute honua.mcp.read",
     "iat": now, "nbf": now, "exp": now + 6 * 3600, "jti": f"{tenant}-{now}"})
 key = os.environ["HONUA_GP_OIDC_SIGNING_KEY"].encode()
 print((signed + b"." + part(hmac.new(key, signed, hashlib.sha256).digest())).decode())

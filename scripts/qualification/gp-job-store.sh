@@ -93,15 +93,15 @@ job_row_exists() {
   [[ "$(job_sql "SELECT count(*) FROM honua.execution_jobs WHERE operation_id = '$1'")" == 1 ]]
 }
 
-# A queued job with its only attempt spent, left claimed by a worker that died long ago:
-# the reconciler must fail it instead of running it again.
+# A queued job with all retry attempts spent, left claimed by a worker whose heartbeat
+# expired: the reconciler must fail it on heartbeat expiry instead of running it again.
+# Leave the JSON record untouched so ExecutionJobSubmitterSeal stays valid for status reads.
 strand_exhausted_claim() {
   job_id_is_safe "$1" || return 1
   [[ "$(job_sql "UPDATE honua.execution_jobs
-      SET record = (record::jsonb || jsonb_build_object('retryPolicy',
-                    coalesce(record::jsonb->'retryPolicy', '{}'::jsonb) || jsonb_build_object('maxAttempts', 1)))::json,
-          status = 'Running', version = version + 1, attempt_count = 1, claimed_by = 'dead-worker',
-          claimed_at = '2000-01-01T00:00:00Z', last_heartbeat_at = '2000-01-01T00:00:00Z',
+      SET status = 'Running', version = version + 1,
+          attempt_count = GREATEST(attempt_count, COALESCE((record::jsonb->'retryPolicy'->>'maxAttempts')::int, 3)),
+          claimed_by = 'dead-worker', claimed_at = now(), last_heartbeat_at = '2000-01-01T00:00:00Z',
           queue_visible_at = NULL, queue_priority = NULL, updated_at = now()
       WHERE operation_id = '$1' AND status = 'Queued' AND backend = 'local'
       RETURNING operation_id")" == "$1" ]]

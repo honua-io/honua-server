@@ -8,7 +8,7 @@ resource: "honua://capability/identity.claims-mapping"
 
 Decide who can read and who can write each published service and layer, using access policies for coarse rules and roles with per-operation grants for fine-grained RBAC.
 
-**Prerequisites:** An admin API key ([Authenticate clients](authentication.md)) and a published service. Open the local API explorer at `http://localhost:8080/docs` and authorize it with the admin key before running these operations.
+**Prerequisites:** An admin API key ([Authenticate clients](authentication.md)) and a published service. Open the local API explorer at `http://localhost:8080/docs` (enabled by default in Development; set `HONUA_SERVE_API_DOCS=true` in Production) and authorize it with the admin key before running these operations, or send the requests directly with `X-API-Key`.
 
 Two mechanisms compose: a per-resource **access policy** (`allowAnonymous`, `allowAnonymousWrite`, `allowedRoles`, `allowedWriteRoles`) and **RBAC roles** carrying `(service, layer, operation)` permission grants with `*` wildcards. A scoped write key (`write:<service>` or `write:<service>/<layer>`) is authorized by its own grant, independently of `allowedWriteRoles`; revoke the key to stop it. Otherwise an explicit write policy on a resource stays authoritative; when none is set, a matching RBAC write grant (`insert`/`update`/`delete`), a global data-editor role (`Rbac__DataEditorRoles`), or a service-scoped `data-editor:{service}` role authorizes the mutation. Admin endpoints (`/api/v1/admin/*`) and metrics endpoints always require the `admin` role.
 
@@ -39,7 +39,7 @@ Run `POST /api/v1/admin/roles` in the explorer with this body:
 }
 ```
 
-Note the returned `roleId`. `GET /api/v1/admin/roles` lists all roles; `PUT`/`DELETE /api/v1/admin/roles/{id}` rename or remove one.
+Note the returned `data.roleId`. `GET /api/v1/admin/roles` lists all roles; `PUT`/`DELETE /api/v1/admin/roles/{id}` rename or remove one.
 
 ### 3. Grant per-operation permissions to the role
 
@@ -145,7 +145,7 @@ Run `GET /api/v1/admin/users/{userId}/effective-permissions` in the explorer.
 { "success": true, "data": { "userId": "…", "roles": ["editors"], "permissions": [ { "service": "parks", "layer": "*", "operation": "update" } ] } }
 ```
 
-Then confirm enforcement: an anonymous `POST .../FeatureServer/{layerIndex}/addFeatures` against the restricted service returns a GeoServices error with code `499` in an HTTP 200 response, a signed-in caller without the grant gets HTTP `403`, and a caller holding `editors` succeeds. API keys have the same introspection at `GET /api/v1/admin/api-keys/{id}/effective-permissions`.
+Then confirm enforcement: an anonymous `POST .../FeatureServer/{layerIndex}/addFeatures` against the restricted service returns a GeoServices error with code `499` in an HTTP 200 response, a signed-in caller without the grant gets HTTP `403`, and a caller holding `editors` succeeds. API keys can also be inspected at `GET /api/v1/admin/api-keys/{id}/effective-permissions`, which returns `{ id, name, status, kind, permissions, canAuthenticate }` under `data`.
 
 ## Troubleshoot
 

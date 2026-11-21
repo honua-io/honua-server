@@ -29,6 +29,9 @@ public sealed class UserProjectBuilder
     internal static string WarmPackageSource { get; } =
         Environment.GetEnvironmentVariable("NUGET_PACKAGES") is { Length: > 0 } configured ? configured : "/opt/nuget/packages";
 
+    internal static string OfflineNuGetConfigPath { get; } =
+        Path.Join(Path.GetDirectoryName(WarmPackageSource) ?? "/opt/nuget", "NuGet.config");
+
     /// <summary>Creates a project builder.</summary>
     /// <param name="dotnetRunner">An injectable <c>dotnet</c> runner (for tests); defaults to invoking the real SDK.</param>
     public UserProjectBuilder(Func<IReadOnlyList<string>, string?, ProcessResult>? dotnetRunner = null)
@@ -94,6 +97,10 @@ public sealed class UserProjectBuilder
             "-p:TreatWarningsAsErrors=false",
             "-p:NuGetAudit=false",
         };
+        if (File.Exists(OfflineNuGetConfigPath))
+        {
+            args.Add($"-p:RestoreConfigFile={OfflineNuGetConfigPath}");
+        }
 
         var result = _runner(args, root);
         if (result.ExitCode != 0)
@@ -125,6 +132,7 @@ public sealed class UserProjectBuilder
         }
 
         RemoveCredentials(psi);
+        EnsureWritableCliHome(psi, cwd);
         using var process = Process.Start(psi)
             ?? throw new UserBuildException("failed to start dotnet.");
         var stdout = process.StandardOutput.ReadToEnd();
@@ -141,5 +149,27 @@ public sealed class UserProjectBuilder
         {
             psi.Environment.Remove(name);
         }
+    }
+
+    internal static void EnsureWritableCliHome(ProcessStartInfo psi, string? fallbackDirectory)
+    {
+        var fallback = !string.IsNullOrWhiteSpace(fallbackDirectory) && Directory.Exists(fallbackDirectory)
+            ? fallbackDirectory
+            : Path.GetTempPath();
+
+        EnsureDirectoryEnv(psi, "HOME", fallback);
+        EnsureDirectoryEnv(psi, "DOTNET_CLI_HOME", psi.Environment["HOME"]!);
+    }
+
+    private static void EnsureDirectoryEnv(ProcessStartInfo psi, string name, string fallback)
+    {
+        if (psi.Environment.TryGetValue(name, out var existing)
+            && !string.IsNullOrWhiteSpace(existing)
+            && Directory.Exists(existing))
+        {
+            return;
+        }
+
+        psi.Environment[name] = fallback;
     }
 }

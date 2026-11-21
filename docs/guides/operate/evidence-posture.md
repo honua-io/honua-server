@@ -64,6 +64,9 @@ Honua readiness probe and a PostGIS query against the managed database.
 The existing `health` section continues to describe the manager process. A stopped
 or unready managed service makes `overallStatus` unhealthy even while the manager is
 healthy. An unreachable executor reports unknown health and unavailable evidence.
+A failed readback, or an empty or error executor response, logs one warning (event 7464)
+naming the target and the failure class, never the error text; an unchanged
+failure is logged at most every five minutes, and a successful readback clears it.
 
 Both health and findings publish the `honua_ops.managed_compose` section source.
 A successfully observed outage is complete evidence. The deterministic

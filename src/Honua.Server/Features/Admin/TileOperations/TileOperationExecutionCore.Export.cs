@@ -36,6 +36,8 @@ internal sealed partial class TileOperationExecutionCore
         public string? PointerETag { get; init; }
 
         public string? UnpublishedETag { get; init; }
+
+        public PublicExportPromoter? PublicPromoter { get; init; }
     }
 
     private sealed record ExportSourceCheck
@@ -163,7 +165,16 @@ internal sealed partial class TileOperationExecutionCore
         var captureId = $"capture-{Guid.NewGuid():N}";
         var run = new ExportVersionRun(
             request.ExportId!, ExportVersionFactory.NewVersion(capturedAt, captureId), captureId, capturedAt);
-        return new ExportPublishContext { Run = run, Source = source, Fields = fields, Store = store, PointerETag = pointerETag, UnpublishedETag = unpublishedETag };
+        return new ExportPublishContext
+        {
+            Run = run,
+            Source = source,
+            Fields = fields,
+            Store = store,
+            PointerETag = pointerETag,
+            UnpublishedETag = unpublishedETag,
+            PublicPromoter = services.GetService<PublicExportPromoter>()
+        };
     }
 
     // An Export id names one Dataset; another Layer must not replace it, even after unpublish.
@@ -394,11 +405,15 @@ internal sealed partial class TileOperationExecutionCore
             await TryClearUnpublishedAsync(context.Store).ConfigureAwait(false);
         }
 
+        var publicDelivery = await TryPromotePublicAsync(context, companions.Descriptor, cancellationToken).ConfigureAwait(false);
         TileOperationLog.ExportActivated(_logger, current.JobId, run.ExportId, run.Version);
         return current with
         {
             ArchiveSizeBytes = build.ArchiveSize,
-            PublishedExportVersion = new PublishedExportVersion(run.ExportId, run.Version, run.CaptureId, collectionKey, context.Store.PointerKey),
+            PublishedExportVersion = new PublishedExportVersion(run.ExportId, run.Version, run.CaptureId, collectionKey, context.Store.PointerKey)
+            {
+                Public = publicDelivery
+            },
             Status = OperationStatus.Completed,
             CompletedAt = DateTimeOffset.UtcNow,
             ErrorMessage = null,
@@ -427,6 +442,29 @@ internal sealed partial class TileOperationExecutionCore
         {
             // Pointer switch already succeeded; stale marker cleanup is best-effort.
         }
+    }
+
+    private static async Task<PublicExportDeliveryStatus?> TryPromotePublicAsync(
+        ExportPublishContext context,
+        ExportVersion descriptor,
+        CancellationToken cancellationToken)
+    {
+        if (context.PublicPromoter is null)
+        {
+            return null;
+        }
+
+        var input = new PublicExportPromotionInput
+        {
+            Descriptor = descriptor,
+            PrivateStore = context.Store,
+            Resource = context.Source.Resource,
+            Service = context.Source.Published.Service,
+            StorageLayerId = context.Source.StorageLayerId,
+            LayerIndex = context.Source.Published.Publication.LayerIndex ?? context.Source.StorageLayerId,
+            MetadataRevision = context.Source.MetadataRevision
+        };
+        return await context.PublicPromoter.PromoteAsync(input, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task PutCompanionFilesAsync(

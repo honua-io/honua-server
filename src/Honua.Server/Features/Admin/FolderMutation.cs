@@ -9,6 +9,10 @@ internal sealed record FolderMutation(MetadataV2Graph Graph, MetadataV2Folder? F
 {
     internal IReadOnlyList<string> ServiceIds { get; init; } = [];
 
+    internal string? MovedServiceName { get; init; }
+
+    internal IReadOnlyList<ServiceFolderAssignment> PriorAssignments { get; init; } = [];
+
     internal static FolderMutation Create(MetadataV2Graph graph, FolderMutationCommand.Create command, string? tenant)
     {
         var folder = new MetadataV2Folder
@@ -51,9 +55,35 @@ internal sealed record FolderMutation(MetadataV2Graph Graph, MetadataV2Folder? F
             throw new KeyNotFoundException();
         if (!command.FolderId.IsSpecified) throw new ArgumentException("folderId is required; null selects root.");
         if (command.FolderId.Value is not null) FindFolder(graph, command.FolderId.Value, tenant);
+        var prior = services.Select(service => new ServiceFolderAssignment(service.Metadata.Id, service.FolderId)).ToArray();
         return new(MetadataV2FolderMutations.Move(graph, command.ServiceName, command.FolderId.Value), null, StatusCodes.Status204NoContent)
         {
-            ServiceIds = services.Select(service => service.Metadata.Id).ToArray()
+            ServiceIds = prior.Select(assignment => assignment.ServiceId).ToArray(),
+            MovedServiceName = command.ServiceName,
+            PriorAssignments = prior
+        };
+    }
+
+    internal static FolderMutation Restore(MetadataV2Graph graph, FolderMutationCommand.Restore command, string? tenant)
+    {
+        if (command.Assignments.Count == 0)
+            throw new ArgumentException("A service move restore requires the recorded prior assignments.");
+        var services = command.Assignments.Select(assignment => graph.Services.FirstOrDefault(service => service.Metadata.Id == assignment.ServiceId)
+            ?? throw new KeyNotFoundException()).ToArray();
+        if (services.Any(service => !string.Equals(service.Metadata.Name, command.ServiceName, StringComparison.OrdinalIgnoreCase) ||
+            !MetadataV2ServicePaths.SameTenant(service.Metadata.Tenant, tenant)))
+            throw new KeyNotFoundException();
+        foreach (var assignment in command.Assignments)
+        {
+            if (assignment.PriorFolderId is not null) FindFolder(graph, assignment.PriorFolderId, tenant);
+        }
+
+        var restored = MetadataV2FolderMutations.AssignFolders(graph, command.Assignments
+            .Select(assignment => new MetadataV2FolderAssignment(assignment.ServiceId, assignment.PriorFolderId)).ToArray());
+        return new(restored, null, StatusCodes.Status204NoContent)
+        {
+            ServiceIds = command.Assignments.Select(assignment => assignment.ServiceId).ToArray(),
+            MovedServiceName = command.ServiceName
         };
     }
 

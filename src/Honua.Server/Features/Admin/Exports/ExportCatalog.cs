@@ -18,7 +18,8 @@ internal readonly record struct ExportListPage(int? Limit = null, int? Offset = 
 internal sealed partial class ExportCatalog(
     ICloudFileStorage storage,
     IOptions<CloudStorageOptions> options,
-    ITileCacheJobService jobs)
+    ITileCacheJobService jobs,
+    PublicExportRevocationService? publicRevocation = null)
 {
     internal const string NotPublicReason = "The public data path is not enabled for Exports on this installation.";
     internal const int DefaultListLimit = 50;
@@ -94,7 +95,13 @@ internal sealed partial class ExportCatalog(
                 UnpublishedAt = DateTimeOffset.UtcNow
             },
             cancellationToken).ConfigureAwait(false);
-        return await storage.DeleteAsync(store.PointerKey, cancellationToken).ConfigureAwait(false);
+        var deleted = await storage.DeleteAsync(store.PointerKey, cancellationToken).ConfigureAwait(false);
+        if (publicRevocation is not null)
+        {
+            await publicRevocation.RevokeUnpublishedAsync(exportId, changeId: null, cancellationToken).ConfigureAwait(false);
+        }
+
+        return deleted;
     }
 
     private static async Task<(string ServiceId, string LayerId)> ResolveSourceIdentityAsync(

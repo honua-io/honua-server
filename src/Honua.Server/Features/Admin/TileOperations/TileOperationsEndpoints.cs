@@ -174,7 +174,16 @@ internal static class TileOperationsEndpoints
         [FromServices] ITileCacheJobService jobService,
         CancellationToken cancellationToken)
     {
-        var retryJobId = await jobService.RetryAsync(jobId, JobOwnershipSecurity.ResolveOwner(context.User), cancellationToken).ConfigureAwait(false);
+        string? retryJobId;
+        try
+        {
+            retryJobId = await jobService.RetryAsync(jobId, JobOwnershipSecurity.ResolveOwner(context.User), cancellationToken).ConfigureAwait(false);
+        }
+        catch (ExportRetryConflictException ex)
+        {
+            return StandardErrorHelpers.CreateConflict(context, ex.Message);
+        }
+
         if (retryJobId == null)
         {
             return StandardErrorHelpers.CreateBadRequest(
