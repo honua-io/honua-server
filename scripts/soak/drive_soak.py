@@ -75,6 +75,17 @@ class Series:
         return [float(sample[key]) for sample in self.samples if sample.get(key) is not None]
 
 
+def is_single_tenant(deployment, capabilities):
+    """GA 2026.1 is single-tenant: multi-tenancy is unavailable and the tenant is the default one.
+
+    The manifest omits scope.tenantSource when tenant context is off; such a deployment has
+    exactly one tenant too.
+    """
+    if capabilities.get("admin.multi-tenancy", {}).get("available", False):
+        return False
+    return deployment.get("tenantSource") in ("Default", None)
+
+
 class SoakDriver:
     def __init__(self, args: argparse.Namespace, lock: dict[str, Any]) -> None:
         self.args = args
@@ -202,17 +213,14 @@ class SoakDriver:
         # tenants: 2026.1 is GA single-tenant, and multi-tenancy is an opt-in Preview surface.
         # The manifest reports the tenant this deployment resolved and how: a `Default` tenant
         # source with multi-tenancy unavailable is exactly one tenant.
-        multi_tenancy = self._capabilities.get("admin.multi-tenancy", {})
-        single_tenant = (
-            self.deployment.get("tenantSource") == "Default" and not multi_tenancy.get("available", False)
-        )
+        single_tenant = is_single_tenant(self.deployment, self._capabilities)
         self._record(
             "tenants",
             declared["tenants"],
             1 if single_tenant else "multi-tenant",
             single_tenant and declared["tenants"] == 1,
-            "capability manifest: scope.tenantSource=Default with admin.multi-tenancy unavailable "
-            "=> a single-tenant deployment",
+            "capability manifest: admin.multi-tenancy unavailable and scope.tenantSource Default "
+            "(or omitted because tenant context is off) => a single-tenant deployment",
             tenantId=self.deployment.get("tenantId"),
             tenantSource=self.deployment.get("tenantSource"),
         )
