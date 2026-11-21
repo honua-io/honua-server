@@ -10,15 +10,22 @@ using Honua.Infrastructure.Services;
 namespace Honua.Server.Features.Admin.Exports;
 
 // Which source fields each artifact carries. Hidden fields reach neither artifact.
-internal sealed record ExportFields(
-    IReadOnlyList<ExportVersionField> Declared,
-    ImmutableArray<string> Hidden,
-    IReadOnlyList<string> TileFields,
-    IReadOnlyList<string> ParquetFields,
-    string ObjectIdField,
-    string IdentityField,
-    bool Stable)
+internal sealed record ExportFields
 {
+    public required IReadOnlyList<ExportVersionField> Declared { get; init; }
+
+    public required ImmutableArray<string> Hidden { get; init; }
+
+    public required IReadOnlyList<string> TileFields { get; init; }
+
+    public required IReadOnlyList<string> ParquetFields { get; init; }
+
+    public required string ObjectIdField { get; init; }
+
+    public required string IdentityField { get; init; }
+
+    public required bool Stable { get; init; }
+
     // Column names the GeoParquet writer owns; a field with one of them would be renamed.
     private static readonly string[] WriterColumns = ["geometry", "bbox"];
 
@@ -43,36 +50,44 @@ internal sealed record ExportFields(
         var hidden = source.Where(field => field.Hidden).Select(field => field.Name).ToImmutableArray();
         var visible = source.Where(field => !field.Hidden).ToList();
         var objectIdField = resource.FindPrimaryIdField()?.Name ?? FieldNames.ObjectId;
-        var objectIdAsText = string.Equals(identityField, objectIdField, StringComparison.OrdinalIgnoreCase)
-            && visible.FirstOrDefault(field => string.Equals(field.Name, identityField, StringComparison.OrdinalIgnoreCase))
-                is not { Type: MetadataV2FieldType.String };
-        RequirePublishable(visible, identityField, objectIdAsText);
-        if (hidden.Contains(objectIdField, StringComparer.OrdinalIgnoreCase))
-        {
-            throw new ExportException(
-                $"The layer's id field '{objectIdField}' is hidden; GeoParquet always carries it, so show it before publishing.");
-        }
+        ValidatePublishable(visible, hidden, (identityField, objectIdField));
 
-        var declared = visible.Select(field => Describe(field, AsText(field, identityField, objectIdField)))
-            .Concat(source.Where(field => field.Hidden && DescriptorType(field.Type) is not null
-                    && ExportRequestRules.IsPortableFieldName(field.Name))
-                .Select(field => new ExportVersionField(field.Name, DescriptorType(field.Type)!, Public: false)))
-            .ToList();
-        if (!declared.Any(field => string.Equals(field.Name, objectIdField, StringComparison.OrdinalIgnoreCase)))
-        {
-            var synthesized = string.Equals(identityField, objectIdField, StringComparison.OrdinalIgnoreCase) ? "string" : "integer";
-            declared.Insert(0, new ExportVersionField(objectIdField, synthesized, Public: true));
-        }
-
+        var declared = BuildDeclaredFields(source, visible, (identityField, objectIdField));
         var parquetFields = GeoParquetFeatureWriter
             .ResolveSelectedFields(resource, objectIdField, visible.Select(field => field.Name).ToArray())
             .Where(field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
             .Select(field => field.Name)
             .ToList();
-        // Tile features carry every public attribute plus the object id column the tile query selects.
-        var tileFields = declared.Where(field => field.Public).Select(field => field.Name).ToList();
-        return new ExportFields(
-            declared, hidden, tileFields, parquetFields, objectIdField, identityField, ChooseIdentity(resource, identityField).Stable);
+        return new ExportFields
+        {
+            Declared = declared,
+            Hidden = hidden,
+            TileFields = declared.Where(field => field.Public).Select(field => field.Name).ToList(),
+            ParquetFields = parquetFields,
+            ObjectIdField = objectIdField,
+            IdentityField = identityField,
+            Stable = ChooseIdentity(resource, identityField).Stable
+        };
+    }
+
+    private static List<ExportVersionField> BuildDeclaredFields(
+        IReadOnlyList<MetadataV2Field> source,
+        IReadOnlyList<MetadataV2Field> visible,
+        (string IdentityField, string ObjectIdField) keys)
+    {
+        var declared = visible.Select(field =>
+                AsText(field, keys.IdentityField, keys.ObjectIdField) ? DescribeAsText(field) : Describe(field))
+            .Concat(source.Where(field => field.Hidden && DescriptorType(field.Type) is not null
+                    && ExportRequestRules.IsPortableFieldName(field.Name))
+                .Select(field => new ExportVersionField(field.Name, DescriptorType(field.Type)!, Public: false)))
+            .ToList();
+        if (!declared.Any(field => string.Equals(field.Name, keys.ObjectIdField, StringComparison.OrdinalIgnoreCase)))
+        {
+            var synthesized = string.Equals(keys.IdentityField, keys.ObjectIdField, StringComparison.OrdinalIgnoreCase) ? "string" : "integer";
+            declared.Insert(0, new ExportVersionField(keys.ObjectIdField, synthesized, Public: true));
+        }
+
+        return declared;
     }
 
     private static bool AsText(MetadataV2Field field, string identityField, string objectIdField)
@@ -83,13 +98,19 @@ internal sealed record ExportFields(
     public bool IsPublic(string name)
         => Declared.Any(field => field.Public && string.Equals(field.Name, name, StringComparison.OrdinalIgnoreCase));
 
-    private static void RequirePublishable(IReadOnlyList<MetadataV2Field> visible, string identityField, bool objectIdAsText)
+    private static void ValidatePublishable(
+        IReadOnlyList<MetadataV2Field> visible,
+        ImmutableArray<string> hidden,
+        (string IdentityField, string ObjectIdField) keys)
     {
-        var identity = visible.FirstOrDefault(field => string.Equals(field.Name, identityField, StringComparison.Ordinal));
+        var identity = visible.FirstOrDefault(field => string.Equals(field.Name, keys.IdentityField, StringComparison.Ordinal));
+        var objectIdAsText = string.Equals(keys.IdentityField, keys.ObjectIdField, StringComparison.OrdinalIgnoreCase)
+            && visible.FirstOrDefault(field => string.Equals(field.Name, keys.IdentityField, StringComparison.OrdinalIgnoreCase))
+                is not { Type: MetadataV2FieldType.String };
         if (!objectIdAsText && identity is not { Type: MetadataV2FieldType.String })
         {
             throw new ExportException(
-                $"Identity field '{identityField}' must be a visible text field of the layer.");
+                $"Identity field '{keys.IdentityField}' must be a visible text field of the layer.");
         }
 
         if (visible.FirstOrDefault(field => WriterColumns.Contains(field.Name, StringComparer.OrdinalIgnoreCase)) is { } reserved)
@@ -97,9 +118,21 @@ internal sealed record ExportFields(
             throw new ExportException(
                 $"Field '{reserved.Name}' collides with a GeoParquet column; rename or hide it before publishing.");
         }
+
+        if (hidden.Contains(keys.ObjectIdField, StringComparer.OrdinalIgnoreCase))
+        {
+            throw new ExportException(
+                $"The layer's id field '{keys.ObjectIdField}' is hidden; GeoParquet always carries it, so show it before publishing.");
+        }
     }
 
-    private static ExportVersionField Describe(MetadataV2Field field, bool asText)
+    private static ExportVersionField Describe(MetadataV2Field field)
+        => DescribeWithType(field, DescriptorType(field.Type) ?? throw new ExportException(
+            $"Field '{field.Name}' has a type the publication descriptor cannot describe; hide it before publishing."));
+
+    private static ExportVersionField DescribeAsText(MetadataV2Field field) => DescribeWithType(field, "string");
+
+    private static ExportVersionField DescribeWithType(MetadataV2Field field, string type)
     {
         if (!ExportRequestRules.IsPortableFieldName(field.Name))
         {
@@ -107,10 +140,6 @@ internal sealed record ExportFields(
                 $"Field '{field.Name}' is not a portable column name; rename or hide it before publishing.");
         }
 
-        var type = asText
-            ? "string"
-            : DescriptorType(field.Type) ?? throw new ExportException(
-                $"Field '{field.Name}' has a type the publication descriptor cannot describe; hide it before publishing.");
         return new ExportVersionField(field.Name, type, Public: true)
         {
             Title = string.IsNullOrWhiteSpace(field.Alias) ? null : field.Alias,

@@ -23,13 +23,31 @@ namespace Honua.Server.Features.Admin.TileOperations;
 // version, and the publication's pointer moves to that version only after both validate.
 internal sealed partial class TileOperationExecutionCore
 {
-    private sealed record ExportPublishContext(
-        ExportVersionRun Run,
-        ExportLayerSource Source,
-        ExportFields Fields,
-        ExportStore Store,
-        string? PointerETag,
-        string? UnpublishedETag);
+    private sealed record ExportPublishContext
+    {
+        public required ExportVersionRun Run { get; init; }
+
+        public required ExportLayerSource Source { get; init; }
+
+        public required ExportFields Fields { get; init; }
+
+        public required ExportStore Store { get; init; }
+
+        public string? PointerETag { get; init; }
+
+        public string? UnpublishedETag { get; init; }
+    }
+
+    private sealed record ExportSourceCheck
+    {
+        public required ExportStore Store { get; init; }
+
+        public required ExportLayerSource Source { get; init; }
+
+        public string? PointerETag { get; init; }
+
+        public string? UnpublishedETag { get; init; }
+    }
 
     private sealed record ExportArtifactFiles(Stream Archive, string ArchiveSha256, byte[] Parquet, string ParquetSha256);
 
@@ -136,30 +154,27 @@ internal sealed partial class TileOperationExecutionCore
 
         var source = await ExportLayerSource.OpenAsync(
             graphProvider, services, request.ServiceId!, request.LayerId!.Value, cancellationToken).ConfigureAwait(false);
-        await RequireSameSourceAsync(store, source, pointerETag, unpublishedETag, cancellationToken).ConfigureAwait(false);
+        await RequireSameSourceAsync(
+            new ExportSourceCheck { Store = store, Source = source, PointerETag = pointerETag, UnpublishedETag = unpublishedETag },
+            cancellationToken).ConfigureAwait(false);
 
         var fields = ExportFields.Resolve(source.Resource, request.IdentityField!);
         var capturedAt = DateTimeOffset.UtcNow;
         var captureId = $"capture-{Guid.NewGuid():N}";
         var run = new ExportVersionRun(
             request.ExportId!, ExportVersionFactory.NewVersion(capturedAt, captureId), captureId, capturedAt);
-        return new ExportPublishContext(run, source, fields, store, pointerETag, unpublishedETag);
+        return new ExportPublishContext { Run = run, Source = source, Fields = fields, Store = store, PointerETag = pointerETag, UnpublishedETag = unpublishedETag };
     }
 
     // An Export id names one Dataset; another Layer must not replace it, even after unpublish.
-    private static async Task RequireSameSourceAsync(
-        ExportStore store,
-        ExportLayerSource source,
-        string? pointerETag,
-        string? unpublishedETag,
-        CancellationToken cancellationToken)
+    private static async Task RequireSameSourceAsync(ExportSourceCheck check, CancellationToken cancellationToken)
     {
-        var serviceId = source.Published.Service.Metadata.Id;
-        var layerId = source.Resource.Metadata.Id;
-        if (pointerETag is not null)
+        var serviceId = check.Source.Published.Service.Metadata.Id;
+        var layerId = check.Source.Resource.Metadata.Id;
+        if (check.PointerETag is not null)
         {
-            var pointer = await store.ReadPointerAsync(cancellationToken).ConfigureAwait(false);
-            var active = pointer is null ? null : await store.ReadCollectionAsync(pointer, cancellationToken).ConfigureAwait(false);
+            var pointer = await check.Store.ReadPointerAsync(cancellationToken).ConfigureAwait(false);
+            var active = pointer is null ? null : await check.Store.ReadCollectionAsync(pointer, cancellationToken).ConfigureAwait(false);
             if (active is null || active.SourceLayer.Service != serviceId || active.SourceLayer.Layer != layerId)
             {
                 throw new ExportException(
@@ -169,9 +184,9 @@ internal sealed partial class TileOperationExecutionCore
             return;
         }
 
-        if (unpublishedETag is not null)
+        if (check.UnpublishedETag is not null)
         {
-            var marker = await store.ReadUnpublishedAsync(cancellationToken).ConfigureAwait(false);
+            var marker = await check.Store.ReadUnpublishedAsync(cancellationToken).ConfigureAwait(false);
             if (marker is not null && !string.IsNullOrEmpty(marker.ServiceId)
                 && (marker.ServiceId != serviceId || marker.LayerId != layerId))
             {
@@ -180,7 +195,7 @@ internal sealed partial class TileOperationExecutionCore
             }
         }
 
-        var existing = await store.FindAnyStoredVersionAsync(cancellationToken).ConfigureAwait(false);
+        var existing = await check.Store.FindAnyStoredVersionAsync(cancellationToken).ConfigureAwait(false);
         if (existing is not null && (existing.SourceLayer.Service != serviceId || existing.SourceLayer.Layer != layerId))
         {
             throw new ExportException(

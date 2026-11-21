@@ -25,17 +25,16 @@ public sealed class ExportCreateDefaultsTests
     }
 
     [UnitTheory]
-    [InlineData(0, 30, 0, 14)]
-    [InlineData(20, 22, 14, 14)]
-    [InlineData(null, 8, null, 8)]
-    [InlineData(2, null, 2, null)]
-    [InlineData(-3, 4, 0, 4)]
-    public void ClampZoom_StaysInsideTheTileCeiling(int? min, int? max, int? expectedMin, int? expectedMax)
+    [InlineData(0, 30, "0,14")]
+    [InlineData(20, 22, "14,14")]
+    [InlineData(null, 8, ",8")]
+    [InlineData(2, null, "2,")]
+    [InlineData(-3, 4, "0,4")]
+    public void ClampZoom_StaysInsideTheTileCeiling(int? min, int? max, string expected)
     {
-        var zoom = ExportCreateDefaults.ClampZoom(min, max, 0, 14);
+        var zoom = ExportCreateDefaults.ClampZoom(min, max, new ExportZoomBounds(0, 14));
 
-        zoom.MinZoom.Should().Be(expectedMin);
-        zoom.MaxZoom.Should().Be(expectedMax);
+        $"{zoom.MinZoom},{zoom.MaxZoom}".Should().Be(expected);
     }
 
     [UnitTest]

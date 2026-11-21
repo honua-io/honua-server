@@ -30,20 +30,17 @@ internal static class ExportAdminEndpoints
         _ = group.MapDelete("/{exportId}", DeleteAsync).WithName("DeleteExport").WithSummary("Unpublish an Export");
     }
 
-    private static async Task<IResult> ListAsync(
-        HttpContext context,
-        [FromServices] ExportCatalog catalog,
-        [FromQuery] int? limit = null,
-        [FromQuery] int? offset = null,
-        CancellationToken cancellationToken = default)
+    private static async Task<IResult> ListAsync(HttpContext context, CancellationToken cancellationToken)
     {
-        var items = await catalog.ListAsync(BaseUrl(context), limit, offset, cancellationToken).ConfigureAwait(false);
+        var catalog = context.RequestServices.GetRequiredService<ExportCatalog>();
+        var page = new ExportListPage(ParseIntQuery(context, "limit"), ParseIntQuery(context, "offset"));
+        var items = await catalog.ListAsync(BaseUrl(context), page, cancellationToken).ConfigureAwait(false);
         return Json(ApiResponse<ExportListResponse>.CreateSuccess(new ExportListResponse(items)), StatusCodes.Status200OK);
     }
 
-    private static async Task<IResult> GetAsync(
-        string exportId, HttpContext context, [FromServices] ExportCatalog catalog, CancellationToken cancellationToken)
+    private static async Task<IResult> GetAsync(string exportId, HttpContext context, CancellationToken cancellationToken)
     {
+        var catalog = context.RequestServices.GetRequiredService<ExportCatalog>();
         var export = ExportRequestRules.IsExportId(exportId)
             ? await catalog.GetAsync(exportId, BaseUrl(context), cancellationToken).ConfigureAwait(false)
             : null;
@@ -52,32 +49,27 @@ internal static class ExportAdminEndpoints
             : Json(ApiResponse<ExportResponse>.CreateSuccess(export), StatusCodes.Status200OK);
     }
 
-    private static async Task<IResult> CreateAsync(
-        ExportCreateRequest request,
-        HttpContext context,
-        [FromServices] IMetadataV2GraphProvider graphProvider,
-        [FromServices] ITileCacheJobService jobService,
-        [FromServices] ExportCatalog catalog,
-        [FromServices] IOptions<LimitsOptions> limits,
-        CancellationToken cancellationToken)
+    private static async Task<IResult> CreateAsync(ExportCreateRequest request, HttpContext context, CancellationToken cancellationToken)
     {
-        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var tiles = limits.Value.Tiles;
-        var resolved = ExportCreateDefaults.Resolve(request, snapshot, tiles.MinTileZoom, tiles.MaxTileZoom);
+        var services = context.RequestServices;
+        var snapshot = await services.GetRequiredService<IMetadataV2GraphProvider>().GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var tiles = services.GetRequiredService<IOptions<LimitsOptions>>().Value.Tiles;
+        var resolved = ExportCreateDefaults.Resolve(request, snapshot, new ExportZoomBounds(tiles.MinTileZoom, tiles.MaxTileZoom));
         if (resolved.Problem is { } problem)
         {
             return Failure(problem, resolved.StatusCode);
         }
 
         var start = resolved.Start!;
+        var catalog = services.GetRequiredService<ExportCatalog>();
         if (await catalog.HasActiveJobAsync(start.ExportId!, cancellationToken).ConfigureAwait(false))
         {
             return Failure($"An export job is already running for Export '{start.ExportId}'.", StatusCodes.Status409Conflict);
         }
 
         var submission = new TileOperationSubmission(
-            start, JobOwnershipSecurity.ResolveOwner(context.User), context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema);
-        var jobId = await jobService.SubmitAsync(submission, cancellationToken).ConfigureAwait(false);
+            start, JobOwnershipSecurity.ResolveOwner(context.User), services.GetService<ISchemaContext>()?.CurrentSchema);
+        var jobId = await services.GetRequiredService<ITileCacheJobService>().SubmitAsync(submission, cancellationToken).ConfigureAwait(false);
         var export = new ExportResponse
         {
             Id = start.ExportId!,
@@ -92,9 +84,9 @@ internal static class ExportAdminEndpoints
             StatusCodes.Status202Accepted);
     }
 
-    private static async Task<IResult> DeleteAsync(
-        string exportId, HttpContext context, [FromServices] ExportCatalog catalog, CancellationToken cancellationToken)
+    private static async Task<IResult> DeleteAsync(string exportId, HttpContext context, CancellationToken cancellationToken)
     {
+        var catalog = context.RequestServices.GetRequiredService<ExportCatalog>();
         if (!ExportRequestRules.IsExportId(exportId)
             || await catalog.GetAsync(exportId, BaseUrl(context), cancellationToken).ConfigureAwait(false) is null)
         {
@@ -111,6 +103,11 @@ internal static class ExportAdminEndpoints
         var export = await catalog.GetAsync(exportId, BaseUrl(context), cancellationToken).ConfigureAwait(false);
         return Json(ApiResponse<ExportResponse>.CreateSuccess(export!, "Export unpublished; its files are no longer served."), StatusCodes.Status200OK);
     }
+
+    private static int? ParseIntQuery(HttpContext context, string name)
+        => context.Request.Query.TryGetValue(name, out var raw)
+            && int.TryParse(raw.ToString(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+            ? parsed : null;
 
     private static string BaseUrl(HttpContext context) => $"{context.Request.Scheme}://{context.Request.Host}{context.Request.PathBase}";
 

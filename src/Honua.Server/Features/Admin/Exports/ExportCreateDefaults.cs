@@ -8,7 +8,18 @@ using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 
 namespace Honua.Server.Features.Admin.Exports;
 
-internal sealed record ExportCreatePlan(TileOperationStartRequest? Start, string? Title, string? Problem, int StatusCode);
+internal readonly record struct ExportZoomBounds(int Lowest = 0, int Highest = 24);
+
+internal sealed record ExportCreatePlan
+{
+    public TileOperationStartRequest? Start { get; init; }
+
+    public string? Title { get; init; }
+
+    public string? Problem { get; init; }
+
+    public int StatusCode { get; init; }
+}
 
 // Turns "export this Layer" into a complete export job: the id defaults to the Layer's name as a slug
 // and the identity to the Layer's declared text key, or the object id as text. Both stay overridable.
@@ -17,8 +28,9 @@ internal static class ExportCreateDefaults
     private const int MaxIdLength = 64;
 
     public static ExportCreatePlan Resolve(
-        ExportCreateRequest request, MetadataV2GraphSnapshot snapshot, int lowestZoom = 0, int highestZoom = 24)
+        ExportCreateRequest request, MetadataV2GraphSnapshot snapshot, ExportZoomBounds? zoomBounds = null)
     {
+        var bounds = zoomBounds ?? new ExportZoomBounds();
         var source = request.Source;
         if (source is null || !string.Equals(source.Kind ?? "layer", "layer", StringComparison.Ordinal))
         {
@@ -38,7 +50,7 @@ internal static class ExportCreateDefaults
         }
 
         var resource = published.Resource;
-        var zoom = ClampZoom(request.MinZoom, request.MaxZoom, lowestZoom, highestZoom);
+        var zoom = ClampZoom(request.MinZoom, request.MaxZoom, bounds);
         var identity = ExportFields.ChooseIdentity(resource, request.IdentityField);
         var start = new TileOperationStartRequest
         {
@@ -53,16 +65,16 @@ internal static class ExportCreateDefaults
         var title = string.IsNullOrWhiteSpace(resource.Metadata.Title) ? null : resource.Metadata.Title.Trim();
         return ExportRequestRules.Problem(start) is { } problem
             ? Refuse(problem, StatusCodes.Status400BadRequest)
-            : new ExportCreatePlan(start, title, null, StatusCodes.Status202Accepted);
+            : new ExportCreatePlan { Start = start, Title = title, StatusCode = StatusCodes.Status202Accepted };
     }
 
     // A requested zoom outside the server's tile ceiling is clamped. Clients overzoom past the archive.
-    internal static (int? MinZoom, int? MaxZoom) ClampZoom(int? minZoom, int? maxZoom, int lowest, int highest)
+    internal static (int? MinZoom, int? MaxZoom) ClampZoom(int? minZoom, int? maxZoom, ExportZoomBounds bounds)
     {
-        var min = minZoom is { } low ? Math.Clamp(low, lowest, highest) : (int?)null;
+        var min = minZoom is { } low ? Math.Clamp(low, bounds.Lowest, bounds.Highest) : (int?)null;
         return maxZoom is not { } high
             ? (min, null)
-            : (min, Math.Clamp(high, min ?? lowest, highest));
+            : (min, Math.Clamp(high, min ?? bounds.Lowest, bounds.Highest));
     }
 
     // Lowercase letters, digits and single hyphens, 3-64 characters, starting with a letter or digit.
@@ -83,5 +95,5 @@ internal static class ExportCreateDefaults
         return trimmed.Length >= 3 ? trimmed : $"export-{trimmed}".TrimEnd('-');
     }
 
-    private static ExportCreatePlan Refuse(string problem, int statusCode) => new(null, null, problem, statusCode);
+    private static ExportCreatePlan Refuse(string problem, int statusCode) => new() { Problem = problem, StatusCode = statusCode };
 }

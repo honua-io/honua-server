@@ -11,6 +11,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.Exports;
 
+internal readonly record struct ExportListPage(int? Limit = null, int? Offset = null);
+
 // Describes Exports from what storage and the job log hold: the pointer names the current Version,
 // version folders hold earlier ones, and the newest export job says whether one is running or failed.
 internal sealed partial class ExportCatalog(
@@ -24,6 +26,22 @@ internal sealed partial class ExportCatalog(
     internal const int MaxStorageListFiles = 2000;
     internal const int MaxVersionsReturned = 100;
 
+    private sealed record CatalogSnapshot(
+        IReadOnlyList<CloudFile> Files,
+        IReadOnlyList<TileOperationProgress> ExportJobs,
+        string BaseUrl);
+
+    private sealed record ExportState
+    {
+        public required ExportStore Store { get; init; }
+
+        public ExportVersion? Current { get; init; }
+
+        public required List<string> VersionIds { get; init; }
+
+        public TileOperationProgress? Job { get; init; }
+    }
+
     public async Task<bool> HasActiveJobAsync(string exportId, CancellationToken cancellationToken)
     {
         var exportJobs = await ExportJobsAsync(cancellationToken).ConfigureAwait(false);
@@ -31,20 +49,22 @@ internal sealed partial class ExportCatalog(
     }
 
     public async Task<IReadOnlyList<ExportResponse>> ListAsync(
-        string baseUrl, int? limit, int? offset, CancellationToken cancellationToken)
+        string baseUrl, ExportListPage page, CancellationToken cancellationToken)
     {
-        var pageLimit = Math.Clamp(limit ?? DefaultListLimit, 1, MaxListLimit);
-        var pageOffset = Math.Max(0, offset ?? 0);
-        var files = await ListFilesAsync(subFolder: null, cancellationToken).ConfigureAwait(false);
-        var exportJobs = await ExportJobsAsync(cancellationToken).ConfigureAwait(false);
-        var ids = files.Select(file => Match(file).ExportId)
-            .Concat(exportJobs.Select(job => job.ExportId))
+        var pageLimit = Math.Clamp(page.Limit ?? DefaultListLimit, 1, MaxListLimit);
+        var pageOffset = Math.Max(0, page.Offset ?? 0);
+        var snapshot = new CatalogSnapshot(
+            await ListFilesAsync(subFolder: null, cancellationToken).ConfigureAwait(false),
+            await ExportJobsAsync(cancellationToken).ConfigureAwait(false),
+            baseUrl);
+        var ids = snapshot.Files.Select(file => Match(file).ExportId)
+            .Concat(snapshot.ExportJobs.Select(job => job.ExportId))
             .OfType<string>().Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
             .Skip(pageOffset).Take(pageLimit);
         var items = new List<ExportResponse>();
         foreach (var id in ids)
         {
-            var export = await DescribeAsync(id, files, exportJobs, baseUrl, allVersions: false, cancellationToken).ConfigureAwait(false);
+            var export = await DescribeSummaryAsync(id, snapshot, cancellationToken).ConfigureAwait(false);
             items.AddRange(export is null ? [] : [export]);
         }
 
@@ -53,9 +73,11 @@ internal sealed partial class ExportCatalog(
 
     public async Task<ExportResponse?> GetAsync(string exportId, string baseUrl, CancellationToken cancellationToken)
     {
-        var files = await ListFilesAsync(exportId, cancellationToken).ConfigureAwait(false);
-        var exportJobs = await ExportJobsAsync(cancellationToken).ConfigureAwait(false);
-        return await DescribeAsync(exportId, files, exportJobs, baseUrl, allVersions: true, cancellationToken).ConfigureAwait(false);
+        var snapshot = new CatalogSnapshot(
+            await ListFilesAsync(exportId, cancellationToken).ConfigureAwait(false),
+            await ExportJobsAsync(cancellationToken).ConfigureAwait(false),
+            baseUrl);
+        return await DescribeDetailAsync(exportId, snapshot, cancellationToken).ConfigureAwait(false);
     }
 
     // Unpublishing writes a durable fence before removing the pointer so an in-flight job cannot
@@ -65,7 +87,13 @@ internal sealed partial class ExportCatalog(
         var store = ExportStore.Create(storage, options.Value, exportId);
         var (serviceId, layerId) = await ResolveSourceIdentityAsync(store, cancellationToken).ConfigureAwait(false);
         await store.WriteUnpublishedAsync(
-            new ExportUnpublishedMarker(exportId, serviceId, layerId, DateTimeOffset.UtcNow),
+            new ExportUnpublishedMarker
+            {
+                ExportId = exportId,
+                ServiceId = serviceId,
+                LayerId = layerId,
+                UnpublishedAt = DateTimeOffset.UtcNow
+            },
             cancellationToken).ConfigureAwait(false);
         return await storage.DeleteAsync(store.PointerKey, cancellationToken).ConfigureAwait(false);
     }
@@ -86,64 +114,96 @@ internal sealed partial class ExportCatalog(
         return existing is not null ? (existing.ServiceId, existing.LayerId) : (string.Empty, string.Empty);
     }
 
-    private async Task<ExportResponse?> DescribeAsync(
-        string exportId,
-        IReadOnlyList<CloudFile> files,
-        IReadOnlyList<TileOperationProgress> exportJobs,
-        string baseUrl,
-        bool allVersions,
-        CancellationToken cancellationToken)
+    private async Task<ExportResponse?> DescribeSummaryAsync(
+        string exportId, CatalogSnapshot snapshot, CancellationToken cancellationToken)
     {
-        var store = ExportStore.Create(storage, options.Value, exportId);
-        var pointer = await store.ReadPointerAsync(cancellationToken).ConfigureAwait(false);
-        var current = pointer?.ExportId == exportId ? await store.ReadCollectionAsync(pointer, cancellationToken).ConfigureAwait(false) : null;
-        var versionIds = files.Select(Match).Where(match => match.ExportId == exportId && match.Version is not null)
-            .Select(match => match.Version!).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
-            .TakeLast(MaxVersionsReturned).ToList();
-        var job = exportJobs.Where(candidate => candidate.ExportId == exportId).MaxBy(candidate => candidate.StartedAt);
-        if (current is null && versionIds.Count == 0 && job is null)
+        var state = await LoadStateAsync(exportId, snapshot, cancellationToken).ConfigureAwait(false);
+        if (state is null)
         {
             return null;
         }
 
-        var versions = await VersionsAsync(store, current, allVersions ? versionIds : [], baseUrl, cancellationToken).ConfigureAwait(false);
-        return new ExportResponse
-        {
-            Id = exportId,
-            Title = current?.Title ?? exportId,
-            Status = Status(current, versionIds, job),
-            Source = Source(current, job),
-            CurrentVersion = current?.Version,
-            UpdatedAt = current?.PublishedAt,
-            CollectionUrl = current is null ? null : FileUrl(baseUrl, exportId, current.Version, ExportCollectionDocument.FileName),
-            NotPublicReason = NotPublicReason,
-            JobId = job?.JobId,
-            Message = job?.Status == OperationStatus.Failed ? job.ErrorMessage : null,
-            Versions = versions
-        };
+        var versions = state.Current is null ? [] : new[] { Version(state.Current, snapshot.BaseUrl) };
+        return BuildResponse(exportId, state, (snapshot.BaseUrl, versions));
     }
 
-    private static async Task<IReadOnlyList<ExportVersionResponse>> VersionsAsync(
-        ExportStore store, ExportVersion? current, IReadOnlyList<string> versionIds, string baseUrl, CancellationToken cancellationToken)
+    private async Task<ExportResponse?> DescribeDetailAsync(
+        string exportId, CatalogSnapshot snapshot, CancellationToken cancellationToken)
+    {
+        var state = await LoadStateAsync(exportId, snapshot, cancellationToken).ConfigureAwait(false);
+        if (state is null)
+        {
+            return null;
+        }
+
+        var versions = await LoadVersionsAsync(state, snapshot.BaseUrl, cancellationToken).ConfigureAwait(false);
+        return BuildResponse(exportId, state, (snapshot.BaseUrl, versions));
+    }
+
+    private async Task<ExportState?> LoadStateAsync(
+        string exportId, CatalogSnapshot snapshot, CancellationToken cancellationToken)
+    {
+        var store = ExportStore.Create(storage, options.Value, exportId);
+        var pointer = await store.ReadPointerAsync(cancellationToken).ConfigureAwait(false);
+        var current = pointer?.ExportId == exportId ? await store.ReadCollectionAsync(pointer, cancellationToken).ConfigureAwait(false) : null;
+        var versionIds = snapshot.Files.Select(Match).Where(match => match.ExportId == exportId && match.Version is not null)
+            .Select(match => match.Version!).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
+            .TakeLast(MaxVersionsReturned).ToList();
+        var job = snapshot.ExportJobs.Where(candidate => candidate.ExportId == exportId).MaxBy(candidate => candidate.StartedAt);
+        return current is null && versionIds.Count == 0 && job is null
+            ? null
+            : new ExportState { Store = store, Current = current, VersionIds = versionIds, Job = job };
+    }
+
+    private static ExportResponse BuildResponse(
+        string exportId, ExportState state, (string BaseUrl, IReadOnlyList<ExportVersionResponse> Versions) detail)
+        => new()
+        {
+            Id = exportId,
+            Title = state.Current?.Title ?? exportId,
+            Status = Status(state.Current, state.VersionIds, state.Job),
+            Source = Source(state.Current, state.Job),
+            CurrentVersion = state.Current?.Version,
+            UpdatedAt = state.Current?.PublishedAt,
+            CollectionUrl = state.Current is null
+                ? null
+                : FileUrl(detail.BaseUrl, exportId, VersionFilePath(state.Current.Version, ExportCollectionDocument.FileName)),
+            NotPublicReason = NotPublicReason,
+            JobId = state.Job?.JobId,
+            Message = state.Job?.Status == OperationStatus.Failed ? state.Job.ErrorMessage : null,
+            Versions = detail.Versions
+        };
+
+    private static async Task<IReadOnlyList<ExportVersionResponse>> LoadVersionsAsync(
+        ExportState state, string baseUrl, CancellationToken cancellationToken)
     {
         var described = new List<ExportVersionResponse>();
-        foreach (var versionId in versionIds.Where(id => id != current?.Version))
+        foreach (var versionId in state.VersionIds.Where(id => id != state.Current?.Version))
         {
-            var version = await store.ReadVersionAsync(versionId, cancellationToken).ConfigureAwait(false);
+            var version = await state.Store.ReadVersionAsync(versionId, cancellationToken).ConfigureAwait(false);
             described.AddRange(version is null ? [] : [Version(version, baseUrl)]);
         }
 
-        described.AddRange(current is null ? [] : [Version(current, baseUrl)]);
+        described.AddRange(state.Current is null ? [] : [Version(state.Current, baseUrl)]);
         return described;
     }
 
     internal static ExportVersionResponse Version(ExportVersion version, string baseUrl)
-        => new(version.Version, version.PublishedAt, version.Capture.FeatureCount,
-        [
-            new ExportArtifactResponse("collection", FileUrl(baseUrl, version.ExportId, version.Version, ExportCollectionDocument.FileName), null),
-            new ExportArtifactResponse("geoparquet", FileUrl(baseUrl, version.ExportId, version.Version, version.Artifacts.Geoparquet.Href), version.Artifacts.Geoparquet.Bytes),
-            new ExportArtifactResponse("pmtiles", FileUrl(baseUrl, version.ExportId, version.Version, version.Artifacts.Pmtiles.Href), version.Artifacts.Pmtiles.Bytes)
-        ]);
+        => new()
+        {
+            Version = version.Version,
+            CreatedAt = version.PublishedAt,
+            FeatureCount = version.Capture.FeatureCount,
+            Artifacts =
+            [
+                new ExportArtifactResponse("collection", FileUrl(baseUrl, version.ExportId, VersionFilePath(version.Version, ExportCollectionDocument.FileName)), null),
+                new ExportArtifactResponse("geoparquet", FileUrl(baseUrl, version.ExportId, VersionFilePath(version.Version, version.Artifacts.Geoparquet.Href)), version.Artifacts.Geoparquet.Bytes),
+                new ExportArtifactResponse("pmtiles", FileUrl(baseUrl, version.ExportId, VersionFilePath(version.Version, version.Artifacts.Pmtiles.Href)), version.Artifacts.Pmtiles.Bytes)
+            ]
+        };
+
+    private static string VersionFilePath(string version, string fileName)
+        => $"{Uri.EscapeDataString(version)}/{Uri.EscapeDataString(fileName)}";
 
     private static string Status(ExportVersion? current, List<string> versionIds, TileOperationProgress? job)
     {
@@ -168,8 +228,8 @@ internal sealed partial class ExportCatalog(
         Name = current?.SourceLayer.Title ?? current?.SourceLayer.Layer
     };
 
-    private static string FileUrl(string baseUrl, string exportId, string version, string fileName)
-        => $"{baseUrl}/api/v1/exports/{Uri.EscapeDataString(exportId)}/{Uri.EscapeDataString(version)}/{Uri.EscapeDataString(fileName)}";
+    private static string FileUrl(string baseUrl, string exportId, string versionFilePath)
+        => $"{baseUrl}/api/v1/exports/{Uri.EscapeDataString(exportId)}/{versionFilePath}";
 
     private async Task<IReadOnlyList<TileOperationProgress>> ExportJobsAsync(CancellationToken cancellationToken)
     {

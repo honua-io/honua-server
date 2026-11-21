@@ -132,7 +132,16 @@ public sealed record PublishedExportVersion(string ExportId, string Version, str
 
 public sealed record ExportPointer(string ExportId, string Version, string Collection, DateTimeOffset SwitchedAt);
 
-public sealed record ExportUnpublishedMarker(string ExportId, string ServiceId, string LayerId, DateTimeOffset UnpublishedAt);
+public sealed record ExportUnpublishedMarker
+{
+    public required string ExportId { get; init; }
+
+    public required string ServiceId { get; init; }
+
+    public required string LayerId { get; init; }
+
+    public required DateTimeOffset UnpublishedAt { get; init; }
+}
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]
 [JsonSerializable(typeof(ExportVersion))]

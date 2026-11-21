@@ -68,7 +68,16 @@ public sealed record ExportResponse
     public IReadOnlyList<ExportVersionResponse> Versions { get; init; } = [];
 }
 
-public sealed record ExportVersionResponse(string Version, DateTimeOffset? CreatedAt, long? FeatureCount, IReadOnlyList<ExportArtifactResponse> Artifacts);
+public sealed record ExportVersionResponse
+{
+    public required string Version { get; init; }
+
+    public DateTimeOffset? CreatedAt { get; init; }
+
+    public long? FeatureCount { get; init; }
+
+    public required IReadOnlyList<ExportArtifactResponse> Artifacts { get; init; }
+}
 
 public sealed record ExportArtifactResponse(string Kind, string Href, long? Bytes);
 

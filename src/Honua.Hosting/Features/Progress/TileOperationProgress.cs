@@ -64,12 +64,10 @@ internal sealed record TileOperationProgress : IOperationProgress, ICancellableO
         string operation,
         string? serviceId,
         int? layerId,
-        string? tileMatrixSetId,
-        string? exportId = null)
+        string? tileMatrixSetId)
         => new()
         {
             JobId = jobId,
-            ExportId = exportId,
             Operation = operation,
             ServiceId = serviceId,
             LayerId = layerId,

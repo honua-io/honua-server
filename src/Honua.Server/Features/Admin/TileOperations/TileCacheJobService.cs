@@ -204,7 +204,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             Parameters = new Dictionary<string, string>(spec.Parameters, StringComparer.Ordinal)
             {
                 [ExecutionJobProgressReader.InitialProgressParameter] = OperationProgressSerializer.Serialize(
-                    TileOperationProgress.CreateInitial(jobId, request.Operation, request.ServiceId, request.LayerId, request.TileMatrixSetId, request.ExportId))
+                    TileOperationProgress.CreateInitial(jobId, request.Operation, request.ServiceId, request.LayerId, request.TileMatrixSetId) with { ExportId = request.ExportId })
             }
         };
     }
@@ -213,7 +213,7 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
     private Task SeedProgressAsync(string jobId, TileOperationStartRequest request, CancellationToken cancellationToken)
         => _progressStore.SetProgressAsync(
             jobId,
-            TileOperationProgress.CreateInitial(jobId, request.Operation, request.ServiceId, request.LayerId, request.TileMatrixSetId, request.ExportId),
+            TileOperationProgress.CreateInitial(jobId, request.Operation, request.ServiceId, request.LayerId, request.TileMatrixSetId) with { ExportId = request.ExportId },
             ProgressRetention,
             cancellationToken);
 
