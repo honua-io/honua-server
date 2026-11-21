@@ -36,7 +36,9 @@ Run `POST /api/v1/admin/import/raster` with these form values:
 | `layerId` | `1` |
 | `name` | `City DEM 2026` |
 
-Optional form fields: `description`, `srid` (overrides CRS detection), `acquisitionDate` (ISO 8601, used by temporal mosaic selection), `tileZoomLevels` (comma-separated 0–24, default `0-8` pre-generated). For PNG/JPEG, attach the world file as another `file` value and optionally add a `.prj` sidecar. The direct PostGIS import runs synchronously and accepts at most the lower of `Limits:Imports:MaxSyncImportSize` and the fixed 50 MiB serving-process safety ceiling. Larger rasters require the durable staged-import pipeline.
+Optional form fields: `description`, `srid` (overrides CRS detection), `acquisitionDate` (ISO 8601, used by temporal mosaic selection), `tileZoomLevels` (comma-separated integers from 0 to 24, such as `0,1,2`; ranges such as `0-2` are rejected; default `0,1,2,3,4,5,6,7,8` pre-generated). For PNG/JPEG, attach the world file as another `file` value and optionally add a `.prj` sidecar. The direct PostGIS import runs synchronously and accepts at most the lower of `Limits:Imports:MaxSyncImportSize` and the fixed 50 MiB serving-process safety ceiling. Larger rasters require the durable staged-import pipeline.
+
+Raster storage needs the `postgis_raster` extension in the server's database. On an install without it, such as the feature-only quickstart, the import returns `503` with that operator action (enable `postgis_raster`, then restart the server), and ImageServer service info, tile and export requests answer not found instead of a server error.
 
 Every raster uploaded to the same layer must match the layer's first raster in SRID and band count; mismatches return `400` with a structured homogeneity message.
 
@@ -110,7 +112,7 @@ Run `POST /api/v1/admin/multidim-coverages` with this body:
 ## Troubleshoot
 
 - **`'layerId' is required and must be a valid integer.`** — the multipart request is missing the `layerId` form field; rasters attach to an existing catalog layer.
-- **`Raster import request is invalid.` for PNG/JPEG** — those formats need a `.pgw`/`.jgw`/`.wld` world file; add the sidecar or supply `srid` plus a `.prj`.
+- **`… imports require a world file` (400) for PNG/JPEG** — those formats need a `.pgw`, `.jgw`, `.tfw` or `.wld` world file. `srid` and a `.prj` set the CRS but do not replace the world file; add the sidecar and retry. Other import failures return `Import failed.` without internal detail.
 - **Homogeneity error on upload** — the new raster's SRID or band count differs from the layer's first raster; use a separate layer or reproject/restack the source.
 - **COG tiles not served from cloud** — check the registration with `GET /api/v1/admin/cloud-rasters/{id}`, confirm a range reader is configured for the provider, and verify that the object has an ETag and a supported sample layout. DEFLATE/LZW/ZSTD/uncompressed chunky unsigned 8/16-bit grayscale or RGB tiles serve as lossless PNG with nodata transparency; use `format=tiff` or `format=cog` for lossless unsigned, signed or floating-point samples with nodata and tile georeferencing; palettes, separate planes and JPEG conversion from decoded samples are unsupported; its default `format=png` does not transcode JPEG either.
 - **Web tiles misaligned** — direct COG tile serving requires an EPSG:3857 GoogleMapsCompatible grid. Other SRIDs and grids return GeoServices error code 404 from the tile fallback (an HTTP 200 error envelope); use the imported PostGIS path for reprojection and general raster operations. A successful metadata refresh does not certify that a source is tile-servable. Rotated, sheared and invalid ModelTransformation grids are rejected during metadata extraction.

@@ -5,6 +5,8 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
 using Amazon;
 using Amazon.ECS;
 using Amazon.ECS.Model;
@@ -544,19 +546,25 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             blockingReasons.Add("AWS ECS/ALB deploy workflows require aws.ecs.canary_service.");
         }
 
-        if (string.IsNullOrWhiteSpace(target.ListenerRuleArn))
-        {
-            blockingReasons.Add("AWS ECS/ALB deploy workflows require aws.alb.listener_rule_arn.");
-        }
+        var singleServiceImageRollout = ReleaseImageDigest.IsImmutable(spec.DesiredRevision) &&
+            IsSingleServiceRollingMode(spec, target);
 
-        if (string.IsNullOrWhiteSpace(target.CanaryTargetGroupArn))
+        if (!singleServiceImageRollout)
         {
-            blockingReasons.Add("AWS ECS/ALB deploy workflows require aws.alb.canary_target_group_arn.");
-        }
+            if (string.IsNullOrWhiteSpace(target.ListenerRuleArn))
+            {
+                blockingReasons.Add("AWS ECS/ALB deploy workflows require aws.alb.listener_rule_arn.");
+            }
 
-        if (string.IsNullOrWhiteSpace(target.StableTargetGroupArn))
-        {
-            blockingReasons.Add("AWS ECS/ALB deploy workflows require aws.alb.stable_target_group_arn.");
+            if (string.IsNullOrWhiteSpace(target.CanaryTargetGroupArn))
+            {
+                blockingReasons.Add("AWS ECS/ALB deploy workflows require aws.alb.canary_target_group_arn.");
+            }
+
+            if (string.IsNullOrWhiteSpace(target.StableTargetGroupArn))
+            {
+                blockingReasons.Add("AWS ECS/ALB deploy workflows require aws.alb.stable_target_group_arn.");
+            }
         }
 
         if (string.IsNullOrWhiteSpace(spec.ArtifactReference))
@@ -575,6 +583,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             blockingReasons.Add("AWS ECS/ALB canary traffic shifting requires telemetry.connection so the rollout can be promoted or rolled back automatically.");
         }
 
+        AppendRevisionFormatPlan(spec, blockingReasons);
         AppendImageConvergencePlan(spec, blockingReasons, warnings);
 
         var alarmReason = AlarmAdmission is null ? null :
@@ -604,7 +613,9 @@ internal sealed partial class AwsEcsAlbDeployBackend(
         cancellationToken.ThrowIfCancellationRequested();
 
         var target = ResolveTarget(spec);
-        EnsureValidTarget(target);
+        var singleServiceImageRollout = ReleaseImageDigest.IsImmutable(spec.DesiredRevision) &&
+            IsSingleServiceRollingMode(spec, target);
+        EnsureValidTarget(target, requireAlbRouting: !singleServiceImageRollout);
         await EnsureAlarmAdmissionAsync(spec, cancellationToken).ConfigureAwait(false);
         if (RequiresCheckpoint(operation))
         {
@@ -655,6 +666,15 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                     cancellationToken)
                 .ConfigureAwait(false);
             var observedTaskDefinition = canaryServiceState.TaskDefinitionArn;
+            if (!imageConvergence && !IsAllowedServiceRevision(appliedTaskDefinition, observedTaskDefinition))
+            {
+                Log.RevisionOutsideServiceFamily(logger, operation.OperationId, spec.TargetId);
+                return new DeploySubmissionResult
+                {
+                    Status = WorkflowOperationStatus.Failed,
+                    Message = RevisionOutsideServiceFamilyMessage
+                };
+            }
 
             // Snapshot the existing listener-rule weights before mutating them so a
             // mid-deploy failure (most importantly the ECS update below) can restore
@@ -775,7 +795,15 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
         try
         {
-            EnsureValidTarget(target);
+            var singleServiceImageRollout = ReleaseImageDigest.IsImmutable(spec.DesiredRevision) &&
+                IsSingleServiceRollingMode(spec, target);
+            EnsureValidTarget(target, requireAlbRouting: !singleServiceImageRollout);
+            if (singleServiceImageRollout)
+            {
+                return await ObserveSingleServiceImageAsync(operation, spec, target, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             _ = TryResolveCanaryWeightPercentage(spec.Parameters, out var desiredCanaryWeight, out _);
             if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision) && spec.CanaryRamp is { IsValid: true } ramp)
             {
@@ -979,8 +1007,204 @@ internal sealed partial class AwsEcsAlbDeployBackend(
         {
             Log.StateLookupFailed(logger, operation.OperationId, spec.TargetId, ex.Message);
             activity?.SetStatus(ActivityStatusCode.Error);
+            if (IsTransientAwsException(ex))
+            {
+                return TransientRetryObservation(
+                    operation,
+                    "ECS/ALB state lookup encountered a transient AWS error. The reconciler will retry.");
+            }
+
             return SanitizedFailure(operation, ex);
         }
+    }
+
+    private async Task<DeployObservation> ObserveSingleServiceImageAsync(
+        WorkflowOperationRecord operation,
+        DeployOperationSpec spec,
+        AwsEcsAlbDeployTarget target,
+        CancellationToken cancellationToken)
+    {
+        var serviceState = await EcsClient.DescribeServiceAsync(
+                target.Cluster!,
+                target.CanaryService!,
+                target.Region,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (operation.Status == WorkflowOperationStatus.RollbackRequested)
+        {
+            if (string.IsNullOrWhiteSpace(spec.CurrentRevision))
+            {
+                return new DeployObservation
+                {
+                    Status = WorkflowOperationStatus.ManualInterventionRequired,
+                    ProviderOperationId = operation.ProviderOperationId,
+                    ObservedRevision = serviceState.TaskDefinitionArn,
+                    Message = "Rollback requires a previously observed task definition, but none was captured for this operation."
+                };
+            }
+
+            if (!string.Equals(serviceState.TaskDefinitionArn, spec.CurrentRevision, StringComparison.Ordinal))
+            {
+                await RestoreStableServiceWhenReadyAsync(operation, spec, target, cancellationToken)
+                    .ConfigureAwait(false);
+                return new DeployObservation
+                {
+                    Status = WorkflowOperationStatus.RollbackRequested,
+                    ProviderOperationId = operation.ProviderOperationId,
+                    ObservedRevision = serviceState.TaskDefinitionArn,
+                    Message = $"ECS single-service rollback is reverting '{target.CanaryService}' to '{spec.CurrentRevision}'."
+                };
+            }
+
+            var rollbackConvergence = EvaluateDeploymentConvergence(serviceState, spec.CurrentRevision);
+            if (!rollbackConvergence.IsConverged)
+            {
+                return new DeployObservation
+                {
+                    Status = WorkflowOperationStatus.RollbackRequested,
+                    ProviderOperationId = operation.ProviderOperationId,
+                    ObservedRevision = serviceState.TaskDefinitionArn,
+                    Message = $"ECS single-service rollback is still settling '{target.CanaryService}': {rollbackConvergence.Reason}."
+                };
+            }
+
+            return await CompleteSingleServiceRollbackAsync(operation, spec, target, serviceState, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (!ReleaseImageDigest.IsEcsTaskDefinitionArn(operation.ProviderOperationId))
+        {
+            return new DeployObservation
+            {
+                Status = WorkflowOperationStatus.Reconciling,
+                ProviderOperationId = operation.ProviderOperationId,
+                ObservedRevision = serviceState.TaskDefinitionArn,
+                Message = "ECS image convergence is waiting for the registered task definition."
+            };
+        }
+
+        var desiredTaskDefinition = operation.ProviderOperationId!;
+        var primary = serviceState.Deployments.FirstOrDefault(deployment =>
+            string.Equals(deployment.Status, "PRIMARY", StringComparison.OrdinalIgnoreCase));
+        if (string.Equals(primary?.RolloutState, "FAILED", StringComparison.OrdinalIgnoreCase))
+        {
+            return new DeployObservation
+            {
+                Status = WorkflowOperationStatus.Reconciling,
+                ProviderOperationId = operation.ProviderOperationId,
+                ObservedRevision = primary?.TaskDefinitionArn ?? serviceState.TaskDefinitionArn,
+                RollbackRecommended = true,
+                Message = "ECS rollout failed before the service reached steady state; rollback is required."
+            };
+        }
+
+        var convergence = EvaluateDeploymentConvergence(serviceState, desiredTaskDefinition);
+        var primaryRevision = convergence.PrimaryTaskDefinitionArn ?? serviceState.TaskDefinitionArn;
+        if (!convergence.IsConverged)
+        {
+            return new DeployObservation
+            {
+                Status = operation.Deploy?.TrafficExposedAt is null
+                    ? WorkflowOperationStatus.Submitted
+                    : WorkflowOperationStatus.Reconciling,
+                ProviderOperationId = operation.ProviderOperationId,
+                ObservedRevision = primaryRevision,
+                Message = $"ECS service '{target.CanaryService}' is rolling to '{desiredTaskDefinition}': {convergence.Reason}."
+            };
+        }
+
+        var healthy = serviceState.DesiredCount > 0 && serviceState.RunningCount >= serviceState.DesiredCount;
+        var healthTargetGroupArn = target.CanaryTargetGroupArn ?? target.StableTargetGroupArn;
+        if (healthy && !string.IsNullOrWhiteSpace(healthTargetGroupArn))
+        {
+            var health = await AlbClient.DescribeTargetHealthAsync(healthTargetGroupArn, target.Region, cancellationToken)
+                .ConfigureAwait(false);
+            healthy = health.HealthyCount >= serviceState.DesiredCount;
+        }
+
+        if (!healthy)
+        {
+            return operation.Deploy?.TrafficExposedAt is null
+                ? new DeployObservation
+                {
+                    Status = WorkflowOperationStatus.Submitted,
+                    ProviderOperationId = operation.ProviderOperationId,
+                    ObservedRevision = primaryRevision,
+                    Message = "ECS candidate is waiting for healthy service targets."
+                }
+                : new DeployObservation
+                {
+                    Status = WorkflowOperationStatus.Reconciling,
+                    ProviderOperationId = operation.ProviderOperationId,
+                    ObservedRevision = primaryRevision,
+                    RollbackRecommended = true,
+                    Message = "ECS service targets are unhealthy; rollback is required."
+                };
+        }
+
+        if (operation.Deploy?.TrafficExposedAt is null)
+        {
+            return new DeployObservation
+            {
+                Status = WorkflowOperationStatus.Submitted,
+                ProviderOperationId = operation.ProviderOperationId,
+                ObservedRevision = primaryRevision,
+                PromotionRecommended = true,
+                Message = "ECS single-service candidate is steady and ready for observation."
+            };
+        }
+
+        return new DeployObservation
+        {
+            Status = WorkflowOperationStatus.Succeeded,
+            ProviderOperationId = operation.ProviderOperationId,
+            ObservedRevision = primaryRevision,
+            Message = $"ECS service '{target.CanaryService}' is serving on task definition '{desiredTaskDefinition}'."
+        };
+    }
+
+    private async Task<DeployObservation> CompleteSingleServiceRollbackAsync(
+        WorkflowOperationRecord operation,
+        DeployOperationSpec spec,
+        AwsEcsAlbDeployTarget target,
+        AwsEcsServiceState serviceState,
+        CancellationToken cancellationToken)
+    {
+        var healthyCount = serviceState.RunningCount;
+        var registeredCount = serviceState.DesiredCount;
+        var healthTargetGroupArn = target.CanaryTargetGroupArn ?? target.StableTargetGroupArn;
+        if (!string.IsNullOrWhiteSpace(healthTargetGroupArn))
+        {
+            var health = await AlbClient.DescribeTargetHealthAsync(healthTargetGroupArn, target.Region, cancellationToken)
+                .ConfigureAwait(false);
+            healthyCount = health.HealthyCount;
+            registeredCount = health.RegisteredCount;
+        }
+
+        var functionalQuery = await RollbackDataPlaneCompletion.ProbeFunctionalQueryAsync(
+                DataPlaneProbe,
+                spec.Parameters,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var identityAuthoritative = !string.IsNullOrWhiteSpace(serviceState.TaskDefinitionArn);
+        var identityProven = identityAuthoritative &&
+            string.Equals(serviceState.TaskDefinitionArn, spec.CurrentRevision, StringComparison.Ordinal);
+        var decision = RollbackDataPlaneCompletion.Evaluate(
+            new RollbackDataPlaneEvidence
+            {
+                RoutingConverged = true,
+                PriorRevisionIdentityProven = identityProven,
+                ServingIdentityMismatched = identityAuthoritative && !identityProven,
+                ServingRevision = serviceState.TaskDefinitionArn,
+                HealthyEndpointCount = healthyCount,
+                RegisteredEndpointCount = registeredCount,
+                FunctionalQuery = functionalQuery,
+                RollbackStartedAt = RollbackDataPlaneCompletion.ReadObservationStartedAt(spec.Parameters),
+                Window = RollbackDataPlaneCompletion.ReadObservationWindow(spec.Parameters)
+            },
+            DateTimeOffset.UtcNow);
+        return RollbackDataPlaneCompletion.ToDeployObservation(decision, operation.ProviderOperationId);
     }
 
     public async Task<DeployObservation> PromoteAsync(
@@ -992,7 +1216,9 @@ internal sealed partial class AwsEcsAlbDeployBackend(
         cancellationToken.ThrowIfCancellationRequested();
 
         var target = ResolveTarget(spec);
-        EnsureValidTarget(target);
+        var singleServiceImageRollout = ReleaseImageDigest.IsImmutable(spec.DesiredRevision) &&
+            IsSingleServiceRollingMode(spec, target);
+        EnsureValidTarget(target, requireAlbRouting: !singleServiceImageRollout);
         await EnsureAlarmAdmissionAsync(spec, cancellationToken).ConfigureAwait(false);
 
         using var activity = StartActivity(ControlPlaneTelemetry.Activities.BackendPromote, operation, target);
@@ -1014,20 +1240,28 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
         try
         {
+            if (await RefusePromotionOutsideServiceFamilyAsync(operation, target, cancellationToken).ConfigureAwait(false) is { } refused)
+            {
+                return refused;
+            }
+
             await EcsClient.UpdateServiceTaskDefinitionAsync(
                     target.Cluster!,
                     target.CanaryService!,
-                    ReleaseImageDigest.IsImmutable(spec.DesiredRevision) ? operation.ProviderOperationId! : spec.CurrentRevision!,
+                    ReleaseImageDigest.IsImmutable(spec.DesiredRevision) ? operation.ProviderOperationId! : spec.DesiredRevision,
                     target.Region,
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            await AlbClient.UpdateListenerRuleWeightsAsync(
-                    target.ListenerRuleArn!,
-                    BuildWeights(target.CanaryTargetGroupArn!, 100, target.StableTargetGroupArn!, 0),
-                    target.Region,
-                    cancellationToken)
-                .ConfigureAwait(false);
+            if (!singleServiceImageRollout || HasDualTargetGroupRouting(target))
+            {
+                await AlbClient.UpdateListenerRuleWeightsAsync(
+                        target.ListenerRuleArn!,
+                        BuildWeights(target.CanaryTargetGroupArn!, 100, target.StableTargetGroupArn!, 0),
+                        target.Region,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
             Log.PromotionCompleted(logger, operation.OperationId, spec.TargetId, target.Cluster!, target.CanaryService!, spec.DesiredRevision);
             return new DeployObservation
@@ -1055,7 +1289,9 @@ internal sealed partial class AwsEcsAlbDeployBackend(
         cancellationToken.ThrowIfCancellationRequested();
 
         var target = ResolveTarget(spec);
-        EnsureValidTarget(target);
+        var singleServiceImageRollout = ReleaseImageDigest.IsImmutable(spec.DesiredRevision) &&
+            IsSingleServiceRollingMode(spec, target);
+        EnsureValidTarget(target, requireAlbRouting: !singleServiceImageRollout);
 
         if (string.IsNullOrWhiteSpace(spec.CurrentRevision))
         {
@@ -1092,13 +1328,22 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                 Status = WorkflowOperationStatus.RollbackRequested,
                 ProviderOperationId = operation.ProviderOperationId,
                 ObservedRevision = spec.CurrentRevision,
-                Message = $"ECS/ALB rollout rollback requested: stable target group is being shifted to 100% of traffic. Canary service '{target.CanaryService}' will settle on subsequent reconciliations."
+                Message = singleServiceImageRollout
+                    ? $"ECS single-service rollout rollback requested: service '{target.CanaryService}' is reverting to task definition '{spec.CurrentRevision}'."
+                    : $"ECS/ALB rollout rollback requested: stable target group is being shifted to 100% of traffic. Canary service '{target.CanaryService}' will settle on subsequent reconciliations."
             };
         }
         catch (Exception ex) when (IsAwsRuntimeException(ex))
         {
             Log.StateLookupFailed(logger, operation.OperationId, spec.TargetId, ex.Message);
             activity?.SetStatus(ActivityStatusCode.Error);
+            if (IsTransientAwsException(ex))
+            {
+                return TransientRetryObservation(
+                    operation,
+                    "ECS/ALB rollback encountered a transient AWS error. The reconciler will retry.");
+            }
+
             return SanitizedFailure(operation, ex);
         }
     }
@@ -1156,7 +1401,43 @@ internal sealed partial class AwsEcsAlbDeployBackend(
     }
 
     private static bool IsAwsRuntimeException(Exception ex)
-        => ex is AmazonServiceException or AmazonClientException;
+        => ex is AmazonServiceException or AmazonClientException or HttpRequestException;
+
+    private static bool IsTransientAwsException(Exception ex)
+    {
+        if (ex is HttpRequestException)
+        {
+            return true;
+        }
+
+        if (ex is AmazonServiceException serviceException)
+        {
+            if (serviceException.StatusCode is HttpStatusCode.InternalServerError
+                or HttpStatusCode.BadGateway
+                or HttpStatusCode.ServiceUnavailable
+                or HttpStatusCode.GatewayTimeout
+                or HttpStatusCode.TooManyRequests)
+            {
+                return true;
+            }
+
+            if (serviceException.ErrorCode is "Throttling" or "ThrottlingException" or "RequestLimitExceeded" or "TooManyRequestsException")
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static DeployObservation TransientRetryObservation(WorkflowOperationRecord operation, string message)
+        => new()
+        {
+            Status = operation.Status,
+            ProviderOperationId = operation.ProviderOperationId,
+            ObservedRevision = operation.ObservedState,
+            Message = message
+        };
 
     private static DeployObservation SanitizedFailure(WorkflowOperationRecord operation, Exception ex)
         => new()
@@ -1370,20 +1651,23 @@ internal sealed partial class AwsEcsAlbDeployBackend(
         {
             Region = GetParameter(parameters, "aws.region"),
             Cluster = GetParameter(parameters, "aws.ecs.cluster"),
-            CanaryService = GetParameter(parameters, "aws.ecs.canary_service") ?? spec.TargetName,
+            CanaryService = GetParameter(parameters, "aws.ecs.canary_service")
+                ?? GetParameter(parameters, "aws.ecs.service")
+                ?? spec.TargetName,
             ListenerRuleArn = GetParameter(parameters, "aws.alb.listener_rule_arn"),
             CanaryTargetGroupArn = GetParameter(parameters, "aws.alb.canary_target_group_arn"),
             StableTargetGroupArn = GetParameter(parameters, "aws.alb.stable_target_group_arn")
         };
     }
 
-    private static void EnsureValidTarget(AwsEcsAlbDeployTarget target)
+    private static void EnsureValidTarget(AwsEcsAlbDeployTarget target, bool requireAlbRouting = true)
     {
         if (string.IsNullOrWhiteSpace(target.Cluster) ||
             string.IsNullOrWhiteSpace(target.CanaryService) ||
-            string.IsNullOrWhiteSpace(target.ListenerRuleArn) ||
-            string.IsNullOrWhiteSpace(target.CanaryTargetGroupArn) ||
-            string.IsNullOrWhiteSpace(target.StableTargetGroupArn))
+            (requireAlbRouting &&
+             (string.IsNullOrWhiteSpace(target.ListenerRuleArn) ||
+              string.IsNullOrWhiteSpace(target.CanaryTargetGroupArn) ||
+              string.IsNullOrWhiteSpace(target.StableTargetGroupArn))))
         {
             throw new InvalidOperationException("AWS ECS/ALB deploy target is missing cluster, canary service, listener rule, or target group metadata.");
         }
@@ -1497,5 +1781,8 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
         [LoggerMessage(9096, LogLevel.Error, "Failed to restore ALB listener-rule weights after a failed ECS/ALB submission for workflow operation {OperationId} targeting {TargetId}: {ErrorMessage}")]
         public static partial void AlbWeightRestoreFailed(ILogger logger, string operationId, string targetId, string errorMessage);
+
+        [LoggerMessage(9099, LogLevel.Warning, "Refused ECS/ALB workflow operation {OperationId} targeting {TargetId}: the task definition is not a revision of the service's own family")]
+        public static partial void RevisionOutsideServiceFamily(ILogger logger, string operationId, string targetId);
     }
 }

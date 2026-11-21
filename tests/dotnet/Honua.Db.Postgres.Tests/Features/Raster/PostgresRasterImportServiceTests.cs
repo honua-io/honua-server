@@ -42,7 +42,7 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
             var result = await service.ImportAsync(CreateRequest(filePath, srid: 4326));
 
             result.Success.Should().BeFalse();
-            result.ErrorMessage.Should().Be("Import failed.");
+            result.ErrorMessage.Should().Contain("homogeneity");
             (await CountLayerRastersAsync(schemaName)).Should().Be(1);
         }
         finally
@@ -67,7 +67,7 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
             var result = await service.ImportAsync(CreateRequest(filePath, srid: 4326));
 
             result.Success.Should().BeFalse();
-            result.ErrorMessage.Should().Be("Import failed.");
+            result.ErrorMessage.Should().Contain("homogeneity");
             (await CountLayerRastersAsync(schemaName)).Should().Be(1);
         }
         finally
@@ -93,7 +93,7 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
             var result = await service.ImportAsync(CreateRequest(filePath, srid: 4326));
 
             result.Success.Should().BeFalse();
-            result.ErrorMessage.Should().Be("Import failed.");
+            result.ErrorMessage.Should().Contain("homogeneity");
             (await CountLayerRastersAsync(schemaName)).Should().Be(2);
         }
         finally
@@ -119,7 +119,7 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
             var result = await service.ImportAsync(CreateRequest(filePath, srid: 4326));
 
             result.Success.Should().BeFalse();
-            result.ErrorMessage.Should().Be("Import failed.");
+            result.ErrorMessage.Should().Contain("homogeneity");
             (await CountLayerRastersAsync(schemaName)).Should().Be(2);
         }
         finally

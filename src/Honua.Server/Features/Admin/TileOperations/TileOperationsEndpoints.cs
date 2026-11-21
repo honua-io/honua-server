@@ -322,7 +322,7 @@ internal sealed record TileOperationListResponse
     public required int TotalCount { get; init; }
 }
 
-[System.Text.Json.Serialization.JsonSourceGenerationOptions(System.Text.Json.JsonSerializerDefaults.General)]
+[System.Text.Json.Serialization.JsonSourceGenerationOptions(System.Text.Json.JsonSerializerDefaults.Web)]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationStartRequest))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationProgress))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(TileOperationProgress[]))]

@@ -20,24 +20,33 @@ using Proto = Geospatial.V1;
 namespace Honua.Server.Tests.Features.Spec;
 
 [Protocol(TestProtocols.Grpc)]
-public sealed class GrpcSpecServiceIntegrationTests : IDisposable
+public sealed class GrpcSpecServiceIntegrationTests(GrpcSpecServiceIntegrationTests.ProHost host)
+    : IClassFixture<GrpcSpecServiceIntegrationTests.ProHost>
 {
     private const string AdminApiKey = "grpc-spec-integration-admin-key";
-    private readonly WebApplicationFactory<Program> _factory;
-    private readonly GrpcChannel _channel;
-    private readonly Proto.SpecService.SpecServiceClient _client;
+    private readonly Proto.SpecService.SpecServiceClient _client = host.Client;
 
-    public GrpcSpecServiceIntegrationTests()
+    // One Pro-licensed server for the class. Its artifact cache is in memory and lives as long as
+    // the host, so every case that applies with ReadWrite uses a node id of its own (the id is part
+    // of the content hash) and still sees a cache miss and a Succeeded node.
+    public sealed class ProHost : IDisposable
     {
-        _factory = CreateLicensedFactory(HonuaEdition.Pro);
-        _channel = CreateChannel(_factory);
-        _client = new Proto.SpecService.SpecServiceClient(_channel);
-    }
+        private readonly WebApplicationFactory<Program> _factory = CreateLicensedFactory(HonuaEdition.Pro);
+        private readonly GrpcChannel _channel;
 
-    public void Dispose()
-    {
-        _channel.Dispose();
-        _factory.Dispose();
+        public ProHost()
+        {
+            _channel = CreateChannel(_factory);
+            Client = new Proto.SpecService.SpecServiceClient(_channel);
+        }
+
+        public Proto.SpecService.SpecServiceClient Client { get; }
+
+        public void Dispose()
+        {
+            _channel.Dispose();
+            _factory.Dispose();
+        }
     }
 
     [IntegrationTest]
@@ -64,7 +73,7 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
     {
         var request = new Proto.ApplySpecRequest
         {
-            Document = BuildDocument("node-a"),
+            Document = BuildDocument(UniqueNodeId("terminal-events")),
             CacheMode = Proto.SpecCacheMode.ReadWrite,
             MaxConcurrency = 1
         };
@@ -92,7 +101,7 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
         // metadata (ResponseHeadersAsync) before the first event frame.
         var request = new Proto.ApplySpecRequest
         {
-            Document = BuildDocument("node-a"),
+            Document = BuildDocument(UniqueNodeId("apply-token")),
             CacheMode = Proto.SpecCacheMode.ReadWrite,
             MaxConcurrency = 1
         };
@@ -577,6 +586,9 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
 
     private static Proto.ParameterValue StringParameter(string value)
         => new() { StringValue = value };
+
+    private static string UniqueNodeId(string purpose)
+        => $"{purpose}-{Guid.NewGuid():N}";
 
     private static Proto.CanonicalSpecDocument BuildDocument(string nodeId)
     {

@@ -7,6 +7,8 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
+using Honua.Infrastructure.Rendering;
+using Honua.Server.Features.Admin;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Styling;
@@ -21,19 +23,22 @@ internal sealed class LayerStyleService : ILayerStyleService
     private readonly IMetadataV2GraphProvider? _metadataV2GraphProvider;
     private readonly IStyleCatalog? _independentStyleCatalog;
     private readonly IMetadataV2StyleGraphSync? _styleGraphSync;
+    private readonly IMetadataV2GraphStore? _graphStore;
 
     public LayerStyleService(
         ILayerStyleCatalog styleCatalog,
         ILogger<LayerStyleService> logger,
         IMetadataV2GraphProvider? metadataV2GraphProvider = null,
         IStyleCatalog? independentStyleCatalog = null,
-        IMetadataV2StyleGraphSync? styleGraphSync = null)
+        IMetadataV2StyleGraphSync? styleGraphSync = null,
+        IMetadataV2GraphStore? graphStore = null)
     {
         _styleCatalog = styleCatalog ?? throw new ArgumentNullException(nameof(styleCatalog));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _metadataV2GraphProvider = metadataV2GraphProvider;
         _independentStyleCatalog = independentStyleCatalog;
         _styleGraphSync = styleGraphSync;
+        _graphStore = graphStore;
     }
 
     public async Task<LayerStyleSnapshot?> GetStyleAsync(
@@ -112,35 +117,18 @@ internal sealed class LayerStyleService : ILayerStyleService
 
         if (hasMapLibre)
         {
-            if (!MapLibreStyleNormalizer.TryNormalize(mapLibreStyle!.Value, styleLayer, out var normalized, out var error))
+            var request = new MapLibreStyleStore
             {
-                return new LayerStyleUpdateResult(LayerStyleUpdateStatus.Invalid, null, error);
-            }
-
-            var updated = await _styleCatalog
-                .SetMapLibreStyleAsync(styleLayer.Id, normalized, revisedBy, changeSummary, cancellationToken)
-                .ConfigureAwait(false);
-            if (updated == null)
-            {
-                return new LayerStyleUpdateResult(LayerStyleUpdateStatus.NotFound, null, null);
-            }
-
-            var generatedDrawingInfoJson = MapLibreToGeoServicesConverter.Convert(normalized, styleLayer);
-
-            await SyncIndependentStyleCatalogAsync(
-                styleLayer.Id,
-                resource,
-                normalized,
-                generatedDrawingInfoJson,
-                revisedBy,
-                changeSummary,
+                Resource = resource,
+                StyleLayer = styleLayer,
+                MapLibreStyle = mapLibreStyle!.Value,
+                RevisedBy = revisedBy,
+                ChangeSummary = changeSummary
+            };
+            return await StoreMapLibreStyleAsync(
+                request,
+                (layer, normalized) => _styleCatalog.SetMapLibreStyleAsync(layer, normalized, revisedBy, changeSummary, cancellationToken),
                 cancellationToken).ConfigureAwait(false);
-
-            return new LayerStyleUpdateResult(
-                LayerStyleUpdateStatus.Updated,
-                BuildSnapshot(await ReadSavedStyleAsync(updated, cancellationToken).ConfigureAwait(false), normalized, generatedDrawingInfoJson),
-                null,
-                NoUnsupportedSymbolizers);
         }
 
         var drawingInfoJson = drawingInfo!.Value.GetRawText();
@@ -161,6 +149,7 @@ internal sealed class LayerStyleService : ILayerStyleService
             return new LayerStyleUpdateResult(LayerStyleUpdateStatus.NotFound, null, null);
         }
 
+        await RetireSavedPresentationAsync(resource, styleLayer.Id).ConfigureAwait(false);
         await SyncIndependentStyleCatalogAsync(
             styleLayer.Id,
             resource,
@@ -176,6 +165,109 @@ internal sealed class LayerStyleService : ILayerStyleService
             null,
             conversion.Unsupported);
     }
+
+    public async Task<LayerStyleUpdateResult> UpdateMapLibreStyleIfVersionAsync(
+        MetadataV2Object resource,
+        ConditionalLayerStyle update,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+        var request = new MapLibreStyleStore
+        {
+            Resource = resource,
+            StyleLayer = await ResolveStyleLayerAsync(resource, update.LayerId, cancellationToken).ConfigureAwait(false),
+            MapLibreStyle = update.MapLibreStyle
+        };
+        var result = await StoreMapLibreStyleAsync(
+            request,
+            (layer, normalized) => _styleCatalog.SetStyleIfVersionAsync(
+                layer,
+                new ConditionalStyleWrite { MapLibreStyleJson = normalized, ExpectedVersion = update.ExpectedVersion },
+                cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+
+        // The precondition was checked against a version that has since moved on; nothing was stored.
+        return result.Status == LayerStyleUpdateStatus.NotFound
+            ? new LayerStyleUpdateResult(LayerStyleUpdateStatus.PreconditionFailed, null, null)
+            : result;
+    }
+
+    private async Task<LayerStyleUpdateResult> StoreMapLibreStyleAsync(
+        MapLibreStyleStore request,
+        Func<int, string, Task<LayerStyleDefinition?>> store,
+        CancellationToken cancellationToken)
+    {
+        var (resource, styleLayer) = (request.Resource, request.StyleLayer);
+        if (!MapLibreStyleNormalizer.TryNormalize(request.MapLibreStyle, styleLayer, out var normalized, out var error))
+        {
+            return new LayerStyleUpdateResult(LayerStyleUpdateStatus.Invalid, null, error);
+        }
+
+        var updated = await store(styleLayer.Id, normalized).ConfigureAwait(false);
+        if (updated == null)
+        {
+            return new LayerStyleUpdateResult(LayerStyleUpdateStatus.NotFound, null, null);
+        }
+
+        var generatedDrawingInfoJson = MapLibreToGeoServicesConverter.Convert(normalized, styleLayer);
+
+        await RetireSavedPresentationAsync(resource, styleLayer.Id).ConfigureAwait(false);
+        await SyncIndependentStyleCatalogAsync(
+            styleLayer.Id,
+            resource,
+            normalized,
+            generatedDrawingInfoJson,
+            request.RevisedBy,
+            request.ChangeSummary,
+            cancellationToken).ConfigureAwait(false);
+
+        return new LayerStyleUpdateResult(
+            LayerStyleUpdateStatus.Updated,
+            BuildSnapshot(await ReadSavedStyleAsync(updated, cancellationToken).ConfigureAwait(false), normalized, generatedDrawingInfoJson),
+            null,
+            NoUnsupportedSymbolizers);
+    }
+
+    private sealed record MapLibreStyleStore
+    {
+        public required MetadataV2Object Resource { get; init; }
+
+        public required StyleLayerDescriptor StyleLayer { get; init; }
+
+        public required JsonElement MapLibreStyle { get; init; }
+
+        public string? RevisedBy { get; init; }
+
+        public string? ChangeSummary { get; init; }
+    }
+
+    // Every renderer and style document prefers a layer's saved presentation (the Console drawingInfo
+    // override) to its stored style, so a newer style write retires the override; otherwise the
+    // style just written would never show.
+    private async Task RetireSavedPresentationAsync(MetadataV2Object resource, int storageLayerId)
+    {
+        if (_graphStore is null || !RasterMapRenderingPipeline.TryGetSavedDrawingInfo(resource, out _))
+        {
+            return;
+        }
+
+        // The style write has committed; a cancelled request must not leave the override in front of it.
+        var target = await AdminLayerConfigurationTargets.WriteAsync(
+                _graphStore, storageLayerId, WithoutSavedPresentation, CancellationToken.None)
+            .ConfigureAwait(false);
+        if (target.IsAmbiguous || target.Resource is null)
+        {
+            LayerStyleLog.SavedPresentationNotRetired(_logger, storageLayerId);
+        }
+    }
+
+    private static MetadataV2Object WithoutSavedPresentation(MetadataV2Object resource)
+        => resource with
+        {
+            Extensions = resource.Extensions
+                .Where(pair => !RasterMapRenderingPipeline.IsSavedDrawingInfoKey(pair.Key))
+                .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal),
+        };
 
     private async Task SyncIndependentStyleCatalogAsync(
         int storageLayerId,

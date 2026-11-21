@@ -183,7 +183,13 @@ public sealed class DeployHumanApprovalReplayTests
             Plan = plan,
             SealedPlanHash = planHash,
             Audit = proposal.Audit with { OperationInstanceId = "approved-instance" },
-            Initiation = proposal.Initiation! with { PlanHash = planHash, PolicyRevision = OperationGateway.ComputePolicyRevision(policy) },
+            Initiation = proposal.Initiation! with
+            {
+                Kind = requesterApproves ? OperationInitiationKind.Human : proposal.Initiation!.Kind,
+                Channel = requesterApproves ? OperationInitiationChannel.InteractiveOidc : proposal.Initiation!.Channel,
+                PlanHash = planHash,
+                PolicyRevision = OperationGateway.ComputePolicyRevision(policy),
+            },
         };
         host.ReviewRequest(human);
         var review = await host.Authority.OpenReviewAsync(proposal, host.Context);

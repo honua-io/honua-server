@@ -37,6 +37,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 # A git_ref MUST be a fully-pinned 40-hex commit SHA. Symbolic refs, tags,
 # branches and abbreviated SHAs are rejected: the server resolves to a pinned
@@ -74,6 +75,7 @@ class JobSpec:
     base_url: str
     job_token: str
     contract_version: int = 1
+    redemption_code: str | None = None
 
     @property
     def entrypoint_module(self) -> str:
@@ -87,6 +89,20 @@ class JobSpec:
 def is_valid_git_sha(value: str | None) -> bool:
     """Return True iff ``value`` is a fully-pinned 40-character lowercase SHA."""
     return bool(value) and bool(_GIT_SHA_RE.fullmatch(value or ""))
+
+
+def _embeds_credentials(repo_url: str) -> bool:
+    """True when an http(s) URL carries any userinfo, or an ssh URL carries a password."""
+    if repo_url.startswith("git@"):
+        return False
+    try:
+        parts = urlsplit(repo_url)
+        username, password = parts.username, parts.password
+    except ValueError as exc:
+        raise JobSpecError("repo_url is malformed.") from exc
+    if parts.scheme in ("http", "https"):
+        return username is not None or password is not None
+    return password is not None
 
 
 def validate_entrypoint(entrypoint: str | None) -> str:
@@ -214,6 +230,7 @@ def load_job_spec(env: Mapping[str, str] | None = None) -> JobSpec:
     # Auth spine is ALWAYS env-only — never sourced from the spec file.
     base_url = env.get("HONUA_BASE_URL")
     job_token = env.get("HONUA_JOB_TOKEN")
+    redemption_code = env.get("HONUA_JOB_REDEMPTION_CODE")
 
     # Serving<->worker job-contract gate (ADR-0060 #3b), env-only like the auth spine.
     contract_version = _coerce_contract_version(env.get(CONTRACT_VERSION_ENV))
@@ -222,7 +239,7 @@ def load_job_spec(env: Mapping[str, str] | None = None) -> JobSpec:
     _require(git_ref, "git_ref / CUSTOMCODE_GIT_REF")
     _require(output_prefix, "output_prefix / CUSTOMCODE_OUTPUT_PREFIX")
     _require(base_url, "HONUA_BASE_URL")
-    _require(job_token, "HONUA_JOB_TOKEN")
+    _require(job_token or redemption_code, "HONUA_JOB_REDEMPTION_CODE (or HONUA_JOB_TOKEN for local runs)")
 
     if not is_valid_git_sha(git_ref):
         raise JobSpecError(
@@ -232,7 +249,10 @@ def load_job_spec(env: Mapping[str, str] | None = None) -> JobSpec:
     validate_entrypoint(entrypoint)
 
     if not str(repo_url).startswith(("https://", "git@", "ssh://", "http://")):
-        raise JobSpecError(f"repo_url has an unsupported scheme: {repo_url!r}.")
+        raise JobSpecError("repo_url has an unsupported scheme.")
+    if _embeds_credentials(str(repo_url)):
+        # The URL is logged and echoed in git errors, so credentials must never travel in it.
+        raise JobSpecError("repo_url must not embed credentials.")
     if not str(output_prefix).startswith("s3://"):
         raise JobSpecError(f"output_prefix must be an s3:// URI, got {output_prefix!r}.")
 
@@ -247,8 +267,9 @@ def load_job_spec(env: Mapping[str, str] | None = None) -> JobSpec:
         declared_scope=_coerce_scope(field("declared_scope")),
         output_max_bytes=_coerce_max_bytes(field("output_max_bytes")),
         base_url=str(base_url),
-        job_token=str(job_token),
+        job_token=str(job_token or ""),
         contract_version=contract_version,
+        redemption_code=str(redemption_code) if redemption_code else None,
     )
 
 

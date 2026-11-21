@@ -125,9 +125,9 @@ internal static class ServiceCollectionExtensions
             sp.GetRequiredService<IFeatureQueryBuilder>(),
             sp.GetRequiredService<IFeatureDataAccess>(),
             sp.GetRequiredService<IFeatureCacheManager>(),
+            Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp),
             sp.GetService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>(),
-            sp.GetService<Honua.Core.Queries.Filters.IFilterExpressionService>(),
-            Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp)));
+            sp.GetService<Honua.Core.Queries.Filters.IFilterExpressionService>()));
 
         // Register segregated interfaces
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
@@ -305,6 +305,20 @@ internal static class ServiceCollectionExtensions
             return;
         }
 
+        // Discovery prepares an unlocked instance but does not lock it: a :memory:
+        // instance is closed right after, and a shared file instance is locked by the
+        // first request connection. On an instance a request already locked, extensions
+        // and settings are in place and only this connection's temp view is missing.
+        if (!DuckDBConnectionLockdown.IsLocked(connection))
+        {
+            PrepareDiscoveryInstance(connection, options);
+        }
+
+        ExecuteNonQuery(connection, DuckDBExternalSourceSql.BuildCreateTempViewSql(layerOpt));
+    }
+
+    private static void PrepareDiscoveryInstance(DuckDBConnection connection, DuckDBOptions options)
+    {
         if (!string.IsNullOrWhiteSpace(options.SpatialExtensionPath))
         {
             ExecuteNonQuery(
@@ -325,8 +339,6 @@ internal static class ServiceCollectionExtensions
         {
             ExecuteNonQuery(connection, command.Sql);
         }
-
-        ExecuteNonQuery(connection, DuckDBExternalSourceSql.BuildCreateTempViewSql(layerOpt));
     }
 
     private static void ExecuteNonQuery(DuckDBConnection connection, string sql)

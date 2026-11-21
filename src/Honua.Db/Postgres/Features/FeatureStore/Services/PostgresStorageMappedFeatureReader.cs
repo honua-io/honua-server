@@ -159,6 +159,26 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return await QueryCoreAsync(query, cancellationToken).ConfigureAwait(false);
     }
 
+    // A page cut short of the nearest count reads one probe row so the more-results flag is exact.
+    private async Task<QueryResult<Feature>> QueryNearestNeighborsAsync(
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        var probe = query.NearestNeighborCountExceedsLimit();
+        var nearestItems = await ExecuteFeatureQueryAsync(
+            probe ? query with { Limit = query.Limit + 1 } : query,
+            cancellationToken).ConfigureAwait(false);
+        var hasMoreNearest = probe && nearestItems.Length > query.Limit;
+        if (hasMoreNearest)
+        {
+            nearestItems = nearestItems.RemoveAt(nearestItems.Length - 1);
+        }
+
+        return nearestItems.Length == 0 && !hasMoreNearest
+            ? QueryResult<Feature>.Empty()
+            : QueryResult<Feature>.Create(nearestItems.Length, nearestItems, hasMoreNearest);
+    }
+
     // Only public entry points resolve security. Nested count/page operations use
     // this same resolved query, including when no row filter or field mask applies.
     private async Task<QueryResult<Feature>> QueryCoreAsync(
@@ -167,17 +187,14 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     {
         if (IsNearestNeighborQuery(query))
         {
-            var nearestItems = await ExecuteFeatureQueryAsync(query, probeLimit: false, cancellationToken).ConfigureAwait(false);
-            return nearestItems.Length == 0
-                ? QueryResult<Feature>.Empty()
-                : QueryResult<Feature>.Create(nearestItems.Length, nearestItems, hasMoreResults: false);
+            return await QueryNearestNeighborsAsync(query, cancellationToken).ConfigureAwait(false);
         }
 
         var offset = query.Offset.GetValueOrDefault();
         ImmutableArray<Feature> items = default;
         if (!query.Distinct && offset == 0 && query.Limit is int limit && limit > 0)
         {
-            items = await ExecuteFeatureQueryAsync(query, probeLimit: false, cancellationToken).ConfigureAwait(false);
+            items = await ExecuteFeatureQueryAsync(query, cancellationToken).ConfigureAwait(false);
             // A short first page proves the exact total in that SELECT's snapshot.
             // Full pages still need a separate count; as before, the two reads
             // do not establish a shared snapshot unless the caller supplies one.
@@ -203,7 +220,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
         if (items.IsDefault)
         {
-            items = await ExecuteFeatureQueryAsync(query, probeLimit: false, cancellationToken).ConfigureAwait(false);
+            items = await ExecuteFeatureQueryAsync(query, cancellationToken).ConfigureAwait(false);
         }
 
         var hasMoreResults = offset + items.Length < totalCount;
@@ -452,18 +469,16 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             return PagedQueryResult<Feature>.Create(result.Items, result.HasMoreResults, result.TotalCount);
         }
 
-        var items = await ExecuteFeatureQueryAsync(query, probeLimit: true, cancellationToken).ConfigureAwait(false);
-        if (items.Length == 0)
+        await using var session = await OpenFeatureReadSessionAsync(
+            query, probeLimit: true, allowSerialPlan: true, cancellationToken).ConfigureAwait(false);
+        using var rows = await ReadFeatureRowsAsync(session, cancellationToken).ConfigureAwait(false);
+        if (rows.Count == 0)
         {
             return PagedQueryResult<Feature>.Empty();
         }
 
-        var hasMoreResults = items.Length > query.Limit.Value;
-        if (hasMoreResults)
-        {
-            items = items.RemoveAt(items.Length - 1);
-        }
-
+        var hasMoreResults = rows.Count > query.Limit.Value;
+        var items = rows.ToImmutable(hasMoreResults ? rows.Count - 1 : rows.Count);
         return PagedQueryResult<Feature>.Create(items, hasMoreResults);
     }
 
@@ -515,20 +530,35 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private async Task<ImmutableArray<Feature>> ExecuteFeatureQueryAsync(
         FeatureQuery query,
-        bool probeLimit,
         CancellationToken cancellationToken)
     {
-        var features = ImmutableArray.CreateBuilder<Feature>();
         await using var session = await OpenFeatureReadSessionAsync(
-            query, probeLimit, allowSerialPlan: true, cancellationToken).ConfigureAwait(false);
-        var reader = session.Reader!;
-        var attributesReader = new FeatureAttributeReadContext();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            features.Add(ReadFeature(reader, session.NativeAttributes, attributesReader));
-        }
+            query, probeLimit: false, allowSerialPlan: true, cancellationToken).ConfigureAwait(false);
+        using var rows = await ReadFeatureRowsAsync(session, cancellationToken).ConfigureAwait(false);
+        return rows.ToImmutable(rows.Count);
+    }
 
-        return features.ToImmutable();
+    private async Task<PooledFeatureBuffer> ReadFeatureRowsAsync(
+        FeatureReadSession session,
+        CancellationToken cancellationToken)
+    {
+        var rows = new PooledFeatureBuffer();
+        try
+        {
+            var reader = session.Reader!;
+            var attributesReader = new FeatureAttributeReadContext();
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                rows.Add(ReadFeature(reader, session.NativeAttributes, attributesReader));
+            }
+
+            return rows;
+        }
+        catch
+        {
+            rows.Dispose();
+            throw;
+        }
     }
 
     private SqlBuilder BuildFeatureSelect(FeatureQuery query, bool probeLimit)
@@ -692,11 +722,19 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             }
             else
             {
-                parts.Add(ValidateAndQuoteIdentifier(field.Name));
+                parts.Add(ColumnValueExpression(field));
             }
         }
 
         return $"jsonb_build_object({string.Join(", ", parts)})";
+    }
+
+    // An exact decimal leaves as its canonical text so jsonb never rounds it through a number.
+    // timestamptz already serialises as RFC 3339 text inside jsonb, so it keeps the column.
+    private static string ColumnValueExpression(MetadataV2Field field)
+    {
+        var column = ValidateAndQuoteIdentifier(field.Name);
+        return field.Type == MetadataV2FieldType.Decimal ? $"{column}::text" : column;
     }
 
     private static bool IsObjectIdField(string fieldName)
@@ -1381,19 +1419,16 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private static void AppendPagination(SqlBuilder sql, FeatureQuery query, bool probeLimit = false)
     {
-        var spatialFilter = query.SpatialFilter;
-        var isNearestNeighbor = spatialFilter.HasValue &&
-                                spatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
-        var nearestCount = isNearestNeighbor
-            ? spatialFilter.GetValueOrDefault().NearestCount
-            : null;
+        var isNearestNeighbor = IsNearestNeighborQuery(query);
         var limit = isNearestNeighbor
-            ? nearestCount ?? query.Limit
+            ? query.ResolveNearestNeighborRowLimit()
             : query.Limit;
 
         if (limit.HasValue)
         {
-            var effectiveLimit = probeLimit && !isNearestNeighbor
+            // A nearest-neighbour page needs the probe row only when its count reaches past the page.
+            var probe = probeLimit && (!isNearestNeighbor || query.NearestNeighborCountExceedsLimit());
+            var effectiveLimit = probe
                 ? checked(limit.Value + 1)
                 : limit.Value;
             sql.Append(CultureInfo.InvariantCulture, $" LIMIT {sql.AddParameter(effectiveLimit)}");

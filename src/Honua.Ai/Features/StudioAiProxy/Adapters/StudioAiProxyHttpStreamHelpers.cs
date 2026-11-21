@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text;
 using Honua.Core.Features.Security.Admission;
 
 namespace Honua.Ai.StudioAiProxy.Adapters;
@@ -9,6 +10,9 @@ namespace Honua.Ai.StudioAiProxy.Adapters;
 internal static class StudioAiProxyHttpStreamHelpers
 {
     internal const int MaximumErrorBodyBytes = 4096;
+
+    // A provider stream line longer than this ends the stream as a read failure instead of being buffered whole.
+    internal const int MaximumStreamLineChars = 1024 * 1024;
 
     // Caller cancellation is rethrown and a provider timeout is returned as timed-out, so the two are not the same failure.
     public static async Task<(HttpResponseMessage? Response, bool TimedOut, HttpRequestException? RequestError)> SendSafeAsync(
@@ -47,7 +51,7 @@ internal static class StudioAiProxyHttpStreamHelpers
     {
         try
         {
-            var line = await reader.ReadLineAsync(linkedToken).ConfigureAwait(false);
+            var line = await ReadBoundedLineAsync(reader, MaximumStreamLineChars, linkedToken).ConfigureAwait(false);
             return (line, false, null);
         }
         catch (OperationCanceledException) when (callerToken.IsCancellationRequested)
@@ -131,5 +135,28 @@ internal static class StudioAiProxyHttpStreamHelpers
                 return (string.Empty, false, ex, total);
             }
         }
+    }
+
+    // Same line terminators as StreamReader.ReadLineAsync (CR, LF; CRLF yields an extra empty line, which callers skip).
+    internal static async Task<string?> ReadBoundedLineAsync(StreamReader reader, int maximumChars, CancellationToken cancellationToken)
+    {
+        var line = new StringBuilder();
+        var next = new char[1];
+        while (await reader.ReadAsync(next.AsMemory(), cancellationToken).ConfigureAwait(false) == 1)
+        {
+            if (next[0] is '\n' or '\r')
+            {
+                return line.ToString();
+            }
+
+            if (line.Length == maximumChars)
+            {
+                throw new IOException("Provider stream line exceeded the maximum length.");
+            }
+
+            line.Append(next[0]);
+        }
+
+        return line.Length == 0 ? null : line.ToString();
     }
 }

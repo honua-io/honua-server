@@ -145,9 +145,8 @@ internal sealed partial class Wfs20Handler
         {
             var requestedTypes = Wfs20Utilities.ParseTypeNames(typeNames);
             var publishedTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken);
-            var selectedTypes = requestedTypes.Length == 0
-                ? SelectAdvertisedFeatureTypes(publishedTypes)
-                : ResolveRequestedFeatureTypes(publishedTypes, requestedTypes);
+            var selectedTypes = await WithCallerMasksAsync(
+                context, SelectDescribedFeatureTypes(publishedTypes, requestedTypes), cancellationToken).ConfigureAwait(false);
             if (selectedTypes.Length == 0 && requestedTypes.Length > 0)
             {
                 throw new ArgumentException($"Requested feature type(s) not found: {string.Join(", ", requestedTypes)}.");
@@ -285,6 +284,41 @@ internal sealed partial class Wfs20Handler
 
         claimed.Add(prefix, uri);
         return true;
+    }
+
+    // DescribeFeatureType without TYPENAMES describes the advertised types.
+    private static ImmutableArray<WfsFeatureTypeDescriptor> SelectDescribedFeatureTypes(
+        ImmutableArray<WfsFeatureTypeDescriptor> publishedTypes,
+        string[] requestedTypes)
+        => requestedTypes.Length == 0
+            ? SelectAdvertisedFeatureTypes(publishedTypes)
+            : ResolveRequestedFeatureTypes(publishedTypes, requestedTypes);
+
+    // The caller's masked fields are hidden in the types an operation reads, so no schema or feature encoding names them.
+    // Masks are resolved only for those types, once per resource.
+    private static async Task<ImmutableArray<WfsFeatureTypeDescriptor>> WithCallerMasksAsync(
+        HttpContext context,
+        ImmutableArray<WfsFeatureTypeDescriptor> featureTypes,
+        CancellationToken cancellationToken)
+    {
+        var visibleByResource = new Dictionary<string, MetadataV2Object>(StringComparer.Ordinal);
+        var masked = ImmutableArray.CreateBuilder<WfsFeatureTypeDescriptor>(featureTypes.Length);
+        foreach (var featureType in featureTypes)
+        {
+            var resourceId = featureType.Resource.Metadata.Id;
+            if (!visibleByResource.TryGetValue(resourceId, out var visible))
+            {
+                visible = await CallerVisibleSchema.HideMaskedFieldsAsync(context, featureType.Resource, cancellationToken)
+                    .ConfigureAwait(false);
+                visibleByResource[resourceId] = visible;
+            }
+
+            masked.Add(ReferenceEquals(visible, featureType.Resource)
+                ? featureType
+                : featureType with { Resource = visible, Declared = featureType.Declared.WithoutWfs10Schema() });
+        }
+
+        return masked.MoveToImmutable();
     }
 
     private static ImmutableArray<WfsFeatureTypeDescriptor> ResolveRequestedFeatureTypes(

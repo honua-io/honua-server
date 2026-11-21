@@ -2,12 +2,14 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Rendering;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Mvc;
@@ -68,21 +70,23 @@ internal static class StyleEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Style for publication '{publicationId}' not found.");
         }
 
-        var snapshot = await styleService.GetStyleAsync(layerValidation.Resource, storageLayerId.Value, cancellationToken);
-        var styleElement = snapshot?.MapLibreStyle;
+        var styleElement = SavedPresentation(context, layerValidation.Resource, storageLayerId.Value)
+            ?? (await styleService.GetStyleAsync(layerValidation.Resource, storageLayerId.Value, cancellationToken))?.MapLibreStyle;
 
         if (!styleElement.HasValue || styleElement.Value.ValueKind == JsonValueKind.Null)
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Style for publication '{publicationId}' not found.");
         }
 
+        var visibleStyle = await VisibleStyleAsync(context, layerValidation.Resource, styleElement.Value);
+
         if (themeProfile == ThemeProfile.Default)
         {
-            var resolvedStyle = StyleEndpointUrlResolver.Resolve(styleElement.Value, StyleUrlContext.From(context));
+            var resolvedStyle = StyleEndpointUrlResolver.Resolve(visibleStyle, StyleUrlContext.From(context));
             return Results.Json(resolvedStyle, StyleJsonContext.Default.JsonElement, contentType: MediaTypes.Json);
         }
 
-        var rawJson = styleElement.Value.GetRawText();
+        var rawJson = visibleStyle.GetRawText();
         var logger = loggerFactory.CreateLogger("Honua.Server.Features.Styling.StyleEndpoints");
         var themed = StyleThemeTransformer.ApplyTheme(rawJson, themeProfile, logger, storageLayerId.Value);
         var themeName = themeProfile switch
@@ -97,12 +101,28 @@ internal static class StyleEndpoints
         var themedElement = StyleJsonUtilities.ParseJsonElement(themed);
         if (!themedElement.HasValue)
         {
-            var resolvedStyle = StyleEndpointUrlResolver.Resolve(styleElement.Value, StyleUrlContext.From(context));
+            var resolvedStyle = StyleEndpointUrlResolver.Resolve(visibleStyle, StyleUrlContext.From(context));
             return Results.Json(resolvedStyle, StyleJsonContext.Default.JsonElement, contentType: MediaTypes.Json);
         }
 
         var resolvedThemedStyle = StyleEndpointUrlResolver.Resolve(themedElement.Value, StyleUrlContext.From(context));
         return Results.Json(resolvedThemedStyle, StyleJsonContext.Default.JsonElement, contentType: MediaTypes.Json);
+    }
+
+    // A saved presentation (the Console drawingInfo override) is what the layer's rendered outputs
+    // draw, so this document serves it ahead of the stored MapLibre style, as /ogc/styles does.
+    private static JsonElement? SavedPresentation(HttpContext context, MetadataV2Object resource, int storageLayerId)
+        => RasterMapRenderingPipeline.ResolveSavedDrawingInfoMapLibreStyle(
+            resource, storageLayerId, context.RequestServices.GetRequiredService<IGeoServicesStyleConverter>()) is { } saved
+            ? StyleJsonUtilities.ParseJsonElement(saved)
+            : null;
+
+    // The style without layers or properties that read a field withheld from this caller.
+    private static async Task<JsonElement> VisibleStyleAsync(HttpContext context, MetadataV2Object resource, JsonElement style)
+    {
+        var withheld = await StyleDocumentWithheldFields.ResolveAsync(context, resource, context.RequestAborted);
+        return JsonElement.Parse(StyleDocumentWithheldFields.WithoutWithheldMapLibre(style.GetRawText(), withheld)
+            ?? StyleDocumentWithheldFields.EmptyMapLibreStyle);
     }
 
     internal static bool TryParseTheme(string? raw, out ThemeProfile theme)

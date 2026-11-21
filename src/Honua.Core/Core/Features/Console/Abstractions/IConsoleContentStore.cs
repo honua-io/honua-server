@@ -16,7 +16,9 @@ public interface IConsoleContentStore
     // A supplied generation must match the stored one exactly; a null generation is last-write-wins.
     Task<ConsoleContentItem?> UpdateAsync(ConsoleContentItem item, CancellationToken cancellationToken = default);
 
-    // A patch that would leave team visibility without a team scope is rejected inside the write, because the patch itself cannot set the scope.
+    // A patch that would leave team visibility without a team scope, or that was authorized for an item kept personal
+    // by one owner and has since changed, is rejected inside the write: the patch cannot set the scope, and the item may
+    // change after it was read.
     Task<ConsoleContentItem?> PatchAsync(string id, ConsoleContentItemPatch patch, CancellationToken cancellationToken = default);
 
     Task<bool> DeleteAsync(string id, CancellationToken cancellationToken = default);
@@ -37,4 +39,12 @@ public sealed record ConsoleContentItemPatch
     public ConsoleVisibility? Visibility { get; init; }
 
     public string? UpdatedById { get; init; }
+
+    public string? PersonalOwnerId { get; init; }
+
+    public void EnsureStillPersonal(ConsoleContentItem stored)
+    {
+        if (PersonalOwnerId is { } owner && !stored.IsPersonalTo(owner))
+            throw new InvalidOperationException("Console content item changed after this edit was authorized; refresh and retry.");
+    }
 }

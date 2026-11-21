@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Affected local feedback using the canonical unit planner and shard router; not a PR gate."""
 import argparse
+import functools
+from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 import importlib.util
 import json
 import os
@@ -8,6 +10,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import xml.etree.ElementTree as ET
 import uuid
@@ -18,6 +21,7 @@ from shard_projects import shard_projects
 
 MONOLITH = 'tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj'
 MAX_STAGE0_CPU_COUNT = 16
+DEFAULT_TEST_PARALLELISM = 3
 
 
 def planner(root):
@@ -149,6 +153,7 @@ def feedback_environment():
 
 def build_feedback(root, projects, invoke):
     env = feedback_environment()
+    test_parallelism(env)  # fail before the build, not after it
     with tempfile.TemporaryDirectory(prefix='.honua-local-feedback-', dir=root) as temporary:
         selection = Path(temporary) / 'feedback.slnf'
         selection.write_text(json.dumps({'solution': {'path': str(root / 'Honua.sln'), 'projects': projects}}))
@@ -175,21 +180,68 @@ def shard_environment(execution_env, shard, directory):
     return env
 
 
-def run_feedback_tests(plan, results, invoke):
-    execution_env = feedback_environment()
+def test_parallelism(env):
+    # The no-build test processes are independent; bound them by the job's worker budget.
+    cpu_count = int(env['DOTNET_PROCESSOR_COUNT'])
+    value = int(env.get('HONUA_STAGE0_TEST_PARALLELISM', str(min(DEFAULT_TEST_PARALLELISM, cpu_count))))
+    if not 1 <= value <= cpu_count:
+        raise ValueError('HONUA_STAGE0_TEST_PARALLELISM must be between 1 and the stage-0 CPU count')
+    return value
+
+
+def feedback_test_jobs(plan, results, execution_env):
+    jobs = []
     for index, project in enumerate(plan['units']):
         directory = results / ('unit-' + str(index))
-        directory.mkdir()
-        invoke(['dotnet', 'test', project, '--no-build', '--no-restore', '--configuration', 'Release',
-                '--logger', 'trx;LogFileName=feedback.trx', '--results-directory', str(directory)],
-               check=True, env=execution_env)
-        require_tests(directory)
+        jobs.append((['dotnet', 'test', project, '--no-build', '--no-restore', '--configuration', 'Release',
+                      '--logger', 'trx;LogFileName=feedback.trx', '--results-directory', str(directory)],
+                     execution_env, directory))
     for index, shard in enumerate(plan['shards']):
         directory = results / ('shard-' + str(index))
+        jobs.append((['bash', 'scripts/ci/run-server-test-shard.sh'],
+                     shard_environment(execution_env, shard, directory), directory))
+    return jobs
+
+
+def run_feedback_tests(plan, results, invoke):
+    execution_env = feedback_environment()
+    def run_job(command, env, directory):
         directory.mkdir()
-        env = shard_environment(execution_env, shard, directory)
-        invoke(['bash', 'scripts/ci/run-server-test-shard.sh'], check=True, env=env)
+        invoke(command, check=True, env=env)
         require_tests(directory)
+    with ThreadPoolExecutor(max_workers=test_parallelism(execution_env)) as pool:
+        futures = [pool.submit(run_job, *job) for job in feedback_test_jobs(plan, results, execution_env)]
+        try:
+            done, _ = wait(futures, return_when=FIRST_EXCEPTION)
+        finally:
+            # On a failure or Ctrl-C, start nothing new; leaving the pool waits only for running jobs.
+            for future in futures:
+                future.cancel()
+        failed = [future for future in futures if future in done and future.exception()]
+        if failed:
+            wait(futures)
+            raise failed[0].exception()
+
+
+def command_invoker(results, status, run):
+    """Run one logged, timed command; safe to call from several test threads."""
+    lock = threading.Lock()
+    def invoke(command, **kwargs):
+        with lock:
+            index = len(status['commands'])
+            log = results / ('command-' + str(index) + '.log')
+            status['commands'].append({'command': command, 'log': str(log), 'status': 'running'})
+            print('Feedback command log: ' + str(log), flush=True)
+        entry = status['commands'][index]
+        started = time.monotonic()
+        try:
+            with log.open('w') as output:
+                run(command, stdout=output, stderr=subprocess.STDOUT, **kwargs)
+        finally:
+            entry['durationSeconds'] = round(time.monotonic() - started, 3)
+            print(f'Feedback timing: {command[0]} {command[1]}={entry["durationSeconds"]}s', flush=True)
+        entry['status'] = 'passed'
+    return invoke
 
 
 def execute(root, plan, run=subprocess.run, results_directory=None):
@@ -202,21 +254,7 @@ def execute(root, plan, run=subprocess.run, results_directory=None):
     (results / 'plan.json').write_text(json.dumps(plan, indent=2) + '\n')
     status = {'feedbackOnly': True, 'validatesPullRequest': False, 'fullGatesRequired': True,
               'status': 'running', 'source': plan.get('source'), 'commands': []}
-    def invoke(command, **kwargs):
-        kwargs.setdefault('cwd', root)
-        index = len(status['commands'])
-        log = results / ('command-' + str(index) + '.log')
-        status['commands'].append({'command': command, 'log': str(log), 'status': 'running'})
-        print('Feedback command log: ' + str(log), flush=True)
-        started = time.monotonic()
-        try:
-            with log.open('w') as output:
-                run(command, stdout=output, stderr=subprocess.STDOUT, **kwargs)
-        finally:
-            elapsed = round(time.monotonic() - started, 3)
-            status['commands'][-1]['durationSeconds'] = elapsed
-            print(f'Feedback timing: {command[0]} {command[1]}={elapsed}s', flush=True)
-        status['commands'][-1]['status'] = 'passed'
+    invoke = command_invoker(results, status, functools.partial(run, cwd=root))
     # PATH dotnet preserves the supervisor/Flow admission wrapper.
     try:
         (results / 'result.json').write_text(json.dumps(status, indent=2) + '\n')
@@ -226,8 +264,9 @@ def execute(root, plan, run=subprocess.run, results_directory=None):
     except (Exception, KeyboardInterrupt) as error:
         status['status'] = 'cancelled' if isinstance(error, KeyboardInterrupt) else 'failed'
         status['error'] = str(error)
-        if status['commands'] and status['commands'][-1]['status'] == 'running':
-            status['commands'][-1]['status'] = 'failed'
+        for entry in status['commands']:
+            if entry['status'] == 'running':
+                entry['status'] = 'failed'
         raise
     finally:
         (results / 'result.json').write_text(json.dumps(status, indent=2) + '\n')

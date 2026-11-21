@@ -49,6 +49,15 @@ resolution; the server never blindly replays a mutation. Dashboard drafts use
 the same composition editor, whole-document validation, and durable lifecycle
 as map/app drafts.
 
+When draft creation requires approval, retain the returned proposal identity and
+wait for a person to approve it. The original proposer can read
+`honua://proposals/{proposalId}` after execution succeeds to recover
+`resourceIds.draftId` and `resourceIds.itemId` from the completed operation,
+including after a server restart. Read that draft with `honua_studio_get_draft`
+for its current generation before editing. Pending proposals do not expose these
+identities. If the completed result has no draft identity, report the missing
+result; do not issue a second create request to recover it.
+
 Publication is not a canvas mutation. Save the draft as an immutable version, then read it
 back with `honua_studio_get_version` when a capture needs the top-level `versionId` and
 `contentHash`. Pass the saved version's `itemId`, `versionId`, and `contentHash` together
@@ -83,14 +92,12 @@ also require their own receipts and audience checks.
 
 ## Composition policy
 
-Realtime draft editing is the intended Studio authoring experience. The current
-server guardrail executes draft composition directly under Community/Pro defaults
-and under `Licensing:Mode=Disabled`. With licensing enabled, the Enterprise default
-still requires approval for `StudioDraftMutation`; an operator override can also
-require approval or block it. This is a current runtime limitation relative to the
-realtime product direction, not a reason for clients to invent approval steps for
-every design turn. Respect the actual operation outcome and report the mismatch.
-Do not change deployment policy as an implicit part of a creative edit.
+Every MCP caller is an agent, administrators included. Draft mutations can return
+`RequiresApproval` with a proposal identity instead of a draft or version result.
+A person approves or rejects that proposal in Console; an agent credential cannot
+decide it. Respect the actual operation outcome and retain the original proposal
+while awaiting approval. Do not change deployment policy or add requester
+permissions as an implicit part of a creative edit.
 
 Publication always waits for a person. Every MCP caller is an agent,
 administrators included, so a new proposal returns `AwaitingApproval`,

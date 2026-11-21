@@ -29,6 +29,7 @@
     <Compile Include="../Honua.TestKit/Infrastructure/TestMetadataV2GraphProvider.cs" Link="Shared/TestMetadataV2GraphProvider.cs" />
     <Compile Include="../Honua.TestKit/OData/ODataProviderTestData.cs" Link="Shared/ODataProviderTestData.cs" />
     <Compile Include="../Shared/OwnerEditUnitSupport/OwnerEditTestFixtures.cs" Link="Shared/OwnerEditTestFixtures.cs" />
+    <Compile Include="../Shared/ParquetUnitSupport/ArrowParquetTestReader.cs" Link="Shared/ArrowParquetTestReader.cs" />
     <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

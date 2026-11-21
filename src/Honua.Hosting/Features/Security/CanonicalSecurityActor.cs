@@ -163,7 +163,7 @@ internal static class CanonicalSecurityActor
     internal static bool IsRequestBindingProjection(Claim claim) =>
         IsFrameworkOwnedClaim(claim)
         && (claim.Type is CanonicalActorClaim or EffectiveTenantClaim or ScopeCeilingClaim
-            or AuthenticationSchemeClaim or "honua:issuer"
+            or AuthenticationSchemeClaim or "honua:issuer" or OwnerIdentityScope.OwnerClaim
             || (claim.Type == ClaimTypes.Role && claim.Value == AgentApprovalRule.AgentRole));
 
     internal static string ResolveScopeCeiling(ClaimsPrincipal principal)

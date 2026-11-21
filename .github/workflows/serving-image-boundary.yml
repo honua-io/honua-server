@@ -5,6 +5,11 @@ name: Serving Image Boundary
 # final-rootfs boundary; this path-filtered PR workflow supplies earlier image
 # feedback without lengthening the required merge-train floor.
 #
+# Pull requests build the PostGIS serving image only. rc.2 certifies ECS, so
+# the Lambda native-AOT image is not built here on pull_request. A manual
+# dispatch still builds both. nightly-container-build.yml and
+# deploy-platform-images.yml keep the Lambda image.
+#
 # ROUTING CONTRACT (#3204). The `pull_request` trigger below is deliberately
 # limited to inputs that DEFINE the image: the production serving Dockerfiles,
 # the build context filter, the in-image restore helper, the boundary verifier,
@@ -43,6 +48,7 @@ on:
       - 'docker/Dockerfile.aot'
       - 'docker/Dockerfile.lambda.aot'
       - 'scripts/docker/restore-dotnet-with-github-packages.sh'
+      - 'scripts/docker/server-lock-args.sh'
       - 'scripts/ci/verify-serving-image-boundary.py'
       - 'scripts/ci/serving-image-reuse.py'
       - 'scripts/ci/verify-native-migration-refusal.py'
@@ -127,7 +133,7 @@ jobs:
           # both and fails closed when they diverge.
           while IFS= read -r path; do
             case "$path" in
-              .dockerignore|docker/runtime/*|scripts/docker/restore-dotnet-with-github-packages.sh|scripts/ci/verify-serving-image-boundary.py|scripts/ci/serving-image-reuse.py|scripts/ci/verify-native-migration-refusal.py|scripts/ci/fixtures/validate-native-migration-refusal.py|scripts/ci/fixtures/validate-serving-image-boundary.py|.github/workflows/serving-image-boundary.yml)
+              .dockerignore|docker/runtime/*|scripts/docker/restore-dotnet-with-github-packages.sh|scripts/docker/server-lock-args.sh|scripts/ci/verify-serving-image-boundary.py|scripts/ci/serving-image-reuse.py|scripts/ci/verify-native-migration-refusal.py|scripts/ci/fixtures/validate-native-migration-refusal.py|scripts/ci/fixtures/validate-serving-image-boundary.py|.github/workflows/serving-image-boundary.yml)
                 generic=true
                 lambda=true
                 ;;
@@ -142,7 +148,11 @@ jobs:
 
           chosen=()
           if [[ "$generic" == "true" ]]; then chosen+=(generic); fi
-          if [[ "$lambda" == "true" ]]; then chosen+=(lambda); fi
+          # The case arms above stay the policy source for both variants.
+          # Pull requests drop Lambda after that decision: rc.2 certifies ECS.
+          if [[ "$lambda" == "true" && "${{ github.event_name }}" != "pull_request" ]]; then
+            chosen+=(lambda)
+          fi
           emit ${chosen[@]+"${chosen[@]}"}
 
       # This is the v3 content address introduced by #3331: exact selected Git

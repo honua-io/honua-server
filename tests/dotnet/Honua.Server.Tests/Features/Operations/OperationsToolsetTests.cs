@@ -19,6 +19,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
@@ -418,7 +419,8 @@ public sealed class OperationsToolsetTests
         foreach (var descriptor in descriptors)
         {
             var projectedName = PublishedOperationTool.ProjectName(descriptor.OperationId);
-            if (descriptor.ApprovalModel == OperationApprovalModel.OperatorGate)
+            if (descriptor.ApprovalModel == OperationApprovalModel.OperatorGate ||
+                AgentApprovalRule.RequiresApproval(descriptor))
                 publishedNames.Should().NotContain(projectedName);
             else
                 publishedNames.Should().Contain(projectedName);
@@ -1047,7 +1049,9 @@ public sealed class OperationsToolsetTests
             .ToDictionary(static group => group.Key, static group => group.Count(), StringComparer.Ordinal);
 
         var approvalGated = AdminOperateOperationCatalog.Descriptors
-            .Where(static descriptor => descriptor.ApprovalModel != OperationApprovalModel.None)
+            .Where(static descriptor =>
+                descriptor.ApprovalModel != OperationApprovalModel.None ||
+                AgentApprovalRule.RequiresApproval(descriptor))
             .Select(static descriptor => descriptor.OperationId)
             .ToArray();
         mapperCounts.Keys.Should().BeEquivalentTo(approvalGated);

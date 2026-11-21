@@ -22,10 +22,13 @@ internal static class ServiceCatalogPage
     }
 
     internal static ServiceListPage Create(MetadataV2GraphSnapshot snapshot, AdminListQuery query, string? tenantId = null)
+        => Create(snapshot, query, new ServiceListScope { TenantId = tenantId });
+
+    internal static ServiceListPage Create(MetadataV2GraphSnapshot snapshot, AdminListQuery query, ServiceListScope scope)
     {
-        var matches = MatchingServices(snapshot, query, tenantId)
+        var matches = MatchingServices(snapshot, query, scope.TenantId)
             .GroupBy(service => service.Metadata.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(group => ToSummary(snapshot, group))
+            .Select(group => ToSummary(snapshot, group, scope.UnlistedProtocols))
             .ToList();
         matches.Sort(static (left, right) => string.Compare(
             left.ServiceName, right.ServiceName, StringComparison.OrdinalIgnoreCase));
@@ -54,6 +57,21 @@ internal static class ServiceCatalogPage
                 : services.Where(service => service.FolderId == query.FolderId);
         }
 
+        if (query.ConnectionId is { } connectionId && query.StorageLayerId is { } storageLayerId)
+        {
+            // Filter logical service names so protocol entries retain their union in the summary.
+            var scope = new LayerScope(connectionId, storageLayerId)
+            {
+                TenantId = tenantId,
+                ManagedConnectionId = query.ManagedConnectionId,
+            };
+            var names = services.Where(service => snapshot.Index.PublicationsByService[service.Metadata.Id]
+                .Any(publication => MatchesLayer(snapshot, publication, scope)))
+                .Select(service => service.Metadata.Name)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            services = services.Where(service => names.Contains(service.Metadata.Name));
+        }
+
         if (string.IsNullOrEmpty(query.NameQuery))
         {
             return services;
@@ -63,10 +81,36 @@ internal static class ServiceCatalogPage
             service.Metadata.Name.Contains(query.NameQuery, StringComparison.OrdinalIgnoreCase));
     }
 
+    private sealed record LayerScope(Guid ConnectionId, int StorageLayerId)
+    {
+        public string? TenantId { get; init; }
+
+        public Guid? ManagedConnectionId { get; init; }
+    }
+
+    private static bool MatchesLayer(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Layer publication,
+        LayerScope scope)
+    {
+        var resource = snapshot.ResolveResource(publication);
+        var binding = snapshot.ResolveStorageBinding(publication);
+        return resource is not null && binding is not null
+            && binding.ResourceId == resource.Metadata.Id
+            && binding.StorageLayerId == scope.StorageLayerId
+            && (binding.ConnectionId is null
+                ? scope.ManagedConnectionId == scope.ConnectionId
+                : Guid.TryParse(binding.ConnectionId, out var boundConnection) && boundConnection == scope.ConnectionId)
+            && MetadataV2TenantVisibility.IsVisibleToTenant(publication.Metadata.Tenant, scope.TenantId)
+            && MetadataV2TenantVisibility.IsVisibleToTenant(resource.Metadata.Tenant, scope.TenantId)
+            && MetadataV2TenantVisibility.IsVisibleToTenant(binding.Metadata.Tenant, scope.TenantId);
+    }
+
     // Protocol entries for one logical service share Metadata.Name.
     private static ServiceSummary ToSummary(
         MetadataV2GraphSnapshot snapshot,
-        IGrouping<string, MetadataV2Service> sameName)
+        IGrouping<string, MetadataV2Service> sameName,
+        string[] unlistedProtocols)
     {
         var representative = sameName.First();
         var enabled = sameName
@@ -88,7 +132,7 @@ internal static class ServiceCatalogPage
             Title = representative.Metadata.Title,
             Description = representative.Metadata.Description ?? string.Empty,
             LayerCount = layerCount,
-            EnabledProtocols = enabled.Length == 0 ? ServiceProtocols.All : enabled,
+            EnabledProtocols = enabled.Length == 0 ? unlistedProtocols : enabled,
         };
     }
 
@@ -102,4 +146,12 @@ internal static class ServiceCatalogPage
 
         return matches.Skip(start).Take(query.PageSize).ToArray();
     }
+}
+
+// A service that lists no protocols serves every protocol the install can serve.
+internal sealed record ServiceListScope
+{
+    public string? TenantId { get; init; }
+
+    public string[] UnlistedProtocols { get; init; } = ServiceProtocols.All;
 }

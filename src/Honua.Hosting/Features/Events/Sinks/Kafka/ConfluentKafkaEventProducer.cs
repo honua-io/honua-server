@@ -28,16 +28,28 @@ internal sealed class ConfluentKafkaEventProducer : IKafkaEventProducer
             MessageTimeoutMs = value.MessageTimeoutMs,
         };
 
-        if (!string.IsNullOrWhiteSpace(value.SecurityProtocol) &&
-            Enum.TryParse<SecurityProtocol>(value.SecurityProtocol, ignoreCase: true, out var protocol))
+        ApplySecurity(config, value);
+        _producer = new ProducerBuilder<string, byte[]>(config).Build();
+    }
+
+    // Re-checked here because the producer can be built from options that never went through
+    // ValidateOnStart; a misconfigured protocol must refuse to connect rather than fall back to PLAINTEXT.
+    private static void ApplySecurity(ProducerConfig config, KafkaFeatureChangeEventSinkOptions value)
+    {
+        var failures = KafkaFeatureChangeEventSinkOptionsValidator.SecurityFailures(value);
+        if (failures.Count > 0)
         {
-            config.SecurityProtocol = protocol;
+            throw new InvalidOperationException(string.Join(" ", failures));
         }
 
-        if (!string.IsNullOrWhiteSpace(value.SaslMechanism) &&
-            Enum.TryParse<SaslMechanism>(value.SaslMechanism, ignoreCase: true, out var mechanism))
+        if (KafkaSecurityNames.NormalizeProtocol(value.SecurityProtocol) is { } protocol)
         {
-            config.SaslMechanism = mechanism;
+            config.SecurityProtocol = Enum.Parse<SecurityProtocol>(protocol, ignoreCase: true);
+        }
+
+        if (KafkaSecurityNames.NormalizeMechanism(value.SaslMechanism) is { } mechanism)
+        {
+            config.SaslMechanism = Enum.Parse<SaslMechanism>(mechanism, ignoreCase: true);
         }
 
         if (!string.IsNullOrWhiteSpace(value.SaslUsername))
@@ -49,8 +61,6 @@ internal sealed class ConfluentKafkaEventProducer : IKafkaEventProducer
         {
             config.SaslPassword = value.SaslPassword;
         }
-
-        _producer = new ProducerBuilder<string, byte[]>(config).Build();
     }
 
     public async Task ProduceAsync(

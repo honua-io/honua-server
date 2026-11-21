@@ -1,0 +1,21 @@
+{
+  "bounds-out-of-range.json": "schema",
+  "capture-id-mismatch.json": "capture-id",
+  "checksum-not-multihash.json": "schema",
+  "column-not-in-public-fields.json": "public-fields-only",
+  "duplicate-field-name.json": "unique-field-names",
+  "identity-maps-to-other-field.json": "identity-mapping",
+  "identity-not-in-geoparquet.json": "identity-mapping",
+  "inverted-bounds.json": "bounds-order",
+  "inverted-zoom-range.json": "zoom-order",
+  "missing-capture.json": "schema",
+  "missing-geoparquet-asset.json": "schema",
+  "missing-pmtiles-asset.json": "schema",
+  "missing-pmtiles-link.json": "schema",
+  "missing-portolan-declaration.json": "schema",
+  "missing-source-crs.json": "schema",
+  "non-public-field-in-asset.json": "public-fields-only",
+  "numeric-identity.json": "identity-mapping",
+  "pmtiles-without-visual-role.json": "schema",
+  "proprietary-license.json": "schema"
+}

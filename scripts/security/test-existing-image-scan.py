@@ -29,6 +29,15 @@ class ExistingImageScanTests(unittest.TestCase):
 
     def test_binds_digest_platform_and_source(self):
         self.assertEqual(REVISION, scan.bind_identity(IMAGE, "linux/amd64", REVISION, INSPECTED)["sourceRevision"])
+        self.assertNotIn("requestedImage", scan.bind_identity(IMAGE, "linux/amd64", REVISION, INSPECTED))
+        requested = "ghcr.io/honua-io/honua-server@sha256:" + "d" * 64
+        bound = scan.note_requested_image(
+            scan.bind_identity(IMAGE, "linux/amd64", REVISION, INSPECTED), requested)
+        self.assertEqual(IMAGE, bound["image"])
+        self.assertEqual(requested, bound["requestedImage"])
+        same = scan.note_requested_image(
+            scan.bind_identity(IMAGE, "linux/amd64", REVISION, INSPECTED), IMAGE)
+        self.assertNotIn("requestedImage", same)
         for key, value in (("RepoDigests", []), ("Architecture", "arm64"), ("Config", {})):
             changed = copy.deepcopy(INSPECTED)
             changed[0][key] = value

@@ -48,6 +48,10 @@ fi
 # measurement error under half a percent of the smallest configured budget while
 # waking the supervisor 6x less often than a 1s poll would on a shared runner.
 poll_seconds="${HONUA_SERVER_TEST_POLL_SECONDS:-5}"
+# Sampling stays at `poll_seconds`, but the child's exit is noticed within
+# `exit_check_seconds`. Stage 0 runs short shards one after another, and sleeping
+# a whole poll after a 1s shard made each one cost 5s.
+exit_check_seconds=1
 # Warn when a completed shard consumed at least this fraction of its inner
 # timeout. A shard above the line still passed, but it has no room left for the
 # next test the capability gate forces into it.
@@ -82,7 +86,7 @@ stall_seconds="${HONUA_SERVER_TEST_STALL_SECONDS:-300}"
 kill_after_seconds="${HONUA_SERVER_TEST_KILL_AFTER_SECONDS:-30}"
 # Slack allowed when deciding whether an exit 137 could have come from `timeout`
 # itself. It covers measurement error ONLY: `start_epoch` is sampled before the
-# child is launched and the supervisor polls the child every `poll_seconds`, so
+# child is launched and the supervisor checks the child every `exit_check_seconds`, so
 # both can only make `duration_seconds` larger than the child's true runtime.
 # The single way the measurement can come out short is whole-second truncation
 # of the two `date +%s` samples, which costs at most a second. Keeping this
@@ -193,6 +197,18 @@ log_size() {
   printf '%s' "${size:-0}"
 }
 
+sleep_until_exit_or_poll() {
+  if [[ ! "${poll_seconds}" =~ ^[1-9][0-9]*$ ]] || (( poll_seconds <= exit_check_seconds )); then
+    sleep "${poll_seconds}"
+    return
+  fi
+  local waited=0
+  while (( waited < poll_seconds )) && kill -0 "${test_pid}" 2>/dev/null; do
+    sleep "${exit_check_seconds}"
+    waited=$((waited + exit_check_seconds))
+  done
+}
+
 "${run_command[@]}" >> "${log_file}" 2>&1 &
 test_pid=$!
 heartbeat_count=0
@@ -232,7 +248,7 @@ while kill -0 "${test_pid}" 2>/dev/null; do
     fi
   fi
 
-  sleep "${poll_seconds}"
+  sleep_until_exit_or_poll
 done
 
 set +e

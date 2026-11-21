@@ -75,6 +75,10 @@ internal static class InfrastructureCompositionRoot
         // a blocked edit never reaches the auditor as an applied write.
         services.AddFeatureLockEnforcingFeatureWriter();
 
+        // Outermost: a write to a layer published over a source table is refused before any other
+        // decorator sees it, because the managed writer would store it where that layer never reads.
+        services.AddSourceBackedWriteGuard();
+
         // Registry-backed geographic-SRID classification seam. Composes the provider's
         // ICrsRegistry (registered above for providers that ship one, e.g. Postgres) with the
         // static GeographicSridClassifier fallback so DI-reachable call sites (ImageServer

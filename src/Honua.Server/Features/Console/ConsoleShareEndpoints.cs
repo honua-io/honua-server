@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using Honua.Core.Features.Console.Abstractions;
 using Honua.Core.Features.Console.Domain;
+using Honua.Core.Features.Publishing.Content;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Console.Models;
 using Honua.Infrastructure.Authentication;
@@ -287,10 +288,10 @@ internal static class ConsoleShareEndpoints
     {
         try
         {
-            var now = timeProvider.GetUtcNow();
-            if (request.ExpiresAt is { } expiry && expiry <= now)
+            var (expiresAt, expiryError) = PublicLinkLifetime.Resolve(request.ExpiresAt, timeProvider.GetUtcNow());
+            if (expiryError is not null)
             {
-                return TypedResults.BadRequest(ApiResponse<object>.Failure("expiresAt must be in the future."));
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(expiryError));
             }
 
             var item = await contentStore.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
@@ -309,7 +310,7 @@ internal static class ConsoleShareEndpoints
             // Seed with the effective tier so a visibility-derived public-indexed
             // item keeps that tier (the minted link must resolve under the same
             // policy the mint check just accepted) instead of resetting to private.
-            var token = await shareStore.MintPublicLinkAsync(id, effectiveTier, request.ExpiresAt, principalId, context.RequestAborted).ConfigureAwait(false);
+            var token = await shareStore.MintPublicLinkAsync(id, effectiveTier, expiresAt, principalId, context.RequestAborted).ConfigureAwait(false);
             ConsoleShareEndpointsLog.PublicLinkMinted(logger, id, token.TokenId, principalId, token.ExpiresAt);
             return TypedResults.Ok(ApiResponse<ConsolePublicLinkToken>.CreateSuccess(token));
         }

@@ -61,6 +61,13 @@ require(
     r"dotnet build Honua\.sln \\\s+--no-restore",
     "build from the assets produced by its explicit restore",
 )
+for condition in re.findall(r"^\s+if: (.*steps\.test-roots\.outputs\.count.*)$", FORMAT_TEXT, flags=re.MULTILINE):
+    if "steps.test-roots.outcome == 'skipped' ||" not in condition:
+        raise AssertionError(
+            "format-check analyzer steps must run when test-roots is skipped: " + condition
+        )
+if len(re.findall(r"steps\.test-roots\.outcome == 'skipped' \|\|", FORMAT_TEXT)) != 2:
+    raise AssertionError("format-check restore and build steps must both handle a skipped test-roots step")
 require(
     r"dotnet format Honua\.sln --verify-no-changes --no-restore ",
     "format without repeating restore after the full build",

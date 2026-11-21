@@ -154,8 +154,8 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
             }
 
             var typeInfo = serializerOptions.GetTypeInfo(value.GetType());
-            var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(value, typeInfo);
-            return etagService.ComputeETag(jsonBytes);
+            using var payload = ETagJsonPayload.Serialize(value, typeInfo);
+            return etagService.ComputeETag(payload.WrittenSpan);
         }
         catch (NotSupportedException)
         {

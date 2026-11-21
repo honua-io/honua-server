@@ -4,6 +4,7 @@
 using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
+using System.Security.Cryptography.Xml;
 using System.Text;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
@@ -14,7 +15,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Identity;
 
-[Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.IdentityManagement)]
 public class SamlBridgeEndpointsTests : IAsyncLifetime
@@ -57,6 +57,16 @@ public class SamlBridgeEndpointsTests : IAsyncLifetime
     {
         _certificate.Dispose();
         return _fixture.DisposeAsync();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /saml/login")]
+    public async Task Login_WithoutSignOnUrl_ReturnsNotFound()
+    {
+        var response = await _client.GetAsync("/saml/login");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.False(response.Headers.Contains("Set-Cookie"));
     }
 
     [IntegrationTest]
@@ -142,6 +152,61 @@ public class SamlBridgeEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /saml/slo")]
+    public async Task Slo_SameSignedLogoutRequestTwice_SecondIsRejected()
+    {
+        var samlRequest = SamlTestAssertions.CreateSignedLogoutRequest(_certificate, "replay-user@example.com");
+
+        using var first = new FormUrlEncodedContent(new Dictionary<string, string> { ["SAMLRequest"] = samlRequest });
+        using var second = new FormUrlEncodedContent(new Dictionary<string, string> { ["SAMLRequest"] = samlRequest });
+        var firstResponse = await _client.PostAsync("/saml/slo", first);
+        var secondResponse = await _client.PostAsync("/saml/slo", second);
+
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, secondResponse.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /saml/slo")]
+    public async Task Slo_RepeatedLogoutRequest_LeavesAnotherSessionSignedIn()
+    {
+        var firstSession = await SeedSessionAsync("repeat-user@example.com");
+        var secondSession = await SeedSessionAsync("repeat-user@example.com");
+        var samlRequest = SamlTestAssertions.CreateSignedLogoutRequest(_certificate, "repeat-user@example.com");
+
+        using var firstResponse = await PostLogoutAsync(samlRequest, firstSession);
+        using var repeatedResponse = await PostLogoutAsync(samlRequest, secondSession);
+
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, repeatedResponse.StatusCode);
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var sessionStore = scope.ServiceProvider.GetRequiredService<AdminAuthSessionStore>();
+        Assert.Null(await sessionStore.GetAuthenticatedSessionAsync(firstSession, CancellationToken.None));
+        Assert.NotNull(await sessionStore.GetAuthenticatedSessionAsync(secondSession, CancellationToken.None));
+    }
+
+    private async Task<string> SeedSessionAsync(string nameId)
+    {
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var sessionStore = scope.ServiceProvider.GetRequiredService<AdminAuthSessionStore>();
+        return await sessionStore.CreateAuthenticatedSessionAsync(
+            "saml",
+            "opaque-token",
+            idToken: null,
+            [new AdminAuthSessionClaim { Type = ClaimTypes.NameIdentifier, Value = nameId }],
+            DateTimeOffset.UtcNow.AddMinutes(5),
+            CancellationToken.None);
+    }
+
+    private async Task<HttpResponseMessage> PostLogoutAsync(string samlRequest, string sessionId)
+    {
+        using var client = _fixture.CreateClient(
+            c => c.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}"));
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string> { ["SAMLRequest"] = samlRequest });
+        return await client.PostAsync("/saml/slo", content);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /saml/slo")]
     public async Task Slo_MissingSamlRequest_ReturnsBadRequest()
     {
         using var sloContent = new FormUrlEncodedContent(new Dictionary<string, string> { ["RelayState"] = "x" });
@@ -163,6 +228,39 @@ public class SamlBridgeEndpointsTests : IAsyncLifetime
         Assert.Contains(
             response.Headers.GetValues("Set-Cookie"),
             c => c.Contains("honua_admin_session", StringComparison.Ordinal));
+    }
+
+    [IntegrationTheory]
+    [InlineData("http://www.w3.org/2001/04/xmldsig-more#sha384", "http://www.w3.org/2001/04/xmldsig-more#rsa-sha384")]
+    [InlineData("http://www.w3.org/2001/04/xmlenc#sha512", "http://www.w3.org/2001/04/xmldsig-more#rsa-sha512")]
+    [Endpoint("POST /saml/acs")]
+    public async Task Acs_SupportedSigningProfile_EstablishesSession(string digestMethod, string signatureMethod)
+    {
+        var assertion = SamlTestAssertions.CreateSignedResponseWithAlgorithms(_certificate, digestMethod, signatureMethod);
+
+        using var response = await PostAcsAsync(assertion);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Contains(
+            response.Headers.GetValues("Set-Cookie"),
+            cookie => cookie.Contains("honua_admin_session", StringComparison.Ordinal));
+    }
+
+    [IntegrationTheory]
+    [InlineData(SignedXml.XmlDsigSHA1Url, SignedXml.XmlDsigRSASHA256Url)]
+    [InlineData(SignedXml.XmlDsigSHA256Url, SignedXml.XmlDsigRSASHA1Url)]
+    [InlineData(SignedXml.XmlDsigSHA1Url, SignedXml.XmlDsigRSASHA1Url)]
+    [Endpoint("POST /saml/acs")]
+    public async Task Acs_UnsupportedSigningProfile_IsRejected(string digestMethod, string signatureMethod)
+    {
+        var assertion = SamlTestAssertions.CreateSignedResponseWithAlgorithms(_certificate, digestMethod, signatureMethod);
+
+        using var response = await PostAcsAsync(assertion);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.DoesNotContain(
+            response.Headers.TryGetValues("Set-Cookie", out var cookies) ? cookies : [],
+            cookie => cookie.Contains("honua_admin_session", StringComparison.Ordinal));
     }
 
     [IntegrationTest]

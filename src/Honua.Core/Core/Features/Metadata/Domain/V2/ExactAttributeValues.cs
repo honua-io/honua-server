@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
@@ -118,6 +119,182 @@ public static partial class ExactAttributeValues
 
         return number;
     }
+
+    // A canonical base-10 number (optional sign, no exponent, no leading zeros) is also a valid
+    // JSON number of any length.
+    public static bool IsCanonicalDecimalText(string? value)
+        => value is not null && DecimalPattern().IsMatch(value);
+
+    // A stored attribute value (exact decimal text, CLR number, JSON number or string) as a finite
+    // double for formats without an exact decimal type. Text parses culture-invariantly.
+    public static double? ToFiniteDouble(object? value)
+    {
+        var number = value switch
+        {
+            double d => d,
+            float f => f,
+            decimal m => (double)m,
+            long l => l,
+            int i => i,
+            short s => s,
+            string text => ParseInvariantDouble(text),
+            JsonElement { ValueKind: JsonValueKind.Number } element when element.TryGetDouble(out var parsed) => parsed,
+            JsonElement { ValueKind: JsonValueKind.String } element => ParseInvariantDouble(element.GetString()),
+            _ => double.NaN
+        };
+        return double.IsFinite(number) ? number : null;
+    }
+
+    // Canonical exact text for a client-supplied number, keeping a JSON number's own digits; null
+    // when the value is not a finite number. Used by adapters whose wire format has no exact type.
+    public static string? FormatDecimalNumber(object? value) => value switch
+    {
+        JsonElement { ValueKind: JsonValueKind.Number } element => CanonicalDecimalText(element.GetRawText()),
+        long l => l.ToString(CultureInfo.InvariantCulture),
+        int i => i.ToString(CultureInfo.InvariantCulture),
+        decimal m => m.ToString(CultureInfo.InvariantCulture),
+        double d when double.IsFinite(d) => CanonicalDecimalText(d.ToString("R", CultureInfo.InvariantCulture)),
+        float f when float.IsFinite(f) => CanonicalDecimalText(((double)f).ToString("R", CultureInfo.InvariantCulture)),
+        _ => null
+    };
+
+    // RFC 3339 UTC text for an integral epoch-millisecond number; null for anything else.
+    public static string? FormatEpochMilliseconds(object? value) => value switch
+    {
+        long l => FormatUtcInstant(l),
+        int i => FormatUtcInstant(i),
+        double d when IsWholeEpochMilliseconds(d) => FormatUtcInstant((long)d),
+        JsonElement { ValueKind: JsonValueKind.Number } element when element.TryGetInt64(out var epoch) => FormatUtcInstant(epoch),
+        _ => null
+    };
+
+    private const double MaxEpochMilliseconds = 253_402_300_800_000d;
+
+    // Whole milliseconds only. The zero check is on the integer bits of the residual so a new
+    // floating-point equality is not introduced.
+    private static bool IsWholeEpochMilliseconds(double value)
+    {
+        if (!double.IsFinite(value) || Math.Abs(value) >= MaxEpochMilliseconds)
+        {
+            return false;
+        }
+
+        var residual = value - Math.Truncate(value);
+        return BitConverter.DoubleToInt64Bits(residual + 0d) == 0L;
+    }
+
+    private static string? CanonicalDecimalText(string text)
+    {
+        if (IsCanonicalDecimalText(text))
+        {
+            return text;
+        }
+
+        if (!decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var number))
+        {
+            return null;
+        }
+
+        // decimal.TryParse flushes an underflow to zero and rounds a long significand.
+        // An exponent form that does not reconstruct is not an exact value.
+        if ((text.Contains('e') || text.Contains('E')) && !ExponentTextFitsDecimal(text, number))
+        {
+            return null;
+        }
+
+        return number.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static bool ExponentTextFitsDecimal(string text, decimal parsed)
+    {
+        var span = text.AsSpan().Trim();
+        var marker = span.LastIndexOfAny('e', 'E');
+        if (marker <= 0 || marker == span.Length - 1)
+        {
+            return false;
+        }
+
+        var mantissaText = span[..marker];
+        if (SignificantDigits(mantissaText) > 28)
+        {
+            return false;
+        }
+
+        if (!int.TryParse(span[(marker + 1)..], NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var exponent)
+            || !decimal.TryParse(mantissaText, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var mantissa))
+        {
+            return false;
+        }
+
+        try
+        {
+            if (exponent >= 0)
+            {
+                return mantissa * Pow10(exponent) == parsed;
+            }
+
+            var divisor = Pow10(-exponent);
+            var scaled = mantissa / divisor;
+            return scaled == parsed && scaled * divisor == mantissa;
+        }
+        catch (OverflowException)
+        {
+            return false;
+        }
+    }
+
+    private static int SignificantDigits(ReadOnlySpan<char> mantissa)
+    {
+        var digits = 0;
+        var seen = false;
+        foreach (var character in mantissa)
+        {
+            if (character is '+' or '-' or '.')
+            {
+                continue;
+            }
+
+            if (!char.IsDigit(character))
+            {
+                return int.MaxValue;
+            }
+
+            if (character == '0' && !seen)
+            {
+                continue;
+            }
+
+            seen = true;
+            digits++;
+        }
+
+        return digits;
+    }
+
+    private static decimal Pow10(int exponent)
+    {
+        var value = 1m;
+        for (var i = 0; i < exponent; i++)
+        {
+            value = checked(value * 10m);
+        }
+
+        return value;
+    }
+
+    private static string? FormatUtcInstant(long epochMilliseconds)
+        => epochMilliseconds is < MinEpochMilliseconds or > MaxUtcEpochMilliseconds
+            ? null
+            : DateTimeOffset.FromUnixTimeMilliseconds(epochMilliseconds).UtcDateTime
+                .ToString("yyyy'-'MM'-'dd'T'HH':'mm':'ss'.'fff'Z'", CultureInfo.InvariantCulture);
+
+    private const long MinEpochMilliseconds = -62_135_596_800_000;
+    private const long MaxUtcEpochMilliseconds = 253_402_300_799_999;
+
+    private static double ParseInvariantDouble(string? text)
+        => double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : double.NaN;
 
     private static string NormalizeNegativeZero(string value)
         => value.StartsWith('-') && value.AsSpan(1).TrimStart('0').TrimStart('.').TrimStart('0').IsEmpty

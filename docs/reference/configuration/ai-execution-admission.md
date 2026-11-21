@@ -176,14 +176,24 @@ Money values are integer units in the explicit currency scale. Rates are those u
 `financial.monthlyActor` is optional. When present it is `{ "tokens": <integer>, "money": <integer> }`, in the same token and money units as the other financial scopes, and it limits what one canonical actor may reserve in a UTC calendar month:
 
 - The month is the UTC calendar month of the reservation. It does not follow `periodAnchorUtc` or `periodSeconds`; the per-period `actor` scope and the monthly cap are checked independently, and a request must pass both.
-- Unsettled reservations count in full, as do settled invocations that were reserved during the month.
-- Adding or changing the cap needs stopped, drained admission, like other financial policy changes. Once set, the cap cannot be removed; the database refuses a policy that drops it.
-- When an actor's reserved and settled spend reaches 80% of either the token or the money allowance, one notice row is written to `ai_monthly_actor_notices` for that actor and month. Later reservations in the same month do not add another row. The notice is delivered through the webhook channel when one is configured.
+- Unsettled reservations count in full, as do settled invocations that were reserved during the month. Unsettled liability from an earlier month stays charged; settled usage stays in the month it was reserved.
+- Apply migration 170 before enabling the cap. Adding or changing it needs stopped, drained admission, like other financial policy changes. Once set, the cap cannot be removed; the database refuses a policy that drops it.
+- When an actor's reserved and settled spend reaches 80% of either the token or the money allowance, one notice row is written to `ai_monthly_actor_notices` for that actor and month. Later reservations in the same month do not add another row. The durable outbox then queues a `monthly-actor-spend` warning to the configured operations notification channels.
 - A request that would exceed the cap is denied with admission code `financial_monthly_actor_exceeded` before any provider contact. The denying transaction rolls back, so no `ai_financial_invocations` or attempt row records it, and Reporting returns its deterministic fallback narrative.
 
 Every budget denial (`financial_monthly_actor_exceeded`, `financial_budget_exceeded`, `financial_stop`, `financial_ledger_full` and `budget_exceeded`) writes a structured warning, event ID 9542, with the admission code, deployment ID, actor key (the SHA-256 digest of the canonical actor, never the actor itself), use case and UTC month. Search the server log for event 9542 or the code to find out why a report lost its AI narrative.
 
 The basis binds the provider, exact final invocation URL/model, standard/default tier, effective/expiry times, conservative input bound, output cap and rates. The input bound is an operator assertion covering complete framing and messages; it is not estimated from bytes. Request byte limits are a separate check. Reporting freezes its final request and applies the stricter of its configured output limit and the financial output cap before send. Model disclosure approval and credentials remain separately required.
+
+### Incident cap
+
+Optional `financial.incident` applies token and money limits across all actors and periods for one authority scope and episode UUID. Apply migrations 172 and 217 before enabling it. Configure `financial.incidentWorkflows` through the same authorized, stopped and drained policy-update operation. Each binding contains the canonical `workflow` (`job:` followed by the server operation identity), `authorityScope`, `episodeId` and positive `lifecycleVersion`. Bindings are operator-authorized associations in the persisted policy; request labels and model output cannot supply them. At most 64 distinct workflows can be bound.
+
+With an incident cap enabled, every admitted financial invocation needs a matching binding and an active episode at the recorded lifecycle version. The episode observation must be no older than five minutes and no more than thirty seconds in the future. Admission and the durable pre-send claim both validate this authority in PostgreSQL. Missing bindings deny with `financial_incident_required`; stale, closed or version-mismatched episodes deny with `financial_incident_invalid`. A reservation crossing either cap denies with `financial_incident_exceeded` before provider contact. Reporting uses deterministic fallback on denial.
+
+Episode charges include settled and uncertain debt from every period and actor. Refreshing a binding to the same episode UUID preserves its allowance; a different episode UUID has a separate allowance without erasing earlier deployment or actor debt. Incident caps cannot be removed after activation. Changing their limits or bindings requires stopped, drained admission and an advancing control epoch. No automatic job-to-episode producer or additional model-sending path is enabled by configuring this policy.
+
+At 80% of either incident limit, the durable outbox queues an `incident-spend` warning with deployment, authority scope and episode attributes. Retries retain a stable deduplication identity for that episode. A refreshed lifecycle version does not create a new warning. Delivery still requires a configured operations notification channel.
 
 ### Liability, stop and recovery limits
 

@@ -92,9 +92,18 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
         double length;
         try
         {
-            // Computes planar length in the input CRS's coordinate units.
-            // No geodesic conversion is applied, matching geometry.area.
-            length = geometry.Length;
+            if (inputs.Geodesic && GeodesicGeometryOperations.IsGeographicSrid(inputs.Srid))
+            {
+                length = GeodesicGeometryOperations.ComputeGeodesicLengthMeters(geometry) / inputs.MetersPerUnit;
+            }
+            else if (inputs.Geodesic)
+            {
+                length = geometry.Length / inputs.MetersPerUnit;
+            }
+            else
+            {
+                length = geometry.Length;
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -151,6 +160,22 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
             return false;
         }
 
+        var geodesic = false;
+        if (parameters.TryGetValue(prefix + "geodesic", out var geodesicRaw)
+            && !string.IsNullOrWhiteSpace(geodesicRaw)
+            && !bool.TryParse(geodesicRaw, out geodesic))
+        {
+            error = "invalid input 'geodesic'; expected boolean";
+            return false;
+        }
+
+        var unitRaw = parameters.TryGetValue(prefix + "unit", out var rawUnit) ? rawUnit : null;
+        if (!GeodesicGeometryOperations.TryNormalizeLinearUnit(unitRaw, out var unitName, out var metersPerUnit))
+        {
+            error = $"invalid input 'unit' '{unitRaw}'; expected meters, kilometers, feet, yards, miles, or nautical-miles";
+            return false;
+        }
+
         byte[] wkbBytes;
         try
         {
@@ -168,7 +193,7 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
             return false;
         }
 
-        inputs = new LengthInputs(wkbBytes, srid);
+        inputs = new LengthInputs(wkbBytes, srid, geodesic, unitName, metersPerUnit);
         error = "";
         return true;
     }
@@ -183,7 +208,7 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
             writer.WriteString("processId", HandledProcessId);
             writer.WriteString("measure", "length");
             writer.WriteNumber("value", length);
-            writer.WriteString("unit", "input-crs-units");
+            writer.WriteString("unit", inputs.Geodesic ? inputs.Unit : "input-crs-units");
             writer.WriteNumber("inputSrid", inputs.Srid);
             writer.WriteString("inputGeometryType", geometry.GeometryType);
             writer.WriteEndObject();
@@ -201,7 +226,7 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
         return sb.ToString();
     }
 
-    private readonly record struct LengthInputs(byte[] WkbBytes, int Srid);
+    private readonly record struct LengthInputs(byte[] WkbBytes, int Srid, bool Geodesic, string Unit, double MetersPerUnit);
 
     private static partial class Log
     {

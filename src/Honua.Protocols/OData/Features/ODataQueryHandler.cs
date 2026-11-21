@@ -629,13 +629,12 @@ internal sealed partial class ODataQueryHandler(
             // Convert features to OData format
             var featuresData = queryResult.Items.Select(f =>
             {
-                var attributes = ODataAttributeSerializer.Serialize(f.Attributes);
                 var geometry = ODataGeometryConverter.ConvertWkbToGeometry(
                     _geometryService,
                     f.Geometry,
                     layerSrid,
                     axisOrder);
-                var dict = ODataUtilityService.BuildFeaturePayload(publicLayerId, f, geometry, attributes);
+                var dict = ODataUtilityService.BuildFeaturePayload(publicLayerId, f, geometry);
 
                 // Add expanded relations if available
                 if (expandedRelations != null && expandedRelations.TryGetValue(f.Id, out var relations))
@@ -867,7 +866,7 @@ internal sealed partial class ODataQueryHandler(
                 GeometryLimits = geometryLimits,
                 OutFields = outFields,
                 Logger = _logger,
-                EncodingLimits = limitsOptions?.Value?.GeoParquet
+                EncodingLimits = (limitsOptions?.Value?.GeoParquet ?? new GeoParquetLimits()).ForQuery()
             });
 
             ODataUtilityService.SetODataHeaders(context);

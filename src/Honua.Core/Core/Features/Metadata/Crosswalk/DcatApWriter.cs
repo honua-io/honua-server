@@ -41,7 +41,7 @@ public static class DcatApWriter
         Add(node, "dcat:contactPoint", ContactPoints(metadata.Contacts));
         Add(node, "dct:provenance", metadata.Lineage is null ? null : Statement("dct:ProvenanceStatement", metadata.Lineage));
         Add(node, "dct:accrualPeriodicity", MetadataCrosswalk.EuFrequencyCode(metadata.UpdateFrequency) is { } frequency ? Reference(EuAuthority + "frequency/" + frequency) : null);
-        Add(node, "dcat:spatialResolutionInMeters", metadata.SpatialResolution?.DistanceMeters is { } meters ? Typed(((decimal)meters).ToString(CultureInfo.InvariantCulture), "xsd:decimal") : null);
+        Add(node, "dcat:spatialResolutionInMeters", metadata.SpatialResolution?.DistanceMeters is { } meters ? Typed(XsdDecimal(meters), "xsd:decimal") : null);
         Add(node, "dcat:temporalResolution", metadata.TemporalResolution is { } duration ? Typed(duration, "xsd:duration") : null);
         Add(node, "dct:spatial", Spatial(metadata.Extent));
         Add(node, "dct:temporal", Temporal(metadata.TemporalExtent));
@@ -49,6 +49,13 @@ public static class DcatApWriter
         AddAccess(node, metadata);
         return node;
     }
+
+    // xsd:decimal has no exponent. Values outside the decimal range are whole numbers, so they are
+    // written in fixed-point form instead of being converted.
+    private static string XsdDecimal(double value)
+        => Math.Abs(value) < (double)decimal.MaxValue
+            ? ((decimal)value).ToString(CultureInfo.InvariantCulture)
+            : value.ToString("F0", CultureInfo.InvariantCulture);
 
     private static void AddAccess(JsonObject node, DescriptiveMetadata metadata)
     {

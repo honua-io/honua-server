@@ -35,6 +35,8 @@ public sealed partial class RuntimeDdlGovernanceTests
                 new(RuntimeDdlCategory.GeneratedImportTarget, 5, "GeoservicesImportService owns the generated target index and the replacement swap (drop the prior target, rename the job-scoped staging table and its derived key and sequence) inside its import transaction; rollback discards the staging table (#4600)."),
             ["src/Honua.Db/Postgres/Features/Migration/GeoservicesImportService.ImportSteps.cs"] =
                 new(RuntimeDdlCategory.GeneratedImportTarget, 2, "GeoservicesImportService creates its generated import table, or job-scoped staging table, and schema inside the import transaction; rollback is the cleanup."),
+            ["src/Honua.Db/Postgres/Features/Infrastructure/GeometryFamilyViews.cs"] =
+                new(RuntimeDdlCategory.GeometryFamilyView, 2, "GeometryFamilyViews owns the marker-commented per-geometry-type views over a mixed source table: created in the layer publish transaction, and dropped and recreated around an import's table swap inside that import's transaction. Views without the marker are never touched."),
             ["src/Honua.Db/Postgres/Features/Migration/PostgresMigrationCatalogWriter.cs"] =
                 new(RuntimeDdlCategory.GeneratedImportTarget, 2, "PostgresMigrationCatalogWriter owns attempt-scoped target creation and catalog rollback."),
             ["src/Honua.Db/Postgres/Features/Geoprocessing/PostgresHonuaLayerSink.cs"] =
@@ -158,5 +160,6 @@ public sealed partial class RuntimeDdlGovernanceTests
         SessionTemporaryTable,
         SessionTemporaryView,
         ExtensionBootstrap,
+        GeometryFamilyView,
     }
 }

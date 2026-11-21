@@ -113,7 +113,7 @@ public class GeometryLimits
     // Segment pairs that may cross, counted before a Geometry Service operation nodes geometries
     // (overlay, union, cut, trim, generalization, repair, relation, offset); a quarter of it for
     // callers that are not signed in.
-    [Range(typeof(long), "1000", "50000000")]
+    [Range(1000d, 50000000d)]
     public long MaxOverlayCandidatePairs { get; set; } = 2000000;
 
     public double? SimplifyTolerance { get; set; }
@@ -183,6 +183,11 @@ public class ConnectionLimits
     public int ConnectionAcquisitionTimeoutSeconds { get; set; } = 5;
 
     public bool AdaptiveConcurrencyEnabled { get; set; }
+
+    // Refuse anonymous expensive reads with a retryable 503 while the query gate is under
+    // pressure. Turn off only where queueing is wanted instead, for example behind an edge that
+    // already admits traffic, or in a fixed-admission benchmark.
+    public bool AnonymousPressureAdmissionEnabled { get; set; } = true;
 
     [Range(1, 1000)]
     public int AdaptiveConcurrencyMinQueries { get; set; } = 1;

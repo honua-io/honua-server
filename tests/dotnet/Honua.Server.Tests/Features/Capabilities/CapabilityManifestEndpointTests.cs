@@ -47,7 +47,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Capabilities;
 
-[Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.Metadata)]
 public sealed partial class CapabilityManifestEndpointTests
@@ -769,234 +768,241 @@ public sealed partial class CapabilityManifestEndpointTests
         publication.GetProperty("reasonCode").GetString().Should().Be("environment-unavailable");
     }
 
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/capabilities/manifest")]
-    public async Task GetManifest_RollbackIgnoresTargetsFromOtherEnvironments()
+    // Rollback cases build their own hosts and share no state, so they run as a separate class
+    // in parallel with the default-application cases.
+    [Protocol(TestProtocols.Infrastructure)]
+    [Operation(Operations.Metadata)]
+    public sealed class RollbackTargets
     {
-        var backend = Substitute.For<IDeployBackend>();
-        backend.BackendName.Returns("test-rollback");
-        backend.TargetKind.Returns(DeployTargetKind.Kubernetes);
-        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(
-            new DeployBackendCapabilities { SupportsRollback = true });
-        var fixture = CreateManifestFixture()
-            .ConfigureServices(services =>
+        [IntegrationTest]
+        [Endpoint("GET /api/v1/capabilities/manifest")]
+        public async Task GetManifest_RollbackIgnoresTargetsFromOtherEnvironments()
+        {
+            var backend = Substitute.For<IDeployBackend>();
+            backend.BackendName.Returns("test-rollback");
+            backend.TargetKind.Returns(DeployTargetKind.Kubernetes);
+            backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(
+                new DeployBackendCapabilities { SupportsRollback = true });
+            var fixture = CreateManifestFixture()
+                .ConfigureServices(services =>
+                {
+                    services.RemoveAll<IDeployBackend>();
+                    services.AddSingleton(backend);
+                    services.AddSingleton(Substitute.For<IWorkflowOperationStore>());
+                    services.Configure<ControlPlaneOptions>(configured => configured.DeployTargets.AddRange(
+                    [
+                        new DeployTargetOptions
+                        {
+                            TargetId = "rollback-prod",
+                            Backend = backend.BackendName,
+                            TargetKind = backend.TargetKind,
+                            Environment = "prod"
+                        }
+                    ]));
+                });
+            await fixture.InitializeAsync();
+
+            try
             {
-                services.RemoveAll<IDeployBackend>();
-                services.AddSingleton(backend);
-                services.AddSingleton(Substitute.For<IWorkflowOperationStore>());
-                services.Configure<ControlPlaneOptions>(configured => configured.DeployTargets.AddRange(
-                [
-                    new DeployTargetOptions
-                    {
-                        TargetId = "rollback-prod",
-                        Backend = backend.BackendName,
-                        TargetKind = backend.TargetKind,
-                        Environment = "prod"
-                    }
-                ]));
-            });
-        await fixture.InitializeAsync();
+                using var client = fixture.CreateAdminClient();
+                using var response = await client.GetAsync(
+                    "/api/v1/capabilities/manifest?environment=test");
+                using var document = await ReadDocumentAsync(response);
 
-        try
-        {
-            using var client = fixture.CreateAdminClient();
-            using var response = await client.GetAsync(
-                "/api/v1/capabilities/manifest?environment=test");
-            using var document = await ReadDocumentAsync(response);
-
-            GetCapability(document.RootElement, "deploy.rollback")
-                .GetProperty("available").GetBoolean().Should().BeFalse(
-                    "the durable store is present but the only rollback target belongs to prod");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/capabilities/manifest")]
-    public async Task GetManifest_RollbackRequiresDurableOperationStore()
-    {
-        var backend = Substitute.For<IDeployBackend>();
-        backend.BackendName.Returns("test-rollback");
-        backend.TargetKind.Returns(DeployTargetKind.Kubernetes);
-        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(
-            new DeployBackendCapabilities { SupportsRollback = true });
-        var fixture = CreateManifestFixture()
-            .ConfigureServices(services =>
+                GetCapability(document.RootElement, "deploy.rollback")
+                    .GetProperty("available").GetBoolean().Should().BeFalse(
+                        "the durable store is present but the only rollback target belongs to prod");
+            }
+            finally
             {
-                services.RemoveAll<IDeployBackend>();
-                services.AddSingleton(backend);
-                services.Configure<ControlPlaneOptions>(configured => configured.DeployTargets.Add(
-                    new DeployTargetOptions
-                    {
-                        TargetId = "rollback-test",
-                        Backend = backend.BackendName,
-                        TargetKind = backend.TargetKind,
-                        Environment = "test"
-                    }));
-            });
-        await fixture.InitializeAsync();
-
-        try
-        {
-            using var client = fixture.CreateAdminClient();
-            using var response = await client.GetAsync(
-                "/api/v1/capabilities/manifest?environment=test");
-            using var document = await ReadDocumentAsync(response);
-
-            GetCapability(document.RootElement, "deploy.rollback")
-                .GetProperty("available").GetBoolean().Should().BeFalse(
-                    "the matching backend supports rollback but no durable operation store is composed");
+                await fixture.DisposeAsync();
+            }
         }
-        finally
+
+        [IntegrationTest]
+        [Endpoint("GET /api/v1/capabilities/manifest")]
+        public async Task GetManifest_RollbackRequiresDurableOperationStore()
         {
-            await fixture.DisposeAsync();
-        }
-    }
+            var backend = Substitute.For<IDeployBackend>();
+            backend.BackendName.Returns("test-rollback");
+            backend.TargetKind.Returns(DeployTargetKind.Kubernetes);
+            backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(
+                new DeployBackendCapabilities { SupportsRollback = true });
+            var fixture = CreateManifestFixture()
+                .ConfigureServices(services =>
+                {
+                    services.RemoveAll<IDeployBackend>();
+                    services.AddSingleton(backend);
+                    services.Configure<ControlPlaneOptions>(configured => configured.DeployTargets.Add(
+                        new DeployTargetOptions
+                        {
+                            TargetId = "rollback-test",
+                            Backend = backend.BackendName,
+                            TargetKind = backend.TargetKind,
+                            Environment = "test"
+                        }));
+                });
+            await fixture.InitializeAsync();
 
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/capabilities/manifest")]
-    public async Task GetManifest_RollbackClaimsAreTargetScoped()
-    {
-        var automatic = RollbackBackend("rollback-auto", supportsRollback: true);
-        var handoff = RollbackBackend("rollback-handoff", supportsRollback: false);
-        var probe = RollbackBackend("rollback-probe", supportsRollback: true, probeFails: true);
-        var store = Substitute.For<IWorkflowOperationStore>();
-        store.GetMostRecentSucceededDeployByTargetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns((WorkflowOperationRecord?)null);
-        store.GetMostRecentSucceededDeployByTargetAsync("auto-prior", Arg.Any<CancellationToken>())
-            .Returns(ProtectedDeploy("auto-prior"));
-
-        var fixture = CreateManifestFixture()
-            .ConfigureServices(services =>
+            try
             {
-                services.RemoveAll<IDeployBackend>();
-                services.AddSingleton(automatic);
-                services.AddSingleton(handoff);
-                services.AddSingleton(probe);
-                services.AddSingleton(store);
-                services.Configure<ControlPlaneOptions>(configured => configured.DeployTargets.AddRange(
-                [
-                    Target("auto-prior", automatic.BackendName, "test"),
-                    Target("auto-none", automatic.BackendName, "test"),
-                    Target("handoff", handoff.BackendName, "test"),
-                    Target("missing", "rollback-absent", "test"),
-                    Target("probe", probe.BackendName, "test"),
-                    Target("other-env", automatic.BackendName, "prod")
-                ]));
-            });
-        await fixture.InitializeAsync();
+                using var client = fixture.CreateAdminClient();
+                using var response = await client.GetAsync(
+                    "/api/v1/capabilities/manifest?environment=test");
+                using var document = await ReadDocumentAsync(response);
 
-        try
-        {
-            using var client = fixture.CreateAdminClient();
-            using var response = await client.GetAsync("/api/v1/capabilities/manifest?environment=test");
-            using var document = await ReadDocumentAsync(response);
-            var rollback = GetCapability(document.RootElement, "deploy.rollback");
-
-            rollback.GetProperty("available").GetBoolean().Should().BeTrue(
-                "one target in the environment has a backend that supports rollback and a restorable prior revision");
-            var claims = rollback.GetProperty("rollbackTargets").EnumerateArray().ToArray();
-            claims.Select(claim => claim.GetProperty("targetId").GetString()).Should().Equal(
-                "auto-prior", "auto-none", "handoff", "missing", "probe");
-            Claim(claims, "auto-prior").GetProperty("executable").GetBoolean().Should().BeTrue();
-            Claim(claims, "auto-prior").GetProperty("reasonCode").GetString().Should().Be("rollback.executable");
-            Claim(claims, "auto-none").GetProperty("state").GetString().Should().Be("no-prior-revision");
-            Claim(claims, "auto-none").GetProperty("executable").GetBoolean().Should().BeFalse();
-            Claim(claims, "handoff").GetProperty("reasonCode").GetString().Should().Be("rollback.handoff-only");
-            Claim(claims, "missing").GetProperty("reasonCode").GetString().Should().Be("rollback.backend-missing");
-            Claim(claims, "probe").GetProperty("reasonCode").GetString().Should().Be("rollback.backend-probe-failed");
-            claims.Should().NotContain(claim => claim.GetProperty("targetId").GetString() == "other-env");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/capabilities/manifest")]
-    public async Task GetManifest_RollbackWithoutPriorRevision_IsNotAvailable()
-    {
-        var automatic = RollbackBackend("rollback-auto", supportsRollback: true);
-        var store = Substitute.For<IWorkflowOperationStore>();
-        store.GetMostRecentSucceededDeployByTargetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns((WorkflowOperationRecord?)null);
-        var fixture = CreateManifestFixture()
-            .ConfigureServices(services =>
+                GetCapability(document.RootElement, "deploy.rollback")
+                    .GetProperty("available").GetBoolean().Should().BeFalse(
+                        "the matching backend supports rollback but no durable operation store is composed");
+            }
+            finally
             {
-                services.RemoveAll<IDeployBackend>();
-                services.AddSingleton(automatic);
-                services.AddSingleton(store);
-                services.Configure<ControlPlaneOptions>(configured => configured.DeployTargets.Add(
-                    Target("auto-none", automatic.BackendName, "test")));
-            });
-        await fixture.InitializeAsync();
-
-        try
-        {
-            using var client = fixture.CreateAdminClient();
-            using var response = await client.GetAsync("/api/v1/capabilities/manifest?environment=test");
-            using var document = await ReadDocumentAsync(response);
-            var rollback = GetCapability(document.RootElement, "deploy.rollback");
-
-            rollback.GetProperty("available").GetBoolean().Should().BeFalse(
-                "SupportsRollback without a restorable prior revision is not an executable rollback");
-            rollback.GetProperty("reasonCode").GetString().Should().Be("rollback.no-executable-target");
-            var claim = rollback.GetProperty("rollbackTargets").EnumerateArray().Single();
-            claim.GetProperty("targetId").GetString().Should().Be("auto-none");
-            claim.GetProperty("executable").GetBoolean().Should().BeFalse();
-            claim.GetProperty("reasonCode").GetString().Should().Be("rollback.prior-revision-missing");
+                await fixture.DisposeAsync();
+            }
         }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
-    }
 
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/capabilities/manifest")]
-    public async Task GetManifest_AnonymousCallerOmitsRollbackTargets()
-    {
-        const string targetId = "rollback-secret-target";
-        var automatic = RollbackBackend("rollback-auto", supportsRollback: true);
-        var store = Substitute.For<IWorkflowOperationStore>();
-        store.GetMostRecentSucceededDeployByTargetAsync(targetId, Arg.Any<CancellationToken>())
-            .Returns(ProtectedDeploy(targetId));
-        var fixture = CreateManifestFixture()
-            .ConfigureServices(services =>
+        [IntegrationTest]
+        [Endpoint("GET /api/v1/capabilities/manifest")]
+        public async Task GetManifest_RollbackClaimsAreTargetScoped()
+        {
+            var automatic = RollbackBackend("rollback-auto", supportsRollback: true);
+            var handoff = RollbackBackend("rollback-handoff", supportsRollback: false);
+            var probe = RollbackBackend("rollback-probe", supportsRollback: true, probeFails: true);
+            var store = Substitute.For<IWorkflowOperationStore>();
+            store.GetMostRecentSucceededDeployByTargetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns((WorkflowOperationRecord?)null);
+            store.GetMostRecentSucceededDeployByTargetAsync("auto-prior", Arg.Any<CancellationToken>())
+                .Returns(ProtectedDeploy("auto-prior"));
+
+            var fixture = CreateManifestFixture()
+                .ConfigureServices(services =>
+                {
+                    services.RemoveAll<IDeployBackend>();
+                    services.AddSingleton(automatic);
+                    services.AddSingleton(handoff);
+                    services.AddSingleton(probe);
+                    services.AddSingleton(store);
+                    services.Configure<ControlPlaneOptions>(configured => configured.DeployTargets.AddRange(
+                    [
+                        Target("auto-prior", automatic.BackendName, "test"),
+                        Target("auto-none", automatic.BackendName, "test"),
+                        Target("handoff", handoff.BackendName, "test"),
+                        Target("missing", "rollback-absent", "test"),
+                        Target("probe", probe.BackendName, "test"),
+                        Target("other-env", automatic.BackendName, "prod")
+                    ]));
+                });
+            await fixture.InitializeAsync();
+
+            try
             {
-                services.RemoveAll<IDeployBackend>();
-                services.AddSingleton(automatic);
-                services.AddSingleton(store);
-                services.Configure<ControlPlaneOptions>(configured => configured.DeployTargets.Add(
-                    Target(targetId, automatic.BackendName, "test")));
-            });
-        await fixture.InitializeAsync();
+                using var client = fixture.CreateAdminClient();
+                using var response = await client.GetAsync("/api/v1/capabilities/manifest?environment=test");
+                using var document = await ReadDocumentAsync(response);
+                var rollback = GetCapability(document.RootElement, "deploy.rollback");
 
-        try
-        {
-            using var anonymous = fixture.CreateClient();
-            using var anonymousResponse = await anonymous.GetAsync("/api/v1/capabilities/manifest?environment=test");
-            using var anonymousDocument = await ReadDocumentAsync(anonymousResponse);
-            var anonymousRollback = GetCapability(anonymousDocument.RootElement, "deploy.rollback");
-            anonymousRollback.GetProperty("supported").ValueKind.Should().Be(JsonValueKind.True);
-            anonymousRollback.TryGetProperty("available", out _).Should().BeTrue();
-            anonymousRollback.TryGetProperty("rollbackTargets", out _).Should().BeFalse();
-            anonymousDocument.RootElement.GetRawText().Should().NotContain(targetId);
-
-            using var admin = fixture.CreateAdminClient();
-            using var adminResponse = await admin.GetAsync("/api/v1/capabilities/manifest?environment=test");
-            using var adminDocument = await ReadDocumentAsync(adminResponse);
-            var claims = GetCapability(adminDocument.RootElement, "deploy.rollback")
-                .GetProperty("rollbackTargets").EnumerateArray().ToArray();
-            claims.Should().Contain(claim => claim.GetProperty("targetId").GetString() == targetId);
+                rollback.GetProperty("available").GetBoolean().Should().BeTrue(
+                    "one target in the environment has a backend that supports rollback and a restorable prior revision");
+                var claims = rollback.GetProperty("rollbackTargets").EnumerateArray().ToArray();
+                claims.Select(claim => claim.GetProperty("targetId").GetString()).Should().Equal(
+                    "auto-prior", "auto-none", "handoff", "missing", "probe");
+                Claim(claims, "auto-prior").GetProperty("executable").GetBoolean().Should().BeTrue();
+                Claim(claims, "auto-prior").GetProperty("reasonCode").GetString().Should().Be("rollback.executable");
+                Claim(claims, "auto-none").GetProperty("state").GetString().Should().Be("no-prior-revision");
+                Claim(claims, "auto-none").GetProperty("executable").GetBoolean().Should().BeFalse();
+                Claim(claims, "handoff").GetProperty("reasonCode").GetString().Should().Be("rollback.handoff-only");
+                Claim(claims, "missing").GetProperty("reasonCode").GetString().Should().Be("rollback.backend-missing");
+                Claim(claims, "probe").GetProperty("reasonCode").GetString().Should().Be("rollback.backend-probe-failed");
+                claims.Should().NotContain(claim => claim.GetProperty("targetId").GetString() == "other-env");
+            }
+            finally
+            {
+                await fixture.DisposeAsync();
+            }
         }
-        finally
+
+        [IntegrationTest]
+        [Endpoint("GET /api/v1/capabilities/manifest")]
+        public async Task GetManifest_RollbackWithoutPriorRevision_IsNotAvailable()
         {
-            await fixture.DisposeAsync();
+            var automatic = RollbackBackend("rollback-auto", supportsRollback: true);
+            var store = Substitute.For<IWorkflowOperationStore>();
+            store.GetMostRecentSucceededDeployByTargetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns((WorkflowOperationRecord?)null);
+            var fixture = CreateManifestFixture()
+                .ConfigureServices(services =>
+                {
+                    services.RemoveAll<IDeployBackend>();
+                    services.AddSingleton(automatic);
+                    services.AddSingleton(store);
+                    services.Configure<ControlPlaneOptions>(configured => configured.DeployTargets.Add(
+                        Target("auto-none", automatic.BackendName, "test")));
+                });
+            await fixture.InitializeAsync();
+
+            try
+            {
+                using var client = fixture.CreateAdminClient();
+                using var response = await client.GetAsync("/api/v1/capabilities/manifest?environment=test");
+                using var document = await ReadDocumentAsync(response);
+                var rollback = GetCapability(document.RootElement, "deploy.rollback");
+
+                rollback.GetProperty("available").GetBoolean().Should().BeFalse(
+                    "SupportsRollback without a restorable prior revision is not an executable rollback");
+                rollback.GetProperty("reasonCode").GetString().Should().Be("rollback.no-executable-target");
+                var claim = rollback.GetProperty("rollbackTargets").EnumerateArray().Single();
+                claim.GetProperty("targetId").GetString().Should().Be("auto-none");
+                claim.GetProperty("executable").GetBoolean().Should().BeFalse();
+                claim.GetProperty("reasonCode").GetString().Should().Be("rollback.prior-revision-missing");
+            }
+            finally
+            {
+                await fixture.DisposeAsync();
+            }
+        }
+
+        [IntegrationTest]
+        [Endpoint("GET /api/v1/capabilities/manifest")]
+        public async Task GetManifest_AnonymousCallerOmitsRollbackTargets()
+        {
+            const string targetId = "rollback-secret-target";
+            var automatic = RollbackBackend("rollback-auto", supportsRollback: true);
+            var store = Substitute.For<IWorkflowOperationStore>();
+            store.GetMostRecentSucceededDeployByTargetAsync(targetId, Arg.Any<CancellationToken>())
+                .Returns(ProtectedDeploy(targetId));
+            var fixture = CreateManifestFixture()
+                .ConfigureServices(services =>
+                {
+                    services.RemoveAll<IDeployBackend>();
+                    services.AddSingleton(automatic);
+                    services.AddSingleton(store);
+                    services.Configure<ControlPlaneOptions>(configured => configured.DeployTargets.Add(
+                        Target(targetId, automatic.BackendName, "test")));
+                });
+            await fixture.InitializeAsync();
+
+            try
+            {
+                using var anonymous = fixture.CreateClient();
+                using var anonymousResponse = await anonymous.GetAsync("/api/v1/capabilities/manifest?environment=test");
+                using var anonymousDocument = await ReadDocumentAsync(anonymousResponse);
+                var anonymousRollback = GetCapability(anonymousDocument.RootElement, "deploy.rollback");
+                anonymousRollback.GetProperty("supported").ValueKind.Should().Be(JsonValueKind.True);
+                anonymousRollback.TryGetProperty("available", out _).Should().BeTrue();
+                anonymousRollback.TryGetProperty("rollbackTargets", out _).Should().BeFalse();
+                anonymousDocument.RootElement.GetRawText().Should().NotContain(targetId);
+
+                using var admin = fixture.CreateAdminClient();
+                using var adminResponse = await admin.GetAsync("/api/v1/capabilities/manifest?environment=test");
+                using var adminDocument = await ReadDocumentAsync(adminResponse);
+                var claims = GetCapability(adminDocument.RootElement, "deploy.rollback")
+                    .GetProperty("rollbackTargets").EnumerateArray().ToArray();
+                claims.Should().Contain(claim => claim.GetProperty("targetId").GetString() == targetId);
+            }
+            finally
+            {
+                await fixture.DisposeAsync();
+            }
         }
     }
 
@@ -1193,30 +1199,38 @@ public sealed partial class CapabilityManifestEndpointTests
         proposals.GetProperty("reasonCode").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
     }
 
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/capabilities/manifest")]
-    public async Task GetManifest_WithNoRedis_ReportsProposalsAvailable()
+    // This host runs the production job worker over the shared job tables, so it runs in the
+    // serial JobSubstrate collection with the other WithProductionJobSubstrate hosts.
+    [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
+    [Protocol(TestProtocols.Infrastructure)]
+    [Operation(Operations.Metadata)]
+    public sealed class ProductionJobSubstrate
     {
-        var fixture = CreateManifestFixture().WithProductionJobSubstrate();
-        await fixture.InitializeAsync();
-
-        try
+        [IntegrationTest]
+        [Endpoint("GET /api/v1/capabilities/manifest")]
+        public async Task GetManifest_WithSystemDatabaseOnly_ReportsProposalsAvailable()
         {
-            fixture.GetService<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>()
-                .Should().BeOfType<Honua.ControlPlane.PostgresOperationProposalStore>();
-            using var client = fixture.CreateAdminClient();
-            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+            var fixture = CreateManifestFixture().WithProductionJobSubstrate();
+            await fixture.InitializeAsync();
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            using var document = await ReadDocumentAsync(response);
-            var proposals = GetCapability(document.RootElement, "operations.proposals");
-            proposals.GetProperty("available").GetBoolean().Should().BeTrue(
-                "proposals live in the system database, so approvals work without Redis");
-            GetCapability(document.RootElement, "jobs.runner").GetProperty("available").GetBoolean().Should().BeTrue();
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
+            try
+            {
+                fixture.GetService<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>()
+                    .Should().BeOfType<Honua.ControlPlane.PostgresOperationProposalStore>();
+                using var client = fixture.CreateAdminClient();
+                using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                using var document = await ReadDocumentAsync(response);
+                var proposals = GetCapability(document.RootElement, "operations.proposals");
+                proposals.GetProperty("available").GetBoolean().Should().BeTrue(
+                    "proposals live in the system database, so approvals need no external store");
+                GetCapability(document.RootElement, "jobs.runner").GetProperty("available").GetBoolean().Should().BeTrue();
+            }
+            finally
+            {
+                await fixture.DisposeAsync();
+            }
         }
     }
 

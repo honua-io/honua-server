@@ -10,6 +10,8 @@ using Honua.Db.Postgres.Features.Raster;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
@@ -46,9 +48,35 @@ public sealed class PostgresRasterStoreCrudTests(PostgresFixture fixture)
         var schemaName = await fixture.CreateIsolatedSchemaAsync("rasterdiscovery");
         try
         {
-            var act = () => CreateStore(schemaName).GetPrimaryRasterInfoAsync(LayerId);
-            await act.Should().ThrowAsync<PostgresException>()
-                .Where(exception => exception.SqlState == PostgresErrorCodes.UndefinedTable);
+            // With postgis_raster installed a missing raster table is a broken schema, not
+            // "no rasters": every lookup that tolerates a feature-only install must still fail.
+            var store = CreateStore(schemaName);
+            Func<Task>[] lookups =
+            [
+                () => store.GetPrimaryRasterInfoAsync(LayerId),
+                () => store.GetRasterInfoAsync(LayerId, 1),
+                () => store.ListRastersAsync(LayerId),
+                () => store.QueryRastersAsync(LayerId, new RasterSelectionQuery { TimeStart = DateTimeOffset.UnixEpoch }),
+                () => store.QueryCatalogAsync(LayerId, new RasterCatalogQuery()),
+                () => store.GetRasterLayerIdAsync(1),
+                () => store.ExportEmptyExtentAsync(LayerId, new RasterQuery
+                {
+                    OutputFormat = RasterFormat.PNG,
+                    OutputWidth = 1,
+                    OutputHeight = 1,
+                    CoverClipExtent = true,
+                    ClipRegion = new RasterClipRegion
+                    {
+                        Geometry = new WKBWriter().Write(new GeometryFactory().ToGeometry(new Envelope(0, 1, 0, 1))),
+                        Srid = 3857,
+                    },
+                }),
+            ];
+            foreach (var act in lookups)
+            {
+                await act.Should().ThrowAsync<PostgresException>()
+                    .Where(exception => exception.SqlState == PostgresErrorCodes.UndefinedTable);
+            }
         }
         finally
         {

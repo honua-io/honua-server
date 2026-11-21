@@ -46,13 +46,22 @@ internal sealed class ImageServerKeyPropertiesHandler
         try
         {
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context) is null)
+            if (ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context) is not { } resolved)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
             var primary = await _rasterStore.GetPrimaryRasterInfoAsync(layerId, cancellationToken);
+            var cogs = primary is null
+                ? await ImageServerCogRasters.ResolveAsync(context, new(snapshot, resolved.Publication, []), cancellationToken).ConfigureAwait(false)
+                : null;
+            if (cogs?.Refusal is { } cogRefusal)
+            {
+                return cogRefusal;
+            }
+
+            primary = cogs?.Rasters is [var cogPrimary, ..] ? cogPrimary : primary;
             if (primary is not { } raster)
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);

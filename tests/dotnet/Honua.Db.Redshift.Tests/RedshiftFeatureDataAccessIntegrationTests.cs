@@ -102,7 +102,7 @@ public sealed class RedshiftFeatureDataAccessIntegrationTests : IAsyncLifetime
         var options = Options.Create(new RedshiftOptions { ConnectionString = connectionString });
         var factory = new RedshiftConnectionFactory(options);
         _dataAccess = new RedshiftFeatureDataAccess(factory, options, NullLogger<RedshiftFeatureDataAccess>.Instance);
-        _store = new RedshiftFeatureStore(_dataAccess);
+        _store = new RedshiftFeatureStore(_dataAccess, new LayerReadSecurityResolver(null, null, null, null));
 
         _mapping = new RedshiftLayerMapping
         {

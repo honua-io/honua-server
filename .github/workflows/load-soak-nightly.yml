@@ -1,8 +1,12 @@
-# Scheduled soak retired by #5314. Qualification uses capacity-soak-candidate.yml
-# at the manifest candidate ref; this manual workflow is diagnostic only.
-name: Load/Soak Diagnostics (manual)
+# Nightly load/soak diagnostics against trunk source. Release qualification still uses
+# capacity-soak-candidate.yml at the manifest candidate ref (#5314); this run reports
+# regressions between candidates and does not produce release evidence.
+name: Load/Soak Diagnostics
 
 on:
+  # 11:30 UTC: clear of the 04:00-07:23 nightly jobs and the 13:23 full run.
+  schedule:
+    - cron: '30 11 * * *'
   workflow_dispatch:
     inputs:
       profile:
@@ -25,7 +29,9 @@ env:
   BASE_URL: 'http://localhost:5000'
   DB_NAME: honua_load
   DB_USER: honua
-  DB_PASSWORD: honua_password
+  # Per-run, not a repository literal: production startup refuses every credential the
+  # repository ships, so the old fixed value stopped the server booting.
+  DB_PASSWORD: load-soak-db-${{ github.run_id }}-${{ github.run_attempt }}
   HONUA_LOAD_MAX_FAILURE_RATE: '0.0001'
 
 permissions:
@@ -60,6 +66,10 @@ jobs:
       # posture is edge rate limiting (ADR-0004); disable the app-level limiter here
       # so the load/soak run measures the server, not the throttle.
       RateLimiting__Enabled: "false"
+      # For the same reason, queue anonymous reads rather than shedding them: under the nightly
+      # profile's single-host flood the pool saturates and anonymous pressure admission refuses
+      # OGC, OData and FeatureServer queries with 503, which measures the shedder, not the server.
+      Limits__Connections__AnonymousPressureAdmissionEnabled: "false"
       Security__DisableHttpsRedirection: "true"
       Security__ConnectionEncryption__MasterKey: "load-soak-master-key-${{ github.run_id }}-${{ github.run_attempt }}-padding0000"
       # Production startup requires the canonical operation policy to be active
@@ -78,14 +88,14 @@ jobs:
       Limits__Connections__MaxConnectionPoolSize: "40"
       Limits__Connections__MinConnectionPoolSize: "0"
       Limits__Connections__ConnectionAcquisitionTimeoutSeconds: "15"
-      ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=honua_load;Username=honua;Password=honua_password;Maximum Pool Size=40
+      ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=honua_load;Username=honua;Password=load-soak-db-${{ github.run_id }}-${{ github.run_attempt }};Maximum Pool Size=40
     services:
       postgres:
         image: postgis/postgis:16-3.4
         env:
           POSTGRES_DB: honua_load
           POSTGRES_USER: honua
-          POSTGRES_PASSWORD: honua_password
+          POSTGRES_PASSWORD: load-soak-db-${{ github.run_id }}-${{ github.run_attempt }}
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
           - 5432:5432

@@ -68,7 +68,6 @@ public sealed class ProcessLocalAdminStoreGuardTests
     }
 }
 
-[Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]
 public sealed class ProcessLocalAdminStoreGuardEndpointTests

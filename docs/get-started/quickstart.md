@@ -108,9 +108,11 @@ The command adds the shipped `compose.console.yaml` overlay to the saved
 override, and enables the Console profile for subsequent quickstart runs. The
 overlay's `console` service is a small HTTPS web server (`console.nginx.conf`) that
 serves the bundle at `/console/` and forwards every other path to the serving API.
-The overlay sets `PUBLIC_BASE_URL` to this HTTPS edge so generated style, source
-and tile URLs share the browser's origin. A later customer Compose file can
-override `PUBLIC_BASE_URL` when the installation uses a different public origin.
+The overlay sets `PUBLIC_BASE_URL` and `HONUA_ADMIN_UI_CORS_ORIGINS` to this HTTPS
+edge so generated style, source, and tile URLs share the browser's origin and
+Studio's browser requests to `/mcp` pass origin validation without colliding with
+customer `Cors__AllowedOrigins__*` entries. A later customer Compose file can
+override both variables when the installation uses a different public origin.
 Browser sign-in sessions, CSRF tokens and the identity-provider callback need one
 HTTPS origin, so Console is not offered over plain HTTP. The certificate is
 self-signed and created locally in `secrets/console_tls_certificate` (key in
@@ -278,11 +280,11 @@ services:
       - ./secrets/keyring.pfx:/var/lib/honua/keyring.pfx:ro
     secrets: [postgres_password, honua_admin_password, honua_audit_chain_key, honua_master_key, honua_keyring_password]
   postgres:
-    image: honua-postgis-proj-grids:17-3.5-3.7.3
+    image: honua-postgis-proj-grids:17-honua-d9df4cd1
     build:
       context: ./docker/proj-grids
       args:
-        BASE_IMAGE: pgrouting/pgrouting:17-3.5-3.7.3
+        BASE_IMAGE: ghcr.io/honua-io/honua-server@sha256:d9df4cd19ac018b1e626d7c74a1400d7affb8de48dbe5ed67a862589c4e3d998
     pull_policy: missing
     environment:
       POSTGRES_DB: honua
@@ -299,6 +301,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
+      # The first start on a volume from an older database image rebuilds text indexes first.
+      start_period: 60m
     restart: unless-stopped
 volumes:
   postgres:
@@ -610,8 +614,9 @@ git clone --depth 1 https://github.com/honua-io/honua-server.git honua-server-de
 
 The development stack is a separate Compose project with its own database. It
 publishes `127.0.0.1` ports `8080`, `8081`, `5432` and `5174`, so those must
-be free; the quickstart above keeps `18080` and `18081`. Its admin password is the
-public development default, which is why every port binds to loopback only.
+be free; the quickstart above keeps `18080` and `18081`. Its admin API key is
+generated per install and stored as `HONUA_ADMIN_PASSWORD` in `honua-server-dev/.env`;
+every port still binds to loopback only.
 
 Open the development Console at `http://localhost:5174` (or its configured `HONUA_CONSOLE_PORT`)
 and use Studio to author maps, save and reopen versions, and request publication.

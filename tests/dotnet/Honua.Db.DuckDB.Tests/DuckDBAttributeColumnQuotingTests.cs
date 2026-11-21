@@ -3,6 +3,7 @@
 
 using DuckDB.NET.Data;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Db.DuckDB.Features.FeatureStore;
 using Honua.Db.DuckDB.Features.FeatureStore.Services;
 using Honua.Db.DuckDB.Features.Infrastructure;
@@ -188,7 +189,8 @@ public sealed class DuckDBAttributeColumnQuotingTests : IAsyncLifetime
                 registry,
                 null,
                 NullLogger<DuckDBFeatureDataAccess>.Instance),
-            new DuckDBFeatureCacheManager(registry));
+            new DuckDBFeatureCacheManager(registry),
+            new LayerReadSecurityResolver(null, null, null, null));
     }
 
     private static async Task ExecuteAsync(DuckDBConnection connection, string sql)

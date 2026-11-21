@@ -106,7 +106,7 @@ class CandidateBindingTests(unittest.TestCase):
             "recovery": {"substrates": [{"store": store, "original_destroyed": True,
                                          "restored_into_empty_store": True,
                                          "files_before": "checksum file", "files_after": "checksum file"}
-                                        for store in ("postgres", "gp-output")]}}
+                                        for store in ("postgres", "data-protection-keys", "gp-output")]}}
         self.assertEqual(pin, binding.verify(pin, summary)["candidate"])
         with self.assertRaisesRegex(ValueError, "another candidate"):
             binding.verify({**pin, "server_image": "server@sha256:" + "4" * 64}, summary)

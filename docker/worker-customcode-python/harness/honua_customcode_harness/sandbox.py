@@ -17,6 +17,7 @@ from typing import Any
 STRIPPED_ENV_VARS: frozenset[str] = frozenset(
     {
         "HONUA_JOB_TOKEN",
+        "HONUA_JOB_REDEMPTION_CODE",
         "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
         "AWS_CONTAINER_CREDENTIALS_FULL_URI",
         "AWS_CONTAINER_AUTHORIZATION_TOKEN",

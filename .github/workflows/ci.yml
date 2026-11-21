@@ -504,15 +504,18 @@ jobs:
               echo "non_test_changes=true" >> $GITHUB_OUTPUT
             fi
 
+            # Repository metadata that no build, test or package reads;
+            # scripts/ci/trailing_selection.py REPO_METADATA keeps the same list.
+            REPO_METADATA='\.github/(codeql/|ISSUE_TEMPLATE/|CODEOWNERS$|actionlint\.yaml$|dependabot\.yml$|hygiene\.json$|pull_request_template\.md$)'
             BUILD_FILES=$(
               printf '%s\n' "$CHANGED_FILES" \
-                | grep -Ev '^($|docs/|README\.md$|\.github/(workflows/[^/]+\.yml$|ci-shards\.json$)|scripts/ci/)' \
+                | grep -Ev -e '^($|docs/|README\.md$|\.github/(workflows/[^/]+\.yml$|ci-shards\.json$)|scripts/ci/)' -e "^${REPO_METADATA}" \
                 | sed '/^$/d' || true
             )
 
             INTEGRATION_FILES=$(
               printf '%s\n' "$CHANGED_FILES" \
-                | grep -Ev '^($|docs/|README\.md$|\.github/(actions/setup-dotnet-ci/|workflows/[^/]+\.yml$|ci-shards\.json$)|scripts/ci/|NuGet\.config$|src/Honua\.Core/Honua\.Core\.csproj$)' \
+                | grep -Ev -e '^($|docs/|README\.md$|\.github/(actions/setup-dotnet-ci/|workflows/[^/]+\.yml$|ci-shards\.json$)|scripts/ci/|NuGet\.config$|src/Honua\.Core/Honua\.Core\.csproj$)' -e "^${REPO_METADATA}" \
                 | sed '/^$/d' || true
             )
 
@@ -731,46 +734,21 @@ jobs:
           python3 scripts/ci/check-doc-links.test.py
           python3 scripts/ci/check-doc-links.py
 
+  # Trunk dispatches and schedules build on an idle honua-heavy runner (8 vCPU)
+  # when the build-host heartbeat leaves two heavy runners free for PR Gate;
+  # otherwise, and for every read failure, the producer stays hosted.
   producer-runner:
     name: CI producer / Runner select
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
     needs: changes
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    uses: ./.github/workflows/advisory-runner-select.yml
     permissions:
       contents: read
       id-token: write
-    outputs:
-      runner: ${{ steps.select.outputs.runner || 'ubuntu-latest' }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: vars.HONUA_CI_PRODUCER_RUNNER == 'honua-build' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository)
-        continue-on-error: true
-        timeout-minutes: 1
-        with:
-          sparse-checkout: |
-            scripts/ci/select-ci-producer-runner.sh
-            scripts/ci/gate-runner-heartbeat.sh
-          sparse-checkout-cone-mode: false
-      - name: Assume producer readiness read role
-        if: vars.HONUA_CI_PRODUCER_RUNNER == 'honua-build' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository)
-        continue-on-error: true
-        timeout-minutes: 1
-        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6
-        with:
-          role-to-assume: ${{ secrets.HONUA_CI_PRODUCER_READ_ROLE_ARN }}
-          aws-region: ${{ vars.HONUA_PR_GATE_RUNNER_REGION }}
-          mask-aws-account-id: true
-          retry-max-attempts: 1
-      - name: Select producer compute without waking or waiting
-        id: select
-        if: vars.HONUA_CI_PRODUCER_RUNNER == 'honua-build' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository)
-        continue-on-error: true
-        timeout-minutes: 1
-        env:
-          HONUA_CI_PRODUCER_RUNNER: ${{ vars.HONUA_CI_PRODUCER_RUNNER }}
-          HONUA_CI_PRODUCER_TRUSTED: ${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) }}
-        run: bash scripts/ci/select-ci-producer-runner.sh
+    with:
+      hosted-runner: ubuntu-latest
+    secrets:
+      wake-role: ${{ secrets.HONUA_PR_GATE_WAKE_ROLE_ARN }}
 
   build:
     name: Build & Format Check
@@ -779,12 +757,18 @@ jobs:
     outputs:
       producer_attempt: ${{ steps.managed-publish.outputs.producer-attempt }}
       managed_sdk_version: ${{ steps.managed-sdk.outputs.dotnet-sdk-version }}
-    runs-on: ${{ needs.producer-runner.outputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ fromJSON(needs.producer-runner.outputs.runner || '"ubuntu-latest"') }}
     timeout-minutes: 60
     env:
       DOTNET_PROCESSOR_COUNT: '4'
       DOTNET_CLI_USE_MSBUILD_SERVER: 'false'
       MSBUILDDISABLENODEREUSE: '1'
+      # Selective (affected) dispatches compile without analyzers: PR Gate's
+      # analyzer partitions proved each landed PR and Format Check below still
+      # runs dotnet format. Scheduled and full runs keep the analyzer build.
+      # Protocol-profile builds analyze Honua.Server; build-selected-protocol-
+      # profiles.py reads this variable to reuse the no-analyzer references.
+      PRODUCER_RUN_ANALYZERS: ${{ needs.changes.outputs.full_ci == 'true' && 'true' || 'false' }}
     steps:
       - name: Place the producer SDK in the runner temp directory
         run: echo "DOTNET_INSTALL_DIR=$RUNNER_TEMP/honua-ci-producer-sdk" >> "$GITHUB_ENV"
@@ -801,12 +785,12 @@ jobs:
       # before .NET setup and restore so runner diagnostics keep enough space.
       - name: Free disk space
         if: runner.environment == 'github-hosted'
+        # Detached: about 88 GB is free before cleanup (107 GB after), so the
+        # build need not wait 1-7.5 min (once a 28 min hang) for rm to finish.
         run: |
-          sudo rm -rf /usr/local/lib/android || true
-          sudo rm -rf /usr/share/swift || true
-          sudo rm -rf /usr/local/.ghcup || true
-          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
           df -h / || true
+          sudo -n setsid rm -rf /usr/local/lib/android /usr/share/swift /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL < /dev/null > /dev/null 2>&1 &
 
       - name: Setup .NET
         id: managed-sdk
@@ -847,7 +831,11 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
           echo "::notice::Warnings-as-errors build mode: ${mode}${projects:+ (${projects})}"
-          python3 scripts/ci/protocol-profile-selection.py --dry-run --changed-from-git > "${RUNNER_TEMP}/protocol-profiles.json"
+          # On trunk, full and scheduled runs compare trunk with itself, so a
+          # range selection may build only the default profile; they build all.
+          profile_scope=--changed-from-git
+          if [[ "${FULL_CI}" == true ]]; then profile_scope=--all; fi
+          python3 scripts/ci/protocol-profile-selection.py --dry-run "${profile_scope}" > "${RUNNER_TEMP}/protocol-profiles.json"
           cat "${RUNNER_TEMP}/protocol-profiles.json"
 
       - name: Download selected shard matrix
@@ -878,12 +866,12 @@ jobs:
       - name: Restore producer build graph
         env:
           BUILD_TARGET: ${{ steps.managed-plan.outputs.target }}
-        run: scripts/ci/dotnet-restore-retry.sh "${BUILD_TARGET}" -p:Configuration=Release -maxcpucount:4 -p:TreatWarningsAsErrors=true -p:RunAnalyzers=true -p:UseSharedCompilation=false
+        run: scripts/ci/dotnet-restore-retry.sh "${BUILD_TARGET}" -p:Configuration=Release -maxcpucount:4 -p:TreatWarningsAsErrors=true -p:RunAnalyzers="${PRODUCER_RUN_ANALYZERS}" -p:UseSharedCompilation=false
 
       - name: Build (warnings as errors)
         env:
           BUILD_TARGET: ${{ steps.managed-plan.outputs.target }}
-        run: dotnet build "${BUILD_TARGET}" --no-restore --configuration Release -graphBuild -maxcpucount:4 -p:TreatWarningsAsErrors=true -p:RunAnalyzers=true -p:UseSharedCompilation=false
+        run: dotnet build "${BUILD_TARGET}" --no-restore --configuration Release -graphBuild -maxcpucount:4 -p:TreatWarningsAsErrors=true -p:RunAnalyzers="${PRODUCER_RUN_ANALYZERS}" -p:UseSharedCompilation=false
 
       - name: Build selected standalone tooling projects
         run: >-
@@ -992,12 +980,12 @@ jobs:
       # Reclaim runner disk before the build + coverage run; the modular
       # topology pushed some runners over the free-disk limit. Best-effort.
       - name: Free disk space
+        if: runner.environment == 'github-hosted'
+        # Detached for the same reason as the producer's cleanup.
         run: |
-          sudo rm -rf /usr/local/lib/android || true
-          sudo rm -rf /usr/share/swift || true
-          sudo rm -rf /usr/local/.ghcup || true
-          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
           df -h / || true
+          sudo -n setsid rm -rf /usr/local/lib/android /usr/share/swift /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL < /dev/null > /dev/null 2>&1 &
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -1262,8 +1250,10 @@ jobs:
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.targeted-shards.outputs.schedule_shards != 'false' }}
     # Keep one matrix on one pool: hosted jobs waiting for capacity also occupy
     # max-parallel slots and can prevent idle heavy runners from receiving work.
-    # Fork code stays on the existing fallback.
-    runs-on: ${{ vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
+    # Full runs (the run-name rule) take standard hosted runners, free for this
+    # public repository; affected runs keep the heavy pool. Fork code stays on
+    # the existing fallback.
+    runs-on: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' && (inputs.full_ci || !inputs.selective_base)) && 'ubuntu-latest' || vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     # Explicit producer dependency; only unmaterialized projects compile here.
     needs: [changes, targeted-shards, build]
     timeout-minutes: ${{ matrix.timeout_minutes }}
@@ -1326,10 +1316,12 @@ jobs:
         run: scripts/ci/server-test-shard-free-disk.sh
 
       - name: Setup .NET
+        id: setup-dotnet
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           artifact-sdk-version: ${{ needs.build.outputs.managed_sdk_version }}
+          host-package-fallback: 'true'
 
       - name: Select shard managed outputs
         env:
@@ -1459,13 +1451,23 @@ jobs:
       - name: Create Test Results Directory
         run: mkdir -p ./artifacts/test-results
 
+      # Consumed obj folders name the producer's ~/.nuget/packages. With the host fallback that
+      # folder is mostly empty, so a fully consumed shard still re-checks its package imports
+      # here; the check restores only projects whose packages are missing and compiles nothing.
       - name: Build server test binaries
         id: shard-cache-build
-        if: steps.managed-status.outputs.restored != 'true' && steps.shard-cache-materialize.outputs.restored != 'true'
+        if: (steps.managed-status.outputs.restored != 'true' || steps.setup-dotnet.outputs.host-package-fallback-used == 'true') && steps.shard-cache-materialize.outputs.restored != 'true'
         timeout-minutes: 20
         env:
           RESTORED_PROJECTS: ${{ steps.managed-consume.outputs.restored-projects-file }}
         run: python3 scripts/ci/managed-test-build.py fallback --projects-file "${RUNNER_TEMP}/shard-projects.json" --restored-file "${RESTORED_PROJECTS}"
+
+      # An exact-head cache payload carries the obj of the job that wrote it, which may name a
+      # package folder this runner lacks; re-check its imports the same way (restore only).
+      - name: Re-check package imports of cached shard binaries
+        if: steps.setup-dotnet.outputs.host-package-fallback-used == 'true' && steps.shard-cache-materialize.outputs.restored == 'true'
+        timeout-minutes: 10
+        run: python3 scripts/ci/managed-test-build.py fallback --projects-file "${RUNNER_TEMP}/shard-projects.json" --restored-file "${RUNNER_TEMP}/shard-projects.json"
 
       - name: Package shard-local cache payload
         id: shard-cache-package
@@ -2532,6 +2534,10 @@ jobs:
     needs: [build, changes, core-package-compatibility, postgres-compat]
     timeout-minutes: 15
     env:
+      # Full run 44183857476 died in the pinned SDK TypeScript build at Node's
+      # default ~2 GB heap. This job pins Node 22.23.3; that default still applies.
+      # Hosted runners have 16 GB.
+      NODE_OPTIONS: --max-old-space-size=4096
       HONUA_MCP_CERT_TARGET: standalone
       HONUA_BASE_URL: http://localhost:5000
       HONUA_TRANSPORT: ${{ matrix.transport }}
@@ -2656,6 +2662,12 @@ jobs:
     needs: mcp-certification
     continue-on-error: true
     timeout-minutes: 10
+    # The Bedrock role trusts only this environment; jobs assume it through OIDC, never a stored key.
+    environment: bedrock-smoke
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
     services:
       postgres:
         image: mirror.gcr.io/postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
@@ -2703,22 +2715,21 @@ jobs:
         if: steps.setup.outputs.smoke-available == 'true'
         shell: bash
         env:
-          BEDROCK_AWS_ACCESS_KEY_ID: ${{ secrets.BEDROCK_AWS_ACCESS_KEY_ID }}
-          BEDROCK_AWS_SECRET_ACCESS_KEY: ${{ secrets.BEDROCK_AWS_SECRET_ACCESS_KEY }}
+          BEDROCK_ROLE_ARN: ${{ vars.HONUA_BEDROCK_SMOKE_ROLE_ARN }}
         run: |
-          if [[ -n "$BEDROCK_AWS_ACCESS_KEY_ID" && -n "$BEDROCK_AWS_SECRET_ACCESS_KEY" ]]; then
+          if [[ -n "$BEDROCK_ROLE_ARN" ]]; then
             echo "available=true" >> "$GITHUB_OUTPUT"
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::BEDROCK_AWS_* secrets are not configured; MCP LLM smoke will run without the live Bedrock driver."
+            echo "::notice::HONUA_BEDROCK_SMOKE_ROLE_ARN is not set; MCP LLM smoke will run without the live Bedrock driver."
           fi
 
       - name: Configure AWS credentials for Bedrock smoke
         if: steps.bedrock.outputs.available == 'true'
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          aws-access-key-id: ${{ secrets.BEDROCK_AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.BEDROCK_AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ vars.HONUA_BEDROCK_SMOKE_ROLE_ARN }}
+          role-session-name: honua-mcp-llm-smoke
           aws-region: ${{ vars.HONUA_MCP_SMOKE_AWS_REGION || 'us-west-2' }}
 
       - name: Run MCP LLM Smoke Tests
@@ -2899,7 +2910,7 @@ jobs:
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.core_package == 'true' }}
     runs-on: ${{ vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     needs: changes
-    # Packing both frameworks and cold-building the full server exceeded 10 minutes.
+    # Packing the plug-in contracts and cold-building the full server exceeded 10 minutes.
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -2938,7 +2949,7 @@ jobs:
       - name: Test package integration
         run: |
           package_version="0.0.0-ci.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
-          for framework in net10.0 net11.0; do
+          framework="$(scripts/ci/honua-target-framework.sh)"
           consumer_dir="$(mktemp -d)"
           cat > "${consumer_dir}/PackageConsumer.csproj" <<EOF
           <Project Sdk="Microsoft.NET.Sdk">
@@ -3006,7 +3017,6 @@ jobs:
           dotnet build --configuration Release
           popd >/dev/null
           rm -rf "${consumer_dir}"
-          done
 
       - name: Validate server compatibility
         run: |
@@ -3390,7 +3400,8 @@ jobs:
   # Scheduled runtime coverage shares the full-CI managed build producer.
   runtime-proofs:
     name: Full CI / Runtime proofs
-    needs: build
+    if: ${{ success() && (needs.changes.outputs.full_ci == 'true' || fromJson(needs.changes.outputs.specialized_lanes).runtime) }}
+    needs: [build, changes]
     runs-on: ${{ vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 75
     steps:
@@ -3663,6 +3674,7 @@ jobs:
       - name: Check required job results
         env:
           REQUIRE_MANAGED_BUILD: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
+          REQUIRE_RUNTIME_PROOFS: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') && (needs.changes.outputs.full_ci == 'true' || fromJson(needs.changes.outputs.specialized_lanes).runtime) }}
           REQUIRE_FORMAT: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.build_changes == 'true' }}
           REQUIRE_STORE_IMAGES: ${{ (github.event_name == 'workflow_dispatch' && inputs.full_ci == true) || github.event_name == 'schedule' }}
           RUNTIME_PROOFS_RESULT: ${{ needs.runtime-proofs.result }}
@@ -3676,7 +3688,7 @@ jobs:
             echo "::error::Selected managed producer must succeed, got ${BUILD_RESULT}."
             exit 1
           fi
-          if [[ "${REQUIRE_MANAGED_BUILD}" == true && "${RUNTIME_PROOFS_RESULT}" != success ]]; then
+          if [[ "${REQUIRE_RUNTIME_PROOFS}" == true && "${RUNTIME_PROOFS_RESULT}" != success ]]; then
             echo "::error::Selected runtime proofs must succeed, got ${RUNTIME_PROOFS_RESULT}."
             exit 1
           fi

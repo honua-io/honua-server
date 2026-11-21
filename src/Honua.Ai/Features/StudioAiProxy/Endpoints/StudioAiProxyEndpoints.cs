@@ -15,6 +15,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.RateLimiting;
+using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Security.Admission;
 using Microsoft.Extensions.Options;
 
@@ -124,11 +125,19 @@ internal static class StudioAiProxyEndpoints
         // mapper rather than stitched into a rebuilt request: rebuilding drops the accepted request
         // bytes the transcript signature binds, silently downgrading provenance to a re-serialization.
         string? certificationTenantId = null;
+        string? certificationActorId = null;
         if (httpRequest.Certification is not null)
         {
             if (!tenantContext.RequireTenantId(out var tenantId, out _))
             {
                 return BadRequest(context, "A resolved tenant is required for a certification request.");
+            }
+
+            // The signed transcript names its requester so only that actor can present it as proposal evidence.
+            certificationActorId = CanonicalSecurityActor.Resolve(context.User)?.ActorId;
+            if (string.IsNullOrWhiteSpace(certificationActorId))
+            {
+                return Results.Forbid();
             }
 
             certificationTenantId = tenantId;
@@ -138,7 +147,8 @@ internal static class StudioAiProxyEndpoints
             httpRequest,
             allowCallerOverrides,
             acceptedRequestJson,
-            certificationTenantId);
+            certificationTenantId,
+            certificationActorId);
         if (mappingError is not null || domainRequest is null)
         {
             return BadRequest(context, mappingError ?? "Invalid request.");

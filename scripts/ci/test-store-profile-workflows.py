@@ -8,6 +8,42 @@ import unittest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
+_RELEASE_REPOSITORY = 'ghcr.io/honua-io/honua-server@'
+_RELEASE_PLATFORM_DIGEST = 'sha256:' + 'a' * 64
+_RELEASE_REQUESTED_DIGEST = 'sha256:' + 'b' * 64
+_RELEASE_PULL_IDS = (_RELEASE_REPOSITORY, _RELEASE_PLATFORM_DIGEST, _RELEASE_REQUESTED_DIGEST)
+_RELEASE_DOCKER = '''docker() {
+  if [[ "${1-}" == login ]]; then cat >/dev/null; return 0; fi
+  if [[ "${1-} ${2-} ${3-} ${4-}" == "buildx imagetools inspect --raw" ]]; then printf '%s' "$SOURCE_MANIFEST"; return 0; fi
+  if [[ "${1-}" == pull ]]; then return 0; fi
+  if [[ "${1-} ${2-}" == "image inspect" ]]; then printf '%s' "$INSPECT_JSON"; return 0; fi
+  echo "unexpected docker $*" >&2
+  return 1
+}
+'''
+
+
+def _run_release_pull():
+    revision = 'e' * 40
+    index = {'mediaType': 'application/vnd.oci.image.index.v1+json', 'manifests': [
+        {'mediaType': 'application/vnd.oci.image.manifest.v1+json', 'digest': _RELEASE_PLATFORM_DIGEST,
+         'platform': {'os': 'linux', 'architecture': 'amd64'}}]}
+    inspected = [{'RepoDigests': [_RELEASE_REPOSITORY + _RELEASE_PLATFORM_DIGEST],
+                  'Os': 'linux', 'Architecture': 'amd64', 'Id': 'sha256:' + 'c' * 64,
+                  'Config': {'Labels': {'org.opencontainers.image.revision': revision}}}]
+    with tempfile.TemporaryDirectory() as directory:
+        work = Path(directory)
+        (work / 'scripts').symlink_to(ROOT / 'scripts', target_is_directory=True)
+        environment = dict(os.environ, SCAN_IMAGE=_RELEASE_REPOSITORY + _RELEASE_REQUESTED_DIGEST,
+                           SCAN_PLATFORM='linux/amd64', SCAN_REVISION=revision,
+                           SOURCE_MANIFEST=json.dumps(index), INSPECT_JSON=json.dumps(inspected),
+                           REGISTRY_TOKEN='unused', GITHUB_ACTOR='actor', RUNNER_TEMP=str(work),
+                           GITHUB_ENV=str(work / 'env'), GITHUB_SERVER_URL='https://github.com',
+                           GITHUB_REPOSITORY='honua-io/honua-server', GITHUB_RUN_ID='1')
+        subprocess.run(['bash', '-c', _RELEASE_DOCKER + 'export -f docker\nbash scripts/security/bind-platform-image.sh'],
+                       cwd=work, env=environment, check=True)
+        identity = json.loads((work / 'existing-image-identity.json').read_text())
+        return (work / 'env').read_text(), identity, (work / 'requested-manifest.json').is_file()
 
 
 def workflow(name):
@@ -121,6 +157,30 @@ class StoreProfileWorkflowTests(unittest.TestCase):
                 self.assertEqual((work / 'release-test.attestation-free-ref.txt').read_text().strip(),
                                  repository + platform_digest)
 
+    def test_release_scan_keeps_the_published_digest_in_the_vex_document(self):
+        steps = workflow('release-security-assets.yml')['jobs']['assets']['steps']
+        pull = next(step['run'] for step in steps
+                    if step.get('name') == 'Pull the release image and bind its identity')
+        vex = next(step['run'] for step in steps
+                   if step.get('name') == 'Generate the release OpenVEX document')
+        trivy = next(step for step in steps if step.get('name') == 'Scan with the release VEX applied')
+        self.assertIn('bash scripts/security/bind-platform-image.sh', pull)
+        self.assertIn('--image "$SCAN_IMAGE"', vex)
+        self.assertIn('"$PLATFORM_REF" != "$SCAN_IMAGE"', vex)
+        script = (ROOT / 'scripts/security/bind-platform-image.sh').read_text()
+        persisted = script.split('>> "$GITHUB_ENV"', 1)[0].rsplit('{', 1)[1]
+        self.assertEqual(['echo "REQUESTED_IMAGE=$requested"', 'echo "RESOLVED_IMAGE=$resolved"'],
+                         [line.strip() for line in persisted.splitlines() if line.strip() and line.strip() != '}'])
+        self.assertEqual(trivy['with']['image-ref'], '${{ env.RESOLVED_IMAGE }}')
+        saved, identity, manifest = _run_release_pull()
+        repository, platform_digest, requested_digest = _RELEASE_PULL_IDS
+        self.assertIn('RESOLVED_IMAGE=' + repository + platform_digest, saved)
+        self.assertIn('REQUESTED_IMAGE=' + repository + requested_digest, saved)
+        self.assertNotIn('SCAN_IMAGE=', saved)
+        self.assertEqual(repository + platform_digest, identity['image'])
+        self.assertEqual(repository + requested_digest, identity['requestedImage'])
+        self.assertTrue(manifest)
+
     def test_shell_free_consumers_use_native_probe_and_external_http(self):
         jobs = workflow('security-nightly.yml')['jobs']
         steps = next(job['steps'] for job in jobs.values()
@@ -143,7 +203,7 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertIn('Publish pristine managed test outputs', producer_names)
         self.assertIn('Honua.Server boot + migrations smoke', producer_names)
         consumer = workflow('ci.yml')['jobs']['runtime-proofs']
-        self.assertEqual(consumer['needs'], 'build')
+        self.assertEqual(consumer['needs'], ['build', 'changes'])
         steps = consumer['steps']
         names = [step.get('name', '') for step in steps]
         verify = steps[names.index(verify_name)]
@@ -155,7 +215,7 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertEqual(verify['env']['HONUA_EXPECTED_STORE_PROFILE'], 'postgis')
         self.assertNotIn('if', verify)
 
-    def test_store_measurement_uses_heavy_runner_and_separate_profile_caches(self):
+    def test_store_measurement_uses_heavy_runner_and_read_only_profile_cache(self):
         jobs = workflow('store-image-size.yml')['jobs']
         job = jobs['measure']
         selector = jobs['runner-select']
@@ -165,8 +225,8 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertEqual(job['runs-on'], "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(needs.runner-select.outputs.runner || '\"ubuntu-24.04\"') || 'ubuntu-latest' }}")
         self.assertIn('always() && !cancelled()', job['if'])
         admission = workflow('advisory-runner-select.yml')['jobs']['select']
-        self.assertIn('head.repo.full_name == github.repository', admission['runs-on'])
-        self.assertIn('fromJSON(vars.HONUA_LIGHT_RUNNER)', admission['runs-on'])
+        # honua-light hosts only offer the snap AWS CLI, which cannot start in the runner sandbox.
+        self.assertEqual(admission['runs-on'], 'ubuntu-latest')
         budgets = re.fullmatch(
             r"\$\{\{ matrix.compilation == 'aot' && (\d+) \|\| (\d+) \}\}",
             job['timeout-minutes'])
@@ -178,9 +238,28 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertGreater(jit_minutes, 0)
         self.assertLessEqual(jit_minutes, 30)
         build = next(step for step in job['steps'] if step.get('name') == 'Build serving image')
-        self.assertIn('matrix.profile', build['with']['cache-to'])
-        self.assertIn('matrix.compilation', build['with']['cache-to'])
-        self.assertIn('mode=max', build['with']['cache-to'])
+        self.assertEqual(
+            build['with']['cache-from'],
+            'type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:${{ matrix.cache_scope }}')
+        # Per-commit compiler layers are never reused; exporting them only
+        # lengthened every measurement and filled the Actions cache quota.
+        for step in job['steps']:
+            self.assertNotIn('cache-to', step.get('with', {}), step.get('name'))
+
+    def test_store_measurement_builder_keeps_its_cache_between_solves(self):
+        steps = workflow('store-image-size.yml')['jobs']['measure']['steps']
+        setup = next(step for step in steps if step.get('uses', '').startswith('docker/setup-buildx-action@'))
+        config = setup.get('with', {}).get('buildkitd-config-inline', '')
+        self.assertEqual([line.strip() for line in config.splitlines()], ['[worker.oci]', 'gc = false'])
+        self.assertNotIn('cleanup', setup.get('with', {}))
+
+    def test_store_script_tests_run_in_one_measurement_leg(self):
+        job = workflow('store-image-size.yml')['jobs']['measure']
+        legs = [(leg['profile'], leg['compilation']) for leg in job['strategy']['matrix']['include']]
+        self.assertEqual(legs.count(('postgis', 'jit')), 1)
+        tests = next(step for step in job['steps'] if step.get('name') == 'Test measurement and health probe')
+        self.assertEqual(tests.get('if'), "matrix.profile == 'postgis' && matrix.compilation == 'jit'")
+        self.assertNotIn('matrix.', tests['run'])
 
     def test_store_matrix_jobs_use_isolated_local_images(self):
         job = workflow('store-image-size.yml')['jobs']['measure']

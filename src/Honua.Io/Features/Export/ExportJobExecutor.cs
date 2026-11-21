@@ -93,7 +93,7 @@ internal sealed class ExportJobExecutor(
 
     private async Task<JobExecutionResult> ExportAsync(ExportRun run, CancellationToken cancellationToken)
     {
-        Directory.CreateDirectory(run.ScratchDir);
+        ExportScratch.Create(run.ScratchDir);
         using var activity = StartActivity(run.Request);
         await using var scope = scopeFactory.CreateAsyncScope();
         var cloudStorage = scope.ServiceProvider.GetRequiredService<ICloudFileStorage>();

@@ -465,6 +465,23 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.DownloadAttachment)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}")]
+    public async Task DownloadAttachment_IsNeverRenderedInline()
+    {
+        // Stored content types are client-supplied: downloads must force a file save and forbid
+        // MIME sniffing so markup in an attachment never runs in the server's origin.
+        var attachmentId = await AddAttachmentAsync("<b>note</b>"u8.ToArray(), "note.txt", "text/plain");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments/{attachmentId}");
+
+        response.BeSuccessful();
+        response.Content.Headers.ContentDisposition!.DispositionType.Should().Be("attachment");
+        response.Headers.GetValues("X-Content-Type-Options").Should().Equal("nosniff");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.AddAttachment)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public async Task AddAttachment_WithInvalidMimeType_Returns400()

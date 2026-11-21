@@ -5,6 +5,7 @@ using System.Net;
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Tests.ParquetUnitSupport;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using System.Text.Json;
@@ -97,7 +98,7 @@ public sealed class MapServerSpatialReferenceTests : MapServerEndpointTestBase
             }
             else
             {
-                using var reader = new ParquetSharp.Arrow.FileReader(stream);
+                using var reader = ArrowParquetTestReader.Open(stream);
                 using var batches = reader.GetRecordBatchReader();
                 using var batch = await batches.ReadNextRecordBatchAsync();
                 AssertGeographicPoint(batch!);

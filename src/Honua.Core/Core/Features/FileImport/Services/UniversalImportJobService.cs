@@ -12,6 +12,7 @@ using Honua.Core.Features.Import.ObjectStore;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.ObjectStorage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -278,11 +279,15 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             using var scope = _scopeFactory.CreateScope();
             if (request.UsesObjectStore)
             {
-                var reader = scope.ServiceProvider.GetRequiredService<IImportObjectStoreReader>();
-                var cloud = scope.ServiceProvider.GetService<ICloudFileStorage>();
-                var storeOptions = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<ImportObjectStoreOptions>>().Value;
                 var materialized = await ImportObjectStoreMaterializer.MaterializeAsync(
-                    request, reader, cloud, storeOptions, cancellationToken).ConfigureAwait(false);
+                    new ImportObjectStoreMaterializer.Source
+                    {
+                        Request = request,
+                        Reader = scope.ServiceProvider.GetRequiredService<IImportObjectStoreReader>(),
+                        Connections = scope.ServiceProvider.GetRequiredService<IObjectStorageConnectionResolver>(),
+                        CloudStorage = scope.ServiceProvider.GetService<ICloudFileStorage>(),
+                    },
+                    cancellationToken).ConfigureAwait(false);
                 request = materialized.Request;
                 if (materialized.DisposeStream)
                 {

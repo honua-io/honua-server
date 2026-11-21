@@ -117,6 +117,12 @@
         "responses": {
           "200": {
             "description": "Stylesheet",
+            "headers": {
+              "ETag": {
+                "description": "Strong entity tag of the stored style revision",
+                "schema": { "type": "string" }
+              }
+            },
             "content": {
               "application/vnd.mapbox.style+json": { "schema": { "type": "object" } },
               "application/vnd.ogc.sld+xml;version=1.0": { "schema": { "type": "string" } },
@@ -158,6 +164,12 @@
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "404": { "$ref": "#/components/responses/NotFound" },
+          "412": {
+            "description": "The If-Match entity tag or X-Honua-Style-Impact review does not match the stored style",
+            "content": {
+              "application/problem+json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } }
+            }
+          },
           "413": { "$ref": "#/components/responses/PayloadTooLarge" },
           "415": { "$ref": "#/components/responses/UnsupportedMediaType" }
         }
@@ -179,6 +191,34 @@
               }
             }
           },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/ogc/styles/{styleId}/impact": {
+      "parameters": [
+        { "$ref": "#/components/parameters/styleId" }
+      ],
+      "get": {
+        "summary": "Get the shared-style review required before save",
+        "security": [
+          { "ApiKeyAuth": [] },
+          { "BearerAuth": [] }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stored version, entity tag, and the associations and consumers in the caller's tenant",
+            "headers": {
+              "ETag": {
+                "description": "Same strong entity tag as the stylesheet",
+                "schema": { "type": "string" }
+              }
+            },
+            "content": {
+              "application/json": { "schema": { "type": "object" } }
+            }
+          },
+          "401": { "description": "Style management rights are required" },
           "404": { "$ref": "#/components/responses/NotFound" }
         }
       }

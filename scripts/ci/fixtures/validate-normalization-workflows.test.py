@@ -127,6 +127,17 @@ class NormalizationContractTests(unittest.TestCase):
                 with self.assertRaisesRegex(AssertionError, "App token scope"):
                     run(consumer=consumer)
 
+    def test_release_app_key_is_read_only_inside_bot_app(self) -> None:
+        self.assertEqual(MODULE.yaml.safe_load(SOURCES["consumer"])["jobs"]["validate"]["environment"], "bot-app")
+        for original, replacement in (
+            ("    environment: bot-app\n", ""),
+            ("    environment: bot-app\n", "    environment: publish-images\n"),
+        ):
+            with self.subTest(replacement=replacement):
+                self.assertEqual(SOURCES["consumer"].count(original), 1)
+                with self.assertRaisesRegex(AssertionError, "bot-app"):
+                    run(consumer=SOURCES["consumer"].replace(original, replacement, 1))
+
     @staticmethod
     def with_mode(mode: str) -> str:
         # Independent of the checked-in value, so the tests survive a mode flip.

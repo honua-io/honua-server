@@ -116,6 +116,56 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
         return ReadStyle(reader);
     }
 
+    public async Task<int?> GetLayerStyleWriteVersionAsync(int layerId, CancellationToken cancellationToken = default)
+    {
+        string sql = $"SELECT COALESCE(style_version, 0) FROM {_layersTable} WHERE layer_id = @layerId";
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        _ = command.Parameters.AddWithValue("@layerId", layerId);
+        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is int version
+            ? version
+            : null;
+    }
+
+    public async Task<LayerStyleDefinition?> SetStyleIfVersionAsync(
+        int layerId,
+        ConditionalStyleWrite write,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(write);
+
+        string sql = $"""
+            UPDATE {_layersTable}
+            SET maplibre_style = @mapLibreStyle,
+                geoservices_drawing_info = @drawingInfo,
+                style_version = COALESCE(style_version, 0) + 1,
+                style_revised_at = NOW(),
+                style_revised_by = NULL,
+                style_change_summary = NULL
+            WHERE layer_id = @layerId AND COALESCE(style_version, 0) = @expectedVersion
+            RETURNING {SelectColumns}
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        _ = command.Parameters.AddWithValue("@layerId", layerId);
+        _ = command.Parameters.AddWithValue("@expectedVersion", write.ExpectedVersion);
+        _ = command.Parameters.Add(new NpgsqlParameter("@mapLibreStyle", NpgsqlDbType.Jsonb)
+        {
+            Value = write.MapLibreStyleJson
+        });
+        _ = command.Parameters.Add(new NpgsqlParameter("@drawingInfo", NpgsqlDbType.Jsonb)
+        {
+            Value = (object?)write.DrawingInfoJson ?? DBNull.Value
+        });
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            ? ReadStyle(reader)
+            : null;
+    }
+
     public async Task<LayerStyleDefinition?> SetStyleAsync(
         int layerId,
         string mapLibreStyleJson,

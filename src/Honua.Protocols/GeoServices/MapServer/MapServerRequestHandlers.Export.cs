@@ -1028,6 +1028,12 @@ internal static partial class MapServerEndpoints
                 return false;
             }
 
+            if (document.RootElement.GetArrayLength() > sourceResolver.MaxLayers)
+            {
+                error = $"dynamicLayers may contain at most {sourceResolver.MaxLayers.ToString(CultureInfo.InvariantCulture)} entries.";
+                return false;
+            }
+
             var seenIds = new HashSet<int>();
 
             foreach (var element in document.RootElement.EnumerateArray())

@@ -60,25 +60,37 @@ internal sealed class PostgresChangeTracker : IChangeTracker
         int[] layerIds,
         IReadOnlySet<long>? objectIds,
         CancellationToken cancellationToken = default)
-        => GetChangesCoreAsync(sinceGeneration, throughGeneration: null, layerIds, objectIds, null, cancellationToken);
+        => GetChangesCoreAsync(new ChangeLogRead(sinceGeneration, layerIds) { ObjectIds = objectIds }, cancellationToken);
 
     public Task<IReadOnlyList<FeatureChange>> GetChangesSinceAsync(
         long sinceGeneration, int[] layerIds, IReadOnlySet<long>? objectIds,
         string excludeOriginReplicaId, CancellationToken cancellationToken = default)
-        => GetChangesCoreAsync(sinceGeneration, throughGeneration: null, layerIds, objectIds, excludeOriginReplicaId, cancellationToken);
+        => GetChangesCoreAsync(
+            new ChangeLogRead(sinceGeneration, layerIds) { ObjectIds = objectIds, ExcludeOriginReplicaId = excludeOriginReplicaId },
+            cancellationToken);
 
     public Task<IReadOnlyList<FeatureChange>> GetChangesInWindowAsync(
         long sinceGeneration, long throughGeneration, int[] layerIds,
         string? excludeOriginReplicaId, CancellationToken cancellationToken = default)
-        => GetChangesCoreAsync(sinceGeneration, throughGeneration, layerIds, objectIds: null, excludeOriginReplicaId, cancellationToken);
+        => GetChangesCoreAsync(
+            new ChangeLogRead(sinceGeneration, layerIds) { ThroughGeneration = throughGeneration, ExcludeOriginReplicaId = excludeOriginReplicaId },
+            cancellationToken);
+
+    public Task<IReadOnlyList<FeatureChange>> GetChangesInWindowAsync(
+        FeatureChangeWindow window, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(window);
+        return GetChangesCoreAsync(
+            new ChangeLogRead(window.SinceGeneration, window.LayerIds) { ThroughGeneration = window.ThroughGeneration, Limit = window.Limit },
+            cancellationToken);
+    }
 
     private async Task<IReadOnlyList<FeatureChange>> GetChangesCoreAsync(
-        long sinceGeneration, long? throughGeneration, int[] layerIds, IReadOnlySet<long>? objectIds,
-        string? excludeOriginReplicaId, CancellationToken cancellationToken)
+        ChangeLogRead read, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(layerIds);
+        ArgumentNullException.ThrowIfNull(read.LayerIds);
 
-        if (layerIds.Length == 0 || objectIds is { Count: 0 })
+        if (read.LayerIds.Length == 0 || read.ObjectIds is { Count: 0 })
         {
             return [];
         }
@@ -144,22 +156,25 @@ internal sealed class PostgresChangeTracker : IChangeTracker
                       ELSE 2
                   END > 0
             ORDER BY max_gen
+            LIMIT $6
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
 
-        command.Parameters.AddWithValue(NpgsqlDbType.Bigint, sinceGeneration);
-        command.Parameters.Add(new NpgsqlParameter { Value = layerIds, NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Integer });
+        command.Parameters.AddWithValue(NpgsqlDbType.Bigint, read.SinceGeneration);
+        command.Parameters.Add(new NpgsqlParameter { Value = read.LayerIds, NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Integer });
         command.Parameters.Add(new NpgsqlParameter
         {
-            Value = objectIds is null ? DBNull.Value : (object)objectIds.ToArray(),
+            Value = read.ObjectIds is null ? DBNull.Value : (object)read.ObjectIds.ToArray(),
             NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Bigint
         });
-        command.Parameters.Add(new NpgsqlParameter { Value = (object?)excludeOriginReplicaId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        command.Parameters.Add(new NpgsqlParameter { Value = (object?)read.ExcludeOriginReplicaId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         // Bounding both CTEs collapses each object's history over the window only, so a later
         // window reports what happened after this bound rather than a collapse of the whole log.
-        command.Parameters.Add(new NpgsqlParameter { Value = (object?)throughGeneration ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
+        command.Parameters.Add(new NpgsqlParameter { Value = read.ThroughGeneration is long through ? (object)through : DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
+        // A null limit is LIMIT ALL: replica sync and probes read the whole window.
+        command.Parameters.Add(new NpgsqlParameter { Value = read.Limit is int limit ? (object)limit : DBNull.Value, NpgsqlDbType = NpgsqlDbType.Integer });
 
         var changes = new List<FeatureChange>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -187,5 +202,16 @@ internal sealed class PostgresChangeTracker : IChangeTracker
         }
 
         return changes;
+    }
+
+    private readonly record struct ChangeLogRead(long SinceGeneration, int[] LayerIds)
+    {
+        public long? ThroughGeneration { get; init; }
+
+        public IReadOnlySet<long>? ObjectIds { get; init; }
+
+        public string? ExcludeOriginReplicaId { get; init; }
+
+        public int? Limit { get; init; }
     }
 }

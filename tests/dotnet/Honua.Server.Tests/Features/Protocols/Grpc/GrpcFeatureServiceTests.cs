@@ -1724,7 +1724,7 @@ public sealed partial class GrpcFeatureServiceTests
             .Returns(QueryResult<Feature>.Create(0, ImmutableArray<Feature>.Empty));
 
         await _sut.QueryFeatures(
-            new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = OrderingLayerId, OrderBy = "POPULATION DESC, name, unknown_field" },
+            new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = OrderingLayerId, OrderBy = "POPULATION DESC, name" },
             CreateCallContext());
 
         AssertTypedOrdering(captured);
@@ -1740,7 +1740,7 @@ public sealed partial class GrpcFeatureServiceTests
             .Returns(AsyncEnumerable.Empty<Feature>());
 
         await _sut.QueryFeaturesStream(
-            new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = OrderingLayerId, OrderBy = "POPULATION DESC, name, unknown_field" },
+            new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = OrderingLayerId, OrderBy = "POPULATION DESC, name" },
             new TestServerStreamWriter<Proto.FeaturePage>(),
             CreateCallContext());
 
@@ -1768,15 +1768,13 @@ public sealed partial class GrpcFeatureServiceTests
     {
         query.Should().NotBeNull();
         var orderBy = query!.Value.OrderBy!.Value;
-        orderBy.Should().HaveCount(3);
+        orderBy.Should().HaveCount(2);
         orderBy[0].Field.Should().Be("population", "the clause resolves to the declared field name");
         orderBy[0].FieldType.Should().Be(MetadataV2FieldType.Integer);
         orderBy[0].Ascending.Should().BeFalse();
         orderBy[1].Field.Should().Be("name");
         orderBy[1].FieldType.Should().Be(MetadataV2FieldType.String);
         orderBy[1].Ascending.Should().BeTrue();
-        orderBy[2].Field.Should().Be("unknown_field");
-        orderBy[2].FieldType.Should().BeNull("a field the schema does not declare keeps the untyped path");
     }
 
     [UnitTest]

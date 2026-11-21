@@ -136,7 +136,7 @@ internal sealed class ProposalStatusResource : IMcpResource
             ResolutionReason = execution.ResolutionReason,
             ExecutionOperationId = proposal.ExecutionOperationId,
             ResourceIds = isProposer && proposal.Status == OperationProposalStatus.Succeeded
-                && proposal.OperationId is "studio.draft.save-version" or "studio.content.reopen-version"
+                && proposal.OperationId is "studio.draft.create" or "studio.draft.save-version" or "studio.content.reopen-version"
                 && operation?.Status == OperationHandleStatus.Completed
                 && operation.OperationId == proposal.OperationId
                 && string.Equals(operation.TenantId, proposal.TenantId, StringComparison.Ordinal)

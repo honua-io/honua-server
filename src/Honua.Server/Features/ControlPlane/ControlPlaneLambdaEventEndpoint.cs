@@ -103,7 +103,10 @@ internal static partial class ControlPlaneLambdaEventEndpoint
         // migration task ran) cannot do the control-plane work. Answer a typed not-ready 503 so the
         // invocation fails and EventBridge/Scheduler retries it, instead of running the handler
         // against a database it cannot use.
-        if (ControlPlaneNotReadyGuard.TryRefuse(context, degradedStartup) is { } notReady)
+        if (ControlPlaneNotReadyGuard.TryRefuse(
+                context,
+                degradedStartup,
+                context.RequestServices.GetService<Honua.Infrastructure.Monitoring.MigrationState>()) is { } notReady)
         {
             LogNotReady(logger, context.Response.Headers[ReadinessReasonCodes.HeaderName].ToString());
             return notReady;

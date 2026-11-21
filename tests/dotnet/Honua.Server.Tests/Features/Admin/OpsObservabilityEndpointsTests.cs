@@ -18,7 +18,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-[Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.HealthCheck)]
 public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime

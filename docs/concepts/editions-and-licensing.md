@@ -46,7 +46,8 @@ Delivery across several nodes, and multi-replica map collaboration, use the
 cross-node PostgreSQL provider, selected by `Realtime:Provider=postgres` or by
 `auto` with `Deployment:Mode=MultiNode`. All four cloud-native formats and the
 whole GA process catalog retain their release scope. `Licensing__DevGrantEdition` remains a development-only
-override and is refused in Production, including when Mode is Disabled.
+override and is accepted only when the environment is `Development` or `Test`; any other environment
+name, including Production and Staging, refuses startup, including when Mode is Disabled.
 
 Disabled mode also sets the default guardrail posture, because the guardrail ladder
 treats the host as Enterprise-equivalent. Administrative configuration changes,

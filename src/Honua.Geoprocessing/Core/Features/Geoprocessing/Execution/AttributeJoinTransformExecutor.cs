@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 
@@ -16,9 +17,10 @@ internal sealed class AttributeJoinTransformExecutor(
 
     protected override string ProcessId => HandledProcessId;
 
-    protected override List<IFeature> Apply(
+    protected override async Task<List<IFeature>> ApplyAsync(
         FeatureCollection source,
         StepInputReader inputs,
+        IJobExecutionContext context,
         CancellationToken cancellationToken)
     {
         var leftKeys = SplitRequired(inputs, "leftKeys");
@@ -45,11 +47,9 @@ internal sealed class AttributeJoinTransformExecutor(
             : Array.Empty<string>();
         var prefix = inputs.GetOrDefault("prefix", string.Empty);
 
-        var rightUri = inputs.Require("right");
-        if (!FeatureCollectionArtifact.TryParseDataUri(rightUri, out var rightFeatures, out var rightError, _options.CurrentValue.MaxArtifactBytes))
-        {
-            throw new TransformInputException($"'right' {rightError}");
-        }
+        var opts = _options.CurrentValue;
+        var rightFeatures = await OverlayExecutorSupport.ReadLayerAsync(
+            inputs, "right", opts.MaxArtifactBytes, opts.OutputRootDirectory, context, cancellationToken).ConfigureAwait(false);
 
         var buildSide = BuildHashTable(rightFeatures, rightKeys, cancellationToken);
 

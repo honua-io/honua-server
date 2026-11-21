@@ -52,6 +52,10 @@
     <!-- Published .NET GeoServices SDK: the protocol client for ArcGIS source reads in the import path.
          1.10.4 is the published release pin with lossless source metadata and nullable/WKT fidelity. -->
     <PackageVersion Include="Honua.Sdk.GeoServices" Version="1.10.4" />
+    <!-- Published .NET field SDK: the shared XLSForm workbook reader, writer and converter behind form package import/export.
+         Its Honua.Sdk.Abstractions 5.0.1 dependency keeps every public API that GeoServices 1.10.4 and Admin 1.7.0 use.
+         Field targets net11.0 only, so only the net11.0 server references it; Honua.Core stays on GeoServices 1.10.4 for net10.0. -->
+    <PackageVersion Include="Honua.Sdk.Field" Version="5.0.1" />
     <PackageVersion Include="Mapsui" Version="5.0.2" />
     <!-- Pin the NBomber.Contracts test dependency to its patched release. -->
     <PackageVersion Include="MessagePack" Version="2.5.307" />
@@ -152,11 +156,6 @@
     <PackageVersion Include="Testcontainers.Oracle" Version="4.11.0" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.11.0" />
     <PackageVersion Include="WireMock.Net" Version="2.2.0" />
-    <!-- Fully-managed C# port of zstd (MIT): decodes ZSTD-compressed COG tiles without a
-         native libzstd, keeping the serving path AOT- and trim-safe. Already in the
-         graph transitively via Parquet.Net; pinned at the version that resolves today so
-         making it a direct reference does not move Parquet's zstd. -->
-    <PackageVersion Include="ZstdSharp.Port" Version="0.8.7" />
     <PackageVersion Include="Xunit.SkippableFact" Version="1.5.23" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.abstractions" Version="2.0.3" />

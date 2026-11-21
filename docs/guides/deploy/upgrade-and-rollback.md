@@ -199,6 +199,26 @@ Rollback](docker-compose.md#upgrade--rollback). An rc.1 image does not qualify t
 migration, so rollback to rc.1 after it applies is by restoring the pre-upgrade
 database backup.
 
+### Compose database image in rc.2
+
+The Compose installs' database moves to Honua's image: PostgreSQL 17 with the same
+PostGIS 3.5 and pgRouting 3.7, on a maintained Debian base. That base has a newer C
+library, which sorts some text differently. On the first start of an existing
+volume, before the server accepts connections, the image does two things in every
+database: it rebuilds the indexes on text columns, then records the new collation
+version. Spatial and numeric indexes are left alone. Allow time for this on a large
+database: the database healthcheck has a 60-minute start period, and the Honua
+server waits for it. `python3 quickstart.py` and `docker compose up --wait` stop
+waiting after their own timeout (three minutes) and report a failure, but the
+rebuild carries on. Do not stop or restart the stack while it runs: a restart
+begins the rebuild again. Run `python3 quickstart.py` again once the database log
+shows the rebuild has finished; it does not recreate the running database. If the
+rebuild fails, the database does not start, and the error is in its log.
+
+Once the rebuild has run, the rc.1 database image would read those indexes with the
+older C library. Roll back to rc.1 by restoring the pre-upgrade database backup into
+a new volume. Do not start the rc.1 database on the upgraded volume.
+
 ### Configuration binding correction
 
 Recent releases correct source-generated binding for options that previously used
@@ -369,7 +389,7 @@ A contract-phase upgrade is therefore two runs. The first exits `5` and prints t
 
 ## Coordinated rollouts via the deploy API
 
-For canary/gated rollouts, Honua's control plane drives the deployment through admin endpoints (all `X-API-Key`-authenticated):
+For canary/gated rollouts, Honua's control plane drives the deployment through admin endpoints. Planning and observation support admin API keys; approval-required submission and manual promotion require a current interactive human admin session:
 
 | Endpoint | Purpose |
 |---|---|
@@ -377,10 +397,19 @@ For canary/gated rollouts, Honua's control plane drives the deployment through a
 | `POST /api/v1/admin/deploy/plan` | Plan a rollout against a configured deploy target |
 | `POST /api/v1/admin/deploy/operations` | Create a deploy operation |
 | `GET /api/v1/admin/deploy/operations/{operationId}` | Observe operation status and phase |
-| `POST /api/v1/admin/deploy/operations/{operationId}/submit` | Start the rollout |
+| `GET /api/v1/admin/deploy/operations/{operationId}/approval-review/{action}` | Review the current operation for `submit` or `promote` |
+| `POST /api/v1/admin/deploy/operations/{operationId}/submit` | Start the rollout; human review is required for approval-gated plans |
 | `POST /api/v1/admin/deploy/operations/{operationId}/promote` | Force the cutover of a rollout parked awaiting promotion |
 | `POST /api/v1/admin/deploy/operations/{operationId}/rollback` | Roll the operation back |
 | `POST /api/v1/admin/platform-release/converge` | Actuate the declared platform release across all server deployments in one call |
+
+For approval-required submission or manual promotion, use the same browser session to read
+`GET .../operations/{operationId}/approval-review/submit` or `.../approval-review/promote`.
+Review the returned operation, then send its `review.capability` in the
+`X-Honua-Approval-Capability` header on the matching action POST, with the session's CSRF header.
+The review is bound to the current operation, action and human session. If it expires or the
+operation changes, obtain a fresh review. Compose submission also requires a different identified
+operator from the plan's requester; recreate older Compose plans that lack that identity.
 
 Deploy targets are configured under `ControlPlane__DeployTargets__*` with a backend per platform: `honua-kubernetes-argo-rollouts` (Argo Rollouts canary), `honua-aws-ecs-alb` (ALB weighted target groups), `honua-gitops-aws-lambda` (alias weights), plus GitOps passthrough variants. `AzureContainerApps`, `AzureFunctions` and `SelfHostedRolling` are not target kinds: the server refuses to start while a `ControlPlane__DeployTargets__*__TargetKind` entry names one, so remove such entries before upgrading. The server does not read `ControlPlane__SelfHosted__*` settings; remove them too. When a target sets `telemetry.connection` (a `ControlPlane__TelemetryConnections` entry, Prometheus or CloudWatch), the reconciler gates promotion on error rate and p95 latency and triggers automatic rollback on breach. Keep environment-specific target metadata in your infrastructure-as-code repository; the public [honua-iac](https://github.com/honua-io/honua-iac) modules are the reference.
 
@@ -490,7 +519,7 @@ Notes:
 
 - **Installed Compose project:** the Compose backend defaults to the `health` gate, so a promotion needs **no** external telemetry backend.
 - **Using a private/on-prem Prometheus for the telemetry gate:** the outbound URL guard rejects private/loopback endpoints by default (SSRF hardening). To point a telemetry connection at an on-prem Prometheus (for example `http://prometheus.internal:9090` or a `10.x`/`192.168.x` address), set `AllowPrivateNetworks: true` on that `ControlPlane__TelemetryConnections` entry. This is a per-connection opt-in; the default posture (HTTPS-only, no private destinations) is unchanged for every other connection. Only enable it for a trusted endpoint inside your own network.
-- **Manual promotion (escape hatch):** `POST /api/v1/admin/deploy/operations/{operationId}/promote` forces the cutover on a rollout parked in `Reconciling` (or `Submitted`). It requires admin authorization, records the operator on the audit trail, and returns `409 Conflict` with a reason when the operation cannot be promoted (not yet submitted, already promoted, rolling back, or terminal). Use it when a gate never clears (for example a metrics connection is down) or when you deliberately run the `manual` gate.
+- **Manual promotion (escape hatch):** `POST /api/v1/admin/deploy/operations/{operationId}/promote` forces the cutover on a rollout parked in `Reconciling` (or `Submitted`). It requires an interactive human admin session and a current review capability, records the verified operator on the audit trail, and returns `409 Conflict` with a reason when the operation cannot be promoted (not yet submitted, already promoted, rolling back, or terminal). Use it when a gate never clears (for example a metrics connection is down) or when you deliberately run the `manual` gate.
 
 ## Post-activation observation window
 

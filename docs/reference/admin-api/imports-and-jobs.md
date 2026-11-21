@@ -139,6 +139,8 @@ a new mapping. Unrelated concurrent catalog changes survive compensation.
 | DELETE | `/api/v1/admin/multidim-coverages/{id}` | Remove a multidimensional coverage |
 | POST | `/api/v1/admin/multidim-coverages/{id}/refresh` | Refresh multidimensional coverage metadata |
 
+`POST /api/v1/admin/import/raster` answers `503` when the database has no `postgis_raster` extension (raster storage isn't installed); the message names the operator action.
+
 Raster import is multipart form-data with optional sidecars (`.pgw`/`.jgw`/`.tfw`/`.wld`, `.prj`). Subsequent uploads to a layer must match the layer's SRID and band count; mismatches return `400`.
 
 Run `POST /api/v1/admin/import/raster` with form values `file=ortho.tif`, `layerId=1`, and `name=ortho-2026`.

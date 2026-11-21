@@ -8,6 +8,7 @@ using System.Xml;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Microsoft.AspNetCore.Http;
@@ -108,9 +109,8 @@ internal sealed class ImageServerKmlHandler
         return new GeographicBox(t.MinX, t.MinY, t.MaxX, t.MaxY);
     }
 
-    private static string BuildExportImageHref(HttpContext context, GeographicBox box)
+    internal static string BuildExportImageHref(HttpContext context, GeographicBox box)
     {
-        var pathBase = context.Request.PathBase.HasValue ? context.Request.PathBase.Value! : string.Empty;
         var path = context.Request.Path.Value ?? string.Empty;
         var kmlIndex = path.LastIndexOf("/kml/", StringComparison.OrdinalIgnoreCase);
         var servicePath = kmlIndex >= 0 ? path[..kmlIndex] : path;
@@ -120,8 +120,7 @@ internal sealed class ImageServerKmlHandler
             CultureInfo.InvariantCulture,
             $"?bbox={box.West},{box.South},{box.East},{box.North}&bboxSR={Wgs84Srid}&imageSR={Wgs84Srid}&size={width},{height}&format=png&transparent=true&f=image");
 
-        var host = context.Request.Host.HasValue ? context.Request.Host.Value : "localhost";
-        return $"{context.Request.Scheme}://{host}{pathBase}{servicePath}/exportImage{query}";
+        return $"{BaseUrlResolver.GetBaseUrl(context).TrimEnd('/')}{servicePath}/exportImage{query}";
     }
 
     private static (int Width, int Height) ComputeOverlaySize(GeographicBox box)
@@ -214,5 +213,5 @@ internal sealed class ImageServerKmlHandler
     private static string FormatCoordinate(double value)
         => value.ToString("0.##########", CultureInfo.InvariantCulture);
 
-    private readonly record struct GeographicBox(double West, double South, double East, double North);
+    internal readonly record struct GeographicBox(double West, double South, double East, double North);
 }

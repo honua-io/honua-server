@@ -88,8 +88,6 @@ internal static partial class GeoJsonFeatureBaseBuilder
 
         var declaredAttributeFields = schema.DeclaredAttributeFields;
         var visibleAttributeFields = schema.VisibleAttributeFields;
-        var dateOnlyFields = schema.DateOnlyFields;
-        var dateTimeFields = schema.DateTimeFields;
 
         // codeql[cs/linq/missed-select]: skips hidden fields and coerces values into one property dictionary
         foreach (var field in schema.VisibleFields)
@@ -109,7 +107,7 @@ internal static partial class GeoJsonFeatureBaseBuilder
 
             if (attributes.TryGetValue(fieldName, out var value))
             {
-                properties[fieldName] = CoerceProperty(fieldName, value, dateOnlyFields, dateTimeFields);
+                properties[fieldName] = CoerceProperty(fieldName, value, schema);
             }
             else if (isObjectIdField && shouldIncludeObjectId)
             {
@@ -147,7 +145,7 @@ internal static partial class GeoJsonFeatureBaseBuilder
                     continue;
                 }
 
-                properties[fieldName] = CoerceProperty(fieldName, value, dateOnlyFields, dateTimeFields);
+                properties[fieldName] = CoerceProperty(fieldName, value, schema);
             }
         }
 
@@ -181,22 +179,26 @@ internal static partial class GeoJsonFeatureBaseBuilder
     private static object? CoerceProperty(
         string fieldName,
         object? value,
-        HashSet<string> dateOnlyFields,
-        HashSet<string> dateTimeFields)
+        PreparedSchema schema)
     {
         if (value is null)
         {
             return null;
         }
 
-        if (dateOnlyFields.Contains(fieldName))
+        if (schema.DecimalFields.Contains(fieldName))
+        {
+            return CoerceDecimal(value);
+        }
+
+        if (schema.DateOnlyFields.Contains(fieldName))
         {
             return TryCoerceDate(value, out var utc)
                 ? utc.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
                 : value;
         }
 
-        if (dateTimeFields.Contains(fieldName))
+        if (schema.DateTimeFields.Contains(fieldName))
         {
             return TryCoerceDate(value, out var utc)
                 ? TemporalExtentHelpers.FormatOgcTemporalValue(utc)
@@ -204,6 +206,30 @@ internal static partial class GeoJsonFeatureBaseBuilder
         }
 
         return value;
+    }
+
+    // Emits canonical decimal text as a raw JSON number so every digit survives; any other text
+    // falls back to a double, and non-text values pass through.
+    private static object CoerceDecimal(object value)
+    {
+        var text = value switch
+        {
+            string stringValue => stringValue,
+            JsonElement { ValueKind: JsonValueKind.String } element => element.GetString(),
+            _ => null
+        };
+        if (text is null)
+        {
+            return value;
+        }
+
+        if (ExactAttributeValues.IsCanonicalDecimalText(text))
+        {
+            using var document = JsonDocument.Parse(text);
+            return document.RootElement.Clone();
+        }
+
+        return ExactAttributeValues.ToFiniteDouble(text) ?? value;
     }
 
     private static bool TryCoerceDate(object value, out DateTimeOffset utc)
@@ -289,12 +315,13 @@ internal static partial class GeoJsonFeatureBaseBuilder
     }
 
     private static bool ContainsKeyIgnoreCase(
-        IReadOnlyDictionary<string, object?> properties,
+        Dictionary<string, object?> properties,
         string key)
-        => TryGetValueIgnoreCase(properties, key, out _);
+        => properties.ContainsKey(key) || TryGetValueIgnoreCase(properties, key, out _);
 
+    // Dictionary<,> rather than an interface: its struct enumerator is not boxed per lookup.
     private static bool TryGetValueIgnoreCase(
-        IReadOnlyDictionary<string, object?> properties,
+        Dictionary<string, object?> properties,
         string key,
         out object? value)
     {

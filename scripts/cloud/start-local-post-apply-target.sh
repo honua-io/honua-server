@@ -56,7 +56,8 @@ OWNED_SERVER="${REPO_ROOT}/scripts/ci/owned-server.py"
 DB_PORT="$(python3 "${OWNED_SERVER}" port --variable HONUA_LOCAL_TARGET_DB_PORT --ci-default 5432)"
 DB_NAME="honua_post_apply"
 DB_USER="honua_post_apply"
-DB_PASSWORD="honua_post_apply"
+# A per-run password: the sidecar is reachable only on loopback, but never with a known credential.
+DB_PASSWORD="$(head -c 24 /dev/urandom | base64 | tr -d '=+/')"
 SERVER_PORT="$(python3 "${OWNED_SERVER}" port --variable HONUA_LOCAL_TARGET_PORT --ci-default 5000)"
 SERVER_LOG="${STATE_DIR}/honua-post-apply-server.log"
 DB_INIT_LOG="${STATE_DIR}/honua-post-apply-postgis.init.log"
@@ -95,7 +96,7 @@ fi
 echo "Starting PostGIS sidecar ${IMAGE} for the local post-apply target."
 DB_CONTAINER_ID="$(docker run --detach --rm \
     --name "${DB_CONTAINER}" \
-    --publish "0.0.0.0:${DB_PORT}:5432" \
+    --publish "127.0.0.1:${DB_PORT}:5432" \
     --env POSTGRES_DB="${DB_NAME}" \
     --env POSTGRES_USER="${DB_USER}" \
     --env POSTGRES_PASSWORD="${DB_PASSWORD}" \

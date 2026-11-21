@@ -75,7 +75,7 @@ A MapLibre client may paint `text-field` from the style document it fetches. Tha
 
    Open the `style` URL advertised by TileJSON and append `?theme=dark`. Its `publicationId` is the graph Layer ID, independent of the numeric tile selector.
 
-   Supported themes are `default`, `dark`, `colorblind-safe`, and `print`; an unknown value returns 400. The publication-keyed path identifies the published layer in the metadata graph. Use `GET /ogc/styles/{styleId}` to retrieve a style by its collection identifier, including derived SLD through `Accept` negotiation.
+   Supported themes are `default`, `dark`, `colorblind-safe`, and `print`; an unknown value returns 400. The publication-keyed path identifies the published layer in the metadata graph. Use `GET /ogc/styles/{styleId}` to retrieve a named style, including derived SLD through `Accept` negotiation. Take `styleId` from the `id` values that `GET /ogc/styles` lists (usually the layer name); the numeric OGC collection id is not a style id and returns 404.
 
 5. Point clients at the one style. Nothing else to configure per protocol:
 

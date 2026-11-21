@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Helpers;
@@ -13,7 +14,7 @@ namespace Honua.Server.Features.Admin.Services;
 
 internal static partial class ManagedImportConnection
 {
-    internal static readonly Guid Id = new("77460000-0000-4000-8000-000000007746");
+    internal static readonly Guid Id = ManagedDataConnection.Id;
     internal const string Name = "Imported data";
     internal const string FallbackName = "Imported data (built-in)";
     internal const string Description = "Tables imported into this server.";

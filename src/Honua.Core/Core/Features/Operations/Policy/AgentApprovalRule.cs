@@ -29,6 +29,10 @@ public static class AgentApprovalRule
     {
         "admin.services.access-policy.set",
         "admin.layer.publish",
+        "admin.connections.create",
+        "admin.connections.update",
+        "admin.connections.delete",
+        "admin.import.upload-object",
         "service.publish",
         "dataset.stage.import",
         StudioDraftMutationContext.PublicationOperationId,

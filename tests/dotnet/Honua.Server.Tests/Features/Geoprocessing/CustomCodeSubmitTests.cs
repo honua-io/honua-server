@@ -463,6 +463,20 @@ public sealed class CustomCodeSubmitTests
             .Where(e => e.Message.Contains("https"));
     }
 
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_CustomCode_RepoUrlWithCredentials_Rejected()
+    {
+        var sut = CreateService(options => options.RepoPolicy = CustomCodeRepoPolicy.Open);
+        var metadata = CustomCodeMetadata(repoUrl: "https://user:token@github.com/honua-io/example.git");
+
+        var act = async () => await sut.SubmitJobAsync(CustomCodePlan(), null, AdminPrincipal(), metadata);
+
+        await act.Should().ThrowAsync<Exception>()
+            .Where(e => e.Message.Contains("must not embed credentials"));
+    }
+
     // -----------------------------------------------------------------------
     // declared_scope ⊆ owner
     // -----------------------------------------------------------------------

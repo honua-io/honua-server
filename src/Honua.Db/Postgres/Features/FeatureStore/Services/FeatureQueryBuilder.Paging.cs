@@ -9,12 +9,11 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class FeatureQueryBuilder
 {
-    private static void AppendPagination(StringBuilder sql, bool isKnnQuery, FeatureQuery query, SpatialFilter? spatialFilter, ref int paramIndex)
+    private static void AppendPagination(StringBuilder sql, bool isKnnQuery, FeatureQuery query, ref int paramIndex)
     {
         if (isKnnQuery)
         {
-            // For KNN, use NearestCount as LIMIT if specified, otherwise use regular Limit
-            var limit = spatialFilter?.NearestCount ?? query.Limit;
+            var limit = query.ResolveNearestNeighborRowLimit();
             if (limit.HasValue)
             {
                 sql.Append(CultureInfo.InvariantCulture, $" LIMIT ${paramIndex++}");

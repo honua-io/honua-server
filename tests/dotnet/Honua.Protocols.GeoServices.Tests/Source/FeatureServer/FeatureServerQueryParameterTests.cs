@@ -12,6 +12,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.Tests.ParquetUnitSupport;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -1468,7 +1469,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         Encoding.ASCII.GetString(payload, 0, 4).Should().Be("PAR1");
 
         using var stream = new MemoryStream(payload);
-        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var reader = ArrowParquetTestReader.Open(stream);
         using var batchReader = reader.GetRecordBatchReader();
         await batchReader.ReadNextRecordBatchAsync(); // materialize schema
 
@@ -1498,7 +1499,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         Encoding.ASCII.GetString(payload, 0, 4).Should().Be("PAR1");
 
         using var stream = new MemoryStream(payload);
-        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var reader = ArrowParquetTestReader.Open(stream);
         using var batchReader = reader.GetRecordBatchReader();
         await batchReader.ReadNextRecordBatchAsync(); // materialize schema
 

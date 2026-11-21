@@ -113,6 +113,18 @@ public sealed partial class McpSessionSharedStoreTests
             return Task.FromResult(TryGetLive(sessionId, out _));
         }
 
+        public Task<bool> SetLogLevelAsync(string sessionId, string level, CancellationToken cancellationToken)
+        {
+            ThrowIfFailing();
+            if (!_records.TryGetValue(sessionId, out var entry) || entry.ExpiresAt <= time.GetUtcNow())
+            {
+                return Task.FromResult(false);
+            }
+
+            _records[sessionId] = (entry.Record with { LogLevel = level }, entry.ExpiresAt);
+            return Task.FromResult(true);
+        }
+
         public Task RemoveAsync(string sessionId, CancellationToken cancellationToken)
         {
             ThrowIfFailing();

@@ -5,7 +5,7 @@ description: "Enable the built-in browser assistant with Bedrock, customer autho
 ---
 # Studio assistant on Bedrock
 
-The built-in Studio assistant uses the browser Studio SDK with the configured Server model proxy and canonical MCP tools. The supported contracts are Studio AI capabilities/chat under `/api/v1/studio/ai` and `/mcp`; draft creation is the `honua_studio_create_draft` MCP tool. Standard Server trunk does not implement `/api/v1/agent/workspaces`. No feature flag, AI provider setting, prefix or trailing slash registers that separate workspace API. Console must use an image containing the supported browser transport; an older Console image requires a rebuild.
+The built-in Studio assistant uses the browser Studio SDK with the configured Server model proxy and canonical MCP tools. The supported contracts are Studio AI capabilities/chat under `/api/v1/studio/ai` and `/mcp`; draft creation is the `honua_studio_create_draft` MCP tool. `/api/v1/agent/workspaces` is a separate API for local-process workspaces; it is not the assistant transport, and no feature flag or AI provider setting turns it into one. Console must use an image containing the supported browser transport; an older Console image requires a rebuild.
 
 ## Opt in from the Compose quickstart
 
@@ -118,6 +118,6 @@ Sign in to Console, open a map or dashboard in Studio, then select **Start conve
 | HTTP 503 with an admission `code` | Check stable deployment identity, configured backend, migrations, ledger initialization and resume state. Do not retry by changing identities. |
 | HTTP 429 | Invocation/concurrency capacity is exhausted; respect `Retry-After` and inspect the configured policy. |
 | Stream error `studio_ai/disclosure_denied` | The configured model/region/use case/classification does not match an exact disclosure approval. |
-| `POST /api/v1/agent/workspaces/` returns 404 | Console is using the separate, absent workspace contract. Rebuild/update Console to the supported browser assistant transport. Bedrock settings alone cannot repair that image. |
+| Console sends assistant requests to `/api/v1/agent/workspaces` | Console is an older image that uses the local-process workspace API as its assistant transport. That API does not run the assistant. Rebuild/update Console to the supported browser assistant transport. Bedrock settings alone cannot repair that image. |
 
 Capabilities indicate provider configuration, not a live AWS or admission check. No Bedrock inference or AWS resource creation occurs merely by opening Studio or starting the conversation; submitting a prompt can invoke the provider after authorization, disclosure and admission succeed.

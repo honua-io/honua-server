@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -30,7 +31,6 @@ using Honua.Protocols.Ogc.Classic.Wfs20.Services;
 using Honua.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using SkiaSharp;
 using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;
 using static Honua.Protocols.Ogc.Classic.OgcClassicRequestHelpers;
@@ -58,6 +58,8 @@ internal static partial class WmsRequestHandlers
     private static readonly Version _wms13SemanticVersion = new(1, 3, 0);
     private static readonly string[] _wms13CapabilitiesMediaTypes = [WmsCapabilitiesMimeType];
     private static readonly string[] _wms111CapabilitiesMediaTypes = [Wms111CapabilitiesMimeType, WmsCapabilitiesMimeType];
+    private static readonly string WmsCapabilitiesUtf8ContentType = PooledUtf8ContentResult.WithUtf8Charset(WmsCapabilitiesMimeType);
+    private static readonly string Wms111CapabilitiesUtf8ContentType = PooledUtf8ContentResult.WithUtf8Charset(Wms111CapabilitiesMimeType);
 
     private readonly record struct WmsLayer(
         MetadataV2Object Resource,
@@ -127,16 +129,7 @@ internal static partial class WmsRequestHandlers
                     svcDef);
             if (accessError != null)
             {
-                var isAuthenticated = context.User?.Identity?.IsAuthenticated == true;
-                return CreateWmsServiceException(
-                    context,
-                    "AccessDenied",
-                    isAuthenticated
-                        ? AccessPolicyHelpers.AccessForbiddenMessage
-                        : AccessPolicyHelpers.AuthRequiredMessage,
-                    isAuthenticated
-                        ? StatusCodes.Status403Forbidden
-                        : StatusCodes.Status401Unauthorized);
+                return CreateWmsAccessDenied(context);
             }
 
             if (wmsLayers.Length == 0 && !string.IsNullOrWhiteSpace(requestType) &&
@@ -148,6 +141,12 @@ internal static partial class WmsRequestHandlers
             var accessibleLayers = wmsLayers
                 .Where(l => AccessPolicyHelpers.IsResourceAccessible(context, l.Resource, svcDef))
                 .ToArray();
+            var challengeLayers = ResolveWmsChallengeLayers(svcDef, wmsLayers, accessibleLayers);
+            var challengeError = ChallengeRequestedProtectedLayers(context, svcDef, challengeLayers);
+            if (challengeError != null)
+            {
+                return challengeError;
+            }
 
             if (string.IsNullOrWhiteSpace(requestType) ||
                 string.Equals(requestType, "GetCapabilities", StringComparison.OrdinalIgnoreCase))
@@ -169,8 +168,17 @@ internal static partial class WmsRequestHandlers
 
                 OgcClassicLog.WmsRequested(logger, serviceId, "GetCapabilities");
                 var metadataService = svcDef with { Metadata = PublishedMetadataProjection.ForCapabilities(snapshot.Graph, svcDef) };
-                var xml = await BuildWmsCapabilities(context, metadataService, accessibleLayers, capabilitiesVersion).ConfigureAwait(false);
-                return Results.Content(xml, GetWmsCapabilitiesMimeType(capabilitiesVersion), Encoding.UTF8, StatusCodes.Status200OK);
+                var capabilities = PooledTextBuilder.Rent();
+                try
+                {
+                    await BuildWmsCapabilities(capabilities, context, metadataService, new(accessibleLayers, challengeLayers), capabilitiesVersion).ConfigureAwait(false);
+                    return PooledTextBuilder.ToUtf8Result(
+                        capabilities, GetWmsCapabilitiesUtf8ContentType(capabilitiesVersion));
+                }
+                finally
+                {
+                    PooledTextBuilder.Return(capabilities);
+                }
             }
 
             if (string.Equals(requestType, "GetMap", StringComparison.OrdinalIgnoreCase))
@@ -223,9 +231,16 @@ internal static partial class WmsRequestHandlers
             // Intentional catch-all: outermost WMS request-dispatch boundary. Already
             // logged (with exception) and mapped to a WMS ServiceExceptionReport.
             OgcClassicLog.WmsFailed(logger, serviceId, ex.Message, ex);
-            return CreateWmsServiceException(context, "NoApplicableCode", "WMS request failed.", StatusCodes.Status500InternalServerError);
+            return CreateWmsFailure(context, ex);
         }
     }
+
+    // A FILTER naming a field the caller's read policy withholds is a request error; any other
+    // failure at the dispatch boundary is a server fault.
+    private static IResult CreateWmsFailure(HttpContext context, Exception exception)
+        => exception is MaskedFieldReferenceException
+            ? CreateWmsServiceException(context, "InvalidParameterValue", "WMS request includes an invalid FILTER.", StatusCodes.Status400BadRequest)
+            : CreateWmsServiceException(context, "NoApplicableCode", "WMS request failed.", StatusCodes.Status500InternalServerError);
 
     private static WmsLayer[] ResolveWmsLayers(MetadataV2GraphSnapshot snapshot, MetadataV2Service service, HttpContext context)
     {
@@ -322,10 +337,7 @@ internal static partial class WmsRequestHandlers
         => OgcClassicDeclaredDimensions.HasWmsTimeDimension(layer.Resource);
 
     private static int GetWmsMaxLayersPerRequest(HttpContext context)
-    {
-        var configured = context.RequestServices.GetService<IOptions<LimitsOptions>>()?.Value?.Query?.MaxMapLayersPerRequest;
-        return configured is > 0 ? configured.Value : QueryLimits.DefaultMaxMapLayersPerRequest;
-    }
+        => MapLayerRequestLimit.Resolve(context.RequestServices);
 
     private static IResult? ValidateWmsLayerTokenCount(
         HttpContext context,
@@ -1029,8 +1041,9 @@ internal static partial class WmsRequestHandlers
     private static string[] GetWmsCapabilitiesMediaTypes(string version)
         => IsWms111Version(version) ? _wms111CapabilitiesMediaTypes : _wms13CapabilitiesMediaTypes;
 
-    private static string GetWmsCapabilitiesMimeType(string version)
-        => IsWms111Version(version) ? Wms111CapabilitiesMimeType : WmsCapabilitiesMimeType;
+    // The Content-Type Results.Content(xml, capabilitiesMimeType, Encoding.UTF8) set for this version.
+    private static string GetWmsCapabilitiesUtf8ContentType(string version)
+        => IsWms111Version(version) ? Wms111CapabilitiesUtf8ContentType : WmsCapabilitiesUtf8ContentType;
 
     private static string GetWmsExceptionMimeType(string? exceptionsValue, string? version)
         => WmsServiceExceptionReport.GetMimeType(exceptionsValue, version);

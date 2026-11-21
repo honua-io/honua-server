@@ -17,6 +17,9 @@ internal static class SamlTestAssertions
 
     public const string AcsUrl = Audience + "/saml/acs";
 
+    // The IdP session handle that signed responses carry and logout requests name.
+    public const string SessionIndex = "_session1";
+
     public static X509Certificate2 CreateSigningCertificate()
     {
         using var rsa = RSA.Create(2048);
@@ -124,7 +127,7 @@ internal static class SamlTestAssertions
               </saml:Assertion>
             </samlp:Response>
             """;
-        var signed = SignElement(xml, "_assertionPrefixed", certificate);
+        var signed = SignElement(xml, "_assertionPrefixed", new SigningParameters(certificate));
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(signed));
     }
 
@@ -156,16 +159,25 @@ internal static class SamlTestAssertions
     }
 
     public static string CreateSignedLogoutRequest(X509Certificate2 certificate, string nameId)
+        => SignLogoutRequest(certificate, nameId, $"<samlp:SessionIndex>{SessionIndex}</samlp:SessionIndex>");
+
+    // A logout request that names the subject but none of its sessions.
+    public static string CreateSignedLogoutRequestWithoutSessionIndex(X509Certificate2 certificate, string nameId)
+        => SignLogoutRequest(certificate, nameId, sessionIndexXml: string.Empty);
+
+    public static string CreateUnsignedLogoutRequest(string nameId)
+        => Convert.ToBase64String(Encoding.UTF8.GetBytes(
+            BuildLogoutRequestXml(nameId, "_logout-unsigned", $"<samlp:SessionIndex>{SessionIndex}</samlp:SessionIndex>")));
+
+    private static string SignLogoutRequest(X509Certificate2 certificate, string nameId, string sessionIndexXml)
     {
-        var xml = BuildLogoutRequestXml(nameId);
-        var signed = SignElement(xml, "_logout1", certificate);
+        var id = "_logout" + Guid.NewGuid().ToString("N");
+        var xml = BuildLogoutRequestXml(nameId, id, sessionIndexXml);
+        var signed = SignElement(xml, id, new SigningParameters(certificate));
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(signed));
     }
 
-    public static string CreateUnsignedLogoutRequest(string nameId)
-        => Convert.ToBase64String(Encoding.UTF8.GetBytes(BuildLogoutRequestXml(nameId)));
-
-    private static string BuildLogoutRequestXml(string nameId)
+    private static string BuildLogoutRequestXml(string nameId, string id, string sessionIndexXml)
     {
         const string saml = "urn:oasis:names:tc:SAML:2.0:assertion";
         const string samlp = "urn:oasis:names:tc:SAML:2.0:protocol";
@@ -174,10 +186,10 @@ internal static class SamlTestAssertions
         // Realistic IdP shape: a prefixed samlp:LogoutRequest root with samlp-prefixed and
         // assertion-default-namespace children, exercising exclusive-C14N prefix rendering.
         return $"""
-            <samlp:LogoutRequest xmlns:samlp="{samlp}" xmlns="{saml}" ID="_logout1" Version="2.0" IssueInstant="{issueInstant}">
+            <samlp:LogoutRequest xmlns:samlp="{samlp}" xmlns="{saml}" ID="{id}" Version="2.0" IssueInstant="{issueInstant}" Destination="{Audience}/saml/slo">
               <Issuer>{Issuer}</Issuer>
               <NameID Format="urn:oasis:names:tc:SAML:2.0:nameid-format:persistent">{nameId}</NameID>
-              <samlp:SessionIndex>_session1</samlp:SessionIndex>
+              {sessionIndexXml}
             </samlp:LogoutRequest>
             """;
     }
@@ -277,7 +289,7 @@ internal static class SamlTestAssertions
                   </SubjectConfirmation>
                 </Subject>
                 {conditionsXml}
-                <AuthnStatement AuthnInstant="{issueInstant}">
+                <AuthnStatement AuthnInstant="{issueInstant}" SessionIndex="{SessionIndex}">
                   <AuthnContext><AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:Password</AuthnContextClassRef></AuthnContext>
                 </AuthnStatement>
                 <AttributeStatement>
@@ -289,9 +301,22 @@ internal static class SamlTestAssertions
     }
 
     private static string SignAssertion(string responseXml, X509Certificate2 certificate)
-        => SignElement(responseXml, "_assertion1", certificate);
+        => SignElement(responseXml, "_assertion1", new SigningParameters(certificate));
 
-    private static string SignElement(string xml, string referenceId, X509Certificate2 certificate)
+    private sealed record SigningParameters(
+        X509Certificate2 Certificate,
+        string DigestMethod = SignedXml.XmlDsigSHA256Url,
+        string SignatureMethod = SignedXml.XmlDsigRSASHA256Url);
+
+    public static string CreateSignedResponseWithAlgorithms(
+        X509Certificate2 certificate, string digestMethod, string signatureMethod)
+    {
+        var xml = BuildResponseXml("user@example.com", "user@example.com", "User", ["viewer"], null, null);
+        var signed = SignElement(xml, "_assertion1", new SigningParameters(certificate, digestMethod, signatureMethod));
+        return Convert.ToBase64String(Encoding.UTF8.GetBytes(signed));
+    }
+
+    private static string SignElement(string xml, string referenceId, SigningParameters parameters)
     {
         var document = new XmlDocument { PreserveWhitespace = true };
         document.LoadXml(xml);
@@ -299,14 +324,23 @@ internal static class SamlTestAssertions
         var nsmgr = new XmlNamespaceManager(document.NameTable);
         nsmgr.AddNamespace("saml", "urn:oasis:names:tc:SAML:2.0:assertion");
         var element = (XmlElement)document.SelectSingleNode($"//*[@ID='{referenceId}']")!;
+        // The replay store is shared across test hosts and remembers both the Assertion and the
+        // Response ID, so every signed message and its enclosing Response need their own IDs.
+        var uniqueId = referenceId + "-" + Guid.NewGuid().ToString("N");
+        element.SetAttribute("ID", uniqueId);
+        var root = document.DocumentElement!;
+        if (!ReferenceEquals(root, element) && root.HasAttribute("ID"))
+        {
+            root.SetAttribute("ID", root.GetAttribute("ID") + "-" + Guid.NewGuid().ToString("N"));
+        }
 
-        using var rsa = certificate.GetRSAPrivateKey()!;
+        using var rsa = parameters.Certificate.GetRSAPrivateKey()!;
         var signedXml = new SignedXml(element) { SigningKey = rsa };
         signedXml.SignedInfo!.CanonicalizationMethod = SignedXml.XmlDsigExcC14NTransformUrl;
-        signedXml.SignedInfo.SignatureMethod = SignedXml.XmlDsigRSASHA256Url;
+        signedXml.SignedInfo.SignatureMethod = parameters.SignatureMethod;
 
-        var reference = new Reference("#" + referenceId);
-        reference.DigestMethod = SignedXml.XmlDsigSHA256Url;
+        var reference = new Reference("#" + uniqueId);
+        reference.DigestMethod = parameters.DigestMethod;
         reference.AddTransform(new XmlDsigEnvelopedSignatureTransform());
         reference.AddTransform(new XmlDsigExcC14NTransform());
         signedXml.AddReference(reference);

@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 using NtsGeometry = NetTopologySuite.Geometries.Geometry;
@@ -17,12 +18,15 @@ internal sealed class OverlayUnionExecutor(
 
     protected override string ProcessId => HandledProcessId;
 
-    protected override List<IFeature> Apply(
+    protected override async Task<List<IFeature>> ApplyAsync(
         FeatureCollection source,
         StepInputReader inputs,
+        IJobExecutionContext context,
         CancellationToken cancellationToken)
     {
-        var overlayLayer = OverlayExecutorSupport.ReadLayer(inputs, "overlay", _options.CurrentValue.MaxArtifactBytes);
+        var opts = _options.CurrentValue;
+        var overlayLayer = await OverlayExecutorSupport.ReadLayerAsync(
+            inputs, "overlay", opts.MaxArtifactBytes, opts.OutputRootDirectory, context, cancellationToken).ConfigureAwait(false);
 
         var inputUnion = OverlayExecutorSupport.UnionGeometry(source);
         var overlayUnion = OverlayExecutorSupport.UnionGeometry(overlayLayer);

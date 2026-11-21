@@ -17,7 +17,7 @@ using Npgsql;
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
 [Collection("Database")]
-public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture fixture)
+public sealed partial class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture fixture)
 {
     private const int LayerId = 9042;
 

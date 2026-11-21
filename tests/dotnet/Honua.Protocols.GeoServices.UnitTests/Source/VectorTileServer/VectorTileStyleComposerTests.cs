@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.VectorTileServer.Services;
 using Honua.TestKit.Attributes;
@@ -23,14 +24,7 @@ public sealed class VectorTileStyleComposerTests
     [Fact]
     public void Compose_DefaultPointStyle_OmitsSpriteAndGlyphs()
     {
-        var json = VectorTileStyleComposer.Compose(
-            storedMapLibreJson: null,
-            ServiceName,
-            SourceId,
-            TileUrl,
-            MetadataV2GeometryType.Point,
-            SpriteUrl,
-            GlyphsUrl);
+        var json = ComposeWithSpriteAndGlyphs(null, MetadataV2GeometryType.Point);
 
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
@@ -62,14 +56,7 @@ public sealed class VectorTileStyleComposerTests
             }
             """;
 
-        var json = VectorTileStyleComposer.Compose(
-            storedStyle,
-            ServiceName,
-            SourceId,
-            TileUrl,
-            MetadataV2GeometryType.Point,
-            SpriteUrl,
-            GlyphsUrl);
+        var json = ComposeWithSpriteAndGlyphs(storedStyle, MetadataV2GeometryType.Point);
 
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
@@ -102,14 +89,7 @@ public sealed class VectorTileStyleComposerTests
             }
             """;
 
-        var json = VectorTileStyleComposer.Compose(
-            storedStyle,
-            ServiceName,
-            SourceId,
-            TileUrl,
-            MetadataV2GeometryType.Point,
-            SpriteUrl,
-            GlyphsUrl);
+        var json = ComposeWithSpriteAndGlyphs(storedStyle, MetadataV2GeometryType.Point);
 
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
@@ -132,14 +112,7 @@ public sealed class VectorTileStyleComposerTests
             }
             """;
 
-        var json = VectorTileStyleComposer.Compose(
-            storedStyle,
-            ServiceName,
-            SourceId,
-            TileUrl,
-            MetadataV2GeometryType.Polygon,
-            SpriteUrl,
-            GlyphsUrl);
+        var json = ComposeWithSpriteAndGlyphs(storedStyle, MetadataV2GeometryType.Polygon);
 
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
@@ -151,15 +124,17 @@ public sealed class VectorTileStyleComposerTests
     [UnitTest]
     public void Issue5534_DefaultStyle_VectorSourceReferencesTheServiceDescriptor()
     {
-        var json = VectorTileStyleComposer.Compose(
-            storedMapLibreJson: null,
-            ServiceName,
-            SourceId,
-            TileUrl,
-            MetadataV2GeometryType.Point,
-            SpriteUrl,
-            GlyphsUrl,
-            ServiceUrl);
+        var json = VectorTileStyleComposer.Compose(new VectorTileStyleOptions
+        {
+            StoredMapLibreJson = null,
+            ServiceName = ServiceName,
+            SourceId = SourceId,
+            TileUrl = TileUrl,
+            GeometryType = MetadataV2GeometryType.Point,
+            SpriteUrl = SpriteUrl,
+            GlyphsUrl = GlyphsUrl,
+            ServiceUrl = ServiceUrl
+        });
 
         using var document = JsonDocument.Parse(json);
         var source = document.RootElement.GetProperty("sources").GetProperty(SourceId);
@@ -186,15 +161,17 @@ public sealed class VectorTileStyleComposerTests
             }
             """;
 
-        var json = VectorTileStyleComposer.Compose(
-            storedStyle,
-            ServiceName,
-            SourceId,
-            TileUrl,
-            MetadataV2GeometryType.Polygon,
-            SpriteUrl,
-            GlyphsUrl,
-            ServiceUrl);
+        var json = VectorTileStyleComposer.Compose(new VectorTileStyleOptions
+        {
+            StoredMapLibreJson = storedStyle,
+            ServiceName = ServiceName,
+            SourceId = SourceId,
+            TileUrl = TileUrl,
+            GeometryType = MetadataV2GeometryType.Polygon,
+            SpriteUrl = SpriteUrl,
+            GlyphsUrl = GlyphsUrl,
+            ServiceUrl = ServiceUrl
+        });
 
         using var document = JsonDocument.Parse(json);
         foreach (var source in document.RootElement.GetProperty("sources").EnumerateObject())
@@ -218,15 +195,82 @@ public sealed class VectorTileStyleComposerTests
             }
             """;
 
-        var json = VectorTileStyleComposer.Compose(
-            storedStyle,
-            ServiceName,
-            SourceId,
-            TileUrl,
-            MetadataV2GeometryType.Polygon);
+        var json = VectorTileStyleComposer.Compose(new VectorTileStyleOptions
+        {
+            StoredMapLibreJson = storedStyle,
+            ServiceName = ServiceName,
+            SourceId = SourceId,
+            TileUrl = TileUrl,
+            GeometryType = MetadataV2GeometryType.Polygon
+        });
 
         using var document = JsonDocument.Parse(json);
         document.RootElement.GetProperty("sources").GetProperty(SourceId)
             .TryGetProperty("url", out _).Should().BeFalse();
     }
+
+    [UnitTest]
+    public void Compose_DefaultStyle_UsesDefaultTileZoomLimit()
+    {
+        var json = VectorTileStyleComposer.Compose(new VectorTileStyleOptions
+        {
+            StoredMapLibreJson = null,
+            ServiceName = ServiceName,
+            SourceId = SourceId,
+            TileUrl = TileUrl,
+            GeometryType = MetadataV2GeometryType.Point
+        });
+
+        using var document = JsonDocument.Parse(json);
+        var source = document.RootElement.GetProperty("sources").GetProperty(SourceId);
+        source.GetProperty("maxzoom").GetInt32().Should().Be(new TileLimits().MaxTileZoom);
+    }
+
+    [UnitTest]
+    public void Compose_ConfiguredLimits_NarrowsEveryOwnedSourceAndPreservesTighterRanges()
+    {
+        const string storedStyle = """
+            {
+              "version": 8,
+              "sources": {
+                "wide": { "type": "vector", "minzoom": 0, "maxzoom": 22 },
+                "implicit": { "type": "vector" },
+                "narrow": { "type": "vector", "minzoom": 5, "maxzoom": 10 }
+              },
+              "layers": []
+            }
+            """;
+        var json = VectorTileStyleComposer.Compose(new VectorTileStyleOptions
+        {
+            StoredMapLibreJson = storedStyle,
+            ServiceName = ServiceName,
+            SourceId = SourceId,
+            TileUrl = TileUrl,
+            GeometryType = MetadataV2GeometryType.Point,
+            TileLimits = new TileLimits { MinTileZoom = 3, MaxTileZoom = 12 }
+        });
+
+        using var document = JsonDocument.Parse(json);
+        var sources = document.RootElement.GetProperty("sources");
+        foreach (var source in sources.EnumerateObject())
+        {
+            var narrow = source.Name == "narrow";
+            source.Value.GetProperty("minzoom").GetInt32().Should().Be(narrow ? 5 : 3);
+            source.Value.GetProperty("maxzoom").GetInt32().Should().Be(narrow ? 10 : 12);
+            source.Value.GetProperty("tiles")[0].GetString().Should().Be(TileUrl);
+        }
+        sources.EnumerateObject().Should().HaveCount(4);
+    }
+
+    private static string ComposeWithSpriteAndGlyphs(string? storedStyle, MetadataV2GeometryType geometryType)
+        => VectorTileStyleComposer.Compose(new VectorTileStyleOptions
+        {
+            StoredMapLibreJson = storedStyle,
+            ServiceName = ServiceName,
+            SourceId = SourceId,
+            TileUrl = TileUrl,
+            GeometryType = geometryType,
+            SpriteUrl = SpriteUrl,
+            GlyphsUrl = GlyphsUrl
+        });
 }

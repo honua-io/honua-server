@@ -391,13 +391,14 @@ internal sealed partial class PortalTokenIssuer(
         PortalTokenRecord record,
         string[] roles)
     {
-        var claims = new List<Claim>
-        {
+        List<Claim> claims =
+        [
             new(ClaimTypes.Name, record.PrincipalId),
             new(ClaimTypes.NameIdentifier, record.PrincipalId),
             new("auth_type", AuthTypeClaimValue),
             new(BindingClaimType, record.ClientType.ToString()),
-        };
+            .. FederatedIssuerClaims(record.Source),
+        ];
 
         if (!string.IsNullOrWhiteSpace(record.DisplayName))
         {
@@ -409,10 +410,9 @@ internal sealed partial class PortalTokenIssuer(
             claims.Add(new Claim(TenantClaimType, record.TenantId!));
         }
 
-        foreach (var role in roles.Where(role => !string.IsNullOrWhiteSpace(role)))
-        {
-            claims.Add(new Claim(ClaimTypes.Role, role));
-        }
+        claims.AddRange(roles
+            .Where(static role => !string.IsNullOrWhiteSpace(role))
+            .Select(static role => new Claim(ClaimTypes.Role, role)));
 
         var identity = new ClaimsIdentity(
             claims,
@@ -426,6 +426,20 @@ internal sealed partial class PortalTokenIssuer(
         CanonicalSecurityActor.StampAuthorityClaims(identity);
 
         return new ClaimsPrincipal(identity);
+    }
+
+    // A token exchanged from a federated sign-in keeps its provider, so owner checks qualify it like the original bearer.
+    private static IEnumerable<Claim> FederatedIssuerClaims(PortalTokenSourceRecord? source)
+    {
+        if (source is not { Kind: PortalCredentialSourceKind.FederatedToken, Reference: { } reference })
+        {
+            return [];
+        }
+
+        var separator = reference.IndexOf('|', StringComparison.Ordinal);
+        return separator > 0
+            ? [CanonicalSecurityActor.CreateStampedClaim(OwnerIdentityScope.SubjectIssuerClaim, reference[..separator])]
+            : [];
     }
 
     // A token another node will not see must not look issued, so a store failure reaches the caller.

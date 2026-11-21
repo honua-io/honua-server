@@ -4,6 +4,7 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -19,17 +20,70 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
-public sealed class ImageServerWmtsMatrixSetTests : IDisposable
+public sealed class ImageServerWmtsMatrixSetTests : IClassFixture<ImageServerWmtsMatrixSetTests.MatrixSetHosts>
 {
     private const int TestLayerId = 0;
     private const string WorldCrs84Quad = "WorldCRS84Quad";
-    private readonly DirectoryInfo _storageDirectory = Directory.CreateTempSubdirectory("honua-wmts-matrix-");
+    private readonly MatrixSetHosts _hosts;
 
-    public void Dispose()
+    public ImageServerWmtsMatrixSetTests(MatrixSetHosts hosts) => _hosts = hosts;
+
+    // One host per matrix-set configuration; each case borrows one with its own raster store.
+    // Each host owns a storage directory for its file-backed tile cache. Tile keys already carry
+    // the catalog revision that every borrow advances; UseRasterStoreAsync also deletes the stored
+    // files, so an earlier case's tile cannot satisfy a later case's first rendering request.
+    public sealed class MatrixSetHosts : IAsyncLifetime
     {
-        // Every test disposes its host in finally before xUnit releases this owned directory.
-        _storageDirectory.Delete(recursive: true);
-        GC.SuppressFinalize(this);
+        private readonly DirectoryInfo _storageRoot = Directory.CreateTempSubdirectory("honua-wmts-matrix-");
+
+        public MatrixSetHosts()
+        {
+            var defaultStorage = _storageRoot.CreateSubdirectory("default");
+            var worldCrs84QuadStorage = _storageRoot.CreateSubdirectory("world-crs84-quad");
+            Default = new SwitchedServiceHost<IRasterStore>(
+                CreateRasterStoreSubstitute(),
+                services => UseStorage(services, defaultStorage));
+            WorldCrs84QuadEnabled = new SwitchedServiceHost<IRasterStore>(
+                CreateRasterStoreSubstitute(),
+                services =>
+                {
+                    UseStorage(services, worldCrs84QuadStorage);
+                    services.Configure<ImageServerTileMatrixSetOptions>(options => options.Enabled.Add(WorldCrs84Quad));
+                });
+        }
+
+        public SwitchedServiceHost<IRasterStore> Default { get; }
+
+        public SwitchedServiceHost<IRasterStore> WorldCrs84QuadEnabled { get; }
+
+        public async Task InitializeAsync()
+        {
+            await Default.InitializeAsync();
+            await WorldCrs84QuadEnabled.InitializeAsync();
+        }
+
+        public async Task DisposeAsync()
+        {
+            try
+            {
+                await Default.DisposeAsync();
+            }
+            finally
+            {
+                await WorldCrs84QuadEnabled.DisposeAsync();
+                _storageRoot.Delete(recursive: true);
+            }
+        }
+
+        private static void UseStorage(IServiceCollection services, DirectoryInfo storage)
+        {
+            services.PostConfigure<LocalStorageOptions>(options => options.BasePath = storage.FullName);
+            services.PostConfigure<CloudStorageOptions>(options =>
+            {
+                options.LocalStorage ??= new LocalStorageOptions();
+                options.LocalStorage.BasePath = storage.FullName;
+            });
+        }
     }
 
     private static IRasterStore CreateRasterStoreSubstitute()
@@ -70,26 +124,19 @@ public sealed class ImageServerWmtsMatrixSetTests : IDisposable
         return store;
     }
 
-    private async Task<WebAppFixture> CreateFixtureAsync(IRasterStore rasterStore, bool enableWorldCrs84Quad)
+    private async Task<SwitchedServiceLease> UseRasterStoreAsync(IRasterStore rasterStore, bool enableWorldCrs84Quad)
     {
-        var fixture = new WebAppFixture()
-            .ConfigureServices(services =>
-            {
-                // Database isolation does not isolate the file-backed tile cache. A previous
-                // fixture's tile must never satisfy this fixture's first rendering request.
-                services.PostConfigure<LocalStorageOptions>(options => options.BasePath = _storageDirectory.FullName);
-                services.PostConfigure<CloudStorageOptions>(options =>
-                {
-                    options.LocalStorage ??= new LocalStorageOptions();
-                    options.LocalStorage.BasePath = _storageDirectory.FullName;
-                });
-                services.AddSingleton(rasterStore);
-                if (enableWorldCrs84Quad)
-                {
-                    services.Configure<ImageServerTileMatrixSetOptions>(options => options.Enabled.Add(WorldCrs84Quad));
-                }
-            });
-        await fixture.InitializeAsync();
+        var host = enableWorldCrs84Quad ? _hosts.WorldCrs84QuadEnabled : _hosts.Default;
+        var fixture = await host.BorrowAsync(rasterStore);
+
+        // Delete through the storage service: it indexes stored files in memory, so removing
+        // files from disk alone would leave index entries that suppress the next tile write.
+        var storage = fixture.GetService<ICloudFileStorage>();
+        foreach (var file in await storage.ListFilesAsync(maxResults: int.MaxValue))
+        {
+            await storage.DeleteAsync(file.FileId);
+        }
+
         return fixture;
     }
 
@@ -98,7 +145,7 @@ public sealed class ImageServerWmtsMatrixSetTests : IDisposable
     [Operation(Operations.Metadata)]
     public async Task Wmts_GetCapabilities_DefaultConfig_AdvertisesOnlyWebMercatorQuad()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: false);
+        var fixture = await UseRasterStoreAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: false);
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -120,7 +167,7 @@ public sealed class ImageServerWmtsMatrixSetTests : IDisposable
     [Operation(Operations.Metadata)]
     public async Task Wmts_GetCapabilities_WithWorldCrs84QuadEnabled_AdvertisesMatrixSet()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: true);
+        var fixture = await UseRasterStoreAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: true);
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -159,7 +206,7 @@ public sealed class ImageServerWmtsMatrixSetTests : IDisposable
                 Srid = 4326,
             });
 
-        var fixture = await CreateFixtureAsync(store, enableWorldCrs84Quad: true);
+        var fixture = await UseRasterStoreAsync(store, enableWorldCrs84Quad: true);
         try
         {
             // WorldCRS84Quad level 0: 2 columns x 1 row. Tile (col 0, row 0) covers the western
@@ -215,7 +262,7 @@ public sealed class ImageServerWmtsMatrixSetTests : IDisposable
                 HasData = true,
             });
 
-        var fixture = await CreateFixtureAsync(store, enableWorldCrs84Quad: true);
+        var fixture = await UseRasterStoreAsync(store, enableWorldCrs84Quad: true);
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -244,7 +291,7 @@ public sealed class ImageServerWmtsMatrixSetTests : IDisposable
     [Operation(Operations.GetTile)]
     public async Task Wmts_GetTile_WorldCrs84QuadNotConfigured_ReturnsInvalidParameterValue()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: false);
+        var fixture = await UseRasterStoreAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: false);
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -266,7 +313,7 @@ public sealed class ImageServerWmtsMatrixSetTests : IDisposable
     [Operation(Operations.GetTile)]
     public async Task Wmts_GetTile_UnknownMatrixSet_ReturnsInvalidParameterValue()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: true);
+        var fixture = await UseRasterStoreAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: true);
         try
         {
             var response = await fixture.Client.GetAsync(
@@ -287,7 +334,7 @@ public sealed class ImageServerWmtsMatrixSetTests : IDisposable
     [Operation(Operations.GetTile)]
     public async Task Wmts_GetTile_WorldCrs84QuadColumnOutOfBounds_ReturnsInvalidParameterValue()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: true);
+        var fixture = await UseRasterStoreAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: true);
         try
         {
             // At level 0 WorldCRS84Quad has 2 columns (0..1); column 2 is out of bounds.
@@ -310,7 +357,7 @@ public sealed class ImageServerWmtsMatrixSetTests : IDisposable
     [Operation(Operations.GetTile)]
     public async Task Wmts_GetTile_WorldCrs84QuadRowOutOfBounds_ReturnsInvalidParameterValue()
     {
-        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: true);
+        var fixture = await UseRasterStoreAsync(CreateRasterStoreSubstitute(), enableWorldCrs84Quad: true);
         try
         {
             // At level 0 WorldCRS84Quad has 1 row (0 only); row 1 is out of bounds.

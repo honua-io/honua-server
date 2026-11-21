@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.Admin.Share;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Export)]
-public sealed class ShareAdminEndpointsTests : IAsyncLifetime
+public sealed partial class ShareAdminEndpointsTests : IAsyncLifetime
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 

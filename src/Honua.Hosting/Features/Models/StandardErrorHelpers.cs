@@ -70,6 +70,14 @@ internal static class StandardErrorHelpers
         return StandardErrorResponseFormatter.FormatError(context, errorResponse);
     }
 
+    // Request-boundary mapping for a failed feature query: a caller error raised below the
+    // handler (a field the caller's policy hides) or backpressure keeps its own status; anything
+    // else is a generic 500 with the given detail.
+    internal static IResult CreateQueryFailure(HttpContext context, Exception exception, string internalErrorDetail)
+        => exception is ServiceUnavailableException or MaskedFieldReferenceException
+            ? CreateFromException(context, exception)
+            : CreateInternalServerError(context, internalErrorDetail);
+
     internal static IResult CreateMethodNotAllowed(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
     {
         var errorResponse = new StandardErrorResponse(

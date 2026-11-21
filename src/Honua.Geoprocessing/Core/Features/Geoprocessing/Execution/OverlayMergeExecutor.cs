@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 
@@ -14,12 +15,15 @@ internal sealed class OverlayMergeExecutor(
 
     protected override string ProcessId => HandledProcessId;
 
-    protected override List<IFeature> Apply(
+    protected override async Task<List<IFeature>> ApplyAsync(
         FeatureCollection source,
         StepInputReader inputs,
+        IJobExecutionContext context,
         CancellationToken cancellationToken)
     {
-        var mergeLayer = OverlayExecutorSupport.ReadLayer(inputs, "merge", _options.CurrentValue.MaxArtifactBytes);
+        var opts = _options.CurrentValue;
+        var mergeLayer = await OverlayExecutorSupport.ReadLayerAsync(
+            inputs, "merge", opts.MaxArtifactBytes, opts.OutputRootDirectory, context, cancellationToken).ConfigureAwait(false);
 
         var output = new List<IFeature>(source.Count + mergeLayer.Count);
         foreach (var feature in source)

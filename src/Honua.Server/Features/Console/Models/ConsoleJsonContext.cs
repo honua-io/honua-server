@@ -33,6 +33,7 @@ namespace Honua.Server.Features.Console.Models;
 // Open-data DCAT + STAC publication API.
 [JsonSerializable(typeof(ApiResponse<ConsoleOpenDataPageResponse>))]
 [JsonSerializable(typeof(ApiResponse<ConsoleOpenDataPage>))]
+[JsonSerializable(typeof(ApiResponse<ConsoleOpenDataDatasetListResponse>))]
 [JsonSerializable(typeof(ApiResponse<ConsoleOpenDataEligibilityResponse>))]
 [JsonSerializable(typeof(ApiResponse<ConsoleDcatExportResponse>))]
 [JsonSerializable(typeof(ApiResponse<ConsoleStacPublicationState>))]

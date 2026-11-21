@@ -15,7 +15,7 @@ using System.Security.Claims;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
-public sealed class LiveStreamAuthorizationTests
+public sealed partial class LiveStreamAuthorizationTests
 {
     [UnitTest]
     public async Task Filter_EndpointDenialCancelsPendingCheck_DoesNotStartAnSseResponse()

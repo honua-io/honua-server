@@ -84,6 +84,58 @@ public sealed class CustomCodeBatchBoundaryTests
     }
 
     [UnitTest]
+    public async Task Dispatch_ContainerOverrides_CarrySingleUseCodeNotCapability()
+    {
+        var client = new StubAwsBatchJobClient();
+        var issuer = Substitute.For<IScopedJobTokenIssuer>();
+        issuer.IssueAsync(Arg.Any<ScopedJobTokenRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new ScopedJobTokenIssuance("capability-1", DateTimeOffset.UtcNow.AddHours(1)));
+        var backend = new AwsBatchComputeBackend(client, Options.Create(new AwsBatchExecutionOptions()),
+            NullLogger<AwsBatchComputeBackend>.Instance, issuer);
+        var job = AwsBatchComputeBackendTests.CreateJob() with
+        {
+            Audit = new OperationAuditInfo { CustomCodeOwnerScope = new CustomCodeOwnerScope("owner", "tenant", [], [], []) }
+        };
+
+        var prepared = await backend.PrepareSubmissionAsync(job, CancellationToken.None);
+        var parameters = job.Spec.Parameters.Concat(prepared!).ToDictionary(pair => pair.Key, pair => pair.Value);
+        var started = await backend.StartAsync(job with { Spec = job.Spec with { Parameters = parameters } });
+
+        var code = prepared![AwsBatchComputeBackend.RedemptionCodeParameter];
+        Assert.Matches("^[0-9a-f]{64}$", code);
+        Assert.False(started.ResolvedParameters!.ContainsKey(AwsBatchComputeBackend.RedemptionCodeParameter),
+            "a post-start provenance merge must never restore a code the job already redeemed");
+        Assert.DoesNotContain(client.LastSubmission!.EnvironmentOverrides, entry => entry.Value.Contains("capability-1", StringComparison.Ordinal));
+        Assert.DoesNotContain(client.LastSubmission.EnvironmentOverrides, entry => entry.Name == "HONUA_JOB_TOKEN");
+        Assert.Contains(client.LastSubmission.EnvironmentOverrides, entry => entry.Name == "HONUA_JOB_REDEMPTION_CODE" && entry.Value == code);
+    }
+
+    [UnitTest]
+    public async Task Dispatch_PreparationWithoutRedemptionCode_FailsBeforeSubmit()
+    {
+        var client = new StubAwsBatchJobClient();
+        var backend = new AwsBatchComputeBackend(client, Options.Create(new AwsBatchExecutionOptions()),
+            NullLogger<AwsBatchComputeBackend>.Instance, Substitute.For<IScopedJobTokenIssuer>());
+        var job = AwsBatchComputeBackendTests.CreateJob();
+        var parameters = new Dictionary<string, string>(job.Spec.Parameters, StringComparer.Ordinal)
+        {
+            [AwsBatchComputeBackend.JobTokenParameter] = "capability-1",
+            ["env.HONUA_JOB_ID"] = job.OperationId,
+            ["env.HONUA_JOB_ATTEMPT"] = "1",
+        };
+        var legacy = job with
+        {
+            Audit = new OperationAuditInfo { CustomCodeOwnerScope = new CustomCodeOwnerScope("owner", "tenant", [], [], []) },
+            Spec = job.Spec with { Parameters = parameters },
+        };
+
+        var result = await backend.StartAsync(legacy);
+
+        Assert.Equal(ExecutionJobStatus.Failed, result.Status);
+        Assert.Null(client.LastSubmission);
+    }
+
+    [UnitTest]
     public async Task Dispatch_InjectsAdmittedCorrelationAndTraceWithoutClobberingTraceId()
     {
         var client = new StubAwsBatchJobClient();

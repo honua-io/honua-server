@@ -333,18 +333,27 @@ internal static class WmtsRequestHandlers
             var visibleLayers = accessibleLayers
                 .Where(l => ResourceHasGeometry(l.Resource))
                 .ToArray();
-            var xml = await BuildWmtsCapabilitiesAsync(
-                context.Request,
-                svcDef,
-                visibleLayers,
-                snapshot.Graph,
-                sections,
-                wmtsMaxZoom,
-                capabilitiesFeatureReader,
-                tileMatrixSetRegistry,
-                logger,
-                cancellationToken).ConfigureAwait(false);
-            return Results.Content(xml, responseMimeType);
+            var capabilities = PooledTextBuilder.Rent();
+            try
+            {
+                await BuildWmtsCapabilitiesAsync(
+                    capabilities,
+                    context.Request,
+                    svcDef,
+                    visibleLayers,
+                    snapshot.Graph,
+                    sections,
+                    wmtsMaxZoom,
+                    capabilitiesFeatureReader,
+                    tileMatrixSetRegistry,
+                    logger,
+                    cancellationToken).ConfigureAwait(false);
+                return PooledTextBuilder.ToUtf8Result(capabilities, responseMimeType);
+            }
+            finally
+            {
+                PooledTextBuilder.Return(capabilities);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -1244,7 +1253,8 @@ internal static class WmtsRequestHandlers
         return sb.ToString();
     }
 
-    private static async Task<string> BuildWmtsCapabilitiesAsync(
+    private static async Task BuildWmtsCapabilitiesAsync(
+        StringBuilder sb,
         HttpRequest request,
         MetadataV2Service service,
         IReadOnlyList<WmtsLayer> visibleLayers,
@@ -1257,7 +1267,6 @@ internal static class WmtsRequestHandlers
         CancellationToken cancellationToken)
     {
         service = service with { Metadata = PublishedMetadataProjection.ForCapabilities(graph, service) };
-        var sb = new StringBuilder(4096);
         var includeServiceIdentification = sections.HasFlag(WmtsCapabilitiesSections.ServiceIdentification);
         var includeServiceProvider = sections.HasFlag(WmtsCapabilitiesSections.ServiceProvider);
         var includeOperationsMetadata = sections.HasFlag(WmtsCapabilitiesSections.OperationsMetadata);
@@ -1509,8 +1518,6 @@ internal static class WmtsRequestHandlers
         }
 
         sb.AppendLine("</Capabilities>");
-
-        return sb.ToString();
     }
 
     private static bool IsWmtsLayerQueryable(WmtsLayer layer)
@@ -2391,11 +2398,13 @@ internal static class WmtsRequestHandlers
             return null;
         }
 
-        var extent = OgcTileExtent.ExpandDegenerateAxes(transformedExtent.Value, ResolveWmtsMaxZoom(context));
-        var minLon = Math.Min(extent.MinLon, extent.MaxLon);
-        var minLat = Math.Min(extent.MinLat, extent.MaxLat);
-        var maxLon = Math.Max(extent.MinLon, extent.MaxLon);
-        var maxLat = Math.Max(extent.MinLat, extent.MaxLat);
+        var extent = TileExtent.ExpandDegenerateAxes(transformedExtent.Value, ResolveWmtsMaxZoom(context));
+        // ows:WGS84BoundingBox cannot cross the dateline; advertise the full longitude range.
+        var crossesDateline = extent.MinLon > extent.MaxLon;
+        var minLon = crossesDateline ? -180d : extent.MinLon;
+        var maxLon = crossesDateline ? 180d : extent.MaxLon;
+        var minLat = extent.MinLat;
+        var maxLat = extent.MaxLat;
 
         return (
             $"{FormatWmtsCoordinate(minLon)} {FormatWmtsCoordinate(minLat)}",

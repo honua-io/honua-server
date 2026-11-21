@@ -11,7 +11,7 @@ HONUA_HTTP_PORT="$(python3 "${OWNED_SERVER}" port --variable HONUA_QUICKSTART_SM
 HONUA_GRPC_PORT="$(python3 "${OWNED_SERVER}" port --variable HONUA_QUICKSTART_SMOKE_GRPC_PORT --ci-default 18081)"
 HONUA_CONSOLE_PORT="$(python3 "${OWNED_SERVER}" port --variable HONUA_QUICKSTART_SMOKE_CONSOLE_PORT --ci-default 15174)"
 POSTGRES_PORT="$(python3 "${OWNED_SERVER}" port --variable HONUA_QUICKSTART_SMOKE_POSTGRES_PORT --ci-default 15432)"
-ADMIN_PASSWORD="${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
+ADMIN_PASSWORD="${HONUA_ADMIN_PASSWORD:-}"
 
 compose() {
   local compose_files=(-f "${COMPOSE_FILE}")
@@ -125,6 +125,8 @@ fi
 
 SMOKE_ENV_FILE="$(mktemp)"
 python3 "${ROOT_DIR}/scripts/docker/quickstart.py" --env-file "${SMOKE_ENV_FILE}" --init-only
+# The bootstrap generated (or validated a supplied) admin key in the env file.
+ADMIN_PASSWORD="$(sed -n 's/^HONUA_ADMIN_PASSWORD=//p' "${SMOKE_ENV_FILE}")"
 SMOKE_OVERRIDE_FILE="$(mktemp)"
 cat >"${SMOKE_OVERRIDE_FILE}" <<'YAML'
 services:

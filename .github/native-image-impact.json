@@ -16,7 +16,8 @@
     "NuGet.config",
     ".editorconfig",
     "eng/**",
-    "scripts/docker/restore-dotnet-with-github-packages.sh"
+    "scripts/docker/restore-dotnet-with-github-packages.sh",
+    "scripts/docker/server-lock-args.sh"
   ],
   "serving_external_patterns": [
     "docs/gis/data/feature-catalog.json",
@@ -65,6 +66,7 @@
       ".dockerignore",
       "docker/runtime/**",
       "scripts/docker/restore-dotnet-with-github-packages.sh",
+      "scripts/docker/server-lock-args.sh",
       "scripts/ci/verify-serving-image-boundary.py",
       "scripts/ci/serving-image-reuse.py",
       "scripts/ci/verify-native-migration-refusal.py",
@@ -88,6 +90,7 @@
       "docker/Dockerfile.aot",
       "docker/Dockerfile.lambda.aot",
       "scripts/docker/restore-dotnet-with-github-packages.sh",
+      "scripts/docker/server-lock-args.sh",
       "scripts/ci/verify-serving-image-boundary.py",
       "scripts/ci/serving-image-reuse.py",
       "scripts/ci/verify-native-migration-refusal.py",

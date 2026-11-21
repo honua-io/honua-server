@@ -1,6 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
@@ -104,6 +108,9 @@ internal sealed class PostgresOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
+        var previous = await ReadPolicyInTransactionAsync(connection, transaction, normalized.Rule, cancellationToken)
+            .ConfigureAwait(false);
+
         var sql = $"""
             INSERT INTO {_policyTable}
                 (rule, mode, max_auto_actions_per_window, window_seconds, max_blast_radius, updated_at, updated_by)
@@ -125,16 +132,22 @@ internal sealed class PostgresOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
         }
 
         await TouchTrackAsync(connection, transaction, normalized.Rule, now, cancellationToken).ConfigureAwait(false);
-        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
 
-        await RecordAuditAsync(
-                "ops_autonomy.policy.update",
+        var auditDetails = BuildPolicyAuditDetails(previous, normalized, reason);
+        var auditSucceeded = await TryRecordPolicyAuditAsync(
+                "ops.autonomy.policy_changed",
                 changedBy,
                 normalized.Rule,
-                reason,
-                $"{{\"rule\":\"{JsonEscape(normalized.Rule)}\",\"mode\":\"{normalized.Mode}\"}}",
+                auditDetails,
                 cancellationToken)
             .ConfigureAwait(false);
+        if (!auditSucceeded)
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException("Policy mutation aborted: tamper-evident audit log write failed.");
+        }
+
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
 
         return await ReadSnapshotAsync(normalized.Rule, cancellationToken).ConfigureAwait(false);
     }
@@ -182,21 +195,35 @@ internal sealed class PostgresOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("settings_id", NpgsqlDbType.Text, SettingsId);
-        command.Parameters.AddWithValue("kill_switch_enabled", NpgsqlDbType.Boolean, settings.KillSwitchEnabled);
-        command.Parameters.AddWithValue("updated_at", NpgsqlDbType.TimestampTz, now);
-        command.Parameters.AddWithValue("updated_by", NpgsqlDbType.Text, actor);
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-        await RecordAuditAsync(
-                "ops_autonomy.settings.update",
+        var previous = await ReadSettingsInTransactionAsync(connection, transaction, cancellationToken)
+            .ConfigureAwait(false);
+
+        await using (var command = new NpgsqlCommand(sql, connection, transaction))
+        {
+            command.Parameters.AddWithValue("settings_id", NpgsqlDbType.Text, SettingsId);
+            command.Parameters.AddWithValue("kill_switch_enabled", NpgsqlDbType.Boolean, settings.KillSwitchEnabled);
+            command.Parameters.AddWithValue("updated_at", NpgsqlDbType.TimestampTz, now);
+            command.Parameters.AddWithValue("updated_by", NpgsqlDbType.Text, actor);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        var auditDetails = BuildSettingsAuditDetails(previous, settings, reason);
+        var auditSucceeded = await TryRecordPolicyAuditAsync(
+                "ops.autonomy.policy_changed",
                 actor,
                 SettingsId,
-                reason,
-                $"{{\"killSwitchEnabled\":{settings.KillSwitchEnabled.ToString().ToLowerInvariant()}}}",
+                auditDetails,
                 cancellationToken)
             .ConfigureAwait(false);
+        if (!auditSucceeded)
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException("Policy mutation aborted: tamper-evident audit log write failed.");
+        }
+
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
 
         return new OpsAutonomySettings
         {
@@ -504,24 +531,67 @@ internal sealed class PostgresOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private Task RecordAuditAsync(
+    private async Task<OpsAutonomyPolicy?> ReadPolicyInTransactionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string rule,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            SELECT rule, mode, max_auto_actions_per_window, window_seconds, max_blast_radius, updated_at, updated_by
+            FROM {_policyTable}
+            WHERE rule = @rule
+            FOR UPDATE
+            """;
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("rule", NpgsqlDbType.Text, rule);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            ? ReadPolicy(reader)
+            : null;
+    }
+
+    private async Task<OpsAutonomySettings?> ReadSettingsInTransactionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            SELECT kill_switch_enabled, updated_at, updated_by
+            FROM {_settingsTable}
+            WHERE settings_id = @settings_id
+            FOR UPDATE
+            """;
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("settings_id", NpgsqlDbType.Text, SettingsId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        return new OpsAutonomySettings
+        {
+            KillSwitchEnabled = reader.GetBoolean(0),
+            UpdatedAt = reader.IsDBNull(1) ? null : reader.GetFieldValue<DateTimeOffset>(1),
+            UpdatedBy = reader.IsDBNull(2) ? null : reader.GetString(2),
+        };
+    }
+
+    private async Task<bool> TryRecordPolicyAuditAsync(
         string action,
         string actor,
         string resourceId,
-        string? reason,
         string details,
         CancellationToken cancellationToken)
     {
-        if (_auditLog is null)
+        if (_auditLog is null || _auditLog is NullAuditLog)
         {
-            return Task.CompletedTask;
+            return true;
         }
 
         var resolvedActor = string.IsNullOrWhiteSpace(actor) ? AuditEvent.AnonymousActor : actor;
-        var fullDetails = string.IsNullOrWhiteSpace(reason)
-            ? details
-            : details[..^1] + ",\"reason\":\"" + JsonEscape(reason) + "\"}";
-        return _auditLog.RecordAsync(
+        var auditId = await _auditLog.RecordAsync(
             new AuditEvent
             {
                 Timestamp = DateTimeOffset.UtcNow,
@@ -533,10 +603,51 @@ internal sealed class PostgresOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
                 Action = action,
                 Outcome = AuditOutcome.Success,
                 CorrelationId = resourceId,
-                Details = fullDetails,
+                Details = details,
             },
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
+        return !string.IsNullOrWhiteSpace(auditId);
     }
+
+    internal static string BuildPolicyAuditDetails(
+        OpsAutonomyPolicy? previous,
+        OpsAutonomyPolicy current,
+        string? reason)
+    {
+        var previousJson = previous is null ? "null" : SerializePolicySnapshot(previous);
+        var currentJson = SerializePolicySnapshot(current);
+        var previousDigest = previous is null ? "null" : $"\"{ComputeSha256Hex(previousJson)}\"";
+        var currentDigest = ComputeSha256Hex(currentJson);
+        var reasonPart = string.IsNullOrWhiteSpace(reason) ? string.Empty : $",\"reason\":\"{JsonEscape(reason)}\"";
+        return $"{{\"rule\":\"{JsonEscape(current.Rule)}\",\"previous\":{previousJson},\"current\":{currentJson},\"previousPolicyDigest\":{previousDigest},\"newPolicyDigest\":\"{currentDigest}\"{reasonPart}}}";
+    }
+
+    internal static string BuildSettingsAuditDetails(
+        OpsAutonomySettings? previous,
+        OpsAutonomySettings current,
+        string? reason)
+    {
+        var previousJson = previous is null ? "null" : SerializeSettingsSnapshot(previous);
+        var currentJson = SerializeSettingsSnapshot(current);
+        var previousDigest = previous is null ? "null" : $"\"{ComputeSha256Hex(previousJson)}\"";
+        var currentDigest = ComputeSha256Hex(currentJson);
+        var reasonPart = string.IsNullOrWhiteSpace(reason) ? string.Empty : $",\"reason\":\"{JsonEscape(reason)}\"";
+        return $"{{\"settingsId\":\"{SettingsId}\",\"previous\":{previousJson},\"current\":{currentJson},\"previousPolicyDigest\":{previousDigest},\"newPolicyDigest\":\"{currentDigest}\"{reasonPart}}}";
+    }
+
+    private static string SerializePolicySnapshot(OpsAutonomyPolicy policy)
+    {
+        var windowSeconds = ((int)Math.Ceiling(policy.Window.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
+        var maxActions = policy.MaxAutoActionsPerWindow.ToString(CultureInfo.InvariantCulture);
+        var maxBlast = policy.MaxBlastRadius.ToString(CultureInfo.InvariantCulture);
+        return $"{{\"rule\":\"{JsonEscape(policy.Rule)}\",\"mode\":\"{policy.Mode}\",\"maxAutoActionsPerWindow\":{maxActions},\"windowSeconds\":{windowSeconds},\"maxBlastRadius\":{maxBlast}}}";
+    }
+
+    private static string SerializeSettingsSnapshot(OpsAutonomySettings settings)
+        => $"{{\"killSwitchEnabled\":{settings.KillSwitchEnabled.ToString().ToLowerInvariant()}}}";
+
+    private static string ComputeSha256Hex(string value)
+        => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 
     private static OpsAutonomyPolicy ReadPolicy(
         NpgsqlDataReader reader,

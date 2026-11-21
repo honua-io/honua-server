@@ -4,6 +4,7 @@
   "title": "clarify_intent inputSchema",
   "description": "Argument shape for the clarify_intent tool (Analyze, Publish Data, Build App). Reference advertised name: honua_clarify_intent. Re-runs grounding with the operator's answers merged in. Extends ground_candidates with required intentId and a response carrying answers keyed by questionId. See planning.md §2.",
   "type": "object",
+  "additionalProperties": false,
   "required": ["goal", "intentId", "response"],
   "properties": {
     "goal": {

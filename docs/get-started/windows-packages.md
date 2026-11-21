@@ -131,7 +131,7 @@ services:
       - storage:/var/lib/honua/storage
       - ./secrets/keyring.pfx:/var/lib/honua/keyring.pfx:ro
   postgres:
-    image: pgrouting/pgrouting:17-3.5-3.7.3
+    image: ghcr.io/honua-io/honua-server@sha256:d9df4cd19ac018b1e626d7c74a1400d7affb8de48dbe5ed67a862589c4e3d998
     environment:
       POSTGRES_DB: honua
       POSTGRES_USER: honua
@@ -146,6 +146,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
+      # The first start on a volume from an older database image rebuilds text indexes first.
+      start_period: 60m
     restart: unless-stopped
 volumes:
   postgres:
@@ -300,7 +302,7 @@ if '--verify-only' not in sys.argv:
             schema=result['schema'], table=result['table'], layer_name='windows-points',
             service_name='windows', srid=4326, geometry_column=result['geometryColumn'],
             geometry_type='Point', primary_key=result['primaryKey'], fields_list=['id', 'properties']))
-        state_path.write_text(json.dumps({'service': 'windows', 'layer': layer.layer_id}), encoding='utf-8')
+        state_path.write_text(json.dumps({'service': 'windows', 'layer': layer.storage_layer_id}), encoding='utf-8')
 
 state = json.loads(state_path.read_text(encoding='utf-8'))
 with HonuaClient(base, api_key=key) as client:

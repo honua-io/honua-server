@@ -162,6 +162,36 @@ public sealed class PostgresChangeTrackerTests : IClassFixture<WebAppFixture>
 
     [IntegrationTest]
     [Operation(Operations.ExtractChanges)]
+    public async Task GetChangesInWindow_WithAPageLimit_ReadsOnlyTheOldestChanges()
+    {
+        const int layerId = 990137;
+        var tracker = _fixture.GetService<IChangeTracker>();
+        var baseline = await tracker.GetCurrentGenerationAsync();
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+        await using var insert = new Npgsql.NpgsqlCommand("""
+            INSERT INTO honua.feature_changes (generation, layer_id, objectid, operation)
+            SELECT nextval('honua.sync_generation'), 990137, objectid, 1
+            FROM generate_series(9201, 9205) AS objectid
+            ORDER BY objectid;
+            """, connection);
+        await insert.ExecuteNonQueryAsync();
+        var through = await tracker.GetCurrentGenerationAsync();
+
+        var page = await tracker.GetChangesInWindowAsync(new FeatureChangeWindow
+        {
+            SinceGeneration = baseline,
+            ThroughGeneration = through,
+            LayerIds = [layerId],
+            Limit = 2
+        });
+        var whole = await tracker.GetChangesInWindowAsync(baseline, through, [layerId], null);
+
+        page.Select(change => change.ObjectId).Should().Equal(9201L, 9202L);
+        whole.Should().HaveCount(5);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ExtractChanges)]
     public async Task GetChangesInWindow_WhenSameFeatureChangesLater_CollapsesOnlyInsideTheWindow()
     {
         const int layerId = 990136;

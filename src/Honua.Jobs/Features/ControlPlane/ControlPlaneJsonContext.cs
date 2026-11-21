@@ -17,6 +17,7 @@ namespace Honua.ControlPlane;
 [JsonSerializable(typeof(MetadataRollbackPlan))]
 [JsonSerializable(typeof(MetadataEvidenceRef))]
 [JsonSerializable(typeof(ExecutionJobRecord))]
+[JsonSerializable(typeof(ExecutionJobSpec))]
 [JsonSerializable(typeof(DeployTargetDefinition))]
 [JsonSerializable(typeof(ExecutionJobDefinition))]
 [JsonSerializable(typeof(ExecutionLogEntry))]

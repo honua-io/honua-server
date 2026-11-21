@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Policy;
 
 namespace Honua.Core.Features.Operations.Services;
 
@@ -15,8 +16,10 @@ public static class OperationDescriptorPublication
         ArgumentNullException.ThrowIfNull(descriptor);
         ArgumentNullException.ThrowIfNull(mapperCounts);
 
+        var requiresMapper = descriptor.ApprovalModel != OperationApprovalModel.None
+            || AgentApprovalRule.RequiresApproval(descriptor);
         return !descriptor.IsCompatibilityOnly &&
-            (descriptor.ApprovalModel == OperationApprovalModel.None ||
+            (!requiresMapper ||
              mapperCounts.TryGetValue(descriptor.OperationId, out var count) && count == 1);
     }
 

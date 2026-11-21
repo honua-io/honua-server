@@ -91,9 +91,9 @@ public sealed class OpsAutonomySettingsWriterTests : IAsyncLifetime
     {
         using var request = new CancellationTokenSource();
         var audit = Substitute.For<IAuditLog>();
+        CancelRequestWhenAuditRecords(audit, request, "\"current\":{\"killSwitchEnabled\":false}");
         var store = new PostgresOpsAutonomyPolicyStore(new TestDatabaseConnectionProvider(_postgres.DataSource), audit);
         await store.SetSettingsAsync(new OpsAutonomySettings { KillSwitchEnabled = true }, "operator");
-        CancelRequestWhenAuditRecords(audit, request, "false");
         var watchdog = new RecordingWatchdog();
         var writer = new OpsAutonomySettingsWriter(_postgres.DataSource, store, watchdog);
 
@@ -108,14 +108,17 @@ public sealed class OpsAutonomySettingsWriterTests : IAsyncLifetime
     {
         using var request = new CancellationTokenSource();
         var audit = Substitute.For<IAuditLog>();
+        CancelRequestWhenAuditRecords(audit, request, "\"current\":{\"killSwitchEnabled\":true}");
         var store = new PostgresOpsAutonomyPolicyStore(new TestDatabaseConnectionProvider(_postgres.DataSource), audit);
-        CancelRequestWhenAuditRecords(audit, request, "true");
+        await store.SetSettingsAsync(new OpsAutonomySettings { KillSwitchEnabled = false }, "operator");
         var watchdog = new RecordingWatchdog();
         var writer = new OpsAutonomySettingsWriter(_postgres.DataSource, store, watchdog);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => writer.SetAsync(StopChange(), request.Token));
 
-        Assert.True((await store.GetSettingsAsync()).KillSwitchEnabled);
+        // Transactional policy audit aborts the DB write when audit is cancelled,
+        // while the writer still suspends the watchdog fail-safe.
+        Assert.False((await store.GetSettingsAsync()).KillSwitchEnabled);
         Assert.Equal(1, watchdog.SuspendCalls);
     }
 

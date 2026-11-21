@@ -38,8 +38,6 @@ internal static partial class MapServerEndpoints
     private const string ExportTilesTpkContentType = "application/octet-stream";
     private const int ExportTilesTileSizeBytesEstimate = 32 * 1024;
 
-    private readonly record struct ExportTileCoordinate(int Z, int X, int Y);
-
     private sealed record ExportTilesPlan(
         string ServiceId,
         MetadataV2Service Service,
@@ -119,6 +117,11 @@ internal static partial class MapServerEndpoints
             return StandardErrorHelpers.CreateServiceUnavailable(
                 context,
                 "Cloud file storage is not configured. exportTiles requires storage-backed artifacts.");
+        }
+
+        if (context.RequestServices.GetService<ExportTilesArtifactBudget>()?.TryTake(context.User) is { } retryAfter)
+        {
+            return StandardErrorHelpers.CreateTooManyRequests(context, ExportTilesArtifactBudget.RefusedMessage, retryAfter);
         }
 
         var loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
@@ -386,7 +389,7 @@ internal static partial class MapServerEndpoints
         var (selection, access, bounds) = mapExport!;
         var (service, _, publishedLayers) = selection;
 
-        var totalTileCount = CountExportTileCoordinates(bounds, requestedZooms);
+        var totalTileCount = ExportTileGrid.Count(bounds, requestedZooms);
         var exceededTransferLimit = totalTileCount > maxTiles;
         if (totalTileCount <= 0)
         {
@@ -405,7 +408,7 @@ internal static partial class MapServerEndpoints
         // Bound the build to maxTiles tiles so a whole-world estimate cannot allocate the
         // full grid. The estimate response still reports TotalTileCount and exceededTransferLimit.
         var buildLimit = (int)Math.Min(totalTileCount, maxTiles);
-        var selectedTiles = BuildExportTileCoordinates(bounds, requestedZooms, buildLimit);
+        var selectedTiles = ExportTileGrid.Build(bounds, requestedZooms, buildLimit);
         if (selectedTiles.Length == 0)
         {
             return (null, StandardErrorHelpers.CreateBadRequest(context, "exportTiles selected no tiles."));
@@ -616,85 +619,6 @@ internal static partial class MapServerEndpoints
         var minLat = Math.Clamp(Math.Min(extent.MinY, extent.MaxY), -SpatialConstants.WebMercatorMaxLatitude, SpatialConstants.WebMercatorMaxLatitude);
         var maxLat = Math.Clamp(Math.Max(extent.MinY, extent.MaxY), -SpatialConstants.WebMercatorMaxLatitude, SpatialConstants.WebMercatorMaxLatitude);
         return [minLon, minLat, maxLon, maxLat];
-    }
-
-    // The tile count is computed with checked arithmetic before the grid is allocated, so a whole-world high zoom cannot overflow or force the full coordinate list.
-    private static long CountExportTileCoordinates(double[] bounds, IReadOnlyList<int> levels)
-    {
-        var minLon = bounds[0];
-        var minLat = bounds[1];
-        var maxLon = bounds[2];
-        var maxLat = bounds[3];
-        long total = 0;
-
-        foreach (var z in levels)
-        {
-            var n = 1 << z;
-            var xMin = LonToExportTileX(minLon, z, n);
-            var xMax = LonToExportTileX(maxLon, z, n);
-            var yMin = LatToExportTileY(maxLat, z, n);
-            var yMax = LatToExportTileY(minLat, z, n);
-
-            var width = (long)(xMax - xMin + 1);
-            var height = (long)(yMax - yMin + 1);
-            total += width * height;
-        }
-
-        return total;
-    }
-
-    private static ExportTileCoordinate[] BuildExportTileCoordinates(
-        double[] bounds,
-        IReadOnlyList<int> levels,
-        int maxTiles)
-    {
-        var minLon = bounds[0];
-        var minLat = bounds[1];
-        var maxLon = bounds[2];
-        var maxLat = bounds[3];
-        // Pre-size to the bounded cap, never the (potentially enormous) full grid, so the
-        // build itself can never allocate more than maxTiles coordinates.
-        var coordinates = new List<ExportTileCoordinate>(Math.Max(0, maxTiles));
-
-        foreach (var z in levels)
-        {
-            var n = 1 << z;
-            var xMin = LonToExportTileX(minLon, z, n);
-            var xMax = LonToExportTileX(maxLon, z, n);
-            var yMin = LatToExportTileY(maxLat, z, n);
-            var yMax = LatToExportTileY(minLat, z, n);
-
-            for (var x = xMin; x <= xMax; x++)
-            {
-                for (var y = yMin; y <= yMax; y++)
-                {
-                    if (coordinates.Count >= maxTiles)
-                    {
-                        return [.. coordinates];
-                    }
-
-                    coordinates.Add(new ExportTileCoordinate(z, x, y));
-                }
-            }
-        }
-
-        return [.. coordinates];
-    }
-
-    private static int LonToExportTileX(double lon, int z, int n)
-    {
-        var clampedLon = Math.Clamp(lon, -180d, 180d);
-        var x = (int)Math.Floor((clampedLon + 180d) / 360d * n);
-        return Math.Clamp(x, 0, n - 1);
-    }
-
-    private static int LatToExportTileY(double lat, int z, int n)
-    {
-        var clampedLat = Math.Clamp(lat, -SpatialConstants.WebMercatorMaxLatitude, SpatialConstants.WebMercatorMaxLatitude);
-        var latRad = clampedLat * Math.PI / 180d;
-        var y = (int)Math.Floor(
-            (1d - Math.Log(Math.Tan(latRad) + 1d / Math.Cos(latRad)) / Math.PI) / 2d * n);
-        return Math.Clamp(y, 0, n - 1);
     }
 
     private static string SanitizeExportTilesKeySegment(string value)

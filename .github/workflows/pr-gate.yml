@@ -61,6 +61,9 @@ jobs:
   # Chooses compute for the heavy jobs: the build-host runner label in
   # vars.HONUA_PR_GATE_RUNNER when the host has idle runners, else ubuntu-latest.
   # With the variable unset every step skips and the output stays ubuntu-latest.
+  # This job stays on ubuntu-latest (qualify_light aside). HONUA_LIGHT_RUNNER
+  # places the non-gate workflows, and a selector queued on that pool leaves
+  # idle honua-build runners unused.
   # This job must never fail: its dependents include the required producer,
   # which may not carry a job condition. Step timeouts therefore sum below the
   # job timeout, so a slow step falls back to hosted instead of failing the job. Enforce mode stays hosted because the
@@ -68,7 +71,7 @@ jobs:
   runner-select:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: PR Gate / Runner select
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk' && inputs.qualify_light && fromJSON('{"group":"honua-light","labels":["honua-light"]}') || vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk' && inputs.qualify_light && fromJSON('{"group":"honua-light","labels":["honua-light"]}') || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -124,7 +127,7 @@ jobs:
     if: always() && !cancelled() && (needs.runner-select.result == 'success' || github.event.pull_request.draft == true)
     name: PR Gate / ${{ matrix.check }}
     needs: runner-select
-    runs-on: ${{ matrix.analyzer-partition == 'tests' && (contains(needs.runner-select.outputs.start_heavy, format(',analyzers-{0},', matrix.analyzer-test-partition)) && vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || 'ubuntu-latest') || github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk' && inputs.qualify_light && fromJSON('{"group":"honua-light","labels":["honua-light"]}') || vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.analyzer-partition == 'tests' && (contains(needs.runner-select.outputs.start_heavy, format(',analyzers-{0},', matrix.analyzer-test-partition)) && vars.HONUA_HEAVY_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_HEAVY_RUNNER) || 'ubuntu-latest') || github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk' && inputs.qualify_light && fromJSON('{"group":"honua-light","labels":["honua-light"]}') || 'ubuntu-latest' }}
     timeout-minutes: 45
     # Format and both analyzer partitions run independently after runner selection.
     # A test-analyzer row takes the heavy pool only when runner-select planned it
@@ -821,7 +824,7 @@ jobs:
     # refs/pull/N/merge ref has the base-branch tip as its first parent. The
     # same reasoning scopes scripts/ci/compute-lean-gate-build-scope.sh.
     if: github.event_name == 'pull_request' && !github.event.pull_request.draft
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk' && inputs.qualify_light && fromJSON('{"group":"honua-light","labels":["honua-light"]}') || vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk' && inputs.qualify_light && fromJSON('{"group":"honua-light","labels":["honua-light"]}') || 'ubuntu-latest' }}
     timeout-minutes: 10
     outputs:
       # A docs-only diff skips selection and publishes `skip`, which the
@@ -1012,6 +1015,7 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           artifact-sdk-version: ${{ needs.server-test-producer.outputs.managed-sdk-version }}
+          host-package-fallback: 'true'
 
       - name: Wait for free disk space
         run: scripts/ci/server-test-shard-free-disk.sh --await
@@ -1211,7 +1215,7 @@ jobs:
     name: ${{ github.event.pull_request.draft && 'PR Gate / Affected shards (draft)' || 'PR Gate / Affected shards' }}
     if: always() && github.event_name == 'pull_request' && !github.event.pull_request.draft
     needs: [affected-shards-select, affected-shard, affected-shard-held, server-test-producer]
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk' && inputs.qualify_light && fromJSON('{"group":"honua-light","labels":["honua-light"]}') || vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk' && inputs.qualify_light && fromJSON('{"group":"honua-light","labels":["honua-light"]}') || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - *job-temp
@@ -1275,7 +1279,7 @@ jobs:
     # merge-authority guard on trunk one merge later). Run the same two guard
     # scripts here, gated on the diff so every other PR pays nothing.
     name: PR Gate / CI Router Validation
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk' && inputs.qualify_light && fromJSON('{"group":"honua-light","labels":["honua-light"]}') || vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk' && inputs.qualify_light && fromJSON('{"group":"honua-light","labels":["honua-light"]}') || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - *job-temp
@@ -1470,7 +1474,7 @@ jobs:
     name: ${{ github.event.pull_request.draft && 'PR Gate (draft)' || 'PR Gate' }}
     if: always()
     needs: [pr-gate, fast-tests, fast-server-tests, format, ci-router-validation, affected-shards, server-test-producer]
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk' && inputs.qualify_light && fromJSON('{"group":"honua-light","labels":["honua-light"]}') || vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk' && inputs.qualify_light && fromJSON('{"group":"honua-light","labels":["honua-light"]}') || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - *job-temp

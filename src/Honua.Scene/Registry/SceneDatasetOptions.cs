@@ -10,6 +10,9 @@ public sealed class SceneDatasetOptions
     public const string SectionName = "Scenes";
 
     public List<SceneDatasetEntry> Datasets { get; set; } = new();
+
+    // Extra directories that scenes registered through the admin API may use as asset roots.
+    public List<string> AdminAssetDirectories { get; set; } = new();
 }
 
 public sealed class SceneDatasetEntry

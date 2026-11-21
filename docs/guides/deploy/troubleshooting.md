@@ -189,6 +189,9 @@ The job store is in the system database, so a server with
 `ConnectionStrings__DefaultConnection` set satisfies it. Without one the server
 exits with a single typed startup error that names the setting to add.
 
+`limits.job.durableJobRuntimeAvailable` in `GET /api/v1/capabilities/manifest`
+reports whether the job store and job queue are available.
+
 Recent jobs: `GET /api/v1/admin/import/jobs`; durable job detail and logs: `GET /api/v1/admin/jobs/{jobId}/logs`. For stuck workflow runs, see [Automate workflows](../query-analyze/automate-workflows.md).
 
 ## Geoprocessing development and remote jobs

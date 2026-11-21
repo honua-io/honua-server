@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Runtime.CompilerServices;
+using System.Text;
 using Honua.Core.Features.Console.Abstractions;
 using Honua.Core.Features.Console.Domain;
 using Honua.Server.Features.Console.Models;
@@ -16,6 +18,11 @@ internal static class ConsoleOpenDataPublicEndpoints
 {
     private const string OpenDataDeniedMessage = "Open-data dataset not found.";
     private const string StacBasePath = "/api/v1/open-data/stac";
+    private const int DefaultListLimit = 25;
+    private const int MaxListLimit = 50;
+    private const int CandidateBatchSize = 200;
+    private static readonly ConsoleContentItemType[] DistributableTypes =
+        [ConsoleContentItemType.Layer, ConsoleContentItemType.Service, ConsoleContentItemType.OpenData];
 
     internal sealed class ConsoleOpenDataPublicEndpointsLogCategory;
 
@@ -32,6 +39,11 @@ internal static class ConsoleOpenDataPublicEndpoints
             .WithTags("Console")
             .AllowAnonymous()
             .CacheOutput(policy => policy.NoCache());
+
+        group.MapGet("/datasets", HandleListDatasets)
+            .WithDisplayName("List Anonymous Open-Data Datasets")
+            .WithSummary("Lists the anonymous open-data page projections of public-indexed items, one bounded page per request. Private and ineligible items are never listed.")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapGet("/datasets/{id}", HandleGetDataset)
             .WithDisplayName("Read Anonymous Open-Data Dataset")
@@ -96,6 +108,138 @@ internal static class ConsoleOpenDataPublicEndpoints
             return AnonymousError();
         }
     }
+
+    // Bound from the request: the three stores the eligibility check reads, plus the paging query.
+    internal sealed class DatasetListRequest
+    {
+        [FromServices]
+        public IConsoleContentStore ContentStore { get; init; } = null!;
+
+        [FromServices]
+        public IConsoleShareStore ShareStore { get; init; } = null!;
+
+        [FromServices]
+        public IConsoleOpenDataStore OpenDataStore { get; init; } = null!;
+
+        [FromQuery(Name = "cursor")]
+        public string? Cursor { get; init; }
+
+        [FromQuery(Name = "limit")]
+        public int? Limit { get; init; }
+    }
+
+    private static async Task<Results<Ok<ApiResponse<ConsoleOpenDataDatasetListResponse>>, ProblemHttpResult>> HandleListDatasets(
+        [AsParameters] DatasetListRequest request,
+        [FromServices] ILogger<ConsoleOpenDataPublicEndpointsLogCategory> logger,
+        HttpContext context)
+    {
+        try
+        {
+            var list = await ListEligibleDatasetsAsync(request, context.RequestAborted).ConfigureAwait(false);
+            return TypedResults.Ok(ApiResponse<ConsoleOpenDataDatasetListResponse>.CreateSuccess(list));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        // Intentional catch-all: this is the request-handling boundary for the anonymous
+        // dataset list endpoint; the failure is logged and mapped to a generic error response.
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            ConsoleEndpointsLog.EndpointFailed(logger, "open-data.public.datasets", ex);
+            return AnonymousError();
+        }
+    }
+
+    // Keyset paging over eligible items in id order: the cursor is the id of the last item
+    // returned, which the reader can already see, so paging never reveals how many public
+    // items are hidden from them. No total is returned for the same reason.
+    private static async Task<ConsoleOpenDataDatasetListResponse> ListEligibleDatasetsAsync(
+        DatasetListRequest request,
+        CancellationToken cancellationToken)
+    {
+        var limit = request.Limit is > 0 ? Math.Min(request.Limit.Value, MaxListLimit) : DefaultListLimit;
+        var entries = new List<ConsoleOpenDataDatasetListItem>(limit);
+        await foreach (var candidate in CandidatesAfterAsync(request.ContentStore, DecodeCursor(request.Cursor), cancellationToken).ConfigureAwait(false))
+        {
+            var page = await ProjectIfEligibleAsync(request, candidate, cancellationToken).ConfigureAwait(false);
+            if (page is not null)
+            {
+                entries.Add(new ConsoleOpenDataDatasetListItem { ItemType = candidate.ItemType, Page = page });
+                if (entries.Count == limit)
+                {
+                    break;
+                }
+            }
+        }
+
+        return new ConsoleOpenDataDatasetListResponse
+        {
+            Items = entries,
+            NextCursor = entries.Count == limit ? EncodeCursor(entries[^1].Page.ItemId) : null,
+        };
+    }
+
+    // Public items of a distributable type, in id order, after the given id. Only these can be eligible.
+    private static async IAsyncEnumerable<ConsoleContentItem> CandidatesAfterAsync(
+        IConsoleContentStore contentStore,
+        string? afterId,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        string? storeCursor = null;
+        do
+        {
+            var batch = await contentStore.ListAsync(new ConsoleContentQuery
+            {
+                ItemTypes = DistributableTypes,
+                Visibilities = [ConsoleVisibility.Public],
+                Cursor = storeCursor,
+                Limit = CandidateBatchSize,
+            }, cancellationToken).ConfigureAwait(false);
+            foreach (var item in batch.Items.Where(item => afterId is null || string.CompareOrdinal(item.Id, afterId) > 0))
+            {
+                yield return item;
+            }
+
+            storeCursor = batch.NextCursor;
+        }
+        while (storeCursor is not null);
+    }
+
+    private static async Task<ConsoleOpenDataPage?> ProjectIfEligibleAsync(
+        DatasetListRequest request,
+        ConsoleContentItem item,
+        CancellationToken cancellationToken)
+    {
+        var shareState = await request.ShareStore.GetAsync(item.Id, cancellationToken).ConfigureAwait(false);
+        if (!IsOpenDataEligible(item, shareState))
+        {
+            return null;
+        }
+
+        var stored = await request.OpenDataStore.GetPageAsync(item.Id, cancellationToken).ConfigureAwait(false);
+        return ConsoleOpenDataMapper.BuildPageProjection(item, stored);
+    }
+
+    private static string? DecodeCursor(string? cursor)
+    {
+        if (string.IsNullOrWhiteSpace(cursor))
+        {
+            return null;
+        }
+
+        try
+        {
+            return Encoding.UTF8.GetString(Convert.FromBase64String(cursor));
+        }
+        catch (FormatException)
+        {
+            // A malformed cursor reads from the start, like the other Console list cursors.
+            return null;
+        }
+    }
+
+    private static string EncodeCursor(string itemId) => Convert.ToBase64String(Encoding.UTF8.GetBytes(itemId));
 
     private static async Task<Results<Ok<DcatCatalog>, NotFound<ApiResponse<object>>, ProblemHttpResult>> HandleGetDataJson(
         string id,
@@ -290,8 +434,7 @@ internal static class ConsoleOpenDataPublicEndpoints
         }
 
         var shareState = await shareStore.GetAsync(id, cancellationToken).ConfigureAwait(false);
-        var tier = ConsoleShareMapper.ResolveEffectiveTier(shareState, item);
-        if (!ConsoleOpenDataMapper.IsDistributableType(item.ItemType) || tier != ConsoleShareAccessTier.PublicIndexed)
+        if (!IsOpenDataEligible(item, shareState))
         {
             return null;
         }
@@ -301,6 +444,12 @@ internal static class ConsoleOpenDataPublicEndpoints
         var publication = await openDataStore.GetStacPublicationAsync(id, cancellationToken).ConfigureAwait(false);
         return (page, publication);
     }
+
+    // The one eligibility rule for every anonymous open-data read: a distributable type whose
+    // effective Share tier is public-indexed.
+    private static bool IsOpenDataEligible(ConsoleContentItem item, ConsoleShareState? shareState)
+        => ConsoleOpenDataMapper.IsDistributableType(item.ItemType)
+            && ConsoleShareMapper.ResolveEffectiveTier(shareState, item) == ConsoleShareAccessTier.PublicIndexed;
 
     private static async Task<(ConsoleOpenDataPage Page, ConsoleStacPublicationState Publication)?> ResolvePublishedCollectionAsync(
         string collectionId,
