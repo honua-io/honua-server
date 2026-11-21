@@ -94,6 +94,8 @@ internal static partial class ServiceSettingsEndpoints
 
         try
         {
+            listQuery = await ResolveLayerScopeOwnerAsync(listQuery, context).ConfigureAwait(false);
+
             var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
             var tenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId;
             if (ServiceCatalogPage.FolderIsMissing(snapshot, listQuery.FolderId, tenantId))
@@ -113,6 +115,20 @@ internal static partial class ServiceSettingsEndpoints
                 detail: "An internal error occurred while listing services.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
+    }
+
+    private static async Task<AdminListQuery> ResolveLayerScopeOwnerAsync(AdminListQuery query, HttpContext context)
+    {
+        if (query.ConnectionId is null)
+        {
+            return query;
+        }
+
+        return query with
+        {
+            ManagedConnectionId = await Services.ManagedImportConnection.ResolveOwnerAsync(
+                context.RequestServices, context.RequestAborted).ConfigureAwait(false)
+        };
     }
 
     private static async Task<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
