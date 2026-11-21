@@ -123,4 +123,35 @@ public sealed partial class StudioPackageLifecycleServiceTests
             Assert.Null(await store.GetDraftRevisionAsync(draft.DraftId, draft.Generation));
         }
     }
+
+    [UnitTest]
+    public async Task PreviewPlanAsync_ReturnsFreshValidationWithoutMutatingDraftOrRecordingRevision()
+    {
+        var clock = new MutableTimeProvider(new DateTimeOffset(2026, 5, 25, 12, 0, 0, TimeSpan.Zero));
+        var store = new InMemoryStudioPackageStore();
+        var service = BuildServiceProvider(store, timeProvider: clock).GetRequiredService<IStudioPackageLifecycleService>();
+        var created = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "readonly-preview",
+            Envelope = BuildEnvelope("1=1", "content.parcels"),
+            ActorId = "author-a",
+        });
+
+        clock.Advance(TimeSpan.FromMinutes(10));
+        var plan = await service.PreviewPlanAsync(created.DraftId, "reviewer-b");
+
+        Assert.NotNull(plan);
+        Assert.True(plan!.Synchronous);
+        Assert.False(plan.RequiresJob);
+        Assert.Equal(StudioPackageValidationStatus.Valid, plan.Validation.Status);
+        Assert.Equal(clock.GetUtcNow(), plan.Validation.GeneratedAt);
+
+        var reread = await store.GetDraftAsync(created.DraftId);
+        Assert.NotNull(reread);
+        Assert.Equal(created.Generation, reread!.Generation);
+        Assert.Equal(created.UpdatedBy, reread.UpdatedBy);
+        Assert.Equal(created.UpdatedAt, reread.UpdatedAt);
+        Assert.Equal(created.Validation.GeneratedAt, reread.Validation.GeneratedAt);
+        Assert.Empty(await store.ListDraftRevisionsAsync(new(created.DraftId)));
+    }
 }

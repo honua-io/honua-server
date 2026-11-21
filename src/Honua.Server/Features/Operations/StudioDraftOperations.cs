@@ -47,7 +47,7 @@ internal static class StudioDraftOperations
         Build(
             PreviewPlan,
             "Preview Studio draft plan",
-            OperationSideEffectClass.MutatesMetadata,
+            OperationSideEffectClass.ReadOnly,
             OperationDeterminism.RuntimeDynamic),
         Build(
             SaveVersion,

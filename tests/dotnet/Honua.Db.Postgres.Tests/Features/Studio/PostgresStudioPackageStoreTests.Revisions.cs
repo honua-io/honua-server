@@ -114,4 +114,40 @@ public sealed partial class PostgresStudioPackageStoreTests
             await fixture.DropSchemaAsync(schema);
         }
     }
+
+    [IntegrationTest]
+    public async Task PreviewPlanAsync_LeavesStoredDraftGenerationAuditAndRevisionsUnchanged()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("StudioPreviewReadOnly");
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var store = new PostgresStudioPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            var registry = new StudioPackageFamilyRegistry(store);
+            var lifecycle = new StudioPackageLifecycleService(
+                store, registry, new StudioPackageValidator(registry, TimeProvider.System), TimeProvider.System);
+            var created = await lifecycle.CreateDraftAsync(new CreateStudioPackageDraftCommand
+            {
+                PackageKey = "readonly-preview",
+                Envelope = BuildEnvelope("1=1"),
+                ActorId = "author-a",
+            });
+            var before = (await store.GetDraftAsync(created.DraftId))!;
+
+            var plan = await lifecycle.PreviewPlanAsync(created.DraftId, "reviewer-b");
+
+            plan.Should().NotBeNull();
+            var reloaded = (await store.GetDraftAsync(created.DraftId))!;
+            reloaded.Generation.Should().Be(before.Generation);
+            reloaded.UpdatedBy.Should().Be(before.UpdatedBy);
+            reloaded.UpdatedAt.Should().Be(before.UpdatedAt);
+            reloaded.Validation.GeneratedAt.Should().Be(before.Validation.GeneratedAt);
+            (await store.ListDraftRevisionsAsync(new(created.DraftId))).Should().BeEmpty();
+            (await lifecycle.PreviewPlanAsync(Guid.NewGuid(), "reviewer-b")).Should().BeNull();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
 }
