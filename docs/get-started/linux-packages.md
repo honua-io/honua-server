@@ -93,7 +93,7 @@ services:
       - storage:/var/lib/honua/storage
       - ./secrets/keyring.pfx:/var/lib/honua/keyring.pfx:ro
   postgres:
-    image: pgrouting/pgrouting:17-3.5-3.7.3@sha256:5e6767abbd1fd9ead84c9988aa31bac71ca292ef8a1fc2e4a5ee2b613ac6a7bb
+    image: ghcr.io/honua-io/honua-server@sha256:d9df4cd19ac018b1e626d7c74a1400d7affb8de48dbe5ed67a862589c4e3d998
     environment:
       POSTGRES_DB: honua
       POSTGRES_USER: honua
@@ -108,6 +108,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
+      # The first start on a volume from an older database image rebuilds text indexes first.
+      start_period: 60m
     restart: unless-stopped
 volumes:
   postgres:

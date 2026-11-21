@@ -278,11 +278,11 @@ services:
       - ./secrets/keyring.pfx:/var/lib/honua/keyring.pfx:ro
     secrets: [postgres_password, honua_admin_password, honua_audit_chain_key, honua_master_key, honua_keyring_password]
   postgres:
-    image: honua-postgis-proj-grids:17-3.5-3.7.3
+    image: honua-postgis-proj-grids:17-honua-d9df4cd1
     build:
       context: ./docker/proj-grids
       args:
-        BASE_IMAGE: pgrouting/pgrouting:17-3.5-3.7.3@sha256:5e6767abbd1fd9ead84c9988aa31bac71ca292ef8a1fc2e4a5ee2b613ac6a7bb
+        BASE_IMAGE: ghcr.io/honua-io/honua-server@sha256:d9df4cd19ac018b1e626d7c74a1400d7affb8de48dbe5ed67a862589c4e3d998
     pull_policy: missing
     environment:
       POSTGRES_DB: honua
@@ -299,6 +299,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
+      # The first start on a volume from an older database image rebuilds text indexes first.
+      start_period: 60m
     restart: unless-stopped
 volumes:
   postgres:

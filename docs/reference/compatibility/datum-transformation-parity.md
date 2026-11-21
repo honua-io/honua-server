@@ -168,8 +168,8 @@ Runtime observations on the base test image (`postgis/postgis:18-3.6`, PROJ 9.6.
 
 [`docker/proj-grids`](../../../docker/proj-grids/README.md) provisions the canonical
 PROJ grids into `/usr/share/proj`. The default customer Compose deployment builds
-it on `pgrouting/pgrouting:17-3.5-3.7.3`, preserving PostgreSQL 17 and existing data
-volumes. The customer archive includes the complete build context. Grid downloads
+it on Honua's Compose database image (`docker/compose-postgres`: PostgreSQL 17,
+PostGIS 3.5 and pgRouting 3.7), preserving PostgreSQL 17 and existing data volumes. The customer archive includes the complete build context. Grid downloads
 happen at image build time; `PROJ_NETWORK=OFF` prevents runtime network dependence.
 The standalone diagnostic composition retains its separate pinned PostGIS base.
 
