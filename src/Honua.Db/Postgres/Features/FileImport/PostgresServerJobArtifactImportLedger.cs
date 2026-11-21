@@ -195,6 +195,8 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
     {
         await using var transaction = await request.Connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         var tx = new TransactionContext(request.Connection, transaction);
+        await AcquireLayerPublishLockAsync(tx, existing.SchemaName, existing.PhysicalTable!, cancellationToken)
+            .ConfigureAwait(false);
         if (await IsReferencedByLayerAsync(tx, existing, cancellationToken).ConfigureAwait(false)
             || await IsReferencedByStorageBindingAsync(tx, existing, cancellationToken).ConfigureAwait(false))
         {
@@ -204,6 +206,22 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
         await DropOwnedTableAsync(tx, existing, cancellationToken).ConfigureAwait(false);
         await MarkReceiptDiscardedAsync(tx, request.ScopeKey, cancellationToken).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task AcquireLayerPublishLockAsync(
+        TransactionContext tx,
+        string schema,
+        string table,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            SELECT pg_advisory_xact_lock(
+                hashtextextended('{_layersTable}:' || lower(@schema) || '.' || lower(@table), 0));
+            """;
+        await using var command = new NpgsqlCommand(sql, tx.Connection, tx.Transaction);
+        command.Parameters.AddWithValue("@schema", schema);
+        command.Parameters.AddWithValue("@table", table);
+        _ = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task DropOwnedTableAsync(

@@ -339,6 +339,7 @@ internal static class OperationsServiceCollectionExtensions
     internal sealed class AdminConnectImportRegistrationMarker;
     internal sealed class AdminApiOperationRegistrationMarker;
     internal sealed class WorkflowRollbackApprovalRegistrationMarker;
+    internal sealed class StagedImportApprovalRegistrationMarker;
 
     // Preview a job artifact, then import it into fresh server-owned staging after approval.
     private static void AddStagedImportOperations(IServiceCollection services)
@@ -350,10 +351,15 @@ internal static class OperationsServiceCollectionExtensions
             Honua.Geoprocessing.StagedImportOperation.ImportOperationId);
         services.TryAddDeferredOperationExecutor<Honua.Geoprocessing.StagedImportDiscardExecutor>(
             Honua.Geoprocessing.StagedImportOperation.DiscardOperationId);
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationApprovalRequestMapper>(
-            new Honua.Geoprocessing.StagedImportApprovalMapper(Honua.Geoprocessing.StagedImportOperation.ImportOperationId)));
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationApprovalRequestMapper>(
-            new Honua.Geoprocessing.StagedImportApprovalMapper(Honua.Geoprocessing.StagedImportOperation.DiscardOperationId)));
+        if (!services.Any(descriptor => descriptor.ServiceType == typeof(StagedImportApprovalRegistrationMarker)))
+        {
+            services.AddSingleton<StagedImportApprovalRegistrationMarker>();
+            services.AddSingleton<IOperationApprovalRequestMapper>(
+                new Honua.Geoprocessing.StagedImportApprovalMapper(Honua.Geoprocessing.StagedImportOperation.ImportOperationId));
+            services.AddSingleton<IOperationApprovalRequestMapper>(
+                new Honua.Geoprocessing.StagedImportApprovalMapper(Honua.Geoprocessing.StagedImportOperation.DiscardOperationId));
+        }
+
         services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
     }
 }

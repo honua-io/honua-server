@@ -89,12 +89,19 @@ internal sealed class CloudDemoServiceSeeder(
                 ? PostgresSchemaConfiguration.DefaultMetadataSchema
                 : configuration!["Database:Schema"]!;
             var layersTable = SchemaSearchPath.QualifyTable("layers", metadataSchema);
+            var servicesTable = SchemaSearchPath.QualifyTable("services", metadataSchema);
+            var serviceLayersTable = SchemaSearchPath.QualifyTable("service_layers", metadataSchema);
+            var layerFieldsTable = SchemaSearchPath.QualifyTable("layer_fields", metadataSchema);
             var attachmentTable = SchemaSearchPath.QualifyTable("attachments", physicalAttachmentSchema);
             foreach (var statement in statements)
             {
                 var boundStatement = statement == ResetReadOnlyFeatureDataSql || statement == ResetWritableFeatureDataSql
                     ? statement.Replace("honua.attachments", attachmentTable, StringComparison.Ordinal)
-                    : statement.Replace("honua.layers", layersTable, StringComparison.Ordinal);
+                    : statement
+                        .Replace("honua.layers", layersTable, StringComparison.Ordinal)
+                        .Replace("honua.services", servicesTable, StringComparison.Ordinal)
+                        .Replace("honua.service_layers", serviceLayersTable, StringComparison.Ordinal)
+                        .Replace("honua.layer_fields", layerFieldsTable, StringComparison.Ordinal);
                 await ExecuteSqlAsync(connection, transaction, boundStatement, cancellationToken).ConfigureAwait(false);
             }
 

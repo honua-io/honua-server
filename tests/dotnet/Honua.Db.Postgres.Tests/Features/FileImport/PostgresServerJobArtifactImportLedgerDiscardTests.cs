@@ -125,6 +125,46 @@ public sealed class PostgresServerJobArtifactImportLedgerDiscardTests(PostgresFi
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Import)]
+    public async Task DiscardAsync_ReferencedByStorageBinding_RefusesDrop()
+    {
+        var metaSchema = await fixture.CreateIsolatedSchemaAsync("meta_7632_sb");
+        var dataSchema = await fixture.CreateIsolatedSchemaAsync("data_7632_sb");
+        try
+        {
+            var seed = new ReceiptSeed
+            {
+                MetaSchema = metaSchema,
+                DataSchema = dataSchema,
+                IntentId = "intent-storage-binding-ref",
+                LogicalTable = "staged_7632_bound",
+                PhysicalTable = "imported_staged_7632_bound",
+            };
+            await SeedOwnedStagedImportAsync(seed);
+            await fixture.ExecuteAsync(
+                $"""
+                INSERT INTO "{metaSchema}".metadata_v2_current (environment, revision) VALUES ('default', 1);
+                INSERT INTO "{metaSchema}".metadata_v2_storage_bindings_idx (
+                    environment, revision, storage_binding_id, resource_id, connection_id, storage_type, locator)
+                VALUES ('default', 1, 'sb-1', 'res-1', NULL, 'postgres', '{dataSchema}.{seed.PhysicalTable}');
+                """);
+
+            var schemaConfig = new PostgresSchemaConfiguration(metaSchema, dataSchema, [dataSchema]);
+            await using var dataSource = NpgsqlDataSource.Create(fixture.ConnectionString);
+            var ledger = new PostgresServerJobArtifactImportLedger(dataSource, schemaConfig);
+            var act = () => ledger.DiscardAsync(DiscardScope(TenantId, seed), CancellationToken.None);
+
+            await act.Should().ThrowAsync<ServerJobArtifactImportReferencedException>();
+            (await TableExistsAsync(dataSchema, seed.PhysicalTable)).Should().BeTrue();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(dataSchema);
+            await fixture.DropSchemaAsync(metaSchema);
+        }
+    }
+
     private async Task SeedOwnedStagedImportAsync(ReceiptSeed seed)
     {
         await CreateMetadataSchemaCatalogAsync(seed.MetaSchema);
@@ -136,6 +176,8 @@ public sealed class PostgresServerJobArtifactImportLedgerDiscardTests(PostgresFi
     {
         var wrongTenant = () => ledger.DiscardAsync(DiscardScope("other-tenant", seed), CancellationToken.None);
         await wrongTenant.Should().ThrowAsync<ServerJobArtifactImportNotFoundException>();
+        var wrongActor = () => ledger.DiscardAsync(DiscardScope(TenantId, seed) with { ActorId = "other-actor" }, CancellationToken.None);
+        await wrongActor.Should().ThrowAsync<ServerJobArtifactImportNotFoundException>();
         (await TableExistsAsync(seed.DataSchema, seed.PhysicalTable)).Should().BeTrue();
 
         var first = await ledger.DiscardAsync(DiscardScope(TenantId, seed), CancellationToken.None);
