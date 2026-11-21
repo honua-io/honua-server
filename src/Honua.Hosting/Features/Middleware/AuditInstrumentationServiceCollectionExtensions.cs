@@ -4,6 +4,7 @@
 using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Infrastructure.FeatureStore;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -55,52 +56,16 @@ public static class AuditInstrumentationServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        var innerDescriptor = services.LastOrDefault(static d => d.ServiceType == typeof(IFeatureWriter));
-        if (innerDescriptor is null)
-        {
-            // No provider writer registered yet; nothing to decorate.
-            return services;
-        }
-
         services.AddHttpContextAccessor();
-        services.Remove(innerDescriptor);
-
-        services.Add(ServiceDescriptor.Describe(
-            typeof(IFeatureWriter),
-            sp =>
-            {
-                var inner = (IFeatureWriter)CreateInner(sp, innerDescriptor);
-                var auditLog = sp.GetService<IAuditLog>() ?? NullAuditLog.Instance;
-                var httpContextAccessor = sp.GetRequiredService<IHttpContextAccessor>();
-                var policy = sp.GetService<IOptionsMonitor<AuditPolicyOptions>>();
-                return new AuditingFeatureWriter(
-                    inner,
-                    auditLog,
-                    new FeatureWriteAuditScope(httpContextAccessor, () => CurrentPolicy(policy)));
-            },
-            innerDescriptor.Lifetime));
-
-        return services;
-    }
-
-    private static object CreateInner(IServiceProvider sp, ServiceDescriptor descriptor)
-    {
-        if (descriptor.ImplementationInstance is not null)
+        return services.DecorateFeatureWriter(static (sp, inner) =>
         {
-            return descriptor.ImplementationInstance;
-        }
-
-        if (descriptor.ImplementationFactory is not null)
-        {
-            return descriptor.ImplementationFactory(sp);
-        }
-
-        if (descriptor.ImplementationType is not null)
-        {
-            return ActivatorUtilities.CreateInstance(sp, descriptor.ImplementationType);
-        }
-
-        throw new InvalidOperationException(
-            "The registered IFeatureWriter descriptor has no resolvable implementation to decorate.");
+            var auditLog = sp.GetService<IAuditLog>() ?? NullAuditLog.Instance;
+            var httpContextAccessor = sp.GetRequiredService<IHttpContextAccessor>();
+            var policy = sp.GetService<IOptionsMonitor<AuditPolicyOptions>>();
+            return new AuditingFeatureWriter(
+                inner,
+                auditLog,
+                new FeatureWriteAuditScope(httpContextAccessor, () => CurrentPolicy(policy)));
+        });
     }
 }

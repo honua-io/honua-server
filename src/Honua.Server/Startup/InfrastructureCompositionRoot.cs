@@ -16,6 +16,7 @@ using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Collaboration;
 using Honua.Infrastructure.Configuration;
+using Honua.Infrastructure.FeatureStore;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Services;
@@ -74,6 +75,10 @@ internal static class InfrastructureCompositionRoot
         // overwrite a feature another editor holds. Registered after the audit decorator so
         // a blocked edit never reaches the auditor as an applied write.
         services.AddFeatureLockEnforcingFeatureWriter();
+
+        // Outermost: a write to a layer published over a source table is refused before any other
+        // decorator sees it, because the managed writer would store it where that layer never reads.
+        services.AddSourceBackedWriteGuard();
 
         // Registry-backed geographic-SRID classification seam. Composes the provider's
         // ICrsRegistry (registered above for providers that ship one, e.g. Postgres) with the
