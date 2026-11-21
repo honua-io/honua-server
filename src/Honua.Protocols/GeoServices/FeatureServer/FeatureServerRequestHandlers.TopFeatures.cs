@@ -185,12 +185,20 @@ internal static partial class FeatureServerEndpoints
                 [offsetError ?? "resultOffset must be an integer."]);
         }
 
-        var queryLimits = ResolveQueryLimits(context);
-        if (resultOffset is < 0 || resultOffset > queryLimits.MaxOffset)
+        if (resultOffset is < 0)
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid resultOffset parameter",
-                [$"resultOffset must be between 0 and {queryLimits.MaxOffset}."]);
+                ["resultOffset cannot be negative."]);
+        }
+
+        // Same bound and wording as the query operation's pagination validation.
+        var queryLimits = ResolveQueryLimits(context);
+        if (resultOffset > queryLimits.MaxOffset)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid resultOffset parameter",
+                [$"resultOffset cannot exceed {queryLimits.MaxOffset}. Maximum offset: {queryLimits.MaxOffset}."]);
         }
 
         if (!TryParseIntValue(values, "resultRecordCount", out var resultRecordCount, out var recordCountError))

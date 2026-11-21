@@ -301,7 +301,7 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
         var root = await GetTopFeaturesAsync($"&resultOffset={int.MaxValue}");
 
         root.TryGetProperty("error", out var error).Should().BeTrue();
-        error.GetRawText().Should().Contain("resultOffset must be between 0 and");
+        error.GetRawText().Should().Contain("resultOffset cannot exceed");
         root.TryGetProperty("features", out _).Should().BeFalse();
     }
 
