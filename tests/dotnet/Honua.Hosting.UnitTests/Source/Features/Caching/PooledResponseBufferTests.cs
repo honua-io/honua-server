@@ -90,20 +90,30 @@ public sealed class PooledResponseBufferTests
         actual.Body.Should().Equal(expected.Body);
     }
 
-    [UnitTheory]
-    [InlineData("text/xml", false)]
-    [InlineData("application/vnd.ogc.wms_xml", true)]
-    public async Task PooledTextBuilder_ToUtf8Result_WritesTheSameResponseAsResultsContent(string mediaType, bool utf8Charset)
+    [UnitTest]
+    public async Task PooledTextBuilder_ToUtf8Result_MatchesResultsContentWithoutCharset()
     {
         var builder = CreateChunkedText();
-        var text = builder.ToString();
-        var expected = await ExecuteAsync(utf8Charset
-            ? Results.Content(text, mediaType, Encoding.UTF8)
-            : Results.Content(text, mediaType));
+        var expected = await ExecuteAsync(Results.Content(builder.ToString(), "text/xml"));
 
-        var contentType = utf8Charset ? PooledUtf8ContentResult.WithUtf8Charset(mediaType) : mediaType;
-        var actual = await ExecuteAsync(PooledTextBuilder.ToUtf8Result(builder, contentType));
+        var actual = await ExecuteAsync(PooledTextBuilder.ToUtf8Result(builder, "text/xml"));
 
+        actual.ContentType.Should().Be(expected.ContentType);
+        actual.ContentLength.Should().Be(expected.ContentLength);
+        actual.Body.Should().Equal(expected.Body);
+    }
+
+    [UnitTest]
+    public async Task PooledTextBuilder_ToUtf8Result_MatchesResultsContentWithUtf8Charset()
+    {
+        const string mediaType = "application/vnd.ogc.wms_xml";
+        var builder = CreateChunkedText();
+        var expected = await ExecuteAsync(Results.Content(builder.ToString(), mediaType, Encoding.UTF8));
+
+        var actual = await ExecuteAsync(
+            PooledTextBuilder.ToUtf8Result(builder, PooledUtf8ContentResult.WithUtf8Charset(mediaType)));
+
+        actual.ContentType.Should().Be("application/vnd.ogc.wms_xml; charset=utf-8");
         actual.ContentType.Should().Be(expected.ContentType);
         actual.ContentLength.Should().Be(expected.ContentLength);
         actual.Body.Should().Equal(expected.Body);
