@@ -278,13 +278,13 @@ uses a narrow serial-planner policy for source-backed PostGIS point layers.
 Set it to `false` to retain PostgreSQL planning for these reads, or `true` to
 explicitly enable the same bounded policy. Eligible reads have a simple
 intersects/envelope bbox, an effective limit of
-1–100 features before the extra pagination probe row, an offset of at most 1,000
+1–1,000 features before the extra pagination probe row, an offset of at most 1,000
 (next-link pages), default ordering (including
 the normalized ascending primary-ID sort), and no distinct, branch-version or null-geometry request.
 Unknown geometry types, ambient transactions and borrowed mutation transactions
 retain ordinary planning.
-This option does not change counts, statistics, streaming, tiles, larger pages,
-offsets beyond 1,000 or custom sorts. Count planning has separate options below.
+This option does not change counts, statistics, streaming, tiles, pages over
+1,000 features, offsets beyond 1,000 or custom sorts. Count planning has separate options below.
 
 For an eligible read, Honua batches a transaction-local
 `max_parallel_workers_per_gather=0` setting with the original parameterized

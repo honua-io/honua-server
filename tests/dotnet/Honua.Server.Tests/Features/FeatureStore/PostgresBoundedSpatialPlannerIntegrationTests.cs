@@ -186,7 +186,7 @@ public sealed partial class PostgresBoundedSpatialPlannerIntegrationTests(Databa
     {
         var query = shape switch
         {
-            "larger-page" => Bbox() with { Limit = 101 },
+            "larger-page" => Bbox() with { Limit = 1001 },
             "custom-order" => Bbox() with { OrderBy = [new OrderByClause("label")] },
             "descending-id" => Bbox() with { OrderBy = [new OrderByClause("id", ascending: false)] },
             "multiple-order-fields" => Bbox() with { OrderBy = [new OrderByClause("id"), new OrderByClause("label")] },

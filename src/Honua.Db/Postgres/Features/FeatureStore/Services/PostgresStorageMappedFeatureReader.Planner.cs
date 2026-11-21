@@ -20,14 +20,16 @@ internal sealed partial class PostgresStorageMappedFeatureReader
 
     // A parallel worker launch costs more than a bounded bbox page. On 100K points a
     // 101-row page at offset 100 took 11 ms parallel and 0.9 ms serial, and serial was
-    // still faster at offset 5,000. Next-link pages stay eligible for ten 100-row pages.
+    // still faster at offset 5,000 and for 1,001-row pages (13.2 ms vs 2.8 ms). Pages
+    // of up to 1,000 rows and next-link pages through offset 1,000 stay eligible.
+    internal const int MaxBoundedSpatialPlanLimit = 1000;
     internal const int MaxBoundedSpatialPlanOffset = 1000;
 
     private bool CanUseBoundedSpatialPlan(FeatureQuery query) =>
         _mapping.IsSourceBacked &&
         _geometryColumn != null &&
         _resource.ReadGeometryType() == MetadataV2GeometryType.Point &&
-        query.Limit is > 0 and <= 100 &&
+        query.Limit is > 0 and <= MaxBoundedSpatialPlanLimit &&
         query.Offset.GetValueOrDefault() is >= 0 and <= MaxBoundedSpatialPlanOffset &&
         HasDefaultPlannerOrder(query) &&
         !query.Distinct &&

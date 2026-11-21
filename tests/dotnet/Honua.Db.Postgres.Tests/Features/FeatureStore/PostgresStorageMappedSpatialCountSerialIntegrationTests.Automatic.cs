@@ -121,7 +121,7 @@ public sealed partial class PostgresStorageMappedSpatialCountSerialIntegrationTe
         query = shape switch
         {
             "unbounded" => query with { Limit = null },
-            "large-page" => query with { Limit = 101 },
+            "large-page" => query with { Limit = 1001 },
             "later-page" => query with { Offset = 1001 },
             "descending" => query with { OrderBy = ImmutableArray.Create(new OrderByClause("id", ascending: false)) },
             "include-null" => query with { IncludeNullGeometry = true },
