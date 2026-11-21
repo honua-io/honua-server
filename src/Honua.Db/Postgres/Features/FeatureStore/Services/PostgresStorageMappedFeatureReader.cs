@@ -167,7 +167,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     {
         if (IsNearestNeighborQuery(query))
         {
-            var nearestItems = await ExecuteFeatureQueryAsync(query, probeLimit: false, cancellationToken).ConfigureAwait(false);
+            var nearestItems = await ExecuteFeatureQueryAsync(query, cancellationToken).ConfigureAwait(false);
             return nearestItems.Length == 0
                 ? QueryResult<Feature>.Empty()
                 : QueryResult<Feature>.Create(nearestItems.Length, nearestItems, hasMoreResults: false);
@@ -177,7 +177,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         ImmutableArray<Feature> items = default;
         if (!query.Distinct && offset == 0 && query.Limit is int limit && limit > 0)
         {
-            items = await ExecuteFeatureQueryAsync(query, probeLimit: false, cancellationToken).ConfigureAwait(false);
+            items = await ExecuteFeatureQueryAsync(query, cancellationToken).ConfigureAwait(false);
             // A short first page proves the exact total in that SELECT's snapshot.
             // Full pages still need a separate count; as before, the two reads
             // do not establish a shared snapshot unless the caller supplies one.
@@ -203,7 +203,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
         if (items.IsDefault)
         {
-            items = await ExecuteFeatureQueryAsync(query, probeLimit: false, cancellationToken).ConfigureAwait(false);
+            items = await ExecuteFeatureQueryAsync(query, cancellationToken).ConfigureAwait(false);
         }
 
         var hasMoreResults = offset + items.Length < totalCount;
@@ -452,18 +452,17 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             return PagedQueryResult<Feature>.Create(result.Items, result.HasMoreResults, result.TotalCount);
         }
 
-        var items = await ExecuteFeatureQueryAsync(query, probeLimit: true, cancellationToken).ConfigureAwait(false);
-        if (items.Length == 0)
+        await using var session = await OpenFeatureReadSessionAsync(
+            query, probeLimit: true, allowSerialPlan: true, cancellationToken).ConfigureAwait(false);
+        using var rows = await ReadFeatureRowsAsync(session, cancellationToken).ConfigureAwait(false);
+        if (rows.Count == 0)
         {
             return PagedQueryResult<Feature>.Empty();
         }
 
-        var hasMoreResults = items.Length > query.Limit.Value;
-        if (hasMoreResults)
-        {
-            items = items.RemoveAt(items.Length - 1);
-        }
-
+        var hasMoreResults = rows.Count > query.Limit.Value;
+        // Only the probe row is dropped; a nearest-neighbour query reads its own count, not limit + 1.
+        var items = rows.ToImmutable(hasMoreResults ? rows.Count - 1 : rows.Count);
         return PagedQueryResult<Feature>.Create(items, hasMoreResults);
     }
 
@@ -515,20 +514,35 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private async Task<ImmutableArray<Feature>> ExecuteFeatureQueryAsync(
         FeatureQuery query,
-        bool probeLimit,
         CancellationToken cancellationToken)
     {
-        var features = ImmutableArray.CreateBuilder<Feature>();
         await using var session = await OpenFeatureReadSessionAsync(
-            query, probeLimit, allowSerialPlan: true, cancellationToken).ConfigureAwait(false);
-        var reader = session.Reader!;
-        var attributesReader = new FeatureAttributeReadContext();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            features.Add(ReadFeature(reader, session.NativeAttributes, attributesReader));
-        }
+            query, probeLimit: false, allowSerialPlan: true, cancellationToken).ConfigureAwait(false);
+        using var rows = await ReadFeatureRowsAsync(session, cancellationToken).ConfigureAwait(false);
+        return rows.ToImmutable(rows.Count);
+    }
 
-        return features.ToImmutable();
+    private async Task<PooledFeatureBuffer> ReadFeatureRowsAsync(
+        FeatureReadSession session,
+        CancellationToken cancellationToken)
+    {
+        var rows = new PooledFeatureBuffer();
+        try
+        {
+            var reader = session.Reader!;
+            var attributesReader = new FeatureAttributeReadContext();
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                rows.Add(ReadFeature(reader, session.NativeAttributes, attributesReader));
+            }
+
+            return rows;
+        }
+        catch
+        {
+            rows.Dispose();
+            throw;
+        }
     }
 
     private SqlBuilder BuildFeatureSelect(FeatureQuery query, bool probeLimit)
