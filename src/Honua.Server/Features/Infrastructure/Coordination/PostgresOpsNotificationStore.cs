@@ -29,6 +29,14 @@ internal sealed class PostgresOpsNotificationStore(
     private readonly string _proposals = database.Table("operation_proposals");
     private readonly string _instances = database.Table("operation_instances");
 
+    // A Warning finding notifies only if it is still open after this window, so boot and deploy transients
+    // (a target group before its first task, a probe during a restart) do not email the operator.
+    // Critical findings and escalations notify at once.
+    internal static readonly TimeSpan WarningSettle = TimeSpan.FromMinutes(15);
+
+    internal static DateTimeOffset FirstNotice(OpsFindingSeverity severity, DateTimeOffset firstSeen)
+        => severity >= OpsFindingSeverity.Critical ? firstSeen : firstSeen + WarningSettle;
+
     public Task<int> ExpireApprovalsAsync(int limit, CancellationToken cancellationToken = default)
         => database.ExecuteAsync(async (connection, _, token) =>
         {
@@ -128,13 +136,14 @@ internal sealed class PostgresOpsNotificationStore(
             await using var command = new NpgsqlCommand($"""
                 INSERT INTO {_schedules} AS schedule
                     (source, subject_id, episode_id, first_seen_at, severity, next_notice_at, last_seen_at)
-                VALUES (@source, @subject, @episode, @now, @severity, @now, @now)
+                VALUES (@source, @subject, @episode, @now, @severity, @first_notice, @now)
                 ON CONFLICT (source, subject_id) DO UPDATE SET
                     episode_id = CASE WHEN schedule.closed_at IS NOT NULL THEN EXCLUDED.episode_id ELSE schedule.episode_id END,
                     first_seen_at = CASE WHEN schedule.closed_at IS NOT NULL THEN @now ELSE schedule.first_seen_at END,
                     notice_number = CASE WHEN schedule.closed_at IS NOT NULL THEN 0 ELSE schedule.notice_number END,
-                    next_notice_at = CASE WHEN schedule.closed_at IS NOT NULL OR @severity > schedule.severity
-                        THEN @now WHEN @severity < schedule.severity THEN @now + interval '24 hours'
+                    next_notice_at = CASE WHEN schedule.closed_at IS NOT NULL THEN @first_notice
+                        WHEN @severity > schedule.severity THEN @now
+                        WHEN @severity < schedule.severity THEN @now + interval '24 hours'
                         ELSE schedule.next_notice_at END,
                     severity = @severity,
                     last_seen_at = @now, closed_at = NULL, revision = schedule.revision + 1
@@ -144,6 +153,7 @@ internal sealed class PostgresOpsNotificationStore(
             command.Parameters.AddWithValue("episode", Guid.NewGuid());
             command.Parameters.AddWithValue("severity", (int)subject.Severity);
             command.Parameters.AddWithValue("now", now);
+            command.Parameters.AddWithValue("first_notice", FirstNotice(subject.Severity, now));
             return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
         }, StatementRepeat.SafeToRepeat, cancellationToken);
 
