@@ -11,7 +11,7 @@ using Honua.Core.Features.Studio.Services.Bridging;
 
 namespace Honua.Core.Features.Studio.Services;
 
-public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleService
+public sealed partial class StudioPackageLifecycleService : IStudioPackageLifecycleService
 {
     public const string ActivitySourceName = "Honua.Studio.PackageLifecycle";
 

@@ -46,7 +46,7 @@ public static class OperationScopeMapping
         {
             "service.publish" or "style.apply-preset" => OperatorOperation.Publish,
             "control-plane.deploy.rollback" or "control-plane.coordinated-release.rollback" => OperatorOperation.Rollback,
-            "studio.draft.create" or "studio.draft.update" or "studio.draft.save-version" or
+            "studio.draft.create" or "studio.draft.update" or "studio.draft.restore-revision" or "studio.draft.save-version" or
                 "studio.draft.delete" or "studio.draft.validate" or "studio.draft.preview-plan" or
                 "studio.content.reopen-version" or "studio.content.create-publication-request" or
                 "studio.content.rollback" => ResolveStudioOperation(request.OperationId),
@@ -124,7 +124,7 @@ public static class OperationScopeMapping
         => operationId switch
         {
             "studio.draft.create" or "studio.content.reopen-version" => OperatorOperation.Create,
-            "studio.draft.update" or "studio.draft.save-version" => OperatorOperation.Update,
+            "studio.draft.update" or "studio.draft.restore-revision" or "studio.draft.save-version" => OperatorOperation.Update,
             "studio.draft.delete" => OperatorOperation.Delete,
             "studio.draft.validate" or "studio.draft.preview-plan" => OperatorOperation.Read,
             "studio.content.create-publication-request" => OperatorOperation.Publish,

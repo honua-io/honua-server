@@ -154,4 +154,109 @@ public sealed partial class StudioPackageLifecycleServiceTests
         Assert.Equal(created.Validation.GeneratedAt, reread.Validation.GeneratedAt);
         Assert.Empty(await store.ListDraftRevisionsAsync(new(created.DraftId)));
     }
+
+    [UnitTest]
+    public async Task RestoreDraftRevisionAsync_RestoresEnvelopeAsNewGenerationWhilePreservingIdentityAndLifecycleState()
+    {
+        var clock = new MutableTimeProvider(new DateTimeOffset(2026, 5, 25, 12, 0, 0, TimeSpan.Zero));
+        var store = new InMemoryStudioPackageStore();
+        var service = BuildServiceProvider(store, timeProvider: clock).GetRequiredService<IStudioPackageLifecycleService>();
+        var created = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "undo-composition",
+            WorkspaceId = "ws-build",
+            OwnerId = "owner-a",
+            BaseVersionId = Guid.NewGuid(),
+            Envelope = BuildEnvelope("roads = 1", "content.roads"),
+            ActorId = "owner-a",
+        });
+
+        clock.Advance(TimeSpan.FromMinutes(2));
+        var edited = await ReplaceEnvelopeAsync(service, created, BuildEnvelope("1=0", "content.empty"));
+
+        clock.Advance(TimeSpan.FromMinutes(3));
+        var restored = await service.RestoreDraftRevisionAsync(
+            created.DraftId,
+            RestoreCommand(created.Generation, edited.Generation, "restorer-b"));
+
+        Assert.NotNull(restored);
+        Assert.Equal(3, restored!.Generation);
+        AssertDraftIdentityPreserved(created, restored);
+        Assert.NotNull(restored.BaseVersionId);
+        Assert.Equal("restorer-b", restored.UpdatedBy);
+        Assert.Equal(clock.GetUtcNow(), restored.UpdatedAt);
+        Assert.Equal("roads = 1", restored.Envelope.Body!.Value.GetProperty("where").GetString());
+        Assert.Equal(2, (await service.ListDraftRevisionsAsync(new(created.DraftId))).Count);
+    }
+
+    [UnitTest]
+    public async Task RestoreDraftRevisionAsync_RejectsStaleGenerationAndForeignOrMissingRevisionWithoutWrites()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var service = BuildServiceProvider(store).GetRequiredService<IStudioPackageLifecycleService>();
+        var first = await CreateDraftAsync(service, "draft-one", BuildEnvelope("one", "content.parcels"));
+        var second = await CreateDraftAsync(service, "draft-two", BuildEnvelope("two", "content.roads"));
+        var firstUpdated = await ReplaceEnvelopeAsync(service, first, BuildEnvelope("one-edited", "content.parcels"));
+        var secondUpdated = await ReplaceEnvelopeAsync(service, second, BuildEnvelope("two-edited", "content.roads"));
+        var secondThird = await ReplaceEnvelopeAsync(service, secondUpdated, BuildEnvelope("two-edited-again", "content.roads"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.RestoreDraftRevisionAsync(
+            first.DraftId,
+            RestoreCommand(first.Generation, first.Generation, "owner-a")));
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => service.RestoreDraftRevisionAsync(
+            first.DraftId,
+            RestoreCommand(secondThird.Generation - 1, firstUpdated.Generation, "owner-a")));
+
+        var reread = (await store.GetDraftAsync(first.DraftId))!;
+        Assert.Equal(firstUpdated.Generation, reread.Generation);
+        Assert.Equal("one-edited", reread.Envelope.Body!.Value.GetProperty("where").GetString());
+        Assert.Single(await service.ListDraftRevisionsAsync(new(first.DraftId)));
+    }
+
+    private static Task<StudioPackageDraft> CreateDraftAsync(
+        IStudioPackageLifecycleService service,
+        string packageKey,
+        StudioPackageEnvelope envelope) => service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = packageKey,
+            Envelope = envelope,
+            ActorId = "owner-a",
+        });
+
+    private static async Task<StudioPackageDraft> ReplaceEnvelopeAsync(
+        IStudioPackageLifecycleService service,
+        StudioPackageDraft current,
+        StudioPackageEnvelope envelope)
+    {
+        var updated = await service.UpdateDraftAsync(current.DraftId, new UpdateStudioPackageDraftCommand
+        {
+            PackageKey = current.PackageKey,
+            WorkspaceId = current.WorkspaceId,
+            OwnerId = current.OwnerId,
+            Envelope = envelope,
+            Generation = current.Generation,
+            ActorId = "owner-a",
+        });
+        Assert.NotNull(updated);
+        return updated!;
+    }
+
+    private static RestoreStudioDraftRevisionCommand RestoreCommand(long target, long expected, string actorId) => new()
+    {
+        TargetGeneration = target,
+        ExpectedGeneration = expected,
+        ActorId = actorId,
+    };
+
+    private static void AssertDraftIdentityPreserved(StudioPackageDraft created, StudioPackageDraft restored)
+    {
+        Assert.Equal(created.ItemId, restored.ItemId);
+        Assert.Equal(created.PackageKey, restored.PackageKey);
+        Assert.Equal(created.WorkspaceId, restored.WorkspaceId);
+        Assert.Equal(created.OwnerId, restored.OwnerId);
+        Assert.Equal(created.TenantId, restored.TenantId);
+        Assert.Equal(created.BaseVersionId, restored.BaseVersionId);
+        Assert.Equal(created.CreatedBy, restored.CreatedBy);
+        Assert.Equal(created.CreatedAt, restored.CreatedAt);
+    }
 }
