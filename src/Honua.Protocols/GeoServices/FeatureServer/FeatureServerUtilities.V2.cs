@@ -313,8 +313,22 @@ internal static partial class FeatureServerEndpoints
     internal static string BuildServiceCapabilitiesV2(MetadataV2Service service)
         => BuildServiceCapabilitiesV2(service, [], supportsAttachmentUploads: false, offlineSyncEnabled: true);
 
-    internal static string BuildServiceCapabilitiesV2(MetadataV2Service service, bool offlineSyncEnabled)
-        => BuildServiceCapabilitiesV2(service, [], supportsAttachmentUploads: false, offlineSyncEnabled);
+    // The service capabilities a directory listing shows: editing only where a routable publication's storage
+    // can take managed writes, the same rule the service metadata applies.
+    internal static string BuildListedServiceCapabilitiesV2(
+        MetadataV2Service service, MetadataV2GraphSnapshot snapshot, bool offlineSyncEnabled)
+    {
+        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Object Resource)> publications =
+        [
+            .. snapshot.PublicationsForService(service.Metadata.Id)
+                .Where(snapshot.IsRoutable)
+                .Select(publication => (Publication: ManagedWriteStorage.WithoutUnservableEdits(snapshot, service, publication),
+                    Resource: snapshot.ResolveResource(publication)))
+                .Where(static pair => pair.Resource is not null)
+                .Select(static pair => (pair.Publication, pair.Resource!))
+        ];
+        return BuildServiceCapabilitiesV2(service, publications, supportsAttachmentUploads: false, offlineSyncEnabled);
+    }
 
     internal static string BuildServiceCapabilitiesV2(
         MetadataV2Service service,

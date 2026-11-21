@@ -2,7 +2,9 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Text;
 using System.Text.Json;
+using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -66,6 +68,7 @@ public sealed class SourceBackedLayerEditRefusalTests : IAsyncLifetime
     [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    [Endpoint("POST /services")]
     public async Task Metadata_LayerServedFromSourceTable_DoesNotAdvertiseEditing()
     {
         await PublishSourceTableAsync();
@@ -80,7 +83,30 @@ public sealed class SourceBackedLayerEditRefusalTests : IAsyncLifetime
             capabilities.Should().Contain("Query", body);
             capabilities.Should().NotContain(["Create", "Update", "Delete", "Editing"], body);
         }
+
+        var listed = await ListedFeatureServerCapabilitiesAsync(client);
+        listed.Should().Contain("Query").And.NotContain(["Create", "Update", "Delete", "Editing"]);
     }
+
+    // The SOAP service catalog carries each FeatureServer's capabilities string.
+    private static async Task<string[]> ListedFeatureServerCapabilitiesAsync(HttpClient client)
+    {
+        const string request = """
+            <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+              <soap:Body><GetServiceDescriptions xmlns="http://www.esri.com/schemas/ArcGIS/10.8"/></soap:Body>
+            </soap:Envelope>
+            """;
+        using var content = new StringContent(request, Encoding.UTF8, "text/xml");
+        using var response = await client.PostAsync("/services", content);
+        var body = await response.Content.ReadAsStringAsync();
+        var description = XDocument.Parse(body).Descendants()
+            .Where(static element => element.Name.LocalName == "ServiceDescription")
+            .Single(element => Child(element, "Name") == ServiceName && Child(element, "Type") == "FeatureServer");
+        return Child(description, "Capabilities")!.Split(',');
+    }
+
+    private static string? Child(XElement element, string name)
+        => element.Elements().FirstOrDefault(child => child.Name.LocalName == name)?.Value;
 
     private async Task<string> PublishSourceTableAsync()
     {

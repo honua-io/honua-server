@@ -786,7 +786,7 @@ internal static class GeoservicesCatalogEndpoints
                 entries.Add(GeoServicesCatalogDirectory.CreateEntry(snapshot.Graph, service, directoryType, baseUrl) with
                 {
                     SoapCapabilities = string.Equals(directoryType, FeatureServerProtocolName, StringComparison.Ordinal)
-                        ? FeatureServer.FeatureServerEndpoints.BuildServiceCapabilitiesV2(service, offlineSyncEnabled)
+                        ? FeatureServer.FeatureServerEndpoints.BuildListedServiceCapabilitiesV2(service, snapshot, offlineSyncEnabled)
                         : null
                 });
             }
