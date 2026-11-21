@@ -44,7 +44,17 @@ internal sealed partial class GeoServerImportService
                 TargetServiceName = serviceInfo.GlobalSettings?.Title ?? "geoserver-import"
             });
 
-        return MigrationApplyPlanBuilder.Build(manifest);
+        var plan = MigrationApplyPlanBuilder.Build(manifest);
+        var styleDiffResult = GeoServerStyleDiffBuilder.Build(filteredServiceInfo, _sldConverter);
+        var accessRuleResult = GeoServerAccessRuleTranslator.Translate(filteredServiceInfo.AccessRules, filteredServiceInfo.Layers);
+        var additionalReviewItems = styleDiffResult.ReviewItems
+            .Concat(accessRuleResult.UnexpressibleReviewItems)
+            .ToArray();
+
+        return MigrationApplyPlanBuilder.WithEnrichments(
+            plan,
+            styleDiffResult.LayerStyleDiffsBySourceId,
+            additionalReviewItems);
     }
 
     private static GeoServerServiceInfo CreateFilteredServiceInfoForPlan(
@@ -89,6 +99,7 @@ internal sealed partial class GeoServerImportService
         // SLD body) without re-running discovery.
         var stylesById = filteredResources.Styles.ToDictionary(GetStyleId, StringComparer.Ordinal);
         var publishedLayerIdsBySourceId = new Dictionary<string, int>(StringComparer.Ordinal);
+        var accessRuleTranslation = GeoServerAccessRuleTranslator.Translate(filteredResources.AccessRules, filteredResources.Layers);
 
         // Slice 1: apply workspace-level catalog entries first so that any subsequent
         // layer-group / layer apply can reference them. These records are deterministic
@@ -132,6 +143,14 @@ internal sealed partial class GeoServerImportService
             if (stepResult.HonuaLayerId is { } targetLayerId && string.Equals(step.Kind, "layer", StringComparison.Ordinal))
             {
                 publishedLayerIdsBySourceId[step.SourceId] = targetLayerId;
+                if (layersById.TryGetValue(step.SourceId, out var publishedSourceLayer))
+                {
+                    accessRuleTranslation.LayerPoliciesBySourceId.TryGetValue(step.SourceId, out var layerAccessPolicy);
+                    await ApplyLayerDimensionsAndAccessPolicyAsync(
+                            new LayerMetadataTarget(targetLayerId, publishedSourceLayer, layerAccessPolicy),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
             }
 
             progress?.Report(currentProgress with
@@ -353,6 +372,11 @@ internal sealed partial class GeoServerImportService
             }
         }
 
+        var temporalColumn = layer.TimeDimension is { Enabled: true } timeDim &&
+            !string.IsNullOrWhiteSpace(timeDim.Attribute)
+            ? timeDim.Attribute
+            : null;
+
         var publishRequest = new LayerPublishRequest
         {
             Schema = publishSchema,
@@ -363,6 +387,7 @@ internal sealed partial class GeoServerImportService
             GeometryType = null,
             Srid = request.TargetSrid ?? ResolveSrid(layer.SRS),
             PrimaryKey = null,
+            TemporalColumn = temporalColumn,
             Fields = [],
             ServiceName = step.TargetServiceName,
             Enabled = request.AutoPublishLayers && layer.Enabled

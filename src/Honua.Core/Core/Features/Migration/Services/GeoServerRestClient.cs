@@ -132,6 +132,9 @@ internal sealed partial class GeoServerRestClient
             // Get advertised OGC service endpoints when GeoServer REST exposes service settings
             var serviceEndpoints = await GetServiceEndpointsAsync(baseUrl, cancellationToken);
 
+            // Get layer access rules when GeoServer REST exposes security ACL rules
+            var accessRules = await GetLayerAccessRulesAsync(baseUrl, cancellationToken);
+
             // Perform compatibility analysis
             var compatibility = includeCompatibilityAnalysis
                 ? PerformCompatibilityAnalysis(dataStores, coverageStores, layers, styles)
@@ -151,6 +154,7 @@ internal sealed partial class GeoServerRestClient
                 LayerGroups = layerGroups,
                 Styles = styles,
                 ServiceEndpoints = serviceEndpoints,
+                AccessRules = accessRules,
                 CompatibilityAssessment = compatibility,
                 DiscoveredAt = DateTimeOffset.UtcNow
             };
@@ -506,11 +510,22 @@ internal sealed partial class GeoServerRestClient
             }
 
             var (dataStoreName, coverageStoreName) = ExtractStoreNames(layerElement);
+            var nativeName = GetOptionalStringProperty(layerElement, "nativeName");
+            var resolvedLayerName = layerElement.GetProperty("name").GetString() ?? string.Empty;
+            var dimensions = await GetLayerDimensionsAsync(
+                new LayerResourceReference(
+                    baseUrl,
+                    workspaceName,
+                    resolvedLayerName,
+                    dataStoreName,
+                    coverageStoreName),
+                layerElement,
+                cancellationToken).ConfigureAwait(false);
             var compatibility = AssessLayerCompatibility(layerElement);
 
             return new GeoServerLayerInfo
             {
-                Name = layerElement.GetProperty("name").GetString() ?? string.Empty,
+                Name = resolvedLayerName,
                 WorkspaceName = workspaceName,
                 Title = GetOptionalStringProperty(layerElement, "title"),
                 Abstract = GetOptionalStringProperty(layerElement, "abstract"),
@@ -518,7 +533,7 @@ internal sealed partial class GeoServerRestClient
                 AlternativeStyles = alternativeStyles.ToArray(),
                 DataStoreName = dataStoreName,
                 CoverageStoreName = coverageStoreName,
-                NativeName = GetOptionalStringProperty(layerElement, "nativeName"),
+                NativeName = nativeName,
                 SRS = GetOptionalStringProperty(layerElement, "srs"),
                 NativeCRS = GetOptionalStringProperty(layerElement, "nativeCRS"),
                 LatLonBoundingBox = GetOptionalBoundingBox(layerElement, "latLonBoundingBox"),
@@ -528,6 +543,8 @@ internal sealed partial class GeoServerRestClient
                 Opaque = GetOptionalBoolProperty(layerElement, "opaque") ?? false,
                 Keywords = keywords.ToArray(),
                 Metadata = metadata,
+                TimeDimension = dimensions.Time,
+                ElevationDimension = dimensions.Elevation,
                 Compatibility = compatibility
             };
         }

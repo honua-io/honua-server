@@ -7,6 +7,7 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Resilience;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
 using Microsoft.Extensions.Logging;
 using Honua.Core.Features.Migration.Abstractions;
@@ -32,6 +33,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
     private readonly ILayerPublishingService? _layerPublishingService;
     private readonly IMigrationCatalogWriter? _catalogWriter;
     private readonly IMigrationStyleApplicator? _styleApplicator;
+    private readonly IMetadataV2GraphStore? _metadataGraphStore;
     private readonly ILogger<GeoServerImportService> _logger;
 
     public GeoServerImportService(
@@ -42,7 +44,8 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         ISldStyleConverter? sldConverter = null,
         ILayerPublishingService? layerPublishingService = null,
         IMigrationCatalogWriter? catalogWriter = null,
-        IMigrationStyleApplicator? styleApplicator = null)
+        IMigrationStyleApplicator? styleApplicator = null,
+        IMetadataV2GraphStore? metadataGraphStore = null)
     {
         _restClient = restClient ?? throw new ArgumentNullException(nameof(restClient));
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
@@ -52,6 +55,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         _layerPublishingService = layerPublishingService;
         _catalogWriter = catalogWriter;
         _styleApplicator = styleApplicator;
+        _metadataGraphStore = metadataGraphStore;
     }
 
     public Task<GeoServerServiceInfo> DiscoverServiceAsync(
@@ -226,11 +230,22 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
 
             if (request.DryRun)
             {
+                MigrationApplyPlanArtifact dryRunApplyPlan;
+                using (metricsRecorder.BeginPhase(MigrationCostPerformancePhases.Manifest))
+                {
+                    dryRunApplyPlan = await CreateApplyPlanAsync(serviceInfo, filteredResources, request, cancellationToken)
+                        .ConfigureAwait(false);
+                    metricsRecorder.RecordResourceCount(dryRunApplyPlan.Summary.TotalStepCount);
+                    metricsRecorder.RecordManualReview(dryRunApplyPlan.Summary.ManualReviewStepCount, dryRunApplyPlan.Summary.TotalStepCount);
+                    metricsRecorder.SampleResources();
+                }
+
                 currentProgress = currentProgress with
                 {
                     Status = GeoServerImportStatus.Completed,
                     CompletedAt = DateTimeOffset.UtcNow,
-                    CurrentPhase = "Dry run completed"
+                    CurrentPhase = "Dry run completed",
+                    ApplyPlan = dryRunApplyPlan
                 };
                 metricsRecorder.SampleResources();
                 var dryRunMetrics = BuildRunMetricsArtifact(metricsRecorder, serviceInfo, jobId, "geoserver dry run");
@@ -240,6 +255,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
 
                 return CreateDryRunResult(serviceInfo, filteredResources, request, stopwatch.Elapsed) with
                 {
+                    ApplyPlan = dryRunApplyPlan,
                     RunMetrics = dryRunMetrics
                 };
             }
@@ -431,6 +447,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             Layers = layers,
             LayerGroups = layerGroups,
             Styles = styles,
+            AccessRules = serviceInfo.AccessRules,
             WorkspaceCount = workspaces.Length,
             DataStoreCount = dataStores.Length,
             LayerCount = layers.Length,
@@ -651,6 +668,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         public GeoServerLayerInfo[] Layers { get; init; } = [];
         public GeoServerLayerGroupInfo[] LayerGroups { get; init; } = [];
         public GeoServerStyleInfo[] Styles { get; init; } = [];
+        public GeoServerLayerAccessRule[] AccessRules { get; init; } = [];
         public int WorkspaceCount { get; init; }
         public int DataStoreCount { get; init; }
         public int LayerCount { get; init; }

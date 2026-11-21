@@ -58,7 +58,7 @@ honua-migrate plan verify geoserver-plan.json
 
 `plan` starts a dry run, waits for its successful completion, and records the server evidence in a shared v1 plan contract. It does not apply catalog changes. Bound the scope with repeatable `--workspace`, `--datastore`, and `--layer` options; use `--workspace-map old=new` for renamed workspaces.
 
-Review the classifications (`applied`, `already-applied`, `manual-review`, and `unsupported`), mappings, style diagnostics, overwrite policy, target SRID, auto-publish choice, batch size, and default workspace. Existing output files are rejected unless you intentionally pass `--force`.
+Review the classifications (`applied`, `already-applied`, `manual-review`, and `unsupported`), mappings, per-layer style diffs (`styleDiffs`), unexpressed access-rule review items, overwrite policy, target SRID, auto-publish choice, batch size, and default workspace. Existing output files are rejected unless you intentionally pass `--force`.
 
 GeoServer catalog apply does not copy feature data. Load required source tables into the target PostGIS database through your approved data-transfer process before apply; missing tables remain manual-review items.
 
@@ -118,7 +118,14 @@ honua query "my-service/$LAYER_ID" --limit 5 --format geojson
 
 Compare counts, schemas, extents, representative records, relationships, and metadata with GeoServer or a source-native desktop client. Repoint WFS clients to `$HONUA_URL/wfs`, WMS clients to `$HONUA_URL/ogc/services/my-service/wms`, and WMTS clients to `$HONUA_URL/ogc/services/my-service/wmts` after validation.
 
-The runtime-neutral `honua-migrate reconcile compare` command requires a durable `MigrationRun` and portable source/target snapshots. The GeoServer service adapter does not yet emit that bundle, so automated reconciliation is deferred until the adapter is wired. This guide intentionally avoids presenting an unsupported command sequence.
+To emit a durable `MigrationRun` and portable source/target snapshots during apply, pass `--reconcile-bundle-dir ./geoserver-bundle` to `honua-migrate services geoserver apply`, then run automated reconciliation:
+
+```bash
+honua-migrate reconcile compare ./geoserver-bundle/run.json \
+  --source ./geoserver-bundle/source-snapshot.json \
+  --target ./geoserver-bundle/target-snapshot.json \
+  --output geoserver-reconciliation.json
+```
 
 ## Troubleshoot
 

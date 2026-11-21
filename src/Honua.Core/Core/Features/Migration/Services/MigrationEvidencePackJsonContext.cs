@@ -37,6 +37,8 @@ namespace Honua.Core.Features.Migration.Services;
 [JsonSerializable(typeof(MigrationCompatibilityAssessment))]
 [JsonSerializable(typeof(MigrationManifestReviewItem))]
 [JsonSerializable(typeof(MigrationManifestReviewItem[]))]
+[JsonSerializable(typeof(MigrationLayerStyleDiff))]
+[JsonSerializable(typeof(MigrationLayerStyleDiff[]))]
 public sealed partial class MigrationEvidencePackJsonContext : JsonSerializerContext
 {
 }

@@ -39,6 +39,8 @@ public sealed record GeoServerServiceInfo
 
     public GeoServerServiceEndpointInfo[] ServiceEndpoints { get; init; } = [];
 
+    public GeoServerLayerAccessRule[] AccessRules { get; init; } = [];
+
     public GeoServerMigrationCompatibility? CompatibilityAssessment { get; init; }
 
     public DateTimeOffset DiscoveredAt { get; init; } = DateTimeOffset.UtcNow;
@@ -135,7 +137,59 @@ public sealed record GeoServerLayerInfo
 
     public IReadOnlyDictionary<string, object> Metadata { get; init; } = new Dictionary<string, object>();
 
+    public GeoServerDimensionInfo? TimeDimension { get; init; }
+
+    public GeoServerDimensionInfo? ElevationDimension { get; init; }
+
     public GeoServerResourceCompatibility? Compatibility { get; init; }
+}
+
+public sealed record GeoServerDimensionInfo
+{
+    public bool Enabled { get; init; }
+
+    public string? Attribute { get; init; }
+
+    public string? EndAttribute { get; init; }
+
+    public string? Presentation { get; init; }
+
+    public long? Resolution { get; init; }
+
+    public string? Units { get; init; }
+
+    public string? UnitSymbol { get; init; }
+
+    public string? DefaultValueStrategy { get; init; }
+
+    public string? DefaultReferenceValue { get; init; }
+
+    public bool NearestMatchEnabled { get; init; }
+
+    public DateTimeOffset? StartTime { get; init; }
+
+    public DateTimeOffset? EndTime { get; init; }
+
+    public string? StartValue { get; init; }
+
+    public string? EndValue { get; init; }
+
+    public string[] Values { get; init; } = [];
+}
+
+public sealed record GeoServerLayerAccessRule
+{
+    public required string RuleKey { get; init; }
+
+    public required string RawValue { get; init; }
+
+    public string? WorkspaceName { get; init; }
+
+    public string? LayerName { get; init; }
+
+    public string? Permission { get; init; }
+
+    public string[] Roles { get; init; } = [];
 }
 
 public sealed record GeoServerLayerGroupInfo

@@ -120,6 +120,72 @@ public static class MigrationApplyPlanBuilder
         };
     }
 
+    public static MigrationApplyPlanArtifact WithEnrichments(
+        MigrationApplyPlanArtifact plan,
+        IReadOnlyDictionary<string, MigrationLayerStyleDiff[]>? styleDiffsBySourceId,
+        IReadOnlyList<MigrationManifestReviewItem>? additionalManualReviewItems)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+
+        var hasStyleDiffs = styleDiffsBySourceId is { Count: > 0 };
+        var hasReviewItems = additionalManualReviewItems is { Count: > 0 };
+        if (!hasStyleDiffs && !hasReviewItems)
+        {
+            return plan;
+        }
+
+        var mergedManualReviewItems = hasReviewItems
+            ? OrderReviewItems(plan.ManualReviewItems.Concat(additionalManualReviewItems!))
+            : plan.ManualReviewItems;
+        var reviewCodesBySource = BuildReviewCodesBySource(mergedManualReviewItems, plan.UnsupportedItems);
+        var updatedSteps = ApplyStepEnrichments(plan.Steps, styleDiffsBySourceId, reviewCodesBySource);
+        var fingerprint = ComputeFingerprint(
+            plan.SourceKind,
+            plan.Source,
+            plan.Summary,
+            updatedSteps,
+            mergedManualReviewItems,
+            plan.UnsupportedItems);
+
+        return plan with
+        {
+            ReplayToken = fingerprint,
+            PlanFingerprint = fingerprint,
+            Steps = updatedSteps,
+            ManualReviewItems = mergedManualReviewItems
+        };
+    }
+
+    private static MigrationApplyPlanStep[] ApplyStepEnrichments(
+        MigrationApplyPlanStep[] steps,
+        IReadOnlyDictionary<string, MigrationLayerStyleDiff[]>? styleDiffsBySourceId,
+        Dictionary<string, string[]> reviewCodesBySource)
+    {
+        return steps
+            .Select(step =>
+            {
+                var stepDiffs = styleDiffsBySourceId != null &&
+                    styleDiffsBySourceId.TryGetValue(step.SourceId, out var diffs) &&
+                    diffs.Length > 0
+                    ? OrderStyleDiffs(diffs)
+                    : step.StyleDiffs;
+                return step with
+                {
+                    StyleDiffs = stepDiffs,
+                    ReviewCodes = GetReviewCodes(reviewCodesBySource, step.SourceId)
+                };
+            })
+            .ToArray();
+    }
+
+    private static MigrationLayerStyleDiff[] OrderStyleDiffs(IEnumerable<MigrationLayerStyleDiff> diffs)
+        => diffs
+            .OrderBy(static item => item.StyleId, StringComparer.Ordinal)
+            .ThenBy(static item => item.Construct, StringComparer.Ordinal)
+            .ThenBy(static item => item.Severity, StringComparer.Ordinal)
+            .ThenBy(static item => item.Message, StringComparer.Ordinal)
+            .ToArray();
+
     private static MigrationManifestReviewItem[] OrderReviewItems(IEnumerable<MigrationManifestReviewItem> items)
         => items
             .OrderBy(static item => item.SourceId, StringComparer.Ordinal)
@@ -217,7 +283,28 @@ public static class MigrationApplyPlanBuilder
             WriteStringArray(writer, "styleIds", step.StyleIds);
             WriteStringArray(writer, "externalDependencyIds", step.ExternalDependencyIds);
             WriteStringArray(writer, "reviewCodes", step.ReviewCodes);
+            if (step.StyleDiffs is { Length: > 0 } styleDiffs)
+            {
+                WriteStyleDiffs(writer, styleDiffs);
+            }
             WriteCompatibility(writer, step.Compatibility);
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+    }
+
+    private static void WriteStyleDiffs(Utf8JsonWriter writer, IEnumerable<MigrationLayerStyleDiff> diffs)
+    {
+        writer.WriteStartArray("styleDiffs");
+        foreach (var diff in diffs)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("styleId", diff.StyleId);
+            writer.WriteString("styleName", diff.StyleName);
+            writer.WriteString("construct", diff.Construct);
+            writer.WriteString("severity", diff.Severity);
+            writer.WriteString("message", diff.Message);
             writer.WriteEndObject();
         }
 
