@@ -115,7 +115,7 @@ public sealed class CustomCodeSubmitTests
                 JobDefinitionArn = "arn:aws:batch:us-west-2:123456789012:job-definition/buffer:" + revision,
             }).ToArray(),
         };
-        GpProcessBindingActivation Activation(string digest, int version, string revision) => new()
+        static GpProcessBindingActivation Activation(string digest, int version, string revision) => new()
         {
             Process = "buffer-features",
             LockDigest = digest,

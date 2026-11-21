@@ -105,6 +105,7 @@ internal sealed partial class PbfQueryFormatter
             Resource = resource,
             ObjectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource),
             Srid = options.OutputSrid ?? resource.ReadSrid() ?? 4326,
+            RequestedOutputSrid = options.RequestedOutputSrid,
             ReturnGeometry = options.ReturnGeometry,
             ReturnZ = options.ReturnZ,
             ReturnM = options.ReturnM,
@@ -291,6 +292,7 @@ internal sealed partial class PbfQueryFormatter
         public required MetadataV2Object Resource { get; init; }
         public required string ObjectIdFieldName { get; init; }
         public int Srid { get; init; }
+        public int? RequestedOutputSrid { get; init; }
         public bool ReturnGeometry { get; init; }
         public bool ReturnZ { get; init; }
         public bool ReturnM { get; init; }

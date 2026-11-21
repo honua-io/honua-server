@@ -168,7 +168,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         }
 
         // Standard feature query
-        foreach (var field in queryContext.SchemaFields)
+        foreach (var field in queryContext.ResponseFields)
         {
             response.Fields.Add(GrpcConversionHelpers.ToProtoField(field));
         }
@@ -979,7 +979,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             page.GeometryType = GrpcConversionHelpers.ToProtoGeometryType(layer.GeometryType);
             page.SpatialReference = GrpcConversionHelpers.ToProtoSpatialReference(queryContext.ResponseSpatialReference);
 
-            foreach (var field in queryContext.SchemaFields)
+            foreach (var field in queryContext.ResponseFields)
             {
                 page.Fields.Add(GrpcConversionHelpers.ToProtoField(field));
             }
@@ -1097,6 +1097,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             ? BuildResponseSpatialReference(request.OutSr, outputSrid.Value)
             : layer.SpatialReference;
 
+        var schemaFields = layer.AttributeFields.Where(field => !masked.Contains(field.Name)).ToArray();
         var (projected, attributeHiddenFields) = WithGlobalIdField(
             query,
             globalIdField,
@@ -1111,7 +1112,9 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         {
             GlobalIdField = globalIdField,
             AttributeHiddenFields = attributeHiddenFields,
-            SchemaFields = layer.AttributeFields.Where(field => !masked.Contains(field.Name)).ToArray(),
+            SchemaFields = schemaFields,
+            ResponseFields = GrpcConversionHelpers.SelectResponseFields(
+                schemaFields, query.OutFields, query.Distinct ? null : layer.ObjectIdFieldName),
         };
     }
 
@@ -1413,8 +1416,11 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
         public IReadOnlySet<string> AttributeHiddenFields { get; init; } = new HashSet<string>();
 
-        // The response schema: attribute fields the caller may see.
+        // Attribute fields the caller may see; typed conversion of every returned attribute uses them.
         public IReadOnlyList<MetadataV2Field> SchemaFields { get; init; } = [];
+
+        // The fields a response declares: those the caller asked for in out_fields, as FeatureServer does.
+        public IReadOnlyList<MetadataV2Field> ResponseFields { get; init; } = [];
     }
 
     private readonly record struct GrpcLayerContext(

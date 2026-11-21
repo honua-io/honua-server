@@ -114,7 +114,7 @@ and a partial archive-verification result cannot substitute for that receipt.
 ## Follow-up and release scope
 
 The compliance goal remains open until the applicable requirements are implemented
-and verified. Thursday's release is not gated on completing that entire program;
+and verified. The current release is not gated on completing that entire program;
 remaining compliance work continues afterward. The bounded Zarr, geometry-dimension,
 generated-column, artifact HTTP, empty FlatGeobuf and conformance-harness child
 repairs listed in the initial assessment have landed and their issues are closed.
@@ -131,7 +131,7 @@ catalog/static-asset publication ([#4718](https://github.com/honua-io/honua-serv
 Independent deployment and cloud qualification is required before those claims.
 
 Run existing qualification through its normal owner-controlled workflow after
-repairs land. Preserve candidate pins and the Thursday release scope. Evaluate
+repairs land. Preserve candidate pins and the current release scope. Evaluate
 optional encodings, GeoZarr conventions, native COPC and Kerchunk against their
 explicit specification targets; absence of an optional capability is distinct
 from a correctness defect in an implemented capability. Until qualified evidence

@@ -322,7 +322,7 @@ public class ImageServerEndpointsTests : IClassFixture<PostgresFixture>,
     private static IRasterStore CreateMultiRasterStoreSubstitute()
     {
         var store = Substitute.For<IRasterStore>();
-        RasterInfo Build(long id, string name) => new()
+        static RasterInfo Build(long id, string name) => new()
         {
             Id = id,
             LayerId = TestLayerId,
