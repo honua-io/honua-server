@@ -770,6 +770,7 @@ if (Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingL
 }
 builder.Services.AddScoped<Honua.Infrastructure.Monitoring.IDeployPreflightProbe,
     Honua.Infrastructure.Monitoring.DeployPreflightProbe>();
+builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.DeployPreflightMigrationPlanCache>();
 builder.Services.AddScoped<IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
 builder.Services.AddSingleton<Honua.Server.Features.HealthCheck.DeepProbe>();

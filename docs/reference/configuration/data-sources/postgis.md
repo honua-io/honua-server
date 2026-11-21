@@ -193,6 +193,7 @@ The mode covers the `DefaultConnection` data source only, whose role the startup
 | `Limits__Connections__StatementTimeout` / `LockTimeout` | `00:00:30` | Server-side statement and lock timeouts. |
 | `Limits__Connections__IdleInTransactionTimeout` | `00:01:00` | Idle-in-transaction timeout. |
 | `Limits__Connections__AdaptiveConcurrencyEnabled` | `false` | Adaptive query admission below the concurrency ceiling. |
+| `Limits__Connections__AnonymousPressureAdmissionEnabled` | `true` | Refuse anonymous expensive reads with a retryable 503 while the query gate is under pressure. Set `false` to queue them instead, for example behind an edge that already admits traffic. |
 | `Limits__Connections__Multiplexing` | `false` | Npgsql multiplexing (`false`, `true`, or `auto`). Incompatible with RDS Proxy and transaction-mode poolers — see [Connection poolers and proxies](#connection-poolers-and-proxies-rds-proxy-pgbouncer). |
 | `Database__SessionSettings__Mode` | `connection` | `connection` sets the session timeouts and default `search_path` on every connection; `role-defaults` issues no session `SET` and relies on `ALTER ROLE` defaults — see [Role defaults instead of per-connection SET](#role-defaults-instead-of-per-connection-set). |
 

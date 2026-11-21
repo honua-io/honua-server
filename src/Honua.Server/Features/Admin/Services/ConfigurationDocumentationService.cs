@@ -406,23 +406,30 @@ public sealed class ConfigurationDocumentationService
                     "Npgsql multiplexing mode ('auto', 'true', or 'false'); default off avoids write-lock contention at high concurrency", code.Multiplexing, opts.Multiplexing, "Allowed: auto|true|false"),
                 BuildPropertyWithCurrent("Limits:Connections:ConnectionAcquisitionTimeoutSeconds", "Limits__Connections__ConnectionAcquisitionTimeoutSeconds", "integer",
                     "Maximum seconds to wait for a gate slot before returning HTTP 503 with Retry-After", code.ConnectionAcquisitionTimeoutSeconds, opts.ConnectionAcquisitionTimeoutSeconds, "Range: 1-60"),
-                BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyEnabled", "Limits__Connections__AdaptiveConcurrencyEnabled", "boolean",
-                    "Enable adaptive query admission below the configured database pool ceiling", code.AdaptiveConcurrencyEnabled, opts.AdaptiveConcurrencyEnabled, "Allowed: true|false"),
-                BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyMinQueries", "Limits__Connections__AdaptiveConcurrencyMinQueries", "integer",
-                    "Minimum adaptive concurrent query limit", code.AdaptiveConcurrencyMinQueries, opts.AdaptiveConcurrencyMinQueries, "Range: 1-1000"),
-                BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyInitialQueries", "Limits__Connections__AdaptiveConcurrencyInitialQueries", "integer",
-                    "Initial adaptive concurrent query limit; 0 starts at MaxConcurrentQueries", code.AdaptiveConcurrencyInitialQueries, opts.AdaptiveConcurrencyInitialQueries, "Range: 0-1000"),
-                BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyMaxQueries", "Limits__Connections__AdaptiveConcurrencyMaxQueries", "integer",
-                    "Maximum adaptive concurrent query limit; 0 uses MaxConcurrentQueries", code.AdaptiveConcurrencyMaxQueries, opts.AdaptiveConcurrencyMaxQueries, "Range: 0-1000"),
-                BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyTargetDurationMs", "Limits__Connections__AdaptiveConcurrencyTargetDurationMs", "integer",
-                    "Target database lease duration for adaptive admission", code.AdaptiveConcurrencyTargetDurationMs, opts.AdaptiveConcurrencyTargetDurationMs, "Range: 1-60000"),
-                BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyUpdateIntervalMs", "Limits__Connections__AdaptiveConcurrencyUpdateIntervalMs", "integer",
-                    "Minimum milliseconds between adaptive admission adjustments", code.AdaptiveConcurrencyUpdateIntervalMs, opts.AdaptiveConcurrencyUpdateIntervalMs, "Range: 0-60000"),
+                .. BuildLimitsAdmissionProperties(code, opts),
                 BuildPropertyWithCurrent("Limits:Connections:RequestTimeout", "Limits__Connections__RequestTimeout", "timespan",
                     "Overall request timeout", code.RequestTimeout, opts.RequestTimeout, "Range: 00:00:10-00:10:00")
             ]
         };
     }
+
+    private ConfigurationProperty[] BuildLimitsAdmissionProperties(ConnectionLimits code, ConnectionLimits opts) =>
+    [
+        BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyEnabled", "Limits__Connections__AdaptiveConcurrencyEnabled", "boolean",
+            "Enable adaptive query admission below the configured database pool ceiling", code.AdaptiveConcurrencyEnabled, opts.AdaptiveConcurrencyEnabled, "Allowed: true|false"),
+        BuildPropertyWithCurrent("Limits:Connections:AnonymousPressureAdmissionEnabled", "Limits__Connections__AnonymousPressureAdmissionEnabled", "boolean",
+            "Refuse anonymous expensive reads with a retryable 503 while the query gate is under pressure; off queues them instead", code.AnonymousPressureAdmissionEnabled, opts.AnonymousPressureAdmissionEnabled, "Allowed: true|false"),
+        BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyMinQueries", "Limits__Connections__AdaptiveConcurrencyMinQueries", "integer",
+            "Minimum adaptive concurrent query limit", code.AdaptiveConcurrencyMinQueries, opts.AdaptiveConcurrencyMinQueries, "Range: 1-1000"),
+        BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyInitialQueries", "Limits__Connections__AdaptiveConcurrencyInitialQueries", "integer",
+            "Initial adaptive concurrent query limit; 0 starts at MaxConcurrentQueries", code.AdaptiveConcurrencyInitialQueries, opts.AdaptiveConcurrencyInitialQueries, "Range: 0-1000"),
+        BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyMaxQueries", "Limits__Connections__AdaptiveConcurrencyMaxQueries", "integer",
+            "Maximum adaptive concurrent query limit; 0 uses MaxConcurrentQueries", code.AdaptiveConcurrencyMaxQueries, opts.AdaptiveConcurrencyMaxQueries, "Range: 0-1000"),
+        BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyTargetDurationMs", "Limits__Connections__AdaptiveConcurrencyTargetDurationMs", "integer",
+            "Target database lease duration for adaptive admission", code.AdaptiveConcurrencyTargetDurationMs, opts.AdaptiveConcurrencyTargetDurationMs, "Range: 1-60000"),
+        BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyUpdateIntervalMs", "Limits__Connections__AdaptiveConcurrencyUpdateIntervalMs", "integer",
+            "Minimum milliseconds between adaptive admission adjustments", code.AdaptiveConcurrencyUpdateIntervalMs, opts.AdaptiveConcurrencyUpdateIntervalMs, "Range: 0-60000"),
+    ];
 
     private ConfigurationSection BuildLimitsImportsSection()
     {
