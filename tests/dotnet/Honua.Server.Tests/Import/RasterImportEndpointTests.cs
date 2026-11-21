@@ -441,11 +441,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/raster")]
     public async Task ImportRaster_WithoutRasterStorage_Returns503WithOperatorAction()
     {
-        var rasterImportService = Substitute.For<IRasterImportService>();
-        rasterImportService.DetectFormat("test.tif").Returns(SupportedRasterFormat.GeoTiff);
-        rasterImportService.GetSupportedExtensions().Returns([".tif"]);
-        rasterImportService.ImportAsync(Arg.Any<RasterImportRequest>(), Arg.Any<IProgress<RasterImportProgress>?>(), Arg.Any<CancellationToken>())
-            .Returns<Task<RasterImportResult>>(_ => throw new RasterStorageUnavailableException());
+        var rasterImportService = CreateGeoTiffImportServiceThrowing(new RasterStorageUnavailableException());
 
         var fixture = new WebAppFixture()
             .ConfigureServices(services =>
@@ -586,6 +582,16 @@ public class RasterImportEndpointTests : IAsyncLifetime
     // =============================================================================
     // Test data helpers
     // =============================================================================
+
+    private static IRasterImportService CreateGeoTiffImportServiceThrowing(Exception failure)
+    {
+        var rasterImportService = Substitute.For<IRasterImportService>();
+        rasterImportService.DetectFormat("test.tif").Returns(SupportedRasterFormat.GeoTiff);
+        rasterImportService.GetSupportedExtensions().Returns([".tif"]);
+        rasterImportService.ImportAsync(Arg.Any<RasterImportRequest>(), Arg.Any<IProgress<RasterImportProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns<Task<RasterImportResult>>(_ => throw failure);
+        return rasterImportService;
+    }
 
     private static byte[] CreateMinimalGeoTiffBytes()
     {
