@@ -127,7 +127,7 @@ public sealed class PostgresObjectStorageConnectionStoreTests(PostgresFixture fi
             for (var i = 0; i <= MaxPerMinter; i++)
             {
                 var externalId = ObjectStoragePolicy.NewExternalId();
-                (await TrySetupAsync(store, "operator-a", externalId, TimeSpan.FromMinutes(120 - i))).Should().BeTrue("a principal at its cap supersedes its own oldest setup");
+                (await TrySetupAsync(store, NewSetup("operator-a", externalId, TimeSpan.FromMinutes(120 - i)))).Should().BeTrue("a principal at its cap supersedes its own oldest setup");
                 minted.Add(externalId);
             }
 
@@ -171,39 +171,28 @@ public sealed class PostgresObjectStorageConnectionStoreTests(PostgresFixture fi
         {
             var store = new PostgresObjectStorageConnectionStore(fixture.DataSource, schema);
             var externalId = ObjectStoragePolicy.NewExternalId();
-            (await TrySetupAsync(store, "operator-a", externalId)).Should().BeTrue();
-            var refused = await store.SaveSetupAsync(
-                new ObjectStorageConnectionSetup
-                {
-                    ExternalId = ObjectStoragePolicy.NewExternalId(),
-                    MintedBy = "operator-a",
-                    Bucket = "customer-imports",
-                    ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
-                },
-                maxOpenForMinter: 0,
-                CancellationToken.None);
+            (await TrySetupAsync(store, NewSetup("operator-a", externalId))).Should().BeTrue();
+            var refused = await store.SaveSetupAsync(NewSetup("operator-a"), maxOpenForMinter: 0, CancellationToken.None);
 
             refused.Should().BeFalse();
             (await store.FindOpenSetupAsync(externalId, CancellationToken.None)).Should().NotBeNull();
         });
     }
 
-    private static Task<bool> TrySetupAsync(
-        PostgresObjectStorageConnectionStore store,
-        string mintedBy,
-        string? externalId = null,
-        TimeSpan? lifetime = null)
-        => store.SaveSetupAsync(
-            new ObjectStorageConnectionSetup
-            {
-                ExternalId = externalId ?? ObjectStoragePolicy.NewExternalId(),
-                MintedBy = mintedBy,
-                Bucket = "customer-imports",
-                Prefix = "parcels/",
-                ExpiresAt = DateTimeOffset.UtcNow.Add(lifetime ?? TimeSpan.FromHours(1)),
-            },
-            MaxPerMinter,
-            CancellationToken.None);
+    private static Task<bool> TrySetupAsync(PostgresObjectStorageConnectionStore store, string mintedBy)
+        => TrySetupAsync(store, NewSetup(mintedBy));
+
+    private static Task<bool> TrySetupAsync(PostgresObjectStorageConnectionStore store, ObjectStorageConnectionSetup setup)
+        => store.SaveSetupAsync(setup, MaxPerMinter, CancellationToken.None);
+
+    private static ObjectStorageConnectionSetup NewSetup(string mintedBy, string? externalId = null, TimeSpan? lifetime = null) => new()
+    {
+        ExternalId = externalId ?? ObjectStoragePolicy.NewExternalId(),
+        MintedBy = mintedBy,
+        Bucket = "customer-imports",
+        Prefix = "parcels/",
+        ExpiresAt = DateTimeOffset.UtcNow.Add(lifetime ?? TimeSpan.FromHours(1)),
+    };
 
     private async Task WithSchemaAsync(Func<string, Task> test)
     {
