@@ -23,7 +23,6 @@ internal sealed partial class ExportCatalog(
     internal const string NotPublicReason = "The public data path is not enabled for Exports on this installation.";
     internal const int DefaultListLimit = 50;
     internal const int MaxListLimit = 200;
-    internal const int MaxStorageListFiles = 2000;
     internal const int MaxVersionsReturned = 100;
 
     private sealed record CatalogSnapshot(
@@ -243,7 +242,7 @@ internal sealed partial class ExportCatalog(
         var publishPrefix = options.Value.PMTilesPublish?.KeyPrefix?.Trim().Trim('/');
         var root = string.IsNullOrEmpty(publishPrefix) ? "exports" : $"{publishPrefix}/exports";
         var folder = string.IsNullOrEmpty(subFolder) ? root : $"{root}/{subFolder}";
-        return storage.ListFilesAsync(folder, MaxStorageListFiles, includeMetadata: false, cancellationToken);
+        return storage.ListFilesAsync(folder, int.MaxValue, includeMetadata: false, cancellationToken);
     }
 
     private static (string? ExportId, string? Version) Match(CloudFile file)

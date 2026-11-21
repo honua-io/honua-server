@@ -329,7 +329,7 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
         });
 
         response.StatusCode.Should().Be(expected);
-        Property(JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement, "success").GetBoolean().Should().BeFalse();
+        Property(JsonElement.Parse(await response.Content.ReadAsStringAsync()), "success").GetBoolean().Should().BeFalse();
     }
 
     [IntegrationTheory]

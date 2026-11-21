@@ -6891,7 +6891,7 @@
           "Compliance"
         ],
         "summary": "Advance Compliance Key-Version Posture",
-        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event \u2014 it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
+        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event — it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
         "operationId": "rotateComplianceEncryptionKey",
         "responses": {
           "200": {
@@ -7350,7 +7350,7 @@
           "Import"
         ],
         "summary": "List GeoServer Import Jobs",
-        "description": "Returns the GeoServer import jobs that are still active \u2014 that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
+        "description": "Returns the GeoServer import jobs that are still active — that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
         "operationId": "listGeoServerImportJobs",
         "responses": {
           "200": {
@@ -7668,7 +7668,7 @@
           "Import"
         ],
         "summary": "List GeoServices Import Jobs",
-        "description": "Returns the GeoServices import jobs that are still active \u2014 that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
+        "description": "Returns the GeoServices import jobs that are still active — that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
         "operationId": "listGeoservicesImportJobs",
         "responses": {
           "200": {
@@ -22907,7 +22907,7 @@
             "name": "events",
             "in": "query",
             "required": false,
-            "description": "Maximum number of recent events. Values outside 1\u2013500 are rejected.",
+            "description": "Maximum number of recent events. Values outside 1–500 are rejected.",
             "schema": {
               "type": "integer",
               "minimum": 1,
@@ -55137,7 +55137,7 @@
           },
           "identityField": {
             "type": "string",
-            "description": "Field that links a tile feature to its GeoParquet row; defaults to the Layer's object id."
+            "description": "Feature identity field shared by both artifacts; defaults to the Layer's declared text key, or its object id."
           },
           "minZoom": {
             "type": "integer",
@@ -55146,6 +55146,12 @@
           "maxZoom": {
             "type": "integer",
             "minimum": 0
+          },
+          "maxTiles": {
+            "type": "integer",
+            "minimum": 1,
+            "nullable": true,
+            "description": "Maximum tiles to render for the PMTiles archive; defaults to the server's local tile ceiling."
           }
         }
       },

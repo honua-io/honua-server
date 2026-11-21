@@ -370,7 +370,7 @@ internal sealed partial class TileOperationExecutionCore
         }
     }
 
-    private static string VersionLabel(ExportVersionRun run) => $"{run.PublicationId}/{run.Version}";
+    private static string VersionLabel(ExportVersionRun run) => $"{run.ExportId}/{run.Version}";
 
     private async Task<TileOperationProgress> ActivateAsync(
         TileOperationProgress current,
@@ -396,7 +396,7 @@ internal sealed partial class TileOperationExecutionCore
         await SwitchPointerAsync(context.Store, context.Run, context.PointerETag).ConfigureAwait(false);
         if (context.UnpublishedETag is not null)
         {
-            await context.Store.ClearUnpublishedAsync(CancellationToken.None).ConfigureAwait(false);
+            await TryClearUnpublishedAsync(context.Store).ConfigureAwait(false);
         }
 
         TileOperationLog.ExportActivated(_logger, current.JobId, run.ExportId, run.Version);
@@ -409,6 +409,18 @@ internal sealed partial class TileOperationExecutionCore
             ErrorMessage = null,
             CurrentPhase = "Export completed"
         };
+    }
+
+    private static async Task TryClearUnpublishedAsync(ExportStore store)
+    {
+        try
+        {
+            await store.ClearUnpublishedAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Pointer switch already succeeded; stale marker cleanup is best-effort.
+        }
     }
 
     private static async Task PutCompanionFilesAsync(

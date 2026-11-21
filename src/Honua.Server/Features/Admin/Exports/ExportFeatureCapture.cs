@@ -64,7 +64,7 @@ internal sealed class ExportFeatureCapture
             }
         }
 
-        RequireUniqueIdentity(features, fields.IdentityField);
+        RequireUniqueIdentity(features, fields);
         var undeclared = features
             .SelectMany(feature => feature.Attributes.Keys)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -75,16 +75,21 @@ internal sealed class ExportFeatureCapture
     }
 
     // A rendered feature resolves to exactly one GeoParquet row through this value.
-    private static void RequireUniqueIdentity(IEnumerable<Feature> features, string identityField)
+    private static void RequireUniqueIdentity(IEnumerable<Feature> features, ExportFields fields)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
+        var isObjectId = string.Equals(fields.IdentityField, fields.ObjectIdField, StringComparison.OrdinalIgnoreCase);
         foreach (var feature in features)
         {
-            var value = feature.Attributes.TryGetValue(identityField, out var raw) ? raw?.ToString() : null;
+            var value = feature.Attributes.TryGetValue(fields.IdentityField, out var raw)
+                ? raw?.ToString()
+                : isObjectId && feature.Id > 0
+                    ? feature.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    : null;
             if (string.IsNullOrEmpty(value) || !seen.Add(value))
             {
                 throw new ExportException(
-                    $"Identity field '{identityField}' must hold a unique, non-empty value for every feature.");
+                    $"Identity field '{fields.IdentityField}' must hold a unique, non-empty value for every feature.");
             }
         }
     }

@@ -22,11 +22,13 @@ internal sealed class ExportStore
 
     private readonly ICloudFileStorage _storage;
     private readonly string _exportKey;
+    private readonly string _listPrefix;
 
-    private ExportStore(ICloudFileStorage storage, string exportKey)
+    private ExportStore(ICloudFileStorage storage, string exportKey, string listPrefix)
     {
         _storage = storage;
         _exportKey = exportKey;
+        _listPrefix = listPrefix;
     }
 
     public string PointerKey => $"{_exportKey}/{PointerFileName}";
@@ -37,7 +39,9 @@ internal sealed class ExportStore
     {
         var root = PMTilesPublishKeyRoot.Resolve(options);
         var exportKey = string.IsNullOrEmpty(root) ? $"exports/{exportId}" : $"{root}/exports/{exportId}";
-        return new ExportStore(storage, exportKey);
+        var publishPrefix = options.PMTilesPublish?.KeyPrefix?.Trim().Trim('/');
+        var listPrefix = string.IsNullOrEmpty(publishPrefix) ? $"exports/{exportId}" : $"{publishPrefix}/exports/{exportId}";
+        return new ExportStore(storage, exportKey, listPrefix);
     }
 
     public string VersionKey(string version, string fileName) => $"{_exportKey}/{version}/{fileName}";
@@ -99,7 +103,19 @@ internal sealed class ExportStore
     public async Task<string?> ReadUnpublishedETagAsync(CancellationToken cancellationToken)
     {
         var marker = await _storage.GetMetadataAsync(UnpublishedKey, cancellationToken).ConfigureAwait(false);
-        return marker is null ? null : string.IsNullOrWhiteSpace(marker.ETag) ? marker.FileId : marker.ETag;
+        if (marker is null)
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(marker.ETag))
+        {
+            return marker.ETag;
+        }
+
+        var doc = await ReadUnpublishedAsync(cancellationToken).ConfigureAwait(false);
+        return doc?.UnpublishedAt.UtcTicks.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            ?? marker.UploadedAt.UtcTicks.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
 
     public Task<ExportUnpublishedMarker?> ReadUnpublishedAsync(CancellationToken cancellationToken)
@@ -113,7 +129,7 @@ internal sealed class ExportStore
 
     public async Task<ExportVersion?> FindAnyStoredVersionAsync(CancellationToken cancellationToken)
     {
-        var files = await _storage.ListFilesAsync(_exportKey, 200, includeMetadata: false, cancellationToken).ConfigureAwait(false);
+        var files = await _storage.ListFilesAsync(_listPrefix, 200, includeMetadata: false, cancellationToken).ConfigureAwait(false);
         foreach (var file in files)
         {
             var path = !string.IsNullOrEmpty(file.FileId) ? file.FileId : file.StoragePath;

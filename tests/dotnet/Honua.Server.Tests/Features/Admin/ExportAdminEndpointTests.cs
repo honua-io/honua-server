@@ -7,12 +7,20 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Exports;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
+using Honua.Infrastructure.Progress;
 using Honua.Server.Features.Admin.Exports;
+using Honua.Server.Features.Admin.TileOperations;
+using Honua.Server.Features.Operations;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -56,26 +64,19 @@ public sealed partial class ExportEndpointTests
         OperationScopeMapping.TryResolve(new OperationRequest { OperationId = "admin.exports.delete" }, out var deleteOp).Should().BeTrue();
         deleteOp.Should().Be(OperatorOperation.Delete);
 
-        var dispatcher = _fixture.GetOptionalService<IOperationDispatcher>()!;
-        var result = await dispatcher.DispatchAsync(
-            new OperationRequest
-            {
-                OperationId = "admin.exports.create",
-                Inputs = new Dictionary<string, object?>
-                {
-                    ["source"] = new Dictionary<string, object?> { ["kind"] = "layer", ["serviceId"] = _serviceName, ["layerId"] = _layerId },
-                    ["exportId"] = _exportId
-                }
-            },
-            new OperationPolicyContext
-            {
-                ActorId = "agent-test",
-                Roles = [AgentApprovalRule.AgentRole],
-                Surface = OperationSurface.Mcp,
-                TenantId = "default"
-            });
+        var pdp = _fixture.GetOptionalService<IOperationPolicyDecisionPoint>()!;
+        var create = AdminOperateOperationCatalog.Descriptors.Single(d => d.OperationId == "admin.exports.create");
+        var delete = AdminOperateOperationCatalog.Descriptors.Single(d => d.OperationId == "admin.exports.delete");
+        var agent = new OperationPolicyContext
+        {
+            PrincipalId = "agent-export-test",
+            Roles = [AgentApprovalRule.AgentRole, OperationPolicyBuiltInRules.FullAdministratorRole]
+        };
 
-        result.Outcome.Should().Be(OperationOutcome.ApprovalRequired);
+        (await pdp.EvaluateAsync(create, new OperationRequest { OperationId = create.OperationId }, agent))
+            .Kind.Should().Be(PolicyDecisionKind.RequireApproval);
+        (await pdp.EvaluateAsync(delete, new OperationRequest { OperationId = delete.OperationId }, agent))
+            .Kind.Should().Be(PolicyDecisionKind.RequireApproval);
     }
 
     [IntegrationTest]
@@ -92,6 +93,44 @@ public sealed partial class ExportEndpointTests
         marker.ExportId.Should().Be(_exportId);
         marker.ServiceId.Should().NotBeNullOrWhiteSpace();
         marker.LayerId.Should().NotBeNullOrWhiteSpace();
+
+        var store = ExportStore.Create(Storage, _fixture.GetOptionalService<IOptions<CloudStorageOptions>>()!.Value, _exportId);
+        var etagBefore = await store.ReadUnpublishedETagAsync(CancellationToken.None);
+        etagBefore.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/exports")]
+    [Endpoint("DELETE /api/v1/admin/exports/{exportId}")]
+    public async Task CreateAndDeleteExport_WhileJobIsRunning_ReturnConflict()
+    {
+        var progressStore = _fixture.GetOptionalService<IUniversalProgressStore>()!;
+        var jobId = $"export-active-{Guid.NewGuid():N}";
+        await progressStore.SetProgressAsync(
+            jobId,
+            TileOperationProgress.CreateInitial(jobId, TileCacheExecutionSpecBuilder.ExportOperation, WebAppFixture.TestServiceId, WebAppFixture.TestLayerId, "WebMercatorQuad") with
+            {
+                ExportId = _exportId,
+                Status = Honua.Core.Features.Infrastructure.Domain.OperationStatus.Processing
+            },
+            TimeSpan.FromMinutes(5),
+            CancellationToken.None);
+
+        using var createConflict = await _client.PostAsJsonAsync(ExportsRoute, PublishBody(IdentityField));
+        using var deleteConflict = await _client.DeleteAsync($"{ExportsRoute}/{_exportId}");
+
+        createConflict.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        deleteConflict.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/exports")]
+    public async Task ListExports_RespectsLimitAndOffset()
+    {
+        await PublishAsync(IdentityField);
+
+        using var page = JsonDocument.Parse(await _client.GetStringAsync($"{ExportsRoute}?limit=1&offset=0"));
+        page.RootElement.GetProperty("data").GetProperty("items").GetArrayLength().Should().BeLessThanOrEqualTo(1);
     }
 
     [IntegrationTest]

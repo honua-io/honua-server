@@ -139,9 +139,9 @@ public sealed class ExportCompanionFilesTests
         Crs = new ExportCrs("EPSG:3857", "OGC:CRS84"),
         Fields =
         [
-            new ExportField("objectid", "integer", Public: true),
-            new ExportField("tmk", "string", Public: true) { Title = "Tax map key", Description = "Parcel | key" },
-            new ExportField("owner", "string", Public: false)
+            new ExportVersionField("objectid", "integer", Public: true),
+            new ExportVersionField("tmk", "string", Public: true) { Title = "Tax map key", Description = "Parcel | key" },
+            new ExportVersionField("owner", "string", Public: false)
         ],
         Identity = new ExportIdentity("tmk", "tmk", "tmk"),
         Geometry = new ExportGeometry("geometry", "wkb", ["MultiPolygon"]),

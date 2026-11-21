@@ -34,7 +34,7 @@ internal static class ExportAgentsGuide
             .Append("- Extent: ").Append(ExportMarkdown.Bounds(descriptor.Bounds)).Append(" (west, south, east, north).\n")
             .Append("- Feature count: ").Append(descriptor.Capture.FeatureCount).Append(".\n\n");
 
-    private static void AppendFields(StringBuilder text, IReadOnlyList<ExportField> fields, string identityField)
+    private static void AppendFields(StringBuilder text, IReadOnlyList<ExportVersionField> fields, string identityField)
     {
         text.Append("## Fields\n\n| Name | Type | Description |\n|---|---|---|\n");
         foreach (var field in fields)

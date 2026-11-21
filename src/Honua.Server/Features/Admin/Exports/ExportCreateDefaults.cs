@@ -50,22 +50,29 @@ internal static class ExportCreateDefaults
         }
 
         var resource = published.Resource;
-        var zoom = ClampZoom(request.MinZoom, request.MaxZoom, bounds);
-        var identity = ExportFields.ChooseIdentity(resource, request.IdentityField);
-        var start = new TileOperationStartRequest
-        {
-            Operation = TileCacheExecutionSpecBuilder.ExportOperation,
-            ServiceId = source.ServiceId,
-            LayerId = source.LayerId,
-            ExportId = request.ExportId ?? Slug(resource.Metadata.Name, resource.Metadata.Id),
-            IdentityField = identity.Field,
-            MinZoom = zoom.MinZoom,
-            MaxZoom = zoom.MaxZoom
-        };
+        var start = BuildStartRequest(request, resource, bounds);
         var title = string.IsNullOrWhiteSpace(resource.Metadata.Title) ? null : resource.Metadata.Title.Trim();
         return ExportRequestRules.Problem(start) is { } problem
             ? Refuse(problem, StatusCodes.Status400BadRequest)
             : new ExportCreatePlan { Start = start, Title = title, StatusCode = StatusCodes.Status202Accepted };
+    }
+
+    private static TileOperationStartRequest BuildStartRequest(
+        ExportCreateRequest request, MetadataV2Object resource, ExportZoomBounds bounds)
+    {
+        var zoom = ClampZoom(request.MinZoom, request.MaxZoom, bounds);
+        var identity = ExportFields.ChooseIdentity(resource, request.IdentityField);
+        return new TileOperationStartRequest
+        {
+            Operation = TileCacheExecutionSpecBuilder.ExportOperation,
+            ServiceId = request.Source!.ServiceId,
+            LayerId = request.Source.LayerId,
+            ExportId = request.ExportId ?? Slug(resource.Metadata.Name, resource.Metadata.Id),
+            IdentityField = identity.Field,
+            MinZoom = zoom.MinZoom,
+            MaxZoom = zoom.MaxZoom,
+            MaxTiles = request.MaxTiles ?? TileCacheJobExecutor.LocalMaxTiles
+        };
     }
 
     // A requested zoom outside the server's tile ceiling is clamped. Clients overzoom past the archive.

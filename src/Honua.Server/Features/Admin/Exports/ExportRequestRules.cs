@@ -31,12 +31,12 @@ internal static partial class ExportRequestRules
             : "Property 'bbox' does not apply to export; tile coverage follows the captured features.";
     }
 
-    public static bool IsExportId(string? name) => name is not null && PublicationIdPattern().IsMatch(name);
+    public static bool IsExportId(string? name) => name is not null && ExportIdPattern().IsMatch(name);
 
     public static bool IsPortableFieldName(string name) => FieldNamePattern().IsMatch(name);
 
     [GeneratedRegex("^[a-z0-9][a-z0-9-]{2,63}$", RegexOptions.CultureInvariant)]
-    private static partial Regex PublicationIdPattern();
+    private static partial Regex ExportIdPattern();
 
     [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]{0,62}$", RegexOptions.CultureInvariant)]
     private static partial Regex FieldNamePattern();

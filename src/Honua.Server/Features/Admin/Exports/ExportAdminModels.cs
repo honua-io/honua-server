@@ -25,12 +25,14 @@ public sealed record ExportCreateRequest
     // Defaults to the Layer's name as a slug.
     public string? ExportId { get; init; }
 
-    // Defaults to the Layer's object id.
+    // Defaults to the Layer's declared text key, or the object id as text.
     public string? IdentityField { get; init; }
 
     public int? MinZoom { get; init; }
 
     public int? MaxZoom { get; init; }
+
+    public int? MaxTiles { get; init; }
 }
 
 public sealed record ExportListResponse(IReadOnlyList<ExportResponse> Items);
