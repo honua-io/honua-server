@@ -36,6 +36,7 @@ internal sealed class LiveStreamAuthorizationSession : IDisposable
             ? LiveStreamAuthorizationFilter.RevalidationInterval
             : LiveStreamAuthorizationFilter.RevalidationInterval + LiveStreamAuthorizationFilter.ResourceRevalidationBudget;
         Policies = new LiveStreamPolicyRefreshFeature { RevalidateAsync = RefreshAdmissionAsync };
+        PortalAudienceSnapshot.Attach(context);
         ExpiresAt = ResolveExpiry(context, scheme);
     }
 
@@ -90,6 +91,11 @@ internal sealed class LiveStreamAuthorizationSession : IDisposable
             entered = true;
             authorized = await IsStillAuthorizedAsync(pendingPolicy, deadline.Token).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested || MonitorStop.IsCancellationRequested)
+        {
+            // A stopped caller or a finished stream is no verdict; only the check's own deadline denies.
+            return;
+        }
         catch (Exception error) when (error is not OutOfMemoryException)
         {
             authorized = false;
@@ -135,7 +141,14 @@ internal sealed class LiveStreamAuthorizationSession : IDisposable
             // Kestrel's teardown can then drop the close frame before it leaves: the
             // client saw 1006 instead of 1008. Let the endpoint
             // observe the client's close reply first, bounded by one interval.
-            await socket.WaitForCloseReplyAsync(MonitorStop.Token).ConfigureAwait(false);
+            try
+            {
+                await socket.WaitForCloseReplyAsync(MonitorStop.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (MonitorStop.IsCancellationRequested)
+            {
+                // The client is gone or the endpoint finished; nothing remains to wait for.
+            }
         }
 
         await Lifetime.CancelAsync().ConfigureAwait(false);

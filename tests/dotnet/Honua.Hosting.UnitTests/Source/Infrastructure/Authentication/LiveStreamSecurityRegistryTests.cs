@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 
@@ -88,5 +90,25 @@ public sealed class LiveStreamSecurityRegistryTests
         subscription.Dispose();
         await registry.RefreshAsync(null, CancellationToken.None);
         Assert.Equal(1, count);
+    }
+
+    [UnitTest]
+    public async Task SessionBoundOperatorBearer_SignOutRevocationEndsTheStream()
+    {
+        using var registry = new LiveStreamSecurityRegistry();
+        var credential = OperatorBearerAuthenticationHandler.StreamCredential(
+            "bearer-token", new OperatorBearerBinding(Session: "binding-1"), DateTimeOffset.UtcNow.AddMinutes(5));
+        var revoked = false;
+        using var stream = registry.Register(new("alice", credential.Credential, credential.BackingCredential),
+            _ => Task.CompletedTask, _ =>
+            {
+                revoked = true;
+                return Task.CompletedTask;
+            });
+        var storedBindingHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes("binding-1")));
+
+        await registry.RefreshAsync(new("credential-revoked", storedBindingHash, "AdminSessionBearerBinding"), CancellationToken.None);
+
+        Assert.True(revoked, "deleting the bearer binding token on sign-out must end the bearer's streams");
     }
 }

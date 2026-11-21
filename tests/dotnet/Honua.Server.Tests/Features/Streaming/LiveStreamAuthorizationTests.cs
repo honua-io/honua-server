@@ -77,6 +77,33 @@ public sealed partial class LiveStreamAuthorizationTests
         await authentication.Received(2).AuthenticateAsync(Arg.Any<HttpContext>(), Arg.Any<string>());
     }
 
+    [UnitTest]
+    public async Task Filter_SecurityRefreshCancelledByItsCaller_DoesNotEndTheStream()
+    {
+        var authentication = Substitute.For<IAuthenticationService>();
+        await using var services = CreatePortalStreamServices(authentication);
+        var registry = services.GetRequiredService<LiveStreamSecurityRegistry>();
+        registry.AttachConsumer();
+        var context = CreatePortalStreamContext(services, authentication);
+        context.Features.Set(new LiveStreamCredentialFeature(new("PortalToken", "token-hash"), DateTimeOffset.UtcNow.AddMinutes(5)));
+        var streamOpen = false;
+
+        await new LiveStreamAuthorizationFilter().InvokeAsync(EndpointFilterInvocationContext.Create(context), async invocation =>
+        {
+            authentication.AuthenticateAsync(Arg.Any<HttpContext>(), Arg.Any<string>()).Returns(async call =>
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, call.ArgAt<HttpContext>(0).RequestAborted);
+                return AuthenticateResult.NoResult();
+            });
+            using var stop = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+            await Record.ExceptionAsync(() => registry.RefreshAsync(null, stop.Token));
+            streamOpen = !invocation.HttpContext.RequestAborted.IsCancellationRequested;
+            return Results.Empty;
+        });
+
+        streamOpen.Should().BeTrue("a refresh its caller stopped is no verdict on the stream's credential");
+    }
+
     private static ServiceProvider CreatePortalStreamServices(IAuthenticationService authentication)
     {
         var registrations = new ServiceCollection();

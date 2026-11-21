@@ -51,8 +51,6 @@ internal sealed partial class RealtimeDispatcher(
             ? source.ReadAfterAsync(request.After, request.ScopeKeys, request.Limit, cancellationToken)
             : log.ReadAfterAsync(new(request.Family, request.After, request.Limit, request.ScopeKeys), cancellationToken);
 
-    internal Task RefreshReplaySecurityAsync(CancellationToken cancellationToken)
-        => Security?.RefreshAsync(null, cancellationToken) ?? Task.CompletedTask;
 
     public Task<RealtimeLogWindow> ReadWindowAsync(string family, CancellationToken cancellationToken)
         => _sources.TryGetValue(family, out var source)
@@ -138,7 +136,6 @@ internal sealed partial class RealtimeDispatcher(
         if (Security is not null)
         {
             await Security.RefreshAsync(null, cancellationToken).ConfigureAwait(false);
-            Security.AttachConsumer();
         }
 
         lock (_gate)
@@ -160,14 +157,24 @@ internal sealed partial class RealtimeDispatcher(
             await InitializeAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        var heads = await ReadHeadsAsync(cancellationToken).ConfigureAwait(false);
-        var delivered = 0;
-        foreach (var (family, head) in heads.OrderBy(entry => InternalPriority(entry.Key)))
+        try
         {
-            delivered += await DispatchFamilyAsync(family, head, cancellationToken).ConfigureAwait(false);
-        }
+            var heads = await ReadHeadsAsync(cancellationToken).ConfigureAwait(false);
+            var delivered = 0;
+            foreach (var (family, head) in heads.OrderBy(entry => InternalPriority(entry.Key)))
+            {
+                delivered += await DispatchFamilyAsync(family, head, cancellationToken).ConfigureAwait(false);
+            }
 
-        return delivered;
+            Security?.AttachConsumer();
+            return delivered;
+        }
+        catch
+        {
+            // Streams fall back to their own credential check until a probe succeeds again.
+            Security?.DetachConsumer();
+            throw;
+        }
     }
 
     private async Task<int> DispatchFamilyAsync(string family, long head, CancellationToken cancellationToken)
@@ -289,16 +296,17 @@ internal sealed partial class RealtimeDispatcher(
         public bool RefreshesSecurity { get; init; }
     }
 
-    // A security or catalog event refreshes the affected streams before any later event is delivered.
+    // A batch of security or catalog events refreshes the affected streams before any of it, or any
+    // later event, is delivered.
     private async Task DeliverBatchAsync(DispatchBatch delivery, CancellationToken cancellationToken)
     {
+        if (delivery.RefreshesSecurity)
+        {
+            await RefreshSecurityBatchAsync(delivery.Batch, cancellationToken).ConfigureAwait(false);
+        }
+
         foreach (var realtimeEvent in delivery.Batch)
         {
-            if (delivery.RefreshesSecurity)
-            {
-                await RefreshSecurityAsync(realtimeEvent, cancellationToken).ConfigureAwait(false);
-            }
-
             foreach (var subscriber in delivery.Subscribers)
             {
                 subscriber.Deliver(realtimeEvent, delivery.Head);
