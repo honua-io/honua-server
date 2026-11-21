@@ -21,6 +21,14 @@ namespace Honua.Db.Postgres.Features.Admin;
 
 internal sealed partial class PostgreSqlLayerPublishingService
 {
+    private string MetadataSchema => _schemaConfiguration.MetadataSchema;
+    private string LayersTable => SchemaSearchPath.QualifyTable("layers", MetadataSchema);
+    private string LayerFieldsTable => SchemaSearchPath.QualifyTable("layer_fields", MetadataSchema);
+    private string ServicesTable => SchemaSearchPath.QualifyTable("services", MetadataSchema);
+    private string ServiceLayersTable => SchemaSearchPath.QualifyTable("service_layers", MetadataSchema);
+    private string DataConnectionsTable => SchemaSearchPath.QualifyTable("data_connections", MetadataSchema);
+    private string LayersLayerIdSequence => SchemaSearchPath.QualifyTable("layers_layer_id_seq", MetadataSchema);
+
     private static string NormalizeServiceName(string? serviceName)
     {
         return string.IsNullOrWhiteSpace(serviceName) ? DefaultServiceName : serviceName.Trim();

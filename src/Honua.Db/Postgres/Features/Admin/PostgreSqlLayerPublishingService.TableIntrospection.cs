@@ -363,7 +363,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             .ToList();
     }
 
-    private static async Task<bool> HonuaTableExistsAsync(
+    private async Task<bool> HonuaTableExistsAsync(
         NpgsqlConnection connection,
         string tableName,
         CancellationToken cancellationToken)
@@ -372,12 +372,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
             SELECT EXISTS (
                 SELECT 1
                 FROM information_schema.tables
-                WHERE table_schema = 'honua'
+                WHERE table_schema = @metadataSchema
                   AND table_name = @tableName
             );
             """;
 
         await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@metadataSchema", MetadataSchema);
         command.Parameters.AddWithValue("@tableName", tableName);
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return result is bool exists && exists;

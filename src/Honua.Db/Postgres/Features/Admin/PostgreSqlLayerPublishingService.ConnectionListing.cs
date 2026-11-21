@@ -12,11 +12,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
     // Apply ownership before LIMIT and COUNT. Canonical per-layer bindings take
     // precedence over the legacy service-level connection, which cannot represent
     // a service containing both managed and source-backed layers.
-    private const string PublishedLayerConnectionPredicate = """
+    private string BuildPublishedLayerConnectionPredicate() => $"""
         (@connectionId IS NULL
          OR l.layer_id = ANY(@matchingLayerIds)
          OR (NOT (l.layer_id = ANY(@canonicalLayerIds)) AND EXISTS (
-             SELECT 1 FROM honua.services s
+             SELECT 1 FROM {ServicesTable} s
              WHERE s.service_name = sl.service_name
                AND (s.connection_id = @connectionId
                     OR (s.connection_id IS NULL AND @includeManaged)))))

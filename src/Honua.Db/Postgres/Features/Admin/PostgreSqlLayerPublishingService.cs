@@ -61,7 +61,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
     private readonly ITableDiscoveryService _tableDiscoveryService = tableDiscoveryService;
     private readonly PostgresSchemaConfiguration _schemaConfiguration = schemaConfiguration ?? new(
-        metadataSchema ?? PostgresSchemaConfiguration.DefaultMetadataSchema,
+        string.IsNullOrWhiteSpace(metadataSchema) ? PostgresSchemaConfiguration.DefaultMetadataSchema : metadataSchema.Trim(),
         PostgresSchemaConfiguration.DefaultDataSchema,
         [PostgresSchemaConfiguration.DefaultDataSchema, "public"]);
     private readonly Honua.Core.Features.Infrastructure.Abstractions.ISchemaContext? _schemaContext = schemaContext;
@@ -178,16 +178,16 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     {
         var normalizedService = scope.Ownership.ServiceName;
         var layers = new List<PublishedLayerSummary>();
-        const string sql = $"""
+        var sql = $"""
             SELECT
                 {PublishedLayerSelect}
-            FROM honua.layers l
-            INNER JOIN honua.service_layers sl
+            FROM {LayersTable} l
+            INNER JOIN {ServiceLayersTable} sl
                 ON sl.layer_id = l.layer_id
-            LEFT JOIN honua.layer_fields f
+            LEFT JOIN {LayerFieldsTable} f
                 ON f.layer_id = l.layer_id
             WHERE sl.service_name = @serviceName
-              AND {PublishedLayerConnectionPredicate}
+              AND {BuildPublishedLayerConnectionPredicate()}
             GROUP BY
                 {PublishedLayerColumns}
             ORDER BY l.layer_id;
@@ -1019,12 +1019,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         await ValidateTenantAccessAsync(normalizedService, layerIds.ToHashSet(), storageScope, cancellationToken).ConfigureAwait(false);
 
-        const string updateSql = """
-            UPDATE honua.layers
+        var updateSql = $"""
+            UPDATE {LayersTable}
             SET enabled = @enabled
             WHERE layer_id IN (
                 SELECT layer_id
-                FROM honua.service_layers
+                FROM {ServiceLayersTable}
                 WHERE service_name = @serviceName
             );
             """;

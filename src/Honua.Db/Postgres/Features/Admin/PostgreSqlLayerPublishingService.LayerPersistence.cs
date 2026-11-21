@@ -21,7 +21,7 @@ namespace Honua.Db.Postgres.Features.Admin;
 
 internal sealed partial class PostgreSqlLayerPublishingService
 {
-    private static async Task AcquireLayerPublishLockAsync(
+    private async Task AcquireLayerPublishLockAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string schema,
@@ -30,25 +30,26 @@ internal sealed partial class PostgreSqlLayerPublishingService
     {
         const string sql = """
             SELECT pg_advisory_xact_lock(
-                hashtextextended('honua.layers:' || lower(@schema) || '.' || lower(@table), 0));
+                hashtextextended(lower(@metadataSchema) || '.layers:' || lower(@schema) || '.' || lower(@table), 0));
             """;
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@metadataSchema", MetadataSchema);
         command.Parameters.AddWithValue("@schema", schema);
         command.Parameters.AddWithValue("@table", table);
         _ = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task<int?> FindExistingLayerAsync(
+    private async Task<int?> FindExistingLayerAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
         string schema,
         string table,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $"""
             SELECT layer_id
-            FROM honua.layers
+            FROM {LayersTable}
             WHERE table_schema = @schema AND table_name = @table;
             """;
 
@@ -60,7 +61,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return result is int id ? id : null;
     }
 
-    private static async Task<int> InsertLayerAsync(
+    private async Task<int> InsertLayerAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string layerName,
@@ -77,8 +78,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string storageOptionsJson,
         CancellationToken cancellationToken)
     {
-        const string sql = """
-            INSERT INTO honua.layers (
+        var sql = $"""
+            INSERT INTO {LayersTable} (
                 layer_name,
                 description,
                 table_schema,
@@ -143,22 +144,22 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return layerId;
     }
 
-    private static async Task EnsureLayerSequenceAsync(
+    private async Task EnsureLayerSequenceAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $"""
             WITH layer_state AS (
                 SELECT COALESCE(MAX(layer_id), 0) AS max_layer_id
-                FROM honua.layers
+                FROM {LayersTable}
             ),
             sequence_state AS (
                 SELECT last_value, is_called
-                FROM honua.layers_layer_id_seq
+                FROM {LayersLayerIdSequence}
             )
             SELECT setval(
-                pg_get_serial_sequence('honua.layers', 'layer_id'),
+                pg_get_serial_sequence(@layersTable, 'layer_id'),
                 GREATEST(layer_state.max_layer_id, sequence_state.last_value),
                 CASE
                     WHEN layer_state.max_layer_id = 0 AND sequence_state.is_called = FALSE THEN FALSE
@@ -170,6 +171,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             """;
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@layersTable", LayersTable);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -616,16 +618,16 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
     }
 
-    private static async Task<bool> ServiceExistsAsync(
+    private async Task<bool> ServiceExistsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string serviceName,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $"""
             SELECT EXISTS (
                 SELECT 1
-                FROM honua.services
+                FROM {ServicesTable}
                 WHERE service_name = @serviceName
             );
             """;
@@ -636,15 +638,15 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return result is bool exists && exists;
     }
 
-    private static async Task<List<int>> ListServiceLayerIdsAsync(
+    private async Task<List<int>> ListServiceLayerIdsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string serviceName,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $"""
             SELECT layer_id
-            FROM honua.service_layers
+            FROM {ServiceLayersTable}
             WHERE service_name = @serviceName
             ORDER BY layer_order, layer_id;
             """;
@@ -661,7 +663,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return layerIds;
     }
 
-    private static async Task<int?> ResolveExistingServiceSridAsync(
+    private async Task<int?> ResolveExistingServiceSridAsync(
         NpgsqlConnection connection,
         string serviceName,
         CancellationToken cancellationToken,
@@ -672,9 +674,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return null;
         }
 
-        const string sql = """
+        var sql = $"""
             SELECT srid
-            FROM honua.services
+            FROM {ServicesTable}
             WHERE service_name = @serviceName
             LIMIT 1;
             """;
@@ -687,15 +689,15 @@ internal sealed partial class PostgreSqlLayerPublishingService
             : Convert.ToInt32(result, CultureInfo.InvariantCulture);
     }
 
-    private static async Task InsertFieldsAsync(
+    private async Task InsertFieldsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         int layerId,
         List<LayerFieldInsert> fields,
         CancellationToken cancellationToken)
     {
-        const string sql = """
-            INSERT INTO honua.layer_fields (
+        var sql = $"""
+            INSERT INTO {LayerFieldsTable} (
                 layer_id,
                 field_name,
                 field_type,
@@ -734,7 +736,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
     }
 
-    private static async Task<bool> EnsureServiceAsync(
+    private async Task<bool> EnsureServiceAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string serviceName,
@@ -748,8 +750,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
             connectionId,
             cancellationToken);
 
-        const string sql = """
-            INSERT INTO honua.services (
+        var sql = $"""
+            INSERT INTO {ServicesTable} (
                 service_name,
                 description,
                 srid,
@@ -772,7 +774,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
-    private static async Task<Guid?> ResolvePersistedConnectionIdAsync(
+    private async Task<Guid?> ResolvePersistedConnectionIdAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid? connectionId,
@@ -787,13 +789,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
             SELECT EXISTS (
                 SELECT 1
                 FROM information_schema.tables
-                WHERE table_schema = 'honua'
+                WHERE table_schema = @metadataSchema
                   AND table_name = 'data_connections'
             );
             """;
 
         await using (var tableCommand = new NpgsqlCommand(tableExistsSql, connection, transaction))
         {
+            tableCommand.Parameters.AddWithValue("@metadataSchema", MetadataSchema);
             var tableExists = (bool?)await tableCommand.ExecuteScalarAsync(cancellationToken) ?? false;
             if (!tableExists)
             {
@@ -801,10 +804,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
             }
         }
 
-        const string connectionExistsSql = """
+        var connectionExistsSql = $"""
             SELECT EXISTS (
                 SELECT 1
-                FROM honua.data_connections
+                FROM {DataConnectionsTable}
                 WHERE connection_id = @connectionId
             );
             """;
@@ -815,16 +818,16 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return connectionExists ? connectionId : null;
     }
 
-    private static async Task EnsureServiceLayerAsync(
+    private async Task EnsureServiceLayerAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string serviceName,
         int layerId,
         CancellationToken cancellationToken)
     {
-        const string orderSql = """
+        var orderSql = $"""
             SELECT COALESCE(MAX(layer_order), 0) + 1
-            FROM honua.service_layers
+            FROM {ServiceLayersTable}
             WHERE service_name = @serviceName;
             """;
 
@@ -833,8 +836,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var orderResult = await orderCommand.ExecuteScalarAsync(cancellationToken);
         var nextOrder = Convert.ToInt32(orderResult, CultureInfo.InvariantCulture);
 
-        const string insertSql = """
-            INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
+        var insertSql = $"""
+            INSERT INTO {ServiceLayersTable} (service_name, layer_id, layer_order)
             VALUES (@serviceName, @layerId, @layerOrder)
             ON CONFLICT (service_name, layer_id) DO NOTHING;
             """;
@@ -847,14 +850,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
         await insertCommand.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task<PublishedLayerSummary?> GetLayerSummaryAsync(
+    private async Task<PublishedLayerSummary?> GetLayerSummaryAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         int layerId,
         string serviceName,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $"""
             SELECT
                 l.layer_id,
                 l.layer_name,
@@ -866,10 +869,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 l.srid,
                 l.enabled,
                 COUNT(f.field_name)::int AS field_count
-            FROM honua.layers l
-            INNER JOIN honua.service_layers sl
+            FROM {LayersTable} l
+            INNER JOIN {ServiceLayersTable} sl
                 ON sl.layer_id = l.layer_id
-            LEFT JOIN honua.layer_fields f
+            LEFT JOIN {LayerFieldsTable} f
                 ON f.layer_id = l.layer_id
             WHERE sl.service_name = @serviceName
                 AND l.layer_id = @layerId
@@ -898,13 +901,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return ReadPublishedLayer(reader, serviceName);
     }
 
-    private static async Task<PublishedLayerSummary?> GetLayerSummaryByIdAsync(
+    private async Task<PublishedLayerSummary?> GetLayerSummaryByIdAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         int layerId,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $"""
             SELECT
                 l.layer_id,
                 l.layer_name,
@@ -916,8 +919,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 l.srid,
                 l.enabled,
                 COUNT(f.field_name)::int AS field_count
-            FROM honua.layers l
-            LEFT JOIN honua.layer_fields f
+            FROM {LayersTable} l
+            LEFT JOIN {LayerFieldsTable} f
                 ON f.layer_id = l.layer_id
             WHERE l.layer_id = @layerId
             GROUP BY
@@ -944,15 +947,15 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return ReadPublishedLayer(reader, DefaultServiceName);
     }
 
-    private static async Task SetLayerEnabledCoreAsync(
+    private async Task SetLayerEnabledCoreAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         int layerId,
         bool enabled,
         CancellationToken cancellationToken)
     {
-        const string sql = """
-            UPDATE honua.layers
+        var sql = $"""
+            UPDATE {LayersTable}
             SET enabled = @enabled
             WHERE layer_id = @layerId;
             """;

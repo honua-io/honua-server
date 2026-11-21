@@ -476,7 +476,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         FROM source;
         """;
 
-    private static async Task AddExistingLayerCheckAsync(
+    private async Task AddExistingLayerCheckAsync(
         NpgsqlConnection connection,
         string schema,
         string table,
@@ -489,9 +489,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return;
         }
 
-        const string sql = """
+        var sql = $"""
             SELECT layer_id
-            FROM honua.layers
+            FROM {LayersTable}
             WHERE table_schema = @schema
               AND table_name = @table
             LIMIT 1;
