@@ -314,7 +314,9 @@ require(result['objectIdFieldName'] == 'id', 'Unexpected object ID field')
 require(len(result['features']) == 2, 'Expected exactly two published features')
 observed = {}
 for feature in result['features']:
-    attributes, geometry = feature['attributes']['properties'], feature['geometry']
+    raw_properties = feature['attributes']['properties']
+    attributes = json.loads(raw_properties) if isinstance(raw_properties, str) else raw_properties
+    geometry = feature['geometry']
     name = attributes['name']
     require(name not in observed and name in expected, 'Unexpected or duplicate feature name')
     value, lon, lat = expected[name]
@@ -390,7 +392,7 @@ dc down
 
 Only when you intend to permanently discard **this installation's** data, run
 the following from its saved directory. It removes this project's containers,
-network, and its three project-scoped volumes; it does not prune other projects.
+network, and its two project-scoped volumes; it does not prune other projects.
 
 ```powershell
 dc down --volumes
