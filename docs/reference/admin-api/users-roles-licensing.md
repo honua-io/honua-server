@@ -143,7 +143,7 @@ Runtime licensing validates an offline Ed25519-signed JSON envelope. Without an 
 | GET | `/api/v1/admin/license/features` | Feature entitlement view with catalog category and minimum-edition metadata |
 | POST | `/api/v1/admin/license/upload` | Upload alias using the same validator; returns a compact upload result |
 
-Validation states are `NoLicenseConfigured`, `Valid`, `MissingFile`, `Malformed`, `UnknownKey`, `InvalidSignature`, and `Expired`. Rejected uploads return `400` and do not replace the current license. Paid-feature gates return `402 Payment Required`.
+Validation states are `NoLicenseConfigured`, `Valid`, `MissingFile`, `Malformed`, `UnknownKey`, `InvalidSignature`, `Expired`, and `Disabled`. Rejected uploads return `400` and do not replace the current license. Paid-feature gates return `402 Payment Required`.
 
 Run `POST /api/v1/admin/license/upload` and attach `company.honua-license.json` as the binary request body, then verify it with `GET /api/v1/admin/license/status`.
 
