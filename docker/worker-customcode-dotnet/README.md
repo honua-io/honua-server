@@ -14,7 +14,7 @@ common .NET geo stack + the Honua .NET SDK baked into the NuGet cache.
 
 ## Image contents
 
-- **Base:** `ghcr.io/osgeo/gdal:ubuntu-full-3.13.1` (pinned, Ubuntu 26.04 Resolute matching the .NET 11 SDK image) — the full GDAL driver set
+- **Base:** `ghcr.io/osgeo/gdal:ubuntu-full-3.13.3` (pinned, Ubuntu 26.04 Resolute matching the .NET 11 SDK image) — the full GDAL driver set
   for tools that shell out to or P/Invoke GDAL.
 - Added: the **.NET 11 SDK** (copied from the digest-pinned SDK image of the build stage), `git`, `ca-certificates`.
 - Pre-warmed NuGet cache (no per-job restore for the common case): **NetTopologySuite**,
@@ -39,9 +39,9 @@ using var ds = Gdal.Open(path, Access.GA_ReadOnly);
 ```
 
 - **Binding:** `MaxRev.Gdal.Core` + `MaxRev.Gdal.LinuxRuntime.Minimal`, pinned to
-  **`3.12.4.520`** (bundles native GDAL **3.12.4**). MaxRev bundles its **own
+  **`3.13.3.611`** (bundles native GDAL **3.13.3**). MaxRev bundles its **own
   self-contained native GDAL**, so there is **no ABI dependence** on the base image's
-  `libgdal` — and the pinned version **matches** the base's GDAL (3.12.4) so the
+  `libgdal` — and the pinned version **matches** the base's GDAL (3.13.3) so the
   in-process binding and the `gdal*` CLIs agree on driver behavior.
 - **Init:** a tool calls `GdalBase.ConfigureAll()` once (it wires the bundled native
   GDAL + PROJ data and calls `Gdal.AllRegister()`). The `RasterTool` sample does this

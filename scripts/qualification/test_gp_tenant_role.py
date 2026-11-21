@@ -73,6 +73,7 @@ mint_tenant_token tenant-a''', [])
         payload = completed.stdout.strip().split(".")[1]
         claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
         self.assertEqual((["gp-qualification-tenant-executor"], "tenant-a"), (claims["roles"], claims["tenant_id"]))
+        self.assertEqual({"honua.mcp.execute", "honua.mcp.read"}, set(claims["scope"].split()))
 
     def test_missing_role_is_created_then_granted_execute_and_job_read(self):
         completed, calls = provision([{"roleId": "admin-id", "name": "admin"}])

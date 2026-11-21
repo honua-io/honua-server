@@ -175,7 +175,7 @@ internal sealed class ImageServerTileHandler
                 {
                     ImageServerLog.ImageTileGenerated(_logger, layerId, cachedTile.Data.Length);
                     scope.SetSuccess(1);
-                    return Results.File(cachedTile.Data, cachedTile.ContentType);
+                    return Results.File(cachedTile.Data, cachedTile.ContentType, enableRangeProcessing: true);
                 }
 
                 // Get the image tile from PostGIS
@@ -221,7 +221,7 @@ internal sealed class ImageServerTileHandler
                             .Add("format", rasterFormat.ToString())
                             .Add("metadataEtag", snapshot.Etag),
                         cancellationToken).ConfigureAwait(false);
-                    return Results.File(result.Data, result.ContentType);
+                    return Results.File(result.Data, result.ContentType, enableRangeProcessing: true);
                 }
             }
 
@@ -253,7 +253,7 @@ internal sealed class ImageServerTileHandler
                     var cloudResult = lookup.Result.Value;
                     ImageServerLog.ImageTileGenerated(_logger, layerId, cloudResult.Data.Length);
                     scope.SetSuccess(1);
-                    return Results.File(cloudResult.Data, cloudResult.ContentType);
+                    return Results.File(cloudResult.Data, cloudResult.ContentType, enableRangeProcessing: true);
                 }
             }
 
@@ -409,7 +409,7 @@ internal sealed class ImageServerTileHandler
             {
                 ImageServerLog.ImageTileGenerated(_logger, layerId, cachedTile.Data.Length);
                 scope.SetSuccess(1);
-                return Results.File(cachedTile.Data, cachedTile.ContentType);
+                return Results.File(cachedTile.Data, cachedTile.ContentType, enableRangeProcessing: true);
             }
 
             var tileResult = selectedRasters.Length == 1
@@ -454,7 +454,7 @@ internal sealed class ImageServerTileHandler
                     .Add("format", rasterFormat.ToString())
                     .Add("metadataEtag", snapshot.Etag),
                 cancellationToken).ConfigureAwait(false);
-            return Results.File(result.Data, result.ContentType);
+            return Results.File(result.Data, result.ContentType, enableRangeProcessing: true);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

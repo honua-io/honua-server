@@ -9,6 +9,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
@@ -32,16 +33,16 @@ internal static class AdminLayerFieldConfigurationEndpoints
             .WithTags("Admin", "Metadata", "Fields")
             .RequireAdminAuthorization();
 
-        _ = group.MapGet("/{storageLayerId:int}/fields", HandleGetLayerFields)
-            .WithName("GetAdminLayerFields")
-            .WithSummary("Get persisted layer field configuration")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var getFields = AdminHttpOperationRouteBinding.ForApi("admin.layer.fields.get", "/metadata/layers", "/{storageLayerId:int}/fields");
+        _ = group.MapMethods(getFields.RoutePattern, getFields.Methods, HandleGetLayerFields)
+            .WithAdminOperation(getFields.Definition)
+            .WithSummary("Get persisted layer field configuration");
 
-        _ = group.MapPut("/{storageLayerId:int}/fields", HandleUpdateLayerFields)
+        var setFields = AdminHttpOperationRouteBinding.ForApi("admin.layer.fields.set", "/metadata/layers", "/{storageLayerId:int}/fields");
+        _ = group.MapMethods(setFields.RoutePattern, setFields.Methods, HandleUpdateLayerFields)
+            .WithAdminOperation(setFields.Definition)
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
-            .WithName("UpdateAdminLayerFields")
-            .WithSummary("Update persisted layer field aliases, coded-value domains, and visibility")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+            .WithSummary("Update persisted layer field aliases, coded-value domains, and visibility");
     }
 
     private static async Task<IResult> HandleGetLayerFields(

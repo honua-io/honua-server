@@ -75,7 +75,7 @@ Immediate publication returns `201 Created` with the layer in `data` and its per
 
 ## Verify
 
-Newly published layers default to private and are omitted from anonymous collection listings. Authenticate the request (for example with `X-API-Key: $HONUA_API_KEY`) or enable public read access on the layer, then check `GET http://localhost:8080/ogc/features/collections` and confirm the collection is present:
+Newly published layers default to authenticated access. Query `GET /ogc/features/collections` in the authorized [API explorer](../../reference/openapi-and-explorer.md) (or with your API key, or after granting anonymous read on the service) and confirm the collection is present:
 
 ```json
 {"collections": [{"id": "…", "title": "city-parcels", …}], …}
@@ -83,7 +83,7 @@ Newly published layers default to private and are omitted from anonymous collect
 
 ## Troubleshoot
 
-- **Connection test fails** — verify host/port reachability from the server container and that `sslMode` matches the database TLS setup (`Disable`, `Allow`, `Prefer`, `Require`, `VerifyCA`, `VerifyFull`). Production rejects unencrypted modes with `400` and requires an encrypted `sslMode` (`Require`, `VerifyCA`, or `VerifyFull`).
+- **Connection test fails** — verify host/port reachability from the server container and that `sslMode` matches the database TLS setup (`Disable`, `Allow`, `Prefer`, `Require`, `VerifyCA`, `VerifyFull`). When `sslRequired` is `true` (the default in Production), `sslMode` must require encrypted transport (`Require`, `VerifyCA`, or `VerifyFull`) or the request returns `400 Bad Request` (`SSL mode must require encrypted transport when SSL is required`).
 - **`Cannot specify both Password and SecretReference` (400)** — supply exactly one credential mechanism.
 - **`secretReference` rejected (400)** — the value is not a whole `provider:identifier` reference, or the operator has not permitted it under `Security__RequestSecretReferences__*`.
 - **Table missing from discovery** — discovery lists tables with a registered geometry column; confirm the table has a typed geometry column and the connection user has SELECT on it.
