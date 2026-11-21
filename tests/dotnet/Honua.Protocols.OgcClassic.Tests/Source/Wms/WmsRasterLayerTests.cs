@@ -315,12 +315,12 @@ public sealed class WmsRasterLayerTests : IAsyncLifetime
     private static MetadataV2Layer CreatePublication(
         string serviceId,
         (string Id, string ResourceId, string Name, int LayerIndex) spec) => new()
-    {
-        Metadata = new MetadataV2ObjectMetadata { Id = spec.Id, Name = spec.Name },
-        ServiceId = serviceId,
-        ResourceId = spec.ResourceId,
-        ServiceLocalId = spec.Name,
-        LayerIndex = spec.LayerIndex,
-        IsPrimary = true
-    };
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = spec.Id, Name = spec.Name },
+            ServiceId = serviceId,
+            ResourceId = spec.ResourceId,
+            ServiceLocalId = spec.Name,
+            LayerIndex = spec.LayerIndex,
+            IsPrimary = true
+        };
 }
