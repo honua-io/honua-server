@@ -76,6 +76,24 @@ public sealed class CorsConfigurationTests
     }
 
     [UnitTest]
+    public async Task ProductionPolicy_MergesAdminUiCorsOriginsWithConfiguredAllowedOrigins()
+    {
+        var policy = await ResolvePolicyAsync(
+            CorsConfiguration.ProductionPolicy,
+            isDevelopment: false,
+            new Dictionary<string, string?>
+            {
+                ["Cors:AllowedOrigins:0"] = "http://localhost:18080",
+                ["HONUA_ADMIN_UI_CORS_ORIGINS"] = "https://localhost:18083"
+            });
+
+        Assert.True(policy.IsOriginAllowed("http://localhost:18080"));
+        Assert.True(policy.IsOriginAllowed("https://localhost:18083"));
+        Assert.False(policy.IsOriginAllowed("http://localhost:18083"));
+        Assert.False(policy.IsOriginAllowed("https://unapproved.example"));
+    }
+
+    [UnitTest]
     public async Task DevelopmentPolicy_ExposesMcpSessionHeader()
     {
         var policy = await ResolvePolicyAsync(
