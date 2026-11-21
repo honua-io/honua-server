@@ -69,6 +69,7 @@ file (drift gate), printing the regeneration command above.
     "maxAgeDays": 14,
     "basis": "Newest run_date across the committed client-compat envelopes; deterministic by design so the drift gate stays byte-stable (see #2897)."
   },
+  "unjoinedCiteSuites": [ "GML 3.2", "GeoPackage 1.2", "KML 2.2", "WFS 2.0 Transactional", "WMS 1.1.1" ],
   "capabilities": [
     {
       "key": "serve.wms",
@@ -100,12 +101,12 @@ file (drift gate), printing the regeneration command above.
 | Field | Type | Description |
 |---|---|---|
 | `key`, `displayName`, `category`, `edition` | string | Copied from `capability-keys.v1.json`. |
-| `status` | string \| null | Explicit public release posture copied from `capability-keys.v1.json` (`preview` for customer alerting, `experimental` for warehouse providers, `live` for GeoArrow); `null` when the key has no explicit override. |
+| `status` | string \| null | Explicit public release posture copied from `capability-keys.v1.json`; `null` when the key has no explicit override. Current values: `preview` (real but not covered by the release compatibility promise), `experimental` (for example the warehouse providers, `collaboration.map-sessions`, `serve.i3s-scene` and `streaming.feature-subscriptions`), `live` (`format.geoarrow`) and `internal` (`admin.multi-tenancy`, not a customer capability). |
 | `entryCount` | number | Count of `feature-catalog.json` entries stamped with this capability. |
 | `provingTestCount` | number | Sum of `proving_tests` across those entries. |
 | `maturity` | object | Count per maturity tier (`implemented`, `partial`, `preview`, `experimental`, `deferred`, `planned`) among this capability's entries. |
 | `noSurface` | object \| null | The matching row from `capability-no-surface-allowlist.v1.json` when `entryCount` is `0`; otherwise `null`. |
-| `cite` | array | Zero or one OGC CITE suite result (`{ suite, profile, passed, total, passRate }`) when this capability's protocol has an official ETS (see `CAPABILITY_TO_CITE_SUITE` in the generator script). Empty for capabilities with no CITE suite. |
+| `cite` | array | One OGC CITE suite result (`{ suite, profile, passed, total, passRate }`) per suite mapped to this capability in `CAPABILITY_TO_CITE_SUITES` in the generator script; a capability can have several (`serve.wfs` carries WFS 1.0, 1.1 and 2.0). Empty for capabilities with no CITE suite. |
 | `parity` | array | Esri GeoServices REST parity rows (`{ serviceId, displayName, parity }`) from `geoservices-rest-parity.json`, joined via the `geoservicesCompatMatrix` crosswalk. |
 | `geoservicesAssess` | array of string | `honua-esri-assess` registry keys that crosswalk to this capability. |
 | `interop` | array | `{ clientLane, protocol, freshness }` pairs from the client-interop crosswalk. `freshness` is the per-pair evidence-freshness stamp (issue #2897 item 4): `state` is `fresh`, `stale`, or `unknown`; `ageDays` is the whole-day distance between this pair's committed envelope `run_date` and the top-level `evidenceFreshness.anchor`; `runDate` echoes the envelope's authoritative observation timestamp. `unknown` means no committed envelope (or no usable timestamp) exists for the pair; `stale` means the envelope is not green under the strict all-pass/terminal criteria shared with `scripts/ci/capability-impact.py`, or its observation is more than `maxAgeDays` behind the anchor, or (defensively) it claims an observation newer than the anchor — negative `ageDays` fails closed as `stale` with an explicit `reason` field. Future-dated `run_date` values never get this far: the generator rejects them outright as corrupt input. |
@@ -128,6 +129,15 @@ key list:
   will ingest the relocated, identically-shaped artifact once the aggregation
   moves in Phase B.
 
+### Top-level `unjoinedCiteSuites`
+
+An array of suite names from `cite-status.md` that are not joined to any one
+capability: format-conformance suites (GML, GeoPackage, KML) that span several
+serving capabilities, which the generator deliberately does not force-map to one
+key, and any suite with no entry in `CAPABILITY_TO_CITE_SUITES` (today WFS 2.0
+Transactional and WMS 1.1.1). Consumers that report CITE
+coverage should read this list as well as each capability's `cite` array.
+
 ### Top-level `evidenceFreshness`
 
 | Field | Type | Description |
@@ -137,8 +147,10 @@ key list:
 | `basis` | string | Human-readable statement of the anchor rule. |
 
 The anchor is deliberately **not** wall-clock time: this artifact is
-byte-for-byte drift-gated (the aggregation workflow and the merge train both
-re-run the bare generator and require an identical result), so any field
+byte-for-byte drift-gated (the aggregation workflow and the generated-files
+producer, `scripts/ci/regenerate-generated-files.sh` checked by
+`scripts/ci/check-submitted-generated-files.py`, both re-run the bare generator
+and require an identical result), so any field
 derived from "now" would go stale every day with no source change. Relative
 staleness against the newest committed evidence still surfaces the intended
 signal — a lane that has not produced a green envelope while others have moved
