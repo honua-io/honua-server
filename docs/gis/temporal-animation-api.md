@@ -71,8 +71,8 @@ interval rules, subject to the WMTS unknown-parameter exception above.
 
 The first three paths are relative to a published GeoServices FeatureServer layer
 (`/rest/services/{serviceId}/FeatureServer/{layerId}`). GeoServices routes report errors in the
-Esri error envelope: HTTP 200 with `{"error":{"code":400,...}}`, so "400" and "404" below are the
-`error.code` value.
+Esri error envelope: HTTP 200 with `{"error":{"code":400,...}}`, so "400", "402" and "404" below
+are the `error.code` value.
 
 - `GET .../query?time=<start>,<end>` — time-filtered feature query
   (`temporal.filtering`, Community).

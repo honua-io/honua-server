@@ -23,16 +23,19 @@ or establish current-trunk, published-production, real-cloud or complete standar
 
 ## Current evidence status
 
-Source review baseline: `89a966cd342e88c8fd5ab157e564d14c3d9a68e2`.
+Source review baseline: `99c422646c4cd246a73e9b65efd00e9e36724587`.
 Implementation, a passing local regression, and release qualification are separate
 claims. This page does **not** assert blanket cloud-native format compliance.
 
-The most recent receipt inspected in this review is nightly-certification run
+The most recent receipt inspected in this review is `cng-conformance` run
 [44778578696](https://github.com/honua-io/honua-server/actions/runs/44778578696)
 (2026-11-20, candidate source `de512e8123`, image
-`sha256:1eb5a482778bc8aeb349f4a32732580534e3b5b0067bbcc0060e9159bf07ed6b`). Both
-jobs passed. Its `cell_receipt` reports **24 governed cells, 22 executed, 13
-passing, no failures and 11 explicit gaps**. The two cells that did not execute are
+`sha256:1eb5a482778bc8aeb349f4a32732580534e3b5b0067bbcc0060e9159bf07ed6b`), dispatched
+by the honua-release nightly certification. Both jobs passed. Its `cell_receipt` reports **24 governed cells, 22 executed, 13
+passing, no failures and 11 explicit gaps**. The 13 passing cells are GeoParquet
+(PyArrow, GeoPandas, GDAL), FlatGeobuf (Pyogrio, GeoPandas, GDAL, flatgeobuf-js), PMTiles
+(pmtiles archive read, browser viewer), COG (Rasterio, rio-cogeo, GDAL) and the Zarr
+subset transcode (xarray). The two cells that did not execute are
 `3d-tiles/browser-render/CesiumJS` and `pmtiles/producer-validate/Tippecanoe`. The
 other nine gaps are HDF5/NetCDF and shared-input Zarr cells whose fixtures pass
 their canonical clients but are not bound to a Honua registration. A green job is
@@ -50,7 +53,8 @@ allowed filesystem context. The runner now supplies BuildKit environment secrets
 and stops on failed build, startup or seed commands. GDAL FlatGeobuf validation
 now reads every feature and reconciles the decoded count, replacing summary-only
 inspection. A corruption regression is configured to require the lane's pinned GDAL.
-Run 44778578696 above is a complete execution after these repairs. No candidate
+Run 44778578696 above is the first full lane execution after these repairs (22 of 24
+cells ran); it is a dispatched run, not a cut-candidate qualification. No candidate
 pins, row denominator, validator versions or release gates are changed by the audit.
 
 ## Gated formats

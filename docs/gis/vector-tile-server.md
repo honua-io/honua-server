@@ -8,7 +8,8 @@ not reimplement tile rendering, style storage, or catalog logic.
 
 The service is read-only and follows the service access policy. An anonymous caller can read a
 public service. For a private service, the descriptor, tile and style routes return the GeoServices
-error `499` (authentication required) until the caller signs in or sends an API key. The sprite,
+error `499` (authentication required) to anonymous callers and `403` to signed-in callers without
+access. The sprite,
 glyph and tilemap resources hold no layer data (the tilemap is computed from the tile grid) and
 answer without credentials. Clients read service
 metadata with `GET` or with `POST {"f":"json"}` (Esri clients use the latter).
