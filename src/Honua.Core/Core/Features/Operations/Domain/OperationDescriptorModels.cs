@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Domain;
 
@@ -21,7 +22,9 @@ public enum OperationCompensationAvailability
 {
     NotApplicable,
 
-    Unavailable
+    Unavailable,
+
+    Supported
 }
 
 public sealed record OperationCompensationMetadata(
@@ -59,7 +62,11 @@ public sealed record OperationDescriptor : IOperationDescriptor
 
     public required OperationPolicyMetadata Policy { get; init; }
 
-    public OperationCompensationMetadata Compensation => OperationCompensationMetadata.For(Policy.SideEffectClass);
+    [JsonIgnore]
+    public OperationCompensationMetadata? DeclaredCompensation { get; init; }
+
+    public OperationCompensationMetadata Compensation =>
+        DeclaredCompensation ?? OperationCompensationMetadata.For(Policy.SideEffectClass);
 
     public OperationGroundingMetadata? Grounding { get; init; }
 }

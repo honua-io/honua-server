@@ -139,7 +139,12 @@ public sealed partial class FolderOperationIntegrationTests
         {
             var descriptor = operations.Should().ContainSingle(item => item.GetProperty("operationId").GetString() == operationId).Subject;
             descriptor.TryGetProperty("compensation", out var compensation).Should().BeTrue(operationId);
-            compensation.GetProperty("availability").GetString().Should().Be(operationId == "folder.list" ? "NotApplicable" : "Unavailable");
+            compensation.GetProperty("availability").GetString().Should().Be(operationId switch
+            {
+                "folder.list" => "NotApplicable",
+                "service.move" => "Supported",
+                _ => "Unavailable"
+            });
             if (operationId != "folder.list")
             {
                 compensation.GetProperty("reason").GetString().Should().NotBeNullOrWhiteSpace(operationId);
