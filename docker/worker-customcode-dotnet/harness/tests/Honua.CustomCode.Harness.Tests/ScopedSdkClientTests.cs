@@ -6,7 +6,10 @@ using System.Net.Sockets;
 using System.Text;
 using FluentAssertions;
 using Honua.CustomCode.Harness;
+using Honua.Sdk.Admin;
+using Honua.Sdk.GeoServices.FeatureServer;
 using Honua.Sdk.OgcFeatures;
+using Honua.Sdk.OgcFeatures.Tiles;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -38,6 +41,16 @@ public sealed class ScopedSdkClientTests
     {
         var create = () => CredentialSandbox.BuildScopedClient("https://example.test", "capability");
         create.Should().Throw<ArgumentException>().WithMessage("*jobId*");
+    }
+
+    [Fact]
+    public void ProductionFactory_RegistersOnlyOgcFeaturesAndFeatureServerClients()
+    {
+        using var provider = ScopedHonuaClientFactory.Create("https://example.test", "capability", "job-scope-check");
+        provider.GetService<IHonuaOgcFeaturesClient>().Should().NotBeNull();
+        provider.GetService<IHonuaFeatureServerClient>().Should().NotBeNull();
+        provider.GetService<IHonuaOgcTilesClient>().Should().BeNull();
+        provider.GetService<IHonuaAdminClient>().Should().BeNull();
     }
 
     private static async Task<string> ReceiveAsync(TcpListener listener, CancellationToken cancellationToken, bool startupDenial)
