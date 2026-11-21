@@ -58,14 +58,22 @@ public sealed class LayerValidationHelpersV2Tests
         var context = BuildTwoServiceLayerZeroContext();
 
         var storageA = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
-            context, "10", AccessScope.Read, ServiceProtocols.OgcFeatures);
+            context, "10", AccessScope.Read, ServiceProtocols.OgcFeatures, preferAdvertisedCollectionId: true);
         storageA.IsValid.Should().BeTrue();
         storageA.Resource!.Metadata.Id.Should().Be("res-a");
 
         var ambiguous = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
-            context, "0", AccessScope.Read, ServiceProtocols.OgcFeatures);
+            context, "0", AccessScope.Read, ServiceProtocols.OgcFeatures, preferAdvertisedCollectionId: true);
         ambiguous.IsValid.Should().BeFalse();
         (ambiguous.ErrorResult as IStatusCodeHttpResult)?.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+
+        var snapshot = await context.RequestServices
+            .GetRequiredService<IMetadataV2GraphProvider>()
+            .GetCurrentAsync(CancellationToken.None);
+        var primaryByResource = LayerValidationHelpers.BuildPrimaryServiceMapByResourceV2(snapshot, ServiceProtocols.OData);
+        primaryByResource.Should().ContainKeys("res-a", "res-b");
+        primaryByResource["res-a"].Metadata.Id.Should().Be("svc-a");
+        primaryByResource["res-b"].Metadata.Id.Should().Be("svc-b");
     }
 
     private static DefaultHttpContext BuildTwoServiceLayerZeroContext()
@@ -74,10 +82,12 @@ public sealed class LayerValidationHelpersV2Tests
         var graph = new TestMetadataV2GraphBuilder()
             .AddService("svc-a", "svc-a", protocols: [ServiceProtocols.FeatureServer, ServiceProtocols.OgcFeatures, ServiceProtocols.OData])
             .AddService("svc-b", "svc-b", protocols: [ServiceProtocols.FeatureServer, ServiceProtocols.OgcFeatures, ServiceProtocols.OData])
-            .AddResource("res-a", "parcels_a", storageLayerId: 10)
-            .AddResource("res-b", "roads_b", storageLayerId: 11)
-            .AddPublication("pub-a-0", "svc-a", "res-a", layerIndex: 0, publicationType: MetadataV2LayerType.EsriFeatureLayer)
-            .AddPublication("pub-b-0", "svc-b", "res-b", layerIndex: 0, publicationType: MetadataV2LayerType.EsriFeatureLayer)
+            .AddResource("res-a", "parcels_a")
+            .AddResource("res-b", "roads_b")
+            .AddStorageBinding("bind-a", "res-a", "public.parcels_a", storageLayerId: 10)
+            .AddStorageBinding("bind-b", "res-b", "public.roads_b", storageLayerId: 11)
+            .AddPublication("pub-a-0", "svc-a", "res-a", layerIndex: 0, publicationType: MetadataV2LayerType.EsriFeatureLayer, storageBindingId: "bind-a")
+            .AddPublication("pub-b-0", "svc-b", "res-b", layerIndex: 0, publicationType: MetadataV2LayerType.EsriFeatureLayer, storageBindingId: "bind-b")
             .Build();
         graph = graph with
         {

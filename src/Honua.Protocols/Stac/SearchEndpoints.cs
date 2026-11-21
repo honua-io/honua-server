@@ -243,13 +243,13 @@ internal static class SearchEndpoints
                 context, cancellationToken).ConfigureAwait(false);
 
             // Multiple STAC-enabled publications can resolve to the same storage layer
-            // (e.g. one resource published through two services). The v1 layer-keyed
-            // walk produced a single hit per layer; preserve that contract so feature
-            // counts and result-sets remain stable. Keep the first encountered
-            // publication — ResolveVisibleStacPublicationsAsync already orders by
-            // LayerIndex so this is deterministic.
+            // (e.g. one resource published through two services). Deduplicate by storage
+            // layer (or resource id when unbound) rather than per-service LayerIndex so
+            // distinct services that both publish layer 0 are both searchable.
             IEnumerable<StacV2Lookups.ResolvedStacPublication> targets = visible
-                .GroupBy(t => t.LayerIndex)
+                .GroupBy(static t => t.StorageLayerId is { } storageId
+                    ? $"storage:{storageId}"
+                    : $"resource:{t.Resource.Metadata.Id}", StringComparer.Ordinal)
                 .Select(g => g.First())
                 .ToArray();
 
@@ -257,9 +257,9 @@ internal static class SearchEndpoints
             {
                 // STAC API Item Search spec: collections is an array of string collection IDs.
                 // Filter using the same multi-field matching logic as the single-collection lookup
-                // path (ServiceLocalId, Path, Metadata.Name, Metadata.Id, or legacy numeric ID)
-                // so human-readable slugs (e.g. "sentinel-2-l2a") and legacy numeric IDs both
-                // work without requiring integer parsing.
+                // path (ServiceLocalId, Path, Metadata.Name, Metadata.Id, storage layer ID, or
+                // legacy numeric ID) so human-readable slugs (e.g. "sentinel-2-l2a") and numeric
+                // IDs both work without requiring integer parsing.
                 targets = targets.Where(t =>
                 {
                     var pub = t.Publication;
@@ -273,7 +273,8 @@ internal static class SearchEndpoints
                             ? parsed
                             : null;
 
-                        if (StacV2Lookups.MatchesCollectionId(pub, requestedId, numericId))
+                        if (StacV2Lookups.MatchesCollectionId(pub, requestedId, numericId) ||
+                            (numericId.HasValue && t.StorageLayerId == numericId.Value))
                         {
                             return true;
                         }

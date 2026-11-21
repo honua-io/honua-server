@@ -425,11 +425,15 @@ internal static partial class LayerValidationHelpers
                 TenantScopeHelpers.IsPublicationVisible(context, p, matchedResource, matchedService);
         }
 
+        var (numericPublication, numericAmbiguity) = TryResolveNumericCollection(snapshot, (collectionId, requiredProtocol), IsTenantVisible);
+        if (TryCreateAmbiguousLayerResult(context, numericAmbiguity) is { } ambiguousResult) return ambiguousResult;
+        publication = numericPublication;
+
         // The id written into a Features or Tiles collection document
         // (service-local id, else path, else resource name) must bind that publication
         // even when another publication's title or name reuses it. A visible advertised
         // match does not fall through to an alias. Maps does not set this flag.
-        if (preferAdvertisedCollectionId)
+        if (publication is null && preferAdvertisedCollectionId)
         {
             publication = SelectMatchingCollectionPublication(
                 snapshot.Graph.Publications,
@@ -452,13 +456,6 @@ internal static partial class LayerValidationHelpers
         {
             publication = snapshot.Graph.Publications.FirstOrDefault(p =>
                 string.Equals(p.Metadata.Id, collectionId, StringComparison.OrdinalIgnoreCase) && IsTenantVisible(p));
-        }
-
-        if (publication is null)
-        {
-            var (numericPublication, numericAmbiguity) = TryResolveNumericCollection(snapshot, (collectionId, requiredProtocol), IsTenantVisible);
-            if (TryCreateAmbiguousLayerResult(context, numericAmbiguity) is { } ambiguousResult) return ambiguousResult;
-            publication = numericPublication;
         }
 
         if (publication is null && !string.IsNullOrWhiteSpace(requiredProtocol))

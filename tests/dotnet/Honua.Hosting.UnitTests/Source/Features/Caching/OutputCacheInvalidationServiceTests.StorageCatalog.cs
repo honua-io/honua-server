@@ -31,6 +31,22 @@ public sealed partial class OutputCacheInvalidationServiceTests
         await outputCache.DidNotReceive().EvictByTagAsync("collection:pub-beta-0", Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task InvalidateCollectionAsync_NumericLayerZeroAcrossTwoServices_EvictsBothServices()
+    {
+        var graph = CreateFeatureServerGraph(("alpha", [0]), ("beta", [0]));
+        var outputCache = Substitute.For<IOutputCacheStore>();
+        var responseCache = Substitute.For<IResponseCache>();
+        var invalidator = new OutputCacheInvalidationService(outputCache, responseCache, null,
+            CreateScopeFactory(graph), null, NullLogger<OutputCacheInvalidationService>.Instance);
+
+        await invalidator.InvalidateCollectionAsync("0", CancellationToken.None);
+
+        await outputCache.Received().EvictByTagAsync("collection:pub-alpha-0", Arg.Any<CancellationToken>());
+        await outputCache.Received().EvictByTagAsync("collection:pub-beta-0", Arg.Any<CancellationToken>());
+    }
+
     [UnitTheory]
     [InlineData(false)]
     [InlineData(true)]

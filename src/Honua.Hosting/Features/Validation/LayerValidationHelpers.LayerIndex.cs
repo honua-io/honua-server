@@ -227,4 +227,53 @@ internal static partial class LayerValidationHelpers
             ? []
             : byIndex;
     }
+
+    public static IReadOnlyDictionary<string, MetadataV2Service> BuildPrimaryServiceMapByResourceV2(
+        MetadataV2GraphSnapshot snapshot,
+        string? requiredProtocol = null,
+        IEnumerable<MetadataV2Layer>? publications = null)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        var byResource = new Dictionary<string, (MetadataV2Layer Publication, MetadataV2Service Service)>(StringComparer.Ordinal);
+        foreach (var pub in publications ?? snapshot.Graph.Publications)
+        {
+            if (!pub.LayerIndex.HasValue || string.IsNullOrWhiteSpace(pub.ResourceId) || !snapshot.IsRoutable(pub))
+            {
+                continue;
+            }
+            if (!snapshot.Index.ServicesById.TryGetValue(pub.ServiceId, out var service))
+            {
+                continue;
+            }
+            if (!byResource.TryGetValue(pub.ResourceId, out var existing) ||
+                ShouldReplacePrimaryCandidate(existing, (pub, service), requiredProtocol))
+            {
+                byResource[pub.ResourceId] = (pub, service);
+            }
+        }
+
+        return byResource.ToDictionary(kv => kv.Key, kv => kv.Value.Service, StringComparer.Ordinal);
+    }
+
+    private static bool ShouldReplacePrimaryCandidate(
+        (MetadataV2Layer Publication, MetadataV2Service Service) existing,
+        (MetadataV2Layer Publication, MetadataV2Service Service) candidate,
+        string? requiredProtocol)
+    {
+        var hasProtocolGate = !string.IsNullOrWhiteSpace(requiredProtocol);
+        var existingMatches = hasProtocolGate && MetadataV2ServiceProtocols.IsProtocolEnabled(existing.Service, requiredProtocol!);
+        var candidateMatches = hasProtocolGate && MetadataV2ServiceProtocols.IsProtocolEnabled(candidate.Service, requiredProtocol!);
+        if (candidateMatches != existingMatches)
+        {
+            return candidateMatches;
+        }
+
+        if (candidate.Publication.IsPrimary != existing.Publication.IsPrimary)
+        {
+            return candidate.Publication.IsPrimary;
+        }
+
+        return string.Compare(candidate.Service.Metadata.Name, existing.Service.Metadata.Name, StringComparison.OrdinalIgnoreCase) < 0;
+    }
 }

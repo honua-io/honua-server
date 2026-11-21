@@ -110,10 +110,12 @@ public sealed class StacV2LookupsMatchesCollectionIdTests
         var graph = new TestMetadataV2GraphBuilder()
             .AddService("svc-a", "svc-a", protocols: ["Stac"])
             .AddService("svc-b", "svc-b", protocols: ["Stac"])
-            .AddResource("res-a", "parcels_a", storageLayerId: 10)
-            .AddResource("res-b", "roads_b", storageLayerId: 11)
-            .AddPublication("pub-stac-a-0", "svc-a", "res-a", layerIndex: 0, publicationType: MetadataV2LayerType.StacCollection)
-            .AddPublication("pub-stac-b-0", "svc-b", "res-b", layerIndex: 0, publicationType: MetadataV2LayerType.StacCollection)
+            .AddResource("res-a", "parcels_a")
+            .AddResource("res-b", "roads_b")
+            .AddStorageBinding("bind-a", "res-a", "public.parcels_a", storageLayerId: 10)
+            .AddStorageBinding("bind-b", "res-b", "public.roads_b", storageLayerId: 11)
+            .AddPublication("pub-stac-a-0", "svc-a", "res-a", layerIndex: 0, publicationType: MetadataV2LayerType.StacCollection, storageBindingId: "bind-a")
+            .AddPublication("pub-stac-b-0", "svc-b", "res-b", layerIndex: 0, publicationType: MetadataV2LayerType.StacCollection, storageBindingId: "bind-b")
             .Build();
         var services = new ServiceCollection();
         services.AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph));

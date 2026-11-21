@@ -509,26 +509,26 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
 
             if (int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
             {
-                matchedPub = ResolvePublicationsForUnscopedLayerId(snapshot, layerId)
-                    .OrderBy(p => p.Metadata.Id, StringComparer.Ordinal)
-                    .FirstOrDefault();
-                if (matchedPub is not null)
+                var numericMatches = ResolvePublicationsForUnscopedLayerId(snapshot, layerId);
+                if (numericMatches.Length > 0)
                 {
-                    matchedResource = snapshot.ResolveResource(matchedPub);
+                    foreach (var pub in numericMatches)
+                    {
+                        AddPublicationCollectionAliases(collectionIds, pub, snapshot.ResolveResource(pub));
+                    }
+
+                    return collectionIds.ToArray();
                 }
             }
 
-            if (matchedResource is null)
+            // Not rewritten as .Where(...).FirstOrDefault(): the matched resource
+            // and its publication must be assigned together from the same match,
+            // which a single Where/FirstOrDefault projection can't express cleanly.
+            foreach (var resource in (snapshot.Graph.Resources).Where(resource => string.Equals(resource.Metadata.Name, collectionId, StringComparison.OrdinalIgnoreCase)))
             {
-                // Not rewritten as .Where(...).FirstOrDefault(): the matched resource
-                // and its publication must be assigned together from the same match,
-                // which a single Where/FirstOrDefault projection can't express cleanly.
-                foreach (var resource in (snapshot.Graph.Resources).Where(resource => string.Equals(resource.Metadata.Name, collectionId, StringComparison.OrdinalIgnoreCase)))
-                {
-                    matchedResource = resource;
-                    matchedPub = snapshot.Index.PublicationsByResource[resource.Metadata.Id].OrderBy(p => p.LayerIndex ?? int.MaxValue).FirstOrDefault();
-                    break;
-                }
+                matchedResource = resource;
+                matchedPub = snapshot.Index.PublicationsByResource[resource.Metadata.Id].OrderBy(p => p.LayerIndex ?? int.MaxValue).FirstOrDefault();
+                break;
             }
 
             if (matchedPub is not null)

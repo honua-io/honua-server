@@ -57,7 +57,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         var colliding = graph.Publications.FirstOrDefault(publication =>
             string.Equals(publication.ServiceId, allocation.ServiceId, StringComparison.Ordinal) &&
-            publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&
             publication.LayerIndex == requested &&
             (!string.Equals(publication.ResourceId, allocation.ResourceId, StringComparison.Ordinal) ||
              !string.Equals(publication.StorageBindingId, allocation.BindingId, StringComparison.Ordinal)));

@@ -69,7 +69,7 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
     }
 
     [UnitTest]
-    public void BuildLinkedLayerMetadataV2Graph_NewService_AssignsZeroThenOneAndRejectsCollision()
+    public void BuildLinkedLayerMetadataV2Graph_NewService_AssignsZeroThenOne()
     {
         var graph = CreateTwoStorageLayerGraph();
 

@@ -863,19 +863,22 @@ internal sealed class ODataCrudHandler(
         // walk but stays entirely on MetadataV2Object / MetadataV2Service.
         var provider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMapV2(snapshot, ODataProtocolConstants.ProtocolName);
+        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMapByResourceV2(snapshot, ODataProtocolConstants.ProtocolName);
         IResult? firstError = null;
 
-        // Iterate publications in a deterministic order (LayerIndex asc) so the
+        // Iterate publications in a deterministic order (LayerIndex asc, then ResourceId) so the
         // first encountered authorized publication wins, matching the v1 walk.
         var publications = snapshot.Graph.Publications
             .Where(static p => p.LayerIndex.HasValue)
             .OrderBy(static p => p.LayerIndex!.Value)
+            .ThenBy(static p => p.ResourceId, StringComparer.Ordinal)
             .ToArray();
 
         foreach (var publication in publications)
         {
-            if (!primaryServices.TryGetValue(publication.LayerIndex!.Value, out var service) ||
+            if (string.IsNullOrWhiteSpace(publication.ResourceId) ||
+                !primaryServices.TryGetValue(publication.ResourceId, out var service) ||
+                !string.Equals(service.Metadata.Id, publication.ServiceId, StringComparison.OrdinalIgnoreCase) ||
                 !ODataProtocolConstants.IsEnabled(service))
             {
                 continue;

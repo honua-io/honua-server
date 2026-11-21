@@ -36,7 +36,7 @@ internal static class ODataV2Lookups
         var snapshot = await GetSnapshotAsync(context, cancellationToken).ConfigureAwait(false);
         var resolved = new List<ResolvedODataPublication>();
         var publications = TenantScopeHelpers.FilterVisiblePublications(context, snapshot, snapshot.Graph.Publications).ToArray();
-        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMapV2(snapshot, ODataProtocolConstants.ProtocolName, publications);
+        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMapByResourceV2(snapshot, ODataProtocolConstants.ProtocolName, publications);
         var selectedPublicationIds = SelectODataPublicationIds(snapshot, primaryServices, publications);
 
         foreach (var pub in publications)
@@ -77,7 +77,11 @@ internal static class ODataV2Lookups
             resolved.Add(new ResolvedODataPublication(pub, resource!, service, pub.LayerIndex.Value, storageLayerId.Value));
         }
 
-        resolved.Sort(static (a, b) => a.LayerIndex.CompareTo(b.LayerIndex));
+        resolved.Sort(static (a, b) =>
+        {
+            var indexCompare = a.LayerIndex.CompareTo(b.LayerIndex);
+            return indexCompare != 0 ? indexCompare : a.StorageLayerId.CompareTo(b.StorageLayerId);
+        });
         return resolved.ToArray();
     }
 
@@ -92,16 +96,16 @@ internal static class ODataV2Lookups
     private static bool IsPrimaryPublicationForLayer(
         MetadataV2Layer publication,
         MetadataV2Service service,
-        IReadOnlyDictionary<int, MetadataV2Service> primaryServices)
+        IReadOnlyDictionary<string, MetadataV2Service> primaryServices)
     {
-        return publication.LayerIndex.HasValue &&
-            primaryServices.TryGetValue(publication.LayerIndex.Value, out var primaryService) &&
+        return !string.IsNullOrWhiteSpace(publication.ResourceId) &&
+            primaryServices.TryGetValue(publication.ResourceId, out var primaryService) &&
             string.Equals(primaryService.Metadata.Id, service.Metadata.Id, StringComparison.OrdinalIgnoreCase);
     }
 
     private static HashSet<string> SelectODataPublicationIds(
         MetadataV2GraphSnapshot snapshot,
-        IReadOnlyDictionary<int, MetadataV2Service> primaryServices,
+        IReadOnlyDictionary<string, MetadataV2Service> primaryServices,
         IEnumerable<MetadataV2Layer> publications)
     {
         return publications
