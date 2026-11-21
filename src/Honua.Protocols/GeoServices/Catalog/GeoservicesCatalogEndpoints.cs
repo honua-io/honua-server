@@ -759,11 +759,8 @@ internal static class GeoservicesCatalogEndpoints
             if (visibleResources.Count == 0
                 && directoryTypes.Contains(GPServerProtocolName, StringComparer.Ordinal))
             {
-                advertiseLayerlessGp = await AccessPolicyHelpers.RequireServiceAccessAsync(
-                    context,
-                    service,
-                    AuthorizationOperation.Query,
-                    cancellationToken).ConfigureAwait(false) is null;
+                advertiseLayerlessGp = await AccessPolicyHelpers.CanQueryListedServiceAsync(
+                    context, service, cancellationToken).ConfigureAwait(false);
             }
             if (visibleResources.Count == 0 && !advertiseLayerlessGp)
             {

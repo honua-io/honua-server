@@ -159,14 +159,8 @@ internal static partial class AccessPolicyHelpers
         AuthorizationOperation operation,
         CancellationToken cancellationToken = default)
     {
-        var decision = await EvaluateServiceAccessCoreAsync(new ServiceAccessContext
-        {
-            Services = context.RequestServices,
-            Principal = context.User,
-            TenantId = TenantScopeHelpers.ResolveRequestTenantId(context),
-            Operation = operation,
-            RequestCache = context.Items
-        }, service, cancellationToken).ConfigureAwait(false);
+        var decision = await EvaluateServiceAccessCoreAsync(
+            CreateServiceAccessContext(context, operation), service, cancellationToken).ConfigureAwait(false);
         return CreateServiceAccessDeniedResult(context, decision);
     }
 
