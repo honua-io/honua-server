@@ -293,6 +293,18 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
         page.GetProperty("exceededTransferLimit").GetBoolean().Should().BeTrue();
     }
 
+    [IntegrationTest]
+    [Operation(Operations.QueryTopFeatures)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures")]
+    public async Task QueryTopFeatures_OffsetAboveTheMaximum_ReturnsAnError()
+    {
+        var root = await GetTopFeaturesAsync($"&resultOffset={int.MaxValue}");
+
+        root.TryGetProperty("error", out var error).Should().BeTrue();
+        error.GetRawText().Should().Contain("resultOffset must be between 0 and");
+        root.TryGetProperty("features", out _).Should().BeFalse();
+    }
+
     private async Task<JsonElement> GetTopFeaturesAsync(string parameters)
     {
         var topFilter = JsonSerializer.Serialize(new { groupByFields = "category", topCount = 2, orderByFields = "objectid desc" });

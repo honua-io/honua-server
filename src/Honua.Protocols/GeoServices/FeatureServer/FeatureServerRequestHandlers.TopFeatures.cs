@@ -185,11 +185,12 @@ internal static partial class FeatureServerEndpoints
                 [offsetError ?? "resultOffset must be an integer."]);
         }
 
-        if (resultOffset is < 0)
+        var queryLimits = ResolveQueryLimits(context);
+        if (resultOffset is < 0 || resultOffset > queryLimits.MaxOffset)
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid resultOffset parameter",
-                ["resultOffset cannot be negative."]);
+                [$"resultOffset must be between 0 and {queryLimits.MaxOffset}."]);
         }
 
         if (!TryParseIntValue(values, "resultRecordCount", out var resultRecordCount, out var recordCountError))
@@ -227,7 +228,7 @@ internal static partial class FeatureServerEndpoints
         // exceededTransferLimit; count and ids responses carry no page, as on query.
         var featurePage = !returnIdsOnly && !returnCountOnly;
         var pageLimit = featurePage
-            ? ResolveTopFeaturesPageLimit(resultRecordCount, ResolveMaxRecordCount(context))
+            ? ResolveTopFeaturesPageLimit(resultRecordCount, queryLimits.MaxRecordCount)
             : resultRecordCount;
         query = query with
         {
@@ -353,8 +354,8 @@ internal static partial class FeatureServerEndpoints
             ? QueryResult<Feature>.Create(limit, result.Items.RemoveRange(limit, result.Items.Length - limit), hasMoreResults: true)
             : result;
 
-    private static int ResolveMaxRecordCount(HttpContext context)
-        => context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Query.MaxRecordCount;
+    private static QueryLimits ResolveQueryLimits(HttpContext context)
+        => context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Query;
 
     internal static QueryResponse BuildTopFeaturesJsonResponse(
         QueryResult<Feature> result,
