@@ -132,8 +132,8 @@ internal static class GeometryOutputProcessor
         var metersPerDegreeLongitude = Math.Max(
             Math.Cos(latitudeRadians) * metersPerDegreeLatitude,
             1d);
-        var largestMetersPerDegree = Math.Max(metersPerDegreeLatitude, metersPerDegreeLongitude);
-        return meters / largestMetersPerDegree;
+        var effectiveMetersPerDegree = Math.Sqrt(metersPerDegreeLatitude * metersPerDegreeLongitude);
+        return meters / effectiveMetersPerDegree;
     }
 
     private sealed class CoordinatePrecisionFilter(int decimalPlaces) : ICoordinateSequenceFilter

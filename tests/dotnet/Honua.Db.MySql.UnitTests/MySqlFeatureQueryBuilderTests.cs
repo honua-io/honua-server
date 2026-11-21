@@ -861,16 +861,12 @@ public class MySqlFeatureQueryBuilderTests
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
-    public void BuildExtentQuery_PolygonLayer_UsesEnvelopeWithoutTwoArgStSrid()
+    public void BuildExtentQuery_PolygonLayer_UsesEnvelopeWithCartesianStSridZero()
     {
-        // Default test layer is Polygon; envelope corners come via ST_PointN(ST_ExteriorRing(...)).
-        // ST_SRID(geom, 0) (the 2-arg setter) is MySQL-only and breaks MariaDB, so the slice
-        // applies envelope/PointN directly to the column without retagging.
         var result = _builder.BuildExtentQuery(LayerId, new FeatureQuery());
 
-        Assert.Contains("ST_PointN(ST_ExteriorRing(ST_Envelope(`geom`)), 1)", result.Sql, StringComparison.Ordinal);
-        Assert.Contains("ST_PointN(ST_ExteriorRing(ST_Envelope(`geom`)), 3)", result.Sql, StringComparison.Ordinal);
-        Assert.DoesNotContain("ST_SRID(`geom`, 0)", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ST_PointN(ST_ExteriorRing(ST_Envelope(ST_SRID(`geom`, 0))), 1)", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ST_PointN(ST_ExteriorRing(ST_Envelope(ST_SRID(`geom`, 0))), 3)", result.Sql, StringComparison.Ordinal);
         Assert.Contains("FROM `honua`.`parcels`", result.Sql, StringComparison.Ordinal);
         Assert.Contains("`geom` IS NOT NULL", result.Sql, StringComparison.Ordinal);
     }
@@ -893,9 +889,8 @@ public class MySqlFeatureQueryBuilderTests
 
         var result = builder.BuildExtentQuery(42, new FeatureQuery());
 
-        Assert.Contains("ST_PointN(ST_ExteriorRing(ST_Envelope(`shape`)), 1)", result.Sql, StringComparison.Ordinal);
-        Assert.Contains("ST_PointN(ST_ExteriorRing(ST_Envelope(`shape`)), 3)", result.Sql, StringComparison.Ordinal);
-        Assert.DoesNotContain("ST_SRID(`shape`, 0)", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ST_PointN(ST_ExteriorRing(ST_Envelope(ST_SRID(`shape`, 0))), 1)", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ST_PointN(ST_ExteriorRing(ST_Envelope(ST_SRID(`shape`, 0))), 3)", result.Sql, StringComparison.Ordinal);
     }
 
     [global::Xunit.Trait("Tier", "Fast")]
@@ -981,8 +976,8 @@ public class MySqlFeatureQueryBuilderTests
     {
         var result = _builder.BuildExtentQuery(LayerId, new FeatureQuery());
 
-        Assert.Contains("MIN(ST_Longitude(ST_PointN(ST_ExteriorRing(ST_Envelope(`geom`)), 1)))", result.Sql, StringComparison.Ordinal);
-        Assert.Contains("MAX(ST_Latitude(ST_PointN(ST_ExteriorRing(ST_Envelope(`geom`)), 3)))", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("MIN(ST_Longitude(ST_PointN(ST_ExteriorRing(ST_Envelope(ST_SRID(`geom`, 0))), 1)))", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("MAX(ST_Latitude(ST_PointN(ST_ExteriorRing(ST_Envelope(ST_SRID(`geom`, 0))), 3)))", result.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("ST_X(", result.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("ST_Y(", result.Sql, StringComparison.Ordinal);
     }
@@ -1006,8 +1001,8 @@ public class MySqlFeatureQueryBuilderTests
 
         var result = builder.BuildExtentQuery(103, new FeatureQuery());
 
-        Assert.Contains("MIN(ST_X(ST_PointN(ST_ExteriorRing(ST_Envelope(`geom`)), 1)))", result.Sql, StringComparison.Ordinal);
-        Assert.Contains("MAX(ST_Y(ST_PointN(ST_ExteriorRing(ST_Envelope(`geom`)), 3)))", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("MIN(ST_X(ST_PointN(ST_ExteriorRing(ST_Envelope(ST_SRID(`geom`, 0))), 1)))", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("MAX(ST_Y(ST_PointN(ST_ExteriorRing(ST_Envelope(ST_SRID(`geom`, 0))), 3)))", result.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("ST_Longitude", result.Sql, StringComparison.Ordinal);
     }
 

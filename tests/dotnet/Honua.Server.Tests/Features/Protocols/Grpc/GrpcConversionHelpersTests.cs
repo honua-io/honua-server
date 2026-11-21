@@ -846,4 +846,83 @@ public sealed class GrpcConversionHelpersTests
         ntsGeom.Should().BeOfType<MultiPolygon>();
         ((MultiPolygon)ntsGeom).NumGeometries.Should().Be(2);
     }
+
+    [UnitTest]
+    public void TryResolveOutputSrid_WhenBothWkidAndLatestWkidSet_PrefersLatestWkid()
+    {
+        var sr = new Proto.SpatialReference { Wkid = 102100, LatestWkid = 3857 };
+
+        GrpcConversionHelpers.TryResolveOutputSrid(sr).Should().Be(3857);
+    }
+
+    [UnitTest]
+    public void ToProtoFeature_WithLocalAndUnspecifiedDateTime_NormalizesToUtcMilliseconds()
+    {
+        var utc = new DateTime(2024, 6, 15, 18, 30, 0, DateTimeKind.Utc);
+        var local = utc.ToLocalTime();
+        var unspecified = new DateTime(2024, 6, 15, 18, 30, 0, DateTimeKind.Unspecified);
+
+        var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty
+            .Add("local_ts", local)
+            .Add("unspec_ts", unspecified));
+
+        var proto = GrpcConversionHelpers.ToProtoFeature(feature);
+
+        var expectedMillis = new DateTimeOffset(utc, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        proto.Attributes["local_ts"].DatetimeValue.Should().Be(expectedMillis);
+        proto.Attributes["unspec_ts"].DatetimeValue.Should().Be(expectedMillis);
+    }
+
+    [UnitTest]
+    public void ToProtoFeature_WithJsonElementAttributes_MapsPrimitivesAndStructuredJson()
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse("""
+            {
+                "str": "hello",
+                "int_val": 42,
+                "dbl_val": 3.5,
+                "bool_t": true,
+                "bool_f": false,
+                "null_val": null,
+                "arr": [1, 2]
+            }
+            """);
+        var root = doc.RootElement;
+        var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty
+            .Add("str", root.GetProperty("str"))
+            .Add("int_val", root.GetProperty("int_val"))
+            .Add("dbl_val", root.GetProperty("dbl_val"))
+            .Add("bool_t", root.GetProperty("bool_t"))
+            .Add("bool_f", root.GetProperty("bool_f"))
+            .Add("null_val", root.GetProperty("null_val"))
+            .Add("arr", root.GetProperty("arr")));
+
+        var proto = GrpcConversionHelpers.ToProtoFeature(feature);
+
+        proto.Attributes["str"].StringValue.Should().Be("hello");
+        proto.Attributes["int_val"].Int64Value.Should().Be(42L);
+        proto.Attributes["dbl_val"].DoubleValue.Should().Be(3.5);
+        proto.Attributes["bool_t"].BoolValue.Should().BeTrue();
+        proto.Attributes["bool_f"].BoolValue.Should().BeFalse();
+        proto.Attributes["null_val"].ValueCase.Should().Be(Proto.AttributeValue.ValueOneofCase.NullValue);
+        proto.Attributes["arr"].StringValue.Should().Be("[1, 2]");
+    }
+
+    [UnitTest]
+    public void TryParseWkbToProtoGeometry_BigEndianEwkbPointZmWithSridAndPrecision_ParsesDirectly()
+    {
+        var writer = new WKBWriter(ByteOrder.BigEndian, handleSRID: true, emitZ: true, emitM: true);
+        var factory = new GeometryFactory(new PrecisionModel(), 4326);
+        var point = factory.CreatePoint(new CoordinateZM(-157.8583333, 21.3069444, 12.3456, 99.8765));
+        var ewkb = writer.Write(point);
+
+        var parsed = GrpcConversionHelpers.TryParseWkbToProtoGeometry(ewkb, coordinatePrecision: 3, out var proto);
+
+        parsed.Should().BeTrue();
+        proto.ShapeCase.Should().Be(Proto.Geometry.ShapeOneofCase.Point);
+        proto.Point.X.Should().Be(-157.858);
+        proto.Point.Y.Should().Be(21.307);
+        proto.Point.Z.Should().Be(12.346);
+        proto.Point.M.Should().Be(99.876);
+    }
 }

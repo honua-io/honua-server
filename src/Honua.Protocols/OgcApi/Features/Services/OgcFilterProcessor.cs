@@ -213,6 +213,11 @@ internal sealed partial class OgcFilterProcessor
             if (filterExpression != null)
             {
                 filterExpression = Cql2FilterProcessor.NormalizeFilterAxisOrder(filterExpression, filterCrsDefinition.AxisOrder);
+                if (!Cql2FilterProcessor.TryValidateFilterGeometries(filterExpression, out var geometryValidationError))
+                {
+                    return FilterProcessingResult.Failure(
+                        $"{InvalidCqlFilterPrefix}: {SanitizeCqlErrorMessage(geometryValidationError ?? "Invalid filter.")}");
+                }
             }
 
             SqlFragment? sqlFilter = null;
@@ -514,6 +519,14 @@ internal sealed partial class OgcFilterProcessor
         if (partCount is not (4 or 6))
         {
             return BboxParseResult.Failure("Bounding box must contain 4 or 6 comma-separated values.");
+        }
+
+        for (var i = 0; i < partCount; i++)
+        {
+            if (!double.IsFinite(parts[i]))
+            {
+                return BboxParseResult.Failure("Bounding box coordinates must be valid numbers.");
+            }
         }
 
         // A 6-value bbox (minx,miny,minz,maxx,maxy,maxz) is spec-legal per OGC API Features

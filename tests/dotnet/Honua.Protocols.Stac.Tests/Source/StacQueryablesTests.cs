@@ -102,6 +102,19 @@ public sealed class StacQueryablesTests : IClassFixture<WebAppFixture>
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    [IntegrationTheory]
+    [InlineData("/stac/collections/0?unknown=1")]
+    [InlineData("/stac/queryables?unknown=1")]
+    [InlineData("/stac/collections/0/queryables?unknown=1")]
+    [InlineData("/stac/collections/0/items/1?unknown=1")]
+    [Operation(Operations.Metadata)]
+    public async Task StacRoutes_WithUnknownQueryParameter_ReturnBadRequest(string path)
+    {
+        var response = await _fixture.Client.GetAsync(path);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
 }
 
 [Protocol(TestProtocols.Stac)]

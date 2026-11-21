@@ -2,13 +2,26 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Domain;
+using Honua.Core.Features.Shared.Models;
+using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Rendering;
+using Honua.Infrastructure.Services;
+using Honua.Infrastructure.Validation;
 using Honua.Protocols.GeoServices.MapServer;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
@@ -190,6 +203,144 @@ public sealed class MapServerImageContractTests
         message.Should().Contain("64");
         message.Should().Contain("estimateExportTilesSize");
         message.Should().Contain("The package was not created.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Find)]
+    public async Task HandleFind_InvalidLayerDefs_ReturnsBadRequestAndValidFindOrdersByOid()
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        var capturedQueries = new List<FeatureQuery>();
+        reader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                capturedQueries.Add(call.ArgAt<FeatureQuery>(1));
+                return QueryResult<Feature>.Create(0, []);
+            });
+
+        var graph = new MetadataV2Graph
+        {
+            Revision = 1,
+            Environment = "test",
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "svc-find", Name = "parcels" },
+                    Protocols = ["MapServer"],
+                    SpatialReference = MetadataV2SpatialReference.Wgs84,
+                    AccessPolicy = new AccessPolicy { AllowAnonymous = true }
+                }
+            ],
+            Resources =
+            [
+                new MetadataV2Object
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "res-0", Name = "Parcels" },
+                    Type = MetadataV2ObjectType.FeatureDataset,
+                    AccessPolicy = new AccessPolicy { AllowAnonymous = true },
+                    SchemaFields =
+                    [
+                        new MetadataV2Field
+                        {
+                            Name = "parcel_id",
+                            Type = MetadataV2FieldType.BigInteger,
+                            Nullable = false,
+                            SemanticRoles = ["id.primary"]
+                        },
+                        new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }
+                    ],
+                    Spatial = new MetadataV2ObjectSpatial
+                    {
+                        SpatialReference = MetadataV2SpatialReference.Wgs84,
+                        GeometryType = MetadataV2GeometryType.Point
+                    }
+                }
+            ],
+            Publications =
+            [
+                new MetadataV2Layer
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "pub-0", Name = "Parcels" },
+                    ServiceId = "svc-find",
+                    ResourceId = "res-0",
+                    LayerIndex = 0,
+                    PublicationType = MetadataV2LayerType.EsriMapLayer
+                }
+            ]
+        };
+
+        var filterService = Substitute.For<IFilterExpressionService>();
+        filterService.Parse(FilterLanguage.GeoServicesSql, Arg.Any<string>())
+            .Returns(call =>
+            {
+                var sql = call.ArgAt<string>(1);
+                return sql.Contains("NONEXISTENT_FIELD", StringComparison.Ordinal)
+                    ? FilterParseResult.Failure("Field 'NONEXISTENT_FIELD' does not exist.")
+                    : FilterParseResult.Success(
+                        new BinaryExpression(
+                            new Literal(1, LiteralType.Number),
+                            BinaryOperator.Equal,
+                            new Literal(1, LiteralType.Number)));
+            });
+        filterService.Translate(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Object>())
+            .Returns(FilterTranslationResult.Success(
+                null,
+                new SqlFragment("1=1", Array.Empty<object?>())));
+
+        using var services = new ServiceCollection()
+            .AddLogging()
+            .AddValidationServices()
+            .AddSingleton<IConfiguration>(new ConfigurationBuilder().Build())
+            .AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph))
+            .AddSingleton(filterService)
+            .AddSingleton(reader)
+            .AddSingleton(Substitute.For<IGeometryConverter>())
+            .AddSingleton(Options.Create(new LimitsOptions()))
+            .BuildServiceProvider();
+
+        var handleFind = typeof(MapServerEndpoints).GetMethod(
+            "HandleFind",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+
+        // 1. Invalid layerDefs returns 400 error envelope instead of silently skipping the layer.
+        var badContext = new DefaultHttpContext
+        {
+            RequestServices = services
+        };
+        badContext.Request.Method = "GET";
+        badContext.Request.Path = "/rest/services/parcels/MapServer/find";
+        badContext.Request.RouteValues["serviceId"] = "parcels";
+        badContext.Request.QueryString = new QueryString(
+            "?searchText=Test&layers=0&layerDefs=0:NONEXISTENT_FIELD=1&f=json");
+        badContext.Response.Body = new MemoryStream();
+
+        var badResult = await (Task<IResult>)handleFind.Invoke(null, [badContext])!;
+        await badResult.ExecuteAsync(badContext);
+        badContext.Response.Body.Position = 0;
+        using var badReader = new StreamReader(badContext.Response.Body, leaveOpen: true);
+        var badBody = await badReader.ReadToEndAsync();
+        badBody.Should().Contain("400");
+        badBody.Should().Contain("Invalid layerDefs parameter.");
+
+        // 2. Valid find orders deterministically by the resolved OID field ("parcel_id").
+        var okContext = new DefaultHttpContext
+        {
+            RequestServices = services
+        };
+        okContext.Request.Method = "GET";
+        okContext.Request.Path = "/rest/services/parcels/MapServer/find";
+        okContext.Request.RouteValues["serviceId"] = "parcels";
+        okContext.Request.QueryString = new QueryString(
+            "?searchText=Test&layers=0&f=json");
+        okContext.Response.Body = new MemoryStream();
+
+        var okResult = await (Task<IResult>)handleFind.Invoke(null, [okContext])!;
+        await okResult.ExecuteAsync(okContext);
+        capturedQueries.Should().ContainSingle();
+        capturedQueries[0].OrderBy.Should().NotBeNull();
+        capturedQueries[0].OrderBy!.Value.Should().ContainSingle()
+            .Which.Field.Should().Be("parcel_id");
     }
 
     private static IChangeTracker Tracker(long generation)

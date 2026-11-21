@@ -254,9 +254,9 @@ internal static class OgcRecordsEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
-        if (!TryGetGeoJsonOutputFormat(context, f, out var formatError))
+        if (!TryGetGeoJsonOutputFormat(context, f, out var formatErrorResult))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, formatError ?? "Invalid format.");
+            return formatErrorResult!;
         }
 
         if (!TryParseLimitOffset(limit, offset, out var pageLimit, out var pageOffset, out var pageError))
@@ -765,15 +765,44 @@ internal static class OgcRecordsEndpoints
             out outputFormat,
             out errorResult);
 
-    private static bool TryGetGeoJsonOutputFormat(HttpContext context, string? f, out string? error)
+    private static readonly string[] ItemsSupportedMediaTypes =
+    [
+        MediaTypes.GeoJson,
+        MediaTypes.Json,
+        MediaTypes.Html
+    ];
+
+    internal static bool TryGetGeoJsonOutputFormat(HttpContext context, string? f, out IResult? errorResult)
     {
-        error = null;
-        if (string.IsNullOrWhiteSpace(f) || string.Equals(f, "json", StringComparison.OrdinalIgnoreCase) || string.Equals(f, "geojson", StringComparison.OrdinalIgnoreCase))
+        errorResult = null;
+        if (!string.IsNullOrWhiteSpace(f))
+        {
+            if (string.Equals(f, "json", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(f, "geojson", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            errorResult = StandardErrorHelpers.CreateBadRequest(
+                context,
+                $"Unsupported format '{f}'. Supported formats: json, geojson.");
+            return false;
+        }
+
+        var acceptHeader = context.Request.Headers.Accept;
+        if (Microsoft.Extensions.Primitives.StringValues.IsNullOrEmpty(acceptHeader))
         {
             return true;
         }
 
-        error = $"Unsupported format '{f}'. Supported formats: json, geojson.";
+        if (ContentNegotiationHelpers.TrySelectBestMediaType(ItemsSupportedMediaTypes, acceptHeader, out _))
+        {
+            return true;
+        }
+
+        errorResult = StandardErrorHelpers.CreateNotAcceptable(
+            context,
+            "Requested format is not acceptable. Supported formats: application/geo+json, application/json.");
         return false;
     }
 
@@ -802,7 +831,7 @@ internal static class OgcRecordsEndpoints
         return true;
     }
 
-    private static bool TryParseBbox(string? value, out BboxFilter? bbox, out string? error)
+    internal static bool TryParseBbox(string? value, out BboxFilter? bbox, out string? error)
     {
         bbox = null;
         error = null;
@@ -811,7 +840,25 @@ internal static class OgcRecordsEndpoints
             return true;
         }
 
-        var parsed = BoundingBoxOrdinates.Parse(value);
+        var parts = value.Split(',', StringSplitOptions.TrimEntries);
+        if (parts.Length is not (4 or 6))
+        {
+            error = "bbox must contain four (minx,miny,maxx,maxy) or six (minx,miny,minz,maxx,maxy,maxz) comma-separated numbers.";
+            return false;
+        }
+
+        if (parts.Length == 6 &&
+            (!double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var minZ) ||
+             !double.TryParse(parts[5], NumberStyles.Float, CultureInfo.InvariantCulture, out var maxZ) ||
+             !double.IsFinite(minZ) ||
+             !double.IsFinite(maxZ) ||
+             minZ > maxZ))
+        {
+            error = "bbox values must be finite and ordered as minx,miny,minz,maxx,maxy,maxz.";
+            return false;
+        }
+
+        var parsed = BoundingBoxOrdinates.Parse(parts);
         if (!parsed.Succeeded)
         {
             error = "bbox must contain four (minx,miny,maxx,maxy) or six (minx,miny,minz,maxx,maxy,maxz) comma-separated numbers.";
@@ -821,9 +868,13 @@ internal static class OgcRecordsEndpoints
         // minX > maxX is permitted: per RFC 7946 §5.2 and the OGC API bbox parameter,
         // west > east means the box crosses the antimeridian and must be honored.
         var (minX, minY, maxX, maxY) = BoundingBoxOrdinates.Horizontal(parsed.Ordinates);
-        if (minY > maxY)
+        if (minX < -180 || minX > 180 ||
+            maxX < -180 || maxX > 180 ||
+            minY < -90 || minY > 90 ||
+            maxY < -90 || maxY > 90 ||
+            minY > maxY)
         {
-            error = "bbox values must be finite and ordered as minx,miny,maxx,maxy.";
+            error = "bbox values must be within CRS84 bounds (-180,-90,180,90) and ordered as minx,miny,maxx,maxy.";
             return false;
         }
 
@@ -831,7 +882,7 @@ internal static class OgcRecordsEndpoints
         return true;
     }
 
-    private static bool TryParseDatetime(string? value, out DateTimeFilter? filter, out string? error)
+    internal static bool TryParseDatetime(string? value, out DateTimeFilter? filter, out string? error)
     {
         filter = null;
         error = null;
@@ -847,14 +898,22 @@ internal static class OgcRecordsEndpoints
             return false;
         }
 
-        if (!TryParseDatePart(parts[0], out var start))
+        if (parts.Length == 2 &&
+            string.Equals(parts[0], "..", StringComparison.Ordinal) &&
+            string.Equals(parts[1], "..", StringComparison.Ordinal))
+        {
+            error = "datetime interval cannot have both bounds open.";
+            return false;
+        }
+
+        if (!TryParseDatePart(parts[0], allowOpenBound: parts.Length == 2, out var start))
         {
             error = "datetime start is not a valid RFC 3339 value.";
             return false;
         }
 
         DateTimeOffset? end = start;
-        if (parts.Length == 2 && !TryParseDatePart(parts[1], out end))
+        if (parts.Length == 2 && !TryParseDatePart(parts[1], allowOpenBound: true, out end))
         {
             error = "datetime end is not a valid RFC 3339 value.";
             return false;
@@ -871,12 +930,36 @@ internal static class OgcRecordsEndpoints
         return true;
     }
 
-    private static bool TryParseDatePart(string value, out DateTimeOffset? result)
+    private static bool TryParseDatePart(string value, bool allowOpenBound, out DateTimeOffset? result)
     {
         result = null;
         if (string.Equals(value, "..", StringComparison.Ordinal))
         {
+            return allowOpenBound;
+        }
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        if (value.Length == 10 &&
+            value[4] == '-' &&
+            value[7] == '-' &&
+            DateTimeOffset.TryParseExact(
+                value,
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out var dateOnly))
+        {
+            result = dateOnly;
             return true;
+        }
+
+        if (!IsRfc3339DateTime(value))
+        {
+            return false;
         }
 
         if (DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed))
@@ -886,6 +969,37 @@ internal static class OgcRecordsEndpoints
         }
 
         return false;
+    }
+
+    private static bool IsRfc3339DateTime(string value)
+    {
+        if (value.Length < 20 ||
+            value[4] != '-' ||
+            value[7] != '-' ||
+            (value[10] != 'T' && value[10] != 't') ||
+            value[13] != ':' ||
+            value[16] != ':')
+        {
+            return false;
+        }
+
+        if (value.EndsWith('Z') || value.EndsWith('z'))
+        {
+            return true;
+        }
+
+        if (value.Length < 25)
+        {
+            return false;
+        }
+
+        var offsetSign = value[^6];
+        return (offsetSign == '+' || offsetSign == '-') &&
+               value[^3] == ':' &&
+               char.IsAsciiDigit(value[^5]) &&
+               char.IsAsciiDigit(value[^4]) &&
+               char.IsAsciiDigit(value[^2]) &&
+               char.IsAsciiDigit(value[^1]);
     }
 
     private static ImmutableArray<double>? CombineBboxes(IEnumerable<ImmutableArray<double>?> extents)
@@ -945,9 +1059,9 @@ internal static class OgcRecordsEndpoints
         public required DescriptiveMetadata Descriptive { get; init; }
     }
 
-    private sealed record BboxFilter(double MinX, double MinY, double MaxX, double MaxY);
+    internal sealed record BboxFilter(double MinX, double MinY, double MaxX, double MaxY);
 
-    private sealed record DateTimeFilter(DateTimeOffset? Start, DateTimeOffset? End)
+    internal sealed record DateTimeFilter(DateTimeOffset? Start, DateTimeOffset? End)
     {
         public bool Contains(DateTimeOffset value)
             => (Start is null || value >= Start.Value) && (End is null || value <= End.Value);

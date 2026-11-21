@@ -90,12 +90,23 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
         await context.ReportProgressAsync(50, "Computing area", cancellationToken).ConfigureAwait(false);
 
         double area;
+        var unit = "input-crs-units-squared";
         try
         {
-            // Computes the planar area in the squared units of the input CRS.
-            // No geodesic conversion is applied — the catalog advertises planar
-            // area only, consistent with the buffer executor's planar behavior.
-            area = geometry.Area;
+            if ((inputs.Geodesic || inputs.HasExplicitMetricUnit) && GeodesicGeometryOperations.IsGeographicSrid(inputs.Srid))
+            {
+                area = GeodesicGeometryOperations.ComputeGeodesicAreaSquareMeters(geometry) * inputs.AreaUnitFactor;
+                unit = inputs.CanonicalUnit;
+            }
+            else if (inputs.HasExplicitMetricUnit)
+            {
+                area = geometry.Area * inputs.AreaUnitFactor;
+                unit = inputs.CanonicalUnit;
+            }
+            else
+            {
+                area = geometry.Area;
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -112,7 +123,7 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(75, "Encoding area artifact", cancellationToken).ConfigureAwait(false);
 
-        var payload = BuildMeasurePayload(area, geometry, inputs);
+        var payload = BuildMeasurePayload(area, unit, geometry, inputs);
         var maxBytes = _options.CurrentValue.MaxArtifactBytes;
         if (payload.Length > maxBytes)
         {
@@ -152,6 +163,32 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
             return false;
         }
 
+        var geodesic = false;
+        if (parameters.TryGetValue(prefix + "geodesic", out var geodesicRaw)
+            && !string.IsNullOrWhiteSpace(geodesicRaw)
+            && !bool.TryParse(geodesicRaw, out geodesic))
+        {
+            error = "invalid input 'geodesic'; expected boolean";
+            return false;
+        }
+
+        var hasExplicitMetricUnit = false;
+        var areaUnitFactor = 1.0;
+        var canonicalUnit = "square-meters";
+        if ((parameters.TryGetValue(prefix + "unit", out var unitRaw)
+             || parameters.TryGetValue(prefix + "area_unit", out unitRaw)
+             || parameters.TryGetValue(prefix + "areaUnit", out unitRaw))
+            && !string.IsNullOrWhiteSpace(unitRaw))
+        {
+            if (!GeodesicGeometryOperations.TryParseAreaUnitFactorFromSquareMeters(unitRaw, out areaUnitFactor, out canonicalUnit))
+            {
+                error = $"invalid input 'unit' value '{unitRaw}'; expected square-meters or square-kilometers";
+                return false;
+            }
+
+            hasExplicitMetricUnit = true;
+        }
+
         byte[] wkbBytes;
         try
         {
@@ -169,12 +206,12 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
             return false;
         }
 
-        inputs = new AreaInputs(wkbBytes, srid);
+        inputs = new AreaInputs(wkbBytes, srid, geodesic, hasExplicitMetricUnit, areaUnitFactor, canonicalUnit);
         error = "";
         return true;
     }
 
-    private static byte[] BuildMeasurePayload(double area, Geometry geometry, AreaInputs inputs)
+    private static byte[] BuildMeasurePayload(double area, string unit, Geometry geometry, AreaInputs inputs)
     {
         // Canonical measure-result envelope: a stable JSON document that
         // OGC API Processes / GeoServices clients can read uniformly. The
@@ -189,7 +226,7 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
             writer.WriteString("processId", HandledProcessId);
             writer.WriteString("measure", "area");
             writer.WriteNumber("value", area);
-            writer.WriteString("unit", "input-crs-units-squared");
+            writer.WriteString("unit", unit);
             writer.WriteNumber("inputSrid", inputs.Srid);
             writer.WriteString("inputGeometryType", geometry.GeometryType);
             writer.WriteEndObject();
@@ -207,7 +244,13 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
         return sb.ToString();
     }
 
-    private readonly record struct AreaInputs(byte[] WkbBytes, int Srid);
+    private readonly record struct AreaInputs(
+        byte[] WkbBytes,
+        int Srid,
+        bool Geodesic = false,
+        bool HasExplicitMetricUnit = false,
+        double AreaUnitFactor = 1.0,
+        string CanonicalUnit = "square-meters");
 
     private static partial class Log
     {

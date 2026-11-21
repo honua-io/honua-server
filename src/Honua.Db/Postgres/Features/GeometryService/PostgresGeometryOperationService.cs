@@ -553,7 +553,7 @@ internal sealed class PostgresGeometryOperationService(
                 COALESCE(
                     NULLIF((regexp_match(COALESCE(proj4text, ''), '[+]to_meter=([0-9.eE+-]+)'))[1], '')::double precision,
                     CASE
-                        WHEN COALESCE(proj4text, '') ILIKE '%+units=m%' THEN 1.0
+                        WHEN COALESCE(proj4text, '') ~ '\+units=m(\s|$)' THEN 1.0
                         WHEN COALESCE(proj4text, '') ILIKE '%+units=km%' THEN 1000.0
                         WHEN COALESCE(proj4text, '') ILIKE '%+units=us-ft%' THEN 0.3048006096012192
                         WHEN COALESCE(proj4text, '') ILIKE '%+units=ft%' THEN 0.3048

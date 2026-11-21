@@ -1095,13 +1095,16 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
         var responseSpatialReference = outputSrid.HasValue
             ? SpatialReference.Create(
-                outputSrid.Value,
-                request.OutSr?.LatestWkid > 0 ? request.OutSr.LatestWkid : null,
+                request.OutSr is { Wkid: > 0 } ? request.OutSr.Wkid : outputSrid.Value,
+                request.OutSr is { LatestWkid: > 0 } ? request.OutSr.LatestWkid : outputSrid.Value,
                 vcsWkid: null,
                 latestVcsWkid: null,
                 wkt: string.IsNullOrWhiteSpace(request.OutSr?.Wkt) ? null : request.OutSr!.Wkt)
             : layer.SpatialReference;
 
+        var requestedOutFields = query.OutFields is { IsDefaultOrEmpty: false } outFields
+            ? new HashSet<string>(outFields, StringComparer.OrdinalIgnoreCase)
+            : null;
         var (projected, attributeHiddenFields) = WithGlobalIdField(
             query,
             globalIdField,
@@ -1116,7 +1119,10 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         {
             GlobalIdField = globalIdField,
             AttributeHiddenFields = attributeHiddenFields,
-            SchemaFields = layer.AttributeFields.Where(field => !masked.Contains(field.Name)).ToArray(),
+            SchemaFields = layer.AttributeFields
+                .Where(field => !masked.Contains(field.Name)
+                    && (requestedOutFields is null || requestedOutFields.Contains(field.Name)))
+                .ToArray(),
         };
     }
 

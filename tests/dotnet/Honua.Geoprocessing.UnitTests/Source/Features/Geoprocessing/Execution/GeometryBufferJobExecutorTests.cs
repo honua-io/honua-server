@@ -94,21 +94,34 @@ public sealed class GeometryBufferJobExecutorTests
     }
 
     [UnitTest]
-    public async Task ExecuteAsync_GeodesicRequested_RejectsAsManualReview()
+    public async Task ExecuteAsync_GeodesicRequested_BuffersGeographicDegreesInMeters()
     {
         var executor = CreateExecutor(out _);
         var context = Substitute.For<IJobExecutionContext>();
         context.OperationId.Returns("op-geo");
 
+        string? publishedUri = null;
+        context
+            .When(c => c.PublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
+            .Do(call => publishedUri = call.ArgAt<string>(0));
+
+        // 1000 m geodesic buffer around POINT(0 0) in EPSG:4326 (~0.009 degrees radius, not 1000 degrees).
         var record = CreateJobRecord(
             processId: GeometryBufferJobExecutor.HandledProcessId,
             includeInputs: true,
+            distance: "1000",
             geodesic: "true");
 
         var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
 
-        result.Status.Should().Be(ExecutionJobStatus.Failed);
-        result.ErrorMessage.Should().Contain("Geodesic", "the first-slice executor only supports CRS-units buffering");
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        publishedUri.Should().NotBeNull();
+        var base64 = publishedUri!["data:application/geo+json;base64,".Length..];
+        using var doc = JsonDocument.Parse(Convert.FromBase64String(base64));
+        var geomJson = doc.RootElement.GetProperty("geometry").GetRawText();
+        var buffered = new NetTopologySuite.IO.GeoJsonReader().Read<Geometry>(geomJson);
+        buffered.EnvelopeInternal.Width.Should().BeApproximately(2.0 * (1000.0 / 111319.49), 1e-3);
+        buffered.EnvelopeInternal.Height.Should().BeApproximately(2.0 * (1000.0 / 110574.27), 1e-3);
     }
 
     [UnitTest]

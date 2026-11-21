@@ -51,6 +51,7 @@ internal static class I3sSceneServiceBuilder
             Wkid = Wgs84Wkid,
             LatestWkid = Wgs84Wkid,
             VcsWkid = Wgs84EllipsoidVcsWkid,
+            LatestVcsWkid = Wgs84EllipsoidVcsWkid,
         };
 
         I3sFullExtent? fullExtent = extent is null

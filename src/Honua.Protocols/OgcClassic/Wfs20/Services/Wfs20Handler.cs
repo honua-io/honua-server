@@ -678,16 +678,9 @@ internal sealed partial class Wfs20Handler
             return SpatialReference.WGS84.Wkid;
         }
 
-        if (srsName.StartsWith("EPSG:", StringComparison.OrdinalIgnoreCase) &&
-            int.TryParse(srsName[5..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var epsg))
+        if (SpatialReferenceHelpers.TryParseSrid(srsName) is { } parsedSrid)
         {
-            return epsg;
-        }
-
-        if (srsName.StartsWith("urn:ogc:def:crs:EPSG::", StringComparison.OrdinalIgnoreCase) &&
-            int.TryParse(srsName["urn:ogc:def:crs:EPSG::".Length..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var urn))
-        {
-            return urn;
+            return parsedSrid;
         }
 
         var lastSlash = srsName.LastIndexOf('/');
@@ -723,7 +716,8 @@ internal sealed partial class Wfs20Handler
                 Wfs20Utilities.ParameterNames.SrsName);
         }
 
-        var resolvedDefinition = await _crsRegistry.ResolveAsync(srsName, cancellationToken).ConfigureAwait(false);
+        var resolvedDefinition = await _crsRegistry.ResolveAsync(srsName, cancellationToken).ConfigureAwait(false)
+            ?? await _crsRegistry.ResolveBySridAsync(parsedDefinition.Srid, cancellationToken).ConfigureAwait(false);
         if (resolvedDefinition.HasValue)
         {
             return resolvedDefinition.Value.Srid;
@@ -761,10 +755,11 @@ internal sealed partial class Wfs20Handler
             : AxisOrder.EastNorth;
     }
 
-    private static bool IsCrs84Request(string? srsName)
-        => SpatialReferenceHelpers.TryParseCrsDefinition(srsName, out var definition) &&
-           definition.Srid == SpatialReference.WGS84.Wkid &&
-           definition.AxisOrder == AxisOrder.EastNorth;
+    internal static bool IsCrs84Request(string? srsName)
+        => CrsIdentifier.IsCrs84(srsName) ||
+           (SpatialReferenceHelpers.TryParseCrsDefinition(srsName, out var definition) &&
+            definition.Srid == SpatialReference.WGS84.Wkid &&
+            definition.AxisOrder == AxisOrder.EastNorth);
 
     private static Parameter CreateParameter(string name, bool allowAnyValue)
     {

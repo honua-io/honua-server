@@ -8,6 +8,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.ObjectPool;
@@ -828,7 +829,12 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             var paramIndex = 5;
 
             // The buffered tile envelope, expressed in the gridset CRS.
-            var tileEnvelopeWithBuffer = $"ST_Expand({tileEnvelope}, $2)";
+            // Geographic gridsets must clamp expanded bounds to [-180, -90, 180, 90] so polar
+            // tiles expanded by buffer pixels never pass out-of-range latitudes into ST_Transform.
+            var isGeographicGrid = gridGeometry.IsGeographic || GeographicSridClassifier.IsGeographicSrid(targetTileSrid);
+            var tileEnvelopeWithBuffer = isGeographicGrid
+                ? $"ST_Intersection(ST_Expand({tileEnvelope}, $2), ST_MakeEnvelope(-180, -90, 180, 90, {targetTileSrid}))"
+                : $"ST_Expand({tileEnvelope}, $2)";
 
             // Reproject the stored geometry into the gridset SRID for tile rasterization, and push
             // the spatial filter down in the layer's storage SRID so the GiST index is usable.

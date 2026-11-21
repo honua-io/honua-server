@@ -619,6 +619,7 @@ internal static class GdalRasterDimensionGuard
     // an offset to the array. Any parse difficulty leaves the identity default in place.
 
     private const int TagModelPixelScale = 33550;
+    private const int TagModelTransformation = 34264;
     private const int TypeDouble = 12; // 64-bit IEEE double
 
     internal static void ReadGeoTiffPixelScale(ReadOnlySpan<byte> data, out double scaleX, out double scaleY)
@@ -670,21 +671,34 @@ internal static class GdalRasterDimensionGuard
             return;
         }
 
+        long? transformOffset = null;
         for (var i = 0; i < entryCount; i++)
         {
             var b = (int)(entriesStart + i * EntrySize);
-            if (ReadU16(data, b, little) != TagModelPixelScale)
+            var tag = ReadU16(data, b, little);
+            if (tag == TagModelPixelScale)
             {
-                continue;
-            }
-            if (ReadU16(data, b + 2, little) != TypeDouble || ReadU32(data, b + 4, little) < 2)
-            {
+                if (ReadU16(data, b + 2, little) != TypeDouble || ReadU32(data, b + 4, little) < 2)
+                {
+                    return;
+                }
+                // 4-byte value field holds the offset to the out-of-line DOUBLE array.
+                var arrayOffset = (long)ReadU32(data, b + 8, little);
+                ReadScalePair(data, little, arrayOffset, ref scaleX, ref scaleY);
                 return;
             }
-            // 4-byte value field holds the offset to the out-of-line DOUBLE array.
-            var arrayOffset = (long)ReadU32(data, b + 8, little);
-            ReadScalePair(data, little, arrayOffset, ref scaleX, ref scaleY);
-            return;
+
+            if (tag == TagModelTransformation &&
+                ReadU16(data, b + 2, little) == TypeDouble &&
+                ReadU32(data, b + 4, little) >= 16)
+            {
+                transformOffset = (long)ReadU32(data, b + 8, little);
+            }
+        }
+
+        if (transformOffset.HasValue)
+        {
+            ReadModelTransformationScale(data, little, transformOffset.Value, ref scaleX, ref scaleY);
         }
     }
 
@@ -715,21 +729,55 @@ internal static class GdalRasterDimensionGuard
             return;
         }
 
+        long? transformOffset = null;
         for (var i = 0; i < entryCount; i++)
         {
             var b = (int)(entriesStart + i * EntrySize);
-            if (ReadU16(data, b, little) != TagModelPixelScale)
+            var tag = ReadU16(data, b, little);
+            if (tag == TagModelPixelScale)
             {
-                continue;
-            }
-            if (ReadU16(data, b + 2, little) != TypeDouble || ReadU64(data, b + 4, little) < 2)
-            {
+                if (ReadU16(data, b + 2, little) != TypeDouble || ReadU64(data, b + 4, little) < 2)
+                {
+                    return;
+                }
+                // 8-byte value field holds the offset to the out-of-line DOUBLE array.
+                var arrayOffset = (long)ReadU64(data, b + 12, little);
+                ReadScalePair(data, little, arrayOffset, ref scaleX, ref scaleY);
                 return;
             }
-            // 8-byte value field holds the offset to the out-of-line DOUBLE array.
-            var arrayOffset = (long)ReadU64(data, b + 12, little);
-            ReadScalePair(data, little, arrayOffset, ref scaleX, ref scaleY);
+
+            if (tag == TagModelTransformation &&
+                ReadU16(data, b + 2, little) == TypeDouble &&
+                ReadU64(data, b + 4, little) >= 16)
+            {
+                transformOffset = (long)ReadU64(data, b + 12, little);
+            }
+        }
+
+        if (transformOffset.HasValue)
+        {
+            ReadModelTransformationScale(data, little, transformOffset.Value, ref scaleX, ref scaleY);
+        }
+    }
+
+    private static void ReadModelTransformationScale(ReadOnlySpan<byte> data, bool little, long arrayOffset, ref double scaleX, ref double scaleY)
+    {
+        if (arrayOffset < 0 || arrayOffset + (16 * 8) > data.Length)
+        {
             return;
+        }
+
+        var m0 = ReadDouble(data, (int)arrayOffset, little);
+        var m1 = ReadDouble(data, (int)arrayOffset + (1 * 8), little);
+        var m4 = ReadDouble(data, (int)arrayOffset + (4 * 8), little);
+        var m5 = ReadDouble(data, (int)arrayOffset + (5 * 8), little);
+
+        var sx = Math.Sqrt((m0 * m0) + (m4 * m4));
+        var sy = Math.Sqrt((m1 * m1) + (m5 * m5));
+        if (double.IsFinite(sx) && sx > 0d && double.IsFinite(sy) && sy > 0d)
+        {
+            scaleX = sx;
+            scaleY = sy;
         }
     }
 

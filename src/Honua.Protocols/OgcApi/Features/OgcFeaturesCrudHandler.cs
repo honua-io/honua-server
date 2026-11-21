@@ -214,7 +214,8 @@ internal sealed partial class OgcFeaturesCrudHandler(
         string featureId,
         string? ifMatch,
         HttpContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? ifNoneMatch = null)
     {
         try
         {
@@ -269,20 +270,33 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 return lockedResult;
             }
 
-            // Validate If-Match precondition before executing the delete.  The pre-check
+            // Validate If-Match / If-None-Match preconditions before executing the delete. The pre-check
             // gives a fast 412 without an unnecessary write round-trip; the canonical state
             // token is re-validated inside the write transaction (see EnsurePreconditionSatisfiedAsync)
             // so a concurrent commit between this check and the write cannot be silently lost.
             string? expectedStateToken = null;
-            if (!string.IsNullOrWhiteSpace(ifMatch))
+            var effectiveIfNoneMatch = string.IsNullOrWhiteSpace(ifNoneMatch)
+                ? context.Request.Headers.IfNoneMatch.ToString()
+                : ifNoneMatch;
+            if (!string.IsNullOrWhiteSpace(ifMatch) || !string.IsNullOrWhiteSpace(effectiveIfNoneMatch))
             {
                 var etag = OgcFeatureEntityTag.Compute(existing, _etagService);
-                if (!OgcFeatureEntityTag.MatchesEntityOrRepresentation(ifMatch, etag, _etagService))
+                if (!string.IsNullOrWhiteSpace(ifMatch) &&
+                    !OgcFeatureEntityTag.MatchesEntityOrRepresentation(ifMatch, etag, _etagService))
                 {
                     return Results.Problem(
                         statusCode: 412,
                         title: "Precondition Failed",
                         detail: "The resource has been modified since the provided ETag.");
+                }
+
+                if (!string.IsNullOrWhiteSpace(effectiveIfNoneMatch) &&
+                    OgcFeatureEntityTag.MatchesEntityOrRepresentation(effectiveIfNoneMatch, etag, _etagService, allowWeak: true))
+                {
+                    return Results.Problem(
+                        statusCode: 412,
+                        title: "Precondition Failed",
+                        detail: "The resource matches the If-None-Match precondition.");
                 }
 
                 expectedStateToken = FeatureStateToken.FromReadSnapshot(existing);

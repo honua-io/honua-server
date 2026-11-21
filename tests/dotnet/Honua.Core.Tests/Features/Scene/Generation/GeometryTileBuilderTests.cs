@@ -803,4 +803,64 @@ public sealed class GeometryTileBuilderTests
         var binLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(glb.AsSpan(binChunkOffset, 4));
         return glb.AsSpan(binChunkOffset + 8, binLength).ToArray();
     }
+
+    [UnitTest]
+    public void BuildGlb_EmitsGltf20YUpCoordinatesAndRtcTranslation()
+    {
+        var vertex = new SceneVertex(-122.4194, 37.7749, 25.0);
+        var (xEcef, yEcef, zEcef) = EcefCoordinateTransform.ToEcef(vertex.Longitude, vertex.Latitude, 25.0);
+        var feature = new SceneFeature
+        {
+            Id = 1,
+            Geometry = new SceneFeatureGeometry
+            {
+                Kind = SceneGeometryKind.Point,
+                Vertices = [vertex]
+            }
+        };
+
+        var glb = GeometryTileBuilder.BuildGlb(
+            [feature],
+            metadataAttributes: Array.Empty<SceneAttributeSchema>(),
+            extrusion: null);
+        using var doc = JsonDocument.Parse(ExtractJsonChunk(glb));
+        var translation = doc.RootElement.GetProperty("nodes")[0].GetProperty("translation")
+            .EnumerateArray().Select(e => e.GetDouble()).ToArray();
+
+        // glTF 2.0 Y-up: (X_gltf, Y_gltf, Z_gltf) = (X_ecef, Z_ecef, -Y_ecef)
+        translation[0].Should().BeApproximately(xEcef, 1e-6);
+        translation[1].Should().BeApproximately(zEcef, 1e-6);
+        translation[2].Should().BeApproximately(-yEcef, 1e-6);
+
+        var (nx, ny, nz) = EcefCoordinateTransform.ToGltfYUpNormal(0.1, 0.2, 0.3);
+        nx.Should().BeApproximately(0.1, 1e-12);
+        ny.Should().BeApproximately(0.3, 1e-12);
+        nz.Should().BeApproximately(-0.2, 1e-12);
+    }
+
+    [UnitTest]
+    public void BuildGlb_MultiPartGeometries_EmitsAllParts()
+    {
+        var part1 = new[] { new SceneVertex(-122.5, 37.7, 0), new SceneVertex(-122.4, 37.7, 0) };
+        var part2 = new[] { new SceneVertex(-122.3, 37.8, 0), new SceneVertex(-122.2, 37.8, 0) };
+        var multiLine = new SceneFeature
+        {
+            Id = 1,
+            Geometry = new SceneFeatureGeometry
+            {
+                Kind = SceneGeometryKind.LineString,
+                Vertices = [.. part1, .. part2],
+                Parts = [part1, part2]
+            }
+        };
+
+        var glb = GeometryTileBuilder.BuildGlb(
+            [multiLine],
+            metadataAttributes: Array.Empty<SceneAttributeSchema>(),
+            extrusion: null);
+        using var doc = JsonDocument.Parse(ExtractJsonChunk(glb));
+        var count = doc.RootElement.GetProperty("accessors")[0].GetProperty("count").GetInt32();
+        // 2 parts * 1 segment each * 2 endpoints = 4 vertices (no spurious connector segment).
+        count.Should().Be(4);
+    }
 }

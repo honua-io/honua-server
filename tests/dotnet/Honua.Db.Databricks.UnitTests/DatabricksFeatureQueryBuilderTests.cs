@@ -496,6 +496,49 @@ public class DatabricksFeatureQueryBuilderTests
         Assert.Contains("Cross-SRID", ex.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void BuildSelect_EnvelopeSpatialFilter_CrossSrid_Throws()
+    {
+        var crossSridEnvelope = SpatialFilter.Create(
+            geometry: [1, 2, 3, 4],
+            spatialRelationship: SpatialRelationship.Intersects,
+            srid: 3857,
+            isSimpleEnvelope: true,
+            allowEnvelopeOnly: true,
+            envelopeMinX: -10,
+            envelopeMinY: -5,
+            envelopeMaxX: 10,
+            envelopeMaxY: 5);
+
+        var ex = Assert.Throws<NotSupportedException>(() => DatabricksFeatureQueryBuilder.BuildSelect(
+            Mapping(),
+            new FeatureQuery { SpatialFilter = crossSridEnvelope }));
+
+        Assert.Contains("Cross-SRID", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildQueries_OutputSridDifferentFromLayer_ThrowsNotSupported()
+    {
+        var mapping = Mapping();
+        var query = new FeatureQuery { OutputSrid = 3857 };
+
+        var ex = Assert.Throws<NotSupportedException>(() => DatabricksFeatureQueryBuilder.BuildSelect(mapping, query));
+        Assert.Contains("Output SRID", ex.Message, StringComparison.Ordinal);
+        Assert.Throws<NotSupportedException>(() => DatabricksFeatureQueryBuilder.BuildCount(mapping, query));
+        Assert.Throws<NotSupportedException>(() => DatabricksFeatureQueryBuilder.BuildExtent(mapping, query));
+        Assert.Throws<NotSupportedException>(() => DatabricksFeatureQueryBuilder.BuildObjectIds(mapping, query));
+        Assert.Throws<NotSupportedException>(() => DatabricksFeatureQueryBuilder.BuildStatistics(mapping, query));
+    }
+
+    [Fact]
+    public void BuildSelect_OutputSridMatchingLayer_Succeeds()
+    {
+        var statement = DatabricksFeatureQueryBuilder.BuildSelect(Mapping(), new FeatureQuery { OutputSrid = 4326 });
+
+        Assert.Contains("hex(st_asbinary(`geom`))", statement.Sql, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(SpatialRelationship.WithinDistance)]
     [InlineData(SpatialRelationship.BeyondDistance)]

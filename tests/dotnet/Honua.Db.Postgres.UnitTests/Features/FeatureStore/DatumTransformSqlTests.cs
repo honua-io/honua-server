@@ -1,9 +1,14 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Crs;
+using Honua.Core.Features.Shared.Models;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure.Crs;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
@@ -247,6 +252,98 @@ public sealed class DatumTransformSqlTests
         sql.Should().Be(
             "ST_Transform(ST_TransformPipeline(ST_Transform(geom, 4267), '+proj=pipeline +step +proj=hgridshift +grids=us_noaa_conus.tif', 4269), 26917)");
         sql.Should().NotBe("ST_Transform(geom, 26917)");
+    }
+
+    [UnitTest]
+    public void PostgresCrsUnitSql_MetersPerProjectedUnit_UsesAnchoredMeterWordBoundaryRegex()
+    {
+        var sql = PostgresCrsUnitSql.MetersPerProjectedUnit(3857);
+
+        sql.Should().Contain(@"~ '\+units=m(\s|$)'");
+        sql.Should().NotContain("ILIKE '%+units=m%'");
+    }
+
+    [UnitTheory]
+    [InlineData(
+        """PROJCRS["ETRS89 / UTM zone 32N",BASEGEOGCRS["ETRS89",DATUM["European Terrestrial Reference System 1989",ELLIPSOID["GRS 1980",6378137,298.257222101]],CS[ellipsoidal,2],AXIS["latitude",north],AXIS["longitude",east]],CONVERSION["UTM zone 32N",METHOD["Transverse Mercator"]],CS[Cartesian,2],AXIS["(E)",east],AXIS["(N)",north],LENGTHUNIT["metre",1]]""",
+        AxisOrder.EastNorth)]
+    [InlineData(
+        """PROJECTEDCRS["WGS 84 / UTM zone 10N",BASEGEODCRS["WGS 84",DATUM["World Geodetic System 1984",ELLIPSOID["WGS 84",6378137,298.257223563]],CS[ellipsoidal,2],AXIS["lat",north],AXIS["lon",east]],CONVERSION["UTM zone 10N",METHOD["Transverse Mercator"]],CS[Cartesian,2],AXIS["Easting",east],AXIS["Northing",north],LENGTHUNIT["metre",1]]""",
+        AxisOrder.EastNorth)]
+    [InlineData(
+        """PROJCS["Custom Mercator",GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433],AXIS["Lat",NORTH],AXIS["Lon",EAST]],PROJECTION["Mercator_1SP"],PARAMETER["semi_major_axis",6378137],UNIT["metre",1],AXIS["X",EAST],AXIS["Y",NORTH]]""",
+        AxisOrder.EastNorth)]
+    [InlineData(
+        """PROJCRS["ETRS89-extended / LAEA Europe",BASEGEOGCRS["ETRS89",DATUM["European Terrestrial Reference System 1989",ELLIPSOID["GRS 1980",6378137,298.257222101]],CS[ellipsoidal,2],AXIS["latitude",north],AXIS["longitude",east]],CONVERSION["Europe Equal Area",METHOD["Lambert Azimuthal Equal Area"]],CS[Cartesian,2],AXIS["Northing (Y)",north],AXIS["Easting (X)",east],LENGTHUNIT["metre",1]]""",
+        AxisOrder.NorthEast)]
+    public void PostgresCrsRegistry_TryParseAxisOrder_IgnoresInnerBaseGeographicAxesAndSemiMajorAxisParameter(
+        string wkt, AxisOrder expected)
+    {
+        PostgresCrsRegistry.TryParseAxisOrder(wkt, out var axisOrder).Should().BeTrue();
+        axisOrder.Should().Be(expected);
+    }
+
+    [UnitTheory]
+    [InlineData("urn:ogc:def:crs:EPSG:6.9:25831", "http://www.opengis.net/def/crs/EPSG/0/25831")]
+    [InlineData("urn:x-ogc:def:crs:EPSG::4326", "http://www.opengis.net/def/crs/EPSG/0/4326")]
+    [InlineData("urn:ogc:def:crs:OGC:1.3:CRS84", "http://www.opengis.net/def/crs/OGC/1.3/CRS84")]
+    [InlineData("urn:ogc:def:crs:OGC:2:84", "http://www.opengis.net/def/crs/OGC/1.3/CRS84")]
+    [InlineData("CRS:84", "http://www.opengis.net/def/crs/OGC/1.3/CRS84")]
+    public void PostgresCrsRegistry_NormalizeIdentifier_SupportsVersionedUrnsAndCrs84Aliases(
+        string input, string expected)
+    {
+        PostgresCrsRegistry.NormalizeIdentifier(input).Should().Be(expected);
+    }
+
+    [UnitTest]
+    public async Task PostgresCrsRegistry_WithSharedCache_PersistsAcrossScopedInstances()
+    {
+        var sharedCache = new PostgresCrsRegistryCache();
+        var provider = new ThrowingConnectionProvider();
+        var scope1Registry = new PostgresCrsRegistry(provider, NullLogger<PostgresCrsRegistry>.Instance, sharedCache);
+        var scope2Registry = new PostgresCrsRegistry(provider, NullLogger<PostgresCrsRegistry>.Instance, sharedCache);
+
+        var warmed = await scope1Registry.ResolveAsync("urn:ogc:def:crs:OGC:2:84");
+        warmed.Should().NotBeNull();
+        warmed!.Value.AxisOrder.Should().Be(AxisOrder.EastNorth);
+
+        var entry = new PostgresCrsRegistry.CrsCacheEntry(
+            new CrsDefinition("http://www.opengis.net/def/crs/EPSG/0/25831", 25831, AxisOrder.EastNorth, false),
+            DateTimeOffset.UtcNow);
+        sharedCache.SridCache.TryAdd(25831, entry);
+
+        // Second scoped registry resolves SRID 25831 via versioned URN from the shared cache without touching the DB.
+        var fromSecondScope = await scope2Registry.ResolveAsync("urn:ogc:def:crs:EPSG:6.9:25831");
+        fromSecondScope.Should().NotBeNull();
+        fromSecondScope!.Value.Srid.Should().Be(25831);
+
+        // A directly constructed registry without the shared cache uses its own isolated cache.
+        var isolatedRegistry = new PostgresCrsRegistry(provider, NullLogger<PostgresCrsRegistry>.Instance);
+        isolatedRegistry.Invoking(r => r.ResolveBySridAsync(25831).AsTask())
+            .Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    private sealed class ThrowingConnectionProvider : IAdoNetDatabaseConnectionProvider
+    {
+        public string ProviderName => "Test";
+        public bool IsHealthy => false;
+        public string GetConnectionString() => string.Empty;
+        public Task<System.Data.Common.DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("No database connection in unit test.");
+        public Task<(System.Data.Common.DbConnection Connection, System.Data.Common.DbTransaction Transaction)> OpenTransactionAsync(
+            System.Data.IsolationLevel isolationLevel = System.Data.IsolationLevel.ReadCommitted,
+            CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("No database connection in unit test.");
+        public Task<T> ExecuteWithDeadlockRetryAsync<T>(Func<Task<T>> operation, CancellationToken cancellationToken = default)
+            => operation();
+        public Task ExecuteWithDeadlockRetryAsync(Func<Task> operation, CancellationToken cancellationToken = default)
+            => operation();
+        public Task<NpgsqlConnectionLease> OpenNpgsqlConnectionAsync(CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("No database connection in unit test.");
+        public Task<bool> CheckHealthAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+        public void Dispose() { }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private static void AssertPointClamp(string sql, string operand, int fromSrid, int toSrid)

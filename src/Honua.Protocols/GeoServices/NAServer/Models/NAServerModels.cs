@@ -114,11 +114,18 @@ internal sealed class NAServerLocationAllocationResponse
 
 internal sealed class NAServerLaFacilitiesFeatureSet
 {
+    [JsonPropertyName("geometryType")]
+    public string GeometryType { get; init; } = "esriGeometryPoint";
+
+    public NAServerSpatialReference? SpatialReference { get; init; }
+
     public NAServerLaFacilityFeature[] Features { get; init; } = [];
 }
 
 internal sealed class NAServerLaFacilityFeature
 {
+    public NAServerPointGeometry? Geometry { get; init; }
+
     public NAServerLaFacilityAttributes Attributes { get; init; } = new();
 }
 
@@ -136,12 +143,26 @@ internal sealed class NAServerLaFacilityAttributes
 
 internal sealed class NAServerLaDemandPointsFeatureSet
 {
+    [JsonPropertyName("geometryType")]
+    public string GeometryType { get; init; } = "esriGeometryPoint";
+
+    public NAServerSpatialReference? SpatialReference { get; init; }
+
     public NAServerLaDemandPointFeature[] Features { get; init; } = [];
 }
 
 internal sealed class NAServerLaDemandPointFeature
 {
+    public NAServerPointGeometry? Geometry { get; init; }
+
     public NAServerLaDemandPointAttributes Attributes { get; init; } = new();
+}
+
+internal sealed class NAServerPointGeometry
+{
+    public double X { get; init; }
+
+    public double Y { get; init; }
 }
 
 internal sealed class NAServerLaDemandPointAttributes

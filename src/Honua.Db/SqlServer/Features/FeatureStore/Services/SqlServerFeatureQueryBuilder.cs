@@ -21,6 +21,7 @@ internal static partial class SqlServerFeatureQueryBuilder
         ArgumentNullException.ThrowIfNull(attributeColumns);
         query = NormalizeConstraints(query, translationOfWhere: null, translationProved: false, mapping.PrimaryKeyColumn);
         GuardUnsupportedTemporalFilter(query);
+        GuardUnsupportedOutputSrid(mapping, query);
 
         var sb = new StringBuilder();
         var parameters = new List<object>();
@@ -77,6 +78,7 @@ internal static partial class SqlServerFeatureQueryBuilder
         ArgumentNullException.ThrowIfNull(mapping);
         query = NormalizeConstraints(query, translationOfWhere: null, translationProved: false, mapping.PrimaryKeyColumn);
         GuardUnsupportedTemporalFilter(query);
+        GuardUnsupportedOutputSrid(mapping, query);
 
         var sb = new StringBuilder();
         var parameters = new List<object>();
@@ -127,6 +129,7 @@ internal static partial class SqlServerFeatureQueryBuilder
         var declaredAttributes = attributeColumns ?? [];
         query = NormalizeConstraints(query, translationOfWhere: null, translationProved: false, mapping.PrimaryKeyColumn);
         GuardUnsupportedTemporalFilter(query);
+        GuardUnsupportedOutputSrid(mapping, query);
 
         var sb = new StringBuilder();
         var parameters = new List<object>();
@@ -161,20 +164,23 @@ internal static partial class SqlServerFeatureQueryBuilder
         var parameters = new List<object>();
         var geometryColumn = mapping.QuotedGeometryColumn!;
         var isGeography = mapping.GeometryColumnType == SqlServerGeometryColumnType.Geography;
-        var xProperty = isGeography ? "Long" : "STX";
-        var yProperty = isGeography ? "Lat" : "STY";
+        var sridLiteral = (mapping.Srid is > 0 ? mapping.Srid.Value : 4326).ToString(CultureInfo.InvariantCulture);
+        var extentGeometryExpr = isGeography
+            ? $"geometry::STGeomFromWKB({geometryColumn}.STAsBinary(), {sridLiteral})"
+            : geometryColumn;
 
         sb.Append("SELECT ");
-        sb.Append("envelope.STPointN(1).").Append(xProperty).Append(" AS [min_x], ");
-        sb.Append("envelope.STPointN(1).").Append(yProperty).Append(" AS [min_y], ");
-        sb.Append("envelope.STPointN(3).").Append(xProperty).Append(" AS [max_x], ");
-        sb.Append("envelope.STPointN(3).").Append(yProperty).Append(" AS [max_y] ");
-        sb.Append("FROM (SELECT ").Append(mapping.GeometryTypeToken).Append("::EnvelopeAggregate(").Append(geometryColumn).Append(") AS envelope FROM ");
+        sb.Append("envelope.STPointN(1).STX AS [min_x], ");
+        sb.Append("envelope.STPointN(1).STY AS [min_y], ");
+        sb.Append("envelope.STPointN(3).STX AS [max_x], ");
+        sb.Append("envelope.STPointN(3).STY AS [max_y] ");
+        sb.Append("FROM (SELECT geometry::EnvelopeAggregate(").Append(extentGeometryExpr).Append(") AS envelope FROM ");
         sb.Append(mapping.QuotedTableReference);
         sb.Append(" WHERE ").Append(geometryColumn).Append(" IS NOT NULL");
 
         var effective = NormalizeConstraints(query ?? new FeatureQuery(), translationOfWhere: null, translationProved: false, mapping.PrimaryKeyColumn);
         GuardUnsupportedTemporalFilter(effective);
+        GuardUnsupportedOutputSrid(mapping, effective);
         AppendWhereClause(sb, mapping, attributeColumns ?? [], effective, parameters);
         AppendObjectIdsFilter(sb, mapping, effective, parameters);
         AppendSpatialFilter(sb, mapping, effective, parameters);
@@ -191,6 +197,17 @@ internal static partial class SqlServerFeatureQueryBuilder
             throw new NotSupportedException(
                 "Temporal filters are not supported by the SQL Server provider in this slice. " +
                 "Apply temporal filtering in the calling layer or use a PostGIS-backed layer.");
+        }
+    }
+
+    private static void GuardUnsupportedOutputSrid(SqlServerLayerMapping mapping, FeatureQuery query)
+    {
+        if (query.OutputSrid is > 0 && mapping.Srid is > 0 && query.OutputSrid.Value != mapping.Srid.Value)
+        {
+            throw new NotSupportedException(
+                $"Output SRID transforms are not supported by the SQL Server provider " +
+                $"(layer SRID is {mapping.Srid.Value}, requested {query.OutputSrid.Value}). " +
+                "Request features in the layer's storage SRID or use a PostGIS-backed layer.");
         }
     }
 
@@ -390,14 +407,14 @@ internal static partial class SqlServerFeatureQueryBuilder
                 $"{geomCol}.STIntersects({filterExpr}) = 1",
             SpatialRelationship.EnvelopeIntersects =>
                 $"{geomCol}.STEnvelope().STIntersects({filterExpr}.STEnvelope()) = 1",
-            // Esri semantics: esriSpatialRelWithin = filter geometry is within feature geometry;
-            // esriSpatialRelContains = filter geometry contains feature geometry. Lead with the
-            // filter geometry to match the canonical PostGIS reference. Reversing the
-            // operands inverts the relationship and returns the wrong (typically empty) result set.
+            // Keep the indexed table column as the method receiver so SQL Server utilizes its
+            // spatial index. In GeoServices/Honua semantics, SpatialRelationship.Within means
+            // the query filter geometry is within the feature (feature contains filter), and
+            // Contains means the query filter geometry contains the feature (feature within filter).
             SpatialRelationship.Within =>
-                $"{filterExpr}.STWithin({geomCol}) = 1",
+                $"{geomCol}.STContains({filterExpr}) = 1",
             SpatialRelationship.Contains =>
-                $"{filterExpr}.STContains({geomCol}) = 1",
+                $"{geomCol}.STWithin({filterExpr}) = 1",
             SpatialRelationship.Disjoint =>
                 $"{geomCol}.STDisjoint({filterExpr}) = 1",
             _ => throw new NotSupportedException(

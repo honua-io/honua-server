@@ -74,6 +74,7 @@ public class WkbToSkiaConverterTests
 
         result.IsPolygon.Should().BeTrue();
         result.Path.Should().NotBeNull();
+        result.Path!.FillType.Should().Be(SKPathFillType.EvenOdd);
         result.Path!.PointCount.Should().BeGreaterThan(0);
         result.Path.Dispose();
     }

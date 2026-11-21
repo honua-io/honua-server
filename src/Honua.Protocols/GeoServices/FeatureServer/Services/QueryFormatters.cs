@@ -72,6 +72,7 @@ internal sealed class QueryFormatter
                 {
                     ReturnGeometry = returnGeometry,
                     OutputSrid = outputSrid,
+                    RequestedOutputSrid = requestedOutputSrid,
                     ReturnZ = returnZ,
                     ReturnM = returnM,
                     GeometryPrecision = geometryPrecision,

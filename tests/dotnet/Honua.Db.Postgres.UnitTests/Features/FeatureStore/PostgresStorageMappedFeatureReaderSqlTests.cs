@@ -340,7 +340,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
     {
         // Projected-storage layer (EPSG:3857). A bare ::geography cast requires lon/lat and would
         // throw at execution (500); the predicate must reproject both operands to WGS84 geography
-        // via ST_Transform(...,4326)::geography so ST_Distance returns metres.
+        // via ST_Transform(...,4326)::geography and pair ST_DWithin with a storage-CRS && prefilter.
         // Seed the filter-geometry parameter ($1) so the distance parameter realistically becomes $2.
         var parameters = new List<object?> { new byte[] { 1, 2, 3, 4 } };
 
@@ -356,10 +356,8 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
                 return "$" + parameters.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
             });
 
-        predicate.Should().Contain("ST_Transform(\"geom\"::geometry, 4326)::geography");
-        predicate.Should().Contain("ST_Transform($1, 4326)::geography");
-        predicate.Should().StartWith("ST_Distance(");
-        predicate.Should().Contain("<= $2");
+        predicate.Should().StartWith("\"geom\"::geometry &&");
+        predicate.Should().Contain("AND ST_DWithin(ST_Transform(\"geom\"::geometry, 4326)::geography, ST_Transform($1, 4326)::geography, $2)");
         parameters.Last().Should().Be(1000d);
     }
 
@@ -386,6 +384,28 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         predicate.Should().Contain("\"geom\"::geometry::geography");
         predicate.Should().NotContain("ST_Transform");
         predicate.Should().Contain("> $1");
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildFeatureSelect_IntersectsWithAntimeridianSplit_AppliesTwoEnvelopeIndexPrefilter()
+    {
+        var sql = BuildFeatureSelect(
+            new FeatureQuery
+            {
+                SpatialFilter = new SpatialFilter
+                {
+                    Geometry = [1, 2, 3],
+                    Srid = 4326,
+                    SpatialRelationship = SpatialRelationship.Intersects,
+                    AntimeridianSplit = true
+                }
+            },
+            storageSrid: 4326);
+
+        sql.Should().Contain("(\"geom\"::geometry && ST_GeometryN(");
+        sql.Should().Contain(", 1) OR \"geom\"::geometry && ST_GeometryN(");
+        sql.Should().Contain(", 2)) AND ST_Intersects(\"geom\"::geometry, ");
     }
 
     [global::Xunit.Trait("Tier", "Fast")]

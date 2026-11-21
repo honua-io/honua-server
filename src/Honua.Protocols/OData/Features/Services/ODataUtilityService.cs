@@ -541,7 +541,8 @@ internal static class ODataUtilityService
 
         if (!string.IsNullOrWhiteSpace(expand))
         {
-            selections.AddRange(expand.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+            selections.AddRange(expand.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(item => item.EndsWith(')') ? item : $"{item}()"));
         }
 
         return selections.Count == 0 ? null : string.Join(",", selections.Distinct(StringComparer.OrdinalIgnoreCase));

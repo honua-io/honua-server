@@ -90,11 +90,23 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
         await context.ReportProgressAsync(50, "Computing length", cancellationToken).ConfigureAwait(false);
 
         double length;
+        var unit = "input-crs-units";
         try
         {
-            // Computes planar length in the input CRS's coordinate units.
-            // No geodesic conversion is applied, matching geometry.area.
-            length = geometry.Length;
+            if ((inputs.Geodesic || inputs.HasExplicitMetricUnit) && GeodesicGeometryOperations.IsGeographicSrid(inputs.Srid))
+            {
+                length = GeodesicGeometryOperations.ComputeGeodesicLengthMeters(geometry) / inputs.ToMetersFactor;
+                unit = inputs.CanonicalUnit;
+            }
+            else if (inputs.HasExplicitMetricUnit)
+            {
+                length = geometry.Length / inputs.ToMetersFactor;
+                unit = inputs.CanonicalUnit;
+            }
+            else
+            {
+                length = geometry.Length;
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -111,7 +123,7 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(75, "Encoding length artifact", cancellationToken).ConfigureAwait(false);
 
-        var payload = BuildMeasurePayload(length, geometry, inputs);
+        var payload = BuildMeasurePayload(length, unit, geometry, inputs);
         var maxBytes = _options.CurrentValue.MaxArtifactBytes;
         if (payload.Length > maxBytes)
         {
@@ -151,6 +163,32 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
             return false;
         }
 
+        var geodesic = false;
+        if (parameters.TryGetValue(prefix + "geodesic", out var geodesicRaw)
+            && !string.IsNullOrWhiteSpace(geodesicRaw)
+            && !bool.TryParse(geodesicRaw, out geodesic))
+        {
+            error = "invalid input 'geodesic'; expected boolean";
+            return false;
+        }
+
+        var hasExplicitMetricUnit = false;
+        var toMetersFactor = 1.0;
+        var canonicalUnit = "meters";
+        if ((parameters.TryGetValue(prefix + "unit", out var unitRaw)
+             || parameters.TryGetValue(prefix + "length_unit", out unitRaw)
+             || parameters.TryGetValue(prefix + "lengthUnit", out unitRaw))
+            && !string.IsNullOrWhiteSpace(unitRaw))
+        {
+            if (!GeodesicGeometryOperations.TryParseLengthUnitFactorToMeters(unitRaw, out toMetersFactor, out canonicalUnit))
+            {
+                error = $"invalid input 'unit' value '{unitRaw}'; expected meters, kilometers, feet, or miles";
+                return false;
+            }
+
+            hasExplicitMetricUnit = true;
+        }
+
         byte[] wkbBytes;
         try
         {
@@ -168,12 +206,12 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
             return false;
         }
 
-        inputs = new LengthInputs(wkbBytes, srid);
+        inputs = new LengthInputs(wkbBytes, srid, geodesic, hasExplicitMetricUnit, toMetersFactor, canonicalUnit);
         error = "";
         return true;
     }
 
-    private static byte[] BuildMeasurePayload(double length, Geometry geometry, LengthInputs inputs)
+    private static byte[] BuildMeasurePayload(double length, string unit, Geometry geometry, LengthInputs inputs)
     {
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer))
@@ -183,7 +221,7 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
             writer.WriteString("processId", HandledProcessId);
             writer.WriteString("measure", "length");
             writer.WriteNumber("value", length);
-            writer.WriteString("unit", "input-crs-units");
+            writer.WriteString("unit", unit);
             writer.WriteNumber("inputSrid", inputs.Srid);
             writer.WriteString("inputGeometryType", geometry.GeometryType);
             writer.WriteEndObject();
@@ -201,7 +239,13 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
         return sb.ToString();
     }
 
-    private readonly record struct LengthInputs(byte[] WkbBytes, int Srid);
+    private readonly record struct LengthInputs(
+        byte[] WkbBytes,
+        int Srid,
+        bool Geodesic = false,
+        bool HasExplicitMetricUnit = false,
+        double ToMetersFactor = 1.0,
+        string CanonicalUnit = "meters");
 
     private static partial class Log
     {

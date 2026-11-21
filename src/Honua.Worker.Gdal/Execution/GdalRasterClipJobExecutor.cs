@@ -72,7 +72,7 @@ internal sealed partial class GdalRasterClipJobExecutor(
         Geometry boundary;
         try
         {
-            boundary = new WKBReader().Read(boundaryWkb);
+            boundary = new WKBReader { HandleSRID = true }.Read(boundaryWkb);
         }
         catch (ParseException ex)
         {
@@ -91,7 +91,8 @@ internal sealed partial class GdalRasterClipJobExecutor(
                 $"Invalid clip inputs: boundary must be a Polygon or MultiPolygon; got '{boundary.GeometryType}'.");
         }
 
-        if (GdalJobInputReader.TryGetInput(parameters, "boundarySrid", out var boundarySridRaw)
+        if ((GdalJobInputReader.TryGetInput(parameters, "boundarySrid", out var boundarySridRaw)
+             || GdalJobInputReader.TryGetInput(parameters, "srid", out boundarySridRaw))
             && !string.IsNullOrWhiteSpace(boundarySridRaw))
         {
             if (!int.TryParse(boundarySridRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid) || srid <= 0)
@@ -205,21 +206,62 @@ internal sealed partial class GdalRasterClipJobExecutor(
     private static bool IsAreaGeometry(Geometry geometry)
         => geometry is Polygon or MultiPolygon;
 
-    internal static string WriteCutlineGeoJson(Geometry boundary)
+    internal static string WriteCutlineGeoJson(Geometry boundary, string? explicitCrsName = null)
     {
         var geometryJson = new GeoJsonWriter().Write(boundary);
+        var crsName = ResolveCutlineCrsName(boundary, explicitCrsName);
         var sb = new StringBuilder(geometryJson.Length + 256);
         sb.Append("{\"type\":\"FeatureCollection\"");
-        if (boundary.SRID > 0)
+        if (!string.IsNullOrEmpty(crsName))
         {
-            sb.Append(",\"crs\":{\"type\":\"name\",\"properties\":{\"name\":\"EPSG:");
-            sb.Append(boundary.SRID.ToString(CultureInfo.InvariantCulture));
+            sb.Append(",\"crs\":{\"type\":\"name\",\"properties\":{\"name\":\"");
+            sb.Append(crsName);
             sb.Append("\"}}");
         }
         sb.Append(",\"features\":[{\"type\":\"Feature\",\"properties\":{},\"geometry\":");
         sb.Append(geometryJson);
         sb.Append("}]}");
         return sb.ToString();
+    }
+
+    private static string? ResolveCutlineCrsName(Geometry boundary, string? explicitCrsName)
+    {
+        if (!string.IsNullOrWhiteSpace(explicitCrsName))
+        {
+            var trimmed = explicitCrsName.Trim();
+            return int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedSrid) && parsedSrid > 0
+                ? $"EPSG:{parsedSrid.ToString(CultureInfo.InvariantCulture)}"
+                : trimmed;
+        }
+
+        if (boundary.SRID > 0)
+        {
+            return $"EPSG:{boundary.SRID.ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        if (ExceedsGeographicDegreeBounds(boundary))
+        {
+            // When projected coordinates (|x| > 180 or |y| > 90) are passed without
+            // an embedded SRID, emit a projected CRS header so GDAL does not assume
+            // RFC 7946 EPSG:4326 on metre-space cutlines.
+            return "EPSG:3857";
+        }
+
+        return null;
+    }
+
+    internal static bool ExceedsGeographicDegreeBounds(Geometry geometry)
+    {
+        var env = geometry.EnvelopeInternal;
+        if (env is null || env.IsNull)
+        {
+            return false;
+        }
+
+        return Math.Abs(env.MinX) > 180.0
+            || Math.Abs(env.MaxX) > 180.0
+            || Math.Abs(env.MinY) > 90.0
+            || Math.Abs(env.MaxY) > 90.0;
     }
 
     private static partial class Log

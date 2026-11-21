@@ -11,6 +11,12 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Infrastructure.Crs;
 
+internal sealed class PostgresCrsRegistryCache
+{
+    internal ConcurrentDictionary<int, PostgresCrsRegistry.CrsCacheEntry> SridCache { get; } = new();
+    internal ConcurrentDictionary<string, PostgresCrsRegistry.CrsCacheEntry> IdentifierCache { get; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
 internal sealed partial class PostgresCrsRegistry : ICrsRegistry
 {
     private const string Crs84Uri = "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
@@ -45,15 +51,19 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresCrsRegistry> _logger;
-    // Instance-scoped caches: each registry is constructed per IDatabaseConnectionProvider,
-    // so custom SRIDs defined differently in separate databases cannot bleed across sources.
-    private readonly ConcurrentDictionary<int, CrsCacheEntry> _sridCache = new();
-    private readonly ConcurrentDictionary<string, CrsCacheEntry> _identifierCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<int, CrsCacheEntry> _sridCache;
+    private readonly ConcurrentDictionary<string, CrsCacheEntry> _identifierCache;
 
-    public PostgresCrsRegistry(IAdoNetDatabaseConnectionProvider connectionProvider, ILogger<PostgresCrsRegistry> logger)
+    public PostgresCrsRegistry(
+        IAdoNetDatabaseConnectionProvider connectionProvider,
+        ILogger<PostgresCrsRegistry> logger,
+        PostgresCrsRegistryCache? cache = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        var effectiveCache = cache ?? new PostgresCrsRegistryCache();
+        _sridCache = effectiveCache.SridCache;
+        _identifierCache = effectiveCache.IdentifierCache;
     }
 
     public async ValueTask<CrsDefinition?> ResolveAsync(string? crsIdentifier, CancellationToken cancellationToken = default)
@@ -216,7 +226,7 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
         }
     }
 
-    private sealed record CrsCacheEntry(CrsDefinition Definition, DateTimeOffset CreatedAt);
+    internal sealed record CrsCacheEntry(CrsDefinition Definition, DateTimeOffset CreatedAt);
 
     private async Task<CrsDefinition?> LoadFromSpatialRefSysAsync(int srid, CancellationToken cancellationToken)
     {
@@ -254,19 +264,23 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
         }
     }
 
-    private static string NormalizeIdentifier(string crsIdentifier)
+    internal static string NormalizeIdentifier(string crsIdentifier)
     {
-        var trimmed = crsIdentifier.Trim();
-        if (trimmed.Length > 1 && trimmed[0] == '<' && trimmed[^1] == '>')
-        {
-            trimmed = trimmed[1..^1];
-        }
+        var trimmed = CrsIdentifier.Unwrap(crsIdentifier);
 
-        if (string.Equals(trimmed, Crs84Uri, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(trimmed, "CRS84", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(trimmed, "OGC:CRS84", StringComparison.OrdinalIgnoreCase))
+        if (CrsIdentifier.IsCrs84(trimmed))
         {
             return Crs84Uri;
+        }
+
+        if (trimmed.StartsWith(SridPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = trimmed[SridPrefix.Length..];
+        }
+
+        if (CrsIdentifier.TryParseEpsgCode(trimmed, out var parsedSrid))
+        {
+            return FormattableString.Invariant($"{EpsgUriPrefix}{parsedSrid}");
         }
 
         if (trimmed.StartsWith(EpsgUriPrefix, StringComparison.OrdinalIgnoreCase))
@@ -281,10 +295,6 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
         else if (trimmed.StartsWith(EpsgPrefix, StringComparison.OrdinalIgnoreCase))
         {
             trimmed = trimmed[EpsgPrefix.Length..];
-        }
-        else if (trimmed.StartsWith(SridPrefix, StringComparison.OrdinalIgnoreCase))
-        {
-            trimmed = trimmed[SridPrefix.Length..];
         }
 
         return int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid)
@@ -310,7 +320,7 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
         return SpatialReference.Create(srid, null, null, null, wkt).IsGeographic;
     }
 
-    private static AxisOrder DetermineAxisOrder(string? wkt, bool isGeographic)
+    internal static AxisOrder DetermineAxisOrder(string? wkt, bool isGeographic)
     {
         // Consult the WKT AXIS clauses for both geographic and projected CRS:
         // some projected systems (EPSG:3035, 2193, 2180, 31466 …) are officially
@@ -326,27 +336,27 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
         return isGeographic ? AxisOrder.NorthEast : AxisOrder.EastNorth;
     }
 
-    private static bool TryParseAxisOrder(string wkt, out AxisOrder axisOrder)
+    internal static bool TryParseAxisOrder(string wkt, out AxisOrder axisOrder)
     {
         axisOrder = default;
         var directions = new List<string>(2);
-        var index = 0;
+        var index = FindAxisSearchStartIndex(wkt);
 
         while (index < wkt.Length && directions.Count < 2)
         {
-            var axisIndex = wkt.IndexOf("AXIS", index, StringComparison.OrdinalIgnoreCase);
+            var axisIndex = wkt.IndexOf("AXIS[", index, StringComparison.OrdinalIgnoreCase);
             if (axisIndex < 0)
             {
                 break;
             }
 
-            var bracketIndex = wkt.IndexOf('[', axisIndex);
-            if (bracketIndex < 0)
+            if (axisIndex > 0 && (char.IsLetterOrDigit(wkt[axisIndex - 1]) || wkt[axisIndex - 1] == '_'))
             {
-                index = axisIndex + 4;
+                index = axisIndex + 5;
                 continue;
             }
 
+            var bracketIndex = axisIndex + 4;
             var position = bracketIndex + 1;
             var inQuotes = false;
 
@@ -368,7 +378,7 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
 
             if (position >= wkt.Length)
             {
-                index = axisIndex + 4;
+                index = axisIndex + 5;
                 continue;
             }
 
@@ -416,6 +426,102 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
         }
 
         return false;
+    }
+
+    private static readonly string[] _projectedCrsKeywords = ["PROJCRS[", "PROJECTEDCRS[", "PROJCS["];
+    private static readonly string[] _baseGeographicCrsKeywords = ["BASEGEOGCRS", "BASEGEODCRS", "GEOGCS", "GEODCRS", "GEOGRAPHICCRS", "GEOGCRS"];
+
+    private static int FindAxisSearchStartIndex(string wkt)
+    {
+        var isProjected = false;
+        foreach (var keyword in _projectedCrsKeywords)
+        {
+            if (wkt.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+            {
+                isProjected = true;
+                break;
+            }
+        }
+
+        if (!isProjected)
+        {
+            return 0;
+        }
+
+        var maxBaseEnd = -1;
+        foreach (var keyword in _baseGeographicCrsKeywords)
+        {
+            if (TryFindBlockEnd(wkt, keyword, out var blockEnd) && blockEnd > maxBaseEnd)
+            {
+                maxBaseEnd = blockEnd;
+            }
+        }
+
+        return maxBaseEnd >= 0 ? maxBaseEnd + 1 : 0;
+    }
+
+    private static bool TryFindBlockEnd(string wkt, string keyword, out int end)
+    {
+        end = -1;
+        var idx = wkt.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
+        while (idx >= 0)
+        {
+            var isWordStart = idx == 0 || (!char.IsLetterOrDigit(wkt[idx - 1]) && wkt[idx - 1] != '_');
+            var i = idx + keyword.Length;
+            while (i < wkt.Length && char.IsWhiteSpace(wkt[i]))
+            {
+                i++;
+            }
+
+            if (isWordStart && i < wkt.Length && wkt[i] == '[')
+            {
+                var close = FindMatchingBracket(wkt, i);
+                if (close > i)
+                {
+                    end = close;
+                    return true;
+                }
+            }
+
+            idx = wkt.IndexOf(keyword, idx + keyword.Length, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    private static int FindMatchingBracket(string s, int openIndex)
+    {
+        var depth = 0;
+        var inQuote = false;
+        for (var i = openIndex; i < s.Length; i++)
+        {
+            var c = s[i];
+            if (c == '"')
+            {
+                inQuote = !inQuote;
+                continue;
+            }
+
+            if (inQuote)
+            {
+                continue;
+            }
+
+            if (c == '[')
+            {
+                depth++;
+            }
+            else if (c == ']')
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    return i;
+                }
+            }
+        }
+
+        return -1;
     }
 
     private static bool IsEastWest(string direction)

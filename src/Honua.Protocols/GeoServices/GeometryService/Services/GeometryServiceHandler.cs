@@ -414,7 +414,7 @@ internal sealed class GeometryServiceHandler(
                 .ResolveGeodeticBaseSridAsync(outputSrid, ct)
                 .ConfigureAwait(false);
             DatumAreaEnvelope? projectEnvelope = null;
-            if (TryGeographicGeometryEnvelope(geomStrings, transformationInSr, out var west, out var south, out var east, out var north))
+            if (TryGeographicGeometryEnvelope(geomStrings, inputSrid, out var west, out var south, out var east, out var north))
             {
                 projectEnvelope = new DatumAreaEnvelope(west, south, east, north);
             }

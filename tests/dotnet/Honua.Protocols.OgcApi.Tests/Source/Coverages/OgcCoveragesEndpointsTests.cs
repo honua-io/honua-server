@@ -264,7 +264,7 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.TryGetValues("Content-Crs", out var contentCrs).Should().BeTrue();
-        contentCrs!.Single().Should().Be("<https://www.opengis.net/def/crs/EPSG/0/3857>");
+        contentCrs!.Single().Should().Be("<http://www.opengis.net/def/crs/EPSG/0/3857>");
         response.Headers.TryGetValues("Link", out var links).Should().BeTrue();
         var decodedLinks = Uri.UnescapeDataString(links!.Single());
         decodedLinks.Should().Contain("properties=band_3,band_1");
@@ -512,7 +512,7 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
             "subset=",
             "subset=Lon(NaN:1),Lat(0:1)",
             "subset=Lon(0:Infinity),Lat(0:1)",
-            "subset=Lon(1:0),Lat(0:1)",
+            "subset=Lon(0:1),Lat(1:0)",
             "subset=Lon(0:1),Lon(2:3)",
             "subset=Time(0:1),Lat(0:1)",
             "subset=Lon(0:1),Lat(0:91)",

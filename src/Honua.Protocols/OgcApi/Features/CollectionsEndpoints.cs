@@ -417,7 +417,7 @@ internal static class CollectionsEndpoints
                     context,
                     _queryablesFormatParameters,
                     _queryablesSupportedMediaTypes,
-                    MediaTypes.Json,
+                    MediaTypes.SchemaJson,
                     out var outputFormat,
                     out var formatError))
             {

@@ -37,6 +37,7 @@ internal sealed partial class PbfQueryFormatter
                 Resource = resource,
                 ObjectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource),
                 Srid = outputSrid ?? resource.ReadSrid() ?? 4326,
+                RequestedOutputSrid = options.RequestedOutputSrid,
                 ReturnGeometry = returnGeometry,
                 ReturnZ = returnZ,
                 ReturnM = returnM,
@@ -78,7 +79,7 @@ internal sealed partial class PbfQueryFormatter
         {
             WriteFeature(ref writer, feature, encoding.Fields, encoding.FieldIndex, encoding.ObjectId,
                 encoding.ReturnGeometry, encoding.ReturnZ, encoding.ReturnM, encoding.Limits,
-                encoding.Scale, encoding.Transform);
+                encoding.Scale, encoding.Transform, encoding.Srid);
             return writer.DetachBuffer();
         }
         finally
@@ -103,6 +104,7 @@ internal sealed partial class PbfQueryFormatter
         public required MetadataV2Object Resource { get; init; }
         public required string ObjectIdFieldName { get; init; }
         public int Srid { get; init; }
+        public int? RequestedOutputSrid { get; init; }
         public bool ReturnGeometry { get; init; }
         public bool ReturnZ { get; init; }
         public bool ReturnM { get; init; }
@@ -113,7 +115,7 @@ internal sealed partial class PbfQueryFormatter
 
     private sealed record FeatureEncoding(GeoServicesFieldInfo[] Fields, Dictionary<string, int> FieldIndex,
         string ObjectId, bool ReturnGeometry, bool ReturnZ, bool ReturnM, GeometryLimits Limits,
-        double Scale, QuantizationTransform? Transform);
+        double Scale, QuantizationTransform? Transform, int Srid = 0);
 
     private sealed class PbfStreamResult(ImmutableArray<Feature> features, FeatureEncoding encoding,
         byte[] header, int featureResultLength) : IResult

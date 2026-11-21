@@ -209,8 +209,15 @@ internal static partial class Wps20Endpoint
             return Exception("MissingParameterValue", "An Identifier is required.", "identifier");
         }
 
+        var tokens = identifier
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tokens.Length == 0)
+        {
+            return Exception("MissingParameterValue", "An Identifier is required.", "identifier");
+        }
+
         var descriptions = new StringBuilder();
-        if (string.Equals(identifier, "ALL", StringComparison.OrdinalIgnoreCase))
+        if (tokens.Any(token => string.Equals(token, "ALL", StringComparison.OrdinalIgnoreCase)))
         {
             foreach (var process in catalog.ListProcesses()
                          .Where(ProcessExecutionEligibility.IsJobCallable)
@@ -223,18 +230,24 @@ internal static partial class Wps20Endpoint
                 descriptions.Append(DescribeEchoProcess(echo.ProcessId));
             }
         }
-        else if (echo.IsEchoProcess(identifier))
-        {
-            descriptions.Append(DescribeEchoProcess(identifier));
-        }
-        else if (catalog.GetProcess(identifier) is { } process
-                 && ProcessExecutionEligibility.IsJobCallable(process))
-        {
-            descriptions.Append(DescribeCanonicalProcess(process));
-        }
         else
         {
-            return Exception("NoSuchProcess", $"Process '{identifier}' does not exist.", "identifier", StatusCodes.Status404NotFound);
+            foreach (var token in tokens)
+            {
+                if (echo.IsEchoProcess(token))
+                {
+                    descriptions.Append(DescribeEchoProcess(token));
+                }
+                else if (catalog.GetProcess(token) is { } process
+                         && ProcessExecutionEligibility.IsJobCallable(process))
+                {
+                    descriptions.Append(DescribeCanonicalProcess(process));
+                }
+                else
+                {
+                    return Exception("NoSuchProcess", $"Process '{token}' does not exist.", "identifier", StatusCodes.Status404NotFound);
+                }
+            }
         }
 
         return Xml($"""
@@ -631,7 +644,36 @@ internal static partial class Wps20Endpoint
         {
             ValidateBindingValue(requestedVersion, Version, "version");
         }
-        var identifier = root.Descendants(XName.Get("Identifier", OwsNamespace)).FirstOrDefault()?.Value.Trim();
+
+        if (string.Equals(operation, "GetCapabilities", StringComparison.OrdinalIgnoreCase))
+        {
+            var acceptVersions = root.Elements()
+                .FirstOrDefault(element => string.Equals(element.Name.LocalName, "AcceptVersions", StringComparison.OrdinalIgnoreCase));
+            if (acceptVersions is not null)
+            {
+                var versions = acceptVersions.Elements()
+                    .Where(element => string.Equals(element.Name.LocalName, "Version", StringComparison.OrdinalIgnoreCase))
+                    .Select(element => element.Value.Trim())
+                    .Where(value => value.Length > 0)
+                    .ToArray();
+                if (versions.Length == 0 ||
+                    !versions.Any(candidate => string.Equals(candidate, Version, StringComparison.OrdinalIgnoreCase)))
+                {
+                    throw new WpsRequestException(
+                        "VersionNegotiationFailed",
+                        $"The AcceptVersions value does not include supported WPS version '{Version}'.",
+                        "acceptVersions");
+                }
+            }
+        }
+
+        var directIdentifiers = root.Elements(XName.Get("Identifier", OwsNamespace))
+            .Select(element => element.Value.Trim())
+            .Where(value => value.Length > 0)
+            .ToArray();
+        var identifier = directIdentifiers.Length > 0
+            ? string.Join(",", directIdentifiers)
+            : root.Descendants(XName.Get("Identifier", OwsNamespace)).FirstOrDefault()?.Value.Trim();
         var jobId = root.Descendants(XName.Get("JobID", WpsNamespace)).FirstOrDefault()?.Value.Trim();
         var inputs = new Dictionary<string, EchoInput>(StringComparer.OrdinalIgnoreCase);
         foreach (var input in root.Elements(XName.Get("Input", WpsNamespace)))
@@ -734,8 +776,14 @@ internal static partial class Wps20Endpoint
         var data = input.Element(XName.Get("Data", WpsNamespace));
         if (data is not null)
         {
-            var value = string.Concat(data.Nodes().Select(node => node.ToString(SaveOptions.DisableFormatting)));
-            AddInput(inputs, name, new EchoInput(name ?? string.Empty, EchoValueKind.Complex, value, "text/xml"));
+            var value = data.HasElements
+                ? string.Concat(data.Nodes().Select(node => node.ToString(SaveOptions.DisableFormatting)))
+                : data.Value;
+            var kind = !data.HasElements && !string.Equals(name, "complexInput", StringComparison.OrdinalIgnoreCase) && !string.Equals(name, "boundingBoxInput", StringComparison.OrdinalIgnoreCase)
+                ? EchoValueKind.Literal
+                : EchoValueKind.Complex;
+            var mimeType = data.Attribute("mimeType")?.Value ?? (kind == EchoValueKind.Literal ? "text/plain" : "text/xml");
+            AddInput(inputs, name, new EchoInput(name ?? string.Empty, kind, value, mimeType));
             return;
         }
         throw new WpsRequestException("InvalidParameterValue", "Each input requires data or a reference.", name ?? "input");

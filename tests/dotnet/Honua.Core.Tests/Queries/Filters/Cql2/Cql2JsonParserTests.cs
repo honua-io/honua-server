@@ -218,6 +218,18 @@ public class Cql2JsonParserTests
     }
 
     [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("""{"op":"s_intersects","args":[{"property":"geom"},{"bbox":[385000,5810000,395000,5820000]}]}""")]
+    [InlineData("""{"op":"s_intersects","args":[{"property":"geom"},{"bbox":[35,-120,40,-115]}]}""")]
+    public void Parse_BboxLiteral_WithoutExplicitCrs_AllowsProjectedAndNorthEastCoordinatesForFilterCrs(string json)
+    {
+        var result = _parser.Parse(json);
+
+        var spatial = result.Should().BeOfType<SpatialPredicate>().Subject;
+        spatial.Right.Should().BeOfType<GeometryLiteral>();
+    }
+
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_BboxLiteral_3DBox_ThrowsArgumentException()
     {

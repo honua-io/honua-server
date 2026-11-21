@@ -468,6 +468,23 @@ internal sealed partial class FeatureServerQueryExecutor
             return;
         }
 
+        if (query.Limit is int idsLimit and >= 0 and < int.MaxValue)
+        {
+            var probedIds = await QueryObjectIdsWithValidationAsync(
+                layerId,
+                query with { Limit = checked(idsLimit + 1) },
+                cancellationToken).ConfigureAwait(false);
+            var bounded = probedIds.IsDefault ? ImmutableArray<long>.Empty : probedIds;
+            var exceeded = bounded.Length > idsLimit;
+            await WriteObjectIdsAsync(
+                exceeded ? bounded[..idsLimit] : bounded,
+                objectIdFieldName,
+                context,
+                cancellationToken,
+                exceeded).ConfigureAwait(false);
+            return;
+        }
+
         var objectIds = await QueryObjectIdsWithValidationAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         await WriteObjectIdsAsync(objectIds, objectIdFieldName, context, cancellationToken).ConfigureAwait(false);
     }
@@ -476,11 +493,12 @@ internal sealed partial class FeatureServerQueryExecutor
         ImmutableArray<long> objectIds,
         string objectIdFieldName,
         HttpContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool? exceededTransferLimit = null)
         => WriteObjectIdsAsync(
             objectIds.IsDefault ? [] : objectIds,
             remainingIds: null,
-            new ObjectIdResponse(objectIdFieldName, context, cancellationToken));
+            new ObjectIdResponse(objectIdFieldName, context, cancellationToken, exceededTransferLimit));
 
     private static Task WriteObjectIdsAsync(
         BoundedObjectIds objectIds,
@@ -493,7 +511,7 @@ internal sealed partial class FeatureServerQueryExecutor
             new ObjectIdResponse(objectIdFieldName, context, cancellationToken, objectIds.ExceededTransferLimit));
 
     private static bool ShouldUsePagedQuery(FeatureQuery query)
-        => query.Limit is > 0 and < int.MaxValue;
+        => query.Limit is >= 0 and < int.MaxValue;
 
     private static long GetLowerBoundTotalCount(int itemCount, bool hasMoreResults)
         => hasMoreResults ? itemCount + 1L : itemCount;

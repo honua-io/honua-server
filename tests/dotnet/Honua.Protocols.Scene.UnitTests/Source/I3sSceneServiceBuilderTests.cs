@@ -90,6 +90,11 @@ public sealed class I3sSceneServiceBuilderTests
         // The layer advertises the WGS-84 ellipsoidal vertical CRS so a client
         // knows the z values are ellipsoidal metres.
         layer.SpatialReference.VcsWkid.Should().Be(115700);
+        layer.SpatialReference.LatestVcsWkid.Should().Be(115700);
+        var serializedSr = JsonSerializer.SerializeToElement(
+            layer,
+            I3sServingJsonContext.Default.I3sSceneLayerDocument).GetProperty("spatialReference");
+        serializedSr.GetProperty("latestVcsWkid").GetInt32().Should().Be(115700);
         layer.FullExtent!.Xmin.Should().Be(-122.5);
         layer.FullExtent.Ymax.Should().Be(37.8);
         layer.FullExtent.Zmin.Should().Be(0.0);

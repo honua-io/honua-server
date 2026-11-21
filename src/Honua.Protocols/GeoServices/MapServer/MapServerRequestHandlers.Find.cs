@@ -246,9 +246,11 @@ internal static partial class MapServerEndpoints
 
                 SqlFragment? layerSqlFilter = null;
                 if (!string.IsNullOrWhiteSpace(layerDef) &&
-                    !TryTranslateFindFilter(filterExpressionService, layer.Resource, layerDef, out layerSqlFilter))
+                    !TryTranslateFindFilter(filterExpressionService, layer.Resource, layerDef, out layerSqlFilter, out var layerDefError))
                 {
-                    continue;
+                    return StandardErrorHelpers.CreateBadRequest(context,
+                        "Invalid layerDefs parameter.",
+                        [layerDefError ?? "Invalid filter syntax."]);
                 }
 
                 // Push the search text into SQL so the database filters rows instead of the
@@ -263,7 +265,8 @@ internal static partial class MapServerEndpoints
                         filterExpressionService,
                         layer.Resource,
                         CombineDefinitionExpressions(layerDef, searchWhere)!,
-                        out var combinedFilter))
+                        out var combinedFilter,
+                        out _))
                 {
                     layerSqlFilter = combinedFilter;
                     searchPushedDown = true;
@@ -271,6 +274,10 @@ internal static partial class MapServerEndpoints
 
                 var pageSize = Math.Clamp(Math.Max(maxFindResults * 10, 50), 50, 500);
                 var offset = 0;
+                var objectIdSchemaField = GeoServicesObjectIdFieldResolver.ResolveObjectIdField(layer.Resource);
+                var findOrderBy = string.IsNullOrWhiteSpace(objectIdField)
+                    ? (System.Collections.Immutable.ImmutableArray<OrderByClause>?)null
+                    : [new OrderByClause(objectIdField, ascending: true, objectIdSchemaField?.Type)];
 
                 while (results.Count < maxFindResults)
                 {
@@ -280,6 +287,7 @@ internal static partial class MapServerEndpoints
                         OutputSrid = outputSrid,
                         Limit = pageSize,
                         Offset = offset,
+                        OrderBy = findOrderBy,
                         SqlFilter = layerSqlFilter
                     };
 
@@ -593,18 +601,28 @@ internal static partial class MapServerEndpoints
         IFilterExpressionService filterExpressionService,
         MetadataV2Object resource,
         string whereClause,
-        out SqlFragment? sqlFilter)
+        out SqlFragment? sqlFilter,
+        out string? error)
     {
         sqlFilter = null;
+        error = null;
         var parseResult = filterExpressionService.Parse(FilterLanguage.GeoServicesSql, whereClause);
         if (!parseResult.IsSuccess)
         {
+            error = parseResult.ErrorMessage ?? "Invalid filter syntax.";
+            return false;
+        }
+
+        if (parseResult.Expression != null && !FilterExpressionHelpers.IsBooleanFilterExpression(parseResult.Expression))
+        {
+            error = "Invalid where clause.";
             return false;
         }
 
         var translationResult = filterExpressionService.Translate(parseResult.Expression, resource);
         if (!translationResult.IsSuccess)
         {
+            error = translationResult.ErrorMessage ?? "Invalid filter syntax.";
             return false;
         }
 

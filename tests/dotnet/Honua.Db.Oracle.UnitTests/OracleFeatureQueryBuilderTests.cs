@@ -371,7 +371,7 @@ public class OracleFeatureQueryBuilderTests
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
-    public void BuildSelectQuery_WithinFilter_UsesInsideCoveredbyMask()
+    public void BuildSelectQuery_WithinFilter_UsesContainsCoversEqualMaskWithColumnFirst()
     {
         var mapping = BuildMapping();
         var query = new FeatureQuery
@@ -381,15 +381,13 @@ public class OracleFeatureQueryBuilderTests
 
         var result = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
-        // Esri esriSpatialRelWithin = filter geometry within feature geometry. SDO_RELATE masks
-        // are operand-order sensitive: SDO_RELATE(A, B, 'mask=INSIDE') means A is inside B, so
-        // the filter geometry must be the FIRST operand.
-        Assert.Contains($"SDO_RELATE({StampedWkb4326}, \"SHAPE\", 'mask=INSIDE+COVEREDBY') = 'TRUE'", result.Sql, StringComparison.Ordinal);
+        // Oracle Spatial requires the indexed table column first to use MDSYS.SPATIAL_INDEX.
+        Assert.Contains($"SDO_RELATE(\"SHAPE\", {StampedWkb4326}, 'mask=CONTAINS+COVERS+EQUAL') = 'TRUE'", result.Sql, StringComparison.Ordinal);
     }
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
-    public void BuildSelectQuery_ContainsFilter_UsesContainsCoversMask()
+    public void BuildSelectQuery_ContainsFilter_UsesInsideCoveredbyEqualMaskWithColumnFirst()
     {
         var mapping = BuildMapping();
         var query = new FeatureQuery
@@ -399,10 +397,8 @@ public class OracleFeatureQueryBuilderTests
 
         var result = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
-        // Esri esriSpatialRelContains = filter geometry contains feature geometry. SDO_RELATE
-        // masks are operand-order sensitive, so the filter geometry must be the FIRST operand:
-        // SDO_RELATE(filter, feature, 'mask=CONTAINS').
-        Assert.Contains($"SDO_RELATE({StampedWkb4326}, \"SHAPE\", 'mask=CONTAINS+COVERS') = 'TRUE'", result.Sql, StringComparison.Ordinal);
+        // Oracle Spatial requires the indexed table column first to use MDSYS.SPATIAL_INDEX.
+        Assert.Contains($"SDO_RELATE(\"SHAPE\", {StampedWkb4326}, 'mask=INSIDE+COVEREDBY+EQUAL') = 'TRUE'", result.Sql, StringComparison.Ordinal);
     }
 
     [global::Xunit.Trait("Tier", "Fast")]
@@ -422,7 +418,7 @@ public class OracleFeatureQueryBuilderTests
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
-    public void BuildSelectQuery_EnvelopeIntersects_UsesSdoMbrColumn()
+    public void BuildSelectQuery_EnvelopeIntersects_UsesSdoFilterWithColumnFirst()
     {
         var mapping = BuildMapping();
         var query = new FeatureQuery
@@ -432,7 +428,7 @@ public class OracleFeatureQueryBuilderTests
 
         var result = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
 
-        Assert.Contains($"SDO_RELATE(SDO_GEOM.SDO_MBR(\"SHAPE\"), {StampedWkb4326}, 'mask=ANYINTERACT') = 'TRUE'", result.Sql, StringComparison.Ordinal);
+        Assert.Contains($"SDO_FILTER(\"SHAPE\", {StampedWkb4326}) = 'TRUE'", result.Sql, StringComparison.Ordinal);
     }
 
     [global::Xunit.Trait("Tier", "Fast")]
@@ -735,17 +731,48 @@ public class OracleFeatureQueryBuilderTests
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
-    public void BuildExtentQuery_UsesSdoAggrMbrAndOrdinates()
+    public void BuildExtentQuery_UsesSdoAggrMbrAnd3DSafeMbrOrdinateAccessors()
     {
         var mapping = BuildMapping();
 
         var result = OracleFeatureQueryBuilder.BuildExtentQuery(mapping, query: null);
 
-        Assert.Contains("SDO_AGGR_MBR(\"SHAPE\")", result.Sql, StringComparison.Ordinal);
-        Assert.Contains("t.mbb.SDO_ORDINATES(1) AS \"min_x\"", result.Sql, StringComparison.Ordinal);
-        Assert.Contains("t.mbb.SDO_ORDINATES(4) AS \"max_y\"", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("SDO_AGGR_MBR(\"SHAPE\") AS mbr", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("SDO_GEOM.SDO_MIN_MBR_ORDINATE(mbr, 1) AS \"min_x\"", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("SDO_GEOM.SDO_MIN_MBR_ORDINATE(mbr, 2) AS \"min_y\"", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("SDO_GEOM.SDO_MAX_MBR_ORDINATE(mbr, 1) AS \"max_x\"", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("SDO_GEOM.SDO_MAX_MBR_ORDINATE(mbr, 2) AS \"max_y\"", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("SDO_ORDINATES(3)", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("SDO_ORDINATES(4)", result.Sql, StringComparison.Ordinal);
         Assert.Contains("FROM \"GIS\".\"PARCELS\"", result.Sql, StringComparison.Ordinal);
         Assert.Contains("WHERE \"SHAPE\" IS NOT NULL", result.Sql, StringComparison.Ordinal);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildQueries_OutputSridDifferentFromLayer_ThrowsNotSupported()
+    {
+        var mapping = BuildMapping(srid: 4326);
+        var query = new FeatureQuery { OutputSrid = 3857 };
+
+        var ex = Assert.Throws<NotSupportedException>(
+            () => OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns));
+        Assert.Contains("Output SRID", ex.Message, StringComparison.Ordinal);
+        Assert.Throws<NotSupportedException>(() => OracleFeatureQueryBuilder.BuildCountQuery(mapping, query));
+        Assert.Throws<NotSupportedException>(() => OracleFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query));
+        Assert.Throws<NotSupportedException>(() => OracleFeatureQueryBuilder.BuildExtentQuery(mapping, query));
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildSelectQuery_OutputSridMatchingLayer_Succeeds()
+    {
+        var mapping = BuildMapping(srid: 4326);
+        var query = new FeatureQuery { OutputSrid = 4326 };
+
+        var result = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
+
+        Assert.Contains("SDO_UTIL.TO_WKBGEOMETRY(\"SHAPE\")", result.Sql, StringComparison.Ordinal);
     }
 
     [global::Xunit.Trait("Tier", "Fast")]

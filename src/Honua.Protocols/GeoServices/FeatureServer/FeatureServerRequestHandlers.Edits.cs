@@ -707,13 +707,6 @@ internal static partial class FeatureServerEndpoints
 
         var results = new ServiceLayerEditResult[orderedLayerIds.Count];
 
-        // BH2-013: Track whether any non-first layer returned an error response so the
-        // overall HTTP status code can be raised to 207 Multi-Status. Earlier layers'
-        // edits are already committed and their results are preserved in the per-layer
-        // entries, but a 200 response for a request that partially failed misleads
-        // HTTP-status-checking clients and monitoring systems.
-        var hasPartialFailure = false;
-
         for (var i = 0; i < orderedLayerIds.Count; i++)
         {
             var entry = mergedEdits[orderedLayerIds[i]];
@@ -769,32 +762,24 @@ internal static partial class FeatureServerEndpoints
                 // discards their results. Record a per-layer failure entry instead
                 // (Esri per-layer result contract) so the response reflects exactly
                 // which edits were applied.
-                var statusCode = (layerResult as IStatusCodeHttpResult)?.StatusCode;
-                var description = statusCode is { } code
-                    ? $"Edits for layer {entry.Id} were not applied (HTTP {code})."
-                    : $"Edits for layer {entry.Id} were not applied.";
+                var statusCode = ResolveLayerResultStatusCode(layerResult);
+                var errorMessage = ResolveLayerResultErrorDescription(layerResult);
+                var description = !string.IsNullOrWhiteSpace(errorMessage)
+                    ? errorMessage
+                    : statusCode is { } code
+                        ? $"Edits for layer {entry.Id} were not applied (HTTP {code})."
+                        : $"Edits for layer {entry.Id} were not applied.";
                 results[i] = new ServiceLayerEditResult
                 {
                     Id = entry.Id,
-                    AddResults = BuildAddFailureResults(entry.Adds, description) ?? [],
-                    UpdateResults = BuildFeatureFailureResults(entry.Updates, description) ?? [],
-                    DeleteResults = BuildDeleteFailureResults(entry.Deletes, description) ?? []
+                    AddResults = BuildAddFailureResults(entry.Adds, description, statusCode) ?? [],
+                    UpdateResults = BuildFeatureFailureResults(entry.Updates, description, statusCode) ?? [],
+                    DeleteResults = BuildDeleteFailureResults(entry.Deletes, description, statusCode) ?? []
                 };
-
-                // BH2-013: Any non-success status (4xx/5xx) on a non-first layer is a
-                // partial failure; raise the overall response to 207 Multi-Status so
-                // HTTP-status-checking clients (and monitoring) detect the partial failure.
-                if (statusCode >= 400)
-                {
-                    hasPartialFailure = true;
-                }
             }
         }
 
-        var responseStatusCode = hasPartialFailure
-            ? StatusCodes.Status207MultiStatus
-            : StatusCodes.Status200OK;
-        return CreateServiceApplyEditsResult(results, responseStatusCode);
+        return CreateServiceApplyEditsResult(results, StatusCodes.Status200OK);
     }
 
     internal static IResult CreateServiceApplyEditsResult(
@@ -803,23 +788,24 @@ internal static partial class FeatureServerEndpoints
         => Results.Json(results, FeatureServerJsonContext.Default.ServiceLayerEditResultArray,
             statusCode: statusCode, contentType: "application/json");
 
-    private static EditResult[]? BuildAddFailureResults(GeoServicesFeature[]? adds, string description)
+    internal static EditResult[]? BuildAddFailureResults(GeoServicesFeature[]? adds, string description, int? statusCode = null)
     {
         if (adds is not { Length: > 0 })
         {
             return null;
         }
 
+        var errorCode = ResolveLayerFailureErrorCode(statusCode, objectId: null, isAdd: true, isDelete: false);
         var failures = new EditResult[adds.Length];
         for (var i = 0; i < adds.Length; i++)
         {
-            failures[i] = CreateLayerFailureResult(objectId: null, description);
+            failures[i] = CreateLayerFailureResult(objectId: null, description, errorCode);
         }
 
         return failures;
     }
 
-    private static EditResult[]? BuildFeatureFailureResults(GeoServicesFeature[]? features, string description)
+    internal static EditResult[]? BuildFeatureFailureResults(GeoServicesFeature[]? features, string description, int? statusCode = null)
     {
         if (features is not { Length: > 0 })
         {
@@ -829,13 +815,15 @@ internal static partial class FeatureServerEndpoints
         var failures = new EditResult[features.Length];
         for (var i = 0; i < features.Length; i++)
         {
-            failures[i] = CreateLayerFailureResult(TryGetSubmittedObjectId(features[i]), description);
+            var objectId = TryGetSubmittedObjectId(features[i]);
+            var errorCode = ResolveLayerFailureErrorCode(statusCode, objectId, isAdd: false, isDelete: false);
+            failures[i] = CreateLayerFailureResult(objectId, description, errorCode);
         }
 
         return failures;
     }
 
-    private static EditResult[]? BuildDeleteFailureResults(object[]? deletes, string description)
+    internal static EditResult[]? BuildDeleteFailureResults(object[]? deletes, string description, int? statusCode = null)
     {
         if (deletes is not { Length: > 0 })
         {
@@ -848,19 +836,66 @@ internal static partial class FeatureServerEndpoints
             var objectId = FeatureServerValueParser.TryConvertToLong(deletes[i], out var parsed)
                 ? parsed
                 : (long?)null;
-            failures[i] = CreateLayerFailureResult(objectId, description);
+            var errorCode = ResolveLayerFailureErrorCode(statusCode, objectId, isAdd: false, isDelete: true);
+            failures[i] = CreateLayerFailureResult(objectId, description, errorCode);
         }
 
         return failures;
     }
 
-    private static EditResult CreateLayerFailureResult(long? objectId, string description)
+    internal static EditResult CreateLayerFailureResult(
+        long? objectId,
+        string description,
+        int errorCode = GeoServicesEditErrorCodes.GenericFailure)
         => new()
         {
             ObjectId = objectId,
             Success = false,
-            Error = new EditError { Code = 1000, Description = description }
+            Error = new EditError { Code = errorCode, Description = description }
         };
+
+    private static int? ResolveLayerResultStatusCode(IResult layerResult)
+    {
+        if (layerResult is IValueHttpResult { Value: ApiErrorResponse { Error.Code: > 0 } apiError })
+        {
+            return apiError.Error.Code;
+        }
+
+        return (layerResult as IStatusCodeHttpResult)?.StatusCode;
+    }
+
+    private static string? ResolveLayerResultErrorDescription(IResult layerResult)
+    {
+        if (layerResult is IValueHttpResult { Value: ApiErrorResponse { Error.Message: { Length: > 0 } message } })
+        {
+            return message;
+        }
+
+        return null;
+    }
+
+    internal static int ResolveLayerFailureErrorCode(int? statusCode, long? objectId, bool isAdd, bool isDelete)
+    {
+        if (statusCode is >= 1000 and <= 1019)
+        {
+            return statusCode.Value;
+        }
+
+        if (!isAdd && objectId is null or <= 0)
+        {
+            return GeoServicesEditErrorCodes.InvalidObjectId;
+        }
+
+        return statusCode switch
+        {
+            StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden or 498 or 499 => GeoServicesEditErrorCodes.NotPermitted,
+            StatusCodes.Status404NotFound => isDelete ? GeoServicesEditErrorCodes.DeleteNotFound : GeoServicesEditErrorCodes.NotFound,
+            StatusCodes.Status409Conflict or StatusCodes.Status412PreconditionFailed => GeoServicesEditErrorCodes.UpdateConflict,
+            StatusCodes.Status423Locked => GeoServicesEditErrorCodes.FeatureLocked,
+            StatusCodes.Status400BadRequest or StatusCodes.Status422UnprocessableEntity => GeoServicesEditErrorCodes.ValidationFailed,
+            _ => GeoServicesEditErrorCodes.GenericFailure
+        };
+    }
 
     // Best-effort objectId extraction from a submitted feature's attributes. The service-level
     // applyEdits handler does not resolve the per-layer resource, so the canonical OBJECTID
