@@ -21,7 +21,7 @@ The exact server digest is `server.image` in that release's
 | PyPI | `honua-admin==0.3.2` | Control plane used by this journey | None |
 | PyPI | `honua-sdk==0.3.2` | Data plane used by this journey | None |
 | PyPI | `mcp==2.1.1` | Only if you drive the server over MCP | None |
-| npm | `@honua/sdk-js@0.4.0` | Alternative JS SDK and CLI | None |
+| npm | `@honua/sdk-js@0.2.10` | Alternative JS SDK and CLI | None |
 | npm | `create-honua-app@0.1.9` | Application scaffolding CLI | None |
 | npm | `@honua/mcp-server@0.2.10` | Alternative MCP proxy | None |
 | NuGet | `Honua.Sdk` `1.12.0` | Alternative .NET SDK | None |
