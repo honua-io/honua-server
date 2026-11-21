@@ -228,10 +228,20 @@ internal static class GeoServerSecurityRuleTranslator
             }
         }
 
-        return ValidateRoleCombination(new ParsedRoleTokens(hasAnonymous, hasAuthenticated, namedRoles));
+        return ValidateRoleCombination(new ParsedRoleTokens
+        {
+            HasAnonymous = hasAnonymous,
+            HasAuthenticated = hasAuthenticated,
+            NamedRoles = namedRoles
+        });
     }
 
-    private sealed record ParsedRoleTokens(bool HasAnonymous, bool HasAuthenticated, List<string> NamedRoles);
+    private sealed record ParsedRoleTokens
+    {
+        public bool HasAnonymous { get; init; }
+        public bool HasAuthenticated { get; init; }
+        public required List<string> NamedRoles { get; init; }
+    }
 
     private static RoleClassification ValidateRoleCombination(ParsedRoleTokens parsed)
     {
