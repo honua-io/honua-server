@@ -573,11 +573,6 @@ def verify_release_contract(tools_path: Path, output: Path):
     print("release checker: positive ZIP accepted; wrong-source ZIP attestation rejected")
 
 
-if __name__ == "__main__":
-    import tempfile
-    with tempfile.TemporaryDirectory() as directory:
-        verify_release_contract(Path(sys.argv[1]).resolve(), Path(directory))
-
 
 @pytest.mark.parametrize(("tenant_source", "multi_tenancy", "expected"), [
     ("Default", False, True),
@@ -588,3 +583,10 @@ if __name__ == "__main__":
 def test_single_tenant_rule_accepts_an_omitted_tenant_source(tenant_source, multi_tenancy, expected):
     capabilities = {"admin.multi-tenancy": {"available": multi_tenancy}}
     assert drive_soak.is_single_tenant({"tenantSource": tenant_source}, capabilities) is expected
+
+
+if __name__ == "__main__":
+    import tempfile
+    with tempfile.TemporaryDirectory() as directory:
+        verify_release_contract(Path(sys.argv[1]).resolve(), Path(directory))
+

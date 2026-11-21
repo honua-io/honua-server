@@ -162,7 +162,9 @@ class SoakDriver:
         echoed from the workflow input, which is the whole point of the contract keeping
         `candidateRevision` and `observedRevision` as two separate fields.
         """
-        manifest = await self._get_json(client, "/api/v1/capabilities/manifest")
+        # Signed in: an anonymous manifest reports every authenticated capability unavailable,
+        # which would make admin.multi-tenancy look off even where it is configured.
+        manifest = await self._get_json(client, "/api/v1/capabilities/manifest", admin=True)
         server = manifest.get("server") or {}
         scope = manifest.get("scope") or {}
         policies = manifest.get("policies") or {}

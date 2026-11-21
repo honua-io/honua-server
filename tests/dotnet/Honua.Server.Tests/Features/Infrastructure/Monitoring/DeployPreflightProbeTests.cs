@@ -162,12 +162,16 @@ public sealed class DeployPreflightProbeTests
         await otherDatabase.ProbeAsync(maxAge);
         migrationRunner.PlanCount.Should().Be(2, "a different connection string is a different database");
 
+        await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync();
+        await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync(maxAge);
+        migrationRunner.PlanCount.Should().Be(3, "the fresh read is cached for background callers");
+
         migrationRunner.NextPlan = DatabaseMigrationPlan.Failed(new InvalidOperationException("journal unreadable"));
         await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync();
         migrationRunner.NextPlan = DatabaseMigrationPlan.Succeeded();
         var snapshot = await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync(maxAge);
 
-        migrationRunner.PlanCount.Should().Be(4, "a failed read clears the cached plan");
+        migrationRunner.PlanCount.Should().Be(5, "a failed read clears the cached plan");
         snapshot.Migration.PlanAvailable.Should().BeTrue();
     }
 

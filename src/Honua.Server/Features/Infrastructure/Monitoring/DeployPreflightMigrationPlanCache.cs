@@ -9,7 +9,7 @@ namespace Honua.Infrastructure.Monitoring;
 // scopes. Background evaluators (ops findings every minute, the health rollup every 45 seconds)
 // reuse it instead of scanning every migration journal on each pass. A plan is reused only for
 // the same connection string and no migration state change in this process since it was read,
-// so a migration or recovery this process runs is seen at once. A failed read clears it.
+// so a migration or recovery this process runs is seen at once. A failed plan clears it.
 internal sealed class DeployPreflightMigrationPlanCache(TimeProvider timeProvider)
 {
     private Entry? _entry;
