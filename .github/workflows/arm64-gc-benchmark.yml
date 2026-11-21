@@ -211,8 +211,16 @@ jobs:
 
           status=0
           pushd geobench >/dev/null
+          # The 1-minute load stays above the diagnostic's quiet ceiling right after a
+          # 100-VU profile, so let it decay to the core count before the next profile.
+          settle_limit="$(nproc)"
           for profile in "${ordered[@]}"; do
-            echo "=== Pair ${PAIR_INDEX}: running profile=${profile} sizes=${SIZES} levels=${LEVELS} ==="
+            for ((waited = 0; waited < 600; waited += 10)); do
+              load1="$(cut -d ' ' -f1 /proc/loadavg)"
+              awk -v load="${load1}" -v limit="${settle_limit}" 'BEGIN { exit !(load <= limit) }' && break
+              sleep 10
+            done
+            echo "=== Pair ${PAIR_INDEX}: running profile=${profile} sizes=${SIZES} levels=${LEVELS} (load1 $(cut -d ' ' -f1 /proc/loadavg) after ${waited}s settle) ==="
             if ! POSTGIS_IMAGE="${POSTGIS_IMAGE}" K6_IMAGE="${K6_IMAGE}" \
               python3 scripts/gc-cohort-diagnostic.py \
                 --image "${IMAGE_ID}" \
