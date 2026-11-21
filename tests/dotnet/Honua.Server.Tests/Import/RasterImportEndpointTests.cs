@@ -458,15 +458,17 @@ public class RasterImportEndpointTests : IAsyncLifetime
         try
         {
             using var content = new MultipartFormDataContent();
-            var fileContent = new ByteArrayContent(CreateMinimalGeoTiffBytes());
+            using var fileContent = new ByteArrayContent(CreateMinimalGeoTiffBytes());
+            using var layerId = new StringContent("1");
+            using var name = new StringContent("test-raster");
             fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
             {
                 Name = "file",
                 FileName = "test.tif"
             };
             content.Add(fileContent);
-            content.Add(new StringContent("1"), "layerId");
-            content.Add(new StringContent("test-raster"), "name");
+            content.Add(layerId, "layerId");
+            content.Add(name, "name");
 
             using var response = await fixture.Client.PostAsync("/api/v1/admin/import/raster", content);
 
