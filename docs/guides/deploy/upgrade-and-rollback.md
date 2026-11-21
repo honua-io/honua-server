@@ -199,6 +199,26 @@ Rollback](docker-compose.md#upgrade--rollback). An rc.1 image does not qualify t
 migration, so rollback to rc.1 after it applies is by restoring the pre-upgrade
 database backup.
 
+### Compose database image in rc.2
+
+The Compose installs' database moves to Honua's image: PostgreSQL 17 with the same
+PostGIS 3.5 and pgRouting 3.7, on a maintained Debian base. That base has a newer C
+library, which sorts some text differently. On the first start of an existing
+volume, before the server accepts connections, the image does two things in every
+database: it rebuilds the indexes on text columns, then records the new collation
+version. Spatial and numeric indexes are left alone. Allow time for this on a large
+database: the database healthcheck has a 60-minute start period, and the Honua
+server waits for it. `python3 quickstart.py` and `docker compose up --wait` stop
+waiting after their own timeout (three minutes) and report a failure, but the
+rebuild carries on. Do not stop or restart the stack while it runs: a restart
+begins the rebuild again. Run `python3 quickstart.py` again once the database log
+shows the rebuild has finished; it does not recreate the running database. If the
+rebuild fails, the database does not start, and the error is in its log.
+
+Once the rebuild has run, the rc.1 database image would read those indexes with the
+older C library. Roll back to rc.1 by restoring the pre-upgrade database backup into
+a new volume. Do not start the rc.1 database on the upgraded volume.
+
 ### Configuration binding correction
 
 Recent releases correct source-generated binding for options that previously used

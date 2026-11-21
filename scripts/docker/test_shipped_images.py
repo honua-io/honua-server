@@ -19,7 +19,14 @@ class ShippedImageTests(unittest.TestCase):
     def test_inventory_covers_the_database_console_and_grid_build(self):
         images = {image for _, image in shipped_images.shipped_images()}
         self.assertIn(CONSOLE_WEB_IMAGE, images)
-        self.assertTrue(any(image.startswith('pgrouting/pgrouting:') for image in images), images)
+        found = shipped_images.shipped_images()
+        databases = {image for location, image in found
+                     if location.startswith(('docs/get-started/compose.executor.yaml', 'docker/proj-grids/Dockerfile'))
+                     and image.startswith('ghcr.io/')}
+        quickstart_base = {image for location, image in found if location.startswith('docs/get-started/quickstart.md')
+                           and not image.startswith('alpine:')}
+        self.assertEqual(1, len(databases | quickstart_base), databases | quickstart_base)
+        self.assertLessEqual(databases, images)
         self.assertTrue(any(image.startswith('debian:') for image in images), images)
 
     def test_lock_variables_and_locally_built_images_are_not_listed(self):

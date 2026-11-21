@@ -337,6 +337,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
             var useNativeGeoJson = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase) ||
                                    string.Equals(outputFormat, MediaTypes.Json, StringComparison.OrdinalIgnoreCase);
             var includeFeatureLinks = _ogcFeaturesOptions.IncludeFeatureLinks;
+            var linkTemplate = includeFeatureLinks
+                ? OgcFeatureLinkTemplate.Create(request, new(collectionId, outputFormat))
+                : null;
             QueryResult<GmlFeature>? gmlResult = null;
             QueryResult<Feature>? featureResult = null;
             QueryResult<EncodedGeoJsonFeature>? encodedResult = null;
@@ -377,13 +380,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 features = pagedEncodedResult.Value.Items
                     .Select(feature =>
                     {
-                        ImmutableArray<Link>? links = includeFeatureLinks
-                            ? OgcFeaturesUtilities.BuildFeatureLinks(
-                                request,
-                                collectionId,
-                                OgcFeatureIdentifierResolver.FormatPublicId(feature, resource),
-                                outputFormat)
-                            : null;
+                        ImmutableArray<Link>? links = linkTemplate?.Build(
+                            OgcFeatureIdentifierResolver.FormatPublicId(feature, resource));
                         return ToOgcFeature(
                             feature,
                             resource,
@@ -401,13 +399,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 features = pagedFeatureResult.Value.Items
                     .Select(feature =>
                     {
-                        ImmutableArray<Link>? links = includeFeatureLinks
-                            ? OgcFeaturesUtilities.BuildFeatureLinks(
-                                request,
-                                collectionId,
-                                OgcFeatureIdentifierResolver.FormatPublicId(feature, resource),
-                                outputFormat)
-                            : null;
+                        ImmutableArray<Link>? links = linkTemplate?.Build(
+                            OgcFeatureIdentifierResolver.FormatPublicId(feature, resource));
                         return ToOgcFeature(
                             feature,
                             resource,
@@ -425,13 +418,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 features = encodedResult.Value.Items
                     .Select(feature =>
                     {
-                        ImmutableArray<Link>? links = includeFeatureLinks
-                            ? OgcFeaturesUtilities.BuildFeatureLinks(
-                                request,
-                                collectionId,
-                                OgcFeatureIdentifierResolver.FormatPublicId(feature, resource),
-                                outputFormat)
-                            : null;
+                        ImmutableArray<Link>? links = linkTemplate?.Build(
+                            OgcFeatureIdentifierResolver.FormatPublicId(feature, resource));
                         return ToOgcFeature(
                             feature,
                             resource,
@@ -449,13 +437,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 features = featureResult.Value.Items
                     .Select(feature =>
                     {
-                        ImmutableArray<Link>? links = includeFeatureLinks
-                            ? OgcFeaturesUtilities.BuildFeatureLinks(
-                                request,
-                                collectionId,
-                                OgcFeatureIdentifierResolver.FormatPublicId(feature, resource),
-                                outputFormat)
-                            : null;
+                        ImmutableArray<Link>? links = linkTemplate?.Build(
+                            OgcFeatureIdentifierResolver.FormatPublicId(feature, resource));
                         return ToOgcFeature(
                             feature,
                             resource,
@@ -1555,6 +1538,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
         var hasMoreResults = false;
         var featuresSinceFlush = 0;
         GeoJsonFeatureBaseBuilder.PreparedSchema? featureSchema = null;
+        var linkTemplate = includeFeatureLinks
+            ? OgcFeatureLinkTemplate.Create(context.Request, new(collectionId, outputFormat))
+            : null;
         while (hasFeature)
         {
             var feature = enumerator.Current;
@@ -1565,13 +1551,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 break;
             }
 
-            ImmutableArray<Link>? featureLinks = includeFeatureLinks
-                ? OgcFeaturesUtilities.BuildFeatureLinks(
-                    context.Request,
-                    collectionId,
-                    OgcFeatureIdentifierResolver.FormatPublicId(feature, resource),
-                    outputFormat)
-                : null;
+            ImmutableArray<Link>? featureLinks = linkTemplate?.Build(
+                OgcFeatureIdentifierResolver.FormatPublicId(feature, resource));
             var ogcFeature = ToOgcFeature(feature, resource, axisOrder, geometryServices, projectedProperties, featureLinks,
                 featureSchema ??= new GeoJsonFeatureBaseBuilder.PreparedSchema(resource, false));
             JsonSerializer.Serialize(writer, ogcFeature, OgcJsonContext.Default.GeoJsonFeature);

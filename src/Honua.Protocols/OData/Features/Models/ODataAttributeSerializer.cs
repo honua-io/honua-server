@@ -17,7 +17,7 @@ internal static class ODataAttributeSerializer
     public static Dictionary<string, object?> NormalizeAttributes(IReadOnlyDictionary<string, object?> attributes)
         => attributes.ToDictionary(kvp => kvp.Key, kvp => NormalizeODataValue(kvp.Value));
 
-    private static object? NormalizeODataValue(object? value)
+    public static object? NormalizeODataValue(object? value)
     {
         if (value is null)
         {
