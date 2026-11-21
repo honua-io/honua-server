@@ -114,8 +114,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         AddParameter(command, "@layerId", layerId);
         AddParameter(command, "@rasterId", rasterId);
 
-        var rasters = await ReadOrEmptyWithoutRasterStorageAsync(
-            connection, () => ReadRasterInfosAsync(command, cancellationToken), [], cancellationToken).ConfigureAwait(false);
+        var rasters = await ReadUnlessRasterStorageMissingAsync(
+            connection, () => ReadRasterInfosAsync(command, cancellationToken), cancellationToken).ConfigureAwait(false) ?? [];
         if (rasters is not [var info, ..])
         {
             PostgresRasterLog.RasterNotFound(_logger, layerId, rasterId);
@@ -203,8 +203,8 @@ internal sealed class PostgresRasterStore : IRasterStore
             AddParameter(command, name, value);
         }
 
-        var rasters = await ReadOrEmptyWithoutRasterStorageAsync(
-            connection, () => ReadRasterInfosAsync(command, cancellationToken), [], cancellationToken).ConfigureAwait(false);
+        var rasters = await ReadUnlessRasterStorageMissingAsync(
+            connection, () => ReadRasterInfosAsync(command, cancellationToken), cancellationToken).ConfigureAwait(false) ?? [];
 
         PostgresRasterLog.RasterListRetrieved(_logger, layerId, rasters.Length);
         return rasters;
@@ -235,28 +235,11 @@ internal sealed class PostgresRasterStore : IRasterStore
         long totalCount;
         RasterExtent? aggregateExtent = null;
 
-        DbDataReader reader;
-        try
+        var reader = await ReadUnlessRasterStorageMissingAsync(
+            connection, () => command.ExecuteReaderAsync(cancellationToken), cancellationToken).ConfigureAwait(false);
+        if (reader is null)
         {
-            reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UndefinedTable)
-        {
-            if (await PostgresRasterStorageProbe.IsInstalledAsync(connection, cancellationToken).ConfigureAwait(false))
-            {
-                throw;
-            }
-
-            // Feature-only install: no raster tables, so the catalog is empty.
-            return new RasterCatalogPage
-            {
-                Rasters = rasters,
-                TotalCount = 0,
-                RowsScanned = 0,
-                RowsReturned = 0,
-                ProviderDuration = stopwatch.Elapsed,
-                PredicatePushedDown = true,
-            };
+            return new RasterCatalogPage { Rasters = rasters, TotalCount = 0, PredicatePushedDown = true };
         }
 
         await using (reader)
@@ -557,8 +540,8 @@ internal sealed class PostgresRasterStore : IRasterStore
             LIMIT 1
             """;
         AddParameter(referenceCommand, "@layerId", layerId);
-        var referenceIdValue = await ReadOrEmptyWithoutRasterStorageAsync(
-            connection, () => referenceCommand.ExecuteScalarAsync(cancellationToken), null, cancellationToken).ConfigureAwait(false);
+        var referenceIdValue = await ReadUnlessRasterStorageMissingAsync(
+            connection, () => referenceCommand.ExecuteScalarAsync(cancellationToken), cancellationToken).ConfigureAwait(false);
 
         if (referenceIdValue is null || referenceIdValue == DBNull.Value)
         {
@@ -3345,8 +3328,8 @@ internal sealed class PostgresRasterStore : IRasterStore
             """;
         AddParameter(command, "@layerId", layerId);
 
-        var rasters = await ReadOrEmptyWithoutRasterStorageAsync(
-            connection, () => ReadRasterInfosAsync(command, cancellationToken), [], cancellationToken).ConfigureAwait(false);
+        var rasters = await ReadUnlessRasterStorageMissingAsync(
+            connection, () => ReadRasterInfosAsync(command, cancellationToken), cancellationToken).ConfigureAwait(false) ?? [];
         if (rasters is not [var info, ..])
         {
             PostgresRasterLog.RasterListRetrieved(_logger, layerId, 0);
@@ -3358,12 +3341,11 @@ internal sealed class PostgresRasterStore : IRasterStore
     }
 
     // Raster storage is optional (see PostgresRasterStorageProbe): on a feature-only install
-    // a lookup reads as "no rasters" and callers answer their existing not-found. A missing
-    // table while postgis_raster IS installed is a broken schema and still fails.
-    private static async Task<T> ReadOrEmptyWithoutRasterStorageAsync<T>(
+    // a lookup returns default, read as "no rasters", and callers answer their existing
+    // not-found. A missing table while postgis_raster IS installed still fails.
+    private static async Task<T?> ReadUnlessRasterStorageMissingAsync<T>(
         DbConnection connection,
         Func<Task<T>> read,
-        T empty,
         CancellationToken cancellationToken)
     {
         try
@@ -3377,7 +3359,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 throw;
             }
 
-            return empty;
+            return default;
         }
     }
 
@@ -4591,8 +4573,8 @@ internal sealed class PostgresRasterStore : IRasterStore
             """;
         AddParameter(command, "@layerId", layerId);
 
-        var rasters = await ReadOrEmptyWithoutRasterStorageAsync(
-            connection, () => ReadRasterInfosAsync(command, cancellationToken), [], cancellationToken).ConfigureAwait(false);
+        var rasters = await ReadUnlessRasterStorageMissingAsync(
+            connection, () => ReadRasterInfosAsync(command, cancellationToken), cancellationToken).ConfigureAwait(false) ?? [];
 
         PostgresRasterLog.RasterListRetrieved(_logger, layerId, rasters.Length);
         return rasters;
@@ -4686,8 +4668,8 @@ internal sealed class PostgresRasterStore : IRasterStore
             """;
         AddParameter(command, "@rasterId", rasterId);
 
-        var result = await ReadOrEmptyWithoutRasterStorageAsync(
-            connection, () => command.ExecuteScalarAsync(cancellationToken), null, cancellationToken).ConfigureAwait(false);
+        var result = await ReadUnlessRasterStorageMissingAsync(
+            connection, () => command.ExecuteScalarAsync(cancellationToken), cancellationToken).ConfigureAwait(false);
         return result is null or DBNull ? null : Convert.ToInt32(result, CultureInfo.InvariantCulture);
     }
 
