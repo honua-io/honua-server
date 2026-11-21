@@ -253,6 +253,29 @@ exit 0
 ''', directory)
             self.assertEqual(0, completed.returncode, completed.stderr)
 
+    def test_output_size_cap_recreates_both_server_and_peer_with_the_cap(self):
+        with tempfile.TemporaryDirectory() as directory:
+            completed = run_bash("set -euo pipefail\n" + harness_function("run_output_size_cap") + r'''
+compose() { printf 'compose %s cap=%s\n' "$*" "${HONUA_GP_MAX_ARTIFACT_BYTES:-}" >> calls; }
+wait_ready() { echo wait_ready >> calls; }
+wait_peer_ready() { echo wait_peer_ready >> calls; }
+submit_async() { echo gp-1; }
+wait_terminal() { echo '{"status":"failed"}'; }
+result_digest() { return 1; }
+write_receipt() { printf 'receipt %s %s\n' "$1" "$2" >> calls; }
+run_output_size_cap || exit 61
+expected='compose up -d --force-recreate server server-peer cap=1024
+wait_ready
+wait_peer_ready
+compose up -d --force-recreate server server-peer cap=
+wait_ready
+wait_peer_ready
+receipt output-size-cap pass'
+[[ "$(cat calls)" == "$expected" ]] || { cat calls >&2; exit 62; }
+exit 0
+''', directory)
+            self.assertEqual(0, completed.returncode, completed.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

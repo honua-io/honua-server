@@ -1204,10 +1204,10 @@ run_retry_exhaustion() {
 run_output_size_cap() {
   local scenario=output-size-cap job terminal state
   export HONUA_GP_MAX_ARTIFACT_BYTES=1024
-  compose up -d --force-recreate server >/dev/null; wait_ready || return 1
-  job="$(submit_async)" || { unset HONUA_GP_MAX_ARTIFACT_BYTES; return 1; }
+  compose up -d --force-recreate server server-peer >/dev/null; wait_ready && wait_peer_ready || { unset HONUA_GP_MAX_ARTIFACT_BYTES; return 1; }
+  job="$(submit_async)" || { unset HONUA_GP_MAX_ARTIFACT_BYTES; compose up -d --force-recreate server server-peer >/dev/null; wait_ready && wait_peer_ready || true; return 1; }
   terminal="$(wait_terminal "${job}")" || true; state="$(jq -r '.status // empty' <<<"${terminal:-{}}" 2>/dev/null || true)"
-  unset HONUA_GP_MAX_ARTIFACT_BYTES; compose up -d --force-recreate server >/dev/null; wait_ready || return 1
+  unset HONUA_GP_MAX_ARTIFACT_BYTES; compose up -d --force-recreate server server-peer >/dev/null; wait_ready && wait_peer_ready || return 1
   [[ "${state}" == failed ]] || { write_receipt "${scenario}" fail "FINDING: oversized artifact was not rejected" "${job}" "${state}"; return 1; }
   result_digest "${job}" >/dev/null 2>&1 && { write_receipt "${scenario}" fail "FINDING: rejected oversized artifact exposed output" "${job}" "${state}"; return 1; }
   write_receipt "${scenario}" pass "MaxArtifactBytes=1024" "${job}" "${state}"
