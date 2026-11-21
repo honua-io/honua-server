@@ -25,7 +25,7 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         if (query.OutputSrid.HasValue &&
             (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
         {
-            baseGeometry = DatumTransformSql.BuildTransformExpression(
+            baseGeometry = DatumTransformSql.TransformColumnExpression(
                 baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation, query.SpatialReferenceSrid);
         }
 
@@ -45,7 +45,7 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         if (query.OutputSrid.HasValue &&
             (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
         {
-            baseGeometry = DatumTransformSql.BuildTransformExpression(
+            baseGeometry = DatumTransformSql.TransformColumnExpression(
                 baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation, query.SpatialReferenceSrid);
         }
 
@@ -72,7 +72,7 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         if (query.OutputSrid.HasValue &&
             (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
         {
-            baseGeometry = DatumTransformSql.BuildTransformExpression(
+            baseGeometry = DatumTransformSql.TransformColumnExpression(
                 baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation, query.SpatialReferenceSrid);
         }
 
@@ -91,7 +91,7 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         if (query.OutputSrid.HasValue &&
             (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
         {
-            baseGeometry = DatumTransformSql.BuildTransformExpression(
+            baseGeometry = DatumTransformSql.TransformColumnExpression(
                 baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation, query.SpatialReferenceSrid);
         }
 

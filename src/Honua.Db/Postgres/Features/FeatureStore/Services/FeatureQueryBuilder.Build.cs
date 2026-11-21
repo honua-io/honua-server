@@ -69,7 +69,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             else if (query.OutputSrid.HasValue &&
                 (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
             {
-                pointGeometry = DatumTransformSql.BuildTransformExpression(
+                pointGeometry = DatumTransformSql.TransformColumnExpression(
                     pointGeometry, query.OutputSrid.Value, query.OutputDatumTransformation, query.SpatialReferenceSrid);
             }
 
@@ -173,7 +173,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             if (query.OutputSrid.HasValue &&
                 (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
             {
-                pointGeometry = DatumTransformSql.BuildTransformExpression(
+                pointGeometry = DatumTransformSql.TransformColumnExpression(
                     pointGeometry, query.OutputSrid.Value, query.OutputDatumTransformation, query.SpatialReferenceSrid);
             }
 
@@ -483,7 +483,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         if (effectiveQuery.OutputSrid.HasValue &&
             effectiveQuery.OutputSrid != effectiveQuery.SpatialReferenceSrid)
         {
-            extentExpression = DatumTransformSql.BuildTransformExpression(
+            extentExpression = DatumTransformSql.TransformColumnExpression(
                 extentExpression,
                 effectiveQuery.OutputSrid.Value,
                 effectiveQuery.OutputDatumTransformation,

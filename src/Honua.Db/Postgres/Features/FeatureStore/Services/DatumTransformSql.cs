@@ -70,6 +70,14 @@ internal static class DatumTransformSql
             (operand, fromSrid, toSrid),
             static key => BuildTransformExpression(key.Operand, key.ToSrid, selection: null, key.FromSrid));
 
+    // Same text as BuildTransformExpression(operand, toSrid, selection, fromSrid). Pass only column operands
+    // (GeometryProcessor.GetGeometryOperand): a plain SRID-pair reprojection then comes from the bounded cache
+    // instead of being rebuilt per query; a datum selection or an unknown source SRID still builds.
+    public static string TransformColumnExpression(string operand, int toSrid, DatumTransformationSelection? selection, int? fromSrid)
+        => selection is null && fromSrid is int sourceSrid
+            ? CachedTransformExpression(operand, sourceSrid, toSrid)
+            : BuildTransformExpression(operand, toSrid, selection, fromSrid);
+
     public static string CachedTransformExpressionForRuntimeSrid(string operand, int toSrid)
         => RuntimeSridTransforms.GetOrAdd(
             (operand, toSrid),
