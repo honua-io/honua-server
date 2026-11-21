@@ -117,7 +117,7 @@ The response omits filesystem paths and underlying exception details.
 
 ## Troubleshoot
 
-- **Bare `404` with an empty body on `/api/v1/admin/scenes`, `/api/v1/admin/scenes/generate` or `/scenes/{sceneId}/tileset.json`** — the experimental scene capabilities are off; set both variables listed under **Prerequisites** and restart the server.
+- **Bare `404` with an empty body on `/api/v1/admin/scenes`, `/api/v1/admin/scenes/generate` or `/scenes/{sceneId}/tileset.json`** — the experimental scene capabilities are off; set both variables listed above **Steps** and restart the server.
 - **`SCENE_FEATURE_LIMIT_EXCEEDED` (400)** — the layer exceeds `SceneGeneration:MaxFeatureCount`; raise the cap or pass a smaller `maxFeatureCount` with a filtered source layer.
 - **`SCENE_REGISTRATION_CONFLICT` (409)** — the `sceneId` or display name collides with an existing (active or inactive) registration; pick a new id and name. `DELETE /api/v1/admin/scenes/{datasetId}` only deactivates a record, so it keeps its id and name.
 - **Output is flat at Z=0** — the layer has no Z values and no `extrusion` block; configure step 2 and regenerate.
