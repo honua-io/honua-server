@@ -32,13 +32,7 @@ internal sealed class FormXlsFormUpload
             return PayloadTooLarge(context);
         }
 
-        var maxBodyFeature = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
-        if (maxBodyFeature is { IsReadOnly: false })
-        {
-            maxBodyFeature.MaxRequestBodySize = MaxMultipartBodyBytes;
-        }
-
-        context.Features.Set<IFormFeature>(new FormFeature(context.Request, new FormOptions { MultipartBodyLengthLimit = MaxMultipartBodyBytes }));
+        ConfigureRequestLimits(context);
         IFormCollection form;
         try
         {
@@ -77,6 +71,17 @@ internal sealed class FormXlsFormUpload
         using var buffer = new MemoryStream();
         await file.CopyToAsync(buffer, context.RequestAborted).ConfigureAwait(false);
         return new FormXlsFormUpload { Content = buffer.ToArray() };
+    }
+
+    private static void ConfigureRequestLimits(HttpContext context)
+    {
+        var maxBodyFeature = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
+        if (maxBodyFeature is { IsReadOnly: false })
+        {
+            maxBodyFeature.MaxRequestBodySize = MaxMultipartBodyBytes;
+        }
+
+        context.Features.Set<IFormFeature>(new FormFeature(context.Request, new FormOptions { MultipartBodyLengthLimit = MaxMultipartBodyBytes }));
     }
 
     private static FormXlsFormUpload PayloadTooLarge(HttpContext context)
