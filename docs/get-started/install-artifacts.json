@@ -5,8 +5,8 @@
     "honua-admin": "0.3.2",
     "honua-sdk": "0.3.2",
     "mcp": "2.1.1",
-    "@honua/sdk-js": "0.2.10",
-    "create-honua-app": "0.1.9",
+    "@honua/sdk-js": "0.4.0",
+    "create-honua-app": "0.2.5",
     "Honua.Sdk": "2.2.0",
     "Honua.Sdk.Admin": "2.2.0"
   }

@@ -24,7 +24,7 @@ For a build-less browser page you can import it from a CDN instead:
 
 ```html
 <script type="module">
-  import { HonuaClient } from "https://esm.sh/@honua/sdk-js/browser";
+  import { HonuaClient } from "https://esm.sh/@honua/sdk-js@0.4.0/browser";
 </script>
 ```
 
