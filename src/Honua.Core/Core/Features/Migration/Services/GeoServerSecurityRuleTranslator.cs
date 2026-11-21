@@ -143,18 +143,7 @@ internal static class GeoServerSecurityRuleTranslator
 
         if (accumulator.HasRead != accumulator.HasWrite)
         {
-            accumulator.ReviewItems.Add(new MigrationManifestReviewItem
-            {
-                SourceId = layerSourceId,
-                Kind = "security-rule",
-                Code = UnexpressedRuleCode,
-                Severity = "manual-review",
-                Reason = "GeoServer layer defines only one of read/write access rules; held for manual review so Honua does not broaden the unspecified mode.",
-                ManualSteps =
-                [
-                    "Configure explicit read and write access policy roles in Honua before publishing this layer."
-                ]
-            });
+            RecordPartialModeReview(accumulator);
         }
 
         return new GeoServerLayerSecurityTranslation
@@ -164,6 +153,22 @@ internal static class GeoServerSecurityRuleTranslator
             ReviewItems = accumulator.ReviewItems.ToArray(),
             RequiresManualReview = accumulator.RequiresManualReview
         };
+    }
+
+    private static void RecordPartialModeReview(PolicyAccumulator accumulator)
+    {
+        accumulator.ReviewItems.Add(new MigrationManifestReviewItem
+        {
+            SourceId = accumulator.LayerSourceId,
+            Kind = "security-rule",
+            Code = UnexpressedRuleCode,
+            Severity = "manual-review",
+            Reason = "GeoServer layer defines only one of read/write access rules; held for manual review so Honua does not broaden the unspecified mode.",
+            ManualSteps =
+            [
+                "Configure explicit read and write access policy roles in Honua before publishing this layer."
+            ]
+        });
     }
 
     public static MigrationManifestReviewItem[] CollectUnmatchedUnexpressedRules(

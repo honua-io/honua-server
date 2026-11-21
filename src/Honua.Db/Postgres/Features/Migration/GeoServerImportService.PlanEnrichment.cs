@@ -36,21 +36,12 @@ internal sealed partial class GeoServerImportService
         FilteredResources filteredResources)
     {
         var extraReview = new List<MigrationManifestReviewItem>();
-        var context = new StepEnrichmentContext
-        {
-            LayersById = filteredResources.Layers.ToDictionary(GetLayerId, StringComparer.Ordinal),
-            StylesById = filteredResources.Styles.ToDictionary(GetStyleId, StringComparer.Ordinal),
-            StyleIdsByReference = BuildStyleReferenceLookup(filteredResources.Styles),
-            SecurityRules = serviceInfo.SecurityRules,
-            ExtraReview = extraReview
-        };
-
+        var context = BuildStepEnrichmentContext(serviceInfo, filteredResources, extraReview);
         var updatedSteps = new MigrationApplyPlanStep[plan.Steps.Length];
         var anyChanged = false;
         for (var i = 0; i < plan.Steps.Length; i++)
         {
-            var (updated, changed) = EnrichLayerStep(plan.Steps[i], context);
-            updatedSteps[i] = updated;
+            (updatedSteps[i], var changed) = EnrichLayerStep(plan.Steps[i], context);
             anyChanged |= changed;
         }
 
@@ -75,6 +66,19 @@ internal sealed partial class GeoServerImportService
                 .ToArray()
         };
     }
+
+    private static StepEnrichmentContext BuildStepEnrichmentContext(
+        GeoServerServiceInfo serviceInfo,
+        FilteredResources filteredResources,
+        List<MigrationManifestReviewItem> extraReview)
+        => new()
+        {
+            LayersById = filteredResources.Layers.ToDictionary(GetLayerId, StringComparer.Ordinal),
+            StylesById = filteredResources.Styles.ToDictionary(GetStyleId, StringComparer.Ordinal),
+            StyleIdsByReference = BuildStyleReferenceLookup(filteredResources.Styles),
+            SecurityRules = serviceInfo.SecurityRules,
+            ExtraReview = extraReview
+        };
 
     private (MigrationApplyPlanStep Step, bool Changed) EnrichLayerStep(
         MigrationApplyPlanStep step,
