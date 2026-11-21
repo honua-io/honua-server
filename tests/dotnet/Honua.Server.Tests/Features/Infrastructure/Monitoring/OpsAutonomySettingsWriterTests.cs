@@ -110,6 +110,7 @@ public sealed class OpsAutonomySettingsWriterTests : IAsyncLifetime
         var audit = Substitute.For<IAuditLog>();
         CancelRequestWhenAuditRecords(audit, request, "\"current\":{\"killSwitchEnabled\":true}");
         var store = new PostgresOpsAutonomyPolicyStore(new TestDatabaseConnectionProvider(_postgres.DataSource), audit);
+        await store.SetSettingsAsync(new OpsAutonomySettings { KillSwitchEnabled = false }, "operator");
         var watchdog = new RecordingWatchdog();
         var writer = new OpsAutonomySettingsWriter(_postgres.DataSource, store, watchdog);
 
