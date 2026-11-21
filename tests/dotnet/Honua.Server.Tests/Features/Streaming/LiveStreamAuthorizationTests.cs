@@ -38,20 +38,10 @@ public sealed partial class LiveStreamAuthorizationTests
         var expire = end == CredentialEnd.Expired;
         var backingCredential = end == CredentialEnd.BackingKeyRevoked;
         var authentication = Substitute.For<IAuthenticationService>();
-        var registrations = new ServiceCollection();
-        registrations.AddLogging();
-        registrations.AddAuthentication().AddScheme<AuthenticationSchemeOptions, PortalTokenAuthenticationHandler>(
-            PortalTokenAuthenticationExtensions.PortalTokenScheme, _ => { });
-        registrations.AddSingleton(authentication);
-        registrations.AddSingleton<LiveStreamSecurityRegistry>();
-        await using var services = registrations.BuildServiceProvider();
+        await using var services = CreatePortalStreamServices(authentication);
         var registry = services.GetRequiredService<LiveStreamSecurityRegistry>();
         registry.AttachConsumer();
-        var context = new DefaultHttpContext { RequestServices = services };
-        context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "alice")],
-            PortalTokenAuthenticationExtensions.PortalTokenScheme));
-        authentication.AuthenticateAsync(Arg.Any<HttpContext>(), Arg.Any<string>()).Returns(
-            AuthenticateResult.Success(new AuthenticationTicket(context.User, PortalTokenAuthenticationExtensions.PortalTokenScheme)));
+        var context = CreatePortalStreamContext(services, authentication);
         context.Features.Set(new LiveStreamCredentialFeature(new("PortalToken", "token-hash"),
             expire ? DateTimeOffset.UtcNow.AddSeconds(-1) : DateTimeOffset.UtcNow.AddMinutes(5),
             backingCredential ? new("AdminApiKey", "source-key") : null));
@@ -63,13 +53,57 @@ public sealed partial class LiveStreamAuthorizationTests
                     ? new("credential-revoked", "source-key", "AdminApiKey")
                     : new("credential-revoked", "token-hash", "PortalToken"), CancellationToken.None);
             }
-            var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            using var registration = invocation.HttpContext.RequestAborted.Register(() => cancelled.TrySetResult());
-            await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            return Results.Empty;
+            return await WaitForStreamEndAsync(invocation.HttpContext);
         });
         ((IStatusCodeHttpResult)result!).StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
         await authentication.Received(expire ? 0 : 1).AuthenticateAsync(Arg.Any<HttpContext>(), Arg.Any<string>());
+    }
+
+    [UnitTest]
+    public async Task Filter_RegistryWithoutAttachedConsumer_KeepsPeriodicCredentialCheck()
+    {
+        var authentication = Substitute.For<IAuthenticationService>();
+        await using var services = CreatePortalStreamServices(authentication);
+        var context = CreatePortalStreamContext(services, authentication);
+        authentication.AuthenticateAsync(Arg.Any<HttpContext>(), Arg.Any<string>()).Returns(
+            AuthenticateResult.Success(new AuthenticationTicket(context.User, PortalTokenAuthenticationExtensions.PortalTokenScheme)),
+            AuthenticateResult.Fail("credential revoked where no security event reaches this task"));
+        context.Features.Set(new LiveStreamCredentialFeature(new("PortalToken", "token-hash"), DateTimeOffset.UtcNow.AddMinutes(5)));
+
+        var result = await new LiveStreamAuthorizationFilter().InvokeAsync(
+            EndpointFilterInvocationContext.Create(context), invocation => WaitForStreamEndAsync(invocation.HttpContext));
+
+        ((IStatusCodeHttpResult)result!).StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        await authentication.Received(2).AuthenticateAsync(Arg.Any<HttpContext>(), Arg.Any<string>());
+    }
+
+    private static ServiceProvider CreatePortalStreamServices(IAuthenticationService authentication)
+    {
+        var registrations = new ServiceCollection();
+        registrations.AddLogging();
+        registrations.AddAuthentication().AddScheme<AuthenticationSchemeOptions, PortalTokenAuthenticationHandler>(
+            PortalTokenAuthenticationExtensions.PortalTokenScheme, _ => { });
+        registrations.AddSingleton(authentication);
+        registrations.AddSingleton<LiveStreamSecurityRegistry>();
+        return registrations.BuildServiceProvider();
+    }
+
+    private static DefaultHttpContext CreatePortalStreamContext(IServiceProvider services, IAuthenticationService authentication)
+    {
+        var context = new DefaultHttpContext { RequestServices = services };
+        context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "alice")],
+            PortalTokenAuthenticationExtensions.PortalTokenScheme));
+        authentication.AuthenticateAsync(Arg.Any<HttpContext>(), Arg.Any<string>()).Returns(
+            AuthenticateResult.Success(new AuthenticationTicket(context.User, PortalTokenAuthenticationExtensions.PortalTokenScheme)));
+        return context;
+    }
+
+    private static async ValueTask<object?> WaitForStreamEndAsync(HttpContext context)
+    {
+        var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var registration = context.RequestAborted.Register(() => cancelled.TrySetResult());
+        await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        return Results.Empty;
     }
 
     [UnitTest]
