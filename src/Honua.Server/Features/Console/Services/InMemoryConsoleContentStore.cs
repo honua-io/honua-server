@@ -93,6 +93,7 @@ internal sealed class InMemoryConsoleContentStore : IAuthoredConsoleContent
             if (!_items.TryGetValue(id, out var existing))
                 return Task.FromResult<ConsoleContentItem?>(null);
 
+            patch.EnsureStillPersonal(existing);
             var now = _timeProvider.GetUtcNow();
             var updated = existing with
             {

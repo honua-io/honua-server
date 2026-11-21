@@ -72,4 +72,41 @@ public class InMemoryConsoleContentStoreTests
         Assert.Equal("team-b", result.TeamScopeId);
         Assert.Equal("renamed", result.Title);
     }
+
+    [UnitTest]
+    public async Task PatchAsync_AuthorizedOwnerNoLongerOwnsItem_ThrowsAndKeepsItem()
+    {
+        var store = new InMemoryConsoleContentStore(TimeProvider.System);
+        var created = await store.CreateAsync(Seed("moved-1", ConsoleVisibility.Personal, teamScopeId: null));
+        await store.UpdateAsync(created with { OwnerId = "someone-else" });
+
+        var late = new ConsoleContentItemPatch { Title = "late", PersonalOwnerId = "tester" };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => store.PatchAsync("moved-1", late));
+
+        Assert.Null((await store.GetAsync("moved-1"))!.Title);
+    }
+
+    [UnitTest]
+    public async Task PatchAsync_ItemNoLongerPersonal_ThrowsAndKeepsItem()
+    {
+        var store = new InMemoryConsoleContentStore(TimeProvider.System);
+        await store.CreateAsync(Seed("widened-1", ConsoleVisibility.Personal, teamScopeId: null));
+        await store.PatchAsync("widened-1", new ConsoleContentItemPatch { Visibility = ConsoleVisibility.Organization });
+
+        var late = new ConsoleContentItemPatch { Title = "late", PersonalOwnerId = "tester" };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => store.PatchAsync("widened-1", late));
+
+        Assert.Null((await store.GetAsync("widened-1"))!.Title);
+    }
+
+    [UnitTest]
+    public async Task PatchAsync_ItemStillPersonalToAuthorizedOwner_AppliesPatch()
+    {
+        var store = new InMemoryConsoleContentStore(TimeProvider.System);
+        await store.CreateAsync(Seed("current-1", ConsoleVisibility.Personal, teamScopeId: null));
+
+        var result = await store.PatchAsync("current-1", new ConsoleContentItemPatch { Title = "on time", PersonalOwnerId = "tester" });
+
+        Assert.Equal("on time", result!.Title);
+    }
 }

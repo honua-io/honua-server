@@ -81,6 +81,7 @@ internal static class ConsoleContentMapper
             Labels = request.Labels,
             Visibility = request.Visibility,
             UpdatedById = ConsolePrincipal.ResolveActorId(principal),
+            PersonalOwnerId = request.AuthorizedPersonalOwnerId,
         };
     }
 

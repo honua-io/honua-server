@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Runtime.CompilerServices;
+using Honua.Core.Features.Console.Abstractions;
 using Honua.Core.Features.Console.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
@@ -51,40 +52,74 @@ internal static class AgentApprovalFilter
     public static ValueTask<object?> LayerState(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
         => Refuse(invocation, next, LayerStateRef, ConsoleGuidance);
 
-    // Any visibility beyond personal, or a team scope, puts content in front of a new audience.
+    // An agent may create Console content it owns and keeps personal, and edit that content.
+    // A wider visibility, a team scope or another owner puts content in front of a new audience,
+    // and editing content someone else owns, or content others can see or reach through sharing,
+    // changes their work: both need a person.
     public static async ValueTask<object?> ContentVisibility(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
     {
         var context = invocation.HttpContext;
         if (!AgentPrincipal.IsAgent(context.User))
             return await next(invocation).ConfigureAwait(false);
 
-        var changesAudience = invocation.Arguments.Any(static argument => WidensVisibility(argument));
-        if (invocation.Arguments.OfType<CreateConsoleContentItemRequest>().FirstOrDefault() is { OwnerId: not null } create)
-        {
-            changesAudience |= !string.Equals(create.OwnerId, ConsolePrincipal.ResolveActorId(context.User), StringComparison.Ordinal);
-        }
+        var actorId = ConsolePrincipal.ResolveActorId(context.User);
+        if (invocation.Arguments.Any(argument => WidensVisibility(argument) || CreatesForAnotherOwner(argument, actorId)))
+            return OperatorApprovalGate.AgentApprovalRequired(context, ContentVisibilityRef, ConsoleGuidance);
 
-        if (!changesAudience && invocation.Arguments.OfType<UpdateConsoleContentItemRequest>().FirstOrDefault() is { } update)
-        {
-            var store = context.RequestServices.GetRequiredService<ProjectedConsoleContentStore>();
-            var id = context.Request.RouteValues["id"]?.ToString();
-            if (id is not null && await store.GetAsync(id, context.RequestAborted).ConfigureAwait(false) is { } existing)
-            {
-                if (update.Generation is { } generation && generation != existing.Generation)
-                {
-                    return TypedResults.Conflict(ApiResponse<object>.Failure("Console content item generation has changed."));
-                }
+        var edit = invocation.Arguments.FirstOrDefault(static argument => argument is UpdateConsoleContentItemRequest or PatchConsoleContentItemRequest);
+        var id = context.Request.RouteValues["id"]?.ToString();
+        if (edit is null || id is null)
+            return await next(invocation).ConfigureAwait(false);
 
-                changesAudience = !string.Equals(update.OwnerId, existing.OwnerId, StringComparison.Ordinal);
-                // Persist against the same version whose ownership was authorized.
-                update.AuthorizedGeneration = existing.Generation;
-            }
-        }
-
-        return changesAudience
-            ? OperatorApprovalGate.AgentApprovalRequired(context, ContentVisibilityRef, ConsoleGuidance)
-            : await next(invocation).ConfigureAwait(false);
+        var store = context.RequestServices.GetRequiredService<ProjectedConsoleContentStore>();
+        var existing = await store.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
+        // A missing item is the handler's 404.
+        var refusal = existing is null ? null : await AuthorizeEditAsync(context, edit, existing).ConfigureAwait(false);
+        return refusal ?? await next(invocation).ConfigureAwait(false);
     }
+
+    private static async Task<IResult?> AuthorizeEditAsync(HttpContext context, object edit, ConsoleContentItem existing)
+    {
+        var owner = ConsolePrincipal.ResolveStableActorId(context.User);
+        if (owner is null || !existing.IsPersonalTo(owner) || ChangesOwner(edit, existing)
+            || await IsSharedAsync(context, existing.Id).ConfigureAwait(false))
+        {
+            return OperatorApprovalGate.AgentApprovalRequired(context, ContentVisibilityRef, ConsoleGuidance);
+        }
+
+        switch (edit)
+        {
+            case UpdateConsoleContentItemRequest { Generation: { } generation } when generation != existing.Generation:
+                return TypedResults.Conflict(ApiResponse<object>.Failure("Console content item generation has changed."));
+            // A replacement is bound to the version whose owner was authorized; it always keeps the item personal.
+            case UpdateConsoleContentItemRequest update:
+                update.AuthorizedGeneration = existing.Generation;
+                break;
+            // A patch keeps the stored audience, so the write itself re-checks that the item is still personal to the agent.
+            case PatchConsoleContentItemRequest patch:
+                patch.AuthorizedPersonalOwnerId = owner;
+                break;
+        }
+        return null;
+    }
+
+    private static async Task<bool> IsSharedAsync(HttpContext context, string id)
+    {
+        var shares = context.RequestServices.GetRequiredService<IConsoleShareStore>();
+        var share = await shares.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
+        return share is not null
+            && (share.AccessTier != ConsoleShareAccessTier.Private
+                || share.EmbedEnabled
+                || share.PublicLinkTokens.Any(static link => !link.IsExpired));
+    }
+
+    private static bool ChangesOwner(object edit, ConsoleContentItem existing)
+        => edit is UpdateConsoleContentItemRequest update
+            && !string.Equals(update.OwnerId, existing.OwnerId, StringComparison.Ordinal);
+
+    private static bool CreatesForAnotherOwner(object? argument, string? actorId)
+        => argument is CreateConsoleContentItemRequest { OwnerId: { } owner }
+            && !string.Equals(owner, actorId, StringComparison.Ordinal);
 
     private static bool WidensVisibility(object? argument) => argument switch
     {
