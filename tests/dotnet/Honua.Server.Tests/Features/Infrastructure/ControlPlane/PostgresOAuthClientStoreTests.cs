@@ -56,6 +56,22 @@ public sealed class PostgresOAuthClientStoreTests(DatabaseFixtureAdapter databas
     }
 
     [IntegrationTest]
+    public async Task FindByClientIdAsync_OnASecondStore_FindsThePublicClientUntilDeleted()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var created = await harness.CreateOAuthClientStore().CreateAsync(Registration(OAuthClientType.Public), CancellationToken.None);
+        var other = harness.CreateOAuthClientStore();
+
+        var found = await other.FindByClientIdAsync(created.Record.ClientId, CancellationToken.None);
+        found!.Id.Should().Be(created.Record.Id);
+        found.RedirectUris.Should().Equal(created.Record.RedirectUris);
+
+        await other.DeleteAsync(created.Record.Id, CancellationToken.None);
+        (await other.FindByClientIdAsync(created.Record.ClientId, CancellationToken.None)).Should().BeNull();
+        (await other.FindByClientIdAsync("arcgispro", CancellationToken.None)).Should().BeNull();
+    }
+
+    [IntegrationTest]
     public async Task ValidateSecretAsync_ExpiredOrPublicClient_ReturnsNull()
     {
         await using var harness = await CreateHarnessAsync();

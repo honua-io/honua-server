@@ -235,8 +235,8 @@ internal static class SharingOAuth2Endpoints
     private static async Task<IResult?> RefuseUnboundClientAsync(HttpContext context, string clientId, string redirectUri)
     {
         var services = context.RequestServices;
-        var decision = await new PortalOAuthClientBinding(services.GetRequiredService<IOAuthClientStore>(), TimeProvider.System)
-            .CheckAsync(clientId, redirectUri, context.RequestAborted)
+        var decision = await services.GetRequiredService<PortalOAuthClientBinding>()
+            .CheckAsync(new PortalOAuthClientCheck(clientId, PortalOAuthNamedUserStep.Authorize, redirectUri), context.RequestAborted)
             .ConfigureAwait(false);
         if (decision is PortalOAuthClientDecision.Allowed)
         {
@@ -249,7 +249,7 @@ internal static class SharingOAuth2Endpoints
                 "unauthorized_client", "This client is not authorized to use the authorization_code grant.");
         }
 
-        SharingRestLog.OAuthRedirectUriRejected(services.GetRequiredService<ILogger<SharingRestLog>>());
+        SharingRestLog.OAuthClientRejected(services.GetRequiredService<ILogger<SharingRestLog>>(), decision);
         return StandardErrorHelpers.CreateBadRequest(
             context,
             decision is PortalOAuthClientDecision.RedirectNotRegistered

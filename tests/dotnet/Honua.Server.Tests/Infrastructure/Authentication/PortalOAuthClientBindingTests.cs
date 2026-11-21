@@ -49,6 +49,34 @@ public sealed class PortalOAuthClientBindingTests
     }
 
     [UnitTest]
+    public async Task GrantRefusal_IsOnlyReportedForTheClientsOwnRedirect()
+    {
+        var store = new InMemoryOAuthClientStore();
+        var client = await RegisterAsync(store, grantTypes: ["client_credentials"]);
+
+        // An allow-listed redirect the client does not own is refused outright, never redirected to.
+        var decision = await AuthorizeAsync(store, client.ClientId, OtherAllowedRedirect);
+
+        Assert.Equal(PortalOAuthClientDecision.RedirectNotRegistered, decision);
+    }
+
+    [UnitTest]
+    public async Task RefreshOnlyClient_CanRefreshButNotStartTheCodeFlow()
+    {
+        var store = new InMemoryOAuthClientStore();
+        var client = await RegisterAsync(store, grantTypes: ["refresh_token"]);
+        var binding = new PortalOAuthClientBinding(store, TimeProvider.System);
+
+        Assert.Equal(PortalOAuthClientDecision.GrantNotAllowed, await AuthorizeAsync(store, client.ClientId, RegisteredRedirect));
+        Assert.Equal(
+            PortalOAuthClientDecision.GrantNotAllowed,
+            await binding.CheckAsync(new(client.ClientId, PortalOAuthNamedUserStep.CodeExchange), CancellationToken.None));
+        Assert.Equal(
+            PortalOAuthClientDecision.Allowed,
+            await binding.CheckAsync(new(client.ClientId, PortalOAuthNamedUserStep.Refresh), CancellationToken.None));
+    }
+
+    [UnitTest]
     public async Task DeletedClient_DoesNotFallBackToALabel()
     {
         var store = new InMemoryOAuthClientStore();
@@ -67,7 +95,7 @@ public sealed class PortalOAuthClientBindingTests
         var client = await RegisterAsync(store, grantTypes: [], expiresAt: DateTimeOffset.UtcNow.AddMinutes(5));
 
         var decision = await new PortalOAuthClientBinding(store, new ShiftedTimeProvider(TimeSpan.FromHours(1)))
-            .CheckAsync(client.ClientId, RegisteredRedirect, CancellationToken.None);
+            .CheckAsync(Authorize(client.ClientId, RegisteredRedirect), CancellationToken.None);
 
         Assert.Equal(PortalOAuthClientDecision.InactiveClient, decision);
     }
@@ -100,7 +128,10 @@ public sealed class PortalOAuthClientBindingTests
     }
 
     private static Task<PortalOAuthClientDecision> AuthorizeAsync(IOAuthClientStore store, string clientId, string redirectUri)
-        => new PortalOAuthClientBinding(store, TimeProvider.System).CheckAsync(clientId, redirectUri, CancellationToken.None);
+        => new PortalOAuthClientBinding(store, TimeProvider.System).CheckAsync(Authorize(clientId, redirectUri), CancellationToken.None);
+
+    private static PortalOAuthClientCheck Authorize(string clientId, string redirectUri)
+        => new(clientId, PortalOAuthNamedUserStep.Authorize, redirectUri);
 
     private sealed class ShiftedTimeProvider(TimeSpan offset) : TimeProvider
     {

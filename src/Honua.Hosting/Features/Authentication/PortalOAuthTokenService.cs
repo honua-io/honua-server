@@ -20,7 +20,8 @@ internal sealed class PortalOAuthTokenService(
     PortalJwtAccessTokenService jwtService,
     ClientCredentialsFederationService federation,
     IOptions<PortalTokenAuthenticationOptions> tokenOptions,
-    IPrincipalMembershipSource? membershipSource = null)
+    IPrincipalMembershipSource? membershipSource = null,
+    TimeProvider? timeProvider = null)
 {
     private const string AuthorizationCodeGrant = "authorization_code";
     private const string RefreshTokenGrant = "refresh_token";
@@ -40,6 +41,7 @@ internal sealed class PortalOAuthTokenService(
     private readonly ClientCredentialsFederationService _federation = federation;
     private readonly PortalTokenAuthenticationOptions _tokenOptions = tokenOptions.Value;
     private readonly IPrincipalMembershipSource? _membershipSource = membershipSource;
+    private readonly PortalOAuthClientBinding _clientBinding = new(clientStore, timeProvider ?? TimeProvider.System);
 
     // Optional JWT access-token format (ADR-0068): when enabled the issued
     // access_token is a signed JWT whose jti is the cache reference, so revocation
@@ -326,7 +328,7 @@ internal sealed class PortalOAuthTokenService(
             }
         }
 
-        if (await RefuseRegisteredClientAsync(record.ClientId, cancellationToken).ConfigureAwait(false) is { } codeRefusal)
+        if (await RefuseRegisteredClientAsync(record.ClientId, PortalOAuthNamedUserStep.CodeExchange, cancellationToken).ConfigureAwait(false) is { } codeRefusal)
         {
             return codeRefusal;
         }
@@ -361,6 +363,7 @@ internal sealed class PortalOAuthTokenService(
     // longer allowed the code flow, cannot redeem or refresh.
     private async Task<PortalOAuthTokenResult?> RefuseRegisteredClientAsync(
         string? clientId,
+        PortalOAuthNamedUserStep step,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(clientId))
@@ -368,14 +371,14 @@ internal sealed class PortalOAuthTokenService(
             return null;
         }
 
-        var decision = await new PortalOAuthClientBinding(_clientStore, TimeProvider.System)
-            .CheckAsync(clientId, redirectUri: null, cancellationToken)
+        var decision = await _clientBinding
+            .CheckAsync(new PortalOAuthClientCheck(clientId, step), cancellationToken)
             .ConfigureAwait(false);
         return decision switch
         {
             PortalOAuthClientDecision.Allowed => null,
             PortalOAuthClientDecision.GrantNotAllowed => PortalOAuthTokenResult.Failure(
-                "unauthorized_client", "This client is not authorized to use the authorization_code grant."),
+                "unauthorized_client", "This client is not authorized for this grant."),
             _ => PortalOAuthTokenResult.Failure("invalid_grant", "The client is no longer registered."),
         };
     }
@@ -419,7 +422,7 @@ internal sealed class PortalOAuthTokenService(
             }
         }
 
-        if (await RefuseRegisteredClientAsync(record.ClientId, cancellationToken).ConfigureAwait(false) is { } refreshRefusal)
+        if (await RefuseRegisteredClientAsync(record.ClientId, PortalOAuthNamedUserStep.Refresh, cancellationToken).ConfigureAwait(false) is { } refreshRefusal)
         {
             return refreshRefusal;
         }
