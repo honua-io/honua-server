@@ -79,7 +79,7 @@ internal sealed class PostgresOpsNotificationStore(
                 )
                 INSERT INTO {_schedules} AS schedule
                     (source, subject_id, episode_id, first_seen_at, severity, next_notice_at, last_seen_at)
-                SELECT 'proposal', proposal_id, @episode, now(),
+                SELECT 'proposal', proposal_id, @episode, COALESCE((record->>'createdAt')::timestamptz, now()),
                     CASE WHEN record->'autonomyMetadata'->>'severity' = '2'
                         OR (record->'autonomyMetadata'->>'severity' IS NULL AND record->'plan'->>'riskLevel' = '2')
                         THEN 2 ELSE 1 END, now(), now()
