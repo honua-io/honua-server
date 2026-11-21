@@ -95,7 +95,7 @@ public sealed class ExportCompanionFilesTests
         collection["license"]!.GetValue<string>().Should().Be("CC-BY-4.0");
         collection["providers"]!.ToJsonString().Should().Be(
             "[{\"name\":\"City and County of Honolulu\",\"roles\":[\"producer\"],\"url\":\"https://example.gov/gis\"},"
-            + "{\"name\":\"Example GIS\",\"roles\":[\"host\"]}]");
+            + "{\"name\":\"Example GIS\",\"roles\":[\"host\"],\"url\":\"https://example.gov/gis\"}]");
     }
 
     private const string StoredStyle = """

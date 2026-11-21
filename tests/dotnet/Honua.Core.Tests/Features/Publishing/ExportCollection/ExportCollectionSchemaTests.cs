@@ -99,7 +99,7 @@ public sealed class ExportCollectionSchemaTests
         written["license"]!.GetValue<string>().Should().Be(expected);
     }
 
-    // The server adds the README.md and AGENTS.md links and the providers (PairedPublicationDescriptorFactory.Collection);
+    // The server adds the README.md and AGENTS.md links and the providers (ExportVersionFactory.Collection);
     // it does not write a host contact yet, so the example supplies one. With them the document is Portolan-valid.
     [UnitTest]
     public void MauiCountyParcelsExample_PassesThePinnedPortolanProfileOnceCompanionsAreAdded()

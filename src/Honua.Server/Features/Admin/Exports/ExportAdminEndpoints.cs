@@ -30,9 +30,14 @@ internal static class ExportAdminEndpoints
         _ = group.MapDelete("/{exportId}", DeleteAsync).WithName("DeleteExport").WithSummary("Unpublish an Export");
     }
 
-    private static async Task<IResult> ListAsync(HttpContext context, [FromServices] ExportCatalog catalog, CancellationToken cancellationToken)
+    private static async Task<IResult> ListAsync(
+        HttpContext context,
+        [FromServices] ExportCatalog catalog,
+        [FromQuery] int? limit = null,
+        [FromQuery] int? offset = null,
+        CancellationToken cancellationToken = default)
     {
-        var items = await catalog.ListAsync(BaseUrl(context), cancellationToken).ConfigureAwait(false);
+        var items = await catalog.ListAsync(BaseUrl(context), limit, offset, cancellationToken).ConfigureAwait(false);
         return Json(ApiResponse<ExportListResponse>.CreateSuccess(new ExportListResponse(items)), StatusCodes.Status200OK);
     }
 
@@ -52,6 +57,7 @@ internal static class ExportAdminEndpoints
         HttpContext context,
         [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] ITileCacheJobService jobService,
+        [FromServices] ExportCatalog catalog,
         [FromServices] IOptions<LimitsOptions> limits,
         CancellationToken cancellationToken)
     {
@@ -64,6 +70,11 @@ internal static class ExportAdminEndpoints
         }
 
         var start = resolved.Start!;
+        if (await catalog.HasActiveJobAsync(start.ExportId!, cancellationToken).ConfigureAwait(false))
+        {
+            return Failure($"An export job is already running for Export '{start.ExportId}'.", StatusCodes.Status409Conflict);
+        }
+
         var submission = new TileOperationSubmission(
             start, JobOwnershipSecurity.ResolveOwner(context.User), context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema);
         var jobId = await jobService.SubmitAsync(submission, cancellationToken).ConfigureAwait(false);
@@ -88,6 +99,12 @@ internal static class ExportAdminEndpoints
             || await catalog.GetAsync(exportId, BaseUrl(context), cancellationToken).ConfigureAwait(false) is null)
         {
             return Failure($"Export '{exportId}' was not found.", StatusCodes.Status404NotFound);
+        }
+
+        if (await catalog.HasActiveJobAsync(exportId, cancellationToken).ConfigureAwait(false))
+        {
+            return Failure($"An export job is running for Export '{exportId}'; wait for it to finish before unpublishing.",
+                StatusCodes.Status409Conflict);
         }
 
         await catalog.UnpublishAsync(exportId, cancellationToken).ConfigureAwait(false);

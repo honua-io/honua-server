@@ -5,6 +5,12 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Exports;
+using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Policy;
+using Honua.Core.Features.Operations.Services;
 using Honua.Server.Features.Admin.Exports;
 using Honua.TestKit.Attributes;
 
@@ -31,9 +37,61 @@ public sealed partial class ExportEndpointTests
         export.GetProperty("versions")[1].GetProperty("artifacts").EnumerateArray().Select(artifact => Text(artifact, "kind"))
             .Should().BeEquivalentTo("collection", "geoparquet", "pmtiles");
 
-        using var list = JsonDocument.Parse(await _client.GetStringAsync(ExportsRoute));
+        using var list = JsonDocument.Parse(await _client.GetStringAsync($"{ExportsRoute}?limit=50&offset=0"));
         list.RootElement.GetProperty("data").GetProperty("items").EnumerateArray()
             .Should().Contain(item => Text(item, "id") == _exportId);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/exports")]
+    [Endpoint("DELETE /api/v1/admin/exports/{exportId}")]
+    public async Task AgentCaller_ExportCreateAndDelete_RequireHumanApprovalAndMapScopes()
+    {
+        AgentApprovalRule.IsGated("admin.exports.create").Should().BeTrue();
+        AgentApprovalRule.IsGated("admin.exports.delete").Should().BeTrue();
+        OperationScopeMapping.TryResolve(new OperationRequest { OperationId = "admin.exports.list" }, out var listOp).Should().BeTrue();
+        listOp.Should().Be(OperatorOperation.Read);
+        OperationScopeMapping.TryResolve(new OperationRequest { OperationId = "admin.exports.create" }, out var createOp).Should().BeTrue();
+        createOp.Should().Be(OperatorOperation.Create);
+        OperationScopeMapping.TryResolve(new OperationRequest { OperationId = "admin.exports.delete" }, out var deleteOp).Should().BeTrue();
+        deleteOp.Should().Be(OperatorOperation.Delete);
+
+        var dispatcher = _fixture.GetOptionalService<IOperationDispatcher>()!;
+        var result = await dispatcher.DispatchAsync(
+            new OperationRequest
+            {
+                OperationId = "admin.exports.create",
+                Inputs = new Dictionary<string, object?>
+                {
+                    ["source"] = new Dictionary<string, object?> { ["kind"] = "layer", ["serviceId"] = _serviceName, ["layerId"] = _layerId },
+                    ["exportId"] = _exportId
+                }
+            },
+            new OperationPolicyContext
+            {
+                ActorId = "agent-test",
+                Roles = [AgentApprovalRule.AgentRole],
+                Surface = OperationSurface.Mcp,
+                TenantId = "default"
+            });
+
+        result.Outcome.Should().Be(OperationOutcome.ApprovalRequired);
+    }
+
+    [IntegrationTest]
+    [Endpoint("DELETE /api/v1/admin/exports/{exportId}")]
+    public async Task DeleteExport_WritesDurableMarkerThatPreservesSourceIdentity()
+    {
+        var published = await PublishAsync(IdentityField);
+
+        using var deleted = await _client.DeleteAsync($"{ExportsRoute}/{_exportId}");
+        deleted.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var markerKey = published.PointerKey[..^ExportStore.PointerFileName.Length] + ExportStore.UnpublishedFileName;
+        var marker = await ReadJsonAsync<ExportUnpublishedMarker>(markerKey);
+        marker.ExportId.Should().Be(_exportId);
+        marker.ServiceId.Should().NotBeNullOrWhiteSpace();
+        marker.LayerId.Should().NotBeNullOrWhiteSpace();
     }
 
     [IntegrationTest]

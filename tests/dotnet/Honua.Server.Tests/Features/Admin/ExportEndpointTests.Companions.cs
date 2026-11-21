@@ -12,8 +12,8 @@ namespace Honua.Server.Tests.Features.Admin;
 public sealed partial class ExportEndpointTests
 {
     [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
-    public async Task PairedPublish_Layer_WritesCompanionFilesThatDescribeOnlyPublicFields()
+    [Endpoint("POST /api/v1/admin/exports")]
+    public async Task Export_Layer_WritesCompanionFilesThatDescribeOnlyPublicFields()
     {
         HideField(HiddenField);
 

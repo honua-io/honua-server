@@ -19,14 +19,28 @@ internal sealed partial class ExportCatalog(
     ITileCacheJobService jobs)
 {
     internal const string NotPublicReason = "The public data path is not enabled for Exports on this installation.";
+    internal const int DefaultListLimit = 50;
+    internal const int MaxListLimit = 200;
+    internal const int MaxStorageListFiles = 2000;
+    internal const int MaxVersionsReturned = 100;
 
-    public async Task<IReadOnlyList<ExportResponse>> ListAsync(string baseUrl, CancellationToken cancellationToken)
+    public async Task<bool> HasActiveJobAsync(string exportId, CancellationToken cancellationToken)
     {
-        var files = await ListFilesAsync(cancellationToken).ConfigureAwait(false);
+        var exportJobs = await ExportJobsAsync(cancellationToken).ConfigureAwait(false);
+        return exportJobs.Any(job => job.ExportId == exportId && job.Status is OperationStatus.Queued or OperationStatus.Processing);
+    }
+
+    public async Task<IReadOnlyList<ExportResponse>> ListAsync(
+        string baseUrl, int? limit, int? offset, CancellationToken cancellationToken)
+    {
+        var pageLimit = Math.Clamp(limit ?? DefaultListLimit, 1, MaxListLimit);
+        var pageOffset = Math.Max(0, offset ?? 0);
+        var files = await ListFilesAsync(subFolder: null, cancellationToken).ConfigureAwait(false);
         var exportJobs = await ExportJobsAsync(cancellationToken).ConfigureAwait(false);
         var ids = files.Select(file => Match(file).ExportId)
             .Concat(exportJobs.Select(job => job.ExportId))
-            .OfType<string>().Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal);
+            .OfType<string>().Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
+            .Skip(pageOffset).Take(pageLimit);
         var items = new List<ExportResponse>();
         foreach (var id in ids)
         {
@@ -39,16 +53,37 @@ internal sealed partial class ExportCatalog(
 
     public async Task<ExportResponse?> GetAsync(string exportId, string baseUrl, CancellationToken cancellationToken)
     {
-        var files = await ListFilesAsync(cancellationToken).ConfigureAwait(false);
+        var files = await ListFilesAsync(exportId, cancellationToken).ConfigureAwait(false);
         var exportJobs = await ExportJobsAsync(cancellationToken).ConfigureAwait(false);
         return await DescribeAsync(exportId, files, exportJobs, baseUrl, allVersions: true, cancellationToken).ConfigureAwait(false);
     }
 
-    // Unpublishing removes the pointer, so the read routes stop serving; Versions stay for audit.
+    // Unpublishing writes a durable fence before removing the pointer so an in-flight job cannot
+    // republish and a different Layer cannot later claim the same Export id; Versions stay for audit.
     public async Task<bool> UnpublishAsync(string exportId, CancellationToken cancellationToken)
     {
         var store = ExportStore.Create(storage, options.Value, exportId);
+        var (serviceId, layerId) = await ResolveSourceIdentityAsync(store, cancellationToken).ConfigureAwait(false);
+        await store.WriteUnpublishedAsync(
+            new ExportUnpublishedMarker(exportId, serviceId, layerId, DateTimeOffset.UtcNow),
+            cancellationToken).ConfigureAwait(false);
         return await storage.DeleteAsync(store.PointerKey, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<(string ServiceId, string LayerId)> ResolveSourceIdentityAsync(
+        ExportStore store, CancellationToken cancellationToken)
+    {
+        var pointer = await store.ReadPointerAsync(cancellationToken).ConfigureAwait(false);
+        var version = pointer is not null
+            ? await store.ReadCollectionAsync(pointer, cancellationToken).ConfigureAwait(false)
+            : await store.FindAnyStoredVersionAsync(cancellationToken).ConfigureAwait(false);
+        if (version is not null)
+        {
+            return (version.SourceLayer.Service, version.SourceLayer.Layer);
+        }
+
+        var existing = await store.ReadUnpublishedAsync(cancellationToken).ConfigureAwait(false);
+        return existing is not null ? (existing.ServiceId, existing.LayerId) : (string.Empty, string.Empty);
     }
 
     private async Task<ExportResponse?> DescribeAsync(
@@ -63,7 +98,8 @@ internal sealed partial class ExportCatalog(
         var pointer = await store.ReadPointerAsync(cancellationToken).ConfigureAwait(false);
         var current = pointer?.ExportId == exportId ? await store.ReadCollectionAsync(pointer, cancellationToken).ConfigureAwait(false) : null;
         var versionIds = files.Select(Match).Where(match => match.ExportId == exportId && match.Version is not null)
-            .Select(match => match.Version!).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
+            .Select(match => match.Version!).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
+            .TakeLast(MaxVersionsReturned).ToList();
         var job = exportJobs.Where(candidate => candidate.ExportId == exportId).MaxBy(candidate => candidate.StartedAt);
         if (current is null && versionIds.Count == 0 && job is null)
         {
@@ -142,11 +178,12 @@ internal sealed partial class ExportCatalog(
     }
 
     // Listing prefixes the provider's own key prefix, so it takes the folder below it.
-    private Task<IReadOnlyList<CloudFile>> ListFilesAsync(CancellationToken cancellationToken)
+    private Task<IReadOnlyList<CloudFile>> ListFilesAsync(string? subFolder, CancellationToken cancellationToken)
     {
         var publishPrefix = options.Value.PMTilesPublish?.KeyPrefix?.Trim().Trim('/');
-        var folder = string.IsNullOrEmpty(publishPrefix) ? "exports" : $"{publishPrefix}/exports";
-        return storage.ListFilesAsync(folder, int.MaxValue, includeMetadata: false, cancellationToken);
+        var root = string.IsNullOrEmpty(publishPrefix) ? "exports" : $"{publishPrefix}/exports";
+        var folder = string.IsNullOrEmpty(subFolder) ? root : $"{root}/{subFolder}";
+        return storage.ListFilesAsync(folder, MaxStorageListFiles, includeMetadata: false, cancellationToken);
     }
 
     private static (string? ExportId, string? Version) Match(CloudFile file)

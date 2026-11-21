@@ -17,6 +17,7 @@ namespace Honua.Server.Features.Admin.Exports;
 internal sealed class ExportStore
 {
     internal const string PointerFileName = "current.json";
+    internal const string UnpublishedFileName = "unpublished.json";
     private const string JsonContentType = "application/json";
 
     private readonly ICloudFileStorage _storage;
@@ -29,6 +30,8 @@ internal sealed class ExportStore
     }
 
     public string PointerKey => $"{_exportKey}/{PointerFileName}";
+
+    public string UnpublishedKey => $"{_exportKey}/{UnpublishedFileName}";
 
     public static ExportStore Create(ICloudFileStorage storage, CloudStorageOptions options, string exportId)
     {
@@ -92,6 +95,50 @@ internal sealed class ExportStore
 
     public async Task<ExportPointer?> ReadPointerAsync(CancellationToken cancellationToken)
         => await ReadJsonAsync(PointerKey, ExportVersionJsonContext.Default.ExportPointer, cancellationToken).ConfigureAwait(false);
+
+    public async Task<string?> ReadUnpublishedETagAsync(CancellationToken cancellationToken)
+    {
+        var marker = await _storage.GetMetadataAsync(UnpublishedKey, cancellationToken).ConfigureAwait(false);
+        return marker is null ? null : string.IsNullOrWhiteSpace(marker.ETag) ? marker.FileId : marker.ETag;
+    }
+
+    public Task<ExportUnpublishedMarker?> ReadUnpublishedAsync(CancellationToken cancellationToken)
+        => ReadJsonAsync(UnpublishedKey, ExportVersionJsonContext.Default.ExportUnpublishedMarker, cancellationToken);
+
+    public Task WriteUnpublishedAsync(ExportUnpublishedMarker marker, CancellationToken cancellationToken)
+        => PutJsonOnceAsync(UnpublishedKey, marker, ExportVersionJsonContext.Default.ExportUnpublishedMarker, cancellationToken);
+
+    public Task ClearUnpublishedAsync(CancellationToken cancellationToken)
+        => _storage.DeleteAsync(UnpublishedKey, cancellationToken);
+
+    public async Task<ExportVersion?> FindAnyStoredVersionAsync(CancellationToken cancellationToken)
+    {
+        var files = await _storage.ListFilesAsync(_exportKey, 200, includeMetadata: false, cancellationToken).ConfigureAwait(false);
+        foreach (var file in files)
+        {
+            var path = !string.IsNullOrEmpty(file.FileId) ? file.FileId : file.StoragePath;
+            if (!path.EndsWith($"/{ExportCollectionDocument.FileName}", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var withoutFile = path[..^(ExportCollectionDocument.FileName.Length + 1)];
+            var slash = withoutFile.LastIndexOf('/');
+            var version = slash >= 0 ? withoutFile[(slash + 1)..] : withoutFile;
+            if (!ExportReader.IsVersion(version))
+            {
+                continue;
+            }
+
+            var stored = await ReadVersionAsync(version, cancellationToken).ConfigureAwait(false);
+            if (stored is not null)
+            {
+                return stored;
+            }
+        }
+
+        return null;
+    }
 
     public Task<ExportVersion?> ReadCollectionAsync(ExportPointer pointer, CancellationToken cancellationToken)
         => ExportReader.IsVersion(pointer.Version)

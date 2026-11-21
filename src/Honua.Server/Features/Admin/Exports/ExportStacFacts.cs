@@ -40,7 +40,18 @@ internal static class ExportStacFacts
             providers.Add(producer);
         }
 
-        providers.Add(new JsonObject { ["name"] = input.HostName, ["roles"] = new JsonArray("host") });
+        var host = new JsonObject
+        {
+            ["name"] = input.HostName,
+            ["roles"] = new JsonArray("host"),
+            ["url"] = WebUrl(input.Metadata.ContactPoint?.Url) ?? "https://honua.io"
+        };
+        if (!string.IsNullOrWhiteSpace(input.Metadata.ContactPoint?.Email))
+        {
+            host["email"] = input.Metadata.ContactPoint.Email.Trim();
+        }
+
+        providers.Add(host);
         return providers;
     }
 

@@ -28,7 +28,8 @@ internal sealed partial class TileOperationExecutionCore
         ExportLayerSource Source,
         ExportFields Fields,
         ExportStore Store,
-        string? PointerETag);
+        string? PointerETag,
+        string? UnpublishedETag);
 
     private sealed record ExportArtifactFiles(Stream Archive, string ArchiveSha256, byte[] Parquet, string ParquetSha256);
 
@@ -131,36 +132,59 @@ internal sealed partial class TileOperationExecutionCore
         var options = services.GetRequiredService<IOptions<CloudStorageOptions>>().Value;
         var store = ExportStore.Create(storage, options, request.ExportId!);
         var pointerETag = await store.ReadPointerETagAsync(cancellationToken).ConfigureAwait(false);
+        var unpublishedETag = await store.ReadUnpublishedETagAsync(cancellationToken).ConfigureAwait(false);
 
         var source = await ExportLayerSource.OpenAsync(
             graphProvider, services, request.ServiceId!, request.LayerId!.Value, cancellationToken).ConfigureAwait(false);
-        if (pointerETag is not null)
-        {
-            await RequireSameSourceAsync(store, source, cancellationToken).ConfigureAwait(false);
-        }
+        await RequireSameSourceAsync(store, source, pointerETag, unpublishedETag, cancellationToken).ConfigureAwait(false);
 
         var fields = ExportFields.Resolve(source.Resource, request.IdentityField!);
         var capturedAt = DateTimeOffset.UtcNow;
         var captureId = $"capture-{Guid.NewGuid():N}";
         var run = new ExportVersionRun(
             request.ExportId!, ExportVersionFactory.NewVersion(capturedAt, captureId), captureId, capturedAt);
-        return new ExportPublishContext(run, source, fields, store, pointerETag);
+        return new ExportPublishContext(run, source, fields, store, pointerETag, unpublishedETag);
     }
 
-    // A publication id names one dataset; another layer must not silently replace it for its readers.
+    // An Export id names one Dataset; another Layer must not replace it, even after unpublish.
     private static async Task RequireSameSourceAsync(
         ExportStore store,
         ExportLayerSource source,
+        string? pointerETag,
+        string? unpublishedETag,
         CancellationToken cancellationToken)
     {
-        var pointer = await store.ReadPointerAsync(cancellationToken).ConfigureAwait(false);
-        var active = pointer is null ? null : await store.ReadCollectionAsync(pointer, cancellationToken).ConfigureAwait(false);
-        if (active is null
-            || active.SourceLayer.Service != source.Published.Service.Metadata.Id
-            || active.SourceLayer.Layer != source.Resource.Metadata.Id)
+        var serviceId = source.Published.Service.Metadata.Id;
+        var layerId = source.Resource.Metadata.Id;
+        if (pointerETag is not null)
+        {
+            var pointer = await store.ReadPointerAsync(cancellationToken).ConfigureAwait(false);
+            var active = pointer is null ? null : await store.ReadCollectionAsync(pointer, cancellationToken).ConfigureAwait(false);
+            if (active is null || active.SourceLayer.Service != serviceId || active.SourceLayer.Layer != layerId)
+            {
+                throw new ExportException(
+                    "This export id already exports a different layer; choose another export id.");
+            }
+
+            return;
+        }
+
+        if (unpublishedETag is not null)
+        {
+            var marker = await store.ReadUnpublishedAsync(cancellationToken).ConfigureAwait(false);
+            if (marker is not null && !string.IsNullOrEmpty(marker.ServiceId)
+                && (marker.ServiceId != serviceId || marker.LayerId != layerId))
+            {
+                throw new ExportException(
+                    "This export id already exports a different layer; choose another export id.");
+            }
+        }
+
+        var existing = await store.FindAnyStoredVersionAsync(cancellationToken).ConfigureAwait(false);
+        if (existing is not null && (existing.SourceLayer.Service != serviceId || existing.SourceLayer.Layer != layerId))
         {
             throw new ExportException(
-                "This publication id already publishes a different layer; choose another publication id.");
+                "This export id already exports a different layer; choose another export id.");
         }
     }
 
@@ -347,7 +371,19 @@ internal sealed partial class TileOperationExecutionCore
         await context.Store.PutJsonOnceAsync(collectionKey, ExportVersionFactory.Collection(companions),
             ExportVersionJsonContext.Default.JsonObject, cancellationToken).ConfigureAwait(false);
 
+        var currentUnpublishedETag = await context.Store.ReadUnpublishedETagAsync(cancellationToken).ConfigureAwait(false);
+        if (currentUnpublishedETag is not null
+            && !string.Equals(currentUnpublishedETag, context.UnpublishedETag, StringComparison.Ordinal))
+        {
+            throw new ExportException("This Export was unpublished while the job was running; its version was not activated.");
+        }
+
         await SwitchPointerAsync(context.Store, context.Run, context.PointerETag).ConfigureAwait(false);
+        if (context.UnpublishedETag is not null)
+        {
+            await context.Store.ClearUnpublishedAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
         TileOperationLog.ExportActivated(_logger, current.JobId, run.ExportId, run.Version);
         return current with
         {

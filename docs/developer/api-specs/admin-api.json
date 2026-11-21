@@ -24715,7 +24715,32 @@
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Maximum Exports to return (1-200, default 50).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "description": "Zero-based offset into the sorted Export list.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ]
       },
       "post": {
         "tags": [
@@ -24776,6 +24801,16 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "409": {
+            "description": "An export job is already running for this Export.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportFailureEnvelope"
+                }
+              }
+            }
           }
         }
       }
@@ -24884,6 +24919,16 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "409": {
+            "description": "An export job is already running for this Export.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportFailureEnvelope"
+                }
+              }
+            }
           }
         }
       }
@@ -50924,17 +50969,6 @@
             "nullable": true,
             "description": "`none` or `gzip`: tile payload compression for `archive`, `publish` and `paired-publish` PMTiles output, case-insensitive. Defaults to `none`, which writes the same bytes as earlier releases. Rejected for other operations."
           },
-          "publicationId": {
-            "type": "string",
-            "nullable": true,
-            "pattern": "^[a-z0-9][a-z0-9-]{2,63}$",
-            "description": "Required for `paired-publish`: the publication whose versions and current pointer the run writes."
-          },
-          "identityField": {
-            "type": "string",
-            "nullable": true,
-            "description": "Required for `paired-publish`: a visible text field that identifies each feature in both the PMTiles and the GeoParquet artifact."
-          },
           "generationId": {
             "type": "string",
             "nullable": true,
@@ -51074,9 +51108,6 @@
           "publishedArtifact": {
             "$ref": "#/components/schemas/TileOpsPublishedArtifact"
           },
-          "publishedPublication": {
-            "$ref": "#/components/schemas/TileOpsPublishedPublication"
-          },
           "startedAt": {
             "type": "string",
             "format": "date-time"
@@ -51109,6 +51140,14 @@
           "duration": {
             "type": "string",
             "description": "Elapsed time serialized as a .NET TimeSpan string (for example `00:01:23.4560000`)."
+          },
+          "publishedExportVersion": {
+            "$ref": "#/components/schemas/TileOpsPublishedExportVersion"
+          },
+          "exportId": {
+            "type": "string",
+            "nullable": true,
+            "description": "The Export this job writes a Version of; null for tile operations."
           }
         }
       },
