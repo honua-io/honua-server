@@ -302,7 +302,7 @@ if '--verify-only' not in sys.argv:
             schema=result['schema'], table=result['table'], layer_name='windows-points',
             service_name='windows', srid=4326, geometry_column=result['geometryColumn'],
             geometry_type='Point', primary_key=result['primaryKey'], fields_list=['id', 'properties']))
-        state_path.write_text(json.dumps({'service': 'windows', 'layer': layer.layer_id}), encoding='utf-8')
+        state_path.write_text(json.dumps({'service': 'windows', 'layer': layer.storage_layer_id}), encoding='utf-8')
 
 state = json.loads(state_path.read_text(encoding='utf-8'))
 with HonuaClient(base, api_key=key) as client:
