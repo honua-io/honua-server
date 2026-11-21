@@ -352,7 +352,8 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
                         Log.TileFailed(_logger, job.OperationId, ex);
-                        return JobExecutionResult.Failed($"{HandledProcessId} failed during raster tiling: {ex.GetType().Name}.");
+                        var reason = ex is RasterStorageUnavailableException ? ex.Message : ex.GetType().Name;
+                        return JobExecutionResult.Failed($"{HandledProcessId} failed during raster tiling: {reason.TrimEnd('.')}.");
                     }
                 }
             }

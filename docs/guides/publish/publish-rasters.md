@@ -38,6 +38,8 @@ Run `POST /api/v1/admin/import/raster` with these form values:
 
 Optional form fields: `description`, `srid` (overrides CRS detection), `acquisitionDate` (ISO 8601, used by temporal mosaic selection), `tileZoomLevels` (comma-separated 0–24, default `0-8` pre-generated). For PNG/JPEG, attach the world file as another `file` value and optionally add a `.prj` sidecar. The direct PostGIS import runs synchronously and accepts at most the lower of `Limits:Imports:MaxSyncImportSize` and the fixed 50 MiB serving-process safety ceiling. Larger rasters require the durable staged-import pipeline.
 
+Raster storage needs the `postgis_raster` extension in the server's database. On an install without it, such as the feature-only quickstart, the import returns `503` with that operator action (enable `postgis_raster`, then restart the server), and ImageServer service info, tile and export requests answer not found instead of a server error.
+
 Every raster uploaded to the same layer must match the layer's first raster in SRID and band count; mismatches return `400` with a structured homogeneity message.
 
 Imported rasters are stored with `EXTERNAL` TOAST storage (out-of-line and uncompressed) so tile, terrain, statistics, and export reads fetch only the pixels they need instead of detoasting and decompressing the entire raster on every request. Combined with the default `0-8` tile pre-generation, web tile requests resolve as indexed `raster_tiles` lookups rather than full-raster clips.
