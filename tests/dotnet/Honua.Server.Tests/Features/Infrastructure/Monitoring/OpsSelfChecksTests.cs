@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
-using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
@@ -324,20 +323,9 @@ public sealed class OpsSelfChecksTests
         await checks.EvaluateAsync();
         var messages = logger.ReceivedCalls().Where(call => call.GetMethodInfo().Name == nameof(ILogger.Log))
             .Select(call => call.GetArguments()[2]?.ToString() ?? string.Empty).ToArray();
-        Assert.Contains("Scheduled self-check public-release-feed could not finish: HttpRequestException status 403.", messages);
-        Assert.Contains("Scheduled self-check sign-in-providers could not finish: InvalidOperationException.", messages);
+        Assert.Contains("Ops findings source honua_ops_findings.self-check.public-release-feed could not read public-release-feed: HttpRequestException status 403.", messages);
+        Assert.Contains("Ops findings source honua_ops_findings.self-check.sign-in-providers could not read sign-in-providers: InvalidOperationException.", messages);
         Assert.All(messages, message => Assert.DoesNotContain("private-", message, StringComparison.Ordinal));
-    }
-
-    [UnitTest]
-    [Operation(Operations.TestInfrastructure)]
-    public void DescribeFailure_NamesTransportCause()
-    {
-        var refused = new HttpRequestException(HttpRequestError.ConnectionError, "connect",
-            new HttpRequestException("pinned", new SocketException((int)SocketError.ConnectionRefused)));
-        Assert.Equal("HttpRequestException ConnectionError (SocketException ConnectionRefused)", OpsSelfChecks.DescribeFailure(refused));
-        var timedOut = new HttpRequestException("timed out", new TaskCanceledException());
-        Assert.Equal("HttpRequestException Unknown (TaskCanceledException)", OpsSelfChecks.DescribeFailure(timedOut));
     }
 
     private static readonly Uri ReleaseNotes = new("https://github.com/honua-io/honua-server/releases/tag/v2026.2");

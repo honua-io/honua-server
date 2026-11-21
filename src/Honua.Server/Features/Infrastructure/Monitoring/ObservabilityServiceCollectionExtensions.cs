@@ -83,7 +83,7 @@ internal static class ObservabilityServiceCollectionExtensions
         services.AddScoped<IOpsHealthSnapshotService, OpsHealthSnapshotService>();
         // Singleton: the scoped engine must still report a store source's last successful collection
         // after a failed read in a later scope.
-        services.AddSingleton<OpsFindingsCollectionLedger>();
+        services.AddSingleton(sp => new OpsFindingsCollectionLedger(sp.GetService<ILogger<OpsFindingsCollectionLedger>>()));
         services.AddScoped(sp => new OpsFindingsExtendedSignals
         {
             DatabasePressureSignal = sp.GetService<IOpsDatabasePressureSignal>(),

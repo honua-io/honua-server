@@ -158,10 +158,10 @@ Current rung by concern:
 Read `honua_ops_findings` or the MCP resource `honua://ops/findings` to see
 these findings. Long-running hosts sample once a minute, with sign-in discovery
 cached for five minutes and the public GitHub latest-release feed cached for
-24 hours (a failed release-feed read retries sooner). API Lambda hosts also register the sampler while their execution
-environment is running. Event-handler-only Lambda profiles evaluate checks on a
-findings read. Lambda caches last only for the lifetime of the execution
-environment. Each replica keeps its own cache. Before each sign-in probe, it
+24 hours (a failed release-feed read retries sooner). API Lambda hosts also
+register the sampler while their execution environment is running.
+Event-handler-only Lambda profiles evaluate checks on a findings read. Lambda
+caches last only for the lifetime of the execution environment. Each replica keeps its own cache. Before each sign-in probe, it
 refreshes persisted provider configuration even when it serves no admin requests.
 Provider configuration changes therefore appear in these sampled health findings
 within the five-minute interval; request authentication refreshes independently.
@@ -185,8 +185,10 @@ stable release, including numeric `rc.N` ordering. A missing release produces no
 notice; a failed release-feed read produces a sanitized `self-check-unavailable`
 warning, and Honua retries the read after five minutes, doubling up to hourly,
 until one succeeds. A successful read clears the warning and returns to the
-daily schedule. Each failed scheduled check logs one warning (event 7463) that
-names the check and its failure class, never the error text. Review release notes before approving an
+daily schedule. A failed self-check or findings store read (workflow
+operations, external events) logs one warning (event 7463) naming the source,
+the read and its failure class, never the error text; an unchanged failure is
+logged at most every five minutes. Review release notes before approving an
 upgrade. None of these findings includes an executable recommended action.
 They do not by themselves prove inbox or email delivery: that requires deployment
 notification wiring and live validation.

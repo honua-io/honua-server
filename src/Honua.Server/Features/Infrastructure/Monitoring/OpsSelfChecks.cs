@@ -1,10 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Net.Sockets;
 using Honua.Core.Features.Observability.Domain;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Infrastructure.Monitoring;
 
@@ -25,7 +23,7 @@ internal sealed record OpsPublishedRelease(string Version, Uri ReleaseNotes);
 
 internal sealed record OpsSelfCheckEvaluation(IReadOnlyList<OpsFinding> Findings, IReadOnlyList<EvidenceSourceEnvelope> Sources);
 
-internal sealed partial class OpsSelfChecks(
+internal sealed class OpsSelfChecks(
     TimeProvider clock, IOpsSelfCheckSource source, ILogger<OpsSelfChecks>? logger = null) : IDisposable
 {
     internal const string CertificateRule = "key-ring-certificate-expiry";
@@ -41,11 +39,10 @@ internal sealed partial class OpsSelfChecks(
     private static readonly TimeSpan ReleaseInterval = TimeSpan.FromDays(1);
     private static readonly TimeSpan ReleaseFirstRetry = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan ReleaseLongestRetry = TimeSpan.FromHours(1);
-    private readonly ILogger _logger = logger ?? NullLogger<OpsSelfChecks>.Instance;
     private DateTimeOffset? _providersReadAt;
     private DateTimeOffset? _releaseDueAt;
     private TimeSpan _releaseRetry = ReleaseFirstRetry;
-    private readonly OpsFindingsCollectionLedger _ledger = new();
+    private readonly OpsFindingsCollectionLedger _ledger = new(logger);
     private OpsSelfCheckEvaluation _providerSample = new([], []);
     private OpsSelfCheckEvaluation _releaseSample = new([], []);
 
@@ -90,49 +87,13 @@ internal sealed partial class OpsSelfChecks(
         var collection = new OpsFindingsStoreCollection("honua_ops_findings.self-check." + request.Component,
             EvidencePostureVocabulary.BackendKinds.InProcess, request.Component, clock);
         var result = await collection.ReadAsync(request.Component,
-            token => ReadAndLogFailureAsync(request, now, token), cancellationToken).ConfigureAwait(false);
+            token => request.Read(now, token), cancellationToken).ConfigureAwait(false);
         IReadOnlyList<OpsFinding> findings = result.Succeeded ? result.Value!
             : [CreateFinding(new(CollectionRule, new() { WorkloadId = request.Component }, now),
                 new(OpsFindingSeverity.Warning, "A scheduled health check could not finish",
                 "Check the configuration store and server's outbound connectivity. This check will retry on its next scheduled run."))];
         return (new(findings, [collection.Publish(_ledger, request.MaximumAge)]), result.Succeeded);
     }
-
-    private async Task<IReadOnlyList<OpsFinding>> ReadAndLogFailureAsync(
-        CollectionRequest request, DateTimeOffset now, CancellationToken cancellationToken)
-    {
-        try
-        {
-            return await request.Read(now, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // Exception text can carry connection details, so only the failure class is logged.
-            CollectionFailed(_logger, request.Component, DescribeFailure(ex));
-            throw;
-        }
-    }
-
-    internal static string DescribeFailure(Exception exception)
-    {
-        var description = exception switch
-        {
-            HttpRequestException { StatusCode: { } status } => $"{exception.GetType().Name} status {(int)status}",
-            HttpRequestException http => $"{exception.GetType().Name} {http.HttpRequestError}",
-            _ => exception.GetType().Name
-        };
-        var cause = exception.GetBaseException();
-        return cause switch
-        {
-            _ when ReferenceEquals(cause, exception) => description,
-            SocketException socket => $"{description} ({nameof(SocketException)} {socket.SocketErrorCode})",
-            _ => $"{description} ({cause.GetType().Name})"
-        };
-    }
-
-    [LoggerMessage(EventId = 7463, Level = LogLevel.Warning,
-        Message = "Scheduled self-check {Component} could not finish: {FailureClass}.")]
-    private static partial void CollectionFailed(ILogger logger, string component, string failureClass);
 
     private void AddCertificateFinding(DateTimeOffset now, List<OpsFinding> findings)
     {
