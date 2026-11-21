@@ -55,13 +55,6 @@ internal static partial class AdminHttpOperationRouteBinding
             groupPrefix,
             relativeTemplate);
 
-    public static RouteHandlerBuilder MapAdminOperation(
-        this IEndpointRouteBuilder endpoints,
-        AdminOperationRouteBinding binding,
-        Delegate handler) =>
-        endpoints.MapMethods(binding.RoutePattern, binding.Methods, handler)
-            .WithAdminOperation(binding.Definition);
-
     private static AdminOperationRouteBinding ForDefinition(
         IAdminHttpOperationDefinition definition,
         string groupPrefix,
@@ -194,6 +187,11 @@ internal static partial class AdminHttpOperationRouteBinding
             return "/";
         }
 
+        if (normalizedPrefix == "/")
+        {
+            return binding.Definition.Path;
+        }
+
         if (binding.Definition.Path.StartsWith(normalizedPrefix + "/", StringComparison.Ordinal))
         {
             return binding.Definition.Path[normalizedPrefix.Length..];
@@ -207,6 +205,11 @@ internal static partial class AdminHttpOperationRouteBinding
     {
         var cleanPrefix = prefix.TrimEnd('/');
         var cleanRelative = relative.StartsWith('/') ? relative : "/" + relative;
+        if (string.IsNullOrEmpty(cleanPrefix))
+        {
+            return cleanRelative;
+        }
+
         return cleanRelative == "/" ? cleanPrefix : cleanPrefix + cleanRelative;
     }
 
