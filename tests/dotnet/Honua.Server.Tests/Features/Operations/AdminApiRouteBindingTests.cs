@@ -158,6 +158,23 @@ public sealed class AdminApiRouteBindingTests : IDisposable
         act.Should().Throw<InvalidOperationException>().WithMessage("*admin.connections.test*");
     }
 
+    [UnitTest]
+    public void ForConnectImport_DerivedTemplate_KeepsCatalogParameterName()
+    {
+        var binding = AdminHttpOperationRouteBinding.ForConnectImport("admin.connections.tables.discover", "/connections");
+
+        binding.RoutePattern.Should().Be("/{id}/tables");
+    }
+
+    [UnitTest]
+    public void ForConnectImport_DerivedTemplateUnderRenamedGroupParameter_KeepsSuffix()
+    {
+        var binding = AdminHttpOperationRouteBinding.ForConnectImport(
+            "admin.connections.extents.refresh", "/connections/{connectionId}/layers");
+
+        binding.RoutePattern.Should().Be("/extents/refresh");
+    }
+
     private readonly record struct TestEndpointSpec(string Pattern, string Method, string EndpointName);
 
     private static RouteEndpoint CreateRouteEndpoint(IAdminHttpOperationDefinition definition, TestEndpointSpec spec) =>

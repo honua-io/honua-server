@@ -175,10 +175,13 @@ internal static partial class AdminHttpOperationBinding
             return binding.Definition.Path;
         }
 
-        // Slice the raw catalog path so parameter names and constraints reach the route unchanged.
-        if (binding.Definition.Path.StartsWith(normalizedPrefix + "/", StringComparison.Ordinal))
+        if (normalizedDefPath.StartsWith(normalizedPrefix + "/", StringComparison.Ordinal))
         {
-            return binding.Definition.Path[normalizedPrefix.Length..];
+            // Match on normalized paths but slice the raw catalog path, so the relative
+            // template keeps the catalog's own parameter names and constraints.
+            var prefixSegments = normalizedPrefix.Split('/', StringSplitOptions.RemoveEmptyEntries).Length;
+            var rawSegments = binding.Definition.Path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            return "/" + string.Join('/', rawSegments.Skip(prefixSegments));
         }
 
         throw new InvalidOperationException(
