@@ -10,6 +10,7 @@ using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Console.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -62,10 +63,10 @@ internal sealed class CapabilityManifestService(
     IConsoleActionEvaluator consoleActionEvaluator,
     IMetadataV2EnvironmentSnapshotReader environmentSnapshotReader,
     CapabilityManifestRuntimeInventory runtimeInventory,
-    IEnumerable<IWorkflowOperationStore> workflowOperationStores,
     WarehouseProviderDecisions warehouseProviders,
     ICapabilityRegistry capabilityRegistry,
-    ILogger<CapabilityManifestService> logger) : ICapabilityManifestService
+    ILogger<CapabilityManifestService> logger,
+    IH3CapabilityChecker? h3CapabilityChecker = null) : ICapabilityManifestService
 {
     internal const string BackgroundImportCapabilityId = "import.background";
 
@@ -123,6 +124,7 @@ internal sealed class CapabilityManifestService(
         capabilities = StampRollbackTargets(capabilities, operationCapabilities, policyContext);
         capabilities = [.. capabilities, BuildBackgroundImportCapability(policyContext)];
         capabilities = [.. capabilities, await BuildObjectStoreImportCapabilityAsync(policyContext, cancellationToken).ConfigureAwait(false)];
+        capabilities = [.. capabilities, await BuildH3AnalyticsCapabilityAsync(policyContext, cancellationToken).ConfigureAwait(false)];
         capabilities = [.. capabilities, .. BuildFileFormatCapabilities(policyContext, request.Principal)];
         capabilities = ApplyCompiledProtocolProfile(capabilities);
         var packages = options.ManifestFromRegistry
@@ -1322,7 +1324,7 @@ internal sealed class CapabilityManifestService(
 
     private async Task<bool> HasRestorablePriorRevisionAsync(string targetId, CancellationToken cancellationToken)
     {
-        foreach (var store in workflowOperationStores)
+        foreach (var store in runtimeInventory.WorkflowOperationStores)
         {
             WorkflowOperationRecord? deploy;
             try
@@ -1392,6 +1394,26 @@ internal sealed class CapabilityManifestService(
             entitlementKey: "import.file",
             policyCapability: "metadata.write");
         return capability with { Schemes = ["s3"] };
+    }
+
+    // The H3 routes answer 501 when PostgreSQL lacks the h3-pg extension (the quickstart's bundled
+    // PostGIS image does not ship it). Probe the checker those routes use so a client can tell before
+    // calling. No checker means no PostgreSQL feature store, so the routes cannot serve H3 at all.
+    private async Task<CapabilityManifestCapability> BuildH3AnalyticsCapabilityAsync(
+        CapabilityPolicyContext context,
+        CancellationToken cancellationToken)
+    {
+        var extensionInstalled = h3CapabilityChecker is not null
+            && await h3CapabilityChecker.IsH3AvailableAsync(cancellationToken).ConfigureAwait(false) == true;
+        return Capability(
+            FeatureCatalog.H3AnalyticsKey,
+            "analysis",
+            context,
+            supported: h3CapabilityChecker is not null,
+            configured: extensionInstalled,
+            entitlementKey: FeatureCatalog.H3AnalyticsKey,
+            policyCapability: "features.query",
+            unavailableReasonOverride: CapabilityReasonCodes.DependencyUnavailable);
     }
 
     private static CapabilityManifestCapability[] StampRollbackTargets(

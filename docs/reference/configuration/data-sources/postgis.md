@@ -55,6 +55,7 @@ PostgreSQL 16–18 with PostGIS 3.4–3.6 are tested in CI; see the [tested conf
 | `postgis` | Yes | Spatial operations, geometry types, spatial indexing. |
 | `postgis_raster` | For raster features | Raster data storage and analysis. |
 | `unaccent` | Yes | Accent-insensitive text search normalization. |
+| `h3` ([h3-pg](https://github.com/zachasme/h3-pg)) | For H3 aggregation | H3 cell aggregation (`/h3`, `queryH3`) and H3 vector tiles. |
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS postgis;
@@ -66,6 +67,13 @@ Honua never creates `postgis_raster` from application startup. When the
 extension is absent, the canonical migration runner leaves the optional raster
 migration root unjournaled and verifies the non-raster core floor. Provisioning
 the extension later makes that root eligible on the next migration run.
+
+Honua does not create `h3` either, and the PostGIS image bundled with the
+quickstart does not include it. Without it every H3 route returns `501`, and the
+capability manifest (`GET /api/v1/capabilities/manifest`) reports `analytics.h3`
+as unavailable with reason `dependency-unavailable`. Install the h3-pg package
+for your PostgreSQL version, run `CREATE EXTENSION IF NOT EXISTS h3;`, and
+restart Honua (the extension check is cached for the life of the process).
 
 ## Startup validation
 

@@ -41,7 +41,7 @@ Honua implements the modern OGC API family — Features, Maps, Tiles, Coverages,
 | POST | `/ogc/features/collections/{collectionId}/items` | Create feature (GeoJSON). |
 | POST | `/ogc/features/collections/{collectionId}/items/batch` | Batch create (Honua extension). |
 | PUT, PATCH, DELETE | `/ogc/features/collections/{collectionId}/items/{featureId}` | Replace, merge-patch, delete. |
-| GET | `/ogc/features/collections/{collectionId}/h3` | H3 aggregation (Honua extension; requires `resolution`; returns `501` when the configured provider does not support H3). |
+| GET | `/ogc/features/collections/{collectionId}/h3` | H3 aggregation (Honua extension; requires `resolution`; returns `501` when the configured provider does not support H3 or PostgreSQL lacks the [h3-pg extension](../configuration/data-sources/postgis.md#required-extensions); check `analytics.h3` in the capability manifest). |
 | POST | `/ogc/features/collections/{collectionId}/clusters`, `/spatial-join`, `/buffer-aggregate`, `/density` | Spatial analytics extensions (Pro tier; 402 when entitlement inactive). |
 | GET | `/ogc/features/schemas/honua-ogcapi-features.xsd` | GML application schema. |
 
