@@ -31,12 +31,43 @@ internal static partial class AdminHttpOperationRouteBinding
     public static AdminOperationRouteBinding ForApi(
         string operationId,
         string groupPrefix,
-        string? relativeTemplate = null)
-    {
-        var binding = new AdminOperationRouteBinding(
+        string? relativeTemplate = null) =>
+        ForDefinition(
             AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == operationId),
             groupPrefix,
             relativeTemplate);
+
+    public static AdminOperationRouteBinding ForOperate(
+        string operationId,
+        string groupPrefix,
+        string? relativeTemplate = null) =>
+        ForDefinition(
+            AdminOperateOperationCatalog.Definitions.Single(item => item.OperationId == operationId),
+            groupPrefix,
+            relativeTemplate);
+
+    public static AdminOperationRouteBinding ForAccess(
+        string operationId,
+        string groupPrefix,
+        string? relativeTemplate = null) =>
+        ForDefinition(
+            AdminAccessOperationCatalog.Definitions.Single(item => item.OperationId == operationId),
+            groupPrefix,
+            relativeTemplate);
+
+    public static RouteHandlerBuilder MapAdminOperation(
+        this IEndpointRouteBuilder endpoints,
+        AdminOperationRouteBinding binding,
+        Delegate handler) =>
+        endpoints.MapMethods(binding.RoutePattern, binding.Methods, handler)
+            .WithAdminOperation(binding.Definition);
+
+    private static AdminOperationRouteBinding ForDefinition(
+        IAdminHttpOperationDefinition definition,
+        string groupPrefix,
+        string? relativeTemplate)
+    {
+        var binding = new AdminOperationRouteBinding(definition, groupPrefix, relativeTemplate);
         _ = ResolveValidatedRelativeTemplate(binding);
         return binding;
     }
