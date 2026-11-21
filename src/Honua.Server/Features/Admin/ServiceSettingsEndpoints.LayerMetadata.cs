@@ -21,8 +21,7 @@ internal static partial class ServiceSettingsEndpoints
             return target.Error;
         var resource = target.Resource!;
         context.Response.Headers.ETag = snapshot.Etag;
-        return Results.Json(ApiResponse<LayerMetadataResponse>.CreateSuccess(BuildLayerMetadataResponse(
-            serviceLayerIndex, resource.Metadata.Name, resource.Metadata, resource.AccessPolicy, resource.Temporal, null, resource.Editing)),
+        return Results.Json(ApiResponse<LayerMetadataResponse>.CreateSuccess(BuildLayerMetadataResponse(serviceLayerIndex, resource)),
             ServiceSettingsJsonContext.Default.ApiResponseLayerMetadataResponse);
     }
 

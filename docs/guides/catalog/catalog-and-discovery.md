@@ -13,8 +13,8 @@ Publishing a layer does not create a separate catalog for each protocol. It writ
 Publish with the admin SDK as in [Publish layers](../publish/publish-layers.md). Confirm the result with the CLI:
 
 ```bash
-npx --yes -p @honua/sdk-js@0.2.6 honua services
-npx --yes -p @honua/sdk-js@0.2.6 honua layers "$HONUA_SERVICE"
+npx --yes -p @honua/sdk-js@0.4.0 honua services
+npx --yes -p @honua/sdk-js@0.4.0 honua layers "$HONUA_SERVICE"
 ```
 
 `honua services` and `honua layers` are the same commands as [your first dataset](../../get-started/first-dataset.md). An empty list there means this caller cannot see a routable publication, not that the protocol routes are down.
@@ -61,7 +61,7 @@ Wire shapes, query parameters, and conformance classes stay on the protocol page
 Records reads the current snapshot and emits two kinds of record, both into `honua-catalog`:
 
 - One service record, id `service:{name}`, per public service name. Several protocol-specific service rows that share a name are merged. The record is omitted when that name has no routable publication the caller may read. Alternate links include FeatureServer and MapServer when those protocols are enabled.
-- One dataset record, id `layer:{storageLayerId}` (or the resource id when there is no storage layer), per resource that has a routable publication. When several resources share one storage layer id, the feature dataset is the record that is kept. Alternate links include OGC API Features and STAC when the primary service enables those protocols. The STAC link is only a collection that exists when publish wrote a STAC collection (a geometry column).
+- One dataset record, id `layer:{graph Layer ID}`, per resource that has a routable publication. The graph Layer ID is the id of the resource's primary publication, or of its first routable one when it has no primary. It is not the numeric layer index, so `ids=layer:1` matches nothing. `externalIds` matches that graph Layer ID or the resource name. Alternate links include OGC API Features and STAC when the primary service enables those protocols. The STAC link is only a collection that exists when publish wrote a STAC collection (a geometry column).
 
 Search accepts `q` (comma-separated terms, matched as OR against id, title, and description), `bbox`, `datetime`, `type` (`service` or `dataset`), `ids`, and `externalIds`. A record with no timestamp is not dropped by `datetime`. Create, update, delete, harvesting, and CQL2 on Records are not implemented. Details: [OGC APIs](../../reference/protocols/ogc-apis.md#ogc-api-records).
 

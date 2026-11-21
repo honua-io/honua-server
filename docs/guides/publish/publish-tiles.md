@@ -93,7 +93,7 @@ Run `POST /api/v1/admin/tile-operations/jobs` with this body, substituting your 
 
 Archives never carry fields hidden on the layer (`hidden: true` in its field configuration): tiles and the `vector_layers` metadata omit them.
 
-Both operations accept an optional `tileCompression`: `none` (default) or `gzip`. Gzip tiles are typically about half the size of uncompressed MVT tiles and suit archives served by HTTP range requests, where transport compression does not apply. PMTiles clients read the compression from the archive header and decode gzip tiles natively. The job status reports the value written as `TileCompression`.
+Both operations accept an optional `tileCompression`: `none` (default) or `gzip`. Gzip tiles are typically about half the size of uncompressed MVT tiles and suit archives served by HTTP range requests, where transport compression does not apply. PMTiles clients read the compression from the archive header and decode gzip tiles natively. The job status reports the value written as `tileCompression`.
 
 The completed job status carries `publishedArtifact` with `accessUrl`, `bounds`, `minZoom`/`maxZoom`, and storage details. With a browser-accessible URL, use `pmtiles://{accessUrl}` for a MapLibre source. Re-publishing the same `(serviceId, layerId, tileMatrixSetId)` overwrites the artifact.
 

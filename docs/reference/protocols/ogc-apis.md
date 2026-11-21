@@ -156,7 +156,7 @@ verbatim. Replace the WKB value and distance for a useful buffer operation.
 
 ## OGC API Records
 
-Read-only catalog discovery over published services and layers (record ids `layer:{layerId}`, `service:{serviceName}`).
+Read-only catalog discovery over published services and layers (record ids `layer:{graph Layer ID}`, the id of the resource's primary publication rather than the numeric layer index, and `service:{serviceName}`).
 
 | Method | Path | Purpose |
 | --- | --- | --- |
