@@ -27,27 +27,30 @@ namespace Honua.Server.Tests;
 
 [Collection("Database.CoreEndpoints")]
 [Protocol(TestProtocols.FeatureServer)]
-public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
+public sealed class StreamingFeatureServerEndpointTests
+    : IClassFixture<StreamingFeatureServerEndpointTests.StreamingHost>
 {
-    private readonly WebAppFixture _webAppFixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    private readonly WebAppFixture _webAppFixture;
     private readonly ITestOutputHelper _output;
 
-    public StreamingFeatureServerEndpointTests(ITestOutputHelper output)
+    public StreamingFeatureServerEndpointTests(StreamingHost host, ITestOutputHelper output)
     {
+        ArgumentNullException.ThrowIfNull(host);
+        _webAppFixture = host.Application;
         _output = output ?? throw new ArgumentNullException(nameof(output));
     }
 
-    public async Task InitializeAsync()
+    public sealed class StreamingHost : IAsyncLifetime
     {
-        await _webAppFixture.InitializeAsync();
+        public WebAppFixture Application { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
-        // Ensure we have a large dataset for streaming tests
-        await _webAppFixture.EnsureLargeTestDatasetAsync();
-    }
+        public async Task InitializeAsync()
+        {
+            await Application.InitializeAsync();
+            await Application.EnsureLargeTestDatasetAsync();
+        }
 
-    public async Task DisposeAsync()
-    {
-        await _webAppFixture.DisposeAsync();
+        public Task DisposeAsync() => Application.DisposeAsync();
     }
 
     [IntegrationTest]
