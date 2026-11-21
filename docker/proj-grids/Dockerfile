@@ -2,9 +2,9 @@
 # Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 #
 # Default Compose database image. Grid downloads happen only at build time.
-# Compose and the integration fixture use the existing PostgreSQL 17 / pgRouting
-# base. The standalone diagnostic composition supplies its pinned PostGIS base.
-ARG BASE_IMAGE=postgis/postgis:18-3.6@sha256:60f6ad1d21ea86a67d47780b9a0d1e1d200500f62b19293fa834d0dea80b8677
+# The default base is Honua's Compose database image (docker/compose-postgres).
+# The standalone diagnostic composition (compose.yml) supplies its own PostGIS base.
+ARG BASE_IMAGE=ghcr.io/honua-io/honua-server@sha256:d9df4cd19ac018b1e626d7c74a1400d7affb8de48dbe5ed67a862589c4e3d998
 FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS grid-downloads
 
 COPY grids.txt fetch-grids.sh /tmp/proj-grids/

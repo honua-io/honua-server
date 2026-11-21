@@ -52,8 +52,8 @@ README = (
 )
 
 # Serves the static Console bundle and terminates its local HTTPS origin (compose.console.yaml).
-CONSOLE_WEB_IMAGE = ('docker.io/nginxinc/nginx-unprivileged:1.29-alpine@sha256:'
-                     '0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6')
+CONSOLE_WEB_IMAGE = ('ghcr.io/honua-io/honua-server@sha256:'
+                     '0e41aa9070658b41fde5bd09bf21eb1fbf74c52375f1093eb7ca9f6aa86b7aaa')
 CONSOLE_ENTRYPOINTS = ('index.html', 'config.json')
 CONSOLE_MAX_FILES = 20000
 CONSOLE_MAX_BYTES = 1 << 30
