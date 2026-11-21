@@ -1,7 +1,7 @@
 ---
 type: concept
 title: "Artifact and output reference"
-description: "A produced file, geometry result, image, or package, distinct from its publication."
+description: "A produced file, geometry result, image, or package, distinct from live serving or activation."
 tags: [gis, domain-language]
 aliases: ["output", "result file", "download", "generated file"]
 sources:
@@ -12,12 +12,14 @@ relations:
     target: /concepts/domain/job.md
   - predicate: depends_on
     target: /concepts/domain/storage.md
+  - predicate: relates_to
+    target: /concepts/domain/export.md
   - predicate: disambiguates
     target: /concepts/domain/layer.md
 ---
 # Artifact and output reference
 
-An artifact is a produced output, such as a converted file, preview image, derived dataset, or package. An output reference locates that artifact; it is useful only while the artifact remains retrievable with the intended identity.
+An artifact is a produced output, such as an [Export](export.md) file (PMTiles, GeoParquet, or generated companion), a converted file, preview image, derived dataset, or package. An output reference locates that artifact; it is useful only while the artifact remains retrievable with the intended identity.
 
 Referenced geoprocessing artifacts require the documented persistent output store. A worker's temporary file is not a durable deliverable.[^persistence] The execution [job](job.md) and the output have distinct lifetimes.
 

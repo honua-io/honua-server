@@ -32,6 +32,7 @@
   - [DevOps workflow language](concepts/domain/devops-language.md)
   - [Draft, Version, and Released](concepts/domain/content-version.md)
   - [Environment](concepts/domain/environment.md)
+  - [Export](concepts/domain/export.md)
   - [Feature set snapshot](concepts/domain/feature-set.md)
   - [Filtering and spatial analysis](concepts/domain/spatial-analysis.md)
   - [Folder](concepts/domain/folder.md)
@@ -101,6 +102,7 @@
   - [Publish terrain & elevation](guides/publish/publish-terrain-and-elevation.md)
   - [Publish 3D scenes](guides/publish/publish-3d-scenes.md)
   - [Publish tiles](guides/publish/publish-tiles.md)
+  - [Share parcels as files](guides/publish/export-as-files.md)
 - Style maps
   - [Style maps](guides/style/style-maps.md)
   - [Import SLD styles](guides/style/import-sld-styles.md)

@@ -7,6 +7,7 @@ using System.Xml;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Models;
@@ -31,8 +32,9 @@ internal static class AdminSldStyleEndpoints
             .WithTags("Admin", "Metadata", "Styles", "Migration")
             .RequireAdminAuthorization();
 
-        _ = group.MapPost("/{storageLayerId:int}/style/import-sld", HandleImportSld)
-            .WithName("ImportLayerSldStyle")
+        var importSld = AdminHttpOperationRouteBinding.ForApi("admin.layer.style.import-sld", "/metadata/layers", "/{storageLayerId:int}/style/import-sld");
+        _ = group.MapMethods(importSld.RoutePattern, importSld.Methods, HandleImportSld)
+            .WithAdminOperation(importSld.Definition)
             .WithSummary("Import an SLD/SE document and convert it to a MapLibre style.")
             .Accepts<string>("application/xml", "text/xml")
             .Produces<ApiResponse<SldImportResponse>>(StatusCodes.Status200OK)
@@ -41,8 +43,9 @@ internal static class AdminSldStyleEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status413PayloadTooLarge);
 
-        _ = group.MapGet("/{storageLayerId:int}/style/export-sld", HandleExportSld)
-            .WithName("ExportLayerSldStyle")
+        var exportSld = AdminHttpOperationRouteBinding.ForApi("admin.layer.style.export-sld", "/metadata/layers", "/{storageLayerId:int}/style/export-sld");
+        _ = group.MapMethods(exportSld.RoutePattern, exportSld.Methods, HandleExportSld)
+            .WithAdminOperation(exportSld.Definition)
             .WithSummary("Export the stored MapLibre style as an SLD 1.0 document.")
             .Produces<string>(StatusCodes.Status200OK, "application/xml")
             .ProducesProblem(StatusCodes.Status400BadRequest)

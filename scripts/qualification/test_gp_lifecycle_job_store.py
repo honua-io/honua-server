@@ -87,18 +87,19 @@ grep -q "'currentPhase', current_phase" calls || exit 64
                 + "insert_poison_job poison-1 \"gp-1'\" && exit 71\n[[ ! -e calls ]] || exit 72\n", directory)
             self.assertEqual(0, completed.returncode, completed.stderr)
 
-    def test_stranded_claim_spends_the_only_attempt_on_a_dead_worker(self):
+    def test_stranded_claim_exhausts_attempts_without_rewriting_record_json(self):
         functions = "\n".join(harness_function(name) for name in ("job_sql", "job_id_is_safe", "strand_exhausted_claim"))
         with tempfile.TemporaryDirectory() as directory:
             completed = run_bash(functions + r'''
 compose() { printf '%s\n' "$*" >> calls; echo gp-1; }
 strand_exhausted_claim gp-1 || exit 61
-grep -q "jsonb_build_object('maxAttempts', 1)" calls || exit 62
-grep -q "status = 'Running'.*attempt_count = 1, claimed_by = 'dead-worker'" calls || exit 63
-grep -q "queue_visible_at = NULL, queue_priority = NULL" calls || exit 64
-grep -q "WHERE operation_id = 'gp-1' AND status = 'Queued'" calls || exit 65
+grep -q "SET record =" calls && exit 62
+grep -q "COALESCE((record::jsonb->'retryPolicy'->>'maxAttempts')::int, 3)" calls || exit 63
+grep -q "claimed_by = 'dead-worker', claimed_at = now(), last_heartbeat_at = '2000-01-01T00:00:00Z'" calls || exit 64
+grep -q "queue_visible_at = NULL, queue_priority = NULL" calls || exit 65
+grep -q "WHERE operation_id = 'gp-1' AND status = 'Queued'" calls || exit 66
 compose() { echo other; }
-strand_exhausted_claim gp-1 && exit 66
+strand_exhausted_claim gp-1 && exit 67
 exit 0
 ''', directory)
             self.assertEqual(0, completed.returncode, completed.stderr)
@@ -248,6 +249,45 @@ cancel_barrier_job native-process-started
 grep -q "wait claimed\|release claimed" calls && exit 61
 grep -q "wait native-process-started" calls || exit 62
 grep -q "did not report a child PID" finding || exit 63
+exit 0
+''', directory)
+            self.assertEqual(0, completed.returncode, completed.stderr)
+
+    def test_output_size_cap_recreates_both_server_and_peer_with_the_cap(self):
+        with tempfile.TemporaryDirectory() as directory:
+            completed = run_bash("set -euo pipefail\n" + harness_function("run_output_size_cap") + r'''
+compose() { printf 'compose %s cap=%s\n' "$*" "${HONUA_GP_MAX_ARTIFACT_BYTES:-}" >> calls; }
+wait_ready() { echo wait_ready >> calls; }
+wait_peer_ready() { echo wait_peer_ready >> calls; }
+submit_async() { echo gp-1; }
+wait_terminal() { echo '{"status":"failed"}'; }
+result_digest() { return 1; }
+write_receipt() { printf 'receipt %s %s\n' "$1" "$2" >> calls; }
+run_output_size_cap || exit 61
+expected='compose up -d --force-recreate server server-peer cap=1024
+wait_ready
+wait_peer_ready
+compose up -d --force-recreate server server-peer cap=
+wait_ready
+wait_peer_ready
+receipt output-size-cap pass'
+[[ "$(cat calls)" == "$expected" ]] || { cat calls >&2; exit 62; }
+exit 0
+''', directory)
+            self.assertEqual(0, completed.returncode, completed.stderr)
+
+    def test_sustained_soak_initializes_end_after_duration_under_nounset(self):
+        with tempfile.TemporaryDirectory() as directory:
+            completed = run_bash("set -euo pipefail\n" + harness_function("run_soak") + r'''
+export HONUA_GP_SOAK_SECONDS=1 HONUA_GP_SOAK_CONCURRENCY=1
+submit_async() { echo gp-1; }
+wait_terminal() { echo '{"status":"successful"}'; }
+result_digest() { echo deadbeef; }
+compose() { SECONDS=$((SECONDS + 2)); }
+wait_ready() { :; }
+write_receipt() { printf 'receipt %s %s %s\n' "$1" "$2" "$3" > receipt; }
+run_soak || exit 61
+grep -q "^receipt sustained-soak pass duration=1;concurrency=1;submitted=1;durable_outputs_verified=1$" receipt || { cat receipt >&2; exit 62; }
 exit 0
 ''', directory)
             self.assertEqual(0, completed.returncode, completed.stderr)

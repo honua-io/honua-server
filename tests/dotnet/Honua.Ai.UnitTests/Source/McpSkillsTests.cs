@@ -29,7 +29,7 @@ public sealed class McpSkillsTests
                 Assert.True(names.Add(skill.GetProperty("uri").GetString()!));
             cursor = result.TryGetProperty("nextCursor", out var next) ? next.GetString() : null;
         } while (cursor is not null);
-        Assert.Equal(5, names.Count);
+        Assert.Equal(6, names.Count);
         var invalid = await DispatchAsync("skills/list", "{\"cursor\":\"garbage\"}");
         Assert.Equal(-32602, invalid.Error!.Code);
     }

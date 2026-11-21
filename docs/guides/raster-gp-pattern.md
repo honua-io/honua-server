@@ -20,7 +20,7 @@ This pattern is identical across both custom-code runtimes:
 | Raster sample | `harness/samples/raster_ndvi_tool.py` | `harness/samples/RasterTool/RasterTool.cs` |
 | Vector sample | `harness/samples/buffer_tool.py` | `harness/samples/BufferTool/BufferTool.cs` |
 
-Both images are built on pinned **`ghcr.io/osgeo/gdal:ubuntu-full-*`** bases (`3.12.4` for Python, `3.13.1` for .NET), so the
+Both images are built on pinned **`ghcr.io/osgeo/gdal:ubuntu-full-*`** bases (`3.12.4` for Python, `3.13.3` for .NET), so the
 full GDAL driver set is present. In-build sanity checks assert the bindings load and a
 driver count `> 0`, so the images fail to build if raster/vector interop ever regresses.
 

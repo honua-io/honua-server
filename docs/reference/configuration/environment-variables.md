@@ -424,9 +424,19 @@ GeoServices `f=parquet` and OData `$format=parquet` share the configured
 `Limits:GeoParquet` budgets. A response that cannot fit is rejected with the shared
 protocol-specific 413 error contract. Reduce the requested page or selected fields,
 or omit geometry. The existing query authorization, ordering and paging are applied
-before encoding; an HTTP GeoParquet response keeps that order. Stored paired-publication
+before encoding; an HTTP GeoParquet response keeps that order. Stored Export
 GeoParquet orders rows by the Hilbert index of each geometry's bbox centre, compresses with
 Zstandard, and sizes row groups separately from the response batch.
+
+### Public Export storage (`FileStorage:PublicData`)
+
+Public CDN delivery for eligible Exports is configured under `FileStorage:PublicData`
+(disabled by default):
+
+- `FileStorage__PublicData__Enabled` (`false`): enables copying eligible Export Versions to the public bucket.
+- `FileStorage__PublicData__BucketName`: distinct public bucket name used for `/data/*` assets and `data/catalog.json`.
+- `FileStorage__PublicData__Region`: object-storage region of the public bucket.
+- `FileStorage__PublicData__BaseUrl`: HTTPS origin (scheme and host only, no path, query, or fragment) used to build public `collection.json` and root catalog URLs.
 
 Each query-response Arrow batch is admitted by both row count and an estimated byte total,
 then written as its own Parquet row group and disposed. The estimate counts six bytes per
