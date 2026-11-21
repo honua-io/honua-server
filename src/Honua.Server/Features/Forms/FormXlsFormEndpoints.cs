@@ -29,7 +29,8 @@ internal static class FormXlsFormEndpoints
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
             .Produces(StatusCodes.Status200OK, contentType: FormXlsFormService.WorkbookContentType)
             .ProducesProblem(StatusCodes.Status404NotFound)
-            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+            .RequireAdminAuthorization();
 
         return admin;
     }
