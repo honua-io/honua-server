@@ -10,6 +10,8 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
+using Honua.Infrastructure.FeatureStore;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
@@ -26,7 +28,9 @@ public sealed class SourceBackedLayerEditRefusalTests : IAsyncLifetime
     private const string ServiceName = "sourceedits";
     private const int StorageLayerId = 6357;
 
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    // The test host swaps in its own feature writer, so the production guard is applied on top of it.
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
+        .ConfigureWebHost(static builder => builder.ConfigureTestServices(static services => services.AddSourceBackedWriteGuard()));
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
 
