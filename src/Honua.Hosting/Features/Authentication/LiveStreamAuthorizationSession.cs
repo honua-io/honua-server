@@ -22,7 +22,7 @@ internal sealed class LiveStreamAuthorizationSession : IDisposable
     private readonly TimeSpan _checkBudget;
     private readonly SemaphoreSlim _admissionGate = new(1, 1);
     private int _outcome = StreamRunning;
-    private bool _eventDriven;
+    private LiveStreamSecurityRegistry? _registry;
 
     // A null scheme admits an anonymous stream, whose grants are re-read without reauthentication.
     internal LiveStreamAuthorizationSession(HttpContext context, string? scheme)
@@ -57,7 +57,7 @@ internal sealed class LiveStreamAuthorizationSession : IDisposable
 
     internal LiveStreamSecurityRegistry.Registration? Register(LiveStreamSecurityRegistry? registry)
     {
-        _eventDriven = registry is not null;
+        _registry = registry;
         return registry?.Register(ResolveIdentity(_context), RefreshAuthorizationAsync, _ => EndAuthorizationAsync());
     }
 
@@ -141,8 +141,8 @@ internal sealed class LiveStreamAuthorizationSession : IDisposable
         await Lifetime.CancelAsync().ConfigureAwait(false);
     }
 
-    // Expiry is enforced on every tick; reauthentication runs on the tick only for streams
-    // that no security event refreshes.
+    // Expiry is enforced on every tick; reauthentication runs on the tick only while no
+    // security-event consumer refreshes this task's streams.
     internal async Task MonitorAsync()
     {
         try
@@ -156,7 +156,7 @@ internal sealed class LiveStreamAuthorizationSession : IDisposable
                     return;
                 }
 
-                if (!_eventDriven)
+                if (_registry?.HasConsumer != true)
                 {
                     await RefreshAuthorizationAsync(MonitorStop.Token).ConfigureAwait(false);
                 }

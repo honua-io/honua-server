@@ -46,6 +46,7 @@ public sealed partial class LiveStreamAuthorizationTests
         registrations.AddSingleton<LiveStreamSecurityRegistry>();
         await using var services = registrations.BuildServiceProvider();
         var registry = services.GetRequiredService<LiveStreamSecurityRegistry>();
+        registry.AttachConsumer();
         var context = new DefaultHttpContext { RequestServices = services };
         context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "alice")],
             PortalTokenAuthenticationExtensions.PortalTokenScheme));
@@ -397,6 +398,7 @@ public sealed partial class LiveStreamAuthorizationTests
         context.User = (await context.AuthenticateAsync(PortalTokenAuthenticationExtensions.PortalTokenScheme)).Principal!;
         PortalAudienceSnapshot.Set(context, new HashSet<string> { "svc" });
         var registry = services.GetRequiredService<LiveStreamSecurityRegistry>();
+        registry.AttachConsumer();
 
         await new LiveStreamAuthorizationFilter().InvokeAsync(EndpointFilterInvocationContext.Create(context), async _ =>
         {
@@ -430,6 +432,7 @@ public sealed partial class LiveStreamAuthorizationTests
         var context = Context(scope.ServiceProvider, token.Token);
         context.User = (await context.AuthenticateAsync(PortalTokenAuthenticationExtensions.PortalTokenScheme)).Principal!;
         var registry = services.GetRequiredService<LiveStreamSecurityRegistry>();
+        registry.AttachConsumer();
         await new LiveStreamAuthorizationFilter().InvokeAsync(EndpointFilterInvocationContext.Create(context), async _ =>
         {
             var policies = context.Features.Get<LiveStreamPolicyRefreshFeature>()!;

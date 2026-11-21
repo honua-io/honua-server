@@ -44,6 +44,13 @@ internal sealed class LiveStreamSecurityRegistry(
 {
     private readonly ConcurrentDictionary<long, Registration> _registrations = new();
     private long _nextId;
+    private int _consumerAttached;
+
+    // True once a dispatcher consumes security events on this task. Until then streams keep
+    // their per-interval credential check, because no invalidation will reach them.
+    internal bool HasConsumer => Volatile.Read(ref _consumerAttached) == 1;
+
+    internal void AttachConsumer() => Volatile.Write(ref _consumerAttached, 1);
 
     internal Registration Register(LiveStreamIdentity identity, Func<CancellationToken, Task> refresh,
         Func<CancellationToken, Task>? revoke = null)

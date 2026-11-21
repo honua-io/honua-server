@@ -138,6 +138,7 @@ internal sealed partial class RealtimeDispatcher(
         if (Security is not null)
         {
             await Security.RefreshAsync(null, cancellationToken).ConfigureAwait(false);
+            Security.AttachConsumer();
         }
 
         lock (_gate)
