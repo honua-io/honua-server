@@ -63,7 +63,7 @@ internal sealed partial class GdalRasterReprojectJobExecutor(
 
         GdalJobInputReader.TryGetInput(parameters, "sourceSrs", out var sourceSrs);
 
-        if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var inputError))
+        if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, opts.LocalCoverageRoot, out var sourceInput, out var inputError))
         {
             Log.InvalidInputs(logger, job.OperationId, inputError);
             return JobExecutionResult.Failed($"Invalid reprojection inputs: {inputError}");

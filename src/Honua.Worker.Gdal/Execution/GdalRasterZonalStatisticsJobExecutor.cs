@@ -67,7 +67,7 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
 
         var opts = options.CurrentValue;
 
-        if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var sourceError))
+        if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, opts.LocalCoverageRoot, out var sourceInput, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
             return JobExecutionResult.Failed($"Invalid zonal statistics inputs: {sourceError}");

@@ -12,6 +12,7 @@ internal static class GdalJobInputReader
         IReadOnlyDictionary<string, string> parameters,
         string name,
         long maxInlineBytes,
+        string? localStorageRoot,
         out GdalRasterInput input,
         out string error)
     {
@@ -86,7 +87,7 @@ internal static class GdalJobInputReader
                 try
                 {
                     input = GdalRasterInput.Referenced(
-                        GdalVsiPath.Build(cog.Provider, cog.StoreReference, cog.ObjectKey),
+                        GdalVsiPath.Build(cog.Provider, cog.StoreReference, cog.ObjectKey, localStorageRoot),
                         cog.Content.ETag,
                         cog.DeclaredDimensions,
                         cog.DeclaredPixelScale);

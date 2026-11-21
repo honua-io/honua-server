@@ -291,8 +291,8 @@ internal static partial class ExportEndpoints
     {
         var response = httpContext.Response;
         response.ContentType = format.MediaType;
-        response.Headers["Content-Disposition"] =
-            $"attachment; filename=\"{SanitizeExportFilename(serviceName, layerName)}.{format.FileExtension}\"";
+        response.Headers.ContentDisposition = AttachmentContentDisposition.Create(
+            $"{SanitizeExportFilename(serviceName, layerName)}.{format.FileExtension}");
         response.StatusCode = StatusCodes.Status200OK;
 
         var outputFields = ImmutableArray.CreateBuilder<FeatureOutputField>(fields.Length);
@@ -338,7 +338,7 @@ internal static partial class ExportEndpoints
 
         var response = httpContext.Response;
         response.ContentType = "application/zip";
-        response.Headers["Content-Disposition"] = $"attachment; filename=\"{SanitizeExportFilename(serviceName, layerName)}.zip\"";
+        response.Headers.ContentDisposition = AttachmentContentDisposition.Create($"{SanitizeExportFilename(serviceName, layerName)}.zip");
         response.StatusCode = StatusCodes.Status200OK;
 
         var result = await ShapefileExportWriter.WriteAsync(
@@ -395,7 +395,7 @@ internal static partial class ExportEndpoints
 
             var response = httpContext.Response;
             response.ContentType = "application/geopackage+sqlite3";
-            response.Headers["Content-Disposition"] = $"attachment; filename=\"{SanitizeExportFilename(serviceName, layerName)}.gpkg\"";
+            response.Headers.ContentDisposition = AttachmentContentDisposition.Create($"{SanitizeExportFilename(serviceName, layerName)}.gpkg");
             response.StatusCode = StatusCodes.Status200OK;
 
             await using var fileStream = File.OpenRead(gpkgPath);

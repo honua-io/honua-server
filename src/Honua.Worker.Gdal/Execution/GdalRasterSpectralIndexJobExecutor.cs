@@ -92,7 +92,7 @@ internal sealed partial class GdalRasterSpectralIndexJobExecutor(
             for (var i = 0; i < roles.Count; i++)
             {
                 var letter = (char)('A' + i);
-                if (!GdalJobInputReader.TryGetRasterInput(parameters, roles[i], opts.MaxArtifactBytes, out var rasterInput, out var roleError))
+                if (!GdalJobInputReader.TryGetRasterInput(parameters, roles[i], opts.MaxArtifactBytes, opts.LocalCoverageRoot, out var rasterInput, out var roleError))
                 {
                     Log.InvalidInputs(logger, job.OperationId, roleError);
                     return JobExecutionResult.Failed($"Invalid spectral-index inputs: {roleError}");

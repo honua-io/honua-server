@@ -298,7 +298,7 @@ internal static class StudioPackageEndpoints
                     StudioApiJsonContext.Default.ApiResponseStudioDeliverableExportResponse);
             }
 
-            context.Response.Headers.ContentDisposition = $"attachment; filename=\"{artifact.FileName}\"";
+            context.Response.Headers.ContentDisposition = AttachmentContentDisposition.Create(artifact.FileName);
             context.Response.Headers.CacheControl = "no-store";
             return Results.Bytes(artifact.Content, artifact.ContentType, artifact.FileName);
         }

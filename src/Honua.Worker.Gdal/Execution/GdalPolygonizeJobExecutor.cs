@@ -84,7 +84,7 @@ internal sealed partial class GdalPolygonizeJobExecutor(
             fieldName = fieldRaw.Trim();
         }
 
-        if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var sourceError))
+        if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, opts.LocalCoverageRoot, out var sourceInput, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
             return JobExecutionResult.Failed($"Invalid polygonize inputs: {sourceError}");

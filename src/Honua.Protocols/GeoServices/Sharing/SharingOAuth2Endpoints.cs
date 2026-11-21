@@ -231,6 +231,7 @@ internal static class SharingOAuth2Endpoints
     private static async Task<IResult> HandleAuthorizeAsync(
         HttpContext context,
         [FromServices] PortalOAuthBroker broker,
+        [FromServices] IOAuthClientStore clients,
         [FromServices] IOptions<PortalTokenAuthenticationOptions> tokenOptions,
         [FromServices] ILogger<SharingRestLog> logger)
     {
@@ -266,6 +267,25 @@ internal static class SharingOAuth2Endpoints
         {
             SharingRestLog.OAuthRedirectUriRejected(logger);
             return StandardErrorHelpers.CreateBadRequest(context, "redirect_uri is not registered for this deployment.");
+        }
+
+        // A registered client is held to its own registration. An unknown, deleted,
+        // revoked or expired client, or a redirect_uri outside the client's own list,
+        // is refused directly and never redirected to (RFC 6749 section 4.1.2.1).
+        var clientDecision = await PortalOAuthClientBinding
+            .AuthorizeAsync(clients, clientId, redirectUri, TimeProvider.System, context.RequestAborted)
+            .ConfigureAwait(false);
+        switch (clientDecision)
+        {
+            case PortalOAuthClientDecision.UnknownClient or PortalOAuthClientDecision.InactiveClient:
+                SharingRestLog.OAuthRedirectUriRejected(logger);
+                return StandardErrorHelpers.CreateBadRequest(context, "client_id is not a registered, active client.");
+            case PortalOAuthClientDecision.RedirectNotRegistered:
+                SharingRestLog.OAuthRedirectUriRejected(logger);
+                return StandardErrorHelpers.CreateBadRequest(context, "redirect_uri is not registered for this client.");
+            case PortalOAuthClientDecision.GrantNotAllowed:
+                return RedirectError(context, redirectUri, ReadFirst(query["state"]),
+                    "unauthorized_client", "This client is not authorized to use the authorization_code grant.");
         }
 
         // response_type is validated only after the redirect_uri allow-list check so

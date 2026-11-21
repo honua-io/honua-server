@@ -326,6 +326,11 @@ internal sealed class PortalOAuthTokenService(
             }
         }
 
+        if (await RefuseRegisteredClientAsync(record.ClientId, cancellationToken).ConfigureAwait(false) is { } codeRefusal)
+        {
+            return codeRefusal;
+        }
+
         // Hard PKCE requirement: when enabled, an authorization code that was
         // issued without a registered code_challenge is rejected outright. Combined
         // with the authorize-endpoint guard this guarantees every code flow has had
@@ -349,6 +354,30 @@ internal sealed class PortalOAuthTokenService(
             IsNativeRedirect(record.RedirectUri) ? string.Empty : requestBinding,
             request.IncludeRefreshToken,
             cancellationToken).ConfigureAwait(false);
+    }
+
+    // A code or refresh token outlives its authorize request, so the client's
+    // registration is re-read: a deleted, revoked or expired client, or one no
+    // longer allowed the code flow, cannot redeem or refresh.
+    private async Task<PortalOAuthTokenResult?> RefuseRegisteredClientAsync(
+        string? clientId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(clientId))
+        {
+            return null;
+        }
+
+        var decision = await PortalOAuthClientBinding
+            .AuthorizeAsync(_clientStore, clientId, redirectUri: null, TimeProvider.System, cancellationToken)
+            .ConfigureAwait(false);
+        return decision switch
+        {
+            PortalOAuthClientDecision.Allowed => null,
+            PortalOAuthClientDecision.GrantNotAllowed => PortalOAuthTokenResult.Failure(
+                "unauthorized_client", "This client is not authorized to use the authorization_code grant."),
+            _ => PortalOAuthTokenResult.Failure("invalid_grant", "The client is no longer registered."),
+        };
     }
 
     private async Task<PortalOAuthTokenResult> ExchangeRefreshTokenAsync(
@@ -388,6 +417,11 @@ internal sealed class PortalOAuthTokenService(
             {
                 return PortalOAuthTokenResult.Failure("invalid_grant", "Refresh token was issued to a different client.");
             }
+        }
+
+        if (await RefuseRegisteredClientAsync(record.ClientId, cancellationToken).ConfigureAwait(false) is { } refreshRefusal)
+        {
+            return refreshRefusal;
         }
 
         if (await IsRefreshRevokedAsync(record, cancellationToken).ConfigureAwait(false))

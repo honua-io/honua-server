@@ -264,6 +264,7 @@ public sealed class GdalWorkerExecutorTests
                     job.Spec.Parameters,
                     "source",
                     long.MaxValue,
+                    localStorageRoot: null,
                     out var input,
                     out var error)
                 .Should().BeTrue(error);
