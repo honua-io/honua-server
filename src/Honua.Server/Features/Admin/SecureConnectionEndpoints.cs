@@ -101,7 +101,7 @@ internal static partial class SecureConnectionEndpoints
         MapEncryptionManagementEndpoints(group);
     }
 
-    private static void MapEncryptionManagementEndpoints(RouteGroupBuilder group)
+    private static void MapEncryptionManagementEndpoints(IEndpointRouteBuilder group)
     {
         // Encryption management
         group.MapPost("/encryption/validate", HandleValidateEncryption)
