@@ -95,7 +95,7 @@ public sealed class OgcStyleProjectionSavedPresentationTests
         var result = await projection.UpdateStyleAsync(
             "bng_points",
             """{"version":8,"layers":[{"id":"p","type":"circle","paint":{"circle-color":"#123456"}}]}""",
-            strict: true);
+            new OgcStyleWriteOptions { Strict = true });
 
         result.Status.Should().Be(OgcStyleUpdateStatus.Invalid);
         await styles.DidNotReceiveWithAnyArgs().UpdateStyleAsync(
