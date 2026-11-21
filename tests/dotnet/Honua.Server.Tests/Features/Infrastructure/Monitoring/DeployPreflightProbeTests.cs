@@ -136,9 +136,31 @@ public sealed class DeployPreflightProbeTests
         await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync(maxAge);
         migrationRunner.PlanCount.Should().Be(2, "an aged plan is read again");
 
-        migrationState.MarkRunning();
+        migrationState.MarkSucceeded();
         await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync(maxAge);
-        migrationRunner.PlanCount.Should().Be(3, "a migration run by this process invalidates the plan");
+        migrationRunner.PlanCount.Should().Be(3, "migration work invalidates the plan even when the status reads the same");
+    }
+
+    [UnitTest]
+    public async Task ProbeAsync_BackgroundCallers_ReadAgainForAnotherDatabaseOrAfterAFailedRead()
+    {
+        var migrationRunner = new CapturingMigrationRunner();
+        var migrationState = new MigrationState();
+        migrationState.MarkSucceeded();
+        var cache = new DeployPreflightMigrationPlanCache(new ManualClock());
+        var maxAge = DeployPreflightProbe.BackgroundMigrationPlanMaxAge;
+
+        await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync(maxAge);
+        await CachingProbe(migrationRunner, migrationState, cache, "Host=other;Database=honua").ProbeAsync(maxAge);
+        migrationRunner.PlanCount.Should().Be(2, "a different connection string is a different database");
+
+        migrationRunner.NextPlan = DatabaseMigrationPlan.Failed(new InvalidOperationException("journal unreadable"));
+        await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync();
+        migrationRunner.NextPlan = DatabaseMigrationPlan.Succeeded();
+        var snapshot = await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync(maxAge);
+
+        migrationRunner.PlanCount.Should().Be(4, "a failed read clears the cached plan");
+        snapshot.Migration.PlanAvailable.Should().BeTrue();
     }
 
     [UnitTest]
@@ -159,12 +181,13 @@ public sealed class DeployPreflightProbeTests
     private static DeployPreflightProbe CachingProbe(
         IDatabaseMigrationRunner migrationRunner,
         MigrationState migrationState,
-        DeployPreflightMigrationPlanCache cache)
+        DeployPreflightMigrationPlanCache cache,
+        string connectionString = "Host=db;Database=honua;Username=test;Password=secret")
         => new(
             new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["ConnectionStrings:DefaultConnection"] = "Host=db;Database=honua;Username=test;Password=secret"
+                    ["ConnectionStrings:DefaultConnection"] = connectionString
                 })
                 .Build(),
             new StubReadinessCheckService(),
@@ -204,11 +227,13 @@ public sealed class DeployPreflightProbeTests
 
         public int PlanCount { get; private set; }
 
+        public DatabaseMigrationPlan NextPlan { get; set; } = DatabaseMigrationPlan.Succeeded();
+
         public Task<DatabaseMigrationPlan> PlanMigrationsAsync(string connectionString, Assembly migrationsAssembly, CancellationToken cancellationToken = default)
         {
             LastConnectionString = connectionString;
             PlanCount++;
-            return Task.FromResult(DatabaseMigrationPlan.Succeeded());
+            return Task.FromResult(NextPlan);
         }
 
         public Task<DatabaseMigrationResult> RunMigrationsAsync(string connectionString, Assembly migrationsAssembly, CancellationToken cancellationToken = default)

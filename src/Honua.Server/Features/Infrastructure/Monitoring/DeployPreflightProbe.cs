@@ -151,9 +151,11 @@ internal sealed class DeployPreflightProbe(
         TimeSpan maxMigrationPlanAge,
         CancellationToken cancellationToken)
     {
-        var status = migrationState.Status;
+        // Read before planning: a migration that finishes while this plan is read leaves the
+        // stored entry one transition behind, so the next caller reads again.
+        var transitions = migrationState.Transitions;
         if (maxMigrationPlanAge > TimeSpan.Zero
-            && migrationPlanCache?.TryGet(connectionString, status, maxMigrationPlanAge) is { } cached)
+            && migrationPlanCache?.TryGet(connectionString, transitions, maxMigrationPlanAge) is { } cached)
         {
             return cached;
         }
@@ -162,7 +164,7 @@ internal sealed class DeployPreflightProbe(
             connectionString,
             typeof(Program).Assembly,
             cancellationToken).ConfigureAwait(false);
-        migrationPlanCache?.Store(connectionString, status, plan);
+        migrationPlanCache?.Store(connectionString, transitions, plan);
         return plan;
     }
 
