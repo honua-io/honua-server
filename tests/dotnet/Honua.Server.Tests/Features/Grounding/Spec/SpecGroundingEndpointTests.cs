@@ -421,6 +421,20 @@ public sealed class SpecGroundingEndpointTests(SpecGroundingEndpointTests.Ground
         payload.RootElement.GetProperty("detail").GetString().Should().Be(expectedDetail);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GroundingSummarize)]
+    [Endpoint("POST /v1/grounding/spec/summarize")]
+    public async Task Summarize_NullSpecSections_TreatsThemAsAbsent()
+    {
+        using var content = new StringContent(
+            """{"spec":{"grammar":"v1.0","sources":null,"map":null}}""",
+            Encoding.UTF8,
+            "application/json");
+        using var response = await _client.PostAsync("/v1/grounding/spec/summarize", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     private static int CountSentences(string text)
         => text.Split('.', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Length;
 }
