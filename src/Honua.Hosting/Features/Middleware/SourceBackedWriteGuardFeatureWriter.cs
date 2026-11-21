@@ -8,7 +8,7 @@ using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 
-namespace Honua.Infrastructure.FeatureStore;
+namespace Honua.Infrastructure.Middleware;
 
 // The managed writer stores features in the shared features table. A layer published over a
 // source table reads that table instead, so a write accepted for it would never be read back.

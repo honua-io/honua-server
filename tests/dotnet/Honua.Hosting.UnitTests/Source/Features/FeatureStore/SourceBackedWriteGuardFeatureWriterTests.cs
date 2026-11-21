@@ -11,7 +11,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Infrastructure.FeatureStore;
+using Honua.Infrastructure.Middleware;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 

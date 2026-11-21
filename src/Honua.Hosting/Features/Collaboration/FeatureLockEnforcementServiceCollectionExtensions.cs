@@ -4,7 +4,7 @@
 using Honua.Core.Features.Collaboration.FeatureLocks;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
-using Honua.Infrastructure.FeatureStore;
+using Honua.Infrastructure.Middleware;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;

@@ -7,10 +7,10 @@ using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
+using Honua.Infrastructure.Middleware;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
-using Honua.Infrastructure.FeatureStore;
 using Microsoft.Extensions.DependencyInjection;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 

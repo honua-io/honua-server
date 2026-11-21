@@ -5,7 +5,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Honua.Infrastructure.FeatureStore;
+namespace Honua.Infrastructure.Middleware;
 
 public static class FeatureWriterDecoration
 {

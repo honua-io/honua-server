@@ -16,7 +16,6 @@ using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Collaboration;
 using Honua.Infrastructure.Configuration;
-using Honua.Infrastructure.FeatureStore;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Services;

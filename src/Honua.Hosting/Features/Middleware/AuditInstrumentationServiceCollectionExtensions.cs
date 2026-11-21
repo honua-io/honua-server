@@ -4,7 +4,6 @@
 using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
-using Honua.Infrastructure.FeatureStore;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
