@@ -66,6 +66,16 @@ public static class ServiceProtocols
         Elevation
     ];
 
+    // Protocols that read only imported rasters (postgis_raster). ImageServer, coverages and WCS
+    // stay: they also serve cloud-optimized GeoTIFF and Zarr sources, which need no raster extension.
+    public static readonly string[] RequiringRasterStorage =
+    [
+        Terrain,
+        Elevation
+    ];
+
+    public static readonly string[] WithoutRasterStorage = All.Except(RequiringRasterStorage, StringComparer.Ordinal).ToArray();
+
     public static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
     {
         if (service is null)

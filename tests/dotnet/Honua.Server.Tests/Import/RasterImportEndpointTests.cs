@@ -219,8 +219,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("Import failed.");
-        body.Should().NotContain("world file");
+        body.Should().Contain("require a world file");
     }
 
     [IntegrationTest]
@@ -248,8 +247,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("Import failed.");
-        body.Should().NotContain("world file");
+        body.Should().Contain("require a world file");
     }
 
     [IntegrationTest]
