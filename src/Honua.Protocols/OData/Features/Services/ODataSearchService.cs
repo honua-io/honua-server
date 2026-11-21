@@ -523,7 +523,7 @@ internal sealed partial class ODataSearchService
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var tenantId = context is null ? null : TenantScopeHelpers.ResolveRequestTenantId(context);
         var (candidates, matchedByLayerIndex) = SelectODataLayerCandidates(snapshot, layerId, tenantId);
-        var accessible = await CollectAccessibleLayersAsync(snapshot, candidates, context, cancellationToken)
+        var accessible = await CollectAccessibleLayersAsync(new(snapshot, candidates, context), cancellationToken)
             .ConfigureAwait(false);
 
         // Only layers the caller may read count towards ambiguity, so a hidden layer is never disclosed.
@@ -540,17 +540,16 @@ internal sealed partial class ODataSearchService
 
         var selected = accessible[0];
         var reader = await _providerResolver.ResolveQueryReaderAsync(
-            snapshot, selected.Service, selected.Resource, selected.Publication, selected.StorageLayerId,
+            snapshot, snapshot.Index.ServicesById[selected.Publication.ServiceId], selected.Resource, selected.Publication, selected.StorageLayerId,
             requireCount, requireTextSearch, cancellationToken).ConfigureAwait(false);
         return new ResolvedODataLayer(reader, selected.Publication, selected.Resource, layerId, selected.StorageLayerId);
     }
 
     private static async Task<List<AccessibleODataLayer>> CollectAccessibleLayersAsync(
-        MetadataV2GraphSnapshot snapshot,
-        MetadataV2Layer[] candidates,
-        HttpContext? context,
+        ODataLayerCandidates request,
         CancellationToken cancellationToken)
     {
+        var (snapshot, candidates, context) = request;
         var accessible = new List<AccessibleODataLayer>();
         foreach (var publication in candidates)
         {
@@ -571,7 +570,7 @@ internal sealed partial class ODataSearchService
                 ?? snapshot.ResolveStorageLayerId(resource);
             if (storageLayerId.HasValue)
             {
-                accessible.Add(new AccessibleODataLayer(publication, service, resource, storageLayerId.Value));
+                accessible.Add(new AccessibleODataLayer(publication, resource, storageLayerId.Value));
             }
         }
 
@@ -690,9 +689,13 @@ internal sealed partial class ODataSearchService
 
     private sealed record AccessibleODataLayer(
         MetadataV2Layer Publication,
-        MetadataV2Service Service,
         MetadataV2Object Resource,
         int StorageLayerId);
+
+    private readonly record struct ODataLayerCandidates(
+        MetadataV2GraphSnapshot Snapshot,
+        MetadataV2Layer[] Publications,
+        HttpContext? Context);
 
     private sealed record ResolvedODataLayer(
         IFeatureReader Reader,
