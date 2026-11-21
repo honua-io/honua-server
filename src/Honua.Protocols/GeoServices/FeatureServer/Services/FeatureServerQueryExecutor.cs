@@ -79,6 +79,39 @@ internal sealed partial class FeatureServerQueryExecutor
         CancellationToken cancellationToken)
         => await QueryObjectIdsWithValidationAsync(_featureReader, layerId, query, cancellationToken).ConfigureAwait(false);
 
+    public async Task<BoundedObjectIds> QueryObjectIdsWithLimitProbeAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+        => await QueryObjectIdsWithLimitProbeAsync(
+            _featureReader,
+            new ObjectIdProbeQuery(layerId, query),
+            cancellationToken).ConfigureAwait(false);
+
+    private static async Task<BoundedObjectIds> QueryObjectIdsWithLimitProbeAsync(
+        IFeatureReader reader,
+        ObjectIdProbeQuery probe,
+        CancellationToken cancellationToken)
+    {
+        if (probe.Query.Limit is not int limit || limit < 0 || limit == int.MaxValue)
+        {
+            var unboundedIds = await QueryObjectIdsWithValidationAsync(reader, probe.LayerId, probe.Query, cancellationToken).ConfigureAwait(false);
+            return new BoundedObjectIds(unboundedIds.IsDefault ? ImmutableArray<long>.Empty : unboundedIds, ExceededTransferLimit: false);
+        }
+
+        var probeQuery = probe.Query with { Limit = checked(limit + 1) };
+        var ids = await QueryObjectIdsWithValidationAsync(reader, probe.LayerId, probeQuery, cancellationToken).ConfigureAwait(false);
+        if (ids.IsDefault)
+        {
+            ids = ImmutableArray<long>.Empty;
+        }
+
+        var exceeded = ids.Length > limit;
+        return new BoundedObjectIds(exceeded ? ids[..limit] : ids, exceeded);
+    }
+
+    private readonly record struct ObjectIdProbeQuery(int LayerId, FeatureQuery Query);
+
     private static async Task<ImmutableArray<long>> QueryObjectIdsWithValidationAsync(
         IFeatureReader reader,
         int layerId,
@@ -464,23 +497,24 @@ internal sealed partial class FeatureServerQueryExecutor
         {
             await StreamObjectIdsWithValidationAsync(
                 streamingReader,
-                new ObjectIdStreamRequest(layerId, query, new ObjectIdResponse(objectIdFieldName, context, cancellationToken))).ConfigureAwait(false);
+                new ObjectIdStreamRequest(
+                    layerId,
+                    query,
+                    new ObjectIdResponse
+                    {
+                        ObjectIdFieldName = objectIdFieldName,
+                        Context = context,
+                        CancellationToken = cancellationToken
+                    })).ConfigureAwait(false);
             return;
         }
 
-        var objectIds = await QueryObjectIdsWithValidationAsync(layerId, query, cancellationToken).ConfigureAwait(false);
-        await WriteObjectIdsAsync(objectIds, objectIdFieldName, context, cancellationToken).ConfigureAwait(false);
+        var bounded = await QueryObjectIdsWithLimitProbeAsync(
+            _featureReader,
+            new ObjectIdProbeQuery(layerId, query),
+            cancellationToken).ConfigureAwait(false);
+        await WriteObjectIdsAsync(bounded, objectIdFieldName, context, cancellationToken).ConfigureAwait(false);
     }
-
-    private static Task WriteObjectIdsAsync(
-        ImmutableArray<long> objectIds,
-        string objectIdFieldName,
-        HttpContext context,
-        CancellationToken cancellationToken)
-        => WriteObjectIdsAsync(
-            objectIds.IsDefault ? [] : objectIds,
-            remainingIds: null,
-            new ObjectIdResponse(objectIdFieldName, context, cancellationToken));
 
     private static Task WriteObjectIdsAsync(
         BoundedObjectIds objectIds,
@@ -490,13 +524,27 @@ internal sealed partial class FeatureServerQueryExecutor
         => WriteObjectIdsAsync(
             objectIds.ObjectIds.IsDefault ? [] : objectIds.ObjectIds,
             remainingIds: null,
-            new ObjectIdResponse(objectIdFieldName, context, cancellationToken, objectIds.ExceededTransferLimit));
+            new ObjectIdResponse
+            {
+                ObjectIdFieldName = objectIdFieldName,
+                Context = context,
+                CancellationToken = cancellationToken,
+                ExceededTransferLimit = objectIds.ExceededTransferLimit
+            });
 
     private static bool ShouldUsePagedQuery(FeatureQuery query)
-        => query.Limit is > 0 and < int.MaxValue;
+        => query.Limit is >= 0 and < int.MaxValue;
 
     private static long GetLowerBoundTotalCount(int itemCount, bool hasMoreResults)
         => hasMoreResults ? itemCount + 1L : itemCount;
 }
 
 internal readonly record struct BoundedObjectIds(ImmutableArray<long> ObjectIds, bool ExceededTransferLimit);
+
+internal readonly record struct V2LayerQueryTarget
+{
+    public required MetadataV2Service Service { get; init; }
+    public required MetadataV2Object Resource { get; init; }
+    public required MetadataV2Layer Publication { get; init; }
+    public required int StorageLayerId { get; init; }
+}

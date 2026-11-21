@@ -124,6 +124,24 @@ internal sealed partial class FeatureServerQueryExecutor
         return await QueryObjectIdsWithValidationAsync(reader, storageLayerId, query, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<BoundedObjectIds> QueryObjectIdsWithLimitProbeAsync(
+        V2LayerQueryTarget target,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        var reader = await ResolveReaderV2Async(
+            target.Service,
+            target.Resource,
+            target.Publication,
+            target.StorageLayerId,
+            FeatureProviderReadOperation.Query,
+            cancellationToken).ConfigureAwait(false);
+        return await QueryObjectIdsWithLimitProbeAsync(
+            reader,
+            new ObjectIdProbeQuery(target.StorageLayerId, query),
+            cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task<QueryResult<Feature>> ProjectComputedFieldsAsync(
         QueryResult<Feature> result,
         MetadataV2Object resource,
@@ -325,16 +343,23 @@ internal sealed partial class FeatureServerQueryExecutor
         {
             await StreamObjectIdsWithValidationAsync(
                 streamingReader,
-                new ObjectIdStreamRequest(storageLayerId, query, new ObjectIdResponse(objectIdFieldName, context, cancellationToken))).ConfigureAwait(false);
+                new ObjectIdStreamRequest(
+                    storageLayerId,
+                    query,
+                    new ObjectIdResponse
+                    {
+                        ObjectIdFieldName = objectIdFieldName,
+                        Context = context,
+                        CancellationToken = cancellationToken
+                    })).ConfigureAwait(false);
             return;
         }
 
-        var objectIds = await QueryObjectIdsWithValidationAsync(
+        var fallbackBounded = await QueryObjectIdsWithLimitProbeAsync(
             reader,
-            storageLayerId,
-            query,
+            new ObjectIdProbeQuery(storageLayerId, query),
             cancellationToken).ConfigureAwait(false);
-        await WriteObjectIdsAsync(objectIds, objectIdFieldName, context, cancellationToken).ConfigureAwait(false);
+        await WriteObjectIdsAsync(fallbackBounded, objectIdFieldName, context, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task StreamQueryAsync(
