@@ -975,6 +975,12 @@ internal sealed class ImageServerExportHandler
             return true;
         }
 
+        if (ImageServerRequestLimits.ExceedsListLimit(bandIds, ImageServerRequestLimits.MaxBandIds))
+        {
+            error = $"bandIds may list at most {ImageServerRequestLimits.MaxBandIds} bands.";
+            return false;
+        }
+
         var parts = bandIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (parts.Length == 0)
         {
