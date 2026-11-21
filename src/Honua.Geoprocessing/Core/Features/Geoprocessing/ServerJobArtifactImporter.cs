@@ -32,7 +32,17 @@ internal sealed record ServerJobArtifactImportCommand(
 internal sealed class MemoryServerJobArtifactImportLedger : IServerJobArtifactImportLedger
 {
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _gates = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, (string Fingerprint, ServerJobArtifactImportReceipt Receipt)> _entries = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, Entry> _entries = new(StringComparer.Ordinal);
+    private readonly Func<string, string, bool>? _isReferenced;
+    private readonly Func<string, string, bool>? _isOwned;
+
+    internal MemoryServerJobArtifactImportLedger(
+        Func<string, string, bool>? isReferenced = null,
+        Func<string, string, bool>? isOwned = null)
+    {
+        _isReferenced = isReferenced;
+        _isOwned = isOwned;
+    }
 
     public async Task<ServerJobArtifactImportReceipt> GetOrImportAsync(
         ServerJobArtifactImportScope scope,
@@ -48,6 +58,11 @@ internal sealed class MemoryServerJobArtifactImportLedger : IServerJobArtifactIm
         {
             if (_entries.TryGetValue(key, out var existing))
             {
+                if (existing.Discarded)
+                {
+                    throw new ServerJobArtifactImportDiscardedException(scope.IntentId);
+                }
+
                 if (!string.Equals(existing.Fingerprint, scope.Fingerprint, StringComparison.Ordinal))
                 {
                     throw new ServerJobArtifactImportConflictException(scope.IntentId);
@@ -57,12 +72,20 @@ internal sealed class MemoryServerJobArtifactImportLedger : IServerJobArtifactIm
             }
 
             var receipt = await import(MemoryAttempt.Instance, cancellationToken).ConfigureAwait(false);
-            if (!_entries.TryAdd(key, (scope.Fingerprint, receipt)))
+            var entry = new Entry(scope.Fingerprint, scope.Table, receipt, Discarded: false);
+            if (!_entries.TryAdd(key, entry))
             {
-                if (_entries.TryGetValue(key, out existing)
-                    && string.Equals(existing.Fingerprint, scope.Fingerprint, StringComparison.Ordinal))
+                if (_entries.TryGetValue(key, out existing))
                 {
-                    return existing.Receipt;
+                    if (existing.Discarded)
+                    {
+                        throw new ServerJobArtifactImportDiscardedException(scope.IntentId);
+                    }
+
+                    if (string.Equals(existing.Fingerprint, scope.Fingerprint, StringComparison.Ordinal))
+                    {
+                        return existing.Receipt;
+                    }
                 }
 
                 throw new ServerJobArtifactImportConflictException(scope.IntentId);
@@ -75,6 +98,65 @@ internal sealed class MemoryServerJobArtifactImportLedger : IServerJobArtifactIm
             gate.Release();
         }
     }
+
+    public async Task<ServerJobArtifactImportDiscardReceipt> DiscardAsync(
+        ServerJobArtifactImportDiscardScope scope,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        var key = scope.TenantId + "\n" + scope.ActorId + "\n" + scope.IntentId;
+        var gate = _gates.GetOrAdd(key, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!_entries.TryGetValue(key, out var existing))
+            {
+                throw new ServerJobArtifactImportNotFoundException(scope.IntentId);
+            }
+
+            if (existing.Discarded)
+            {
+                return new ServerJobArtifactImportDiscardReceipt(
+                    existing.Receipt.IntentId,
+                    existing.Receipt.Schema,
+                    existing.LogicalTable,
+                    existing.Receipt.PhysicalTable,
+                    AlreadyDiscarded: true);
+            }
+
+            var ownedByName = existing.LogicalTable.StartsWith("staged_", StringComparison.Ordinal)
+                && string.Equals(existing.LogicalTable, scope.ExpectedTable, StringComparison.Ordinal)
+                && (string.Equals(existing.Receipt.PhysicalTable, scope.ExpectedTable, StringComparison.Ordinal)
+                    || string.Equals(existing.Receipt.PhysicalTable, "imported_" + scope.ExpectedTable, StringComparison.Ordinal));
+            if (!ownedByName || (_isOwned is not null && !_isOwned(existing.Receipt.Schema, existing.Receipt.PhysicalTable)))
+            {
+                throw new ServerJobArtifactImportNotOwnedException(existing.Receipt.Schema, existing.Receipt.PhysicalTable);
+            }
+
+            if (_isReferenced is not null && _isReferenced(existing.Receipt.Schema, existing.Receipt.PhysicalTable))
+            {
+                throw new ServerJobArtifactImportReferencedException(existing.Receipt.Schema, existing.Receipt.PhysicalTable);
+            }
+
+            _entries[key] = existing with { Discarded = true };
+            return new ServerJobArtifactImportDiscardReceipt(
+                existing.Receipt.IntentId,
+                existing.Receipt.Schema,
+                existing.LogicalTable,
+                existing.Receipt.PhysicalTable,
+                AlreadyDiscarded: false);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private sealed record Entry(
+        string Fingerprint,
+        string LogicalTable,
+        ServerJobArtifactImportReceipt Receipt,
+        bool Discarded);
 
     private sealed class MemoryAttempt : IServerJobArtifactImportAttempt
     {
@@ -129,11 +211,56 @@ internal static partial class ServerJobArtifactImporter
         {
             throw new GeoprocessingIdempotencyConflictException(command.IntentId);
         }
+        catch (ServerJobArtifactImportDiscardedException exception)
+        {
+            throw new GeoprocessingPreconditionFailedException(exception.Message);
+        }
         catch (ServerJobArtifactImportInProgressException exception)
         {
             throw new GeoprocessingPreconditionFailedException(exception.Message);
         }
         catch (ServerJobArtifactImportIncompleteException exception)
+        {
+            throw new GeoprocessingPreconditionFailedException(exception.Message);
+        }
+    }
+
+    internal static async Task<ServerJobArtifactImportDiscardReceipt> DiscardAsync(
+        ServerJobArtifactImportDiscardScope scope,
+        IServerJobArtifactImportLedger ledger,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        ArgumentNullException.ThrowIfNull(ledger);
+        RequireToken(scope.TenantId, "tenant");
+        RequireToken(scope.ActorId, "actor");
+        RequireToken(scope.IntentId, "intentId");
+        RequireIdentifier(scope.ExpectedTable, "table");
+        try
+        {
+            return await ledger.DiscardAsync(scope, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ServerJobArtifactImportNotFoundException exception)
+        {
+            throw new GeoprocessingNotFoundException(exception.Message);
+        }
+        catch (ServerJobArtifactImportInProgressException exception)
+        {
+            throw new GeoprocessingPreconditionFailedException(exception.Message);
+        }
+        catch (ServerJobArtifactImportIncompleteException exception)
+        {
+            throw new GeoprocessingPreconditionFailedException(exception.Message);
+        }
+        catch (ServerJobArtifactImportReferencedException exception)
+        {
+            throw new GeoprocessingPreconditionFailedException(exception.Message);
+        }
+        catch (ServerJobArtifactImportNotOwnedException exception)
+        {
+            throw new GeoprocessingPreconditionFailedException(exception.Message);
+        }
+        catch (ImportTableOwnershipException exception)
         {
             throw new GeoprocessingPreconditionFailedException(exception.Message);
         }

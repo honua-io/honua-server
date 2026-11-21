@@ -26,6 +26,8 @@ internal static class StagedImportOperation
 
     public const string ImportOperationId = "dataset.stage.import";
 
+    public const string DiscardOperationId = "dataset.stage.discard";
+
     public const string PreviewFingerprintParameter = "previewFingerprint";
 
     internal static readonly TimeSpan ApprovalWindow = TimeSpan.FromMinutes(30);
@@ -48,7 +50,28 @@ internal static class StagedImportOperation
             SideEffect = OperationSideEffectClass.MutatesData,
             Extra = [RequiredParameter(PreviewFingerprintParameter)],
         }),
+        DiscardDescriptor(),
     ];
+
+    private static OperationDescriptor DiscardDescriptor() => new()
+    {
+        OperationId = DiscardOperationId,
+        ProviderId = ProviderId,
+        Title = "Discard staged dataset import",
+        Description = "Drops a server-owned staged import table from a committed import receipt before publication and marks the receipt discarded.",
+        Category = "import",
+        ExecutionKind = OperationExecutionKind.Synchronous,
+        ApprovalModel = OperationApprovalModel.OperatorGate,
+        Policy = new OperationPolicyMetadata
+        {
+            BlastRadiusClass = OperationBlastRadiusClass.ResourceScope,
+            SideEffectClass = OperationSideEffectClass.DestroysState,
+            Determinism = OperationDeterminism.RuntimeDynamic,
+            SupportsDryRun = false,
+        },
+        InputSchema = [RequiredParameter("intentId")],
+        OutputSchema = [],
+    };
 
     // The server owns the destination: callers cannot name, reuse or overwrite a table.
     public static string DestinationTable(string tenantId, string actorId, string intentId)

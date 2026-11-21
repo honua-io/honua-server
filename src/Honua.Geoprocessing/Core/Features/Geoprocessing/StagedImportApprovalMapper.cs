@@ -71,6 +71,72 @@ internal sealed class StagedImportApprovalMapper : IOperationApprovalRequestMapp
     }
 }
 
+internal sealed class StagedImportDiscardApprovalMapper : IOperationApprovalRequestMapper
+{
+    public string OperationId => StagedImportOperation.DiscardOperationId;
+
+    public OperationGatewayRequest Map(IOperationDescriptor descriptor, OperationRequest request,
+        OperationPolicyContext context, PolicyDecision decision)
+    {
+        if (descriptor.OperationId != OperationId || request.OperationId != OperationId)
+        {
+            throw new ArgumentException("The mapper only accepts dataset.stage.discard requests.", nameof(request));
+        }
+
+        if (request.Parameters.ContainsKey("table") || request.Parameters.ContainsKey("schema"))
+        {
+            throw new GeoprocessingValidationException(
+                "The staging table is resolved from the committed import receipt; do not supply 'table' or 'schema'.");
+        }
+
+        var (tenantId, actorId) = StagedImportOperation.RequireScope(context);
+        var intentId = StagedImportOperation.Required(request, "intentId");
+        var table = StagedImportOperation.DestinationTable(tenantId, actorId, intentId);
+        var payload = new StagedImportApprovalPayload
+        {
+            Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["intentId"] = intentId,
+            },
+            TenantId = context.TenantId,
+            SchemaName = context.SchemaName,
+        };
+        var serialized = JsonSerializer.Serialize(payload, StagedImportApprovalJsonContext.Default.StagedImportApprovalPayload);
+        return new OperationGatewayRequest
+        {
+            OperationInstanceId = context.OperationInstanceId,
+            OperationId = OperationId,
+            Kind = OperationClass.AdminConfigChange,
+            RequestedBy = context.PrincipalId,
+            Reason = decision.Reason,
+            CorrelationId = context.CorrelationId,
+            ExecutionPayload = serialized,
+            Plan = new OperationProposalPlan
+            {
+                Summary = $"Discard staged import intent '{intentId}' and drop its server-owned staging table '{table}' if unreferenced.",
+                RiskLevel = ProposalRiskLevel.Medium,
+                ExecutionPayload = serialized,
+            },
+        };
+    }
+
+    public OperationApprovalReplayMapping MapReplay(OperationGatewayRequest request)
+    {
+        var payload = JsonSerializer.Deserialize(request.Plan?.ExecutionPayload
+            ?? throw new InvalidOperationException("The staged import discard replay payload is unavailable."),
+            StagedImportApprovalJsonContext.Default.StagedImportApprovalPayload)
+            ?? throw new InvalidOperationException("The staged import discard replay payload is invalid.");
+        var replay = new OperationRequest { OperationId = OperationId, Parameters = payload.Parameters };
+        _ = StagedImportOperation.Required(replay, "intentId");
+        return new OperationApprovalReplayMapping
+        {
+            Request = replay,
+            TenantId = payload.TenantId,
+            SchemaName = payload.SchemaName,
+        };
+    }
+}
+
 internal sealed record StagedImportApprovalPayload
 {
     public Dictionary<string, string?> Parameters { get; init; } = new(StringComparer.Ordinal);

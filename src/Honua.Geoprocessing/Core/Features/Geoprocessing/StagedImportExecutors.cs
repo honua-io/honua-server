@@ -143,6 +143,65 @@ internal sealed class StagedImportExecutor(IServiceProvider services) : IOperati
         => Task.FromResult(StagedImportHandles.Status(handle));
 }
 
+internal sealed class StagedImportDiscardExecutor(IServiceProvider services) : IOperationExecutor
+{
+    public string OperationId => StagedImportOperation.DiscardOperationId;
+
+    public Task<OperationValidation> ValidateAsync(OperationRequest request, CancellationToken cancellationToken = default)
+    {
+        string? problem = null;
+        if (request.Parameters.ContainsKey("table") || request.Parameters.ContainsKey("schema"))
+        {
+            problem = "The staging table is resolved from the committed import receipt; do not supply 'table' or 'schema'.";
+        }
+        else if (!request.Parameters.TryGetValue("intentId", out var intentId) || string.IsNullOrWhiteSpace(intentId))
+        {
+            problem = "Required operation parameter 'intentId' is missing.";
+        }
+
+        return Task.FromResult(new OperationValidation
+        {
+            IsValid = problem is null,
+            Status = problem is null ? "valid" : "invalid",
+            Messages = problem is null ? [] : [problem],
+        });
+    }
+
+    public async Task<OperationHandle> SubmitAsync(OperationRequest request, OperationPolicyContext context,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.Parameters.ContainsKey("table") || request.Parameters.ContainsKey("schema"))
+        {
+            throw new GeoprocessingValidationException(
+                "The staging table is resolved from the committed import receipt; do not supply 'table' or 'schema'.");
+        }
+
+        var (tenantId, actorId) = StagedImportOperation.RequireScope(context);
+        var intentId = StagedImportOperation.Required(request, "intentId");
+        _ = await StagedImportOperation.AuthorizedPrincipalAsync(services, cancellationToken).ConfigureAwait(false);
+        var expectedTable = StagedImportOperation.DestinationTable(tenantId, actorId, intentId);
+        var receipt = await ServerJobArtifactImporter.DiscardAsync(
+            new ServerJobArtifactImportDiscardScope(tenantId, actorId, intentId, expectedTable),
+            services.GetRequiredService<IServerJobArtifactImportLedger>(),
+            cancellationToken).ConfigureAwait(false);
+        var summary = receipt.AlreadyDiscarded
+            ? "The staged dataset import was already discarded."
+            : "Discarded the staged dataset import.";
+        return StagedImportHandles.Completed(services, context, new StagedImportResult(OperationId, summary,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["intentId"] = receipt.IntentId,
+                ["schema"] = receipt.Schema,
+                ["stagingTable"] = receipt.Table,
+                ["physicalTable"] = receipt.PhysicalTable,
+                ["alreadyDiscarded"] = receipt.AlreadyDiscarded ? "true" : "false",
+            }));
+    }
+
+    public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
+        => Task.FromResult(StagedImportHandles.Status(handle));
+}
+
 internal sealed record StagedImportResult(string OperationId, string Summary, IReadOnlyDictionary<string, string> Details);
 
 internal static class StagedImportHandles
