@@ -1019,7 +1019,8 @@ internal static partial class LayerValidationHelpers
             context,
             "This collection is published over an external source table, which this server cannot write through.",
             [
-                $"Features are served from '{mapping.QualifiedName}'; the managed feature writer cannot modify it.",
+                // Generic on purpose: the storage schema and table are internal and never returned to a caller.
+                "The managed feature writer cannot modify the table this collection is served from.",
                 "Edit the source table directly and refresh the published layer, or republish the data into the managed feature store."
             ]);
     }
