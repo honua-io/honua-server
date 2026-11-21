@@ -17,6 +17,74 @@ internal static class GeoServerSecurityRuleTranslator
 
     private static readonly string[] DisallowedRoleTokens = [";", "=", "!", " ", "\t", "cql:"];
 
+    private enum LayerRuleMatch { None, Exact, Wildcard }
+
+    private sealed record RoleClassification
+    {
+        public bool IsValid { get; init; }
+        public bool IsAnonymous { get; init; }
+        public bool IsAuthenticatedOnly { get; init; }
+        public string[] NamedRoles { get; init; } = [];
+        public string? FailureReason { get; init; }
+    }
+
+    private sealed class PolicyAccumulator(string layerSourceId)
+    {
+        public string LayerSourceId { get; } = layerSourceId;
+        public bool HasRead { get; private set; }
+        public bool AllowAnonymousRead { get; private set; }
+        public SortedSet<string> ReadRoles { get; } = new(StringComparer.Ordinal);
+        public bool HasWrite { get; private set; }
+        public bool AllowAnonymousWrite { get; private set; }
+        public SortedSet<string> WriteRoles { get; } = new(StringComparer.Ordinal);
+        public List<MigrationSecurityRuleDisposition> Dispositions { get; } = [];
+        public List<MigrationManifestReviewItem> ReviewItems { get; } = [];
+
+        public void Apply(string mode, RoleClassification classification)
+        {
+            if (mode == "r")
+            {
+                HasRead = true;
+                if (classification.IsAnonymous)
+                {
+                    AllowAnonymousRead = true;
+                }
+                else if (!classification.IsAuthenticatedOnly)
+                {
+                    ReadRoles.UnionWith(classification.NamedRoles);
+                }
+
+                return;
+            }
+
+            HasWrite = true;
+            if (classification.IsAnonymous)
+            {
+                AllowAnonymousWrite = true;
+            }
+            else if (!classification.IsAuthenticatedOnly)
+            {
+                WriteRoles.UnionWith(classification.NamedRoles);
+            }
+        }
+
+        public AccessPolicy? BuildPolicy()
+        {
+            if (!HasRead && !HasWrite)
+            {
+                return null;
+            }
+
+            return new AccessPolicy
+            {
+                AllowAnonymous = AllowAnonymousRead,
+                AllowAnonymousWrite = AllowAnonymousWrite,
+                AllowedRoles = AllowAnonymousRead || ReadRoles.Count == 0 ? null : [.. ReadRoles],
+                AllowedWriteRoles = AllowAnonymousWrite || WriteRoles.Count == 0 ? null : [.. WriteRoles]
+            };
+        }
+    }
+
     public static GeoServerLayerSecurityTranslation TranslateForLayer(
         GeoServerLayerInfo layer,
         IReadOnlyList<GeoServerSecurityRule> rules,
@@ -30,121 +98,16 @@ internal static class GeoServerSecurityRuleTranslator
             return new GeoServerLayerSecurityTranslation(null, [], []);
         }
 
-        var dispositions = new List<MigrationSecurityRuleDisposition>();
-        var reviewItems = new List<MigrationManifestReviewItem>();
-
-        var hasTranslatedRead = false;
-        var allowAnonymousRead = false;
-        var allowedReadRoles = new SortedSet<string>(StringComparer.Ordinal);
-
-        var hasTranslatedWrite = false;
-        var allowAnonymousWrite = false;
-        var allowedWriteRoles = new SortedSet<string>(StringComparer.Ordinal);
-
+        var accumulator = new PolicyAccumulator(layerSourceId);
         foreach (var rule in rules.OrderBy(static r => r.RuleKey, StringComparer.Ordinal))
         {
-            if (!AppliesToLayer(rule, layer, out var isExactLayerRule))
-            {
-                continue;
-            }
-
-            var mode = rule.Mode.Trim().ToLowerInvariant();
-            if (!isExactLayerRule)
-            {
-                AddUnexpressed(
-                    rule,
-                    layerSourceId,
-                    $"Wildcard security rule '{rule.RuleKey}' cannot be expressed as a per-layer Honua access policy without risking a broader grant; review and apply explicitly.",
-                    dispositions,
-                    reviewItems);
-                continue;
-            }
-
-            if (mode is not ("r" or "w"))
-            {
-                AddUnexpressed(
-                    rule,
-                    layerSourceId,
-                    $"GeoServer security rule '{rule.RuleKey}' with mode '{rule.Mode}' cannot be expressed as a Honua read/write access policy; not applied as a broader grant.",
-                    dispositions,
-                    reviewItems);
-                continue;
-            }
-
-            if (!TryClassifyRoles(rule.Roles, out var isAnonymous, out var isAuthenticatedOnly, out var namedRoles, out var failureReason))
-            {
-                AddUnexpressed(
-                    rule,
-                    layerSourceId,
-                    failureReason!,
-                    dispositions,
-                    reviewItems);
-                continue;
-            }
-
-            if (mode == "r")
-            {
-                hasTranslatedRead = true;
-                if (isAnonymous)
-                {
-                    allowAnonymousRead = true;
-                }
-                else if (!isAuthenticatedOnly)
-                {
-                    foreach (var role in namedRoles)
-                    {
-                        allowedReadRoles.Add(role);
-                    }
-                }
-            }
-            else
-            {
-                hasTranslatedWrite = true;
-                if (isAnonymous)
-                {
-                    allowAnonymousWrite = true;
-                }
-                else if (!isAuthenticatedOnly)
-                {
-                    foreach (var role in namedRoles)
-                    {
-                        allowedWriteRoles.Add(role);
-                    }
-                }
-            }
-
-            dispositions.Add(new MigrationSecurityRuleDisposition
-            {
-                RuleKey = rule.RuleKey,
-                Mode = mode,
-                Roles = rule.Roles,
-                Status = "translated",
-                Reason = mode == "r"
-                    ? "Translated into Honua per-layer read access policy."
-                    : "Translated into Honua per-layer write access policy."
-            });
-        }
-
-        AccessPolicy? policy = null;
-        if (hasTranslatedRead || hasTranslatedWrite)
-        {
-            policy = new AccessPolicy
-            {
-                AllowAnonymous = allowAnonymousRead,
-                AllowAnonymousWrite = allowAnonymousWrite,
-                AllowedRoles = allowAnonymousRead || allowedReadRoles.Count == 0
-                    ? null
-                    : [.. allowedReadRoles],
-                AllowedWriteRoles = allowAnonymousWrite || allowedWriteRoles.Count == 0
-                    ? null
-                    : [.. allowedWriteRoles]
-            };
+            ProcessLayerRule(layer, rule, accumulator);
         }
 
         return new GeoServerLayerSecurityTranslation(
-            policy,
-            dispositions.ToArray(),
-            reviewItems.ToArray());
+            accumulator.BuildPolicy(),
+            accumulator.Dispositions.ToArray(),
+            accumulator.ReviewItems.ToArray());
     }
 
     public static MigrationManifestReviewItem[] CollectUnmatchedUnexpressedRules(
@@ -156,154 +119,174 @@ internal static class GeoServerSecurityRuleTranslator
             return [];
         }
 
-        var items = new List<MigrationManifestReviewItem>();
-        foreach (var rule in rules.OrderBy(static r => r.RuleKey, StringComparer.Ordinal))
-        {
-            var matchedAnyLayer = layers.Any(layer => AppliesToLayer(rule, layer, out _));
-            if (matchedAnyLayer)
-            {
-                continue;
-            }
-
-            // Directives like catalog "mode=HIDE" or rules targeting unmatched/wildcard scopes
-            // still surface in the plan report so operators see every rule that was not applied.
-            if (string.Equals(rule.Mode, "catalog-mode", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(rule.WorkspacePattern, "*", StringComparison.Ordinal) ||
-                string.Equals(rule.LayerPattern, "*", StringComparison.Ordinal))
-            {
-                items.Add(new MigrationManifestReviewItem
-                {
-                    SourceId = $"security-rule:{rule.RuleKey}",
-                    Kind = "security-rule",
-                    Code = UnexpressedRuleCode,
-                    Severity = "manual-review",
-                    Reason = $"GeoServer security rule '{rule.RuleKey}' could not be expressed as a per-layer Honua access policy and was not applied as a broader grant.",
-                    ManualSteps =
-                    [
-                        $"Review GeoServer security rule '{rule.RuleKey}' ({string.Join(", ", rule.Roles)}) and configure the equivalent Honua service or layer access policy manually."
-                    ]
-                });
-            }
-        }
-
-        return items.ToArray();
+        return rules
+            .OrderBy(static r => r.RuleKey, StringComparer.Ordinal)
+            .Where(rule => !layers.Any(layer => MatchRuleToLayer(rule, layer) != LayerRuleMatch.None) && IsUnmatchedReportable(rule))
+            .Select(CreateUnmatchedReviewItem)
+            .ToArray();
     }
 
-    private static bool AppliesToLayer(
-        GeoServerSecurityRule rule,
+    private static void ProcessLayerRule(
         GeoServerLayerInfo layer,
-        out bool isExactLayerRule)
+        GeoServerSecurityRule rule,
+        PolicyAccumulator accumulator)
     {
-        isExactLayerRule = false;
+        var match = MatchRuleToLayer(rule, layer);
+        if (match == LayerRuleMatch.None)
+        {
+            return;
+        }
+
+        if (match == LayerRuleMatch.Wildcard)
+        {
+            RecordUnexpressed(
+                accumulator,
+                rule,
+                $"Wildcard security rule '{rule.RuleKey}' cannot be expressed as a per-layer Honua access policy without risking a broader grant; review and apply explicitly.");
+            return;
+        }
+
+        var mode = rule.Mode.Trim().ToLowerInvariant();
+        if (mode is not ("r" or "w"))
+        {
+            RecordUnexpressed(
+                accumulator,
+                rule,
+                $"GeoServer security rule '{rule.RuleKey}' with mode '{rule.Mode}' cannot be expressed as a Honua read/write access policy; not applied as a broader grant.");
+            return;
+        }
+
+        var classification = ClassifyRoles(rule.Roles);
+        if (!classification.IsValid)
+        {
+            RecordUnexpressed(accumulator, rule, classification.FailureReason!);
+            return;
+        }
+
+        accumulator.Apply(mode, classification);
+        accumulator.Dispositions.Add(new MigrationSecurityRuleDisposition
+        {
+            RuleKey = rule.RuleKey,
+            Mode = mode,
+            Roles = rule.Roles,
+            Status = "translated",
+            Reason = mode == "r"
+                ? "Translated into Honua per-layer read access policy."
+                : "Translated into Honua per-layer write access policy."
+        });
+    }
+
+    private static LayerRuleMatch MatchRuleToLayer(GeoServerSecurityRule rule, GeoServerLayerInfo layer)
+    {
         if (string.Equals(rule.Mode, "catalog-mode", StringComparison.OrdinalIgnoreCase))
         {
-            return false;
+            return LayerRuleMatch.None;
         }
 
         var wsWildcard = string.Equals(rule.WorkspacePattern, "*", StringComparison.Ordinal);
         var layerWildcard = string.Equals(rule.LayerPattern, "*", StringComparison.Ordinal);
-
         var wsMatch = wsWildcard || string.Equals(rule.WorkspacePattern, layer.WorkspaceName, StringComparison.OrdinalIgnoreCase);
         var layerMatch = layerWildcard || string.Equals(rule.LayerPattern, layer.Name, StringComparison.OrdinalIgnoreCase);
 
         if (!wsMatch || !layerMatch)
         {
-            return false;
+            return LayerRuleMatch.None;
         }
 
-        isExactLayerRule = !wsWildcard && !layerWildcard;
-        return true;
+        return wsWildcard || layerWildcard ? LayerRuleMatch.Wildcard : LayerRuleMatch.Exact;
     }
 
-    private static bool TryClassifyRoles(
-        string[] roles,
-        out bool isAnonymous,
-        out bool isAuthenticatedOnly,
-        out List<string> namedRoles,
-        out string? failureReason)
+    private static RoleClassification ClassifyRoles(string[] roles)
     {
-        isAnonymous = false;
-        isAuthenticatedOnly = false;
-        namedRoles = [];
-        failureReason = null;
-
         if (roles.Length == 0)
         {
-            failureReason = "Security rule specifies no roles and cannot be expressed safely; not applied as a broader grant.";
-            return false;
+            return InvalidRoles("Security rule specifies no roles and cannot be expressed safely; not applied as a broader grant.");
         }
 
-        var hasAnonymousToken = false;
-        var hasAuthenticatedToken = false;
+        var hasAnonymous = false;
+        var hasAuthenticated = false;
+        var namedRoles = new List<string>();
 
-        foreach (var rawRole in roles)
+        foreach (var role in roles.Select(static r => r.Trim()).Where(static r => r.Length > 0))
         {
-            var role = rawRole.Trim();
-            if (role.Length == 0)
-            {
-                continue;
-            }
-
             if (ContainsDisallowedSyntax(role))
             {
-                failureReason = $"Security rule role expression '{role}' uses syntax that cannot be expressed as a Honua role list; not applied as a broader grant.";
-                return false;
+                return InvalidRoles($"Security rule role expression '{role}' uses syntax that cannot be expressed as a Honua role list; not applied as a broader grant.");
             }
 
             if (string.Equals(role, "*", StringComparison.Ordinal) ||
                 string.Equals(role, "ROLE_ANONYMOUS", StringComparison.OrdinalIgnoreCase))
             {
-                hasAnonymousToken = true;
-                continue;
+                hasAnonymous = true;
             }
-
-            if (string.Equals(role, "ROLE_AUTHENTICATED", StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(role, "ROLE_AUTHENTICATED", StringComparison.OrdinalIgnoreCase))
             {
-                hasAuthenticatedToken = true;
-                continue;
+                hasAuthenticated = true;
             }
-
-            namedRoles.Add(role);
+            else
+            {
+                namedRoles.Add(role);
+            }
         }
 
-        if (hasAnonymousToken && (hasAuthenticatedToken || namedRoles.Count > 0))
-        {
-            failureReason = "Security rule mixes anonymous wildcard access with restricted roles; kept for manual review instead of widening access.";
-            return false;
-        }
-
-        if (hasAuthenticatedToken && namedRoles.Count > 0)
-        {
-            failureReason = "Security rule mixes ROLE_AUTHENTICATED with specific roles; kept for manual review instead of widening access.";
-            return false;
-        }
-
-        isAnonymous = hasAnonymousToken;
-        isAuthenticatedOnly = hasAuthenticatedToken;
-        return true;
+        return ValidateRoleCombination(hasAnonymous, hasAuthenticated, namedRoles);
     }
+
+    private static RoleClassification ValidateRoleCombination(
+        bool hasAnonymous,
+        bool hasAuthenticated,
+        List<string> namedRoles)
+    {
+        if (hasAnonymous && (hasAuthenticated || namedRoles.Count > 0))
+        {
+            return InvalidRoles("Security rule mixes anonymous wildcard access with restricted roles; kept for manual review instead of widening access.");
+        }
+
+        if (hasAuthenticated && namedRoles.Count > 0)
+        {
+            return InvalidRoles("Security rule mixes ROLE_AUTHENTICATED with specific roles; kept for manual review instead of widening access.");
+        }
+
+        return new RoleClassification
+        {
+            IsValid = true,
+            IsAnonymous = hasAnonymous,
+            IsAuthenticatedOnly = hasAuthenticated,
+            NamedRoles = [.. namedRoles]
+        };
+    }
+
+    private static RoleClassification InvalidRoles(string reason)
+        => new() { IsValid = false, FailureReason = reason };
 
     private static bool ContainsDisallowedSyntax(string role)
-    {
-        foreach (var token in DisallowedRoleTokens)
+        => DisallowedRoleTokens.Any(token => role.Contains(token, StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsUnmatchedReportable(GeoServerSecurityRule rule)
+        => string.Equals(rule.Mode, "catalog-mode", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(rule.WorkspacePattern, "*", StringComparison.Ordinal) ||
+           string.Equals(rule.LayerPattern, "*", StringComparison.Ordinal);
+
+    private static MigrationManifestReviewItem CreateUnmatchedReviewItem(GeoServerSecurityRule rule)
+        => new()
         {
-            if (role.Contains(token, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
+            SourceId = $"security-rule:{rule.RuleKey}",
+            Kind = "security-rule",
+            Code = UnexpressedRuleCode,
+            Severity = "manual-review",
+            Reason = $"GeoServer security rule '{rule.RuleKey}' could not be expressed as a per-layer Honua access policy and was not applied as a broader grant.",
+            ManualSteps =
+            [
+                $"Review GeoServer security rule '{rule.RuleKey}' ({string.Join(", ", rule.Roles)}) and configure the equivalent Honua service or layer access policy manually."
+            ]
+        };
 
-        return false;
-    }
-
-    private static void AddUnexpressed(
+    private static void RecordUnexpressed(
+        PolicyAccumulator accumulator,
         GeoServerSecurityRule rule,
-        string layerSourceId,
-        string reason,
-        List<MigrationSecurityRuleDisposition> dispositions,
-        List<MigrationManifestReviewItem> reviewItems)
+        string reason)
     {
-        dispositions.Add(new MigrationSecurityRuleDisposition
+        accumulator.Dispositions.Add(new MigrationSecurityRuleDisposition
         {
             RuleKey = rule.RuleKey,
             Mode = rule.Mode,
@@ -312,9 +295,9 @@ internal static class GeoServerSecurityRuleTranslator
             Reason = reason
         });
 
-        reviewItems.Add(new MigrationManifestReviewItem
+        accumulator.ReviewItems.Add(new MigrationManifestReviewItem
         {
-            SourceId = layerSourceId,
+            SourceId = accumulator.LayerSourceId,
             Kind = "security-rule",
             Code = UnexpressedRuleCode,
             Severity = "manual-review",

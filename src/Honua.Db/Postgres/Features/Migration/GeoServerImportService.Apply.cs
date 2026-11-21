@@ -4,14 +4,11 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
@@ -51,112 +48,6 @@ internal sealed partial class GeoServerImportService
         return EnrichApplyPlan(plan, serviceInfo, filteredResources);
     }
 
-    private MigrationApplyPlanArtifact EnrichApplyPlan(
-        MigrationApplyPlanArtifact plan,
-        GeoServerServiceInfo serviceInfo,
-        FilteredResources filteredResources)
-    {
-        var layersById = filteredResources.Layers.ToDictionary(GetLayerId, StringComparer.Ordinal);
-        var stylesById = filteredResources.Styles.ToDictionary(GetStyleId, StringComparer.Ordinal);
-        var styleIdsByReference = BuildStyleReferenceLookup(filteredResources.Styles);
-
-        var extraManualReviewItems = new List<MigrationManifestReviewItem>();
-        var updatedSteps = new MigrationApplyPlanStep[plan.Steps.Length];
-        var anyStepChanged = false;
-
-        for (var i = 0; i < plan.Steps.Length; i++)
-        {
-            var step = plan.Steps[i];
-            if (!string.Equals(step.Kind, "layer", StringComparison.Ordinal) ||
-                !layersById.TryGetValue(step.SourceId, out var layer))
-            {
-                updatedSteps[i] = step;
-                continue;
-            }
-
-            var layerStyles = ResolveLayerStyles(layer, stylesById, styleIdsByReference);
-            var styleDiffResult = GeoServerStyleDiffBuilder.BuildForLayer(step.SourceId, layerStyles, _sldConverter);
-            var securityTranslation = GeoServerSecurityRuleTranslator.TranslateForLayer(
-                layer,
-                serviceInfo.SecurityRules,
-                step.SourceId);
-
-            if (styleDiffResult.Diffs.Length == 0 && securityTranslation.Dispositions.Length == 0)
-            {
-                updatedSteps[i] = step;
-                continue;
-            }
-
-            anyStepChanged = true;
-            extraManualReviewItems.AddRange(styleDiffResult.ReviewItems);
-            extraManualReviewItems.AddRange(securityTranslation.ReviewItems);
-
-            var reviewCodes = step.ReviewCodes
-                .Concat(styleDiffResult.ReviewItems.Select(static item => item.Code))
-                .Concat(securityTranslation.ReviewItems.Select(static item => item.Code))
-                .Distinct(StringComparer.Ordinal)
-                .OrderBy(static code => code, StringComparer.Ordinal)
-                .ToArray();
-
-            updatedSteps[i] = step with
-            {
-                ReviewCodes = reviewCodes,
-                StyleDiffs = styleDiffResult.Diffs.Length > 0 ? styleDiffResult.Diffs : null,
-                SecurityRules = securityTranslation.Dispositions.Length > 0 ? securityTranslation.Dispositions : null
-            };
-        }
-
-        extraManualReviewItems.AddRange(
-            GeoServerSecurityRuleTranslator.CollectUnmatchedUnexpressedRules(
-                serviceInfo.SecurityRules,
-                filteredResources.Layers));
-
-        if (!anyStepChanged && extraManualReviewItems.Count == 0)
-        {
-            return plan;
-        }
-
-        var mergedManualReview = plan.ManualReviewItems
-            .Concat(extraManualReviewItems)
-            .OrderBy(static item => item.SourceId, StringComparer.Ordinal)
-            .ThenBy(static item => item.Code, StringComparer.Ordinal)
-            .ToArray();
-
-        return plan with
-        {
-            Steps = updatedSteps,
-            ManualReviewItems = mergedManualReview
-        };
-    }
-
-    private static List<(string StyleId, GeoServerStyleInfo Style)> ResolveLayerStyles(
-        GeoServerLayerInfo layer,
-        Dictionary<string, GeoServerStyleInfo> stylesById,
-        Dictionary<StyleReferenceKey, string[]> styleIdsByReference)
-    {
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        var resolved = new List<(string StyleId, GeoServerStyleInfo Style)>();
-
-        void AddForReference(string? styleReference)
-        {
-            foreach (var styleId in ResolveStyleIds(styleIdsByReference, layer.WorkspaceName, styleReference))
-            {
-                if (seen.Add(styleId) && stylesById.TryGetValue(styleId, out var style))
-                {
-                    resolved.Add((styleId, style));
-                }
-            }
-        }
-
-        AddForReference(layer.DefaultStyle);
-        foreach (var alternativeStyle in layer.AlternativeStyles)
-        {
-            AddForReference(alternativeStyle);
-        }
-
-        return resolved;
-    }
-
     private static GeoServerServiceInfo CreateFilteredServiceInfoForPlan(
         GeoServerServiceInfo serviceInfo,
         FilteredResources filteredResources)
@@ -179,7 +70,6 @@ internal sealed partial class GeoServerImportService
     }
 
     private async Task<MigrationApplyExecutionArtifact> ExecuteApplyPlanAsync(
-        GeoServerServiceInfo serviceInfo,
         FilteredResources filteredResources,
         GeoServerImportRequest request,
         MigrationApplyPlanArtifact applyPlan,
@@ -230,7 +120,6 @@ internal sealed partial class GeoServerImportService
 
             var stepResult = await ExecuteApplyStepAsync(
                     step,
-                    serviceInfo.SecurityRules,
                     layersById,
                     dataStoresByKey,
                     layerGroupsById,
@@ -303,7 +192,6 @@ internal sealed partial class GeoServerImportService
 
     private async Task<MigrationApplyExecutionStepResult> ExecuteApplyStepAsync(
         MigrationApplyPlanStep step,
-        GeoServerSecurityRule[] securityRules,
         Dictionary<string, GeoServerLayerInfo> layersById,
         Dictionary<string, GeoServerDataStoreInfo> dataStoresByKey,
         Dictionary<string, GeoServerLayerGroupInfo> layerGroupsById,
@@ -466,32 +354,16 @@ internal sealed partial class GeoServerImportService
             }
         }
 
-        var temporalInfo = BuildLayerTemporalInfo(layer);
-        var temporalColumn = temporalInfo?.StartTimeField;
-        var layerExtensions = BuildLayerDimensionExtensions(layer);
-        var securityTranslation = GeoServerSecurityRuleTranslator.TranslateForLayer(
-            layer,
-            securityRules,
-            step.SourceId);
-
-        var publishRequest = new LayerPublishRequest
-        {
-            Schema = publishSchema,
-            Table = publishTable,
-            LayerName = step.TargetResourceName ?? layer.Name,
-            Description = layer.Abstract,
-            GeometryColumn = null,
-            GeometryType = null,
-            Srid = request.TargetSrid ?? ResolveSrid(layer.SRS),
-            PrimaryKey = null,
-            TemporalColumn = temporalColumn,
-            Temporal = temporalInfo,
-            AccessPolicy = securityTranslation.AccessPolicy,
-            Extensions = layerExtensions,
-            Fields = [],
-            ServiceName = step.TargetServiceName,
-            Enabled = request.AutoPublishLayers && layer.Enabled
-        };
+        var publishRequest = BuildLayerPublishRequest(
+            new LayerPublishBuildContext
+            {
+                Step = step,
+                Layer = layer,
+                Schema = publishSchema,
+                Table = publishTable,
+                SecurityRules = filteredResources.SecurityRules,
+                Request = request
+            });
 
         try
         {
@@ -1591,357 +1463,6 @@ internal sealed partial class GeoServerImportService
             ApplyPlan = applyPlan,
             ApplyExecution = applyExecution
         };
-
-    private static MetadataV2ObjectTemporal? BuildLayerTemporalInfo(GeoServerLayerInfo layer)
-    {
-        if (layer.TimeDimension is not { Enabled: true } timeDim ||
-            string.IsNullOrWhiteSpace(timeDim.Attribute))
-        {
-            return null;
-        }
-
-        return new MetadataV2ObjectTemporal
-        {
-            StartTimeField = timeDim.Attribute.Trim(),
-            EndTimeField = string.IsNullOrWhiteSpace(timeDim.EndAttribute) ? null : timeDim.EndAttribute.Trim()
-        };
-    }
-
-    private static Dictionary<string, JsonElement>? BuildLayerDimensionExtensions(GeoServerLayerInfo layer)
-    {
-        if (layer.ElevationDimension is not { Enabled: true } elevDim)
-        {
-            return null;
-        }
-
-        using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream))
-        {
-            writer.WriteStartObject();
-            writer.WriteStartArray("dimensions");
-            writer.WriteStartObject();
-            writer.WriteString("name", "elevation");
-            writer.WriteString("units", string.IsNullOrWhiteSpace(elevDim.Units) ? "EPSG:5030" : elevDim.Units);
-            if (!string.IsNullOrWhiteSpace(elevDim.UnitSymbol))
-            {
-                writer.WriteString("unitSymbol", elevDim.UnitSymbol);
-            }
-
-            writer.WriteBoolean("nearestValue", elevDim.NearestMatchEnabled);
-            if (!string.IsNullOrWhiteSpace(elevDim.DefaultValueReference))
-            {
-                writer.WriteString("default", elevDim.DefaultValueReference);
-            }
-
-            var extentText = !string.IsNullOrWhiteSpace(elevDim.Attribute)
-                ? elevDim.Attribute!
-                : (elevDim.DefaultValueReference ?? string.Empty);
-            writer.WriteString("extent", extentText);
-            writer.WriteEndObject();
-            writer.WriteEndArray();
-            writer.WriteEndObject();
-        }
-
-        using var doc = JsonDocument.Parse(stream.ToArray());
-        return new Dictionary<string, JsonElement>(StringComparer.Ordinal)
-        {
-            ["wms"] = doc.RootElement.Clone()
-        };
-    }
-
-    private async Task TryRecordMigrationRunStartedAsync(
-        string runId,
-        GeoServerServiceInfo serviceInfo,
-        CancellationToken cancellationToken)
-    {
-        if (_migrationRunCatalog is null)
-        {
-            return;
-        }
-
-        var sanitizedUrl = SanitizeUrlForRunCatalog(serviceInfo.GeoServerRestUrl);
-        await _migrationRunCatalog.RecordStartedAsync(
-                new MigrationRunRecord
-                {
-                    RunId = runId,
-                    SourceKind = "geoserver-rest",
-                    SourceUrl = sanitizedUrl,
-                    SourceDisplayName = serviceInfo.GlobalSettings?.Title ?? "GeoServer",
-                    Status = MigrationRunStatus.Running,
-                    StartedAt = DateTimeOffset.UtcNow,
-                    StatusNote = "GeoServer migration apply started."
-                },
-                cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    private async Task TryRecordMigrationRunCompletedAsync(
-        string runId,
-        MigrationRunStatus status,
-        GeoServerReconciliationBundle bundle,
-        string statusNote,
-        CancellationToken cancellationToken)
-    {
-        if (_migrationRunCatalog is null)
-        {
-            return;
-        }
-
-        var evidenceJson = SerializeReconciliationBundle(bundle);
-        var fingerprint = $"sha256:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(evidenceJson))).ToLowerInvariant()}";
-        await _migrationRunCatalog.RecordCompletedAsync(
-                runId,
-                status,
-                DateTimeOffset.UtcNow,
-                evidencePackRef: $"geoserver-reconciliation:{runId}",
-                evidencePackFingerprint: fingerprint,
-                evidencePackBody: evidenceJson,
-                statusNote: statusNote,
-                cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    private static string SanitizeUrlForRunCatalog(string url)
-    {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
-        {
-            return url;
-        }
-
-        var builder = new UriBuilder(uri)
-        {
-            UserName = string.Empty,
-            Password = string.Empty,
-            Query = string.Empty,
-            Fragment = string.Empty
-        };
-        return builder.Uri.AbsoluteUri;
-    }
-
-    private static GeoServerReconciliationBundle BuildReconciliationBundle(
-        string runId,
-        string jobId,
-        GeoServerServiceInfo serviceInfo,
-        FilteredResources filteredResources,
-        MigrationApplyPlanArtifact applyPlan,
-        MigrationApplyExecutionArtifact applyExecution)
-    {
-        var planId = $"geoserver-plan-{jobId}";
-        var planDigest = applyPlan.PlanFingerprint;
-
-        var sourceCounts = new Dictionary<string, int>(StringComparer.Ordinal)
-        {
-            ["workspaces"] = filteredResources.WorkspaceCount,
-            ["datastores"] = filteredResources.DataStoreCount,
-            ["layers"] = filteredResources.LayerCount,
-            ["styles"] = filteredResources.StyleCount
-        };
-
-        var appliedStepResults = applyExecution.StepResults
-            .Where(static s => s.Outcome is "applied" or "already-applied")
-            .ToArray();
-        var targetCounts = new Dictionary<string, int>(StringComparer.Ordinal)
-        {
-            ["workspaces"] = appliedStepResults.Count(static s => string.Equals(s.Kind, "workspace", StringComparison.Ordinal)),
-            ["datastores"] = appliedStepResults.Count(static s => string.Equals(s.Kind, "datastore", StringComparison.Ordinal)),
-            ["layers"] = appliedStepResults.Count(static s => string.Equals(s.Kind, "layer", StringComparison.Ordinal)),
-            ["styles"] = appliedStepResults.Count(static s => string.Equals(s.Kind, "style", StringComparison.Ordinal))
-        };
-
-        var sourceSchemas = new Dictionary<string, string[]>(StringComparer.Ordinal);
-        var targetSchemas = new Dictionary<string, string[]>(StringComparer.Ordinal);
-        var sourceExtents = new Dictionary<string, GeoServerReconciliationExtent>(StringComparer.Ordinal);
-        var targetExtents = new Dictionary<string, GeoServerReconciliationExtent>(StringComparer.Ordinal);
-        var appliedLayerSourceIds = appliedStepResults
-            .Where(static s => string.Equals(s.Kind, "layer", StringComparison.Ordinal))
-            .Select(static s => s.SourceId)
-            .ToHashSet(StringComparer.Ordinal);
-
-        foreach (var layer in filteredResources.Layers.OrderBy(GetLayerId, StringComparer.Ordinal))
-        {
-            var layerId = GetLayerId(layer);
-            var dimensions = new List<string>();
-            if (layer.TimeDimension is { Enabled: true } td && !string.IsNullOrWhiteSpace(td.Attribute))
-            {
-                dimensions.Add($"time:{td.Attribute}");
-            }
-
-            if (layer.ElevationDimension is { Enabled: true } ed)
-            {
-                dimensions.Add($"elevation:{ed.Attribute ?? "declared"}");
-            }
-
-            var schemaSummary = dimensions.ToArray();
-            sourceSchemas[layerId] = schemaSummary;
-
-            if (layer.LatLonBoundingBox is { } bbox)
-            {
-                sourceExtents[layerId] = new GeoServerReconciliationExtent
-                {
-                    MinX = bbox.MinX,
-                    MinY = bbox.MinY,
-                    MaxX = bbox.MaxX,
-                    MaxY = bbox.MaxY,
-                    Crs = bbox.CRS
-                };
-            }
-
-            if (appliedLayerSourceIds.Contains(layerId))
-            {
-                targetSchemas[layerId] = schemaSummary;
-                if (sourceExtents.TryGetValue(layerId, out var extent))
-                {
-                    targetExtents[layerId] = extent;
-                }
-            }
-        }
-
-        var supportedMetadata = new[] { "sourceKind", "sourceVersion", "targetService" };
-        var sharedMetadata = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["sourceKind"] = "geoserver-rest",
-            ["sourceVersion"] = serviceInfo.Version ?? string.Empty,
-            ["targetService"] = serviceInfo.GlobalSettings?.Title ?? "geoserver-import"
-        };
-
-        return new GeoServerReconciliationBundle
-        {
-            RunId = runId,
-            PlanId = planId,
-            PlanDigest = planDigest,
-            Service = "geoserver",
-            SourceSnapshot = new GeoServerReconciliationSnapshot
-            {
-                RunId = runId,
-                PlanId = planId,
-                PlanDigest = planDigest,
-                Service = "geoserver",
-                Counts = sourceCounts,
-                Schemas = sourceSchemas,
-                Extents = sourceExtents,
-                Samples = [],
-                Relationships = [],
-                Metadata = sharedMetadata,
-                SupportedMetadata = supportedMetadata
-            },
-            TargetSnapshot = new GeoServerReconciliationSnapshot
-            {
-                RunId = runId,
-                PlanId = planId,
-                PlanDigest = planDigest,
-                Service = "geoserver",
-                Counts = targetCounts,
-                Schemas = targetSchemas,
-                Extents = targetExtents,
-                Samples = [],
-                Relationships = [],
-                Metadata = sharedMetadata,
-                SupportedMetadata = supportedMetadata
-            }
-        };
-    }
-
-    private static string SerializeReconciliationBundle(GeoServerReconciliationBundle bundle)
-    {
-        using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream))
-        {
-            writer.WriteStartObject();
-            writer.WriteString("run_id", bundle.RunId);
-            writer.WriteString("plan_id", bundle.PlanId);
-            writer.WriteString("plan_digest", bundle.PlanDigest);
-            writer.WriteString("service", bundle.Service);
-            writer.WritePropertyName("source_snapshot");
-            WriteSnapshot(writer, bundle.SourceSnapshot);
-            writer.WritePropertyName("target_snapshot");
-            WriteSnapshot(writer, bundle.TargetSnapshot);
-            writer.WriteEndObject();
-        }
-
-        return Encoding.UTF8.GetString(stream.ToArray());
-    }
-
-    private static void WriteSnapshot(Utf8JsonWriter writer, GeoServerReconciliationSnapshot snapshot)
-    {
-        writer.WriteStartObject();
-        writer.WriteString("run_id", snapshot.RunId);
-        writer.WriteString("plan_id", snapshot.PlanId);
-        writer.WriteString("plan_digest", snapshot.PlanDigest);
-        writer.WriteString("service", snapshot.Service);
-
-        writer.WriteStartObject("counts");
-        foreach (var (key, value) in snapshot.Counts.OrderBy(static kv => kv.Key, StringComparer.Ordinal))
-        {
-            writer.WriteNumber(key, value);
-        }
-
-        writer.WriteEndObject();
-
-        writer.WriteStartObject("schemas");
-        foreach (var (key, values) in snapshot.Schemas.OrderBy(static kv => kv.Key, StringComparer.Ordinal))
-        {
-            writer.WriteStartArray(key);
-            foreach (var v in values)
-            {
-                writer.WriteStringValue(v);
-            }
-
-            writer.WriteEndArray();
-        }
-
-        writer.WriteEndObject();
-
-        writer.WriteStartObject("extents");
-        foreach (var (key, extent) in snapshot.Extents.OrderBy(static kv => kv.Key, StringComparer.Ordinal))
-        {
-            writer.WriteStartObject(key);
-            writer.WriteNumber("minX", extent.MinX);
-            writer.WriteNumber("minY", extent.MinY);
-            writer.WriteNumber("maxX", extent.MaxX);
-            writer.WriteNumber("maxY", extent.MaxY);
-            if (extent.Crs is not null)
-            {
-                writer.WriteString("crs", extent.Crs);
-            }
-
-            writer.WriteEndObject();
-        }
-
-        writer.WriteEndObject();
-
-        writer.WriteStartArray("samples");
-        foreach (var sample in snapshot.Samples)
-        {
-            writer.WriteStringValue(sample);
-        }
-
-        writer.WriteEndArray();
-
-        writer.WriteStartArray("relationships");
-        foreach (var rel in snapshot.Relationships)
-        {
-            writer.WriteStringValue(rel);
-        }
-
-        writer.WriteEndArray();
-
-        writer.WriteStartObject("metadata");
-        foreach (var (key, value) in snapshot.Metadata.OrderBy(static kv => kv.Key, StringComparer.Ordinal))
-        {
-            writer.WriteString(key, value);
-        }
-
-        writer.WriteEndObject();
-
-        writer.WriteStartArray("supported_metadata");
-        foreach (var key in snapshot.SupportedMetadata)
-        {
-            writer.WriteStringValue(key);
-        }
-
-        writer.WriteEndArray();
-        writer.WriteEndObject();
-    }
 
     private readonly record struct LayerCatalogTarget(string Schema, string Table);
 }

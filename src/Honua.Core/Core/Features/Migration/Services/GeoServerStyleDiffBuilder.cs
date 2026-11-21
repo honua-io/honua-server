@@ -29,6 +29,14 @@ internal static class GeoServerStyleDiffBuilder
         ("Transformation", "GeoServer rendering Transformation functions are not supported.")
     ];
 
+    private sealed class StyleDiffAccumulator
+    {
+        public SortedSet<string> Constructs { get; } = new(StringComparer.Ordinal);
+        public List<string> Warnings { get; } = [];
+        public List<string> Errors { get; } = [];
+        public bool IsEmpty => Constructs.Count == 0 && Warnings.Count == 0 && Errors.Count == 0;
+    }
+
     public static GeoServerLayerStyleDiffResult BuildForLayer(
         string layerSourceId,
         IReadOnlyList<(string StyleId, GeoServerStyleInfo Style)> layerStyles,
@@ -44,86 +52,101 @@ internal static class GeoServerStyleDiffBuilder
 
         foreach (var (styleId, style) in layerStyles.OrderBy(static item => item.StyleId, StringComparer.Ordinal))
         {
-            if (!string.Equals(style.Format, "sld", StringComparison.OrdinalIgnoreCase))
+            var diff = BuildDiffForStyle(styleId, style, sldConverter);
+            if (diff == null)
             {
                 continue;
             }
 
-            var unsupportedConstructs = new SortedSet<string>(StringComparer.Ordinal);
-            var warnings = new List<string>();
-            var errors = new List<string>();
-
-            if (!string.IsNullOrWhiteSpace(style.SldContent))
-            {
-                InspectSldXml(style.SldContent!, unsupportedConstructs, warnings);
-
-                if (sldConverter != null)
-                {
-                    var conversion = sldConverter.Convert(style.SldContent!);
-                    foreach (var warning in conversion.Warnings)
-                    {
-                        if (!warnings.Contains(warning, StringComparer.Ordinal))
-                        {
-                            warnings.Add(warning);
-                        }
-
-                        ExtractConstructFromDiagnostic(warning, unsupportedConstructs);
-                    }
-
-                    foreach (var error in conversion.Errors)
-                    {
-                        if (!errors.Contains(error, StringComparer.Ordinal))
-                        {
-                            errors.Add(error);
-                        }
-                    }
-                }
-            }
-
-            if (unsupportedConstructs.Count == 0 && warnings.Count == 0 && errors.Count == 0)
-            {
-                continue;
-            }
-
-            var constructArray = unsupportedConstructs.ToArray();
-            var warningArray = warnings.ToArray();
-            var errorArray = errors.ToArray();
-
-            diffs.Add(new MigrationStyleDiff
-            {
-                StyleId = styleId,
-                StyleName = style.Name,
-                Format = style.Format,
-                UnsupportedConstructs = constructArray,
-                Warnings = warningArray,
-                Errors = errorArray
-            });
-
-            var constructList = constructArray.Length > 0
-                ? string.Join(", ", constructArray)
-                : "SLD conversion diagnostics";
-            reviewItems.Add(new MigrationManifestReviewItem
-            {
-                SourceId = layerSourceId,
-                Kind = "style-diff",
-                Code = StyleDiffReviewCode,
-                Severity = "manual-review",
-                Reason = $"Style '{style.Name}' contains SLD constructs the importer will not draw cleanly: {constructList}.",
-                Warnings = warningArray.Concat(errorArray).ToArray(),
-                ManualSteps =
-                [
-                    $"Review SLD style diff for '{style.Name}' ({constructList}) before applying to production."
-                ]
-            });
+            diffs.Add(diff);
+            reviewItems.Add(CreateReviewItem(layerSourceId, diff));
         }
 
         return new GeoServerLayerStyleDiffResult(diffs.ToArray(), reviewItems.ToArray());
     }
 
-    private static void InspectSldXml(
+    private static MigrationStyleDiff? BuildDiffForStyle(
+        string styleId,
+        GeoServerStyleInfo style,
+        ISldStyleConverter? sldConverter)
+    {
+        if (!string.Equals(style.Format, "sld", StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(style.SldContent))
+        {
+            return null;
+        }
+
+        var acc = new StyleDiffAccumulator();
+        InspectSldXml(style.SldContent!, acc);
+        CollectConverterDiagnostics(style.SldContent!, sldConverter, acc);
+
+        if (acc.IsEmpty)
+        {
+            return null;
+        }
+
+        return new MigrationStyleDiff
+        {
+            StyleId = styleId,
+            StyleName = style.Name,
+            Format = style.Format,
+            UnsupportedConstructs = [.. acc.Constructs],
+            Warnings = [.. acc.Warnings],
+            Errors = [.. acc.Errors]
+        };
+    }
+
+    private static void CollectConverterDiagnostics(
         string sldContent,
-        SortedSet<string> unsupportedConstructs,
-        List<string> warnings)
+        ISldStyleConverter? sldConverter,
+        StyleDiffAccumulator acc)
+    {
+        if (sldConverter == null)
+        {
+            return;
+        }
+
+        var conversion = sldConverter.Convert(sldContent);
+        foreach (var warning in conversion.Warnings)
+        {
+            if (!acc.Warnings.Contains(warning, StringComparison.Ordinal))
+            {
+                acc.Warnings.Add(warning);
+            }
+
+            ExtractConstructFromDiagnostic(warning, acc.Constructs);
+        }
+
+        foreach (var error in conversion.Errors)
+        {
+            if (!acc.Errors.Contains(error, StringComparison.Ordinal))
+            {
+                acc.Errors.Add(error);
+            }
+        }
+    }
+
+    private static MigrationManifestReviewItem CreateReviewItem(string layerSourceId, MigrationStyleDiff diff)
+    {
+        var constructList = diff.UnsupportedConstructs.Length > 0
+            ? string.Join(", ", diff.UnsupportedConstructs)
+            : "SLD conversion diagnostics";
+        return new MigrationManifestReviewItem
+        {
+            SourceId = layerSourceId,
+            Kind = "style-diff",
+            Code = StyleDiffReviewCode,
+            Severity = "manual-review",
+            Reason = $"Style '{diff.StyleName}' contains SLD constructs the importer will not draw cleanly: {constructList}.",
+            Warnings = diff.Warnings.Concat(diff.Errors).ToArray(),
+            ManualSteps =
+            [
+                $"Review SLD style diff for '{diff.StyleName}' ({constructList}) before applying to production."
+            ]
+        };
+    }
+
+    private static void InspectSldXml(string sldContent, StyleDiffAccumulator acc)
     {
         try
         {
@@ -137,8 +160,8 @@ internal static class GeoServerStyleDiffBuilder
             {
                 if (presentElements.Contains(elementName))
                 {
-                    unsupportedConstructs.Add(elementName);
-                    warnings.Add($"[{elementName}] {description}");
+                    acc.Constructs.Add(elementName);
+                    acc.Warnings.Add($"[{elementName}] {description}");
                 }
             }
         }

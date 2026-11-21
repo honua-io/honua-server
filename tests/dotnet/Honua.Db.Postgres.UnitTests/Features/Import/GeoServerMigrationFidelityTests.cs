@@ -50,25 +50,13 @@ public sealed class GeoServerMigrationFidelityTests
     [Fact]
     public async Task ImportConfigurationAsync_WithTimeAndElevationDimensions_CopiesDimensionsToLayerPublishRequest()
     {
-        var responses = BuildBaseGeoServerResponses(
-            includeFeatureTypeDimensions: true,
-            includeSecurityRules: false,
-            sldContent: null);
+        var responses = WithFeatureTypeDimensions(BuildBaseResponses());
         var publisher = new RecordingPublisher();
         using var handler = new DictionaryHttpHandler(responses);
         using var httpClient = new HttpClient(handler);
-        var service = CreateService(httpClient, publisher: publisher);
+        var service = CreateService(httpClient, new ServiceStubs { Publisher = publisher.Object });
 
-        var result = await service.ImportConfigurationAsync(new GeoServerImportRequest
-        {
-            GeoServerRestUrl = "https://geoserver.example.test/geoserver/rest",
-            TargetHonuaUrl = "https://honua.example.test",
-            DryRun = false,
-            ApplyMode = true,
-            AutoPublishLayers = true,
-            ImportStyles = false,
-            RequestTimeoutSeconds = 5
-        });
+        var result = await service.ImportConfigurationAsync(BuildApplyRequest());
 
         result.Success.Should().BeTrue();
         var publish = publisher.Requests.Should().ContainSingle().Subject;
@@ -76,37 +64,20 @@ public sealed class GeoServerMigrationFidelityTests
         publish.Temporal.Should().NotBeNull();
         publish.Temporal!.StartTimeField.Should().Be("observed_at");
         publish.Temporal.EndTimeField.Should().Be("valid_until");
-
-        publish.Extensions.Should().NotBeNull();
-        publish.Extensions!.Should().ContainKey("wms");
-        var wmsJson = publish.Extensions["wms"].GetRawText();
-        wmsJson.Should().Contain("\"name\":\"elevation\"");
-        wmsJson.Should().Contain("\"units\":\"EPSG:5030\"");
-        wmsJson.Should().Contain("\"unitSymbol\":\"m\"");
+        publish.Extensions.Should().NotBeNull().And.ContainKey("wms");
+        publish.Extensions!["wms"].GetRawText().Should().Contain("\"name\":\"elevation\"").And.Contain("\"units\":\"EPSG:5030\"");
     }
 
     [Fact]
     public async Task ImportConfigurationAsync_WithReadWriteAndUnexpressedSecurityRules_TranslatesWithoutBroadening()
     {
-        var responses = BuildBaseGeoServerResponses(
-            includeFeatureTypeDimensions: false,
-            includeSecurityRules: true,
-            sldContent: null);
+        var responses = WithSecurityRules(BuildBaseResponses());
         var publisher = new RecordingPublisher();
         using var handler = new DictionaryHttpHandler(responses);
         using var httpClient = new HttpClient(handler);
-        var service = CreateService(httpClient, publisher: publisher);
+        var service = CreateService(httpClient, new ServiceStubs { Publisher = publisher.Object });
 
-        var result = await service.ImportConfigurationAsync(new GeoServerImportRequest
-        {
-            GeoServerRestUrl = "https://geoserver.example.test/geoserver/rest",
-            TargetHonuaUrl = "https://honua.example.test",
-            DryRun = false,
-            ApplyMode = true,
-            AutoPublishLayers = true,
-            ImportStyles = false,
-            RequestTimeoutSeconds = 5
-        });
+        var result = await service.ImportConfigurationAsync(BuildApplyRequest());
 
         result.Success.Should().BeTrue();
         var publish = publisher.Requests.Should().ContainSingle().Subject;
@@ -115,58 +86,28 @@ public sealed class GeoServerMigrationFidelityTests
         publish.AccessPolicy.AllowAnonymousWrite.Should().BeFalse("wildcard *.*.w=* must not widen per-layer write access");
         publish.AccessPolicy.AllowedRoles.Should().BeEquivalentTo(["ROLE_ANALYST", "ROLE_READER"]);
         publish.AccessPolicy.AllowedWriteRoles.Should().BeEquivalentTo(["ROLE_EDITOR"]);
-
-        result.ApplyPlan.Should().NotBeNull();
-        var layerStep = result.ApplyPlan!.Steps.Should().ContainSingle(s => s.SourceId == "layer:demo:roads").Subject;
-        layerStep.SecurityRules.Should().NotBeNull();
-        layerStep.SecurityRules!.Should().Contain(r => r.RuleKey == "demo.roads.r" && r.Status == "translated");
-        layerStep.SecurityRules.Should().Contain(r => r.RuleKey == "demo.roads.w" && r.Status == "translated");
-        layerStep.SecurityRules.Should().Contain(r => r.RuleKey == "demo.roads.a" && r.Status == "unexpressed");
-        layerStep.SecurityRules.Should().Contain(r => r.RuleKey == "*.*.w" && r.Status == "unexpressed");
-
-        result.ApplyPlan.ManualReviewItems.Should().Contain(item =>
-            item.Code == GeoServerSecurityRuleTranslator.UnexpressedRuleCode &&
-            item.Reason.Contains("demo.roads.a", StringComparison.Ordinal));
-        result.ApplyPlan.ManualReviewItems.Should().Contain(item =>
-            item.Code == GeoServerSecurityRuleTranslator.UnexpressedRuleCode &&
-            item.Reason.Contains("*.*.w", StringComparison.Ordinal));
+        AssertSecurityPlanReport(result.ApplyPlan!);
     }
 
     [Fact]
     public async Task ImportConfigurationAsync_DryRunPlan_ListsUnsupportedSldConstructsBeforeApply()
     {
-        var responses = BuildBaseGeoServerResponses(
-            includeFeatureTypeDimensions: false,
-            includeSecurityRules: false,
-            sldContent: SldWithElseFilterAndTextSymbolizer);
+        var responses = WithSldStyle(BuildBaseResponses(), SldWithElseFilterAndTextSymbolizer);
         var publisher = new RecordingPublisher();
         var converter = new StubWarningSldConverter(
             "[ElseFilter] (rule 'FallbackRule') ElseFilter has no portable MapLibre equivalent; rule will render unfiltered.");
         using var handler = new DictionaryHttpHandler(responses);
         using var httpClient = new HttpClient(handler);
-        var service = CreateService(httpClient, publisher: publisher, sldConverter: converter);
+        var service = CreateService(httpClient, new ServiceStubs { Publisher = publisher.Object, SldConverter = converter });
 
-        var result = await service.ImportConfigurationAsync(new GeoServerImportRequest
-        {
-            GeoServerRestUrl = "https://geoserver.example.test/geoserver/rest",
-            TargetHonuaUrl = "https://honua.example.test",
-            DryRun = true,
-            ApplyMode = false,
-            ImportStyles = true,
-            RequestTimeoutSeconds = 5
-        });
+        var result = await service.ImportConfigurationAsync(BuildApplyRequest() with { DryRun = true, ApplyMode = false, ImportStyles = true });
 
         result.Success.Should().BeTrue();
         result.WasDryRun.Should().BeTrue();
         publisher.Requests.Should().BeEmpty("dry-run must report style diffs before apply");
-
-        result.ApplyPlan.Should().NotBeNull();
         var layerStep = result.ApplyPlan!.Steps.Should().ContainSingle(s => s.SourceId == "layer:demo:roads").Subject;
-        layerStep.StyleDiffs.Should().NotBeNull();
         var diff = layerStep.StyleDiffs!.Should().ContainSingle(d => d.StyleName == "roads_style").Subject;
-        diff.UnsupportedConstructs.Should().Contain("ElseFilter");
-        diff.UnsupportedConstructs.Should().Contain("TextSymbolizer");
-
+        diff.UnsupportedConstructs.Should().Contain("ElseFilter").And.Contain("TextSymbolizer");
         result.ApplyPlan.ManualReviewItems.Should().Contain(item =>
             item.SourceId == "layer:demo:roads" &&
             item.Code == GeoServerStyleDiffBuilder.StyleDiffReviewCode &&
@@ -177,31 +118,33 @@ public sealed class GeoServerMigrationFidelityTests
     [Fact]
     public async Task ImportConfigurationAsync_NonDryRun_RecordsDurableMigrationRunAndPortableReconciliationBundle()
     {
-        var responses = BuildBaseGeoServerResponses(
-            includeFeatureTypeDimensions: true,
-            includeSecurityRules: true,
-            sldContent: SldWithElseFilterAndTextSymbolizer);
+        var responses = WithSldStyle(WithSecurityRules(WithFeatureTypeDimensions(BuildBaseResponses())), SldWithElseFilterAndTextSymbolizer);
         var publisher = new RecordingPublisher();
-        var runCatalog = new RecordingMigrationRunCatalog();
+        var runCatalog = new RecordingRunCatalog();
         using var handler = new DictionaryHttpHandler(responses);
         using var httpClient = new HttpClient(handler);
-        var service = CreateService(httpClient, publisher: publisher, migrationRunCatalog: runCatalog);
+        var service = CreateService(httpClient, new ServiceStubs { Publisher = publisher.Object, RunCatalog = runCatalog.Object });
 
-        var result = await service.ImportConfigurationAsync(new GeoServerImportRequest
-        {
-            JobId = "job7015",
-            GeoServerRestUrl = "https://geoserver.example.test/geoserver/rest",
-            TargetHonuaUrl = "https://honua.example.test",
-            DryRun = false,
-            ApplyMode = true,
-            AutoPublishLayers = true,
-            ImportStyles = true,
-            RequestTimeoutSeconds = 5
-        });
+        var result = await service.ImportConfigurationAsync(BuildApplyRequest() with { JobId = "job7015", ImportStyles = true });
 
         result.Success.Should().BeTrue();
         result.MigrationRunId.Should().Be("geoserver-run-job7015");
-        result.ReconciliationBundle.Should().NotBeNull();
+        AssertReconciliationBundle(result, runCatalog);
+    }
+
+    private static void AssertSecurityPlanReport(MigrationApplyPlanArtifact plan)
+    {
+        var layerStep = plan.Steps.Should().ContainSingle(s => s.SourceId == "layer:demo:roads").Subject;
+        layerStep.SecurityRules!.Should().Contain(r => r.RuleKey == "demo.roads.r" && r.Status == "translated");
+        layerStep.SecurityRules.Should().Contain(r => r.RuleKey == "demo.roads.w" && r.Status == "translated");
+        layerStep.SecurityRules.Should().Contain(r => r.RuleKey == "demo.roads.a" && r.Status == "unexpressed");
+        layerStep.SecurityRules.Should().Contain(r => r.RuleKey == "*.*.w" && r.Status == "unexpressed");
+        plan.ManualReviewItems.Should().Contain(i => i.Code == GeoServerSecurityRuleTranslator.UnexpressedRuleCode && i.Reason.Contains("demo.roads.a", StringComparison.Ordinal));
+        plan.ManualReviewItems.Should().Contain(i => i.Code == GeoServerSecurityRuleTranslator.UnexpressedRuleCode && i.Reason.Contains("*.*.w", StringComparison.Ordinal));
+    }
+
+    private static void AssertReconciliationBundle(GeoServerImportResult result, RecordingRunCatalog runCatalog)
+    {
         var bundle = result.ReconciliationBundle!;
         bundle.RunId.Should().Be("geoserver-run-job7015");
         bundle.PlanId.Should().Be("geoserver-plan-job7015");
@@ -211,23 +154,36 @@ public sealed class GeoServerMigrationFidelityTests
         bundle.TargetSnapshot.Counts["layers"].Should().Be(1);
         bundle.SourceSnapshot.Schemas["layer:demo:roads"].Should().Contain("time:observed_at");
         bundle.TargetSnapshot.Schemas["layer:demo:roads"].Should().Contain("time:observed_at");
-
         runCatalog.StartedRuns.Should().ContainSingle(r => r.RunId == "geoserver-run-job7015" && r.SourceKind == "geoserver-rest");
         runCatalog.CompletedRuns.Should().ContainSingle(c =>
             c.RunId == "geoserver-run-job7015" &&
             c.Status == MigrationRunStatus.Succeeded &&
-            c.EvidencePackFingerprint != null &&
-            c.EvidencePackFingerprint.StartsWith("sha256:", StringComparison.Ordinal) &&
-            c.EvidencePackBody != null &&
-            c.EvidencePackBody.Contains("\"source_snapshot\"", StringComparison.Ordinal) &&
-            c.EvidencePackBody.Contains("\"target_snapshot\"", StringComparison.Ordinal));
+            c.Fingerprint != null &&
+            c.Fingerprint.StartsWith("sha256:", StringComparison.Ordinal) &&
+            c.Body != null &&
+            c.Body.Contains("\"source_snapshot\"", StringComparison.Ordinal));
     }
 
-    private static GeoServerImportService CreateService(
-        HttpClient httpClient,
-        RecordingPublisher? publisher = null,
-        ISldStyleConverter? sldConverter = null,
-        IMigrationRunCatalog? migrationRunCatalog = null)
+    private static GeoServerImportRequest BuildApplyRequest()
+        => new()
+        {
+            GeoServerRestUrl = "https://geoserver.example.test/geoserver/rest",
+            TargetHonuaUrl = "https://honua.example.test",
+            DryRun = false,
+            ApplyMode = true,
+            AutoPublishLayers = true,
+            ImportStyles = false,
+            RequestTimeoutSeconds = 5
+        };
+
+    private sealed record ServiceStubs
+    {
+        public ILayerPublishingService? Publisher { get; init; }
+        public ISldStyleConverter? SldConverter { get; init; }
+        public IMigrationRunCatalog? RunCatalog { get; init; }
+    }
+
+    private static GeoServerImportService CreateService(HttpClient httpClient, ServiceStubs stubs)
     {
         var restClient = new GeoServerRestClient(
             httpClient,
@@ -241,17 +197,15 @@ public sealed class GeoServerMigrationFidelityTests
             connectionProvider.Object,
             crsRegistry.Object,
             NullLogger<GeoServerImportService>.Instance,
-            sldConverter: sldConverter,
-            layerPublishingService: publisher?.Object,
-            migrationRunCatalog: migrationRunCatalog);
+            sldConverter: stubs.SldConverter,
+            layerPublishingService: stubs.Publisher)
+        {
+            MigrationRunCatalog = stubs.RunCatalog
+        };
     }
 
-    private static Dictionary<string, string> BuildBaseGeoServerResponses(
-        bool includeFeatureTypeDimensions,
-        bool includeSecurityRules,
-        string? sldContent)
-    {
-        var responses = new Dictionary<string, string>(StringComparer.Ordinal)
+    private static Dictionary<string, string> BuildBaseResponses()
+        => new(StringComparer.Ordinal)
         {
             ["/geoserver/rest/about/version.xml"] = "<about><resource name=\"GeoServer\"><Version>2.28.0</Version></resource></about>",
             ["/geoserver/rest/settings.json"] = """{"global":{"title":"Demo GeoServer"}}""",
@@ -260,24 +214,17 @@ public sealed class GeoServerMigrationFidelityTests
             ["/geoserver/rest/workspaces/demo/datastores.json"] = """{"dataStores":{"dataStore":[{"name":"pg"}]}}""",
             ["/geoserver/rest/workspaces/demo/datastores/pg.json"] = """
                 {"dataStore":{"name":"pg","type":"PostGIS","connectionParameters":{"entry":[
-                    {"@key":"host","$":"db.example.test"},
-                    {"@key":"database","$":"gis"},
-                    {"@key":"schema","$":"public"},
-                    {"@key":"dbtype","$":"postgis"}
+                    {"@key":"host","$":"db.example.test"},{"@key":"database","$":"gis"},{"@key":"schema","$":"public"},{"@key":"dbtype","$":"postgis"}
                 ]}}}
                 """,
             ["/geoserver/rest/workspaces/demo/coveragestores.json"] = """{"coverageStores":{"coverageStore":""}}""",
             ["/geoserver/rest/workspaces/demo/layers.json"] = """{"layers":{"layer":[{"name":"roads"}]}}""",
             ["/geoserver/rest/workspaces/demo/layers/roads.json"] = """
                 {"layer":{
-                    "name":"roads",
-                    "title":"Roads",
-                    "enabled":true,
-                    "queryable":true,
+                    "name":"roads","title":"Roads","enabled":true,"queryable":true,
                     "defaultStyle":{"name":"roads_style","workspace":"demo"},
                     "resource":{"href":"https://geoserver.example.test/geoserver/rest/workspaces/demo/datastores/pg/featuretypes/roads.json"},
-                    "srs":"EPSG:4326",
-                    "latLonBoundingBox":{"minx":-122.5,"miny":37.7,"maxx":-122.3,"maxy":37.8,"crs":"EPSG:4326"}
+                    "srs":"EPSG:4326","latLonBoundingBox":{"minx":-122.5,"miny":37.7,"maxx":-122.3,"maxy":37.8,"crs":"EPSG:4326"}
                 }}
                 """,
             ["/geoserver/rest/layergroups.json"] = """{"layerGroups":{"layerGroup":""}}""",
@@ -287,52 +234,31 @@ public sealed class GeoServerMigrationFidelityTests
             ["/geoserver/rest/workspaces/demo/styles/roads_style.json"] = """{"style":{"name":"roads_style","format":"sld","filename":"roads_style.sld"}}"""
         };
 
-        if (sldContent is not null)
-        {
-            responses["/geoserver/rest/workspaces/demo/styles/roads_style.sld"] = sldContent;
-        }
+    private static Dictionary<string, string> WithFeatureTypeDimensions(Dictionary<string, string> responses)
+    {
+        responses["/geoserver/rest/workspaces/demo/datastores/pg/featuretypes/roads.json"] = """
+            {"featureType":{
+                "name":"roads","nativeName":"roads","srs":"EPSG:4326",
+                "metadata":{"entry":[
+                    {"@key":"time","dimensionInfo":{"enabled":true,"attribute":"observed_at","endAttribute":"valid_until","presentation":"CONTINUOUS_INTERVAL","units":"ISO8601","nearestMatchEnabled":true}},
+                    {"@key":"elevation","dimensionInfo":{"enabled":true,"attribute":"elev_m","presentation":"LIST","units":"EPSG:5030","unitSymbol":"m","defaultValue":{"strategy":"FIXED","referenceValue":"100"}}}
+                ]}
+            }}
+            """;
+        return responses;
+    }
 
-        if (includeFeatureTypeDimensions)
-        {
-            responses["/geoserver/rest/workspaces/demo/datastores/pg/featuretypes/roads.json"] = """
-                {"featureType":{
-                    "name":"roads",
-                    "nativeName":"roads",
-                    "srs":"EPSG:4326",
-                    "metadata":{"entry":[
-                        {"@key":"time","dimensionInfo":{
-                            "enabled":true,
-                            "attribute":"observed_at",
-                            "endAttribute":"valid_until",
-                            "presentation":"CONTINUOUS_INTERVAL",
-                            "units":"ISO8601",
-                            "nearestMatchEnabled":true
-                        }},
-                        {"@key":"elevation","dimensionInfo":{
-                            "enabled":true,
-                            "attribute":"elev_m",
-                            "presentation":"LIST",
-                            "units":"EPSG:5030",
-                            "unitSymbol":"m",
-                            "defaultValue":{"strategy":"FIXED","referenceValue":"100"}
-                        }}
-                    ]}
-                }}
-                """;
-        }
+    private static Dictionary<string, string> WithSecurityRules(Dictionary<string, string> responses)
+    {
+        responses["/geoserver/rest/security/acl/layers.json"] = """
+            {"demo.roads.r":"ROLE_READER, ROLE_ANALYST","demo.roads.w":"ROLE_EDITOR","demo.roads.a":"ROLE_ADMIN","*.*.w":"*"}
+            """;
+        return responses;
+    }
 
-        if (includeSecurityRules)
-        {
-            responses["/geoserver/rest/security/acl/layers.json"] = """
-                {
-                    "demo.roads.r": "ROLE_READER, ROLE_ANALYST",
-                    "demo.roads.w": "ROLE_EDITOR",
-                    "demo.roads.a": "ROLE_ADMIN",
-                    "*.*.w": "*"
-                }
-                """;
-        }
-
+    private static Dictionary<string, string> WithSldStyle(Dictionary<string, string> responses, string sldContent)
+    {
+        responses["/geoserver/rest/workspaces/demo/styles/roads_style.sld"] = sldContent;
         return responses;
     }
 
@@ -341,18 +267,15 @@ public sealed class GeoServerMigrationFidelityTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var path = request.RequestUri?.AbsolutePath ?? string.Empty;
-            if (responses.TryGetValue(path, out var body))
+            if (!responses.TryGetValue(path, out var body))
             {
-                var contentType = path.EndsWith(".xml", StringComparison.Ordinal) || path.EndsWith(".sld", StringComparison.Ordinal)
-                    ? "application/xml"
-                    : "application/json";
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent(body, Encoding.UTF8, contentType)
-                });
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
             }
 
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            var contentType = path.EndsWith(".xml", StringComparison.Ordinal) || path.EndsWith(".sld", StringComparison.Ordinal)
+                ? "application/xml"
+                : "application/json";
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, contentType) });
         }
     }
 
@@ -364,10 +287,7 @@ public sealed class GeoServerMigrationFidelityTests
         public RecordingPublisher()
         {
             var mock = new Mock<ILayerPublishingService>();
-            mock.Setup(p => p.PublishLayerAsync(
-                    It.IsAny<string>(),
-                    It.IsAny<LayerPublishRequest>(),
-                    It.IsAny<CancellationToken>()))
+            mock.Setup(p => p.PublishLayerAsync(It.IsAny<string>(), It.IsAny<LayerPublishRequest>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((string _, LayerPublishRequest request, CancellationToken _) =>
                 {
                     Requests.Add(request);
@@ -393,57 +313,30 @@ public sealed class GeoServerMigrationFidelityTests
             => new("[{\"id\":\"rule-0\",\"type\":\"line\"}]", "1.0.0", warnings, []);
     }
 
-    private sealed class RecordingMigrationRunCatalog : IMigrationRunCatalog
+    private sealed class RecordingRunCatalog
     {
         public List<MigrationRunRecord> StartedRuns { get; } = [];
-        public List<(string RunId, MigrationRunStatus Status, string? EvidencePackFingerprint, string? EvidencePackBody)> CompletedRuns { get; } = [];
+        public List<(string RunId, MigrationRunStatus Status, string? Fingerprint, string? Body)> CompletedRuns { get; } = [];
+        public IMigrationRunCatalog Object { get; }
 
-        public Task<MigrationRunRecord> RecordStartedAsync(MigrationRunRecord record, CancellationToken cancellationToken = default)
+        public RecordingRunCatalog()
         {
-            StartedRuns.Add(record);
-            return Task.FromResult(record);
+            var mock = new Mock<IMigrationRunCatalog>();
+            mock.Setup(c => c.RecordStartedAsync(It.IsAny<MigrationRunRecord>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((MigrationRunRecord rec, CancellationToken _) =>
+                {
+                    StartedRuns.Add(rec);
+                    return rec;
+                });
+            mock.Setup(c => c.RecordCompletedAsync(
+                    It.IsAny<string>(), It.IsAny<MigrationRunStatus>(), It.IsAny<DateTimeOffset>(),
+                    It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((string runId, MigrationRunStatus status, DateTimeOffset completedAt, string? packRef, string? fp, string? body, string? note, CancellationToken _) =>
+                {
+                    CompletedRuns.Add((runId, status, fp, body));
+                    return new MigrationRunRecord { RunId = runId, SourceKind = "geoserver-rest", Status = status, StartedAt = completedAt, CompletedAt = completedAt, EvidencePackRef = packRef, EvidencePackFingerprint = fp, StatusNote = note };
+                });
+            Object = mock.Object;
         }
-
-        public Task<MigrationRunRecord?> RecordCompletedAsync(
-            string runId,
-            MigrationRunStatus status,
-            DateTimeOffset completedAt,
-            string? evidencePackRef,
-            string? evidencePackFingerprint,
-            string? evidencePackBody,
-            string? statusNote,
-            CancellationToken cancellationToken = default)
-        {
-            CompletedRuns.Add((runId, status, evidencePackFingerprint, evidencePackBody));
-            return Task.FromResult<MigrationRunRecord?>(new MigrationRunRecord
-            {
-                RunId = runId,
-                SourceKind = "geoserver-rest",
-                Status = status,
-                StartedAt = completedAt,
-                CompletedAt = completedAt,
-                EvidencePackRef = evidencePackRef,
-                EvidencePackFingerprint = evidencePackFingerprint,
-                StatusNote = statusNote
-            });
-        }
-
-        public Task<MigrationRunRecord?> CancelAsync(string runId, DateTimeOffset cancelledAt, string? statusNote, CancellationToken cancellationToken = default)
-            => Task.FromResult<MigrationRunRecord?>(null);
-
-        public Task<MigrationRunRecord?> GetAsync(string runId, CancellationToken cancellationToken = default)
-            => Task.FromResult<MigrationRunRecord?>(null);
-
-        public Task<MigrationRunListPage> ListAsync(MigrationRunListQuery query, CancellationToken cancellationToken = default)
-            => Task.FromResult(new MigrationRunListPage { Items = [], TotalCount = 0, Limit = query.Limit, Offset = query.Offset });
-
-        public Task<string?> GetEvidencePackAsync(string runId, CancellationToken cancellationToken = default)
-            => Task.FromResult<string?>(null);
-
-        public Task<MigrationRunRecord?> RecordScorecardAsync(string runId, string scorecardFingerprint, string scorecardBody, CancellationToken cancellationToken = default)
-            => Task.FromResult<MigrationRunRecord?>(null);
-
-        public Task<string?> GetScorecardAsync(string runId, CancellationToken cancellationToken = default)
-            => Task.FromResult<string?>(null);
     }
 }
