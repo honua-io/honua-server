@@ -34,6 +34,8 @@ internal static partial class FeatureServerEndpoints
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(publications);
         ArgumentNullException.ThrowIfNull(snapshot);
+        publications = [.. publications.Select(pair =>
+            (ManagedWriteStorage.WithoutUnservableEdits(snapshot, service, pair.Publication), pair.Resource))];
 
         var objectIdField = ResolveServiceObjectIdFieldV2(service, snapshot);
         var supportsStatistics = true;
@@ -118,6 +120,7 @@ internal static partial class FeatureServerEndpoints
         ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(publication);
         ArgumentNullException.ThrowIfNull(snapshot);
+        publication = ManagedWriteStorage.WithoutUnservableEdits(snapshot, service, publication);
 
         var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         var displayField = ResolveDisplayFieldFromResource(resource, objectIdField);

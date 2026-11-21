@@ -40,13 +40,7 @@ public sealed class SourceBackedLayerEditRefusalTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_LayerServedFromSourceTable_IsRefusedAndStoresNothing()
     {
-        var schema = _fixture.CurrentSchema!;
-        await ExecuteAsync(schema, $"""
-            CREATE TABLE {SourceTable} (objectid bigint PRIMARY KEY, name text NOT NULL, geom geometry(Point, 4326) NOT NULL);
-            INSERT INTO {SourceTable} VALUES (1, 'seed', ST_SetSRID(ST_MakePoint(10, 20), 4326));
-            """);
-        _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>()
-            .SetGraph(BuildGraph(schema), schema: schema);
+        var schema = await PublishSourceTableAsync();
         var adds = JsonSerializer.Serialize(new[]
         {
             new { geometry = new { x = 10.5, y = 20.5, spatialReference = new { wkid = 4326 } }, attributes = new { name = Marker } }
@@ -66,6 +60,38 @@ public sealed class SourceBackedLayerEditRefusalTests : IAsyncLifetime
         (await CountAsync(schema, $"SELECT COUNT(*) FROM \"{schema}\".features WHERE attributes->>'name' = '{Marker}'"))
             .Should().Be(0, "a refused edit must not reach the managed features table");
         (await CountAsync(schema, $"SELECT COUNT(*) FROM {SourceTable}")).Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    public async Task Metadata_LayerServedFromSourceTable_DoesNotAdvertiseEditing()
+    {
+        await PublishSourceTableAsync();
+        using var client = _fixture.CreateAdminClient();
+
+        foreach (var path in new[] { "FeatureServer", "FeatureServer/1" })
+        {
+            var body = await client.GetStringAsync($"/rest/services/{ServiceName}/{path}?f=json");
+            using var json = JsonDocument.Parse(body);
+            var capabilities = json.RootElement.GetProperty("capabilities").GetString()!.Split(',');
+
+            capabilities.Should().Contain("Query", body);
+            capabilities.Should().NotContain(["Create", "Update", "Delete", "Editing"], body);
+        }
+    }
+
+    private async Task<string> PublishSourceTableAsync()
+    {
+        var schema = _fixture.CurrentSchema!;
+        await ExecuteAsync(schema, $"""
+            CREATE TABLE {SourceTable} (objectid bigint PRIMARY KEY, name text NOT NULL, geom geometry(Point, 4326) NOT NULL);
+            INSERT INTO {SourceTable} VALUES (1, 'seed', ST_SetSRID(ST_MakePoint(10, 20), 4326));
+            """);
+        _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>()
+            .SetGraph(BuildGraph(schema), schema: schema);
+        return schema;
     }
 
     private async Task ExecuteAsync(string schema, string sql)
@@ -114,7 +140,7 @@ public sealed class SourceBackedLayerEditRefusalTests : IAsyncLifetime
                 protocols: [MetadataV2ServiceProtocols.FeatureServer],
                 options: new Dictionary<string, JsonElement>
                 {
-                    ["capabilities"] = JsonSerializer.SerializeToElement(new[] { "Query", "Create", "Update", "Delete" })
+                    ["capabilities"] = JsonSerializer.SerializeToElement(new[] { "Query", "Create", "Update", "Delete", "Editing" })
                 })
             .AddPublication("source_edits", serviceId, resourceId, layerIndex: 1, storageBindingId: bindingId,
                 publicationType: MetadataV2LayerType.EsriFeatureLayer)
