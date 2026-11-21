@@ -2,12 +2,14 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Text;
 using System.Text.Json;
+using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.TestKit;
 using Honua.Infrastructure.Middleware;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
@@ -40,13 +42,7 @@ public sealed class SourceBackedLayerEditRefusalTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_LayerServedFromSourceTable_IsRefusedAndStoresNothing()
     {
-        var schema = _fixture.CurrentSchema!;
-        await ExecuteAsync(schema, $"""
-            CREATE TABLE {SourceTable} (objectid bigint PRIMARY KEY, name text NOT NULL, geom geometry(Point, 4326) NOT NULL);
-            INSERT INTO {SourceTable} VALUES (1, 'seed', ST_SetSRID(ST_MakePoint(10, 20), 4326));
-            """);
-        _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>()
-            .SetGraph(BuildGraph(schema), schema: schema);
+        var schema = await PublishSourceTableAsync();
         var adds = JsonSerializer.Serialize(new[]
         {
             new { geometry = new { x = 10.5, y = 20.5, spatialReference = new { wkid = 4326 } }, attributes = new { name = Marker } }
@@ -66,6 +62,63 @@ public sealed class SourceBackedLayerEditRefusalTests : IAsyncLifetime
         (await CountAsync(schema, $"SELECT COUNT(*) FROM \"{schema}\".features WHERE attributes->>'name' = '{Marker}'"))
             .Should().Be(0, "a refused edit must not reach the managed features table");
         (await CountAsync(schema, $"SELECT COUNT(*) FROM {SourceTable}")).Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    [Endpoint("POST /services")]
+    public async Task Metadata_LayerServedFromSourceTable_DoesNotAdvertiseEditing()
+    {
+        await PublishSourceTableAsync();
+        using var client = _fixture.CreateAdminClient();
+
+        foreach (var path in new[] { "FeatureServer", "FeatureServer/1" })
+        {
+            var body = await client.GetStringAsync($"/rest/services/{ServiceName}/{path}?f=json");
+            using var json = JsonDocument.Parse(body);
+            var capabilities = json.RootElement.GetProperty("capabilities").GetString()!.Split(',');
+
+            capabilities.Should().Contain("Query", body);
+            capabilities.Should().NotContain(["Create", "Update", "Delete", "Editing"], body);
+        }
+
+        var listed = await ListedFeatureServerCapabilitiesAsync(client);
+        listed.Should().Contain("Query").And.NotContain(["Create", "Update", "Delete", "Editing"]);
+    }
+
+    // The SOAP service catalog carries each FeatureServer's capabilities string.
+    private static async Task<string[]> ListedFeatureServerCapabilitiesAsync(HttpClient client)
+    {
+        const string request = """
+            <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+              <soap:Body><GetServiceDescriptions xmlns="http://www.esri.com/schemas/ArcGIS/10.8"/></soap:Body>
+            </soap:Envelope>
+            """;
+        using var content = new StringContent(request, Encoding.UTF8, "text/xml");
+        using var response = await client.PostAsync("/services", content);
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        var description = XDocument.Parse(body).Descendants()
+            .Where(static element => element.Name.LocalName == "ServiceDescription")
+            .Single(element => Child(element, "Name") == ServiceName && Child(element, "Type") == "FeatureServer");
+        return Child(description, "Capabilities")!.Split(',');
+    }
+
+    private static string? Child(XElement element, string name)
+        => element.Elements().FirstOrDefault(child => child.Name.LocalName == name)?.Value;
+
+    private async Task<string> PublishSourceTableAsync()
+    {
+        var schema = _fixture.CurrentSchema!;
+        await ExecuteAsync(schema, $"""
+            CREATE TABLE {SourceTable} (objectid bigint PRIMARY KEY, name text NOT NULL, geom geometry(Point, 4326) NOT NULL);
+            INSERT INTO {SourceTable} VALUES (1, 'seed', ST_SetSRID(ST_MakePoint(10, 20), 4326));
+            """);
+        _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>()
+            .SetGraph(BuildGraph(schema), schema: schema);
+        return schema;
     }
 
     private async Task ExecuteAsync(string schema, string sql)
@@ -114,7 +167,7 @@ public sealed class SourceBackedLayerEditRefusalTests : IAsyncLifetime
                 protocols: [MetadataV2ServiceProtocols.FeatureServer],
                 options: new Dictionary<string, JsonElement>
                 {
-                    ["capabilities"] = JsonSerializer.SerializeToElement(new[] { "Query", "Create", "Update", "Delete" })
+                    ["capabilities"] = JsonSerializer.SerializeToElement(new[] { "Query", "Create", "Update", "Delete", "Editing" })
                 })
             .AddPublication("source_edits", serviceId, resourceId, layerIndex: 1, storageBindingId: bindingId,
                 publicationType: MetadataV2LayerType.EsriFeatureLayer)

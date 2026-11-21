@@ -88,7 +88,6 @@ public sealed class SourceBackedWriteGuardFeatureWriter(IFeatureWriter inner, IM
     // the managed writer serves it (managed binding, no binding, or no publication at all).
     internal static string? FindSourceTable(MetadataV2GraphSnapshot snapshot, int layerId)
     {
-        var resourcesById = snapshot.Index.ResourcesById;
         string? source = null;
         foreach (var publication in snapshot.Graph.Publications)
         {
@@ -97,7 +96,7 @@ public sealed class SourceBackedWriteGuardFeatureWriter(IFeatureWriter inner, IM
                 continue;
             }
 
-            var table = SourceTableOf(snapshot.ResolveStorageBinding(publication), resourcesById);
+            var table = ManagedWriteStorage.SourceTableOf(snapshot, publication);
             if (table is null)
             {
                 return null;
@@ -107,28 +106,6 @@ public sealed class SourceBackedWriteGuardFeatureWriter(IFeatureWriter inner, IM
         }
 
         return source;
-    }
-
-    private static string? SourceTableOf(
-        MetadataV2StorageBinding? binding,
-        IReadOnlyDictionary<string, MetadataV2Object> resourcesById)
-    {
-        if (binding is not { StorageType: MetadataV2StorageType.RelationalTable }
-            || !resourcesById.TryGetValue(binding.ResourceId, out var resource))
-        {
-            return null;
-        }
-
-        try
-        {
-            var mapping = FeatureStorageMapping.FromMetadata(resource, binding);
-            return mapping.SupportsManagedWrites ? null : mapping.QualifiedName;
-        }
-        catch (InvalidOperationException)
-        {
-            // An unmappable binding is a metadata defect the read paths report; it is not a source table.
-            return null;
-        }
     }
 
     private sealed class GuardedTransaction(SourceBackedWriteGuardFeatureWriter owner, IFeatureWriterTransaction transaction)

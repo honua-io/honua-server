@@ -34,6 +34,8 @@ internal static partial class FeatureServerEndpoints
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(publications);
         ArgumentNullException.ThrowIfNull(snapshot);
+        publications = [.. publications.Select(pair =>
+            (ManagedWriteStorage.WithoutUnservableEdits(snapshot, service, pair.Publication), pair.Resource))];
 
         var objectIdField = ResolveServiceObjectIdFieldV2(service, snapshot);
         var supportsStatistics = true;
@@ -118,6 +120,7 @@ internal static partial class FeatureServerEndpoints
         ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(publication);
         ArgumentNullException.ThrowIfNull(snapshot);
+        publication = ManagedWriteStorage.WithoutUnservableEdits(snapshot, service, publication);
 
         var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         var displayField = ResolveDisplayFieldFromResource(resource, objectIdField);
@@ -312,6 +315,27 @@ internal static partial class FeatureServerEndpoints
 
     internal static string BuildServiceCapabilitiesV2(MetadataV2Service service, bool offlineSyncEnabled)
         => BuildServiceCapabilitiesV2(service, [], supportsAttachmentUploads: false, offlineSyncEnabled);
+
+    // A service as a directory listing sees it: the resources the caller may discover through it.
+    internal sealed record ListedService(
+        MetadataV2Service Service, MetadataV2GraphSnapshot Snapshot, IReadOnlyCollection<MetadataV2Object> VisibleResources);
+
+    // The service capabilities a directory listing shows: editing only where a publication the caller can see
+    // has storage that takes managed writes, the same rule the service metadata applies.
+    internal static string BuildListedServiceCapabilitiesV2(ListedService listed, bool offlineSyncEnabled)
+    {
+        var (service, snapshot, visible) = listed;
+        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Object Resource)> publications =
+        [
+            .. snapshot.PublicationsForService(service.Metadata.Id)
+                .Where(snapshot.IsRoutable)
+                .Select(publication => (Publication: ManagedWriteStorage.WithoutUnservableEdits(snapshot, service, publication),
+                    Resource: snapshot.ResolveResource(publication)))
+                .Where(pair => pair.Resource is not null && visible.Contains(pair.Resource))
+                .Select(static pair => (pair.Publication, pair.Resource!))
+        ];
+        return BuildServiceCapabilitiesV2(service, publications, supportsAttachmentUploads: false, offlineSyncEnabled);
+    }
 
     internal static string BuildServiceCapabilitiesV2(
         MetadataV2Service service,

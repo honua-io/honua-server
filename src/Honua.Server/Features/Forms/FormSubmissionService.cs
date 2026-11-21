@@ -318,6 +318,14 @@ internal sealed class FormSubmissionService
                 .ConfigureAwait(false);
             return Results.Json(timeoutResponse, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: StatusCodes.Status500InternalServerError);
         }
+        catch (ReadOnlyFeatureWriteException ex)
+        {
+            FormSubmissionLog.SubmissionFailed(_logger, ex, packageVersion.FormId, packageVersion.Version, submissionId);
+            var refused = BuildFailedResponse(submissionId, packageVersion, request, "The form's target layer does not accept edits.", editMayHaveCommitted, committedEditResult, committedTargetFeatureId);
+            await PreserveOrReleaseClaimAsync(submissionId, refused, editMayHaveCommitted).ConfigureAwait(false);
+            await RecordAuditAsync(context, "forms.submission.create", packageVersion.FormId, AuditOutcome.Failure, $"{{\"version\":{packageVersion.Version},\"readOnly\":true}}", CancellationToken.None).ConfigureAwait(false);
+            return Results.Json(refused, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: StatusCodes.Status405MethodNotAllowed);
+        }
         // Intentional catch-all request-handling boundary: this is the form
         // submission-create endpoint; the failure is logged and mapped to a
         // generic error response below.
