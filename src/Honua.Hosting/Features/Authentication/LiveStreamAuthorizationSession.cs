@@ -108,7 +108,8 @@ internal sealed class LiveStreamAuthorizationSession : IDisposable
             }
         }
 
-        if (!MonitorStop.IsCancellationRequested && !authorized)
+        // Reauthentication reports a cancelled check as a failure; a stopped caller is still no verdict.
+        if (!authorized && !MonitorStop.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
             await EndAuthorizationAsync().ConfigureAwait(false);
         }
