@@ -60,7 +60,21 @@ internal sealed partial class MetadataReleaseReconciler(
 
             if (!ReferenceEquals(updated, operation) && !Equals(updated, operation))
             {
-                await workflowStore.SetAsync(updated, cancellationToken: token).ConfigureAwait(false);
+                var persisted = await workflowStore.TrySetAsync(updated, cancellationToken: token).ConfigureAwait(false);
+                if (!persisted)
+                {
+                    var latest = await workflowStore.GetAsync(operationId, token).ConfigureAwait(false);
+                    if (latest is null ||
+                        IsTerminal(latest.Status) ||
+                        (operation.Status != WorkflowOperationStatus.RollbackRequested &&
+                         latest.Status == WorkflowOperationStatus.RollbackRequested))
+                    {
+                        return;
+                    }
+
+                    await workflowStore.TrySetAsync(updated with { Version = latest.Version }, cancellationToken: token).ConfigureAwait(false);
+                }
+
                 Log.MetadataReleaseReconciled(logger, operationId, updated.MetadataRelease!.CurrentStage.ToString(), updated.Status.ToString());
             }
         }
@@ -601,7 +615,7 @@ internal sealed partial class MetadataReleaseReconciler(
                 MetadataRelease = operation.MetadataRelease with { CurrentStage = MetadataReleaseStage.Failed }
             };
 
-            await workflowStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await workflowStore.TrySetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
     }
 
