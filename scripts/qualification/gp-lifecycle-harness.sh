@@ -1231,7 +1231,9 @@ run_tenant_limits() {
 }
 
 run_soak() {
-  local scenario=sustained-soak duration="${HONUA_GP_SOAK_SECONDS:-900}" concurrency="${HONUA_GP_SOAK_CONCURRENCY:-8}" end=$((SECONDS+duration)) submitted=0 verified=0 failed=0 job terminal before after; local -a jobs
+  local scenario=sustained-soak duration="${HONUA_GP_SOAK_SECONDS:-900}" concurrency="${HONUA_GP_SOAK_CONCURRENCY:-8}" submitted=0 verified=0 failed=0 job terminal before after
+  local end=$((SECONDS+duration))
+  local -a jobs
   while ((SECONDS<end)); do jobs=(); for ((i=0;i<concurrency;i++)); do job="$(submit_async)" && jobs+=("${job}") && submitted=$((submitted+1)) || failed=$((failed+1)); done; for job in "${jobs[@]}"; do terminal="$(wait_terminal "${job}")" || { failed=$((failed+1)); continue; }; before="$(result_digest "${job}" 2>/dev/null || true)"; compose restart server >/dev/null; wait_ready || true; after="$(result_digest "${job}" 2>/dev/null || true)"; [[ "$(jq -r .status <<<"${terminal}")" == successful && -n "${before}" && "${before}" == "${after}" ]] && verified=$((verified+1)) || failed=$((failed+1)); done; done
   [[ ${submitted} -gt 0 && ${failed} -eq 0 && ${verified} -eq ${submitted} ]] || { write_receipt "${scenario}" fail "FINDING: duration=${duration};concurrency=${concurrency};submitted=${submitted};verified=${verified};failed=${failed}"; return 1; }
   write_receipt "${scenario}" pass "duration=${duration};concurrency=${concurrency};submitted=${submitted};durable_outputs_verified=${verified}"

@@ -276,6 +276,22 @@ exit 0
 ''', directory)
             self.assertEqual(0, completed.returncode, completed.stderr)
 
+    def test_sustained_soak_initializes_end_after_duration_under_nounset(self):
+        with tempfile.TemporaryDirectory() as directory:
+            completed = run_bash("set -euo pipefail\n" + harness_function("run_soak") + r'''
+export HONUA_GP_SOAK_SECONDS=1 HONUA_GP_SOAK_CONCURRENCY=1
+submit_async() { echo gp-1; }
+wait_terminal() { echo '{"status":"successful"}'; }
+result_digest() { echo deadbeef; }
+compose() { SECONDS=$((SECONDS + 2)); }
+wait_ready() { :; }
+write_receipt() { printf 'receipt %s %s %s\n' "$1" "$2" "$3" > receipt; }
+run_soak || exit 61
+grep -q "^receipt sustained-soak pass duration=1;concurrency=1;submitted=1;durable_outputs_verified=1$" receipt || { cat receipt >&2; exit 62; }
+exit 0
+''', directory)
+            self.assertEqual(0, completed.returncode, completed.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
