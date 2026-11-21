@@ -75,12 +75,9 @@ public sealed class SourceBackedWriteGuardFeatureWriter(IFeatureWriter inner, IM
             return;
         }
 
-        // The message stays generic: some surfaces return it to the caller, and the table name is internal.
         if (FindSourceTable(snapshot, layerId) is not null)
         {
-            throw new ReadOnlyFeatureWriteException(
-                "This layer is published over a source table, which this server cannot write through. " +
-                "Edit the source table directly and refresh the layer, or republish the data into the managed feature store.");
+            throw new ReadOnlyFeatureWriteException(ManagedWriteStorage.WriteRefusal);
         }
     }
 

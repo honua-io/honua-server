@@ -1237,17 +1237,22 @@ internal sealed partial class Wfs20Handler
 
         // Declared capabilities of the advertised feature type's publication bound every
         // Transaction action, including on anonymously writable layers (SEC-5).
-        var undeclared = LayerValidationHelpers.FindUndeclaredEditCapability(
-            descriptor.Service,
-            ResolveEditCapabilityPublication(descriptor, featureType.Visible),
-            operation);
-        return undeclared is null
-            ? null
-            : Wfs20ErrorResults.CreateForbidden(
+        var editPublication = ResolveEditCapabilityPublication(descriptor, featureType.Visible);
+        var undeclared = LayerValidationHelpers.FindUndeclaredEditCapability(descriptor.Service, editPublication, operation);
+        if (undeclared is not null)
+        {
+            return Wfs20ErrorResults.CreateForbidden(
                 context,
                 "OperationNotSupported",
                 LayerValidationHelpers.DescribeUndeclaredEditCapability(undeclared),
                 "Transaction");
+        }
+
+        // A feature type served from a source table cannot take managed writes. Refuse here, before the
+        // target features are resolved from the managed store, which would report an edit of nothing.
+        return ManagedWriteStorage.SourceTableOf(descriptor.Snapshot, editPublication) is null
+            ? null
+            : Wfs20ErrorResults.CreateNotImplemented(context, "OperationNotSupported", ManagedWriteStorage.WriteRefusal, "Transaction");
     }
 
 

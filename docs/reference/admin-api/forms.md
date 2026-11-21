@@ -81,7 +81,7 @@ Run `POST /api/v1/forms/{formId}/submissions` with this body:
 - Bodies may be JSON (`application/json` or any `*json` media type) or `multipart/form-data`. Attachment bytes require multipart: a `submission` JSON part plus one file part per attachment descriptor `partName`.
 - `formVersion` is optional and defaults to the current Released Version. `clientId` falls back to the `X-Honua-Client-Id` header.
 - Idempotency is scoped by Form ID, Form Version, actor/client hash, and `idempotencyKey`. Exact replays return the stored terminal response with `idempotentReplay: true`; a changed payload with the same key returns `409`.
-- Responses: `200` accepted (or failed edit with retry guidance), `400` rejected validation failures, `403` policy denials, `404` missing Released Form or target Layer, `409` idempotency conflicts, `500` server failure with `retryable: true`.
+- Responses: `200` accepted (or failed edit with retry guidance), `400` rejected validation failures, `403` policy denials, `404` missing Released Form or target Layer, `405` when the target Layer does not accept edits (for example a Layer served from its source table), with `retryable: false` when no edit was dispatched, `409` idempotency conflicts, `500` server failure with `retryable: true`.
 - Accepted submissions flow into the shared edit pipeline; attachments upload only after a successful create/update edit resolves the target feature id.
 - Runtime validation enforces the current target field policy. Submitted values for read-only or hidden target fields are rejected; updates also reject changes or null removals of the bound GlobalID. Going live with a Form does not freeze target field permissions.
 
