@@ -28,7 +28,7 @@ internal static class GeometryOutputProcessor
 
         var processed = geometry;
 
-        var simplifyTolerance = ResolveSimplifyTolerance(processed, limits.SimplifyTolerance);
+        var simplifyTolerance = ResolveSimplifyTolerance(processed, limits);
         if (simplifyTolerance.HasValue)
         {
             var shouldSimplify = limits.MaxVerticesPerGeometry <= 0 ||
@@ -83,6 +83,17 @@ internal static class GeometryOutputProcessor
         };
     }
 
+    // The same limits for geometries in geometrySrid, used when a geometry was decoded without one.
+    public static GeometryLimits ForGeometrySrid(GeometryLimits limits, int? geometrySrid) => new RequestGeometryLimits
+    {
+        GeometrySrid = geometrySrid,
+        MaxVerticesPerGeometry = limits.MaxVerticesPerGeometry,
+        MaxGeometrySize = limits.MaxGeometrySize,
+        MaxCoordinatePrecision = limits.MaxCoordinatePrecision,
+        MaxOverlayCandidatePairs = limits.MaxOverlayCandidatePairs,
+        SimplifyTolerance = limits.SimplifyTolerance,
+    };
+
     public static Geometry ApplyDimensionFilter(Geometry geometry, bool includeZ, bool includeM)
     {
         if (includeZ && includeM)
@@ -106,20 +117,22 @@ internal static class GeometryOutputProcessor
         return owned;
     }
 
-    private static double? ResolveSimplifyTolerance(Geometry geometry, double? simplifyToleranceMeters)
+    private static double? ResolveSimplifyTolerance(Geometry geometry, GeometryLimits limits)
     {
-        if (!simplifyToleranceMeters.HasValue || simplifyToleranceMeters.Value <= 0)
+        if (limits.SimplifyTolerance is not { } simplifyToleranceMeters || simplifyToleranceMeters <= 0)
         {
             return null;
         }
 
-        return geometry.SRID switch
+        // OGC WKB carries no SRID, so a geometry decoded from it takes the SRID the request resolved.
+        var srid = geometry.SRID != 0 ? geometry.SRID : (limits as RequestGeometryLimits)?.GeometrySrid ?? 0;
+        return srid switch
         {
-            4326 => ConvertMetersToDegrees(simplifyToleranceMeters.Value, geometry.EnvelopeInternal),
+            4326 => ConvertMetersToDegrees(simplifyToleranceMeters, geometry.EnvelopeInternal),
             // Web Mercator (3857) and its aliases already carry metre units; route the alias set
             // through the canonical classifier instead of a local literal list.
-            _ when Honua.Core.Features.Shared.Models.SpatialReferenceExtensions.IsWebMercatorSrid(geometry.SRID)
-                => simplifyToleranceMeters.Value,
+            _ when Honua.Core.Features.Shared.Models.SpatialReferenceExtensions.IsWebMercatorSrid(srid)
+                => simplifyToleranceMeters,
             _ => null
         };
     }
@@ -185,5 +198,11 @@ internal static class GeometryOutputProcessor
                 sequence.SetOrdinate(index, Ordinate.M, double.NaN);
             }
         }
+    }
+
+    // Limits for one request: the configured limits plus the SRID its geometries are in.
+    private sealed class RequestGeometryLimits : GeometryLimits
+    {
+        public int? GeometrySrid { get; init; }
     }
 }
