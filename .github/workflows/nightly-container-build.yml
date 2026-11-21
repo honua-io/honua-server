@@ -75,7 +75,7 @@ jobs:
     # The release App key is an environment secret of bot-app, which deploys only from
     # trunk, so a branch workflow cannot read it. Only a trunk run hands off; tag and
     # branch-proof runs run outside the environment.
-    environment: ${{ github.ref == 'refs/heads/trunk' && 'bot-app' || '' }}
+    environment: ${{ github.ref_type == 'branch' && github.ref_name == 'trunk' && 'bot-app' || '' }}
     timeout-minutes: 30
     permissions:
       # The Actions token only reads here: run lists, check runs and the tag lookup.

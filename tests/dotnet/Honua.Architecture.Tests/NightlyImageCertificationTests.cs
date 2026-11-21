@@ -158,7 +158,7 @@ public sealed partial class NightlyImageCertificationTests
 
         // The app key is an environment secret of bot-app, which deploys only from trunk.
         // Only a trunk run hands off; tag and branch-proof runs never enter the environment.
-        select.Should().Contain("    environment: ${{ github.ref == 'refs/heads/trunk' && 'bot-app' || '' }}\n",
+        select.Should().Contain("    environment: ${{ github.ref_type == 'branch' && github.ref_name == 'trunk' && 'bot-app' || '' }}\n",
             "a branch workflow cannot read the release App key");
         require.Should().Contain("are not set in the trunk-only bot-app environment");
         Regex.Count(select, @"secrets\.HONUA_RELEASE_APP_").Should().Be(Regex.Count(nightly, @"secrets\.HONUA_RELEASE_APP_"),
