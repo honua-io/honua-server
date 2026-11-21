@@ -13,7 +13,7 @@ _RELEASE_PLATFORM_DIGEST = 'sha256:' + 'a' * 64
 _RELEASE_REQUESTED_DIGEST = 'sha256:' + 'b' * 64
 _RELEASE_PULL_IDS = (_RELEASE_REPOSITORY, _RELEASE_PLATFORM_DIGEST, _RELEASE_REQUESTED_DIGEST)
 _RELEASE_DOCKER = '''docker() {
-  if [[ "${1-}" == login ]]; then return 0; fi
+  if [[ "${1-}" == login ]]; then cat >/dev/null; return 0; fi
   if [[ "${1-} ${2-} ${3-} ${4-}" == "buildx imagetools inspect --raw" ]]; then printf '%s' "$SOURCE_MANIFEST"; return 0; fi
   if [[ "${1-}" == pull ]]; then return 0; fi
   if [[ "${1-} ${2-}" == "image inspect" ]]; then printf '%s' "$INSPECT_JSON"; return 0; fi

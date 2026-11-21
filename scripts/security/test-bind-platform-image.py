@@ -96,7 +96,7 @@ class ResolveScanImage(unittest.TestCase):
 
 
 DOCKER = '''docker() {
-  if [[ "${1-}" == login ]]; then return 0; fi
+  if [[ "${1-}" == login ]]; then cat >/dev/null; return 0; fi
   if [[ "${1-} ${2-} ${3-} ${4-}" == "buildx imagetools inspect --raw" ]]; then printf '%s' "$SOURCE_MANIFEST"; return 0; fi
   if [[ "${1-}" == pull ]]; then return 0; fi
   if [[ "${1-} ${2-}" == "image inspect" ]]; then printf '%s' "$INSPECT_JSON"; return 0; fi
