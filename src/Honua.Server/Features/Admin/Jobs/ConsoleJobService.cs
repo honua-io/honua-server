@@ -16,6 +16,7 @@ using Honua.Geoprocessing;
 using Honua.Infrastructure;
 using Honua.Infrastructure.Authentication;
 using Honua.Io.Export;
+using Honua.Server.Features.Admin.Exports;
 using Honua.Server.Features.Admin.TileOperations;
 using Microsoft.Extensions.Options;
 
@@ -380,26 +381,12 @@ internal sealed partial class ConsoleJobService(
 
     private async Task EnsureExportNotUnpublishedAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
     {
-        if (job.Spec.Kind != ExecutionJobKind.TileCache
-            || !TileCacheExecutionSpecBuilder.TryParse(job.Spec.Parameters, out var request, out _, out _)
-            || !string.Equals(request.Operation, TileCacheExecutionSpecBuilder.ExportOperation, StringComparison.OrdinalIgnoreCase)
-            || string.IsNullOrWhiteSpace(request.ExportId))
+        var blocked = await ExportUnpublishGuard
+            .TryGetRetryBlockedMessageAsync(serviceProvider, job, cancellationToken)
+            .ConfigureAwait(false);
+        if (blocked is not null)
         {
-            return;
-        }
-
-        var storage = serviceProvider.GetService<ICloudFileStorage>();
-        var storageOptions = serviceProvider.GetService<IOptions<Honua.Core.Features.Infrastructure.Domain.CloudStorageOptions>>();
-        if (storage is null || storageOptions is null)
-        {
-            return;
-        }
-
-        var store = Honua.Server.Features.Admin.Exports.ExportStore.Create(storage, storageOptions.Value, request.ExportId);
-        if (await store.ReadUnpublishedAsync(cancellationToken).ConfigureAwait(false) is not null)
-        {
-            throw new ConsoleJobConflictException(
-                $"Export '{request.ExportId}' was unpublished; start a new export with POST /api/v1/admin/exports instead of retrying an older job.");
+            throw new ConsoleJobConflictException(blocked);
         }
     }
 

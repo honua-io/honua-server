@@ -270,6 +270,11 @@ public sealed class PublicExportRevocationTests
         var act = () => catalog.UnpublishAsync("parcels", CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*state store unavailable*");
+        privateStorage.Verify(
+            s => s.UploadAsync(
+                It.Is<FileUploadRequest>(r => r.ObjectKeyOverride != null && r.ObjectKeyOverride.EndsWith("unpublished.json", StringComparison.Ordinal)),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
         privateStorage.Verify(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

@@ -101,18 +101,18 @@ public sealed partial class ExportEndpointTests
         etagBefore.Should().NotBeNullOrWhiteSpace();
 
         // A job that started before DELETE (null initial tag) is fenced from activating after DELETE.
-        var midJobFence = () => TileOperationExecutionCore.RequireNotUnpublishedAsync(
-            store, new TileOperationExecutionCore.ExportUnpublishFence(InitialETag: null), CancellationToken.None);
+        var midJobFence = () => ExportUnpublishGuard.RequireNotUnpublishedAsync(
+            store, new ExportUnpublishFence(InitialETag: null), CancellationToken.None);
         await midJobFence.Should().ThrowAsync<ExportException>().WithMessage("*unpublished while the job was running*");
 
         // A job created before DELETE is fenced even if retried after DELETE with the current marker tag.
-        var staleRetryFence = () => TileOperationExecutionCore.RequireNotUnpublishedAsync(
-            store, new TileOperationExecutionCore.ExportUnpublishFence(etagBefore, marker.UnpublishedAt.AddSeconds(-1)), CancellationToken.None);
+        var staleRetryFence = () => ExportUnpublishGuard.RequireNotUnpublishedAsync(
+            store, new ExportUnpublishFence(etagBefore, marker.UnpublishedAt.AddSeconds(-1)), CancellationToken.None);
         await staleRetryFence.Should().ThrowAsync<ExportException>().WithMessage("*unpublished after the job was created*");
 
         // A republish started after DELETE sees the current tag, activates, and clears the marker.
-        await TileOperationExecutionCore.RequireNotUnpublishedAsync(
-            store, new TileOperationExecutionCore.ExportUnpublishFence(etagBefore, marker.UnpublishedAt.AddSeconds(1)), CancellationToken.None);
+        await ExportUnpublishGuard.RequireNotUnpublishedAsync(
+            store, new ExportUnpublishFence(etagBefore, marker.UnpublishedAt.AddSeconds(1)), CancellationToken.None);
         await PublishAsync(IdentityField);
         (await store.ReadUnpublishedETagAsync(CancellationToken.None)).Should().BeNull();
     }
@@ -191,6 +191,7 @@ public sealed partial class ExportEndpointTests
     [Endpoint("GET /api/v1/exports/{exportId}/current.json")]
     public async Task RetryFailedExportJob_AfterUnpublish_ReturnsConflictAndStaysUnpublished()
     {
+        await PublishAsync(IdentityField);
         var failedJobId = await SeedFailedExportJobAsync();
 
         using var deleted = await _client.DeleteAsync($"{ExportsRoute}/{_exportId}");
@@ -205,7 +206,9 @@ public sealed partial class ExportEndpointTests
         (await consoleRetry.Content.ReadAsStringAsync()).Should().Contain("/api/v1/admin/exports");
 
         var store = ExportStore.Create(Storage, _fixture.GetOptionalService<IOptions<CloudStorageOptions>>()!.Value, _exportId);
-        (await store.ReadUnpublishedAsync(CancellationToken.None)).Should().NotBeNull();
+        var marker = await store.ReadUnpublishedAsync(CancellationToken.None);
+        marker.Should().NotBeNull();
+        (await store.ReadPointerAsync(CancellationToken.None)).Should().BeNull();
 
         using var current = await _client.GetAsync($"/api/v1/exports/{_exportId}/current.json");
         current.StatusCode.Should().Be(HttpStatusCode.NotFound);

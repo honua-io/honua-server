@@ -38,6 +38,8 @@ internal sealed partial class TileOperationExecutionCore
         public string? UnpublishedETag { get; init; }
 
         public PublicExportPromoter? PublicPromoter { get; init; }
+
+        public PublicExportRevocationService? PublicRevocation { get; init; }
     }
 
     private sealed record ExportSourceCheck
@@ -50,8 +52,6 @@ internal sealed partial class TileOperationExecutionCore
 
         public string? UnpublishedETag { get; init; }
     }
-
-    internal readonly record struct ExportUnpublishFence(string? InitialETag, DateTimeOffset? JobCreatedAt = null);
 
     private sealed record ExportArtifactFiles(Stream Archive, string ArchiveSha256, byte[] Parquet, string ParquetSha256);
 
@@ -155,7 +155,7 @@ internal sealed partial class TileOperationExecutionCore
         var store = ExportStore.Create(storage, options, request.ExportId!);
         var pointerETag = await store.ReadPointerETagAsync(cancellationToken).ConfigureAwait(false);
         var unpublishedETag = await store.ReadUnpublishedETagAsync(cancellationToken).ConfigureAwait(false);
-        await RequireNotUnpublishedAsync(
+        await ExportUnpublishGuard.RequireNotUnpublishedAsync(
             store, new ExportUnpublishFence(unpublishedETag, JobCreatedAt), cancellationToken).ConfigureAwait(false);
 
         var source = await ExportLayerSource.OpenAsync(
@@ -177,7 +177,8 @@ internal sealed partial class TileOperationExecutionCore
             Store = store,
             PointerETag = pointerETag,
             UnpublishedETag = unpublishedETag,
-            PublicPromoter = services.GetService<PublicExportPromoter>()
+            PublicPromoter = services.GetService<PublicExportPromoter>(),
+            PublicRevocation = services.GetService<PublicExportRevocationService>()
         };
     }
 
@@ -401,13 +402,13 @@ internal sealed partial class TileOperationExecutionCore
         await context.Store.PutJsonOnceAsync(collectionKey, ExportVersionFactory.Collection(companions),
             ExportVersionJsonContext.Default.JsonObject, cancellationToken).ConfigureAwait(false);
 
-        await RequireNotUnpublishedAsync(
+        await ExportUnpublishGuard.RequireNotUnpublishedAsync(
             context.Store, new ExportUnpublishFence(context.UnpublishedETag, JobCreatedAt), cancellationToken).ConfigureAwait(false);
 
         await SwitchPointerAsync(context.Store, context.Run, context.PointerETag).ConfigureAwait(false);
         if (context.UnpublishedETag is not null)
         {
-            await TryClearUnpublishedAsync(context.Store).ConfigureAwait(false);
+            await ExportUnpublishGuard.TryClearUnpublishedIfUnchangedAsync(context.Store, context.UnpublishedETag).ConfigureAwait(false);
         }
 
         var publicDelivery = await TryPromotePublicAsync(context, companions.Descriptor, cancellationToken).ConfigureAwait(false);
@@ -424,42 +425,6 @@ internal sealed partial class TileOperationExecutionCore
             ErrorMessage = null,
             CurrentPhase = "Export completed"
         };
-    }
-
-    internal static async Task RequireNotUnpublishedAsync(
-        ExportStore store, ExportUnpublishFence fence, CancellationToken cancellationToken)
-    {
-        var currentUnpublishedETag = await store.ReadUnpublishedETagAsync(cancellationToken).ConfigureAwait(false);
-        if (currentUnpublishedETag is null)
-        {
-            return;
-        }
-
-        if (!string.Equals(currentUnpublishedETag, fence.InitialETag, StringComparison.Ordinal))
-        {
-            throw new ExportException("This Export was unpublished while the job was running; its version was not activated.");
-        }
-
-        if (fence.JobCreatedAt is { } createdAt)
-        {
-            var marker = await store.ReadUnpublishedAsync(cancellationToken).ConfigureAwait(false);
-            if (marker is not null && createdAt <= marker.UnpublishedAt)
-            {
-                throw new ExportException("This Export was unpublished after the job was created; its version was not activated.");
-            }
-        }
-    }
-
-    private static async Task TryClearUnpublishedAsync(ExportStore store)
-    {
-        try
-        {
-            await store.ClearUnpublishedAsync(CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Pointer switch already succeeded; stale marker cleanup is best-effort.
-        }
     }
 
     private async Task<PublicExportDeliveryStatus?> TryPromotePublicAsync(
@@ -484,7 +449,22 @@ internal sealed partial class TileOperationExecutionCore
         };
         try
         {
-            return await context.PublicPromoter.PromoteAsync(input, cancellationToken).ConfigureAwait(false);
+            var result = await context.PublicPromoter.PromoteAsync(input, cancellationToken).ConfigureAwait(false);
+            if (result.Status == PublicExportDeliveryStatus.Promoted
+                && await context.Store.ReadUnpublishedETagAsync(cancellationToken).ConfigureAwait(false) is not null)
+            {
+                if (context.PublicRevocation is not null)
+                {
+                    await context.PublicRevocation.RevokeUnpublishedAsync(context.Run.ExportId, changeId: null, cancellationToken).ConfigureAwait(false);
+                }
+
+                return new PublicExportDeliveryStatus(PublicExportDeliveryStatus.StaysSignedIn)
+                {
+                    Reason = "Export was unpublished during public promotion; public copy revoked."
+                };
+            }
+
+            return result;
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
         {

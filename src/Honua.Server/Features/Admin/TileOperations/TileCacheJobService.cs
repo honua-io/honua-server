@@ -153,32 +153,19 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             return null;
         }
 
-        if (string.Equals(request.Operation, TileCacheExecutionSpecBuilder.ExportOperation, StringComparison.OrdinalIgnoreCase)
-            && !string.IsNullOrWhiteSpace(request.ExportId))
+        await using (var scope = _scopeFactory.CreateAsyncScope())
         {
-            await EnsureExportNotUnpublishedAsync(request.ExportId, cancellationToken).ConfigureAwait(false);
+            var blocked = await Honua.Server.Features.Admin.Exports.ExportUnpublishGuard
+                .TryGetRetryBlockedMessageAsync(scope.ServiceProvider, job, cancellationToken)
+                .ConfigureAwait(false);
+            if (blocked is not null)
+            {
+                throw new ExportRetryConflictException(blocked);
+            }
         }
 
         return await SubmitAsync(new TileOperationSubmission(request, requestedBy, schemaName), cancellationToken)
             .ConfigureAwait(false);
-    }
-
-    private async Task EnsureExportNotUnpublishedAsync(string exportId, CancellationToken cancellationToken)
-    {
-        await using var scope = _scopeFactory.CreateAsyncScope();
-        var storage = scope.ServiceProvider.GetService<ICloudFileStorage>();
-        var storageOptions = scope.ServiceProvider.GetService<IOptions<CloudStorageOptions>>();
-        if (storage is null || storageOptions is null)
-        {
-            return;
-        }
-
-        var store = Honua.Server.Features.Admin.Exports.ExportStore.Create(storage, storageOptions.Value, exportId);
-        if (await store.ReadUnpublishedAsync(cancellationToken).ConfigureAwait(false) is not null)
-        {
-            throw new ExportRetryConflictException(
-                $"Export '{exportId}' was unpublished; start a new export with POST /api/v1/admin/exports instead of retrying an older job.");
-        }
     }
 
     private async Task<ExecutionJobRecord?> GetJobAsync(string jobId, CancellationToken cancellationToken)
