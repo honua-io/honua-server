@@ -952,7 +952,10 @@ internal sealed class StreamingQueryFormatter
     {
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
         _geoParquetLimits = (limitsOptions?.Value?.GeoParquet ?? new GeoParquetLimits()).ForQuery();
+        PbfFormatter = new PbfQueryFormatter(limitsOptions!);
     }
+
+    internal PbfQueryFormatter PbfFormatter { get; }
 
     public Task StreamAsGeoServicesJsonAsync(
         IAsyncEnumerable<Feature> features,

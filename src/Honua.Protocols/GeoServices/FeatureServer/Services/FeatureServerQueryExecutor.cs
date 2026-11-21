@@ -53,6 +53,7 @@ internal sealed partial class FeatureServerQueryExecutor
     public bool SupportsFlatGeobufOutput => _featureReader is IFlatGeobufFeatureStore;
     public bool SupportsRawGeoServicesPointOutput => _featureReader is IPagedRawGeoServicesFeatureStore;
     public bool SupportsDistinctValues => _featureReader is IDistinctFeatureReader;
+    public bool HasComputedFields => _computedFieldPipeline.HasComputedFields;
 
     public Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken)
         => _featureReader.CountAsync(layerId, query, cancellationToken);

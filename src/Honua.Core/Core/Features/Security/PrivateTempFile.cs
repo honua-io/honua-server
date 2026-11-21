@@ -14,6 +14,22 @@ public static class PrivateTempFile
 
     private const UnixFileMode SharedWrite = UnixFileMode.GroupWrite | UnixFileMode.OtherWrite;
 
+    // ENOSPC and EDQUOT (Linux), ERROR_HANDLE_DISK_FULL and ERROR_DISK_FULL (Windows HRESULTs).
+    private static readonly int[] StorageFullErrorCodes = [28, 122, unchecked((int)0x80070027), unchecked((int)0x80070070)];
+
+    public static bool IsStorageFull(Exception? exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is IOException && Array.IndexOf(StorageFullErrorCodes, current.HResult) >= 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     // A fixed prefix, a fresh GUID and an optional extension directly under the temp path: the
     // name cannot be rooted or guessed, and no shared intermediate directory exists to squat.
     public static string NewPath(string prefix, string? extension = null)
