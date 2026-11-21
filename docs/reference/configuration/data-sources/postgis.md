@@ -73,7 +73,8 @@ quickstart does not include it. Without it every H3 route returns `501`, and the
 capability manifest (`GET /api/v1/capabilities/manifest`) reports `analytics.h3`
 as unavailable with reason `dependency-unavailable`. Install the h3-pg package
 for your PostgreSQL version, run `CREATE EXTENSION IF NOT EXISTS h3;`, and
-restart Honua (the extension check is cached for the life of the process).
+restart Honua: the extension check is cached for the life of the process
+(only a check that could not reach the database is retried, after 60 seconds).
 
 ## Startup validation
 
