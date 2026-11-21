@@ -281,6 +281,33 @@ public sealed class SldImportExportEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("POST /api/v1/admin/metadata/layers/{storageLayerId}/style/import-sld")]
+    public async Task ImportSld_SeFunctionsLikeAndElseFixture_StoresNormalizedExpressions()
+    {
+        var client = _fixture.CreateAdminClient();
+        var sld = LoadFixture("se-functions-like-else.xml");
+
+        using var content = new StringContent(sld, Encoding.UTF8, "application/xml");
+        var response = await client.PostAsync(
+            $"/api/v1/admin/metadata/layers/{WebAppFixture.TestLayerId}/style/import-sld",
+            content);
+
+        response.Be200Ok();
+        var apiResponse = await DeserializeImportAsync(response);
+        apiResponse.Data!.DetectedVersion.Should().Be("Sld11");
+        apiResponse.Data.Diagnostics.Should().BeEmpty();
+        apiResponse.Data.LayerCount.Should().Be(2);
+
+        var layers = apiResponse.Data.MapLibreStyle!.Value.GetProperty("layers");
+        layers[0].GetProperty("paint").GetProperty("fill-color")[0].GetString().Should().Be("match");
+        layers[0].GetProperty("paint").GetProperty("fill-opacity")[0].GetString().Should().Be("interpolate");
+        layers[0].GetProperty("filter")[0].GetString().Should().Be("all");
+        layers[1].GetProperty("paint").GetProperty("fill-color")[0].GetString().Should().Be("step");
+        layers[1].GetProperty("filter")[0].GetString().Should().Be("!");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /api/v1/admin/metadata/layers/{storageLayerId}/style/import-sld")]
     [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/style/export-sld")]
     public async Task RoundTripSld_PreservesPolygonFillSubset()
     {

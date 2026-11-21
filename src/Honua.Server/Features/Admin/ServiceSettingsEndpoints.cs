@@ -10,6 +10,7 @@ using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Models;
@@ -39,39 +40,49 @@ internal static partial class ServiceSettingsEndpoints
             .WithTags("Admin", "Services")
             .RequireAdminAuthorization();
 
-        group.MapGet("/", HandleListServices)
-            .WithDisplayName("List Services")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var list = AdminHttpOperationRouteBinding.ForApi("admin.services.list", "/services");
+        group.MapMethods(list.RoutePattern, list.Methods, HandleListServices)
+            .WithAdminOperation(list.Definition).WithDisplayName("List Services");
 
-        group.MapGet("/{serviceName}/settings", HandleGetSettings)
-            .WithDisplayName("Get Service Settings")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var settings = AdminHttpOperationRouteBinding.ForApi("admin.services.settings.get", "/services");
+        group.MapMethods(settings.RoutePattern, settings.Methods, HandleGetSettings)
+            .WithAdminOperation(settings.Definition).WithDisplayName("Get Service Settings");
 
-        group.MapPut("/{serviceName}/protocols", HandleUpdateProtocols)
+        var protocols = AdminHttpOperationRouteBinding.ForApi("admin.services.protocols.set", "/services");
+        group.MapMethods(protocols.RoutePattern, protocols.Methods, HandleUpdateProtocols)
+            .WithAdminOperation(protocols.Definition)
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
-            .WithDisplayName("Update Service Protocols")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+            .WithDisplayName("Update Service Protocols");
 
         group.MapPut("/{serviceName}/mapserver", HandleUpdateMapServerSettings)
             .WithDisplayName("Update MapServer Settings")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
 
-        group.MapPut("/{serviceName}/access-policy", HandleUpdateAccessPolicy)
+        var accessPolicy = AdminHttpOperationRouteBinding.ForApi("admin.services.access-policy.set", "/services");
+        group.MapMethods(accessPolicy.RoutePattern, accessPolicy.Methods, HandleUpdateAccessPolicy)
+            .WithAdminOperation(accessPolicy.Definition)
             .WithDisplayName("Update Access Policy")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessPolicy);
 
-        group.MapPut("/{serviceName}/timeinfo", HandleUpdateTimeInfo)
-            .WithDisplayName("Update Time Info")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+        var timeInfo = AdminHttpOperationRouteBinding.ForApi("admin.services.timeinfo.set", "/services");
+        group.MapMethods(timeInfo.RoutePattern, timeInfo.Methods, HandleUpdateTimeInfo)
+            .WithAdminOperation(timeInfo.Definition).WithDisplayName("Update Time Info");
 
+        MapServiceLayerMetadataEndpoints(group);
+    }
+
+    private static void MapServiceLayerMetadataEndpoints(IEndpointRouteBuilder group)
+    {
         group.MapGet("/{serviceName}/layers/{serviceLayerIndex:int}/metadata", HandleGetLayerMetadata)
             .WithDisplayName("Get Layer Metadata")
             .Produces<ApiResponse<LayerMetadataResponse>>(200)
             .Produces<ApiResponse<object>>(404)
             .ProducesProblem(409);
 
-        group.MapPut("/{serviceName}/layers/{serviceLayerIndex:int}/metadata", HandleUpdateLayerMetadata)
+        var layerMetadata = AdminHttpOperationRouteBinding.ForApi(
+            "admin.services.layer-metadata.set", "/services", "/{serviceName}/layers/{serviceLayerIndex:int}/metadata");
+        group.MapMethods(layerMetadata.RoutePattern, layerMetadata.Methods, HandleUpdateLayerMetadata)
+            .WithAdminOperation(layerMetadata.Definition)
             .WithDisplayName("Update Layer Metadata")
             .Produces<ApiResponse<LayerMetadataResponse>>(200)
             .Produces<ApiResponse<object>>(400)
@@ -80,7 +91,6 @@ internal static partial class ServiceSettingsEndpoints
             .ProducesProblem(422)
             .ProducesProblem(500)
             .ProducesProblem(501)
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
             .AddAgentApprovalFilter(AgentApprovalFilter.LayerMetadata);
     }
 

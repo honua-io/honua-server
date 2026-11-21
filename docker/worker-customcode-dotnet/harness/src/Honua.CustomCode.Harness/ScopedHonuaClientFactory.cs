@@ -40,6 +40,7 @@ public static class ScopedHonuaClientFactory
             options.UseGeocoding = false;
             options.UseProcesses = false;
             options.UseWfs = false;
+            options.UseOgcTiles = false;
             options.UseOgcFeatures = true;
             options.UseGeoServices = true;
             options.EnableRetry = false;

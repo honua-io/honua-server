@@ -34,6 +34,12 @@ internal static class SldFilterParser
                     var operands = element.Elements()
                         .Select(e => ParseExpression(e, diagnostics, ruleName))
                         .ToList();
+                    if (operands.Count == 0)
+                    {
+                        diagnostics.Add(Unsupported("And", "Empty And predicate cannot be represented; rule omitted.", ruleName));
+                        return new SldFilterUnsupported("And", "Empty And predicate.");
+                    }
+
                     return new SldFilterAnd(operands);
                 }
 
@@ -42,15 +48,25 @@ internal static class SldFilterParser
                     var operands = element.Elements()
                         .Select(e => ParseExpression(e, diagnostics, ruleName))
                         .ToList();
+                    if (operands.Count == 0)
+                    {
+                        diagnostics.Add(Unsupported("Or", "Empty Or predicate cannot be represented; rule omitted.", ruleName));
+                        return new SldFilterUnsupported("Or", "Empty Or predicate.");
+                    }
+
                     return new SldFilterOr(operands);
                 }
 
             case "Not":
                 {
                     var inner = element.Elements().FirstOrDefault();
-                    return inner == null
-                        ? new SldFilterUnsupported("Not", "Empty Not predicate.")
-                        : new SldFilterNot(ParseExpression(inner, diagnostics, ruleName));
+                    if (inner == null)
+                    {
+                        diagnostics.Add(Unsupported("Not", "Empty Not predicate cannot be represented; rule omitted.", ruleName));
+                        return new SldFilterUnsupported("Not", "Empty Not predicate.");
+                    }
+
+                    return new SldFilterNot(ParseExpression(inner, diagnostics, ruleName));
                 }
 
             case "PropertyIsEqualTo":
@@ -66,33 +82,22 @@ internal static class SldFilterParser
             case "PropertyIsGreaterThanOrEqualTo":
                 return ParseComparison(element, SldFilterComparisonOperator.GreaterThanOrEqual, diagnostics, ruleName);
             case "PropertyIsLike":
-                // SLD wildcard semantics (default `%` and `_`, configurable via wildCard/singleChar
-                // attributes) have no portable MapLibre filter equivalent. Treat as unsupported so
-                // the rule renders unfiltered rather than matching the literal pattern string.
-                diagnostics.Add(Unsupported(
-                    "PropertyIsLike",
-                    "PropertyIsLike has no portable MapLibre equivalent; layer renders unfiltered.",
-                    ruleName));
-                return new SldFilterUnsupported("PropertyIsLike", null);
+                return ParseLike(element, diagnostics, ruleName);
 
             case "PropertyIsBetween":
-                diagnostics.Add(Unsupported(
-                    "PropertyIsBetween",
-                    "PropertyIsBetween is decomposed into >= and <= when possible; using unfiltered fallback otherwise.",
-                    ruleName));
                 return TryDecomposeBetween(element, diagnostics, ruleName);
 
             case "PropertyIsNull":
                 diagnostics.Add(Unsupported(
                     "PropertyIsNull",
-                    "PropertyIsNull has no canonical MapLibre equivalent; layer renders unfiltered.",
+                    "PropertyIsNull has no canonical MapLibre equivalent; rule omitted.",
                     ruleName));
                 return new SldFilterUnsupported("PropertyIsNull", null);
 
             case "Function":
                 diagnostics.Add(Unsupported(
                     "OgcFunction",
-                    $"OGC Function '{element.Attribute("name")?.Value}' is not portable; layer renders unfiltered.",
+                    $"OGC Function '{element.Attribute("name")?.Value}' is not portable; rule omitted.",
                     ruleName));
                 return new SldFilterUnsupported("OgcFunction", element.Attribute("name")?.Value);
 
@@ -101,7 +106,7 @@ internal static class SldFilterParser
             case "GmlObjectId":
                 diagnostics.Add(Unsupported(
                     local,
-                    $"{local} predicate is not supported.",
+                    $"{local} predicate is not supported; rule omitted.",
                     ruleName));
                 return new SldFilterUnsupported(local, null);
 
@@ -122,14 +127,14 @@ internal static class SldFilterParser
             case "During":
                 diagnostics.Add(Unsupported(
                     local,
-                    $"Spatial/temporal predicate '{local}' is not supported in MapLibre filter expressions.",
+                    $"Spatial/temporal predicate '{local}' is not supported in MapLibre filter expressions; rule omitted.",
                     ruleName));
                 return new SldFilterUnsupported(local, null);
 
             default:
                 diagnostics.Add(Unsupported(
                     local,
-                    $"Filter predicate '{local}' is not recognized; layer renders unfiltered.",
+                    $"Filter predicate '{local}' is not recognized; rule omitted.",
                     ruleName));
                 return new SldFilterUnsupported(local, null);
         }
@@ -198,14 +203,68 @@ internal static class SldFilterParser
 
         if (string.IsNullOrEmpty(property) || string.IsNullOrEmpty(lower) || string.IsNullOrEmpty(upper))
         {
+            diagnostics.Add(Unsupported("PropertyIsBetween", "PropertyIsBetween requires PropertyName and literal bounds; rule omitted.", ruleName));
             return new SldFilterUnsupported("PropertyIsBetween", null);
         }
 
-        return new SldFilterAnd(new List<SldFilter>
-        {
+        return new SldFilterAnd(
+        [
             new SldFilterComparison(SldFilterComparisonOperator.GreaterThanOrEqual, property, lower),
             new SldFilterComparison(SldFilterComparisonOperator.LessThanOrEqual, property, upper)
-        });
+        ]);
+    }
+
+    private static SldFilter ParseLike(
+        XElement element,
+        List<SldConversionDiagnostic> diagnostics,
+        string? ruleName)
+    {
+        var (property, literal) = ReadPropertyAndLiteral(element);
+        var wildAttr = element.Attribute("wildCard")?.Value ?? "%";
+        var singleAttr = element.Attribute("singleChar")?.Value ?? "_";
+        var escapeAttr = element.Attribute("escapeChar")?.Value ?? element.Attribute("escape")?.Value ?? "\\";
+        var matchCase = string.Equals(element.Attribute("matchCase")?.Value, "false", StringComparison.OrdinalIgnoreCase)
+            ? SldMatchCase.Insensitive
+            : SldMatchCase.Sensitive;
+
+        if (string.IsNullOrEmpty(property) || literal == null
+            || wildAttr.Length != 1 || singleAttr.Length != 1 || escapeAttr.Length != 1)
+        {
+            diagnostics.Add(Unsupported(
+                "PropertyIsLike",
+                "PropertyIsLike requires PropertyName, Literal, and single-character wildcard attributes; rule omitted.",
+                ruleName));
+            return new SldFilterUnsupported("PropertyIsLike", null);
+        }
+
+        return new SldFilterLike
+        {
+            PropertyName = property,
+            Pattern = literal,
+            WildCard = wildAttr[0],
+            SingleChar = singleAttr[0],
+            EscapeChar = escapeAttr[0],
+            MatchCase = matchCase
+        };
+    }
+
+    private static (string? Property, string? Literal) ReadPropertyAndLiteral(XElement element)
+    {
+        string? property = null;
+        string? literal = null;
+        foreach (var child in element.Elements())
+        {
+            if (child.Name.LocalName is "PropertyName" or "ValueReference")
+            {
+                property = child.Value?.Trim();
+            }
+            else if (child.Name.LocalName == "Literal")
+            {
+                literal = child.Value;
+            }
+        }
+
+        return (property, literal);
     }
 
     private static SldConversionDiagnostic Unsupported(string construct, string message, string? ruleName) => new()

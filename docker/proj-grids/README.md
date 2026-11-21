@@ -35,8 +35,8 @@ docker compose -f docker/proj-grids/compose.yml up -d --build
 To build the same base as the customer deployment:
 
 ```bash
-docker build --build-arg BASE_IMAGE=ghcr.io/honua-io/honua-server@sha256:d9df4cd19ac018b1e626d7c74a1400d7affb8de48dbe5ed67a862589c4e3d998 \
-  -t honua-postgis-proj-grids:17-honua-d9df4cd1 docker/proj-grids
+docker build --build-arg BASE_IMAGE=ghcr.io/honua-io/honua-server@sha256:e60f2e287f6bddfaa7e1ac0bab082f83580a6ba242a98d0933d55e1e577e6fa0 \
+  -t honua-postgis-proj-grids:17-honua-e60f2e28 docker/proj-grids
 ```
 
 ## Integration coverage
