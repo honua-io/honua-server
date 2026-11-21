@@ -11,11 +11,17 @@ internal static class AdminApiKeyPermission
 {
     public const string PermissionClaimType = "permission";
 
+    public const string OpsRead = "ops:read";
+
+    public const string OpsPropose = "ops:propose";
+
     private const string AdminGrantPrefix = "admin:";
     private const string OpsGrantPrefix = "ops:";
 
     // An ops-reader grant is outside the admin family and cannot mutate.
-    private static readonly string[] OpsReadGrants = ["ops:read", "ops:reader", "ops:*"];
+    private static readonly string[] OpsReadGrants = [OpsRead, "ops:reader", "ops:*"];
+
+    private static readonly string[] OpsProposeGrants = [OpsPropose, "ops:*"];
 
     private static readonly string[] FullAdminGrants = ["admin", "*", "admin:*"];
 
@@ -212,6 +218,32 @@ internal static class AdminApiKeyPermission
         }
 
         return false;
+    }
+
+    public static bool HasOpsProposeGrant(ClaimsPrincipal principal)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+
+        foreach (var trimmed in principal.FindAll(PermissionClaimType).Select(claim => claim.Value?.Trim()))
+        {
+            if (string.IsNullOrEmpty(trimmed))
+            {
+                continue;
+            }
+
+            if (OpsProposeGrants.Any(grant => string.Equals(trimmed, grant, StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static bool IsOpsProposeAuthorized(ClaimsPrincipal principal)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        return ResolveAccessLevel(principal) == AdminAccessLevel.Write || HasOpsProposeGrant(principal);
     }
 
     public static bool IsOpsReadAuthorized(ClaimsPrincipal principal, string? httpMethod)

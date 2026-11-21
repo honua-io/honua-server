@@ -104,6 +104,12 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
                 "Invalid zonal statistics inputs: 'zones' contained no features.");
         }
 
+        if (!TryExtractGeoJsonCrsName(zonesBytes, out var zonesCrsName, out var crsError))
+        {
+            Log.InvalidInputs(logger, job.OperationId, crsError);
+            return JobExecutionResult.Failed($"Invalid zonal statistics inputs: {crsError}");
+        }
+
         // Bound the cumulative per-zone work BEFORE the loop runs: each zone drives
         // its own clip + statistics subprocess pair, so an unbounded zone count
         // (or a handful of pathologically dense polygons) is a resource DoS even
@@ -199,7 +205,7 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
                 // and silently discard workspace.
                 var cutlinePath = Path.Join(workspace, $"cutline-{zoneIndex}.geojson");
                 var clippedPath = Path.Join(workspace, $"clipped-{zoneIndex}.tif");
-                var cutlineGeoJson = GdalRasterClipJobExecutor.WriteCutlineGeoJson(geometry);
+                var cutlineGeoJson = GdalRasterClipJobExecutor.WriteCutlineGeoJson(geometry, zonesCrsName);
                 await File.WriteAllTextAsync(cutlinePath, cutlineGeoJson, Encoding.UTF8, cancellationToken)
                     .ConfigureAwait(false);
 
@@ -499,6 +505,91 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
             writer.WriteEndObject();
         }
         return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    internal static bool TryExtractGeoJsonCrsName(
+        ReadOnlySpan<byte> geoJsonBytes,
+        out string? crsName,
+        out string error)
+    {
+        crsName = null;
+        error = "";
+
+        try
+        {
+            using var document = JsonDocument.Parse(geoJsonBytes.ToArray());
+            if (document.RootElement.ValueKind != JsonValueKind.Object
+                || !document.RootElement.TryGetProperty("crs", out var crsElement)
+                || crsElement.ValueKind == JsonValueKind.Null)
+            {
+                return true;
+            }
+
+            if (crsElement.ValueKind != JsonValueKind.Object
+                || !crsElement.TryGetProperty("properties", out var propertiesElement)
+                || propertiesElement.ValueKind != JsonValueKind.Object
+                || !propertiesElement.TryGetProperty("name", out var nameElement)
+                || nameElement.ValueKind != JsonValueKind.String)
+            {
+                return true;
+            }
+
+            var rawName = nameElement.GetString()?.Trim();
+            if (string.IsNullOrEmpty(rawName))
+            {
+                return true;
+            }
+
+            // Reject URLs, file paths, and control characters before GDAL parses the CRS.
+            if (rawName.Any(char.IsControl))
+            {
+                error = "'zones' crs.properties.name contains control characters.";
+                return false;
+            }
+
+            if (TryNormalizeUrnEpsg(rawName, out var epsgToken))
+            {
+                crsName = epsgToken;
+                return true;
+            }
+
+            if (!GdalSrsToken.IsValid(rawName))
+            {
+                error = "'zones' crs.properties.name is not an accepted CRS token.";
+                return false;
+            }
+
+            crsName = GdalSrsToken.Normalize(rawName);
+            return true;
+        }
+        catch (JsonException)
+        {
+            error = "'zones' could not be parsed as valid JSON.";
+            return false;
+        }
+    }
+
+    private static bool TryNormalizeUrnEpsg(string rawName, out string normalized)
+    {
+        normalized = "";
+        const string urnPrefix = "urn:ogc:def:crs:EPSG::";
+        if (rawName.StartsWith(urnPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var code = rawName[urnPrefix.Length..];
+            if (int.TryParse(code, NumberStyles.Integer, CultureInfo.InvariantCulture, out var epsg) && epsg > 0)
+            {
+                normalized = $"EPSG:{epsg.ToString(CultureInfo.InvariantCulture)}";
+                return true;
+            }
+        }
+
+        if (string.Equals(rawName, "urn:ogc:def:crs:OGC:1.3:CRS84", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = "OGC:CRS84";
+            return true;
+        }
+
+        return false;
     }
 
     private sealed record ZonalRow(

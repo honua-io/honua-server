@@ -11,6 +11,7 @@ using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Tiles;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Protocols.Zarr;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -44,6 +45,7 @@ public sealed class ZarrTileServiceAuthorizationTests
         await result.ExecuteAsync(context);
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        context.Response.Headers.WWWAuthenticate.ToArray().Should().Equal(AuthenticationChallenge.ApiKeyChallenge);
         await store.DidNotReceive().ListByLayerAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 

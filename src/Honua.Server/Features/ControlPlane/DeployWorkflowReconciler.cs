@@ -411,19 +411,20 @@ internal sealed partial class DeployWorkflowReconciler(
             var checkpointStaged = backend is ICheckpointedDeployBackend checkpointed &&
                 checkpointed.RequiresCheckpoint(current) && current.Deploy?.TrafficExposedAt is null;
             // When a progressive canary ramp is configured the current step must finish its
-            // bake window before the telemetry gate is evaluated. Holding here keeps each step
-            // independent of the operation-wide warmup window and preserves single-step behavior
-            // (the default) when no ramp is configured. A backend-recommended rollback bypasses
-            // the hold so provider-detected failures still settle promptly.
+            // bake window before advancing to the next step, while rollback health/telemetry
+            // signals still run so a degrading canary rolls back promptly instead of baking bad traffic.
+            WorkflowOperationRecord? rampBakeHold = null;
             if (!checkpointStaged && string.IsNullOrWhiteSpace(rollbackReason) && current.Deploy?.Protection == null &&
                 current.CurrentPhase != ICheckpointedDeployBackend.RampPhase)
             {
-                var rampBakeHold = GetCanaryRampBakeHold(current);
+                rampBakeHold = GetCanaryRampBakeHold(current);
                 if (rampBakeHold != null)
                 {
-                    return rampBakeHold;
+                    current = current with { Deploy = rampBakeHold.Deploy };
                 }
             }
+
+            var isBakingCanaryRamp = rampBakeHold != null;
 
             // Which signal must be satisfied before an auto-promotion (cutover) fires. Cloud targets
             // default to the telemetry gate; local Compose defaults to its own health gate so a
@@ -502,7 +503,8 @@ internal sealed partial class DeployWorkflowReconciler(
                 // A configured telemetry gate must clear (not rollback, not still waiting) before
                 // promotion — unless the operator pinned the manual gate, in which case only the admin
                 // promote endpoint may cut over.
-                if (!telemetryDecision.RollbackRecommended &&
+                if (!isBakingCanaryRamp &&
+                    !telemetryDecision.RollbackRecommended &&
                     !telemetryDecision.WaitForMoreTelemetry &&
                     promotionRecommended &&
                     (current.Status == WorkflowOperationStatus.Reconciling ||
@@ -520,6 +522,7 @@ internal sealed partial class DeployWorkflowReconciler(
                 // revision) is authoritative and drives the cutover. Cloud targets default to the
                 // telemetry gate and keep holding until telemetry is wired or an operator forces
                 // promotion; a backend-recommended rollback still short-circuits promotion.
+                !isBakingCanaryRamp &&
                 promotionGate == DeployPromotionGateMode.Health &&
                 string.IsNullOrWhiteSpace(rollbackReason) &&
                 promotionRecommended &&
@@ -529,6 +532,18 @@ internal sealed partial class DeployWorkflowReconciler(
                 current.Deploy?.Protection == null)
             {
                 current = await AdvanceOrPromoteAsync(current, backend, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (isBakingCanaryRamp && string.IsNullOrWhiteSpace(rollbackReason))
+            {
+                return current with
+                {
+                    Status = rampBakeHold!.Status,
+                    UpdatedAt = rampBakeHold.UpdatedAt,
+                    CompletedAt = null,
+                    CurrentPhase = rampBakeHold.CurrentPhase,
+                    ErrorMessage = null
+                };
             }
         }
 
@@ -736,7 +751,7 @@ internal sealed partial class DeployWorkflowReconciler(
             Status = WorkflowOperationStatus.ManualInterventionRequired,
             UpdatedAt = now,
             CompletedAt = now,
-            Deploy = deploy,
+            Deploy = WithProtectionPhase(deploy, DeployProtectionPhase.Unavailable, "rollback-observation-timeout"),
             CurrentPhase = $"Automatic rollback could not prove the requested prior revision within the {timeout.TotalSeconds:0}-second observation timeout and requires manual intervention. {detail}",
             ErrorMessage = $"Automatic rollback evidence remained incomplete after the {timeout.TotalSeconds:0}-second observation timeout: {detail}"
         };

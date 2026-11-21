@@ -52,7 +52,7 @@ public sealed partial class AwsEcsAlbDeployBackendTests
         var backend = CreateBackend(albClient, ecsClient);
 
         var observation = await backend.PromoteAsync(
-            CreateOperation(currentRevision: OtherFamilyTaskDefArn, parameters: CanaryParameters()));
+            CreateOperation(desiredRevision: OtherFamilyTaskDefArn, currentRevision: PreviousTaskDefArn, parameters: CanaryParameters()));
 
         observation.Status.Should().Be(WorkflowOperationStatus.Failed);
         observation.Message.Should().Be(AwsEcsAlbDeployBackend.RevisionOutsideServiceFamilyMessage);
@@ -67,10 +67,23 @@ public sealed partial class AwsEcsAlbDeployBackendTests
         var backend = CreateBackend(ecsClient: ecsClient);
 
         var observation = await backend.PromoteAsync(
-            CreateOperation(currentRevision: PreviousTaskDefArn, parameters: CanaryParameters()));
+            CreateOperation(desiredRevision: PreviousTaskDefArn, currentRevision: TaskDefArn, parameters: CanaryParameters()));
 
         observation.Status.Should().Be(WorkflowOperationStatus.Succeeded);
         ecsClient.LastUpdateTaskDefinitionArn.Should().Be(PreviousTaskDefArn);
+    }
+
+    [UnitTest]
+    public async Task PromoteAsync_TaskDefinitionRollout_UpdatesServiceToDesiredRevisionNotCurrentRevision()
+    {
+        var ecsClient = new StubAwsEcsClient();
+        var backend = CreateBackend(ecsClient: ecsClient);
+
+        var observation = await backend.PromoteAsync(
+            CreateOperation(desiredRevision: TaskDefArn, currentRevision: PreviousTaskDefArn, parameters: CanaryParameters()));
+
+        observation.Status.Should().Be(WorkflowOperationStatus.Succeeded);
+        ecsClient.LastUpdateTaskDefinitionArn.Should().Be(TaskDefArn);
     }
 
     [UnitTheory]

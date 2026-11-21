@@ -501,7 +501,8 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         Assert.Equal(401, (int)response.StatusCode);
         Assert.True(response.Headers.TryGetValues("WWW-Authenticate", out var challengeHeaders));
         Assert.Contains(challengeHeaders, value => value.Contains("ApiKey", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(challengeHeaders, value => value.Contains("Basic", StringComparison.OrdinalIgnoreCase));
+        // Basic is not offered on a transport where Basic credentials are refused.
+        Assert.DoesNotContain(challengeHeaders, value => value.Contains("Basic", StringComparison.OrdinalIgnoreCase));
         var content = await response.Content.ReadAsStringAsync();
         Assert.Contains("requires HTTPS", content);
     }

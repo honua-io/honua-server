@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
@@ -19,19 +20,18 @@ internal sealed class ManagedSpatialJoinExecutor(
 
     protected override string ProcessId => HandledProcessId;
 
-    protected override List<IFeature> Apply(
+    protected override async Task<List<IFeature>> ApplyAsync(
         FeatureCollection source,
         StepInputReader inputs,
+        IJobExecutionContext context,
         CancellationToken cancellationToken)
     {
         var predicate = ReadPredicate(inputs);
         var stats = ReadStatistics(inputs);
 
-        var joinUri = inputs.Require("join");
-        if (!FeatureCollectionArtifact.TryParseDataUri(joinUri, out var joinFeatures, out var joinError, _options.CurrentValue.MaxArtifactBytes))
-        {
-            throw new TransformInputException($"'join' {joinError}");
-        }
+        var opts = _options.CurrentValue;
+        var joinFeatures = await OverlayExecutorSupport.ReadLayerAsync(
+            inputs, "join", opts.MaxArtifactBytes, opts.OutputRootDirectory, context, cancellationToken).ConfigureAwait(false);
 
         var index = BuildIndex(joinFeatures, cancellationToken);
 

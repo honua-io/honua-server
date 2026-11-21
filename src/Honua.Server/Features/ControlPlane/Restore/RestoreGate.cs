@@ -29,6 +29,8 @@ internal sealed class RestoreCellOptions
 
     public string EnvironmentTag { get; set; } = "cert";
 
+    public List<string> AllowedEnvironmentTags { get; set; } = ["cert", "demo", "staging", "prod", "production"];
+
     // This URL must return HTTP 200 and a non-empty body after the prior image is up.
     public string CustomerProbeUrl { get; set; } = string.Empty;
 
@@ -299,8 +301,12 @@ internal sealed class PreMigrationRestoreExecutionService(
         CancellationToken cancellationToken)
     {
         var options = restoreOptions.Value;
+        var allowedTags = options.AllowedEnvironmentTags is { Count: > 0 }
+            ? options.AllowedEnvironmentTags
+            : ["cert", "demo", "staging", "prod", "production"];
         if (!RestoreCellScope.IsBoundedPrefix(options.CellPrefix)
-            || options.EnvironmentTag is not ("cert" or "demo")
+            || string.IsNullOrWhiteSpace(options.EnvironmentTag)
+            || !allowedTags.Any(tag => string.Equals(tag, options.EnvironmentTag, StringComparison.OrdinalIgnoreCase))
             || !SecretInCell(options.ConnectionSecretId, options.CellPrefix)
             || !BackupEvidenceVerifier.InstanceInCell(options.DbSubnetGroupName, options.CellPrefix)
             || options.CellPrefix.TrimEnd('-').Length > 38

@@ -63,8 +63,9 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 Param("wkb", "Input Geometry", "Geometry to buffer as base64-encoded WKB.", ProcessParameterValueType.Wkb, required: true),
                 Param("srid", "Spatial Reference", "SRID of the input geometry.", ProcessParameterValueType.Srid, required: true),
-                Param("distance", "Buffer Distance", "Buffer distance in the input geometry's coordinate units (planar). For a geographic (degree) SRID the distance is in degrees, not meters; project to a metric CRS first for a metric buffer. Must be a finite number greater than zero.", ProcessParameterValueType.FloatingPoint, required: true),
-                Param("geodesic", "Geodesic", "Use geodesic (geography-based) buffering. Not yet supported: submitting geodesic=true is rejected at plan validation.", ProcessParameterValueType.Flag, defaultValue: "false"),
+                Param("distance", "Buffer Distance", "Buffer distance in the input geometry's coordinate units (planar) or in the requested linear unit when geodesic=true. Must be a finite number greater than zero.", ProcessParameterValueType.FloatingPoint, required: true),
+                Param("geodesic", "Geodesic", "Use geodesic buffering on geographic coordinates instead of planar CRS-unit buffering.", ProcessParameterValueType.Flag, defaultValue: "false"),
+                Param("unit", "Distance Unit", "Optional linear unit for geodesic buffering (meters, kilometers, feet, yards, miles, nautical-miles).", ProcessParameterValueType.Text),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
@@ -169,12 +170,14 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         {
             ProcessId = "geometry.area",
             Title = "Area",
-            Description = "Computes the planar (Cartesian) area of a polygon geometry in the square of the input SRID's coordinate units. No geodesic conversion is performed: a geographic (degree) input yields area in squared degrees, not square meters — project to a metric CRS first for square-meter area.",
+            Description = "Computes the planar or geodesic area of a polygon geometry.",
             Category = "geometry",
             Parameters =
             [
                 Param("wkb", "Input Geometry", "Polygon geometry as base64-encoded WKB.", ProcessParameterValueType.Wkb, required: true),
                 Param("srid", "Spatial Reference", "SRID of the input geometry.", ProcessParameterValueType.Srid, required: true),
+                Param("geodesic", "Geodesic", "Compute geodesic area on the WGS84 ellipsoid when true.", ProcessParameterValueType.Flag, defaultValue: "false"),
+                Param("unit", "Area Unit", "Optional output area unit for geodesic calculations (square-meters, square-kilometers, hectares, acres, square-feet, square-miles).", ProcessParameterValueType.Text),
             ],
             OutputArtifactKinds = [ArtifactKind.Scalar]
         },
@@ -182,12 +185,14 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         {
             ProcessId = "geometry.length",
             Title = "Length",
-            Description = "Computes the planar (Cartesian) length of a line geometry (or perimeter of a polygon) in the input SRID's coordinate units. No geodesic conversion is performed: a geographic (degree) input yields length in degrees, not meters — project to a metric CRS first for a length in meters.",
+            Description = "Computes the planar or geodesic length of a line geometry (or perimeter of a polygon).",
             Category = "geometry",
             Parameters =
             [
                 Param("wkb", "Input Geometry", "Line geometry as base64-encoded WKB.", ProcessParameterValueType.Wkb, required: true),
                 Param("srid", "Spatial Reference", "SRID of the input geometry.", ProcessParameterValueType.Srid, required: true),
+                Param("geodesic", "Geodesic", "Compute geodesic length on the WGS84 ellipsoid when true.", ProcessParameterValueType.Flag, defaultValue: "false"),
+                Param("unit", "Length Unit", "Optional output linear unit for geodesic calculations (meters, kilometers, feet, yards, miles, nautical-miles).", ProcessParameterValueType.Text),
             ],
             OutputArtifactKinds = [ArtifactKind.Scalar]
         },

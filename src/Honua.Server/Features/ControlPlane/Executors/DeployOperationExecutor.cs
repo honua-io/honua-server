@@ -55,15 +55,34 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
             $"revision: {planResult.Spec.CurrentRevision ?? "(unknown)"} -> {planResult.Spec.DesiredRevision}",
         };
 
-        if (payload.Rollback && !string.IsNullOrWhiteSpace(payload.BackupId))
+        if (payload.Rollback)
         {
-            diff.Add($"backup: {payload.BackupId}");
+            diff.Add("rollback: true");
+            if (!string.IsNullOrWhiteSpace(payload.BackupId))
+            {
+                diff.Add($"backup: {payload.BackupId}");
+            }
+        }
+
+        if (payload.ParameterOverrides is { Count: > 0 })
+        {
+            foreach (var entry in payload.ParameterOverrides.OrderBy(static pair => pair.Key, StringComparer.Ordinal))
+            {
+                var displayValue = AdminConfigOperationExecutor.IsSensitiveParameterName(entry.Key)
+                    ? "[REDACTED]"
+                    : entry.Value;
+                diff.Add($"param.{entry.Key}: {displayValue}");
+            }
         }
 
         var dryRun = new List<string>();
         if (planResult.Plan.RequiresOutOfBandMigrations) dryRun.Add("requires out-of-band migrations");
-        if (payload.Rollback && !string.IsNullOrWhiteSpace(payload.BackupId))
-            dryRun.Add($"Verify backup {payload.BackupId}; restore it before starting the prior revision when required by reader compatibility.");
+        if (payload.Rollback)
+        {
+            dryRun.Add(string.IsNullOrWhiteSpace(payload.BackupId)
+                ? $"Execute rollback deploy of {planResult.Target.TargetId} to prior revision {planResult.Spec.DesiredRevision}."
+                : $"Verify backup {payload.BackupId}; restore it before starting the prior revision when required by reader compatibility.");
+        }
 
         return new OperationProposalPlan
         {

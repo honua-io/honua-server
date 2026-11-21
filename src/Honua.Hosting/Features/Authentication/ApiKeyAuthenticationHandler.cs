@@ -21,13 +21,12 @@ internal sealed class ApiKeyAuthenticationHandler(
     UrlEncoder encoder,
     ApiKeyAuthenticationDependencies dependencies) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
-    private const string ApiKeyHeader = "X-API-Key";
+    private const string ApiKeyHeader = AuthenticationChallenge.ApiKeyHeader;
     private const string AuthorizationHeader = "Authorization";
     private const string BasicSchemePrefix = "Basic ";
     private const string ApiKeySchemePrefix = "ApiKey ";
     private const string AdminPasswordEnvVar = "HONUA_ADMIN_PASSWORD";
     private const string AuthFailureMessageKey = "AuthFailureMessage";
-    private const string AuthRealm = "Honua Admin";
     private const string AdminAuthenticationNotConfigured = "Admin authentication not configured";
     private const string RequestNotPermittedMessage = "This API key is not permitted from this origin or network.";
     private const string SourceRefusedMessage = "Too many failed authentication attempts from this source";
@@ -655,11 +654,7 @@ internal sealed class ApiKeyAuthenticationHandler(
             return TooManyAttemptsResponse.Create(Context, retryAfter).ExecuteAsync(Context);
         }
 
-        Response.Headers.Append("WWW-Authenticate", $"ApiKey realm=\"{AuthRealm}\", header=\"{ApiKeyHeader}\"");
-        if (_authOptions.EnableBasicAuthCompatibility)
-        {
-            Response.Headers.Append("WWW-Authenticate", $"Basic realm=\"{AuthRealm}\", charset=\"UTF-8\"");
-        }
+        AuthenticationChallenge.AppendCredentialChallenges(Context, _authOptions);
 
         // Check if there's a specific failure message from authentication
         string? failureMessage = Context.Items[AuthFailureMessageKey] as string;

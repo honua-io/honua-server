@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
@@ -102,6 +104,46 @@ public sealed class SecureConnectionResolverErrorSanitizationTests
 
         (await resolver.ResolveConnectionStringAsync(connection.Name)).Should().Be(resolved);
         inner.Requested.Should().Equal("env:HONUA_TEST_LISTED_CONNECTION");
+    }
+
+    [SecurityTest]
+    [Fact]
+    public async Task ResolveConnectionStringAsync_TenantScopedConnection_RejectsCrossTenantAndAllowsMatchingTenant()
+    {
+        const string resolved = "Host=db.example.com;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require";
+        var connection = DataConnection.CreateWithSecretReference(
+            name: "tenant-a-warehouse",
+            host: "db.example.com",
+            port: 5432,
+            databaseName: "analytics",
+            username: "app",
+            secretRef: "env:HONUA_TEST_LISTED_CONNECTION",
+            secretType: "environment",
+            createdBy: "test");
+        connection.TenantId = "tenant-a";
+
+        var inner = new RecordingConnectionSecretResolver { Value = resolved };
+        var resolver = new SecureConnectionResolver(
+            new StubRegistry(connection),
+            new StubEncryptionService(),
+            new RequestSecretReferenceResolver(
+                inner,
+                new RequestSecretReferenceOptions { AllowedEnvironmentVariables = ["HONUA_TEST_LISTED_CONNECTION"] },
+                NullLogger<RequestSecretReferenceResolver>.Instance),
+            NullLogger<SecureConnectionResolver>.Instance);
+
+        using (JobSecurityScope.Begin(new JobSecurityContext("user-b", "tenant-b", [])))
+        {
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+                resolver.ResolveConnectionStringAsync(connection.Name));
+        }
+
+        inner.Requested.Should().BeEmpty();
+
+        using (JobSecurityScope.Begin(new JobSecurityContext("user-a", "tenant-a", [])))
+        {
+            (await resolver.ResolveConnectionStringAsync(connection.Name)).Should().Be(resolved);
+        }
     }
 
     private sealed class RecordingConnectionSecretResolver : IConnectionSecretResolver
