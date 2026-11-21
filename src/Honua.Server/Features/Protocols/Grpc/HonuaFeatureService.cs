@@ -1094,12 +1094,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         query = query with { OutputSrid = outputSrid };
 
         var responseSpatialReference = outputSrid.HasValue
-            ? SpatialReference.Create(
-                outputSrid.Value,
-                request.OutSr?.LatestWkid > 0 ? request.OutSr.LatestWkid : null,
-                vcsWkid: null,
-                latestVcsWkid: null,
-                wkt: string.IsNullOrWhiteSpace(request.OutSr?.Wkt) ? null : request.OutSr!.Wkt)
+            ? BuildResponseSpatialReference(request.OutSr, outputSrid.Value)
             : layer.SpatialReference;
 
         var (projected, attributeHiddenFields) = WithGlobalIdField(
@@ -1210,6 +1205,23 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         }
     }
 
+    private static SpatialReference BuildResponseSpatialReference(
+        Proto.SpatialReference? requestedOutSr,
+        int outputSrid)
+    {
+        var wkid = requestedOutSr?.Wkid is > 0 and var requestedWkid
+            && SpatialReferenceExtensions.NormalizeWebMercatorSrid(requestedWkid) == outputSrid
+            ? requestedWkid
+            : outputSrid;
+        var wkt = string.IsNullOrWhiteSpace(requestedOutSr?.Wkt) ? null : requestedOutSr.Wkt;
+        return SpatialReference.Create(
+            wkid,
+            outputSrid,
+            vcsWkid: null,
+            latestVcsWkid: null,
+            wkt: wkt);
+    }
+
     private async Task<int?> ResolveSpatialReferenceSridAsync(Proto.SpatialReference? spatialReference, CancellationToken cancellationToken)
     {
         if (spatialReference == null)
@@ -1217,18 +1229,11 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             return null;
         }
 
-        if (spatialReference.LatestWkid > 0)
+        var wkid = GrpcConversionHelpers.TryResolveOutputSrid(spatialReference);
+        if (wkid.HasValue)
         {
             return await _spatialReferenceResolver.ResolveSridAsync(
-                spatialReference.LatestWkid.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                geometrySpatialReference: null,
-                cancellationToken).ConfigureAwait(false);
-        }
-
-        if (spatialReference.Wkid > 0)
-        {
-            return await _spatialReferenceResolver.ResolveSridAsync(
-                spatialReference.Wkid.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                wkid.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 geometrySpatialReference: null,
                 cancellationToken).ConfigureAwait(false);
         }

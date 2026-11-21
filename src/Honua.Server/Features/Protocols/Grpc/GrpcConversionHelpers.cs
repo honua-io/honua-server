@@ -164,14 +164,14 @@ internal static class GrpcConversionHelpers
             return null;
         }
 
-        if (spatialReference.Wkid > 0)
-        {
-            return spatialReference.Wkid;
-        }
-
         if (spatialReference.LatestWkid > 0)
         {
             return spatialReference.LatestWkid;
+        }
+
+        if (spatialReference.Wkid > 0)
+        {
+            return spatialReference.Wkid;
         }
 
         return null;
@@ -763,19 +763,7 @@ internal static class GrpcConversionHelpers
     }
 
     private static int? ResolveSpatialFilterSrid(Proto.SpatialReference? spatialReference)
-    {
-        if (spatialReference == null)
-        {
-            return null;
-        }
-
-        if (spatialReference.Wkid > 0)
-        {
-            return spatialReference.Wkid;
-        }
-
-        return spatialReference.LatestWkid > 0 ? spatialReference.LatestWkid : null;
-    }
+        => TryResolveOutputSrid(spatialReference);
 
     private static void TryProjectGeometryCollection(GeometryCollection collection, Proto.Geometry proto)
     {
