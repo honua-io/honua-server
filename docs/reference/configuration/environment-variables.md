@@ -76,8 +76,8 @@ Provider capabilities and versions: [data sources](data-sources/README.md).
 | `Authentication__PortalToken__OAuth2__AllowedRedirectUris__N` | — (empty rejects all) | Redirect-URI allow-list for the GeoServices REST Portal OAuth2 bridge. |
 | `Authentication__PortalToken__OAuth2__RequirePkce` | `true` | Require PKCE on every authorization-code flow. |
 | `Authentication__PortalToken__OAuth2__RotateRefreshTokens` | `true` | Rotate refresh tokens on each use. |
-| `SecurityHeaders__EnableHsts` | — | Emit HSTS headers (recommended `true` in production). |
-| `SecurityHeaders__HstsMaxAge` | — | HSTS max-age in seconds (e.g. `31536000`). |
+| `SecurityHeaders__EnableHsts` | `true` (`false` in Development/Test) | Emit HSTS headers. |
+| `SecurityHeaders__HstsMaxAge` | `63072000` | HSTS max-age in seconds (2 years; minimum `86400` when HSTS is enabled). |
 | `Honua__SceneAccessSigning__SigningKey` | — | HMAC-SHA256 key for protected 3D Tiles scene access envelopes; required when any scene has an `AccessPolicy`. |
 | `Honua__SceneAccessSigning__TokenTtlMinutes` | `15` | Scene access token lifetime. |
 | `Honua__SceneAccessSigning__RefreshAfterFractionOfTtl` | `0.5` | Fraction of the TTL after which clients should refresh. |
@@ -412,12 +412,6 @@ first.
 `StudioAiProxy__MaxRequestBytes` (`1048576`) separately caps the HTTP body
 size, and oversized bodies get HTTP 413.
 
-## Related pages
-
-- [Data sources](data-sources/README.md) — provider capability matrix and per-provider configuration.
-- [PostGIS configuration](data-sources/postgis.md) — connection strings, extensions, managed-Postgres notes.
-- [OpenAPI and the API explorer](../openapi-and-explorer.md) — `/docs` and the runtime spec endpoints.
-
 ### GeoParquet query memory budgets
 
 GeoServices `f=parquet` and OData `$format=parquet` share the configured
@@ -481,3 +475,9 @@ identity and ledger; switching from the retired cache backend requires an
 explicit migration plan for outstanding invocations and charged history.
 See [AI invocation admission](ai-execution-admission.md) for policy fields,
 typed initialize/update/stop/resume controls and migration. Missing authority denies model calls.
+
+## Related pages
+
+- [Data sources](data-sources/README.md) — provider capability matrix and per-provider configuration.
+- [PostGIS configuration](data-sources/postgis.md) — connection strings, extensions, managed-Postgres notes.
+- [OpenAPI and the API explorer](../openapi-and-explorer.md) — `/docs` and the runtime spec endpoints.
