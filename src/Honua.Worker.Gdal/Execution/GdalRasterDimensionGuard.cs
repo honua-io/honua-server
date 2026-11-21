@@ -343,8 +343,9 @@ internal static class GdalRasterDimensionGuard
             var b = (int)(entriesStart + i * EntrySize);
             int tag = ReadU16(data, b, little);
             int type = ReadU16(data, b + 2, little);
+            long count = ReadU32(data, b + 4, little);
             var valueFieldOffset = b + 8; // 4-byte value/offset field
-            AssignTag(data, little, tag, type, valueFieldOffset, valueInlineWidth: 4,
+            AssignTag(data, little, tag, type, count, valueFieldOffset, valueInlineWidth: 4,
                 ref width, ref height, ref samples, ref bits);
         }
 
@@ -389,8 +390,10 @@ internal static class GdalRasterDimensionGuard
             var b = (int)(entriesStart + i * EntrySize);
             int tag = ReadU16(data, b, little);
             int type = ReadU16(data, b + 2, little);
+            var countRaw = ReadU64(data, b + 4, little);
+            long count = countRaw > long.MaxValue ? long.MaxValue : (long)countRaw;
             var valueFieldOffset = b + 12; // 8-byte value/offset field
-            AssignTag(data, little, tag, type, valueFieldOffset, valueInlineWidth: 8,
+            AssignTag(data, little, tag, type, count, valueFieldOffset, valueInlineWidth: 8,
                 ref width, ref height, ref samples, ref bits);
         }
 
@@ -402,6 +405,7 @@ internal static class GdalRasterDimensionGuard
         bool little,
         int tag,
         int type,
+        long count,
         int valueFieldOffset,
         int valueInlineWidth,
         ref long width,
@@ -430,19 +434,33 @@ internal static class GdalRasterDimensionGuard
                 }
                 break;
             case TagBitsPerSample:
-                // BitsPerSample has one entry per sample. When it fits inline the
-                // first value is at the value field; when it is stored out-of-line
-                // the value field holds an offset to the SHORT array. Read the
-                // first element either way — bands are effectively homogeneous.
+                // BitsPerSample stores count SHORT entries (count * 2 bytes). When the full
+                // array exceeds valueInlineWidth, the field holds a file offset to the array.
                 if (type == TypeShort)
                 {
-                    var arrayWidth = 2; // SHORT
-                    var readAt = arrayWidth <= valueInlineWidth
+                    var sampleCount = count > 0 ? count : 1L;
+                    var fitsInline = sampleCount <= valueInlineWidth / 2;
+                    long readAtLong = fitsInline
                         ? valueFieldOffset
-                        : (int)ReadOffset(data, little, valueFieldOffset, valueInlineWidth);
-                    if (readAt >= 0 && readAt + 2 <= data.Length)
+                        : ReadOffset(data, little, valueFieldOffset, valueInlineWidth);
+                    if (readAtLong >= 0 && readAtLong + 2 <= data.Length)
                     {
-                        bits = ReadU16(data, readAt, little);
+                        var readAt = (int)readAtLong;
+                        var toRead = (int)Math.Min(sampleCount, Math.Min(512L, (data.Length - readAt) / 2L));
+                        long maxBits = 0;
+                        for (var idx = 0; idx < toRead; idx++)
+                        {
+                            var sampleBits = ReadU16(data, readAt + idx * 2, little);
+                            if (sampleBits > maxBits)
+                            {
+                                maxBits = sampleBits;
+                            }
+                        }
+
+                        if (maxBits > 0)
+                        {
+                            bits = maxBits;
+                        }
                     }
                 }
                 break;

@@ -469,7 +469,7 @@ public sealed class ProcessCatalogTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    public void Validator_GeometryBuffer_GeodesicTrue_RejectsPlan()
+    public void Validator_GeometryBuffer_GeodesicTrue_AllowsPlan()
     {
         var plan = CreateSingleStepPlan(
             "geometry.buffer",
@@ -483,9 +483,7 @@ public sealed class ProcessCatalogTests
 
         var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
 
-        violations.Should().Contain(v =>
-            v.FieldPath == "steps[s1].inputs.geodesic" &&
-            v.Message.Contains("geodesic buffering is not yet supported", StringComparison.OrdinalIgnoreCase));
+        violations.Should().BeEmpty();
     }
 
     [UnitTest]

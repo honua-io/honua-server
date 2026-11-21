@@ -182,7 +182,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         List<IFeature> output;
         try
         {
-            output = await ApplyCoreAsync(new LayerOpContext(features, source, scope.ServiceProvider), inputs, cancellationToken)
+            output = await ApplyCoreAsync(new LayerOpContext(features, source, scope.ServiceProvider, request), inputs, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (TransformInputException ex)
@@ -251,11 +251,12 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
 
     private protected readonly struct LayerOpContext
     {
-        public LayerOpContext(List<IFeature> features, IDagFeatureSource layerSource, IServiceProvider services)
+        public LayerOpContext(List<IFeature> features, IDagFeatureSource layerSource, IServiceProvider services, DagSourceRequest request)
         {
             Features = features;
             LayerSource = layerSource;
             Services = services;
+            Request = request;
         }
 
         public List<IFeature> Features { get; }
@@ -263,6 +264,8 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         public IDagFeatureSource LayerSource { get; }
 
         public IServiceProvider Services { get; }
+
+        public DagSourceRequest Request { get; }
     }
 
     // Size is charged before the geometry is parsed so an oversized feature is never materialized past its budget.
@@ -277,7 +280,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         long? maxInputBytes = null,
         int? maxTotalVertices = null)
     {
-        var geoJsonReader = new GeoJsonReader();
+        var geoJsonReader = GeoJsonArtifactCodec.CreateReader(request.OutputSrid ?? 0);
         var features = new List<IFeature>();
         long inputBytes = 0;
         long totalVertices = 0;

@@ -95,8 +95,14 @@ internal static class GdalOutputGridGuard
             return false;
         }
 
-        // No derivable ground extent → nothing to bound on the resolution axis; admit.
-        if (!IsPositiveFinite(extentX) || !IsPositiveFinite(extentY))
+        if (!double.IsFinite(extentX) || !double.IsFinite(extentY))
+        {
+            error = "input extent must be finite";
+            return false;
+        }
+
+        // A zero/degenerate finite extent (single point or empty envelope) has no span to bound.
+        if (extentX <= 0d || extentY <= 0d)
         {
             return true;
         }
@@ -106,13 +112,13 @@ internal static class GdalOutputGridGuard
         double width = Math.Ceiling(extentX / cellSizeX);
         double height = Math.Ceiling(extentY / cellSizeY);
 
-        if (width > options.MaxRasterWidth)
+        if (!double.IsFinite(width) || width > options.MaxRasterWidth)
         {
             error = $"derived output grid width {Format(width)} (input extent {Format(extentX)} ÷ target cell size {Format(cellSizeX)}) exceeds configured MaxRasterWidth={options.MaxRasterWidth.ToString(CultureInfo.InvariantCulture)}";
             return false;
         }
 
-        if (height > options.MaxRasterHeight)
+        if (!double.IsFinite(height) || height > options.MaxRasterHeight)
         {
             error = $"derived output grid height {Format(height)} (input extent {Format(extentY)} ÷ target cell size {Format(cellSizeY)}) exceeds configured MaxRasterHeight={options.MaxRasterHeight.ToString(CultureInfo.InvariantCulture)}";
             return false;

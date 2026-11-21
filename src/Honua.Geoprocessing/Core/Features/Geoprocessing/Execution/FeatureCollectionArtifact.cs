@@ -86,7 +86,8 @@ internal static class FeatureCollectionArtifact
 
         try
         {
-            var reader = GeoJsonArtifactCodec.CreateReader();
+            var srid = ResolveJsonSpatialReferenceSrid(json);
+            var reader = GeoJsonArtifactCodec.CreateReader(srid);
             var parsed = reader.Read<FeatureCollection>(json);
             if (parsed is null)
             {
@@ -202,5 +203,45 @@ internal static class FeatureCollectionArtifact
                 writer.WriteString(name, value?.ToString() ?? string.Empty);
                 break;
         }
+    }
+
+    private static int ResolveJsonSpatialReferenceSrid(string json)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        if (document.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object)
+        {
+            return 4326;
+        }
+
+        if (document.RootElement.TryGetProperty(FeatureArtifactSpatialReference.MemberName, out var spatialRef)
+            && spatialRef.ValueKind == System.Text.Json.JsonValueKind.Object)
+        {
+            if (TryReadPositiveSrid(spatialRef, "srid", out var srid)
+                || TryReadPositiveSrid(spatialRef, "wkid", out srid))
+            {
+                return srid;
+            }
+        }
+
+        if (TryReadPositiveSrid(document.RootElement, "srid", out var topLevelSrid))
+        {
+            return topLevelSrid;
+        }
+
+        return 4326;
+    }
+
+    private static bool TryReadPositiveSrid(System.Text.Json.JsonElement obj, string propertyName, out int srid)
+    {
+        if (obj.TryGetProperty(propertyName, out var element)
+            && element.ValueKind == System.Text.Json.JsonValueKind.Number
+            && element.TryGetInt32(out srid)
+            && srid > 0)
+        {
+            return true;
+        }
+
+        srid = 0;
+        return false;
     }
 }

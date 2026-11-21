@@ -69,7 +69,7 @@ internal static class JobEndpoints
             .AllowAnonymous();
     }
 
-    private static async Task<IResult> GetJobList(
+    internal static async Task<IResult> GetJobList(
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
         IOptions<OgcProcessesOptions> options,
@@ -124,7 +124,10 @@ internal static class JobEndpoints
                     [
                         ExecutionJobStatus.Queued,
                         ExecutionJobStatus.Provisioning,
-                        ExecutionJobStatus.Running
+                        ExecutionJobStatus.Running,
+                        ExecutionJobStatus.Succeeded,
+                        ExecutionJobStatus.Failed,
+                        ExecutionJobStatus.Cancelled
                     ]
                 },
                 context.User,
@@ -140,6 +143,11 @@ internal static class JobEndpoints
         var statusInfosBuilder = ImmutableArray.CreateBuilder<OgcStatusInfo>();
         foreach (var job in page.Items)
         {
+            if (job.Spec.Kind != ExecutionJobKind.Geoprocessing)
+            {
+                continue;
+            }
+
             var jobAuthDecision = await gate.CheckAuthorizationAsync(
                 context.User,
                 new OperatorAuthorizationRequest

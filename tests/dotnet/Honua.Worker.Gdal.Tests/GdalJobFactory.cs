@@ -74,6 +74,9 @@ internal static class GdalJobFactory
         });
     }
 
+    public static IOptionsMonitor<GdalWorkerOptions> OptionsMonitor(GdalWorkerOptions value)
+        => new StaticOptionsMonitor<GdalWorkerOptions>(value);
+
     public static IOptionsMonitor<GeoprocessingOutputStagingOptions> StagingOptions()
         => new StaticOptionsMonitor<GeoprocessingOutputStagingOptions>(new GeoprocessingOutputStagingOptions
         {
