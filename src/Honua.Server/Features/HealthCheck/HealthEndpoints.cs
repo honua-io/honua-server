@@ -13,7 +13,6 @@ using Honua.Infrastructure.Middleware;
 
 namespace Honua.Server.Features.HealthCheck;
 
-
 internal static class HealthEndpoints
 {
     private static readonly string[] NonGetMethods =

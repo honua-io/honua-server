@@ -46,6 +46,15 @@ public sealed class EditorConfigPolicyTests
         var editorConfigPath = ArchitectureTestHelpers.CombinePath(repositoryRoot, ".editorconfig");
         File.Exists(editorConfigPath).Should().BeTrue();
 
+        var (globalKeys, misplaced) = InspectGlobalCSharpRules(editorConfigPath);
+
+        misplaced.Should().BeEmpty(
+            "global C#/.NET coding conventions and analyzer severities must sit under [*.cs], not under a path-specific override");
+        globalKeys.Should().Contain(ExpectedGlobalCSharpRules);
+    }
+
+    private static (HashSet<string> GlobalKeys, List<string> Misplaced) InspectGlobalCSharpRules(string editorConfigPath)
+    {
         var misplaced = new List<string>();
         var globalKeys = new HashSet<string>(StringComparer.Ordinal);
         string? currentSection = null;
@@ -76,17 +85,20 @@ public sealed class EditorConfigPolicyTests
             if (string.Equals(currentSection, "[*.cs]", StringComparison.Ordinal))
             {
                 globalKeys.Add(key);
-                continue;
             }
-
-            if (GlobalRulePrefixes.Any(prefix => key.StartsWith(prefix, StringComparison.Ordinal)))
+            else if (FormatMisplacedRule(key, currentSection, lineNumber) is { } violation)
             {
-                misplaced.Add($"line {lineNumber}: '{key}' sits under '{currentSection ?? "<root>"}' instead of '[*.cs]'");
+                misplaced.Add(violation);
             }
         }
 
-        misplaced.Should().BeEmpty(
-            "global C#/.NET coding conventions and analyzer severities must sit under [*.cs], not under a path-specific override");
-        globalKeys.Should().Contain(ExpectedGlobalCSharpRules);
+        return (globalKeys, misplaced);
+    }
+
+    private static string? FormatMisplacedRule(string key, string? currentSection, int lineNumber)
+    {
+        return GlobalRulePrefixes.Any(prefix => key.StartsWith(prefix, StringComparison.Ordinal))
+            ? $"line {lineNumber}: '{key}' sits under '{currentSection ?? "<root>"}' instead of '[*.cs]'"
+            : null;
     }
 }

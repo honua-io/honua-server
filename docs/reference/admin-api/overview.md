@@ -23,7 +23,7 @@ All admin endpoints require authentication except the sign-in endpoints under `/
 | Form packages and submissions | `/api/v1/admin/forms`, `/api/v1/forms` | [Forms](forms.md) |
 | Deploy operations and rollback | `/api/v1/admin/deploy` | [Upgrade and rollback](../../guides/deploy/upgrade-and-rollback.md) |
 | Operations, observability, customer alerts (Preview) | `/api/v1/admin/observability`, `/api/v1/admin/alerts` | [Monitoring](../../guides/deploy/monitoring.md), [Operating Honua](../../guides/operate/README.md) |
-| 3D scene registry and generation (Experimental; opt-in via `serve.i3s-scene`, returns `404` when disabled) | `/api/v1/admin/scenes` | [Publish 3D scenes](../../guides/publish/publish-3d-scenes.md) |
+| 3D scene registry and generation (Experimental; opt-in via `scene.catalog` / `serve.3d-tiles-scene`, returns `404` when disabled) | `/api/v1/admin/scenes` | [Publish 3D scenes](../../guides/publish/publish-3d-scenes.md) |
 | Runtime configuration reference | `/api/v1/admin/config` | [Environment variables](../configuration/environment-variables.md) |
 
 Console control-plane surfaces (`/api/v1/console/*`, including workflow packages) use the same admin authorization posture.
