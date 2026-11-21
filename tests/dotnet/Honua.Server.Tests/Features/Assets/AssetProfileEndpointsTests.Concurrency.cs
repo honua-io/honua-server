@@ -20,7 +20,7 @@ public sealed partial class AssetProfileEndpointsTests
     {
         var request = ProfileRequest(Guid.NewGuid());
         var responses = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ =>
-            _fixture.Client.PostAsJsonAsync(ProfilesPath, request, AssetsJsonContext.Default.AssetProfileWriteRequest)));
+            _fixture.Client.PostAsJsonAsync("/api/v1/assets/profiles", request, AssetsJsonContext.Default.AssetProfileWriteRequest)));
 
         responses.Should().OnlyContain(response => response.StatusCode == HttpStatusCode.Created);
         var bodies = await Task.WhenAll(responses.Select(AssetTestData.ReadJsonAsync));
