@@ -75,6 +75,14 @@ transaction that commits before the claim statement, on the same managed connect
 lease. This adds no background service or connection pool. A competing publisher
 does not block the claim; cancellation or publication failure releases the lease.
 
+The dispatcher paces itself (#9064): empty passes back off from
+`IdlePollIntervalMs` (1 s) to `MaxIdlePollIntervalMs` (10 s), and a local outbox
+write returns it to the short interval. Publication takes two passes (fence, then
+publish), so on an idle cluster the published prefix can trail a write by about
+twice `MaxIdlePollIntervalMs`, longer for writes from processes that run no
+dispatcher. Recheck this bound, or wake the publisher on commit, before
+activating the horizon.
+
 Snapshot xmin can also be held back by transactions in other databases on the same
 PostgreSQL cluster. This conservatively delays publication; measure that lag under
 the deployed workload before activating the horizon. The driver does not replace
