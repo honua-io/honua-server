@@ -107,10 +107,12 @@ internal sealed partial class GeoServerImportService
             .OrderBy(static code => code, StringComparer.Ordinal)
             .ToArray();
 
+        var holdForReview = security.RequiresManualReview
+            && string.Equals(step.Disposition, "ready", StringComparison.Ordinal);
         return (step with
         {
-            Disposition = security.RequiresManualReview ? "manual-review" : step.Disposition,
-            Action = security.RequiresManualReview ? "manual-review" : step.Action,
+            Disposition = holdForReview ? "manual-review" : step.Disposition,
+            Action = holdForReview ? "manual-review" : step.Action,
             ReviewCodes = reviewCodes,
             StyleDiffs = styleDiff.Diffs.Length > 0 ? styleDiff.Diffs : null,
             SecurityRules = security.Dispositions.Length > 0 ? security.Dispositions : null

@@ -109,7 +109,7 @@ internal static class GeoServerStyleDiffBuilder
         var conversion = sldConverter.Convert(sldContent);
         foreach (var warning in conversion.Warnings)
         {
-            if (!acc.Warnings.Contains(warning, StringComparison.Ordinal))
+            if (!acc.Warnings.Contains(warning))
             {
                 acc.Warnings.Add(warning);
             }
@@ -119,7 +119,7 @@ internal static class GeoServerStyleDiffBuilder
 
         foreach (var error in conversion.Errors)
         {
-            if (!acc.Errors.Contains(error, StringComparison.Ordinal))
+            if (!acc.Errors.Contains(error))
             {
                 acc.Errors.Add(error);
             }
