@@ -32,10 +32,17 @@ internal sealed class PostgresObjectStorageConnectionStore : IObjectStorageConne
     public async Task<bool> SaveSetupAsync(ObjectStorageConnectionSetup setup, int maxOpenForMinter, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(setup);
+        // A minter at its cap supersedes its own oldest open setups, so retries and a second tab never lock it out;
+        // the per-minter and installation totals stay bounded.
+        var supersedeSql = $"""
+            DELETE FROM {_setups} WHERE consumed_at IS NULL AND (expires_at <= clock_timestamp() OR external_id IN (
+                SELECT external_id FROM {_setups}
+                WHERE minted_by = @minted_by AND consumed_at IS NULL AND expires_at > clock_timestamp() AND @max_open_for_minter > 0
+                ORDER BY expires_at DESC, external_id
+                OFFSET GREATEST(@max_open_for_minter - 1, 0)))
+            """;
         var sql = $"""
-            WITH pruned AS (
-                DELETE FROM {_setups} WHERE consumed_at IS NULL AND expires_at <= clock_timestamp()
-            ), open_setups AS (
+            WITH open_setups AS (
                 SELECT minted_by FROM {_setups} WHERE consumed_at IS NULL AND expires_at > clock_timestamp()
             )
             INSERT INTO {_setups} (external_id, minted_by, bucket, prefix, expires_at)
@@ -51,6 +58,13 @@ internal sealed class PostgresObjectStorageConnectionStore : IObjectStorageConne
             "SELECT pg_advisory_xact_lock(hashtextextended('honua.object_storage_connection_setups', 0))", db, transaction))
         {
             await lockCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await using (var supersede = new NpgsqlCommand(supersedeSql, db, transaction))
+        {
+            supersede.Parameters.AddWithValue("minted_by", NpgsqlDbType.Text, setup.MintedBy);
+            supersede.Parameters.AddWithValue("max_open_for_minter", NpgsqlDbType.Bigint, (long)maxOpenForMinter);
+            await supersede.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
         int inserted;

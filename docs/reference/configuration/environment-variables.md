@@ -198,7 +198,7 @@ With a system database, MCP session records are shared through the `mcp_sessions
 | --- | --- | --- |
 | `Connections__ObjectStorage__QuickCreateTemplateUrl` | — | HTTPS CloudFormation template that creates the `honua-connection-*` role. The object storage setup endpoint returns a quick-create link only when this is set. |
 | `Connections__ObjectStorage__TrustedPrincipalArn` | — | Principal the role template trusts, passed to the template as `TrustedPrincipalArn`. |
-| `Connections__ObjectStorage__MaxOpenSetupsPerPrincipal` | `5` | Open (unused, unexpired) object storage setups one caller may hold. The installation-wide limit is 100. |
+| `Connections__ObjectStorage__MaxOpenSetupsPerPrincipal` | `5` | Open (unused, unexpired) object storage setups one caller may hold. A new setup past this limit replaces the caller's oldest one. The installation-wide limit is 100. |
 | `Connections__ObjectStorage__BuiltIn__Enabled` | `false` | Shows listed folders of the installation's own bucket as read-only built-in connections. |
 | `Connections__ObjectStorage__BuiltIn__DataPrefixes__N` | — | One folder under `FileStorage__AwsS3__KeyPrefix` per entry. Folders the server writes are refused. No entry means no data connection. |
 | `Connections__ObjectStorage__BuiltIn__PublicFiles` | `false` | Also shows the public PMTiles prefix as a built-in connection. |

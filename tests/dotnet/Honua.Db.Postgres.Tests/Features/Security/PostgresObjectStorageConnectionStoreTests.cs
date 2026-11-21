@@ -118,30 +118,64 @@ public sealed class PostgresObjectStorageConnectionStoreTests(PostgresFixture fi
 
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task OpenSetups_AreCappedPerMinter()
+    public async Task OpenSetups_PerMinterCap_SupersedesTheMintersOldestSetup()
     {
         await WithSchemaAsync(async schema =>
         {
             var store = new PostgresObjectStorageConnectionStore(fixture.DataSource, schema);
+            var minted = new List<string>();
+            for (var i = 0; i <= MaxPerMinter; i++)
+            {
+                var externalId = ObjectStoragePolicy.NewExternalId();
+                (await TrySetupAsync(store, "operator-a", externalId, TimeSpan.FromMinutes(60 + i))).Should().BeTrue("a principal at its cap supersedes its own oldest setup");
+                minted.Add(externalId);
+            }
+
+            (await store.FindOpenSetupAsync(minted[0], CancellationToken.None)).Should().BeNull("the oldest setup was superseded");
+            foreach (var externalId in minted.Skip(1))
+            {
+                (await store.FindOpenSetupAsync(externalId, CancellationToken.None)).Should().NotBeNull();
+            }
+
+            (await TrySetupAsync(store, "operator-b")).Should().BeTrue();
+        });
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task OpenSetups_AtTheInstallationCap_AMinterAtItsCapStillSupersedes()
+    {
+        await WithSchemaAsync(async schema =>
+        {
+            var store = new PostgresObjectStorageConnectionStore(fixture.DataSource, schema);
+            for (var i = 0; i < PostgresObjectStorageConnectionStore.MaxOpenSetups - MaxPerMinter; i++)
+            {
+                (await TrySetupAsync(store, $"operator-{i}")).Should().BeTrue();
+            }
+
             for (var i = 0; i < MaxPerMinter; i++)
             {
                 (await TrySetupAsync(store, "operator-a")).Should().BeTrue();
             }
 
-            (await TrySetupAsync(store, "operator-a")).Should().BeFalse("one principal cannot exhaust the shared cap");
-            (await TrySetupAsync(store, "operator-b")).Should().BeTrue();
+            (await TrySetupAsync(store, "operator-new")).Should().BeFalse("the installation-wide cap is reached");
+            (await TrySetupAsync(store, "operator-a")).Should().BeTrue("superseding keeps the installation total unchanged");
         });
     }
 
-    private static Task<bool> TrySetupAsync(PostgresObjectStorageConnectionStore store, string mintedBy)
+    private static Task<bool> TrySetupAsync(
+        PostgresObjectStorageConnectionStore store,
+        string mintedBy,
+        string? externalId = null,
+        TimeSpan? lifetime = null)
         => store.SaveSetupAsync(
             new ObjectStorageConnectionSetup
             {
-                ExternalId = ObjectStoragePolicy.NewExternalId(),
+                ExternalId = externalId ?? ObjectStoragePolicy.NewExternalId(),
                 MintedBy = mintedBy,
                 Bucket = "customer-imports",
                 Prefix = "parcels/",
-                ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+                ExpiresAt = DateTimeOffset.UtcNow.Add(lifetime ?? TimeSpan.FromHours(1)),
             },
             MaxPerMinter,
             CancellationToken.None);
