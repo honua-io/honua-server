@@ -12,6 +12,7 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.ZarrParser;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Tiles;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Microsoft.AspNetCore.Http;
@@ -231,7 +232,7 @@ internal sealed class ZarrTileService : IZarrTileService
             return StandardErrorHelpers.CreateForbidden(context, "Access to this resource is forbidden.");
         }
 
-        context.Response.Headers.Append("WWW-Authenticate", "Bearer");
+        AccessPolicyHelpers.AppendAuthenticationChallenge(context);
         return StandardErrorHelpers.CreateUnauthorized(context, "Authentication is required to access this resource.");
     }
 
