@@ -12,7 +12,7 @@ internal sealed partial class TileOperationExecutionCore
 {
     // A durable retry keeps its operation id. Recover its activated version before reading
     // fresh data: a missing job receipt must not turn one operation into a second publication.
-    private static async Task<TileOperationProgress> RecoverActivatedAsync(
+    private async Task<TileOperationProgress> RecoverActivatedAsync(
         ExportPublishContext context, ExportPointer recoveryPointer, TileOperationProgress progress, CancellationToken cancellationToken)
     {
         if (recoveryPointer.ExportId != context.Run.ExportId
