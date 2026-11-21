@@ -51,7 +51,7 @@ const dataset = createDataset({
 });
 
 const result = await dataset.source("parcels-fs")!.queryAll({
-  where: "STATUS = 'ACTIVE'",
+  where: "status = 'active'",
   outFields: ["OBJECTID", "NAME"],
   returnGeometry: true,
   pagination: { limit: 500 },
@@ -59,6 +59,8 @@ const result = await dataset.source("parcels-fs")!.queryAll({
 
 console.log(`Loaded ${result.features.length} features`);
 ```
+
+Field names match case-insensitively, but string values do not: `'active'` and `'ACTIVE'` select different rows.
 
 `HonuaFeatureLayer` (from the `honua` subpath) also offers `queryFeatures`, `queryFeaturesAll`, `queryFeaturesStream`, `queryFeatureCount`, and `queryObjectIds`. The query fields map onto the FeatureServer parameters in [Query features](../../guides/query-analyze/query-features.md).
 
