@@ -271,6 +271,9 @@ internal sealed record CapabilityManifestAnalysisLimits
 
     public required int MaxH3CellsPerQuery { get; init; }
 
+    // False when the primary database has no h3_postgis extension, so H3 aggregation answers 501; omitted when unknown.
+    public bool? H3Available { get; init; }
+
     public required int MaxSpatialOperations { get; init; }
 
     public required int MaxJoins { get; init; }
