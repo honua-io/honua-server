@@ -432,6 +432,13 @@ internal static partial class FeatureServerEndpoints
             return false;
         }
 
+        // A requested bin count shares the fixed-boundary cap, so either bin form yields at most that many rows.
+        if (numBins > MaxFixedBoundaryCount)
+        {
+            error = $"autoIntervalBin.numBins cannot be more than {MaxFixedBoundaryCount}.";
+            return false;
+        }
+
         binDef = new BinDefinition
         {
             Type = BinType.AutoInterval,
