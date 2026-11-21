@@ -86,23 +86,10 @@ internal sealed class FeatureServerRelatedRecordsHandler(
             }
 
             // Validate required parameters (these should already be validated by parameter parsing)
-            if (queryParams.ObjectIds.Length == 0 && queryParams.GlobalIds is not { Length: > 0 })
+            var (sourceGlobalIdField, selectorError) = ValidateSourceSelectors(httpContext, resource, queryParams);
+            if (selectorError is not null)
             {
-                return StandardErrorHelpers.CreateBadRequest(httpContext,
-                    "Invalid query parameters",
-                    ["objectIds or globalIds parameter is required"]);
-            }
-
-            MetadataV2Field? sourceGlobalIdField = null;
-            if (queryParams.GlobalIds is { Length: > 0 })
-            {
-                sourceGlobalIdField = FeatureServerGlobalIds.ResolveGlobalIdField(resource);
-                if (sourceGlobalIdField is null)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(httpContext,
-                        "globalIds is not supported for this layer",
-                        ["The target layer does not have a configured globalIdField."]);
-                }
+                return selectorError;
             }
 
             var relationship = resource.Relationships.FirstOrDefault(r => ResolveRelationshipId(r) == queryParams.RelationshipId);
@@ -189,7 +176,13 @@ internal sealed class FeatureServerRelatedRecordsHandler(
 
             var objectIds = await ResolveSourceObjectIdsAsync(
                 httpContext,
-                new SourceGlobalIdLookup(resource, sourceGlobalIdField, sourceStorageLayerId.Value, queryParams),
+                new SourceGlobalIdLookup
+                {
+                    Resource = resource,
+                    GlobalIdField = sourceGlobalIdField,
+                    StorageLayerId = sourceStorageLayerId.Value,
+                    QueryParams = queryParams
+                },
                 cancellationToken).ConfigureAwait(false);
             var outputSrid = await _queryServices.ResolveSridAsync(validatedParams.OutSr, null, cancellationToken);
             if (!string.IsNullOrWhiteSpace(validatedParams.OutSr) && !outputSrid.HasValue)
@@ -461,11 +454,41 @@ internal sealed class FeatureServerRelatedRecordsHandler(
         MetadataV2Object resource)
         => snapshot.ResolveStorageLayerId(publication, resource);
 
-    private readonly record struct SourceGlobalIdLookup(
-        MetadataV2Object Resource,
-        MetadataV2Field? GlobalIdField,
-        int StorageLayerId,
-        QueryRelatedRecordsParameters QueryParams);
+    private sealed class SourceGlobalIdLookup
+    {
+        public required MetadataV2Object Resource { get; init; }
+        public MetadataV2Field? GlobalIdField { get; init; }
+        public required int StorageLayerId { get; init; }
+        public required QueryRelatedRecordsParameters QueryParams { get; init; }
+    }
+
+    private static (MetadataV2Field? GlobalIdField, IResult? Error) ValidateSourceSelectors(
+        HttpContext httpContext,
+        MetadataV2Object resource,
+        QueryRelatedRecordsParameters queryParams)
+    {
+        if (queryParams.ObjectIds.Length == 0 && queryParams.GlobalIds is not { Length: > 0 })
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(httpContext,
+                "Invalid query parameters",
+                ["objectIds or globalIds parameter is required"]));
+        }
+
+        if (queryParams.GlobalIds is not { Length: > 0 })
+        {
+            return (null, null);
+        }
+
+        var field = FeatureServerGlobalIds.ResolveGlobalIdField(resource);
+        if (field is null)
+        {
+            return (null, StandardErrorHelpers.CreateBadRequest(httpContext,
+                "globalIds is not supported for this layer",
+                ["The target layer does not have a configured globalIdField."]));
+        }
+
+        return (field, null);
+    }
 
     private async Task<long[]> ResolveSourceObjectIdsAsync(
         HttpContext httpContext,
@@ -478,13 +501,14 @@ internal sealed class FeatureServerRelatedRecordsHandler(
         }
 
         var featureReader = httpContext.RequestServices.GetRequiredService<IFeatureReader>();
-        var lookupContext = new GlobalIdLookupContext(
-            featureReader,
-            _filterExpressionService,
-            lookup.Resource,
-            lookup.GlobalIdField,
-            lookup.StorageLayerId,
-            VersionContext: null);
+        var lookupContext = new GlobalIdLookupContext
+        {
+            Reader = featureReader,
+            FilterExpressionService = _filterExpressionService,
+            Resource = lookup.Resource,
+            Field = lookup.GlobalIdField,
+            StorageLayerId = lookup.StorageLayerId
+        };
         var matched = await FeatureServerGlobalIds.ResolveFeaturesByGlobalIdsAsync(
             lookupContext,
             lookup.QueryParams.GlobalIds,

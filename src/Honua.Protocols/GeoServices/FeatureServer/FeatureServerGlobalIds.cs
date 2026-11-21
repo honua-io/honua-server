@@ -1,8 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Collections.Immutable;
-using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -12,13 +10,15 @@ using Honua.Core.Queries.Filters;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
-internal readonly record struct GlobalIdLookupContext(
-    IFeatureReader Reader,
-    IFilterExpressionService FilterExpressionService,
-    MetadataV2Object Resource,
-    MetadataV2Field Field,
-    int StorageLayerId,
-    VersionContext? VersionContext);
+internal sealed class GlobalIdLookupContext
+{
+    public required IFeatureReader Reader { get; init; }
+    public required IFilterExpressionService FilterExpressionService { get; init; }
+    public required MetadataV2Object Resource { get; init; }
+    public required MetadataV2Field Field { get; init; }
+    public required int StorageLayerId { get; init; }
+    public VersionContext? VersionContext { get; init; }
+}
 
 internal static class FeatureServerGlobalIds
 {
@@ -38,18 +38,11 @@ internal static class FeatureServerGlobalIds
             field.Name.Equals(declared, StringComparison.OrdinalIgnoreCase));
     }
 
-    internal static bool TryParseGlobalId(object? rawValue, out string normalized)
+    internal static string? ParseGlobalId(object? rawValue)
     {
-        normalized = string.Empty;
         if (rawValue is Guid guid)
         {
-            if (guid == Guid.Empty)
-            {
-                return false;
-            }
-
-            normalized = guid.ToString("D");
-            return true;
+            return guid == Guid.Empty ? null : guid.ToString("D");
         }
 
         var text = rawValue switch
@@ -61,57 +54,56 @@ internal static class FeatureServerGlobalIds
 
         if (string.IsNullOrWhiteSpace(text) || !Guid.TryParse(text, out var parsed) || parsed == Guid.Empty)
         {
-            return false;
+            return null;
         }
 
-        normalized = parsed.ToString("D");
-        return true;
+        return parsed.ToString("D");
     }
 
-    internal static bool TryGetGlobalId(
+    internal static (bool Found, object? Value) FindRawGlobalId(
         IReadOnlyDictionary<string, object?>? attributes,
-        string globalIdFieldName,
-        out string normalized)
+        string globalIdFieldName)
     {
-        normalized = string.Empty;
         if (attributes is null || attributes.Count == 0)
         {
-            return false;
+            return (false, null);
         }
 
         foreach (var entry in attributes)
         {
             if (entry.Key.Equals(globalIdFieldName, StringComparison.OrdinalIgnoreCase))
             {
-                return TryParseGlobalId(entry.Value, out normalized);
+                return (true, entry.Value);
             }
         }
 
-        return false;
+        return (false, null);
     }
 
-    internal static bool TryGetRawGlobalId(
-        IReadOnlyDictionary<string, object?>? attributes,
-        string globalIdFieldName,
-        out object? rawValue)
+    internal static void ValidateClientInsertGlobalId(
+        MetadataV2Field? globalIdField,
+        IReadOnlyDictionary<string, object?>? attributes)
     {
-        rawValue = null;
-        if (attributes is null || attributes.Count == 0)
+        if (globalIdField is null)
         {
-            return false;
+            return;
         }
 
-        foreach (var entry in attributes)
+        var (found, rawValue) = FindRawGlobalId(attributes, globalIdField.Name);
+        if (!found || IsOmittedGlobalId(rawValue))
         {
-            if (entry.Key.Equals(globalIdFieldName, StringComparison.OrdinalIgnoreCase))
-            {
-                rawValue = entry.Value;
-                return true;
-            }
+            return;
         }
 
-        return false;
+        if (ParseGlobalId(rawValue) is null)
+        {
+            throw new ArgumentException($"Field '{globalIdField.Name}' must be a valid UUID.");
+        }
     }
+
+    private static bool IsOmittedGlobalId(object? rawValue)
+        => rawValue is null
+            || rawValue is JsonElement { ValueKind: JsonValueKind.Null or JsonValueKind.Undefined };
 
     internal static string? ReadStoredGlobalId(IReadOnlyDictionary<string, object?> attributes, string? globalIdFieldName)
     {
@@ -154,6 +146,25 @@ internal static class FeatureServerGlobalIds
         IEnumerable<string> normalizedGlobalIds,
         CancellationToken cancellationToken)
     {
+        var distinct = CollectDistinctIds(normalizedGlobalIds);
+        var resolved = new Dictionary<string, Feature>(distinct.Count, StringComparer.Ordinal);
+        if (distinct.Count == 0)
+        {
+            return resolved;
+        }
+
+        var isUuidColumn = lookup.Field.Type == MetadataV2FieldType.Uuid;
+        var chunkSize = isUuidColumn ? MaxInListValues : MaxInListValues / 4;
+        foreach (var chunk in distinct.Chunk(chunkSize))
+        {
+            await QueryChunkIntoAsync(lookup, chunk, resolved, cancellationToken).ConfigureAwait(false);
+        }
+
+        return resolved;
+    }
+
+    private static List<string> CollectDistinctIds(IEnumerable<string> normalizedGlobalIds)
+    {
         var distinct = new List<string>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var id in normalizedGlobalIds)
@@ -164,76 +175,73 @@ internal static class FeatureServerGlobalIds
             }
         }
 
-        var resolved = new Dictionary<string, Feature>(distinct.Count, StringComparer.Ordinal);
-        if (distinct.Count == 0)
-        {
-            return resolved;
-        }
-
-        var isUuidColumn = lookup.Field.Type == MetadataV2FieldType.Uuid;
-        var chunkSize = isUuidColumn ? MaxInListValues : MaxInListValues / 4;
-        var activeVersion = lookup.VersionContext is { IsDefault: false } ? lookup.VersionContext : null;
-
-        foreach (var chunk in distinct.Chunk(chunkSize))
-        {
-            var literals = BuildInLiterals(chunk, isUuidColumn);
-            var expression = new BinaryExpression(
-                new PropertyReference(lookup.Field.Name),
-                BinaryOperator.In,
-                new ValueList(literals));
-            var translation = lookup.FilterExpressionService.Translate(expression, lookup.Resource);
-            if (!translation.IsSuccess)
-            {
-                throw new ArgumentException(translation.ErrorMessage ?? "Invalid GlobalID field.");
-            }
-
-            var result = await lookup.Reader.QueryAsync(
-                lookup.StorageLayerId,
-                new FeatureQuery
-                {
-                    SqlFilter = translation.SqlFilter,
-                    Limit = chunk.Length,
-                    VersionContext = activeVersion
-                },
-                cancellationToken).ConfigureAwait(false);
-
-            foreach (var feature in result.Items)
-            {
-                if (ReadStoredGlobalId(feature.Attributes, lookup.Field.Name) is { } storedId)
-                {
-                    resolved[storedId] = feature;
-                }
-            }
-        }
-
-        return resolved;
+        return distinct;
     }
 
-    private static Literal[] BuildInLiterals(string[] chunk, bool isUuidColumn)
+    private static async Task QueryChunkIntoAsync(
+        GlobalIdLookupContext lookup,
+        string[] chunk,
+        Dictionary<string, Feature> resolved,
+        CancellationToken cancellationToken)
     {
-        if (isUuidColumn)
+        var literals = lookup.Field.Type == MetadataV2FieldType.Uuid
+            ? BuildUuidInLiterals(chunk)
+            : BuildTextInLiterals(chunk);
+        var expression = new BinaryExpression(
+            new PropertyReference(lookup.Field.Name),
+            BinaryOperator.In,
+            new ValueList(literals));
+        var translation = lookup.FilterExpressionService.Translate(expression, lookup.Resource);
+        if (!translation.IsSuccess)
         {
-            var uuidLiterals = new Literal[chunk.Length];
-            for (var i = 0; i < chunk.Length; i++)
-            {
-                uuidLiterals[i] = new Literal(chunk[i], LiteralType.Text);
-            }
-
-            return uuidLiterals;
+            throw new ArgumentException(translation.ErrorMessage ?? "Invalid GlobalID field.");
         }
 
-        var textLiterals = new Literal[chunk.Length * 4];
+        var activeVersion = lookup.VersionContext is { IsDefault: false } ? lookup.VersionContext : null;
+        var result = await lookup.Reader.QueryAsync(
+            lookup.StorageLayerId,
+            new FeatureQuery
+            {
+                SqlFilter = translation.SqlFilter,
+                Limit = chunk.Length,
+                VersionContext = activeVersion
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        foreach (var feature in result.Items)
+        {
+            if (ReadStoredGlobalId(feature.Attributes, lookup.Field.Name) is { } storedId)
+            {
+                resolved[storedId] = feature;
+            }
+        }
+    }
+
+    private static Literal[] BuildUuidInLiterals(string[] chunk)
+    {
+        var literals = new Literal[chunk.Length];
+        for (var i = 0; i < chunk.Length; i++)
+        {
+            literals[i] = new Literal(chunk[i], LiteralType.Text);
+        }
+
+        return literals;
+    }
+
+    private static Literal[] BuildTextInLiterals(string[] chunk)
+    {
+        var literals = new Literal[chunk.Length * 4];
         for (var i = 0; i < chunk.Length; i++)
         {
             var lower = chunk[i];
             var upper = lower.ToUpperInvariant();
             var offset = i * 4;
-            textLiterals[offset] = new Literal(lower, LiteralType.Text);
-            textLiterals[offset + 1] = new Literal(upper, LiteralType.Text);
-            textLiterals[offset + 2] = new Literal($"{{{lower}}}", LiteralType.Text);
-            textLiterals[offset + 3] = new Literal($"{{{upper}}}", LiteralType.Text);
+            literals[offset] = new Literal(lower, LiteralType.Text);
+            literals[offset + 1] = new Literal(upper, LiteralType.Text);
+            literals[offset + 2] = new Literal($"{{{lower}}}", LiteralType.Text);
+            literals[offset + 3] = new Literal($"{{{upper}}}", LiteralType.Text);
         }
 
-        return textLiterals;
+        return literals;
     }
 }

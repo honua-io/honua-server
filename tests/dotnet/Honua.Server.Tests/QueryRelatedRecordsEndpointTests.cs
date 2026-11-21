@@ -4,7 +4,6 @@
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -17,7 +16,7 @@ namespace Honua.Server.Tests;
 
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database.CoreFeatureStore")]
-public sealed class QueryRelatedRecordsEndpointTests : IClassFixture<QueryRelatedRecordsEndpointTests.ReadOnlyProHost>, IAsyncLifetime
+public sealed partial class QueryRelatedRecordsEndpointTests : IClassFixture<QueryRelatedRecordsEndpointTests.ReadOnlyProHost>, IAsyncLifetime
 {
     // The class host by default; a case that writes switches to its own private host.
     private WebAppFixture _fixture;
@@ -1043,81 +1042,6 @@ public sealed class QueryRelatedRecordsEndpointTests : IClassFixture<QueryRelate
 
         // Assert
         await response.AssertGeoServicesErrorAsync(405);
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.QueryRelatedRecords)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
-    public async Task QueryRelatedRecords_WithGlobalIds_WhenLayerHasNoGlobalIdField_Returns400()
-    {
-        var response = await GetWithRetryAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?globalIds=11111111-1111-1111-1111-111111111111&relationshipId={TestRelationshipId}");
-
-        await response.AssertGeoServicesErrorAsync(400);
-        (await response.Content.ReadAsStringAsync()).Should().Contain("globalIds is not supported for this layer");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.QueryRelatedRecords)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
-    public async Task QueryRelatedRecords_WithInvalidGlobalIds_Returns400()
-    {
-        var response = await GetWithRetryAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?globalIds=not-a-uuid&relationshipId={TestRelationshipId}");
-
-        await response.AssertGeoServicesErrorAsync(400);
-        (await response.Content.ReadAsStringAsync()).Should().Contain("globalIds must contain valid UUID values");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.QueryRelatedRecords)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
-    public async Task QueryRelatedRecords_WithGlobalIds_ReturnsMatchingRelatedRecordGroups()
-    {
-        await UseMutableFixtureAsync();
-        const string globalIdField = "GlobalID";
-        const string featureGlobalId = "55555555-5555-5555-5555-555555555555";
-        _mutableFixture!.UpdateV2ResourceSchemaField(TestLayerId, new MetadataV2Field
-        {
-            Name = globalIdField,
-            Type = MetadataV2FieldType.Uuid,
-            Nullable = true,
-            Description = "Global ID"
-        });
-        _mutableFixture.UpdateV2ResourceEditing(TestLayerId, new MetadataV2ObjectEditing
-        {
-            GlobalIdField = globalIdField
-        });
-
-        await using (var connection = await _mutableFixture.Postgres.GetConnectionAsync(_mutableFixture.CurrentSchema!))
-        await using (var command = connection.CreateCommand())
-        {
-            command.CommandText = """
-                UPDATE features
-                SET attributes = jsonb_set(COALESCE(attributes, '{}'::jsonb), '{GlobalID}', to_jsonb(@gid::text), true)
-                WHERE layer_id = 0 AND objectid = 1;
-                """;
-            command.Parameters.AddWithValue("gid", featureGlobalId);
-            await command.ExecuteNonQueryAsync();
-        }
-
-        var response = await GetWithRetryAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?globalIds={Uri.EscapeDataString("{" + featureGlobalId.ToUpperInvariant() + "}")}&relationshipId={TestRelationshipId}");
-        response.Be200Ok();
-        var result = JsonSerializer.Deserialize<QueryRelatedRecordsResponse>(
-            await response.Content.ReadAsStringAsync(),
-            FeatureServerJsonContext.Default.QueryRelatedRecordsResponse);
-        result.Should().NotBeNull();
-        result!.RelatedRecordGroups.Should().Contain(group => group.ObjectId == 1);
-
-        var unmatchedResponse = await GetWithRetryAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?globalIds=66666666-6666-6666-6666-666666666666&relationshipId={TestRelationshipId}");
-        unmatchedResponse.Be200Ok();
-        var unmatched = JsonSerializer.Deserialize<QueryRelatedRecordsResponse>(
-            await unmatchedResponse.Content.ReadAsStringAsync(),
-            FeatureServerJsonContext.Default.QueryRelatedRecordsResponse);
-        unmatched.Should().NotBeNull();
-        unmatched!.RelatedRecordGroups.Should().BeEmpty();
     }
 
     #endregion

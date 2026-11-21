@@ -120,23 +120,10 @@ internal static partial class FeatureServerEndpoints
         parameters = null!;
         errorMessage = null;
 
-        var hasObjectIds = TryGetValue(values, "objectIds", out var rawObjectIds) && !StringValues.IsNullOrEmpty(rawObjectIds);
-        var hasGlobalIds = TryGetValue(values, "globalIds", out var rawGlobalIds) && !StringValues.IsNullOrEmpty(rawGlobalIds);
-        if (!hasObjectIds && !hasGlobalIds)
+        var (objectIds, globalIds, selectorError) = ParseRelatedRecordSelectors(values, maxObjectIdCount);
+        if (selectorError is not null)
         {
-            errorMessage = "objectIds or globalIds parameter is required";
-            return false;
-        }
-
-        long[] objectIds = [];
-        if (hasObjectIds && !TryParseRequiredLongArray(values, "objectIds", maxObjectIdCount, out objectIds, out errorMessage))
-        {
-            return false;
-        }
-
-        string[]? globalIds = null;
-        if (hasGlobalIds && !TryParseGlobalIdArray(rawGlobalIds.ToString(), maxObjectIdCount, out globalIds, out errorMessage))
-        {
+            errorMessage = selectorError;
             return false;
         }
 
@@ -283,42 +270,67 @@ internal static partial class FeatureServerEndpoints
         return Math.Clamp(limits.Query.MaxRecordCount, 1, MaxRelatedRecordsObjectIdCountUpperBound);
     }
 
-    private static bool TryParseGlobalIdArray(
-        string raw,
-        int maxCount,
-        out string[] globalIds,
-        out string? errorMessage)
+    private static (long[] ObjectIds, string[]? GlobalIds, string? Error) ParseRelatedRecordSelectors(
+        IReadOnlyDictionary<string, StringValues> values,
+        int maxCount)
     {
-        globalIds = [];
-        errorMessage = null;
+        var hasObjectIds = TryGetValue(values, "objectIds", out var rawObjectIds) && !StringValues.IsNullOrEmpty(rawObjectIds);
+        var hasGlobalIds = TryGetValue(values, "globalIds", out var rawGlobalIds) && !StringValues.IsNullOrEmpty(rawGlobalIds);
+        if (!hasObjectIds && !hasGlobalIds)
+        {
+            return ([], null, "objectIds or globalIds parameter is required");
+        }
 
+        long[] objectIds = [];
+        if (hasObjectIds && !TryParseRequiredLongArray(values, "objectIds", maxCount, out objectIds, out var objectIdError))
+        {
+            return ([], null, objectIdError);
+        }
+
+        if (!hasGlobalIds)
+        {
+            return (objectIds, null, null);
+        }
+
+        var (globalIds, globalIdError) = ParseGlobalIdArray(rawGlobalIds.ToString(), maxCount);
+        if (globalIdError is not null)
+        {
+            return ([], null, globalIdError);
+        }
+
+        if (objectIds.Length + globalIds.Length > maxCount)
+        {
+            return ([], null, $"objectIds and globalIds combined cannot exceed {maxCount} items");
+        }
+
+        return (objectIds, globalIds, null);
+    }
+
+    private static (string[] GlobalIds, string? Error) ParseGlobalIdArray(string raw, int maxCount)
+    {
         if (string.IsNullOrWhiteSpace(raw))
         {
-            errorMessage = "globalIds parameter cannot be empty";
-            return false;
+            return ([], "globalIds parameter cannot be empty");
         }
 
         var parts = raw.Split(',', StringSplitOptions.None);
         if (parts.Length > maxCount)
         {
-            errorMessage = $"globalIds parameter cannot exceed {maxCount} items";
-            return false;
+            return ([], $"globalIds parameter cannot exceed {maxCount} items");
         }
 
         var parsed = new string[parts.Length];
         for (var i = 0; i < parts.Length; i++)
         {
-            var token = parts[i].Trim();
-            if (!FeatureServerGlobalIds.TryParseGlobalId(token, out var normalized))
+            var normalized = FeatureServerGlobalIds.ParseGlobalId(parts[i].Trim());
+            if (normalized is null)
             {
-                errorMessage = "globalIds must contain valid UUID values";
-                return false;
+                return ([], "globalIds must contain valid UUID values");
             }
 
             parsed[i] = normalized;
         }
 
-        globalIds = parsed;
-        return true;
+        return (parsed, null);
     }
 }

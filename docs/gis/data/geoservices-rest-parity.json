@@ -1036,7 +1036,7 @@
         ],
         "queryRelatedRecords": [
           {
-            "name": "objectIds, relationshipId, outFields, definitionExpression, returnGeometry, resultRecordCount, resultOffset, orderByFields, returnCountOnly, outSR, returnZ, returnM, geometryPrecision, maxAllowableOffset",
+            "name": "objectIds, globalIds, relationshipId, outFields, definitionExpression, returnGeometry, resultRecordCount, resultOffset, orderByFields, returnCountOnly, outSR, returnZ, returnM, geometryPrecision, maxAllowableOffset",
             "status": "implemented"
           },
           {
