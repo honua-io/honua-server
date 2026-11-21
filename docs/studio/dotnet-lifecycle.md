@@ -11,26 +11,31 @@ validate it, save an immutable version, fetch or compare versions, reopen a
 version as a new draft, and create/poll a publish request.
 
 ```csharp
-var draft = await packages.CreateDraftAsync(new CreateStudioPackageDraftRequest
+using Honua.Sdk.Studio.Content;
+
+var draft = await content.CreateDraftAsync(new CreateStudioContentDraftRequest
 {
     PackageKey = "parcels-review",
-    Envelope = new StudioPackageEnvelope
+    Envelope = new StudioContentEnvelope
     {
-        Family = StudioPackageFamily.Map,
+        Family = StudioContentKind.Map,
         SchemaVersion = "honua_map_package.v1",
     },
 });
 
-var version = await packages.CreateContentVersionAsync(
+var version = await content.CreateContentVersionAsync(
     draft.DraftId,
     new SaveStudioContentVersionRequest { ChangeNote = "Initial review map" });
 
-var saved = await packages.GetVersionAsync(version.ItemId, version.VersionId);
-var reopened = await packages.ReopenVersionAsync(saved.ItemId, saved.VersionId);
+var saved = await content.GetVersionAsync(version.ItemId, version.VersionId);
+var reopened = await content.ReopenVersionAsync(saved.ItemId, saved.VersionId);
 ```
 
-Use the request and model names from the installed SDK version. Follow the
-publication method's actual returned status and its documented polling contract;
+`content` is an `IHonuaStudioContentClient`. Use the request and model names
+from the installed SDK version. `SubmitPublishRequestAsync` separates a created
+publication request (HTTP 201) from an operation that needs approval (HTTP 202),
+as described in the
+[SDK's Studio README](https://github.com/honua-io/honua-sdk-dotnet/blob/trunk/src/Honua.Sdk.Studio/README.md);
 a pending or rejected request has no active URL. The
 [MCP publication tool](mcp-tools.md) always files a proposal for a person to
 approve. That MCP behavior is not a substitute for checking the installed .NET
