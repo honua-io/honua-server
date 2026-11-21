@@ -4,8 +4,11 @@
 using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Admin.PairedPublications;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Options;
+using Moq;
 
 namespace Honua.Server.Tests.Features.Admin.PairedPublications;
 
@@ -140,5 +143,75 @@ public sealed class PublicExportRevocationTests
         result.State.Should().Be(PublicExportRevocationState.Completed);
         harness.PublicStorage.Objects.Keys.Should().NotContain(k => k.StartsWith("data/publications/parcels/", StringComparison.Ordinal));
         harness.InvalidationRequests.Should().ContainSingle();
+    }
+
+    [UnitTest]
+    public async Task HostedService_StartupSweepWithTenancyEnabled_RevokesPromotedExports()
+    {
+        var harness = RevocationHarness.Create(new RevocationScenario
+        {
+            AnonymousAllowed = true,
+            MultiTenancyEnabled = true
+        });
+        using var hosted = harness.CreateHostedService();
+
+        var keepRunning = await hosted.RunCycleAsync(CancellationToken.None);
+
+        keepRunning.Should().BeTrue();
+        harness.StateStore.Promoted.Should().BeEmpty();
+        harness.PublicStorage.Objects.Keys.Where(k => k.StartsWith("data/publications/", StringComparison.Ordinal))
+            .Should().BeEmpty();
+        harness.StateStore.Revocations.Values.Should().HaveCount(2)
+            .And.OnlyContain(r => r.State == PublicExportRevocationState.Completed);
+    }
+
+    [UnitTest]
+    public async Task HostedService_WhenFirstEligibilitySweepThrows_NextTickRetriesAndRevokesExport()
+    {
+        var harness = RevocationHarness.Create(new RevocationScenario
+        {
+            AnonymousAllowed = false,
+            GraphFailuresBeforeSuccess = 1
+        });
+        using var hosted = harness.CreateHostedService();
+
+        // First tick hits transient metadata error during eligibility sweep and does not mark sweep complete.
+        (await hosted.RunCycleAsync(CancellationToken.None)).Should().BeTrue();
+        harness.StateStore.Promoted.Keys.Should().Contain("parcels");
+
+        // Next tick retries immediately without waiting for the 5-minute interval and revokes the restricted export.
+        (await hosted.RunCycleAsync(CancellationToken.None)).Should().BeTrue();
+        harness.StateStore.Promoted.Keys.Should().Equal("roads");
+        harness.PublicStorage.Objects.Keys.Where(k => k.StartsWith("data/publications/parcels/", StringComparison.Ordinal))
+            .Should().BeEmpty();
+        harness.StateStore.Revocations.Values.Should().ContainSingle(r =>
+            r.PublicationId == "parcels" && r.State == PublicExportRevocationState.Completed);
+    }
+
+    [UnitTest]
+    public async Task CloudStorageStateStore_WhenListingReachesPageLimit_FailsClosed()
+    {
+        var fullPage = Enumerable.Range(0, CloudStoragePublicExportStateStore.MaxStateRecords)
+            .Select(i => new CloudFile
+            {
+                FileId = $"publications/_public/promoted/pub-{i}.json",
+                FileName = $"pub-{i}.json",
+                StoragePath = $"publications/_public/promoted/pub-{i}.json",
+                ContentType = "application/json",
+                SizeBytes = 10,
+                UploadedAt = DateTimeOffset.UtcNow,
+                Provider = CloudStorageProvider.AwsS3
+            })
+            .ToArray();
+        var storage = new Mock<ICloudFileStorage>();
+        storage.Setup(s => s.ListFilesAsync(It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(fullPage);
+        var store = new CloudStoragePublicExportStateStore(storage.Object, Options.Create(new CloudStorageOptions()));
+
+        var listPromoted = () => store.ListPromotedAsync(CancellationToken.None);
+        var listRevocations = () => store.ListPendingRevocationsAsync(CancellationToken.None);
+
+        await listPromoted.Should().ThrowAsync<InvalidOperationException>().WithMessage("*listing limit*");
+        await listRevocations.Should().ThrowAsync<InvalidOperationException>().WithMessage("*listing limit*");
     }
 }

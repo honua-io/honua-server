@@ -32,7 +32,8 @@ internal static class PublicPublicationDestinationServiceCollectionExtensions
 
     private static void RegisterCoreServices(IServiceCollection services, IConfiguration configuration)
     {
-        services.AddHttpClient(HttpPublicExportCanary.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(10));
+        services.AddHttpClient(HttpPublicExportCanary.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(10))
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
         services.AddScoped<PublicExportEligibility>();
         services.AddSingleton<IPublicExportStateStore, CloudStoragePublicExportStateStore>();
         services.AddSingleton<IPublicExportCanary, HttpPublicExportCanary>();
@@ -41,6 +42,8 @@ internal static class PublicPublicationDestinationServiceCollectionExtensions
         {
             PrivateStorage = provider.GetRequiredService<ICloudFileStorage>(),
             Eligibility = provider.GetRequiredService<PublicExportEligibility>(),
+            GraphProvider = provider.GetRequiredService<IMetadataV2GraphProvider>(),
+            Revocation = provider.GetRequiredService<PublicExportRevocationService>(),
             StateStore = provider.GetRequiredService<IPublicExportStateStore>(),
             Canary = provider.GetRequiredService<IPublicExportCanary>(),
             OpsNotifier = provider.GetRequiredService<IPublicExportOpsNotifier>()

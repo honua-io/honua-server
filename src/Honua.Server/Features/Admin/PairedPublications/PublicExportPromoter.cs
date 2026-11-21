@@ -4,8 +4,10 @@
 using System.Security.Cryptography;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Publishing.Descriptors;
+using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Server.Features.Admin.PairedPublications;
 
@@ -31,6 +33,10 @@ internal sealed record PublicExportPromoterDependencies
     public required ICloudFileStorage PrivateStorage { get; init; }
 
     public required PublicExportEligibility Eligibility { get; init; }
+
+    public required IMetadataV2GraphProvider GraphProvider { get; init; }
+
+    public required PublicExportRevocationService Revocation { get; init; }
 
     public required IPublicExportStateStore StateStore { get; init; }
 
@@ -69,17 +75,46 @@ internal sealed class PublicExportPromoter(
             return new PublicExportDeliveryStatus(PublicExportDeliveryStatus.NotConfigured) { Reason = NotConfiguredMessage };
         }
 
-        var check = await deps.Eligibility.EvaluateAsync(input.Resource, input.Service, cancellationToken).ConfigureAwait(false);
-        if (!check.IsEligible)
+        var capturedCheck = await deps.Eligibility.EvaluateAsync(input.Resource, input.Service, cancellationToken).ConfigureAwait(false);
+        if (!capturedCheck.IsEligible)
         {
-            return new PublicExportDeliveryStatus(PublicExportDeliveryStatus.StaysSignedIn) { Reason = check.Reason };
+            return StaysSignedIn(capturedCheck.Reason);
+        }
+
+        var currentCheck = await EvaluateCurrentSnapshotAsync(input, cancellationToken).ConfigureAwait(false);
+        if (!currentCheck.IsEligible)
+        {
+            return StaysSignedIn(currentCheck.Reason);
         }
 
         var provenance = new PublicPublicationProvenance(
             input.Service.EffectivePublicName, input.LayerIndex, input.MetadataRevision);
         await CopyArtifactsAsync(input, provenance, cancellationToken).ConfigureAwait(false);
+        var collectionUrl = await CopyCollectionAsync(input, provenance, cancellationToken).ConfigureAwait(false);
 
-        var collectionUrl = await CopyFileAsync(
+        var record = BuildPromotedRecord(input, collectionUrl);
+        await deps.StateStore.SavePromotedAsync(record, cancellationToken).ConfigureAwait(false);
+        var allPromoted = await deps.StateStore.ListPromotedAsync(cancellationToken).ConfigureAwait(false);
+        await WriteRootCatalogAsync(allPromoted, cancellationToken).ConfigureAwait(false);
+
+        var lateCheck = await EvaluateCurrentSnapshotAsync(input, cancellationToken).ConfigureAwait(false);
+        if (!lateCheck.IsEligible)
+        {
+            return await RevokeAfterLateIneligibilityAsync(input.Descriptor.PublicationId, lateCheck.Reason, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return await VerifyCanaryAsync(record, collectionUrl, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static PublicExportDeliveryStatus StaysSignedIn(string? reason)
+        => new(PublicExportDeliveryStatus.StaysSignedIn) { Reason = reason };
+
+    private Task<Uri> CopyCollectionAsync(
+        PublicExportPromotionInput input,
+        PublicPublicationProvenance provenance,
+        CancellationToken cancellationToken)
+        => CopyFileAsync(
             input,
             new ArtifactCopySpec
             {
@@ -87,14 +122,29 @@ internal sealed class PublicExportPromoter(
                 ContentType = ExportCollectionDocument.MediaType,
                 Provenance = provenance
             },
+            cancellationToken);
+
+    private async Task<PublicExportDeliveryStatus> RevokeAfterLateIneligibilityAsync(
+        string publicationId,
+        string? reason,
+        CancellationToken cancellationToken)
+    {
+        await deps!.Revocation.RequestRevocationAsync(
+            new PublicExportRevocationRequest(
+                publicationId,
+                PublicExportRevocationService.ReasonAccessRestricted,
+                CdnPurgeCause.NoRequest),
             cancellationToken).ConfigureAwait(false);
+        return StaysSignedIn(reason);
+    }
 
-        var record = BuildPromotedRecord(input, collectionUrl);
-        await deps.StateStore.SavePromotedAsync(record, cancellationToken).ConfigureAwait(false);
-        var allPromoted = await deps.StateStore.ListPromotedAsync(cancellationToken).ConfigureAwait(false);
-        await WriteRootCatalogAsync(allPromoted, cancellationToken).ConfigureAwait(false);
-
-        return await VerifyCanaryAsync(record, collectionUrl, cancellationToken).ConfigureAwait(false);
+    private async Task<PublicExportEligibilityResult> EvaluateCurrentSnapshotAsync(
+        PublicExportPromotionInput input,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await deps!.GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        return await deps.Eligibility.EvaluateSnapshotAsync(
+            snapshot, input.Service.Metadata.Id, input.Resource.Metadata.Id, cancellationToken).ConfigureAwait(false);
     }
 
     private PromotedExportRecord BuildPromotedRecord(PublicExportPromotionInput input, Uri collectionUrl)
@@ -120,7 +170,7 @@ internal sealed class PublicExportPromoter(
         Uri collectionUrl,
         CancellationToken cancellationToken)
     {
-        var canaryResult = await deps.Canary.CheckAsync(collectionUrl, cancellationToken).ConfigureAwait(false);
+        var canaryResult = await deps!.Canary.CheckAsync(collectionUrl, cancellationToken).ConfigureAwait(false);
         var verified = record with
         {
             CanaryState = canaryResult.IsReadable ? PublicExportCanaryState.Readable : PublicExportCanaryState.Unreadable,
@@ -196,7 +246,7 @@ internal sealed class PublicExportPromoter(
     {
         foreach (var companion in ExportCompanionFiles.FileNames)
         {
-            var metadata = await deps.PrivateStorage.GetMetadataAsync(
+            var metadata = await deps!.PrivateStorage.GetMetadataAsync(
                 input.PrivateStore.VersionKey(input.Descriptor.Version, companion), cancellationToken).ConfigureAwait(false);
             if (metadata is null)
             {
@@ -221,7 +271,7 @@ internal sealed class PublicExportPromoter(
         CancellationToken cancellationToken)
     {
         var privateKey = input.PrivateStore.VersionKey(input.Descriptor.Version, spec.FileName);
-        var stream = await deps.PrivateStorage.DownloadAsync(privateKey, cancellationToken).ConfigureAwait(false)
+        var stream = await deps!.PrivateStorage.DownloadAsync(privateKey, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Private publication artifact '{spec.FileName}' could not be read for public promotion.");
 
         await using (stream.ConfigureAwait(false))

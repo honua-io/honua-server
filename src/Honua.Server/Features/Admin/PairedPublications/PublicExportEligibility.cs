@@ -43,6 +43,33 @@ internal sealed class PublicExportEligibility(
     internal const string ReasonRowFilter = "stays on signed-in routes: row filter";
     internal const string ReasonHiddenField = "stays on signed-in routes: hidden field";
     internal const string ReasonPolicyEvaluationFailed = "stays on signed-in routes: read policy could not be verified";
+    internal const string ReasonNotPubliclyPublished = "stays on signed-in routes: layer is no longer publicly published";
+
+    public Task<PublicExportEligibilityResult> EvaluateSnapshotAsync(
+        MetadataV2GraphSnapshot snapshot,
+        string serviceId,
+        string resourceId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (!snapshot.Index.ServicesById.TryGetValue(serviceId, out var service) ||
+            !snapshot.Index.ResourcesById.TryGetValue(resourceId, out var resource))
+        {
+            return Task.FromResult(PublicExportEligibilityResult.Ineligible(ReasonNotPubliclyPublished));
+        }
+
+        var publication = snapshot.Graph.Publications.FirstOrDefault(candidate =>
+            snapshot.IsRoutable(candidate) &&
+            string.Equals(candidate.ServiceId, serviceId, StringComparison.Ordinal) &&
+            string.Equals(candidate.ResourceId, resourceId, StringComparison.Ordinal));
+        if (publication is null ||
+            !MetadataV2TenantVisibility.IsVisibleToTenant(publication, resource, service, requestTenant: null))
+        {
+            return Task.FromResult(PublicExportEligibilityResult.Ineligible(ReasonNotPubliclyPublished));
+        }
+
+        return EvaluateAsync(resource, service, cancellationToken);
+    }
 
     public async Task<PublicExportEligibilityResult> EvaluateAsync(
         MetadataV2Object resource,

@@ -5,13 +5,16 @@ using System.Security.Claims;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.MultiTenancy;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.SharedCaching;
 using Honua.Server.Features.Admin.PairedPublications;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 
 namespace Honua.Server.Tests.Features.Admin.PairedPublications;
@@ -19,13 +22,16 @@ namespace Honua.Server.Tests.Features.Admin.PairedPublications;
 internal sealed record RevocationScenario
 {
     public bool AnonymousAllowed { get; init; }
+    public bool MultiTenancyEnabled { get; init; }
     public bool IncludeParcelsPublication { get; init; } = true;
+    public int GraphFailuresBeforeSuccess { get; init; }
     public CdnInvalidationResult[]? InvalidationOutcomes { get; init; }
 }
 
 internal sealed class RevocationHarness
 {
     public required PublicExportRevocationService Service { get; init; }
+    public required IPublicPublicationDestination Destination { get; init; }
     public required InMemoryPublicExportStateStore StateStore { get; init; }
     public required FakePublicStorage PublicStorage { get; init; }
     public required List<string[]> InvalidationRequests { get; init; }
@@ -45,6 +51,7 @@ internal sealed class RevocationHarness
             .AddInMemoryCollection(new Dictionary<string, string?> { [PublicExportRevocationService.DistributionIdSetting] = "E123DIST" })
             .Build();
 
+        var destination = new PublicPublicationDestination(publicStorage.Storage.Object, new Uri("https://cdn.example.test/"));
         var service = new PublicExportRevocationService(
             new PublicExportRevocationDependencies
             {
@@ -54,7 +61,7 @@ internal sealed class RevocationHarness
                 CdnInvalidation = CreateCdnService(opts.InvalidationOutcomes, invalidationRequests),
                 OpsNotifier = CreateNotifier(failureNotices).Object,
                 Configuration = config,
-                Destination = new PublicPublicationDestination(publicStorage.Storage.Object, new Uri("https://cdn.example.test/")),
+                Destination = destination,
                 StatusReader = CreateStatusReader(pollReceipts).Object
             },
             NullLogger<PublicExportRevocationService>.Instance);
@@ -62,12 +69,25 @@ internal sealed class RevocationHarness
         return new RevocationHarness
         {
             Service = service,
+            Destination = destination,
             StateStore = stateStore,
             PublicStorage = publicStorage,
             InvalidationRequests = invalidationRequests,
             PollReceipts = pollReceipts,
             FailureNotices = failureNotices
         };
+    }
+
+    public PublicExportRevocationHostedService CreateHostedService(TimeProvider? timeProvider = null)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Destination);
+        services.AddSingleton(Service);
+        var provider = services.BuildServiceProvider();
+        return new PublicExportRevocationHostedService(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<PublicExportRevocationHostedService>.Instance,
+            timeProvider);
     }
 
     private static FakePublicStorage CreateSeededPublicStorage()
@@ -114,7 +134,10 @@ internal sealed class RevocationHarness
 
         var services = new ServiceCollection();
         services.AddSingleton(evaluator.Object);
-        return new PublicExportEligibility(services.BuildServiceProvider());
+        return new PublicExportEligibility(
+            services.BuildServiceProvider(),
+            Options.Create(new TenantIsolationOptions { Enabled = opts.MultiTenancyEnabled }),
+            Options.Create(new TenantContextOptions { Enabled = opts.MultiTenancyEnabled }));
     }
 
     private static Mock<ICdnInvalidationStatusReader> CreateStatusReader(List<CdnInvalidationReceipt> pollReceipts)
@@ -168,8 +191,19 @@ internal sealed class RevocationHarness
             Publications = publications
         };
         var provider = new Mock<IMetadataV2GraphProvider>();
+        var snapshot = new MetadataV2GraphSnapshot(graph, "etag-2", DateTimeOffset.UtcNow);
+        var remainingFailures = opts.GraphFailuresBeforeSuccess;
         provider.Setup(g => g.GetCurrentAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new MetadataV2GraphSnapshot(graph, "etag-2", DateTimeOffset.UtcNow));
+            .Returns(() =>
+            {
+                if (remainingFailures > 0)
+                {
+                    remainingFailures--;
+                    return ValueTask.FromException<MetadataV2GraphSnapshot>(new InvalidOperationException("Transient metadata error."));
+                }
+
+                return ValueTask.FromResult(snapshot);
+            });
         return provider;
     }
 

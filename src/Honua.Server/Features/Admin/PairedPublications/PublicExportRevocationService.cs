@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.SharedCaching;
 using Microsoft.Extensions.Configuration;
@@ -337,26 +338,11 @@ internal sealed partial class PublicExportRevocationService(
 
     private async Task<bool> StillEligibleAsync(
         PromotedExportRecord export,
-        Honua.Core.Features.Metadata.Domain.V2.MetadataV2GraphSnapshot snapshot,
+        MetadataV2GraphSnapshot snapshot,
         CancellationToken cancellationToken)
     {
-        if (!snapshot.Index.ServicesById.TryGetValue(export.ServiceId, out var service) ||
-            !snapshot.Index.ResourcesById.TryGetValue(export.ResourceId, out var resource))
-        {
-            return false;
-        }
-
-        var publication = snapshot.Graph.Publications.FirstOrDefault(candidate =>
-            snapshot.IsRoutable(candidate) &&
-            string.Equals(candidate.ServiceId, export.ServiceId, StringComparison.Ordinal) &&
-            string.Equals(candidate.ResourceId, export.ResourceId, StringComparison.Ordinal));
-        if (publication is null ||
-            !Honua.Core.Features.Metadata.Domain.V2.MetadataV2TenantVisibility.IsVisibleToTenant(publication, resource, service, null))
-        {
-            return false;
-        }
-
-        var result = await deps.Eligibility.EvaluateAsync(resource, service, cancellationToken).ConfigureAwait(false);
+        var result = await deps.Eligibility.EvaluateSnapshotAsync(
+            snapshot, export.ServiceId, export.ResourceId, cancellationToken).ConfigureAwait(false);
         return result.IsEligible;
     }
 

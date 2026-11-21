@@ -99,6 +99,7 @@ internal sealed class CloudStoragePublicExportStateStore(
     IOptions<CloudStorageOptions> options) : IPublicExportStateStore
 {
     private const string JsonContentType = "application/json";
+    internal const int MaxStateRecords = 1000;
 
     private string RootPrefix
     {
@@ -144,8 +145,7 @@ internal sealed class CloudStoragePublicExportStateStore(
 
     public async Task<IReadOnlyList<PromotedExportRecord>> ListPromotedAsync(CancellationToken cancellationToken)
     {
-        var files = await storage.ListFilesAsync(PromotedPrefix, maxResults: 1000, includeMetadata: false, cancellationToken)
-            .ConfigureAwait(false);
+        var files = await ListAllOrFailClosedAsync(PromotedPrefix, cancellationToken).ConfigureAwait(false);
         var records = new List<PromotedExportRecord>();
         foreach (var file in files)
         {
@@ -187,8 +187,7 @@ internal sealed class CloudStoragePublicExportStateStore(
 
     public async Task<IReadOnlyList<PublicExportRevocationRecord>> ListPendingRevocationsAsync(CancellationToken cancellationToken)
     {
-        var files = await storage.ListFilesAsync(RevocationPrefix, maxResults: 1000, includeMetadata: false, cancellationToken)
-            .ConfigureAwait(false);
+        var files = await ListAllOrFailClosedAsync(RevocationPrefix, cancellationToken).ConfigureAwait(false);
         var records = new List<PublicExportRevocationRecord>();
         foreach (var file in files)
         {
@@ -207,6 +206,21 @@ internal sealed class CloudStoragePublicExportStateStore(
         }
 
         return records;
+    }
+
+    private async Task<IReadOnlyList<CloudFile>> ListAllOrFailClosedAsync(
+        string prefix,
+        CancellationToken cancellationToken)
+    {
+        var files = await storage.ListFilesAsync(prefix, maxResults: MaxStateRecords, includeMetadata: false, cancellationToken)
+            .ConfigureAwait(false);
+        if (files.Count >= MaxStateRecords)
+        {
+            throw new InvalidOperationException(
+                $"Public export state under '{prefix}' reached the {MaxStateRecords}-record listing limit and cannot be enumerated safely.");
+        }
+
+        return files;
     }
 
     private async Task PutJsonBytesAsync(

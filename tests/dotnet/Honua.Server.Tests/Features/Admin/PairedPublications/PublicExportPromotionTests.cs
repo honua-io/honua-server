@@ -1,13 +1,20 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Security.Claims;
 using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Publishing.Descriptors;
 using Honua.Core.Queries.Filters;
+using Honua.Infrastructure.Authentication;
+using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.PairedPublications;
 using Honua.TestKit.Attributes;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Routing.Patterns;
 
 namespace Honua.Server.Tests.Features.Admin.PairedPublications;
 
@@ -176,5 +183,86 @@ public sealed class PublicExportPromotionTests
         saved.Should().NotBeNull();
         saved!.CanaryState.Should().Be(PublicExportCanaryState.Unreadable);
         harness.CanaryNotices.Should().ContainSingle(n => n.PublicationId == "parcels" && n.Detail.Contains("403"));
+    }
+
+    [UnitTest]
+    public async Task PromoteAsync_WhenLayerRestrictedBeforePromotion_RefusesWithoutWritingObjectsOrCatalog()
+    {
+        var restrictedResource = new MetadataV2Object
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "parcels", Title = "Parcels" },
+            PermanentFilter = new MetadataV2PermanentFilter { Expression = "status = 'public'" }
+        };
+        var service = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "svc-parcels", Name = "parcels-svc" }
+        };
+        var harness = PromotionHarness.Create(new PromotionScenario
+        {
+            CurrentSnapshots = [PromotionHarness.CreateSnapshot(restrictedResource, service)]
+        });
+
+        var result = await harness.Promoter.PromoteAsync(harness.Input, CancellationToken.None);
+
+        result.Status.Should().Be(PublicExportDeliveryStatus.StaysSignedIn);
+        result.Reason.Should().Be(PublicExportEligibility.ReasonRowFilter);
+        harness.PublicStorage.Objects.Keys.Should().NotContain(k => k.StartsWith("data/publications/parcels/", StringComparison.Ordinal));
+        harness.PublicStorage.Objects.Keys.Should().NotContain("data/catalog.json");
+        (await harness.StateStore.GetPromotedAsync("parcels", CancellationToken.None)).Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task PromoteAsync_WhenLayerRestrictedDuringPromotion_RevokesObjectsRewritesCatalogAndReturnsStaysSignedIn()
+    {
+        var service = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "svc-parcels", Name = "parcels-svc" }
+        };
+        var eligibleResource = new MetadataV2Object
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "parcels", Title = "Parcels" }
+        };
+        var restrictedResource = new MetadataV2Object
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "parcels", Title = "Parcels" },
+            PermanentFilter = new MetadataV2PermanentFilter { Expression = "status = 'public'" }
+        };
+        var harness = PromotionHarness.Create(new PromotionScenario
+        {
+            CurrentSnapshots =
+            [
+                PromotionHarness.CreateSnapshot(eligibleResource, service),
+                PromotionHarness.CreateSnapshot(restrictedResource, service)
+            ]
+        });
+
+        var result = await harness.Promoter.PromoteAsync(harness.Input, CancellationToken.None);
+
+        result.Status.Should().Be(PublicExportDeliveryStatus.StaysSignedIn);
+        result.Reason.Should().Be(PublicExportEligibility.ReasonRowFilter);
+        harness.PublicStorage.Objects.Keys.Should().NotContain(k => k.StartsWith("data/publications/parcels/", StringComparison.Ordinal));
+        var catalog = JsonNode.Parse(harness.PublicStorage.Objects["data/catalog.json"])!.AsObject();
+        catalog["links"]!.AsArray().Select(n => n!["href"]!.GetValue<string>())
+            .Should().NotContain(href => href.Contains("parcels", StringComparison.Ordinal));
+        harness.InvalidationRequests.Should().ContainSingle();
+        (await harness.StateStore.GetPromotedAsync("parcels", CancellationToken.None)).Should().BeNull();
+    }
+
+    [UnitTest]
+    public void PairedPublishJobRoute_AgentIdentifiedAdminKey_IsRefusedByAgentRouteAdmission()
+    {
+        const string route = "/api/v{version:apiVersion}/admin/tile-operations/jobs";
+        var agent = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(AdminApiKeyPermission.PermissionClaimType, AgentPrincipal.AgentGrant)], "test"));
+        var context = new DefaultHttpContext { User = agent };
+        context.Request.Method = HttpMethods.Post;
+        context.SetEndpoint(new RouteEndpoint(
+            _ => Task.CompletedTask,
+            RoutePatternFactory.Parse(route),
+            order: 0,
+            EndpointMetadataCollection.Empty,
+            displayName: route));
+
+        AgentRouteAdmissionMiddleware.IsRefused(context).Should().BeTrue();
     }
 }

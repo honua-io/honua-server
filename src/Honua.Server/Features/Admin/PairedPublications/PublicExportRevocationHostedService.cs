@@ -23,45 +23,89 @@ internal sealed record PublicExportRevocationDependencies
     public IHttpContextAccessor? HttpContextAccessor { get; init; }
 }
 
-// Resumes any non-terminal public export revocation records on startup and retries them on a steady cadence.
+// Resumes non-terminal public export revocations and periodically re-evaluates promoted exports.
 internal sealed partial class PublicExportRevocationHostedService(
     IServiceScopeFactory scopeFactory,
-    ILogger<PublicExportRevocationHostedService> logger) : BackgroundService
+    ILogger<PublicExportRevocationHostedService> logger,
+    TimeProvider? timeProvider = null) : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(15);
+    internal static readonly TimeSpan EligibilitySweepInterval = TimeSpan.FromMinutes(5);
+
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+    private DateTimeOffset? _lastEligibilitySweepAt;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(PollInterval);
         do
         {
-            try
-            {
-                using var scope = scopeFactory.CreateScope();
-                if (scope.ServiceProvider.GetService<IPublicPublicationDestination>() is null)
-                {
-                    return;
-                }
-
-                var revocation = scope.ServiceProvider.GetService<PublicExportRevocationService>();
-                if (revocation is not null)
-                {
-                    await revocation.ResumePendingAsync(stoppingToken).ConfigureAwait(false);
-                }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            var keepRunning = await RunCycleAsync(stoppingToken).ConfigureAwait(false);
+            if (!keepRunning)
             {
                 return;
-            }
-            catch (Exception exception)
-            {
-                LogRevocationSweepFailed(logger, exception);
             }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false));
     }
 
+    internal async Task<bool> RunCycleAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            if (scope.ServiceProvider.GetService<IPublicPublicationDestination>() is null)
+            {
+                return false;
+            }
+
+            var revocation = scope.ServiceProvider.GetService<PublicExportRevocationService>();
+            if (revocation is null)
+            {
+                return true;
+            }
+
+            await TrySweepEligibilityAsync(revocation, stoppingToken).ConfigureAwait(false);
+            await revocation.ResumePendingAsync(stoppingToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (Exception exception)
+        {
+            LogRevocationSweepFailed(logger, exception);
+            return true;
+        }
+    }
+
+    private async Task TrySweepEligibilityAsync(
+        PublicExportRevocationService revocation,
+        CancellationToken stoppingToken)
+    {
+        var now = _timeProvider.GetUtcNow();
+        if (_lastEligibilitySweepAt is { } last && now - last < EligibilitySweepInterval)
+        {
+            return;
+        }
+
+        try
+        {
+            await revocation.OnAdministrativeAccessChangeAsync(null, null, stoppingToken).ConfigureAwait(false);
+            _lastEligibilitySweepAt = _timeProvider.GetUtcNow();
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            LogEligibilitySweepFailed(logger, exception);
+        }
+    }
+
     [LoggerMessage(EventId = 10341, Level = LogLevel.Warning,
         Message = "Public export revocation recovery sweep failed; pending revocations will retry on the next tick.")]
     private static partial void LogRevocationSweepFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 10343, Level = LogLevel.Warning,
+        Message = "Public export eligibility sweep failed; re-evaluation will retry on the next tick.")]
+    private static partial void LogEligibilitySweepFailed(ILogger logger, Exception exception);
 }

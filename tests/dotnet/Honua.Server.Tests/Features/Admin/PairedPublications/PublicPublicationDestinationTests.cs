@@ -32,7 +32,7 @@ public sealed class PublicPublicationDestinationTests
                 StoragePath = "data/publications/roads/v1/roads.pmtiles", ContentType = "application/vnd.pmtiles",
                 SizeBytes = 3, UploadedAt = DateTimeOffset.UtcNow, Provider = CloudStorageProvider.AwsS3
             }, TimeSpan.Zero));
-        var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
+        using var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
         using var content = new MemoryStream([1, 2, 3]);
 
         var uri = await destination.PutAsync(new(Key, content, "application/vnd.pmtiles"), CancellationToken.None);
@@ -61,7 +61,7 @@ public sealed class PublicPublicationDestinationTests
                 ContentType = "application/vnd.pmtiles", SizeBytes = 1, UploadedAt = DateTimeOffset.UtcNow,
                 Provider = CloudStorageProvider.AwsS3
             }, TimeSpan.Zero));
-        var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
+        using var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
         using var content = new MemoryStream([1]);
 
         await destination.PutAsync(new(Key, content, "application/vnd.pmtiles")
@@ -86,7 +86,7 @@ public sealed class PublicPublicationDestinationTests
     public async Task PutAsync_InvalidProvenance_RefusesBeforeStorage(string service, int layer, long revision)
     {
         var storage = new Mock<ICloudFileStorage>(MockBehavior.Strict);
-        var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
+        using var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
         using var content = new MemoryStream([1]);
 
         var action = () => destination.PutAsync(new(Key, content, "application/vnd.pmtiles")
@@ -111,7 +111,7 @@ public sealed class PublicPublicationDestinationTests
     public async Task PutAsync_PrivateOrEscapingKey_RefusesBeforeStorage(string publication, string version, string name)
     {
         var storage = new Mock<ICloudFileStorage>(MockBehavior.Strict);
-        var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
+        using var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
         using var content = new MemoryStream([1]);
 
         var action = () => destination.PutAsync(new(new(publication, version, name), content, "application/octet-stream"), CancellationToken.None);
@@ -126,7 +126,7 @@ public sealed class PublicPublicationDestinationTests
         var storage = new Mock<ICloudFileStorage>();
         storage.Setup(s => s.UploadAsync(It.IsAny<FileUploadRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(UploadResult.CreateFailure("unavailable"));
-        var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
+        using var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
         using var content = new MemoryStream([1]);
 
         var action = () => destination.PutAsync(new(Key, content, "application/vnd.pmtiles"), CancellationToken.None);
@@ -142,7 +142,7 @@ public sealed class PublicPublicationDestinationTests
             .ReturnsAsync(false);
         storage.Setup(s => s.ExistsAsync("data/publications/roads/v1/roads.pmtiles", It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
-        var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
+        using var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
 
         var action = () => destination.DeleteAsync(Key, CancellationToken.None);
 
@@ -157,7 +157,7 @@ public sealed class PublicPublicationDestinationTests
             .ReturnsAsync(false);
         storage.Setup(s => s.ExistsAsync("data/publications/roads/v1/roads.pmtiles", It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
-        var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
+        using var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
 
         await destination.DeleteAsync(Key, CancellationToken.None);
     }
@@ -170,7 +170,7 @@ public sealed class PublicPublicationDestinationTests
             .ReturnsAsync(false);
         storage.Setup(s => s.ExistsAsync("data/publications/roads/v1/roads.pmtiles", It.IsAny<CancellationToken>()))
             .ThrowsAsync(new IOException("Storage unavailable"));
-        var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
+        using var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
 
         var action = () => destination.DeleteAsync(Key, CancellationToken.None);
 
@@ -184,7 +184,7 @@ public sealed class PublicPublicationDestinationTests
         var storage = new Mock<ICloudFileStorage>(MockBehavior.Strict);
         storage.Setup(s => s.DeleteAsync("data/publications/roads/v1/roads.pmtiles", cancellation.Token))
             .ReturnsAsync(true).Verifiable();
-        var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
+        using var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
 
         await destination.DeleteAsync(Key, cancellation.Token);
 
@@ -196,7 +196,7 @@ public sealed class PublicPublicationDestinationTests
     public async Task PutAsync_NegativeSize_RefusesBeforeStorage()
     {
         var storage = new Mock<ICloudFileStorage>(MockBehavior.Strict);
-        var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
+        using var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
         using var content = new MemoryStream([1]);
 
         var action = () => destination.PutAsync(new(Key, content, "application/vnd.pmtiles") { SizeBytes = -1 }, CancellationToken.None);

@@ -9,6 +9,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy;
 using Honua.Core.Features.Publishing.Descriptors;
@@ -16,8 +17,11 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.SharedCaching;
 using Honua.Server.Features.Admin.PairedPublications;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
 
@@ -34,6 +38,7 @@ internal sealed record PromotionScenario
     public string[]? MaskedFields { get; init; }
     public string? FailOnPublicKeyOnce { get; init; }
     public PublicExportCanaryResult? CanaryResult { get; init; }
+    public MetadataV2GraphSnapshot[]? CurrentSnapshots { get; init; }
 }
 
 internal sealed class FakePublicStorage
@@ -139,10 +144,12 @@ internal sealed class InMemoryPublicExportStateStore : IPublicExportStateStore
 internal sealed class PromotionHarness
 {
     public required PublicExportPromoter Promoter { get; init; }
+    public IPublicPublicationDestination? Destination { get; init; }
     public required PublicExportPromotionInput Input { get; init; }
     public required InMemoryPublicExportStateStore StateStore { get; init; }
     public required FakePublicStorage PublicStorage { get; init; }
     public required List<PublicExportCanaryFailure> CanaryNotices { get; init; }
+    public required List<string[]> InvalidationRequests { get; init; }
 
     public static PromotionHarness Create(PromotionScenario? scenario = null)
     {
@@ -163,18 +170,102 @@ internal sealed class PromotionHarness
         IPublicPublicationDestination? destination = opts.DestinationConfigured
             ? new PublicPublicationDestination(publicStorage.Storage.Object, new Uri("https://cdn.example.test/"))
             : null;
+        var input = BuildInput(opts, privateStorage.Object, descriptor);
+        var eligibility = CreateEligibility(opts);
+        var graphProvider = CreateGraphProvider(input, opts.CurrentSnapshots);
+        var (revocation, invalidationRequests) = CreateRevocationService(stateStore, eligibility, graphProvider, destination, notifier.Object);
         var deps = new PublicExportPromoterDependencies
         {
-            PrivateStorage = privateStorage.Object, Eligibility = CreateEligibility(opts),
-            StateStore = stateStore, Canary = canary.Object, OpsNotifier = notifier.Object
+            PrivateStorage = privateStorage.Object,
+            Eligibility = eligibility,
+            GraphProvider = graphProvider,
+            Revocation = revocation,
+            StateStore = stateStore,
+            Canary = canary.Object,
+            OpsNotifier = notifier.Object
         };
 
         return new PromotionHarness
         {
             Promoter = new PublicExportPromoter(deps, destination),
-            Input = BuildInput(opts, privateStorage.Object, descriptor),
-            StateStore = stateStore, PublicStorage = publicStorage, CanaryNotices = canaryNotices
+            Destination = destination,
+            Input = input,
+            StateStore = stateStore,
+            PublicStorage = publicStorage,
+            CanaryNotices = canaryNotices,
+            InvalidationRequests = invalidationRequests
         };
+    }
+
+    public static MetadataV2GraphSnapshot CreateSnapshot(MetadataV2Object resource, MetadataV2Service service)
+    {
+        var graph = new MetadataV2Graph
+        {
+            Revision = 12,
+            Services = [service],
+            Resources = [resource],
+            Publications =
+            [
+                new MetadataV2Layer
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "pub-parcels", Name = "parcels" },
+                    ServiceId = service.Metadata.Id,
+                    ResourceId = resource.Metadata.Id,
+                    LayerIndex = 0
+                }
+            ]
+        };
+        return new MetadataV2GraphSnapshot(graph, "etag-12", DateTimeOffset.UtcNow);
+    }
+
+    private static IMetadataV2GraphProvider CreateGraphProvider(
+        PublicExportPromotionInput input,
+        MetadataV2GraphSnapshot[]? snapshots)
+    {
+        var fallback = CreateSnapshot(input.Resource, input.Service);
+        var queue = new Queue<MetadataV2GraphSnapshot>(snapshots ?? [fallback]);
+        var last = snapshots is { Length: > 0 } ? snapshots[^1] : fallback;
+        var provider = new Mock<IMetadataV2GraphProvider>();
+        provider.Setup(g => g.GetCurrentAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => queue.Count > 0 ? queue.Dequeue() : last);
+        return provider.Object;
+    }
+
+    private static (PublicExportRevocationService Service, List<string[]> Requests) CreateRevocationService(
+        IPublicExportStateStore stateStore,
+        PublicExportEligibility eligibility,
+        IMetadataV2GraphProvider graphProvider,
+        IPublicPublicationDestination? destination,
+        IPublicExportOpsNotifier notifier)
+    {
+        var invalidationRequests = new List<string[]>();
+        var invalidator = new Mock<ICdnInvalidator>();
+        invalidator.Setup(i => i.InvalidateAsync(It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyCollection<string> paths, CancellationToken _) =>
+            {
+                invalidationRequests.Add([.. paths]);
+                return new CdnInvalidationResult(CdnInvalidationOutcome.Submitted, "INV-LATE");
+            });
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { [PublicExportRevocationService.DistributionIdSetting] = "E123DIST" })
+            .Build();
+        var statusReader = new Mock<ICdnInvalidationStatusReader>();
+        statusReader.Setup(r => r.ReadAsync(It.IsAny<CdnInvalidationReceipt>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CdnInvalidationStatusResult(CdnInvalidationStatus.Completed));
+        var service = new PublicExportRevocationService(
+            new PublicExportRevocationDependencies
+            {
+                StateStore = stateStore,
+                Eligibility = eligibility,
+                GraphProvider = graphProvider,
+                CdnInvalidation = new CdnInvalidationService(invalidator.Object, NullLogger<CdnInvalidationService>.Instance),
+                OpsNotifier = notifier,
+                Configuration = config,
+                Destination = destination,
+                StatusReader = statusReader.Object
+            },
+            NullLogger<PublicExportRevocationService>.Instance);
+        return (service, invalidationRequests);
     }
 
     private static PublicExportEligibility CreateEligibility(PromotionScenario opts)
