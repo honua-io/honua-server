@@ -13,6 +13,8 @@ internal sealed class ControlPlaneOptions
 {
     public const string SectionName = "ControlPlane";
 
+    public bool AllowPrivateNetworkProbes { get; set; }
+
     public List<DeployTargetOptions> DeployTargets { get; set; } = [];
 
     public List<ExecutionWorkloadOptions> ExecutionWorkloads { get; set; } = [];

@@ -1,6 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text;
+using System.Text.Json;
+using Honua.ControlPlane.Executors;
 using Honua.Core.Exceptions;
 using Honua.ControlPlane;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -292,7 +295,8 @@ internal static class ProposalEndpoints
     private static async Task<IResult> HandleOpenApprovalReview(
         string id, HttpContext context,
         [FromServices] OperationHumanApprovalAuthority authority,
-        [FromServices] IOperationProposalStore? proposalStore = null)
+        [FromServices] IOperationProposalStore? proposalStore = null,
+        [FromServices] ITenantContext? tenantContext = null)
     {
         context.Response.Headers.CacheControl = "no-store";
         if (!UnavailableOperationProposalStore.IsDurable(proposalStore)) return ControlPlaneUnavailable(context);
@@ -300,7 +304,14 @@ internal static class ProposalEndpoints
         {
             OperationHumanApprovalAuthority.RefuseNonHumanTransport(context);
             var proposal = await proposalStore.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
-            if (proposal is null || !OperationTenantAuthorization.CanAccess(context, proposal.TenantId)) return Results.NotFound();
+            if (proposal is null
+                || !OperationTenantAuthorization.CanAccess(context, proposal.TenantId)
+                || (proposal.Evidence is not null
+                    && !string.Equals(proposal.Evidence.TenantId, tenantContext?.TenantId, StringComparison.Ordinal)))
+            {
+                return Results.NotFound();
+            }
+
             var review = await authority.OpenReviewAsync(proposal, context).ConfigureAwait(false);
             return Results.Json(new ProposalHumanReviewResponse { Proposal = ToDetail(proposal), Review = review },
                 ProposalHumanReviewJsonContext.Default.ProposalHumanReviewResponse);
@@ -452,6 +463,7 @@ internal static class ProposalEndpoints
     private static ProposalDetailResponse ToDetail(OperationProposal proposal, OperationProposalExecutionView? execution = null) => new()
     {
         ProposalId = proposal.ProposalId,
+        OperationId = proposal.OperationId,
         Version = proposal.Version,
         PlanHash = proposal.SealedPlanHash,
         Initiation = proposal.Initiation?.Kind.ToString() ?? "Unknown",
@@ -466,10 +478,11 @@ internal static class ProposalEndpoints
         RequestedByAgent = proposal.RequestedByAgent,
         FindingId = proposal.AutonomyMetadata?.FindingId,
         AutonomyRule = proposal.AutonomyMetadata?.Rule,
-        ActionDiscriminator = proposal.AutonomyMetadata?.ActionDiscriminator,
+        ActionDiscriminator = proposal.ActionDiscriminator ?? proposal.AutonomyMetadata?.ActionDiscriminator,
         Summary = proposal.Plan.Summary,
         Diff = proposal.Plan.Diff,
         DryRun = proposal.Plan.DryRun,
+        ExecutionPayload = SanitizeExecutionPayload(proposal.Plan.ExecutionPayload),
         RiskLevel = proposal.Plan.RiskLevel.ToString(),
         BlockingReasons = proposal.Plan.BlockingReasons,
         Warnings = proposal.Plan.Warnings,
@@ -481,4 +494,65 @@ internal static class ProposalEndpoints
         UpdatedAt = execution?.UpdatedAt ?? proposal.UpdatedAt,
         ResolvedAt = proposal.ResolvedAt,
     };
+
+    internal static string? SanitizeExecutionPayload(string? executionPayload)
+    {
+        if (string.IsNullOrWhiteSpace(executionPayload))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(executionPayload);
+            using var stream = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(stream))
+            {
+                WriteSanitizedElement(writer, document.RootElement);
+            }
+
+            return Encoding.UTF8.GetString(stream.ToArray());
+        }
+        catch (JsonException)
+        {
+            return executionPayload;
+        }
+    }
+
+    private static void WriteSanitizedElement(Utf8JsonWriter writer, JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                writer.WriteStartObject();
+                foreach (var property in element.EnumerateObject())
+                {
+                    writer.WritePropertyName(property.Name);
+                    if (AdminConfigOperationExecutor.IsSensitiveParameterName(property.Name) &&
+                        property.Value.ValueKind is JsonValueKind.String or JsonValueKind.Number)
+                    {
+                        writer.WriteStringValue("[REDACTED]");
+                    }
+                    else
+                    {
+                        WriteSanitizedElement(writer, property.Value);
+                    }
+                }
+
+                writer.WriteEndObject();
+                break;
+            case JsonValueKind.Array:
+                writer.WriteStartArray();
+                foreach (var item in element.EnumerateArray())
+                {
+                    WriteSanitizedElement(writer, item);
+                }
+
+                writer.WriteEndArray();
+                break;
+            default:
+                element.WriteTo(writer);
+                break;
+        }
+    }
 }

@@ -45,8 +45,13 @@ internal sealed class OperationHumanApprovalTestHost : IDisposable
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddMemoryCache();
-        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection(
-            new Dictionary<string, string?> { ["Public:BaseUrl"] = options.Audience }).Build());
+        var configValues = new Dictionary<string, string?> { ["Public:BaseUrl"] = options.Audience };
+        if (options.AllowSelfApproval.HasValue)
+        {
+            configValues["Operations:Approval:AllowSelfApproval"] = options.AllowSelfApproval.Value.ToString();
+        }
+
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection(configValues).Build());
         services.AddSingleton<IHttpContextAccessor>(_requests);
         services.AddSingleton<TimeProvider>(Clock);
         services.AddSingleton<IDataProtectionProvider>(protection ?? new EphemeralDataProtectionProvider());
@@ -216,4 +221,5 @@ internal sealed record OperationHumanApprovalTestOptions
 {
     public string Audience { get; init; } = "https://server.example.com";
     public IPrincipalMembershipSource? Memberships { get; init; }
+    public bool? AllowSelfApproval { get; init; }
 }
