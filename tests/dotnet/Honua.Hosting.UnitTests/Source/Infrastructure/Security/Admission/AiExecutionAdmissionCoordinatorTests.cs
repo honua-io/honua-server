@@ -135,6 +135,24 @@ public sealed class AiExecutionAdmissionCoordinatorTests
         entry.Values.Select(value => value.Value?.ToString()).Should().NotContain("apikey:api-key:actor", "only the actor digest is logged");
     }
 
+    [UnitTheory]
+    [InlineData("financial_incident_required")]
+    [InlineData("financial_incident_invalid")]
+    [InlineData("financial_incident_exceeded")]
+    public async Task AcquireAsync_IncidentDenial_LogsBudgetCode(string code)
+    {
+        var store = new Store { Code = code, IncludeReservation = false };
+        using var services = Services(store);
+        var logger = EnabledLogger();
+
+        await FluentActions.Awaiting(() => Coordinator(services, logger, TimeProvider.System).AcquireAsync(Context, default))
+            .Should().ThrowAsync<AiAdmissionException>().Where(exception => exception.Code == code);
+
+        var entry = Entries(logger).Should().ContainSingle().Subject;
+        entry.EventId.Should().Be(9542);
+        entry.Values.Should().Contain(new KeyValuePair<string, object?>("AdmissionCode", code));
+    }
+
     [UnitTest]
     public async Task AcquireAsync_NonBudgetDenial_IsNotLoggedAsBudget()
     {

@@ -172,7 +172,8 @@ internal sealed partial class AiExecutionAdmissionCoordinator(
     private void LogFinancialDenial(AiExecutionContext context, string code)
     {
         if (code is not ("financial_monthly_actor_exceeded" or "financial_budget_exceeded" or "financial_ledger_full"
-            or "financial_stop" or "budget_exceeded"))
+            or "financial_stop" or "budget_exceeded"
+            or "financial_incident_required" or "financial_incident_invalid" or "financial_incident_exceeded"))
             return;
 
         var month = _clock.GetUtcNow().ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture);
