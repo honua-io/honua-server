@@ -84,7 +84,7 @@ Provision an ops-reader credential so a status dashboard or copilot can read the
 
 With a full-admin credential, `POST /api/v1/admin/api-keys` with `{"name":"ops-dashboard","permissions":["ops:read"]}` — see [Authenticate clients](../secure/authentication.md#2-create-scoped-api-keys-for-automation) for the call.
 
-The returned key authorizes the read-only ops surfaces — `GET /api/v1/operate/status`, `GET /api/v1/admin/observability/{ops-health,findings}`, and `GET /api/v1/admin/observability/alerts` — but is rejected with a `403` on every mutating ops operation (deploy rollback/promote/submit, `findings/{id}/propose`, alert `acknowledge`/`suppress`/`resolve`) and on non-ops admin surfaces such as key management. Full-admin keys and client-certificate admins are unaffected.
+The returned key authorizes the read-only ops surfaces — `GET /api/v1/operate/status`, `GET /api/v1/admin/observability/{ops-health,findings}`, and `GET /api/v1/admin/observability/alerts` (mapped only when the experimental `Capabilities:Experimental:alerts.geofence:Enabled=true` is set; otherwise every `/api/v1/admin/observability/alerts*` route returns `404` for every credential, and `GET /api/v1/operate/status` reports `domains.alerts.enabled: false` unless `Alerts:Ops:Enabled=true`) — but is rejected with a `403` on every mutating ops operation (deploy rollback/promote/submit, `findings/{id}/propose`, alert `acknowledge`/`suppress`/`resolve`) and on non-ops admin surfaces such as key management. Full-admin keys and client-certificate admins are unaffected.
 
 ## Steps
 
@@ -173,9 +173,8 @@ Expected: `Healthy` followed by a JSON health snapshot with status fields.
 
 ## Troubleshoot
 
-- **`/metrics` returns 401 or 403** — the endpoint requires the `Admin` policy. Scrape it with an admin credential, or keep it on an interface Prometheus can reach and your users cannot.
+- **`/metrics` returns 401 or 403** — the endpoint requires the `Admin` policy. A `401` means the scrape sent no credential: add the `X-API-Key` header (or an OIDC bearer token). A `403` means the credential is not an admin one. Scrape it with an admin credential, or keep it on an interface Prometheus can reach and your users cannot.
 - **`/metrics` returns 404** — the path was moved with `Observability__Prometheus__Path`, or no meter provider is registered (the server logs that it skipped mapping the endpoint).
-- **`/metrics` returns 401** — the scrape request is missing the `X-API-Key` header (or OIDC bearer token).
 - **No traces in your backend** — set `OTEL_EXPORTER_OTLP_ENDPOINT`, and check `Tracing__Enabled` has not been turned off; confirm status via `GET /api/v1/admin/observability/telemetry`.
 - **`/healthz/ready` flaps** — usually database connectivity; check `GET /monitoring/health/comprehensive` for the failing dependency. Readiness checks include migrations, PostgreSQL connectivity, the per-replica cache, and feature-change storage. Inspect server logs for the named failing check; a healthy cache alone does not prove durable shared-state availability.
 
