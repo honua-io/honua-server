@@ -132,6 +132,9 @@ internal sealed partial class GeoServerRestClient
             // Get advertised OGC service endpoints when GeoServer REST exposes service settings
             var serviceEndpoints = await GetServiceEndpointsAsync(baseUrl, cancellationToken);
 
+            // Get per-layer security rules when GeoServer REST exposes /security/acl/layers.json
+            var securityRules = await GetSecurityRulesAsync(baseUrl, cancellationToken);
+
             // Perform compatibility analysis
             var compatibility = includeCompatibilityAnalysis
                 ? PerformCompatibilityAnalysis(dataStores, coverageStores, layers, styles)
@@ -151,6 +154,7 @@ internal sealed partial class GeoServerRestClient
                 LayerGroups = layerGroups,
                 Styles = styles,
                 ServiceEndpoints = serviceEndpoints,
+                SecurityRules = securityRules,
                 CompatibilityAssessment = compatibility,
                 DiscoveredAt = DateTimeOffset.UtcNow
             };
@@ -506,6 +510,36 @@ internal sealed partial class GeoServerRestClient
             }
 
             var (dataStoreName, coverageStoreName) = ExtractStoreNames(layerElement);
+            var (timeDimension, elevationDimension) = ExtractDimensionsFromMetadata(layerElement);
+            var nativeName = GetOptionalStringProperty(layerElement, "nativeName");
+            var srs = GetOptionalStringProperty(layerElement, "srs");
+            var nativeCrs = GetOptionalStringProperty(layerElement, "nativeCRS");
+            var latLonBoundingBox = GetOptionalBoundingBox(layerElement, "latLonBoundingBox");
+            var nativeBoundingBox = GetOptionalBoundingBox(layerElement, "nativeBoundingBox");
+
+            if (timeDimension == null && elevationDimension == null &&
+                (!string.IsNullOrWhiteSpace(dataStoreName) || !string.IsNullOrWhiteSpace(coverageStoreName)))
+            {
+                var resourceDetails = await TryGetLayerResourceDetailsAsync(
+                    baseUrl,
+                    workspaceName,
+                    dataStoreName,
+                    coverageStoreName,
+                    nativeName ?? layerName,
+                    cancellationToken).ConfigureAwait(false);
+
+                if (resourceDetails != null)
+                {
+                    timeDimension = resourceDetails.TimeDimension;
+                    elevationDimension = resourceDetails.ElevationDimension;
+                    nativeName ??= resourceDetails.NativeName;
+                    srs ??= resourceDetails.Srs;
+                    nativeCrs ??= resourceDetails.NativeCrs;
+                    latLonBoundingBox ??= resourceDetails.LatLonBoundingBox;
+                    nativeBoundingBox ??= resourceDetails.NativeBoundingBox;
+                }
+            }
+
             var compatibility = AssessLayerCompatibility(layerElement);
 
             return new GeoServerLayerInfo
@@ -518,11 +552,13 @@ internal sealed partial class GeoServerRestClient
                 AlternativeStyles = alternativeStyles.ToArray(),
                 DataStoreName = dataStoreName,
                 CoverageStoreName = coverageStoreName,
-                NativeName = GetOptionalStringProperty(layerElement, "nativeName"),
-                SRS = GetOptionalStringProperty(layerElement, "srs"),
-                NativeCRS = GetOptionalStringProperty(layerElement, "nativeCRS"),
-                LatLonBoundingBox = GetOptionalBoundingBox(layerElement, "latLonBoundingBox"),
-                NativeBoundingBox = GetOptionalBoundingBox(layerElement, "nativeBoundingBox"),
+                NativeName = nativeName,
+                SRS = srs,
+                NativeCRS = nativeCrs,
+                LatLonBoundingBox = latLonBoundingBox,
+                NativeBoundingBox = nativeBoundingBox,
+                TimeDimension = timeDimension,
+                ElevationDimension = elevationDimension,
                 Enabled = GetOptionalBoolProperty(layerElement, "enabled") ?? true,
                 Queryable = GetOptionalBoolProperty(layerElement, "queryable") ?? true,
                 Opaque = GetOptionalBoolProperty(layerElement, "opaque") ?? false,
@@ -1488,6 +1524,206 @@ internal sealed partial class GeoServerRestClient
 
         [LoggerMessage(7988, LogLevel.Debug, "GeoServer {Protocol} service settings were unavailable during inventory scan")]
         public static partial void ServiceSettingsUnavailable(ILogger logger, string protocol, Exception exception);
+
+        [LoggerMessage(7989, LogLevel.Debug, "GeoServer security ACL rules were unavailable during discovery")]
+        public static partial void SecurityRulesUnavailable(ILogger logger, Exception exception);
+
+        [LoggerMessage(7990, LogLevel.Debug, "GeoServer featureType/coverage metadata was unavailable for {WorkspaceName}/{LayerName}")]
+        public static partial void FeatureTypeMetadataUnavailable(ILogger logger, string workspaceName, string layerName, Exception exception);
+    }
+
+    private sealed record LayerResourceDetails(
+        GeoServerDimensionInfo? TimeDimension,
+        GeoServerDimensionInfo? ElevationDimension,
+        string? NativeName,
+        string? Srs,
+        string? NativeCrs,
+        GeoServerBoundingBox? LatLonBoundingBox,
+        GeoServerBoundingBox? NativeBoundingBox);
+
+    private async Task<LayerResourceDetails?> TryGetLayerResourceDetailsAsync(
+        string baseUrl,
+        string workspaceName,
+        string? dataStoreName,
+        string? coverageStoreName,
+        string resourceName,
+        CancellationToken cancellationToken)
+    {
+        var relativePath = !string.IsNullOrWhiteSpace(dataStoreName)
+            ? $"workspaces/{EscapePathSegment(workspaceName)}/datastores/{EscapePathSegment(dataStoreName)}/featuretypes/{EscapePathSegment(resourceName)}"
+            : $"workspaces/{EscapePathSegment(workspaceName)}/coveragestores/{EscapePathSegment(coverageStoreName!)}/coverages/{EscapePathSegment(resourceName)}";
+        var rootProperty = !string.IsNullOrWhiteSpace(dataStoreName) ? "featureType" : "coverage";
+
+        try
+        {
+            using var json = await GetRequiredJsonDocumentAsync(BuildJsonUrl(baseUrl, relativePath), cancellationToken)
+                .ConfigureAwait(false);
+            if (!json.RootElement.TryGetProperty(rootProperty, out var resourceElement) ||
+                resourceElement.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            var (timeDim, elevDim) = ExtractDimensionsFromMetadata(resourceElement);
+            return new LayerResourceDetails(
+                timeDim,
+                elevDim,
+                GetOptionalStringProperty(resourceElement, "nativeName"),
+                GetOptionalStringProperty(resourceElement, "srs"),
+                GetOptionalStringProperty(resourceElement, "nativeCRS"),
+                GetOptionalBoundingBox(resourceElement, "latLonBoundingBox"),
+                GetOptionalBoundingBox(resourceElement, "nativeBoundingBox"));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or JsonException)
+        {
+            Log.FeatureTypeMetadataUnavailable(_logger, workspaceName, resourceName, ex);
+            return null;
+        }
+    }
+
+    private static (GeoServerDimensionInfo? TimeDimension, GeoServerDimensionInfo? ElevationDimension) ExtractDimensionsFromMetadata(
+        JsonElement parentElement)
+    {
+        GeoServerDimensionInfo? timeDimension = null;
+        GeoServerDimensionInfo? elevationDimension = null;
+
+        foreach (var entry in EnumerateCollectionItems(parentElement, "metadata", "entry"))
+        {
+            if (entry.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var key = GetOptionalStringProperty(entry, "@key");
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                continue;
+            }
+
+            if (!entry.TryGetProperty("dimensionInfo", out var dimensionElement) ||
+                dimensionElement.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var parsed = ParseDimensionInfo(dimensionElement);
+            if (string.Equals(key, "time", StringComparison.OrdinalIgnoreCase))
+            {
+                timeDimension = parsed;
+            }
+            else if (string.Equals(key, "elevation", StringComparison.OrdinalIgnoreCase))
+            {
+                elevationDimension = parsed;
+            }
+        }
+
+        return (timeDimension, elevationDimension);
+    }
+
+    private static GeoServerDimensionInfo ParseDimensionInfo(JsonElement element)
+    {
+        string? defaultStrategy = null;
+        string? defaultReference = null;
+        if (element.TryGetProperty("defaultValue", out var defaultValueElement) &&
+            defaultValueElement.ValueKind == JsonValueKind.Object)
+        {
+            defaultStrategy = GetOptionalStringProperty(defaultValueElement, "strategy");
+            defaultReference = GetOptionalStringProperty(defaultValueElement, "referenceValue");
+        }
+
+        return new GeoServerDimensionInfo
+        {
+            Enabled = GetOptionalBoolProperty(element, "enabled") ?? false,
+            Attribute = GetOptionalStringProperty(element, "attribute"),
+            EndAttribute = GetOptionalStringProperty(element, "endAttribute"),
+            Presentation = GetOptionalStringProperty(element, "presentation"),
+            Resolution = GetOptionalDoubleProperty(element, "resolution"),
+            Units = GetOptionalStringProperty(element, "units"),
+            UnitSymbol = GetOptionalStringProperty(element, "unitSymbol"),
+            NearestMatchEnabled = GetOptionalBoolProperty(element, "nearestMatchEnabled") ?? false,
+            DefaultValueStrategy = defaultStrategy,
+            DefaultValueReference = defaultReference
+        };
+    }
+
+    private async Task<GeoServerSecurityRule[]> GetSecurityRulesAsync(
+        string baseUrl,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var json = await GetRequiredJsonDocumentAsync(
+                BuildJsonUrl(baseUrl, "security/acl/layers"),
+                cancellationToken).ConfigureAwait(false);
+
+            if (json.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return [];
+            }
+
+            var rules = new List<GeoServerSecurityRule>();
+            foreach (var property in json.RootElement.EnumerateObject())
+            {
+                if (property.Value.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                var rawRoles = property.Value.GetString() ?? string.Empty;
+                var roles = rawRoles
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Where(static role => role.Length > 0)
+                    .ToArray();
+
+                rules.Add(ParseSecurityRule(property.Name, roles));
+            }
+
+            return rules
+                .OrderBy(static rule => rule.RuleKey, StringComparer.Ordinal)
+                .ToArray();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or JsonException)
+        {
+            Log.SecurityRulesUnavailable(_logger, ex);
+            return [];
+        }
+    }
+
+    private static GeoServerSecurityRule ParseSecurityRule(string ruleKey, string[] roles)
+    {
+        if (string.Equals(ruleKey, "mode", StringComparison.OrdinalIgnoreCase))
+        {
+            return new GeoServerSecurityRule
+            {
+                RuleKey = ruleKey,
+                WorkspacePattern = "*",
+                LayerPattern = "*",
+                Mode = "catalog-mode",
+                Roles = roles
+            };
+        }
+
+        var parts = ruleKey.Split('.');
+        if (parts.Length == 3)
+        {
+            return new GeoServerSecurityRule
+            {
+                RuleKey = ruleKey,
+                WorkspacePattern = parts[0],
+                LayerPattern = parts[1],
+                Mode = parts[2],
+                Roles = roles
+            };
+        }
+
+        return new GeoServerSecurityRule
+        {
+            RuleKey = ruleKey,
+            WorkspacePattern = "*",
+            LayerPattern = "*",
+            Mode = "unknown",
+            Roles = roles
+        };
     }
 }
 

@@ -55,6 +55,10 @@ public sealed record GeoServerImportProgress : IOperationProgress, ICancellableO
 
     public MigrationRunMetricsArtifact? RunMetrics { get; init; }
 
+    public string? MigrationRunId { get; init; }
+
+    public GeoServerReconciliationBundle? ReconciliationBundle { get; init; }
+
     // IOperationProgress implementation
     string IOperationProgress.OperationId => JobId;
     OperationType IOperationProgress.Type => OperationType.ExternalImport;
