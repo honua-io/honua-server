@@ -92,7 +92,7 @@ internal sealed class OpsSelfCheckSource(
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new HttpRequestException("Public release check timed out.");
+            throw new HttpRequestException("Public release check timed out.", new TimeoutException());
         }
     }
 
