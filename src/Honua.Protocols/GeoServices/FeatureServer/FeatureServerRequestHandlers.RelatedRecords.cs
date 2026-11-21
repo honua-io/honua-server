@@ -120,7 +120,22 @@ internal static partial class FeatureServerEndpoints
         parameters = null!;
         errorMessage = null;
 
-        if (!TryParseRequiredLongArray(values, "objectIds", maxObjectIdCount, out var objectIds, out errorMessage))
+        var hasObjectIds = TryGetValue(values, "objectIds", out var rawObjectIds) && !StringValues.IsNullOrEmpty(rawObjectIds);
+        var hasGlobalIds = TryGetValue(values, "globalIds", out var rawGlobalIds) && !StringValues.IsNullOrEmpty(rawGlobalIds);
+        if (!hasObjectIds && !hasGlobalIds)
+        {
+            errorMessage = "objectIds or globalIds parameter is required";
+            return false;
+        }
+
+        long[] objectIds = [];
+        if (hasObjectIds && !TryParseRequiredLongArray(values, "objectIds", maxObjectIdCount, out objectIds, out errorMessage))
+        {
+            return false;
+        }
+
+        string[]? globalIds = null;
+        if (hasGlobalIds && !TryParseGlobalIdArray(rawGlobalIds.ToString(), maxObjectIdCount, out globalIds, out errorMessage))
         {
             return false;
         }
@@ -238,6 +253,7 @@ internal static partial class FeatureServerEndpoints
         parameters = new QueryRelatedRecordsParameters
         {
             ObjectIds = objectIds,
+            GlobalIds = globalIds,
             RelationshipId = relationshipId,
             OutFields = NormalizeOutFields(outFields),
             Where = where,
@@ -265,5 +281,44 @@ internal static partial class FeatureServerEndpoints
     {
         var limits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
         return Math.Clamp(limits.Query.MaxRecordCount, 1, MaxRelatedRecordsObjectIdCountUpperBound);
+    }
+
+    private static bool TryParseGlobalIdArray(
+        string raw,
+        int maxCount,
+        out string[] globalIds,
+        out string? errorMessage)
+    {
+        globalIds = [];
+        errorMessage = null;
+
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            errorMessage = "globalIds parameter cannot be empty";
+            return false;
+        }
+
+        var parts = raw.Split(',', StringSplitOptions.None);
+        if (parts.Length > maxCount)
+        {
+            errorMessage = $"globalIds parameter cannot exceed {maxCount} items";
+            return false;
+        }
+
+        var parsed = new string[parts.Length];
+        for (var i = 0; i < parts.Length; i++)
+        {
+            var token = parts[i].Trim();
+            if (!FeatureServerGlobalIds.TryParseGlobalId(token, out var normalized))
+            {
+                errorMessage = "globalIds must contain valid UUID values";
+                return false;
+            }
+
+            parsed[i] = normalized;
+        }
+
+        globalIds = parsed;
+        return true;
     }
 }

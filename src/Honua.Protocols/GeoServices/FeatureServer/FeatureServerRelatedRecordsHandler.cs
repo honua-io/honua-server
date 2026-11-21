@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -85,11 +86,23 @@ internal sealed class FeatureServerRelatedRecordsHandler(
             }
 
             // Validate required parameters (these should already be validated by parameter parsing)
-            if (queryParams.ObjectIds.Length == 0)
+            if (queryParams.ObjectIds.Length == 0 && queryParams.GlobalIds is not { Length: > 0 })
             {
                 return StandardErrorHelpers.CreateBadRequest(httpContext,
                     "Invalid query parameters",
-                    ["objectIds parameter is required"]);
+                    ["objectIds or globalIds parameter is required"]);
+            }
+
+            MetadataV2Field? sourceGlobalIdField = null;
+            if (queryParams.GlobalIds is { Length: > 0 })
+            {
+                sourceGlobalIdField = FeatureServerGlobalIds.ResolveGlobalIdField(resource);
+                if (sourceGlobalIdField is null)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(httpContext,
+                        "globalIds is not supported for this layer",
+                        ["The target layer does not have a configured globalIdField."]);
+                }
             }
 
             var relationship = resource.Relationships.FirstOrDefault(r => ResolveRelationshipId(r) == queryParams.RelationshipId);
@@ -174,7 +187,10 @@ internal sealed class FeatureServerRelatedRecordsHandler(
                     [ex.Message]);
             }
 
-            var objectIds = queryParams.ObjectIds;
+            var objectIds = await ResolveSourceObjectIdsAsync(
+                httpContext,
+                new SourceGlobalIdLookup(resource, sourceGlobalIdField, sourceStorageLayerId.Value, queryParams),
+                cancellationToken).ConfigureAwait(false);
             var outputSrid = await _queryServices.ResolveSridAsync(validatedParams.OutSr, null, cancellationToken);
             if (!string.IsNullOrWhiteSpace(validatedParams.OutSr) && !outputSrid.HasValue)
             {
@@ -221,8 +237,10 @@ internal sealed class FeatureServerRelatedRecordsHandler(
                 relatedStorageLayerId.Value,
                 sqlFilter);
 
-            // Execute related query
-            QueryResult<Feature> result = await _relatedRecordsService.ExecuteRelatedQueryAsync(sourceStorageLayerId.Value, relatedQuery, cancellationToken);
+            // Execute related query (skip storage call when globalIds matched no visible source rows)
+            QueryResult<Feature> result = objectIds.Length == 0
+                ? QueryResult<Feature>.Empty()
+                : await _relatedRecordsService.ExecuteRelatedQueryAsync(sourceStorageLayerId.Value, relatedQuery, cancellationToken);
 
             // Related storage queries return source coordinates. Reproject the WKB,
             // rather than only labeling those coordinates with the requested outSR.
@@ -442,4 +460,62 @@ internal sealed class FeatureServerRelatedRecordsHandler(
         MetadataV2Layer publication,
         MetadataV2Object resource)
         => snapshot.ResolveStorageLayerId(publication, resource);
+
+    private readonly record struct SourceGlobalIdLookup(
+        MetadataV2Object Resource,
+        MetadataV2Field? GlobalIdField,
+        int StorageLayerId,
+        QueryRelatedRecordsParameters QueryParams);
+
+    private async Task<long[]> ResolveSourceObjectIdsAsync(
+        HttpContext httpContext,
+        SourceGlobalIdLookup lookup,
+        CancellationToken cancellationToken)
+    {
+        if (lookup.QueryParams.GlobalIds is not { Length: > 0 } || lookup.GlobalIdField is null)
+        {
+            return lookup.QueryParams.ObjectIds;
+        }
+
+        var featureReader = httpContext.RequestServices.GetRequiredService<IFeatureReader>();
+        var lookupContext = new GlobalIdLookupContext(
+            featureReader,
+            _filterExpressionService,
+            lookup.Resource,
+            lookup.GlobalIdField,
+            lookup.StorageLayerId,
+            VersionContext: null);
+        var matched = await FeatureServerGlobalIds.ResolveFeaturesByGlobalIdsAsync(
+            lookupContext,
+            lookup.QueryParams.GlobalIds,
+            cancellationToken).ConfigureAwait(false);
+
+        return CombineResolvedObjectIds(lookup.QueryParams.ObjectIds, lookup.QueryParams.GlobalIds, matched);
+    }
+
+    private static long[] CombineResolvedObjectIds(
+        long[] objectIds,
+        string[] globalIds,
+        IReadOnlyDictionary<string, Feature> matched)
+    {
+        var combined = new List<long>(objectIds.Length + globalIds.Length);
+        var seen = new HashSet<long>();
+        foreach (var objectId in objectIds)
+        {
+            if (seen.Add(objectId))
+            {
+                combined.Add(objectId);
+            }
+        }
+
+        foreach (var globalId in globalIds)
+        {
+            if (matched.TryGetValue(globalId, out var feature) && seen.Add(feature.Id))
+            {
+                combined.Add(feature.Id);
+            }
+        }
+
+        return combined.ToArray();
+    }
 }

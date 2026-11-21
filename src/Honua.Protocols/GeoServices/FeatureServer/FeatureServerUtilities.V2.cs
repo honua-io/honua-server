@@ -205,7 +205,7 @@ internal static partial class FeatureServerEndpoints
             SupportsTrueCurve = false,
             SupportsReturningQueryExtent = supportsAdvancedQueries && resource.Type != MetadataV2ObjectType.Table,
             SupportsRollbackOnFailureParameter = supportsEditing,
-            SupportsApplyEditsWithGlobalIds = false,
+            SupportsApplyEditsWithGlobalIds = supportsEditing && !string.IsNullOrWhiteSpace(globalIdField),
             IsDataVersioned = branchVersioningEnabled,
             IsDataBranchVersioned = branchVersioningEnabled,
             HasAttachments = supportsQueryAttachments,
