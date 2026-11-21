@@ -3,7 +3,8 @@ name: Install Images
 # Builds the small images that customer installs run beside the server and publishes them to the
 # existing public honua-server package. Each one lives in its own docker/<image> directory:
 #   * postgres-client: psql for the Launch Stack's start-up containers;
-#   * console-web: the Compose quickstart's static Console web server.
+#   * console-web: the Compose quickstart's static Console web server;
+#   * compose-postgres: the Compose installs' PostgreSQL, PostGIS and pgRouting database.
 # Every platform of each pushed digest passes scripts/ci/trivy-release-gate.sh before any tag is
 # assigned. The weekly schedule rebuilds them on current Alpine packages, so a fixed CVE reaches
 # a new digest without a source change; installs pin a digest published by this workflow.
@@ -14,13 +15,16 @@ on:
     paths:
       - 'docker/postgres-client/**'
       - 'docker/console-web/**'
+      - 'docker/compose-postgres/**'
       - '.github/workflows/install-images.yml'
       - 'scripts/ci/trivy-release-gate.sh'
+      - 'scripts/docker/test-compose-postgres-upgrade.sh'
   push:
     branches: [trunk]
     paths:
       - 'docker/postgres-client/**'
       - 'docker/console-web/**'
+      - 'docker/compose-postgres/**'
       - '.github/workflows/install-images.yml'
   schedule:
     - cron: '30 6 * * 1'
@@ -48,6 +52,11 @@ jobs:
             smoke: psql --version && command -v chown && test "$(id -u)" = 65534
           - name: console-web
             smoke: nginx -t && test "$(id -u)" = 101
+          - name: compose-postgres
+            smoke: >-
+              postgres --version && gosu --version && test -x /usr/local/bin/honua-collation-refresh.sh &&
+              dpkg-query -W -f='${Version}' postgresql-17-postgis-3 | grep -q '^3[.]5[.]' &&
+              dpkg-query -W -f='${Version}' postgresql-17-pgrouting | grep -q '^3[.]7[.]'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -81,6 +90,28 @@ jobs:
           format: table
           vuln-type: os,library
 
+  database-upgrade:
+    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
+    name: Upgrade a Compose database volume from the previous base
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Build the database image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: docker/compose-postgres
+          platforms: linux/amd64
+          load: true
+          tags: honua-compose-postgres:upgrade
+          provenance: false
+          sbom: false
+      - name: Upgrade a volume created on the previous base
+        run: scripts/docker/test-compose-postgres-upgrade.sh honua-compose-postgres:upgrade
+
   authorize-publish:
     if: github.event_name != 'pull_request' && github.repository == 'honua-io/honua-server'
     uses: ./.github/workflows/publish-authorization.yml
@@ -101,6 +132,12 @@ jobs:
           - name: console-web
             title: Honua Console web server
             smoke: nginx -t && test "$(id -u)" = 101
+          - name: compose-postgres
+            title: Honua Compose database
+            smoke: >-
+              postgres --version && gosu --version && test -x /usr/local/bin/honua-collation-refresh.sh &&
+              dpkg-query -W -f='${Version}' postgresql-17-postgis-3 | grep -q '^3[.]5[.]' &&
+              dpkg-query -W -f='${Version}' postgresql-17-pgrouting | grep -q '^3[.]7[.]'
     permissions:
       contents: read
       packages: write
