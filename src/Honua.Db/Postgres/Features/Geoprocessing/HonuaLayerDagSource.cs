@@ -85,7 +85,9 @@ internal sealed class HonuaLayerDagSource : IDagFeatureSource
         var geoJsonWriter = new GeoJsonWriter();
 
         await foreach (var feature in UnsupportedWhereSelection.Explain(
-                _streamingStore.StreamFeaturesAsync(layerId, query, cancellationToken), query, cancellationToken)
+                _streamingStore.StreamFeaturesAsync(layerId, query, cancellationToken),
+                query.SqlFilter is null ? request.Where : null,
+                cancellationToken)
             .ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();

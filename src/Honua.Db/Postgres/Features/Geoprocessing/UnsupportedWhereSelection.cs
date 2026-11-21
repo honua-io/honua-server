@@ -18,7 +18,7 @@ internal static class UnsupportedWhereSelection
 
     internal static async IAsyncEnumerable<Feature> Explain(
         IAsyncEnumerable<Feature> rows,
-        FeatureQuery query,
+        string? callerWhere,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var enumerator = rows.GetAsyncEnumerator(cancellationToken);
@@ -31,7 +31,7 @@ internal static class UnsupportedWhereSelection
                 {
                     moved = await enumerator.MoveNextAsync().ConfigureAwait(false);
                 }
-                catch (ArgumentException ex) when (IsUnsupported(query))
+                catch (ArgumentException ex) when (IsUnsupported(callerWhere))
                 {
                     throw new DagSourceSelectionException(Message, ex);
                 }
@@ -46,10 +46,10 @@ internal static class UnsupportedWhereSelection
         }
     }
 
-    // Only a clause the legacy grammar itself rejects is relabelled; any other store
-    // argument failure keeps its type and existing classification.
-    private static bool IsUnsupported(FeatureQuery query)
-        => query.SqlFilter is null
-            && !string.IsNullOrWhiteSpace(query.Where)
-            && !FeatureQueryBuilder.IsSupportedWhereClause(query.Where);
+    // Only a clause the caller wrote and the legacy grammar rejects is relabelled; server-added
+    // predicates (e.g. a watermark) and other store argument failures keep their classification.
+    // Callers pass null when a structured SqlFilter replaces the legacy clause.
+    private static bool IsUnsupported(string? callerWhere)
+        => !string.IsNullOrWhiteSpace(callerWhere)
+            && !FeatureQueryBuilder.IsSupportedWhereClause(callerWhere);
 }

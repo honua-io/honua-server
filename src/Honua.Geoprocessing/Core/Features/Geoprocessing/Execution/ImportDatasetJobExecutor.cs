@@ -138,7 +138,8 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
 
         if (!File.Exists(resolvedSourcePath))
         {
-            return JobExecutionResult.InvalidInput(
+            // Staging may become visible late on shared storage, so a missing file keeps the retry budget.
+            return JobExecutionResult.Failed(
                 $"Invalid {HandledProcessId} inputs: staged source file was not found.");
         }
 

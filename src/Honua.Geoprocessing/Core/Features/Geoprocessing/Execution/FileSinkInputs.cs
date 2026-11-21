@@ -42,7 +42,7 @@ internal sealed class FileSinkInputReader(string processId, GeoprocessingExecuto
         var outputRoot = options.OutputRootDirectory;
         if (!SinkPathResolver.TryResolveOutputPath(outputRoot, path, job, out var resolvedPath, out var pathResolutionError))
         {
-            return Reject(pathResolutionError);
+            return Reject(pathResolutionError ?? "path is invalid");
         }
 
         // Stream the input so a large collection writes incrementally; spilled NDJSON

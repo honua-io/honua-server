@@ -288,6 +288,34 @@ public sealed class DagSourceReaderTests
     }
 
     [UnitTest]
+    public async Task HonuaLayer_WatermarkOnlyArgumentFailure_IsNotBlamedOnTheCaller()
+    {
+        // The connector appends its own watermark predicate; with no caller where, a store
+        // argument failure must not be reported as an unsupported caller clause.
+        var store = Substitute.For<IStreamingFeatureStore>();
+        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ThrowingAsync(new ArgumentException("WHERE clause format not supported.")));
+        var reader = new HonuaLayerDagSource(store);
+        var request = new DagSourceRequest { LayerId = 42, Since = "2026-01-01T00:00:00Z", WatermarkField = "updated_at" };
+
+        var act = async () => await CollectAsync(reader.ReadAsync(request));
+
+        await act.Should().ThrowExactlyAsync<ArgumentException>();
+    }
+
+    [UnitTheory]
+    [InlineData("name = 'x'")]
+    [InlineData("1=1")]
+    public void IsSupportedWhereClause_SimpleComparison_IsSupported(string where)
+        => Honua.Db.Postgres.Features.FeatureStore.Services.FeatureQueryBuilder.IsSupportedWhereClause(where)
+            .Should().BeTrue();
+
+    [UnitTest]
+    public void IsSupportedWhereClause_LiteralOnBothSides_IsRejected()
+        => Honua.Db.Postgres.Features.FeatureStore.Services.FeatureQueryBuilder.IsSupportedWhereClause("1=1 AND 'a' = 'a'")
+            .Should().BeFalse();
+
+    [UnitTest]
     public async Task HonuaLayer_ObjectIdsRequest_BuildsExactObjectIdSet()
     {
         // Analytics.buffer-aggregate and its layer-sourced siblings propagate objectIds
