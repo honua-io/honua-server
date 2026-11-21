@@ -48,6 +48,25 @@ public sealed class ChangeTrackerObjectIdFilterTests
         stub.UnfilteredCalls.Should().Be(0, "an empty id set can never match, so the feed must not be materialized");
     }
 
+    [UnitTest]
+    public async Task GetChangesInWindow_WithAPageLimit_DefaultImplementationKeepsTheOldest()
+    {
+        IChangeTracker tracker = new StubChangeTracker(
+            CreateChange(objectId: 1, FeatureChangeOperation.Insert),
+            CreateChange(objectId: 2, FeatureChangeOperation.Update),
+            CreateChange(objectId: 3, FeatureChangeOperation.Delete));
+
+        var page = await tracker.GetChangesInWindowAsync(new FeatureChangeWindow
+        {
+            SinceGeneration = 0,
+            ThroughGeneration = 3,
+            LayerIds = [0],
+            Limit = 2
+        });
+
+        page.Select(change => change.ObjectId).Should().Equal(1, 2);
+    }
+
     private static FeatureChange CreateChange(long objectId, FeatureChangeOperation operation) => new()
     {
         ChangeId = objectId,

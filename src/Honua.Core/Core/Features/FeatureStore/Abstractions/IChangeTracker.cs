@@ -50,6 +50,19 @@ public interface IChangeTracker
             .ToList();
     }
 
+    // Paged readers take at most Limit collapsed changes. A provider that can bound the read in
+    // storage overrides this so a long change log never reaches memory whole.
+    async Task<IReadOnlyList<FeatureChange>> GetChangesInWindowAsync(
+        FeatureChangeWindow window,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(window);
+        var changes = await GetChangesInWindowAsync(
+            window.SinceGeneration, window.ThroughGeneration, window.LayerIds,
+            excludeOriginReplicaId: null, cancellationToken).ConfigureAwait(false);
+        return changes.Count <= window.Limit ? changes : [.. changes.Take(window.Limit)];
+    }
+
     async Task<IReadOnlyList<FeatureChange>> GetChangesInWindowAsync(
         long sinceGeneration,
         long throughGeneration,

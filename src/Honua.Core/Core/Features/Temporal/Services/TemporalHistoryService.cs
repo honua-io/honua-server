@@ -142,14 +142,20 @@ public sealed partial class TemporalHistoryService : ITemporalHistoryService
             resolvedGeneration = currentGeneration;
         }
 
+        var limit = Math.Min(request.Limit ?? DefaultLimit, MaxLimit);
+
+        // The page bound goes into the change-log read itself, not only onto its result.
         var changes = await _changeTracker
             .GetChangesInWindowAsync(
-                resolvedGeneration, currentGeneration, [storageLayerId],
-                excludeOriginReplicaId: null, cancellationToken)
+                new FeatureChangeWindow
+                {
+                    SinceGeneration = resolvedGeneration,
+                    ThroughGeneration = currentGeneration,
+                    LayerIds = [storageLayerId],
+                    Limit = limit
+                },
+                cancellationToken)
             .ConfigureAwait(false);
-
-        var limit = request.Limit ?? DefaultLimit;
-        limit = Math.Min(limit, MaxLimit);
 
         // Bound the page first, then batch-fetch the surviving features' current snapshots with a
         // single ObjectIds query instead of one feature read per change (avoids up to MaxLimit
