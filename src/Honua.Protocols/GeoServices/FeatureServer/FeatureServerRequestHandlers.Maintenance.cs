@@ -422,6 +422,11 @@ internal static partial class FeatureServerEndpoints
                 $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not bound to a storage layer.");
         }
 
+        if (FeatureServerEditRefusals.ForSourceTable(context, snapshot, publication) is { } sourceTableRefusal)
+        {
+            return sourceTableRefusal;
+        }
+
         IReadOnlyDictionary<string, StringValues> values = ToCaseInsensitiveDictionary(context.Request.Query);
         if (HttpMethods.IsPost(context.Request.Method))
         {

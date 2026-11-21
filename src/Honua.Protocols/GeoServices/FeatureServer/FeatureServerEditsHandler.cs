@@ -261,6 +261,11 @@ internal sealed class FeatureServerEditsHandler(
                 }
             }
 
+            if (FeatureServerEditRefusals.ForSourceTable(httpContext, snapshot, publication) is { } sourceTableRefusal)
+            {
+                return sourceTableRefusal;
+            }
+
             // Resolve the authenticated principal once so owner-based edit policies
             // (ownership-based access control) are enforced consistently in the
             // shared edit pipeline rather than by caller discipline.

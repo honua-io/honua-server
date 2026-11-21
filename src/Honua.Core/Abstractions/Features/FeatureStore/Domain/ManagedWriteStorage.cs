@@ -10,6 +10,11 @@ namespace Honua.Core.Features.FeatureStore.Domain;
 // neither writable nor advertised as editable.
 public static class ManagedWriteStorage
 {
+    // Returned to callers on some surfaces, so it never names the table, which is internal.
+    public const string WriteRefusal =
+        "This layer is published over a source table, which this server cannot write through. " +
+        "Edit the source table directly and refresh the layer, or republish the data into the managed feature store.";
+
     private static readonly HashSet<string> _editCapabilities = new(StringComparer.OrdinalIgnoreCase)
     {
         MetadataV2EditCapabilities.Create,

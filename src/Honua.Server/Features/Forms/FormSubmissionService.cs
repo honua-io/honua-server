@@ -216,6 +216,12 @@ internal sealed class FormSubmissionService
                 return Results.Json(rejected, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: StatusCodes.Status400BadRequest);
             }
 
+            if (targetMetadata.ServedFromSourceTable)
+            {
+                // Refused before the owner-policy read, which uses the managed store and would not find the row.
+                throw new ReadOnlyFeatureWriteException(ManagedWriteStorage.WriteRefusal);
+            }
+
             var optimized = _editProcessor.OptimizeEdit(editRequest, targetMetadata.Resource);
             var batch = _editProcessor.ToFeatureEditBatch(optimized, targetMetadata.Resource);
             var ownerPrepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(

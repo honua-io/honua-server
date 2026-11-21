@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -64,6 +65,70 @@ public sealed class SourceBackedLayerEditRefusalTests : IAsyncLifetime
         (await CountAsync(schema, $"SELECT COUNT(*) FROM {SourceTable}")).Should().Be(1);
     }
 
+    // Every other edit kind is refused like an add, before any target features are read: the pre-reads
+    // would report a visible row as missing, or a where-clause edit as a successful edit of nothing.
+    [IntegrationTheory]
+    [Operation(Operations.Update)]
+    [Operation(Operations.Delete)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    [InlineData("updateFeatures", "features=%5B%7B%22attributes%22%3A%7B%22objectid%22%3A1%2C%22name%22%3A%22renamed%22%7D%7D%5D")]
+    [InlineData("deleteFeatures", "objectIds=1")]
+    [InlineData("deleteFeatures", "where=1%3D1")]
+    [InlineData("applyEdits", "updates=%5B%7B%22attributes%22%3A%7B%22objectid%22%3A1%2C%22name%22%3A%22renamed%22%7D%7D%5D")]
+    [InlineData("applyEdits", "deletes=1")]
+    [InlineData("calculate", "where=1%3D1&calcExpression=%5B%7B%22field%22%3A%22name%22%2C%22value%22%3A%22renamed%22%7D%5D")]
+    public async Task Edit_ExistingRowOfLayerServedFromSourceTable_IsRefusedBeforeTargetsAreRead(string operation, string form)
+    {
+        var schema = await PublishSourceTableAsync();
+
+        using var client = _fixture.CreateAdminClient();
+        using var content = new StringContent($"f=json&{form}", Encoding.UTF8, "application/x-www-form-urlencoded");
+        using var response = await client.PostAsync($"/rest/services/{ServiceName}/FeatureServer/1/{operation}", content);
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var json = JsonDocument.Parse(body);
+        json.RootElement.TryGetProperty("error", out var error).Should().BeTrue(body);
+        error.GetProperty("code").GetInt32().Should().Be(405, body);
+        foreach (var results in new[] { "updateResults", "deleteResults", "updatedFeatureCount" })
+        {
+            json.RootElement.TryGetProperty(results, out _).Should().BeFalse(body);
+        }
+
+        body.Should().NotContain(SourceTable, "the refusal must not disclose the internal table name");
+        await AssertSeedRowUnchangedAsync(schema);
+    }
+
+    [IntegrationTheory]
+    [Operation(Operations.Update)]
+    [Operation(Operations.Delete)]
+    [Protocol(TestProtocols.Wfs20)]
+    [Endpoint("POST /wfs")]
+    [InlineData("<wfs:Update typeName=\"{0}\"><wfs:Property><wfs:ValueReference>name</wfs:ValueReference><wfs:Value>renamed</wfs:Value></wfs:Property></wfs:Update>")]
+    [InlineData("<wfs:Delete typeName=\"{0}\"><fes:Filter><fes:PropertyIsEqualTo><fes:ValueReference>name</fes:ValueReference><fes:Literal>seed</fes:Literal></fes:PropertyIsEqualTo></fes:Filter></wfs:Delete>")]
+    public async Task WfsTransaction_LayerServedFromSourceTable_IsRefusedNotReportedAsZeroEdits(string actionTemplate)
+    {
+        var schema = await PublishSourceTableAsync();
+        using var client = _fixture.CreateAdminClient();
+        var typeName = await GetWfsTypeNameAsync(client);
+
+        using var content = new StringContent(
+            "<wfs:Transaction service=\"WFS\" version=\"2.0.0\" xmlns:wfs=\"http://www.opengis.net/wfs/2.0\" " +
+            "xmlns:fes=\"http://www.opengis.net/fes/2.0\">" + string.Format(CultureInfo.InvariantCulture, actionTemplate, typeName) +
+            "</wfs:Transaction>",
+            Encoding.UTF8,
+            "application/xml");
+        using var response = await client.PostAsync("/wfs", content);
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented, body);
+        body.Should().Contain("OperationNotSupported").And.NotContain("TransactionResponse").And.NotContain(SourceTable);
+        await AssertSeedRowUnchangedAsync(schema);
+    }
+
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
@@ -104,6 +169,19 @@ public sealed class SourceBackedLayerEditRefusalTests : IAsyncLifetime
             .Where(static element => element.Name.LocalName == "ServiceDescription")
             .Single(element => Child(element, "Name") == ServiceName && Child(element, "Type") == "FeatureServer");
         return Child(description, "Capabilities")!.Split(',');
+    }
+
+    private async Task AssertSeedRowUnchangedAsync(string schema)
+        => (await CountAsync(schema, $"SELECT COUNT(*) FROM {SourceTable} WHERE objectid = 1 AND name = 'seed'"))
+            .Should().Be(1, "a refused edit must leave the source row as it was");
+
+    private static async Task<string> GetWfsTypeNameAsync(HttpClient client)
+    {
+        var payload = await client.GetStringAsync("/wfs?service=WFS&version=2.0.0&request=GetCapabilities");
+        return XDocument.Parse(payload).Descendants()
+            .Where(static element => element.Name.LocalName == "FeatureType")
+            .Select(static featureType => featureType.Elements().First(static child => child.Name.LocalName == "Name").Value)
+            .Single();
     }
 
     private static string? Child(XElement element, string name)
@@ -164,7 +242,7 @@ public sealed class SourceBackedLayerEditRefusalTests : IAsyncLifetime
                 serviceId,
                 ServiceName,
                 accessPolicy: open,
-                protocols: [MetadataV2ServiceProtocols.FeatureServer],
+                protocols: [MetadataV2ServiceProtocols.FeatureServer, MetadataV2ServiceProtocols.Wfs20],
                 options: new Dictionary<string, JsonElement>
                 {
                     ["capabilities"] = JsonSerializer.SerializeToElement(new[] { "Query", "Create", "Update", "Delete", "Editing" })
