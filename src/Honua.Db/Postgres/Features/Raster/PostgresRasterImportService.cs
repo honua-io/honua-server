@@ -88,6 +88,11 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             ReportProgress(progress, operationId, startedAt, RasterImportPhase.Ingesting, OperationStatus.Processing, "Loading raster into PostGIS");
 
             await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            if (!await PostgresRasterStorageProbe.IsInstalledAsync(connection, cancellationToken).ConfigureAwait(false))
+            {
+                throw new RasterStorageUnavailableException();
+            }
+
             await _schemaGuard.VerifyRequirementAsync(
                 connection,
                 DatabaseSchemaRequirement.RasterExternalStorage,
@@ -242,6 +247,18 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             return RasterImportResult.CreateFailure(
                 request.LayerId, request.Name, request.Format,
                 "Import failed.", stopwatch.Elapsed, warnings);
+        }
+        catch (RasterStorageUnavailableException ex)
+        {
+            // An install without raster storage: the endpoint answers with the operator action.
+            stopwatch.Stop();
+            PostgresRasterImportLog.ImportFailed(_logger, ex, request.LayerId, request.FileName);
+
+            ReportProgress(progress, operationId, startedAt, RasterImportPhase.Failed, OperationStatus.Failed,
+                ex.Message, completedAt: DateTimeOffset.UtcNow,
+                errorMessage: ex.Message, warnings: warnings);
+
+            throw;
         }
         catch (Exception ex)
         {

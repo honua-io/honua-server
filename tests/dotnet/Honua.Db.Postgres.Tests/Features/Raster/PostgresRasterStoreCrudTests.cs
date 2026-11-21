@@ -46,9 +46,23 @@ public sealed class PostgresRasterStoreCrudTests(PostgresFixture fixture)
         var schemaName = await fixture.CreateIsolatedSchemaAsync("rasterdiscovery");
         try
         {
-            var act = () => CreateStore(schemaName).GetPrimaryRasterInfoAsync(LayerId);
-            await act.Should().ThrowAsync<PostgresException>()
-                .Where(exception => exception.SqlState == PostgresErrorCodes.UndefinedTable);
+            // With postgis_raster installed a missing raster table is a broken schema, not
+            // "no rasters": every lookup that tolerates a feature-only install must still fail.
+            var store = CreateStore(schemaName);
+            Func<Task>[] lookups =
+            [
+                () => store.GetPrimaryRasterInfoAsync(LayerId),
+                () => store.GetRasterInfoAsync(LayerId, 1),
+                () => store.ListRastersAsync(LayerId),
+                () => store.QueryRastersAsync(LayerId, new RasterSelectionQuery { TimeStart = DateTimeOffset.UnixEpoch }),
+                () => store.QueryCatalogAsync(LayerId, new RasterCatalogQuery()),
+                () => store.GetRasterLayerIdAsync(1),
+            ];
+            foreach (var act in lookups)
+            {
+                await act.Should().ThrowAsync<PostgresException>()
+                    .Where(exception => exception.SqlState == PostgresErrorCodes.UndefinedTable);
+            }
         }
         finally
         {

@@ -41,8 +41,35 @@ public sealed class PostgresRasterDiscoveryTests
         (await store.ListRastersAsync(2110)).Should().BeEmpty();
         (await store.QueryRastersAsync(2110, new RasterSelectionQuery { TimeStart = DateTimeOffset.UnixEpoch })).Should().BeEmpty();
         (await store.GetRasterInfoAsync(2110, 1)).Should().BeNull();
+        (await store.GetRasterLayerIdAsync(1)).Should().BeNull();
+        (await store.QueryCatalogAsync(2110, new RasterCatalogQuery { IncludeTotalCount = true })).TotalCount.Should().Be(0);
         var empty = await store.ExportEmptyExtentAsync(2110, EmptyExtentQuery());
         empty.Data.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    public async Task RasterImport_WithoutOptionalRasterExtension_ReportsStorageUnavailable()
+    {
+        await using var database = new PostgreSqlBuilder("postgres:16-alpine").Build();
+        await using var dataSource = await StartDatabaseAsync(database);
+        var service = new PostgresRasterImportService(CreateConnectionProvider(dataSource), Substitute.For<ICrsDetectionService>(),
+            NullLogger<PostgresRasterImportService>.Instance, FixtureBypassDatabaseSchemaGuard.Instance, "honua");
+        var filePath = Path.Join(Path.GetTempPath(), $"honua-raster-{Guid.NewGuid():N}.tif");
+        await File.WriteAllBytesAsync(filePath, [0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+        try
+        {
+            var act = () => service.ImportAsync(new RasterImportRequest
+            {
+                LayerId = 2110, Name = "dem", FilePath = filePath, FileName = "dem.tif",
+                Format = SupportedRasterFormat.GeoTiff, TileZoomLevels = [], OverviewFactors = [],
+            });
+
+            await act.Should().ThrowAsync<RasterStorageUnavailableException>();
+        }
+        finally
+        {
+            File.Delete(filePath);
+        }
     }
 
     private static RasterQuery EmptyExtentQuery() => new()
@@ -69,12 +96,15 @@ public sealed class PostgresRasterDiscoveryTests
     }
 
     private static PostgresRasterStore CreateStore(NpgsqlDataSource dataSource)
+        => new(CreateConnectionProvider(dataSource), NullLogger<PostgresRasterStore>.Instance,
+            FixtureBypassDatabaseSchemaGuard.Instance, "honua");
+
+    private static IAdoNetDatabaseConnectionProvider CreateConnectionProvider(NpgsqlDataSource dataSource)
     {
         var provider = Substitute.For<IAdoNetDatabaseConnectionProvider>();
         provider.OpenConnectionAsync(Arg.Any<CancellationToken>())
             .Returns(async call => (DbConnection)await dataSource.OpenConnectionAsync(call.Arg<CancellationToken>()));
-        return new PostgresRasterStore(provider, NullLogger<PostgresRasterStore>.Instance,
-            FixtureBypassDatabaseSchemaGuard.Instance, "honua");
+        return provider;
     }
 
     private static async Task WaitForMappedDatabaseAsync(NpgsqlDataSource dataSource)

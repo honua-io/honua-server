@@ -438,6 +438,48 @@ public class RasterImportEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/raster")]
+    public async Task ImportRaster_WithoutRasterStorage_Returns409WithOperatorAction()
+    {
+        var rasterImportService = Substitute.For<IRasterImportService>();
+        rasterImportService.DetectFormat("test.tif").Returns(SupportedRasterFormat.GeoTiff);
+        rasterImportService.GetSupportedExtensions().Returns([".tif"]);
+        rasterImportService.ImportAsync(Arg.Any<RasterImportRequest>(), Arg.Any<IProgress<RasterImportProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns<Task<RasterImportResult>>(_ => throw new RasterStorageUnavailableException());
+
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IRasterImportService>();
+                services.AddSingleton(rasterImportService);
+            });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var fileContent = new ByteArrayContent(CreateMinimalGeoTiffBytes());
+            fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+            {
+                Name = "file",
+                FileName = "test.tif"
+            };
+            content.Add(fileContent);
+            content.Add(new StringContent("1"), "layerId");
+            content.Add(new StringContent("test-raster"), "name");
+
+            using var response = await fixture.Client.PostAsync("/api/v1/admin/import/raster", content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("postgis_raster");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("DELETE /api/v1/admin/import/raster/{rasterId}")]
     public async Task DeleteRaster_ExistingRaster_Returns204()
     {
