@@ -23,11 +23,13 @@ internal sealed partial class GeoServerImportService
         GeoServerLayerInfo Layer,
         AccessPolicy? AccessPolicy);
 
-    private readonly record struct LayerMetadataPatch(
-        int StorageLayerId,
-        MetadataV2ObjectTemporal? Temporal,
-        JsonElement? WmsDimensions,
-        AccessPolicy? AccessPolicy);
+    private sealed record LayerMetadataPatch
+    {
+        public required int StorageLayerId { get; init; }
+        public MetadataV2ObjectTemporal? Temporal { get; init; }
+        public JsonElement? WmsDimensions { get; init; }
+        public AccessPolicy? AccessPolicy { get; init; }
+    }
 
     private readonly record struct WmsDimensionSpec(
         string Name,
@@ -38,7 +40,7 @@ internal sealed partial class GeoServerImportService
         LayerMetadataTarget target,
         CancellationToken cancellationToken)
     {
-        if (_metadataGraphStore == null)
+        if (MetadataGraphStore == null)
         {
             return;
         }
@@ -50,7 +52,13 @@ internal sealed partial class GeoServerImportService
             return;
         }
 
-        var patch = new LayerMetadataPatch(target.StorageLayerId, temporal, wmsDimensions, target.AccessPolicy);
+        var patch = new LayerMetadataPatch
+        {
+            StorageLayerId = target.StorageLayerId,
+            Temporal = temporal,
+            WmsDimensions = wmsDimensions,
+            AccessPolicy = target.AccessPolicy
+        };
         await SaveLayerMetadataPatchAsync(patch, cancellationToken).ConfigureAwait(false);
     }
 
@@ -62,7 +70,7 @@ internal sealed partial class GeoServerImportService
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var snapshot = await _metadataGraphStore!.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var snapshot = await MetadataGraphStore!.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var resources = snapshot.Graph.Resources.ToList();
             var index = resources.FindIndex(r => string.Equals(r.Metadata.Id, resourceId, StringComparison.Ordinal));
             if (index < 0)
@@ -80,7 +88,7 @@ internal sealed partial class GeoServerImportService
 
             try
             {
-                _ = await _metadataGraphStore.SaveAsync(
+                _ = await MetadataGraphStore.SaveAsync(
                         snapshot.Graph with { Resources = resources },
                         snapshot.Etag,
                         cancellationToken)

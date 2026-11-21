@@ -510,22 +510,12 @@ internal sealed partial class GeoServerRestClient
             }
 
             var (dataStoreName, coverageStoreName) = ExtractStoreNames(layerElement);
-            var nativeName = GetOptionalStringProperty(layerElement, "nativeName");
-            var resolvedLayerName = layerElement.GetProperty("name").GetString() ?? string.Empty;
-            var dimensions = await GetLayerDimensionsAsync(
-                new LayerResourceReference(
-                    baseUrl,
-                    workspaceName,
-                    resolvedLayerName,
-                    dataStoreName,
-                    coverageStoreName),
-                layerElement,
-                cancellationToken).ConfigureAwait(false);
+            var dimensions = await GetLayerDimensionsAsync(baseUrl, workspaceName, layerElement, cancellationToken).ConfigureAwait(false);
             var compatibility = AssessLayerCompatibility(layerElement);
 
             return new GeoServerLayerInfo
             {
-                Name = resolvedLayerName,
+                Name = layerElement.GetProperty("name").GetString() ?? string.Empty,
                 WorkspaceName = workspaceName,
                 Title = GetOptionalStringProperty(layerElement, "title"),
                 Abstract = GetOptionalStringProperty(layerElement, "abstract"),
@@ -533,7 +523,7 @@ internal sealed partial class GeoServerRestClient
                 AlternativeStyles = alternativeStyles.ToArray(),
                 DataStoreName = dataStoreName,
                 CoverageStoreName = coverageStoreName,
-                NativeName = nativeName,
+                NativeName = GetOptionalStringProperty(layerElement, "nativeName"),
                 SRS = GetOptionalStringProperty(layerElement, "srs"),
                 NativeCRS = GetOptionalStringProperty(layerElement, "nativeCRS"),
                 LatLonBoundingBox = GetOptionalBoundingBox(layerElement, "latLonBoundingBox"),

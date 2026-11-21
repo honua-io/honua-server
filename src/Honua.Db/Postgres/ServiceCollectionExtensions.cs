@@ -922,7 +922,18 @@ internal static partial class ServiceCollectionExtensions
         services.TryAddScoped<IMigrationRunCheckpointStore, PostgresMigrationRunCheckpointStore>();
 
         // Register GeoServer import service
-        services.AddScoped<IGeoServerImportService, GeoServerImportService>();
+        services.AddScoped<IGeoServerImportService>(serviceProvider => new GeoServerImportService(
+            serviceProvider.GetRequiredService<GeoServerRestClient>(),
+            serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+            serviceProvider.GetRequiredService<ICrsRegistry>(),
+            serviceProvider.GetRequiredService<ILogger<GeoServerImportService>>(),
+            serviceProvider.GetService<ISldStyleConverter>(),
+            serviceProvider.GetService<ILayerPublishingService>(),
+            serviceProvider.GetService<IMigrationCatalogWriter>(),
+            serviceProvider.GetService<IMigrationStyleApplicator>())
+        {
+            MetadataGraphStore = serviceProvider.GetService<IMetadataV2GraphStore>()
+        });
 
         // Register OGC API Features collection import with its Postgres sink.
         services.AddScoped<IOgcApiFeaturesCollectionSink>(serviceProvider =>

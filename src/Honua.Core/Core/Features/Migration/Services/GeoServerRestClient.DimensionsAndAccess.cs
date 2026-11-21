@@ -15,19 +15,22 @@ internal sealed partial class GeoServerRestClient
         Elevation
     }
 
-    private readonly record struct LayerResourceReference(
-        string BaseUrl,
-        string WorkspaceName,
-        string ResourceName,
-        string? DataStoreName,
-        string? CoverageStoreName);
+    private sealed record LayerResourceReference
+    {
+        public required string BaseUrl { get; init; }
+        public required string WorkspaceName { get; init; }
+        public required string ResourceName { get; init; }
+        public string? DataStoreName { get; init; }
+        public string? CoverageStoreName { get; init; }
+    }
 
     private readonly record struct LayerDimensions(
         GeoServerDimensionInfo? Time,
         GeoServerDimensionInfo? Elevation);
 
     private async Task<LayerDimensions> GetLayerDimensionsAsync(
-        LayerResourceReference reference,
+        string baseUrl,
+        string workspaceName,
         JsonElement layerElement,
         CancellationToken cancellationToken)
     {
@@ -36,6 +39,17 @@ internal sealed partial class GeoServerRestClient
         {
             return fromLayer;
         }
+
+        var (dataStoreName, coverageStoreName) = ExtractStoreNames(layerElement);
+        var resolvedLayerName = layerElement.GetProperty("name").GetString() ?? string.Empty;
+        var reference = new LayerResourceReference
+        {
+            BaseUrl = baseUrl,
+            WorkspaceName = workspaceName,
+            ResourceName = resolvedLayerName,
+            DataStoreName = dataStoreName,
+            CoverageStoreName = coverageStoreName
+        };
 
         var resourceUrl = BuildLayerResourceMetadataUrl(reference);
         if (resourceUrl == null)
@@ -53,12 +67,12 @@ internal sealed partial class GeoServerRestClient
         try
         {
             using var json = await GetRequiredJsonDocumentAsync(resourceUrl, cancellationToken).ConfigureAwait(false);
-            if (TryGetObjectProperty(json.RootElement, "featureType", out var featureType))
+            if (GetObjectPropertyOrNull(json.RootElement, "featureType") is { } featureType)
             {
                 return ExtractDimensionsFromMetadata(featureType);
             }
 
-            if (TryGetObjectProperty(json.RootElement, "coverage", out var coverage))
+            if (GetObjectPropertyOrNull(json.RootElement, "coverage") is { } coverage)
             {
                 return ExtractDimensionsFromMetadata(coverage);
             }
@@ -99,7 +113,7 @@ internal sealed partial class GeoServerRestClient
 
     private static LayerDimensions ExtractDimensionsFromMetadata(JsonElement containerElement)
     {
-        if (!TryGetObjectProperty(containerElement, "metadata", out var metadataElement))
+        if (GetObjectPropertyOrNull(containerElement, "metadata") is not { } metadataElement)
         {
             return default;
         }
@@ -119,7 +133,7 @@ internal sealed partial class GeoServerRestClient
         foreach (var entry in EnumerateCollectionItems(containerElement, "metadata", "entry"))
         {
             var key = GetOptionalStringProperty(entry, "@key");
-            if (string.IsNullOrWhiteSpace(key) || !TryGetObjectProperty(entry, "dimensionInfo", out var dimensionElement))
+            if (string.IsNullOrWhiteSpace(key) || GetObjectPropertyOrNull(entry, "dimensionInfo") is not { } dimensionElement)
             {
                 continue;
             }
@@ -141,7 +155,7 @@ internal sealed partial class GeoServerRestClient
         JsonElement metadataElement,
         string propertyName,
         DimensionKind kind)
-        => TryGetObjectProperty(metadataElement, propertyName, out var directElement)
+        => GetObjectPropertyOrNull(metadataElement, propertyName) is { } directElement
             ? ParseDimensionInfo(directElement, kind)
             : null;
 
@@ -174,7 +188,7 @@ internal sealed partial class GeoServerRestClient
 
     private static (string? Strategy, string? ReferenceValue) ReadDefaultValue(JsonElement element)
     {
-        if (!TryGetObjectProperty(element, "defaultValue", out var defaultValueElement))
+        if (GetObjectPropertyOrNull(element, "defaultValue") is not { } defaultValueElement)
         {
             return (null, null);
         }
@@ -250,8 +264,10 @@ internal sealed partial class GeoServerRestClient
         };
     }
 
-    private static bool TryGetObjectProperty(JsonElement parent, string propertyName, out JsonElement value)
-        => parent.TryGetProperty(propertyName, out value) && value.ValueKind == JsonValueKind.Object;
+    private static JsonElement? GetObjectPropertyOrNull(JsonElement parent, string propertyName)
+        => parent.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.Object
+            ? value
+            : null;
 
     private static string? ReadOptionalScalar(JsonElement element, string propertyName)
     {

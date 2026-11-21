@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using FluentAssertions;
+using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -13,79 +14,12 @@ namespace Honua.Core.Tests.Features.Import;
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoServerRestClientDimensionsAndAccessTests
 {
+    private const string BaseUrl = "https://gs-core.example.test/geoserver/rest";
+
     [Fact]
     public async Task DiscoverServiceAsync_WithFeatureTypeDimensionsAndLayerAcl_PopulatesDimensionsAndAccessRules()
     {
-        const string baseUrl = "https://geoserver.example.test/geoserver/rest";
-        var responses = new Dictionary<string, (HttpStatusCode Status, string ContentType, string Body)>(StringComparer.OrdinalIgnoreCase)
-        {
-            [$"{baseUrl}/about/version.xml"] = (HttpStatusCode.OK, "application/xml", "<about><resource name=\"GeoServer\"><Version>2.26.0</Version></resource></about>"),
-            [$"{baseUrl}/settings.json"] = (HttpStatusCode.OK, "application/json", """{"global":{"title":"Demo GeoServer"}}"""),
-            [$"{baseUrl}/workspaces.json"] = (HttpStatusCode.OK, "application/json", """{"workspaces":{"workspace":[{"name":"demo"}]}}"""),
-            [$"{baseUrl}/workspaces/demo.json"] = (HttpStatusCode.OK, "application/json", """{"workspace":{"name":"demo","default":true,"isolated":false}}"""),
-            [$"{baseUrl}/workspaces/demo/datastores.json"] = (HttpStatusCode.OK, "application/json", """{"dataStores":{"dataStore":[{"name":"pg"}]}}"""),
-            [$"{baseUrl}/workspaces/demo/datastores/pg.json"] = (HttpStatusCode.OK, "application/json", """{"dataStore":{"name":"pg","type":"PostGIS","enabled":true,"connectionParameters":{"entry":[{"@key":"dbtype","$":"postgis"},{"@key":"schema","$":"public"}]}}}"""),
-            [$"{baseUrl}/workspaces/demo/coveragestores.json"] = (HttpStatusCode.OK, "application/json", """{"coverageStores":""}"""),
-            [$"{baseUrl}/workspaces/demo/layers.json"] = (HttpStatusCode.OK, "application/json", """{"layers":{"layer":[{"name":"observations"}]}}"""),
-            [$"{baseUrl}/workspaces/demo/layers/observations.json"] = (HttpStatusCode.OK, "application/json", """{"layer":{"name":"observations","nativeName":"observations","type":"VECTOR","enabled":true,"queryable":true,"srs":"EPSG:4326","resource":{"@class":"featureType","name":"demo:observations","href":"https://geoserver.example.test/geoserver/rest/workspaces/demo/datastores/pg/featuretypes/observations.json"}}}"""),
-            [$"{baseUrl}/workspaces/demo/datastores/pg/featuretypes/observations.json"] = (HttpStatusCode.OK, "application/json", """
-                {
-                  "featureType": {
-                    "name": "observations",
-                    "metadata": {
-                      "entry": [
-                        {
-                          "@key": "time",
-                          "dimensionInfo": {
-                            "enabled": true,
-                            "attribute": "observed_at",
-                            "endAttribute": "expired_at",
-                            "presentation": "CONTINUOUS_INTERVAL",
-                            "units": "ISO8601",
-                            "defaultValue": { "strategy": "MAXIMUM" },
-                            "nearestMatchEnabled": true,
-                            "startValue": "2025-01-01T00:00:00Z",
-                            "endValue": "2025-12-31T23:59:59Z"
-                          }
-                        },
-                        {
-                          "@key": "elevation",
-                          "dimensionInfo": {
-                            "enabled": true,
-                            "attribute": "altitude_m",
-                            "presentation": "DISCRETE_INTERVAL",
-                            "resolution": 50,
-                            "units": "EPSG:5030",
-                            "unitSymbol": "m",
-                            "defaultValue": { "strategy": "MINIMUM" },
-                            "nearestMatchEnabled": true,
-                            "startValue": "0",
-                            "endValue": "500"
-                          }
-                        }
-                      ]
-                    }
-                  }
-                }
-                """),
-            [$"{baseUrl}/layergroups.json"] = (HttpStatusCode.OK, "application/json", """{"layerGroups":""}"""),
-            [$"{baseUrl}/workspaces/demo/layergroups.json"] = (HttpStatusCode.OK, "application/json", """{"layerGroups":""}"""),
-            [$"{baseUrl}/styles.json"] = (HttpStatusCode.OK, "application/json", """{"styles":""}"""),
-            [$"{baseUrl}/workspaces/demo/styles.json"] = (HttpStatusCode.OK, "application/json", """{"styles":""}"""),
-            [$"{baseUrl}/services/wms/settings.json"] = (HttpStatusCode.OK, "application/json", """{"wms":{"enabled":true}}"""),
-            [$"{baseUrl}/services/wfs/settings.json"] = (HttpStatusCode.OK, "application/json", """{"wfs":{"enabled":true}}"""),
-            [$"{baseUrl}/security/acl/layers.json"] = (HttpStatusCode.OK, "application/json", """
-                {
-                  "demo.observations.r": "ROLE_VIEWER,ROLE_ANALYST",
-                  "demo.observations.w": "ROLE_EDITOR",
-                  "demo.observations.a": "ROLE_ADMIN",
-                  "*.*.r": "*",
-                  "mode": "HIDE"
-                }
-                """)
-        };
-
-        using var handler = new StubHttpMessageHandler(responses);
+        using var handler = new StubHttpMessageHandler(BuildDiscoveryResponses());
         using var httpClient = new HttpClient(handler);
         var client = new GeoServerRestClient(
             httpClient,
@@ -93,7 +27,7 @@ public sealed class GeoServerRestClientDimensionsAndAccessTests
             static (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
 
         var serviceInfo = await client.DiscoverServiceAsync(
-            baseUrl,
+            BaseUrl,
             username: null,
             password: null,
             includeCompatibilityAnalysis: true,
@@ -102,41 +36,85 @@ public sealed class GeoServerRestClientDimensionsAndAccessTests
             maxRetryAttempts: 1);
 
         var layer = serviceInfo.Layers.Should().ContainSingle().Subject;
-        layer.TimeDimension.Should().NotBeNull();
-        layer.TimeDimension!.Enabled.Should().BeTrue();
-        layer.TimeDimension.Attribute.Should().Be("observed_at");
-        layer.TimeDimension.EndAttribute.Should().Be("expired_at");
-        layer.TimeDimension.Presentation.Should().Be("CONTINUOUS_INTERVAL");
-        layer.TimeDimension.Units.Should().Be("ISO8601");
-        layer.TimeDimension.DefaultValueStrategy.Should().Be("MAXIMUM");
-        layer.TimeDimension.NearestMatchEnabled.Should().BeTrue();
-        layer.TimeDimension.StartTime.Should().Be(DateTimeOffset.Parse("2025-01-01T00:00:00Z", CultureInfo.InvariantCulture));
-        layer.TimeDimension.EndTime.Should().Be(DateTimeOffset.Parse("2025-12-31T23:59:59Z", CultureInfo.InvariantCulture));
+        AssertTimeDimension(layer.TimeDimension);
+        AssertElevationDimension(layer.ElevationDimension);
+        AssertAccessRules(serviceInfo.AccessRules);
+    }
 
-        layer.ElevationDimension.Should().NotBeNull();
-        layer.ElevationDimension!.Enabled.Should().BeTrue();
-        layer.ElevationDimension.Attribute.Should().Be("altitude_m");
-        layer.ElevationDimension.Resolution.Should().Be(50);
-        layer.ElevationDimension.Units.Should().Be("EPSG:5030");
-        layer.ElevationDimension.UnitSymbol.Should().Be("m");
-        layer.ElevationDimension.StartValue.Should().Be("0");
-        layer.ElevationDimension.EndValue.Should().Be("500");
+    private static void AssertTimeDimension(GeoServerDimensionInfo? dimension)
+    {
+        dimension.Should().NotBeNull();
+        dimension!.Enabled.Should().BeTrue();
+        dimension.Attribute.Should().Be("captured_at");
+        dimension.EndAttribute.Should().Be("valid_until");
+        dimension.Presentation.Should().Be("CONTINUOUS_INTERVAL");
+        dimension.Units.Should().Be("ISO8601");
+        dimension.DefaultValueStrategy.Should().Be("MAXIMUM");
+        dimension.NearestMatchEnabled.Should().BeTrue();
+        dimension.StartTime.Should().Be(DateTimeOffset.Parse("2024-03-01T00:00:00Z", CultureInfo.InvariantCulture));
+        dimension.EndTime.Should().Be(DateTimeOffset.Parse("2024-09-30T23:59:59Z", CultureInfo.InvariantCulture));
+    }
 
-        serviceInfo.AccessRules.Should().HaveCount(5);
-        serviceInfo.AccessRules.Should().Contain(rule =>
-            rule.RuleKey == "demo.observations.r" &&
-            rule.WorkspaceName == "demo" &&
-            rule.LayerName == "observations" &&
+    private static void AssertElevationDimension(GeoServerDimensionInfo? dimension)
+    {
+        dimension.Should().NotBeNull();
+        dimension!.Enabled.Should().BeTrue();
+        dimension.Attribute.Should().Be("height_m");
+        dimension.Resolution.Should().Be(25);
+        dimension.Units.Should().Be("EPSG:5030");
+        dimension.UnitSymbol.Should().Be("m");
+        dimension.StartValue.Should().Be("10");
+        dimension.EndValue.Should().Be("210");
+    }
+
+    private static void AssertAccessRules(GeoServerLayerAccessRule[] rules)
+    {
+        rules.Should().HaveCount(4);
+        rules.Should().Contain(rule =>
+            rule.RuleKey == "hydro.gauges.r" &&
+            rule.WorkspaceName == "hydro" &&
+            rule.LayerName == "gauges" &&
             rule.Permission == "r" &&
-            rule.Roles.SequenceEqual(new[] { "ROLE_VIEWER", "ROLE_ANALYST" }));
-        serviceInfo.AccessRules.Should().Contain(rule =>
-            rule.RuleKey == "demo.observations.w" &&
+            rule.Roles.SequenceEqual(new[] { "ROLE_READER", "ROLE_HYDRO" }));
+        rules.Should().Contain(rule =>
+            rule.RuleKey == "hydro.gauges.w" &&
             rule.Permission == "w" &&
             rule.Roles.SequenceEqual(new[] { "ROLE_EDITOR" }));
-        serviceInfo.AccessRules.Should().Contain(rule =>
+        rules.Should().Contain(rule =>
             rule.RuleKey == "mode" &&
             rule.WorkspaceName == null &&
-            rule.RawValue == "HIDE");
+            rule.RawValue == "CHALLENGE");
+    }
+
+    private static Dictionary<string, (HttpStatusCode Status, string ContentType, string Body)> BuildDiscoveryResponses()
+    {
+        const string featureTypeJson = """
+            {"featureType":{"name":"gauges","metadata":{"entry":[
+              {"@key":"time","dimensionInfo":{"enabled":true,"attribute":"captured_at","endAttribute":"valid_until","presentation":"CONTINUOUS_INTERVAL","units":"ISO8601","defaultValue":{"strategy":"MAXIMUM"},"nearestMatchEnabled":true,"startValue":"2024-03-01T00:00:00Z","endValue":"2024-09-30T23:59:59Z"}},
+              {"@key":"elevation","dimensionInfo":{"enabled":true,"attribute":"height_m","presentation":"DISCRETE_INTERVAL","resolution":25,"units":"EPSG:5030","unitSymbol":"m","defaultValue":{"strategy":"MINIMUM"},"nearestMatchEnabled":true,"startValue":"10","endValue":"210"}}
+            ]}}}
+            """;
+
+        return new Dictionary<string, (HttpStatusCode, string, string)>(StringComparer.OrdinalIgnoreCase)
+        {
+            [$"{BaseUrl}/about/version.xml"] = (HttpStatusCode.OK, "application/xml", "<about><resource name=\"GeoServer\"><Version>2.26.1</Version></resource></about>"),
+            [$"{BaseUrl}/settings.json"] = (HttpStatusCode.OK, "application/json", """{"global":{"title":"Hydro GeoServer"}}"""),
+            [$"{BaseUrl}/workspaces.json"] = (HttpStatusCode.OK, "application/json", """{"workspaces":{"workspace":[{"name":"hydro"}]}}"""),
+            [$"{BaseUrl}/workspaces/hydro.json"] = (HttpStatusCode.OK, "application/json", """{"workspace":{"name":"hydro","default":true,"isolated":false}}"""),
+            [$"{BaseUrl}/workspaces/hydro/datastores.json"] = (HttpStatusCode.OK, "application/json", """{"dataStores":{"dataStore":[{"name":"pg_hydro"}]}}"""),
+            [$"{BaseUrl}/workspaces/hydro/datastores/pg_hydro.json"] = (HttpStatusCode.OK, "application/json", """{"dataStore":{"name":"pg_hydro","type":"PostGIS","enabled":true,"connectionParameters":{"entry":[{"@key":"dbtype","$":"postgis"},{"@key":"schema","$":"public"}]}}}"""),
+            [$"{BaseUrl}/workspaces/hydro/coveragestores.json"] = (HttpStatusCode.OK, "application/json", """{"coverageStores":""}"""),
+            [$"{BaseUrl}/workspaces/hydro/layers.json"] = (HttpStatusCode.OK, "application/json", """{"layers":{"layer":[{"name":"gauges"}]}}"""),
+            [$"{BaseUrl}/workspaces/hydro/layers/gauges.json"] = (HttpStatusCode.OK, "application/json", """{"layer":{"name":"gauges","nativeName":"raw_gauges_tbl","type":"VECTOR","enabled":true,"queryable":true,"srs":"EPSG:4326","resource":{"@class":"featureType","name":"hydro:gauges","href":"https://gs-core.example.test/geoserver/rest/workspaces/hydro/datastores/pg_hydro/featuretypes/gauges.json"}}}"""),
+            [$"{BaseUrl}/workspaces/hydro/datastores/pg_hydro/featuretypes/gauges.json"] = (HttpStatusCode.OK, "application/json", featureTypeJson),
+            [$"{BaseUrl}/layergroups.json"] = (HttpStatusCode.OK, "application/json", """{"layerGroups":""}"""),
+            [$"{BaseUrl}/workspaces/hydro/layergroups.json"] = (HttpStatusCode.OK, "application/json", """{"layerGroups":""}"""),
+            [$"{BaseUrl}/styles.json"] = (HttpStatusCode.OK, "application/json", """{"styles":""}"""),
+            [$"{BaseUrl}/workspaces/hydro/styles.json"] = (HttpStatusCode.OK, "application/json", """{"styles":""}"""),
+            [$"{BaseUrl}/services/wms/settings.json"] = (HttpStatusCode.OK, "application/json", """{"wms":{"enabled":true}}"""),
+            [$"{BaseUrl}/services/wfs/settings.json"] = (HttpStatusCode.OK, "application/json", """{"wfs":{"enabled":true}}"""),
+            [$"{BaseUrl}/security/acl/layers.json"] = (HttpStatusCode.OK, "application/json", """{"hydro.gauges.r":"ROLE_READER,ROLE_HYDRO","hydro.gauges.w":"ROLE_EDITOR","*.*.r":"*","mode":"CHALLENGE"}""")
+        };
     }
 
     private sealed class StubHttpMessageHandler(
@@ -154,10 +132,7 @@ public sealed class GeoServerRestClientDimensionsAndAccessTests
                 });
             }
 
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)
-            {
-                Content = new StringContent("Not found", Encoding.UTF8, "text/plain")
-            });
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
         }
     }
 }

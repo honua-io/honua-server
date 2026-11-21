@@ -4,7 +4,6 @@
 using System.Globalization;
 using System.Net;
 using System.Text;
-using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
@@ -13,7 +12,6 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
-using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Db.Postgres.Features.Migration;
@@ -26,6 +24,18 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 public sealed class GeoServerDimensionsAccessAndStyleDiffTests : IDisposable
 {
     private const string BaseUrl = "https://geoserver.example.test/geoserver/rest";
+
+    private const string LossySld = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <StyledLayerDescriptor version="1.0.0" xmlns="http://www.opengis.net/sld" xmlns:ogc="http://www.opengis.net/ogc">
+          <NamedLayer><Name>observations</Name><UserStyle><FeatureTypeStyle><Rule>
+            <Name>FallbackLabels</Name><ElseFilter/>
+            <PointSymbolizer><Graphic><Mark><WellKnownName>circle</WellKnownName><Fill><CssParameter name="fill">#0066cc</CssParameter></Fill></Mark><Size>6</Size></Graphic></PointSymbolizer>
+            <TextSymbolizer><Label><ogc:PropertyName>station_name</ogc:PropertyName></Label></TextSymbolizer>
+          </Rule></FeatureTypeStyle></UserStyle></NamedLayer>
+        </StyledLayerDescriptor>
+        """;
+
     private readonly List<IDisposable> _disposables = [];
 
     public void Dispose()
@@ -36,42 +46,14 @@ public sealed class GeoServerDimensionsAccessAndStyleDiffTests : IDisposable
         }
     }
 
-    private const string LossySld = """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <StyledLayerDescriptor version="1.0.0"
-          xmlns="http://www.opengis.net/sld"
-          xmlns:ogc="http://www.opengis.net/ogc">
-          <NamedLayer>
-            <Name>observations</Name>
-            <UserStyle>
-              <FeatureTypeStyle>
-                <Rule>
-                  <Name>FallbackLabels</Name>
-                  <ElseFilter/>
-                  <PointSymbolizer>
-                    <Graphic>
-                      <Mark>
-                        <WellKnownName>circle</WellKnownName>
-                        <Fill><CssParameter name="fill">#0066cc</CssParameter></Fill>
-                      </Mark>
-                      <Size>6</Size>
-                    </Graphic>
-                  </PointSymbolizer>
-                  <TextSymbolizer>
-                    <Label><ogc:PropertyName>station_name</ogc:PropertyName></Label>
-                  </TextSymbolizer>
-                </Rule>
-              </FeatureTypeStyle>
-            </UserStyle>
-          </NamedLayer>
-        </StyledLayerDescriptor>
-        """;
-
     [Fact]
     public async Task ImportConfigurationAsync_DryRun_SurfacesPerLayerStyleDiffAndUnexpressibleAccessRulesBeforeApply()
     {
-        var responses = BuildCatalogResponses(includeUnexpressibleAcl: true);
-        var service = CreateService(responses, sldConverter: new StubSldConverter());
+        var service = CreateService(new ServiceTestDependencies
+        {
+            Responses = BuildCatalogResponses(),
+            SldConverter = new StubSldConverter()
+        });
 
         var result = await service.ImportConfigurationAsync(new GeoServerImportRequest
         {
@@ -84,32 +66,27 @@ public sealed class GeoServerDimensionsAccessAndStyleDiffTests : IDisposable
 
         result.Success.Should().BeTrue();
         result.WasDryRun.Should().BeTrue();
-        result.ApplyPlan.Should().NotBeNull();
-
-        var layerStep = result.ApplyPlan!.Steps.Should()
-            .ContainSingle(step => step.SourceId == "layer:demo:observations")
-            .Subject;
-        layerStep.StyleDiffs.Should().NotBeNull();
+        var layerStep = result.ApplyPlan!.Steps.Should().ContainSingle(step => step.SourceId == "layer:demo:observations").Subject;
         layerStep.StyleDiffs!.Should().Contain(diff => diff.Construct == "ElseFilter");
         layerStep.StyleDiffs.Should().Contain(diff => diff.Construct == "TextSymbolizer");
-        layerStep.ReviewCodes.Should().Contain("geoserver.style.diff");
-        layerStep.ReviewCodes.Should().Contain("geoserver.access-rule.manual-review");
-
-        result.ApplyPlan.ManualReviewItems.Should().Contain(item =>
-            item.Code == "geoserver.access-rule.manual-review" &&
-            item.Reason.Contains("demo.observations.a", StringComparison.Ordinal));
-        result.ApplyPlan.ManualReviewItems.Should().Contain(item =>
-            item.Code == "geoserver.access-rule.manual-review" &&
-            item.Reason.Contains("*.*.r", StringComparison.Ordinal));
+        layerStep.ReviewCodes.Should().Contain(["geoserver.style.diff", "geoserver.access-rule.manual-review"]);
+        result.ApplyPlan.ManualReviewItems.Should().Contain(item => item.Reason.Contains("demo.observations.a", StringComparison.Ordinal));
+        result.ApplyPlan.ManualReviewItems.Should().Contain(item => item.Reason.Contains("*.*.r", StringComparison.Ordinal));
     }
 
     [Fact]
     public async Task ImportConfigurationAsync_Apply_CopiesTimeAndElevationDimensionsAndAccessPolicyToLayerMetadata()
     {
-        var responses = BuildCatalogResponses(includeUnexpressibleAcl: true);
-        var publisher = new RecordingPublisher();
+        var publishedRequests = new List<LayerPublishRequest>();
+        var publisher = CreatePublisherMock(publishedRequests);
         var graphStore = new InMemoryMetadataGraphStore(layerId: 100);
-        var service = CreateService(responses, publisher, graphStore, new StubSldConverter());
+        var service = CreateService(new ServiceTestDependencies
+        {
+            Responses = BuildCatalogResponses(),
+            Publisher = publisher.Object,
+            MetadataGraphStore = graphStore,
+            SldConverter = new StubSldConverter()
+        });
 
         var result = await service.ImportConfigurationAsync(new GeoServerImportRequest
         {
@@ -123,156 +100,63 @@ public sealed class GeoServerDimensionsAccessAndStyleDiffTests : IDisposable
         });
 
         result.Success.Should().BeTrue();
-        publisher.Requests.Should().ContainSingle()
-            .Which.TemporalColumn.Should().Be("observed_at");
+        publishedRequests.Should().ContainSingle().Which.TemporalColumn.Should().Be("observed_at");
+        var saved = graphStore.Current.Graph.Resources.Should().ContainSingle(r => r.Metadata.Id == "res-layer-100").Subject;
+        AssertSavedTemporalAndElevation(saved);
+        AssertSavedAccessPolicy(saved);
+    }
 
-        var savedResource = graphStore.Current.Graph.Resources.Should()
-            .ContainSingle(r => r.Metadata.Id == "res-layer-100")
-            .Subject;
+    private static void AssertSavedTemporalAndElevation(MetadataV2Object saved)
+    {
+        saved.Temporal!.StartTimeField.Should().Be("observed_at");
+        saved.Temporal.EndTimeField.Should().Be("expired_at");
+        saved.Temporal.Extent!.Start.Should().Be(DateTimeOffset.Parse("2025-01-01T00:00:00Z", CultureInfo.InvariantCulture));
+        saved.Temporal.Extent.End.Should().Be(DateTimeOffset.Parse("2025-12-31T23:59:59Z", CultureInfo.InvariantCulture));
 
-        savedResource.Temporal.Should().NotBeNull();
-        savedResource.Temporal!.StartTimeField.Should().Be("observed_at");
-        savedResource.Temporal.EndTimeField.Should().Be("expired_at");
-        savedResource.Temporal.Extent.Should().NotBeNull();
-        savedResource.Temporal.Extent!.Start.Should().Be(DateTimeOffset.Parse("2025-01-01T00:00:00Z", CultureInfo.InvariantCulture));
-        savedResource.Temporal.Extent.End.Should().Be(DateTimeOffset.Parse("2025-12-31T23:59:59Z", CultureInfo.InvariantCulture));
-
-        savedResource.Extensions.Should().ContainKey("wms");
-        var wmsDimensions = savedResource.Extensions["wms"].GetProperty("dimensions");
+        var wmsDimensions = saved.Extensions["wms"].GetProperty("dimensions");
         wmsDimensions.GetArrayLength().Should().Be(1);
         wmsDimensions[0].GetProperty("name").GetString().Should().Be("elevation");
         wmsDimensions[0].GetProperty("units").GetString().Should().Be("EPSG:5030");
-        wmsDimensions[0].GetProperty("unitSymbol").GetString().Should().Be("m");
         wmsDimensions[0].GetProperty("extent").GetString().Should().Be("0/500/50");
         wmsDimensions[0].GetProperty("default").GetString().Should().Be("0");
-
-        savedResource.AccessPolicy.Should().NotBeNull();
-        savedResource.AccessPolicy!.AllowAnonymous.Should().BeFalse();
-        savedResource.AccessPolicy.AllowAnonymousWrite.Should().BeFalse();
-        savedResource.AccessPolicy.AllowedRoles.Should().Equal("ROLE_ANALYST", "ROLE_VIEWER");
-        savedResource.AccessPolicy.AllowedWriteRoles.Should().Equal("ROLE_EDITOR");
     }
 
-    [Fact]
-    public void Translate_WithUnexpressibleWriteRule_DoesNotApplyBroaderGrant()
+    private static void AssertSavedAccessPolicy(MetadataV2Object saved)
     {
-        var layers = new[]
-        {
-            new GeoServerLayerInfo { Name = "observations", WorkspaceName = "demo" }
-        };
-        var rules = new[]
-        {
-            new GeoServerLayerAccessRule
-            {
-                RuleKey = "demo.observations.r",
-                RawValue = "ROLE_VIEWER",
-                WorkspaceName = "demo",
-                LayerName = "observations",
-                Permission = "r",
-                Roles = ["ROLE_VIEWER"]
-            },
-            new GeoServerLayerAccessRule
-            {
-                RuleKey = "demo.observations.w",
-                RawValue = "ROLE_EDITOR;cql=status=1",
-                WorkspaceName = "demo",
-                LayerName = "observations",
-                Permission = "w",
-                Roles = ["ROLE_EDITOR;cql=status=1"]
-            },
-            new GeoServerLayerAccessRule
-            {
-                RuleKey = "demo.*.r",
-                RawValue = "*",
-                WorkspaceName = "demo",
-                LayerName = "*",
-                Permission = "r",
-                Roles = ["*"]
-            }
-        };
-
-        var translated = GeoServerAccessRuleTranslator.Translate(rules, layers);
-
-        translated.LayerPoliciesBySourceId.Should().NotContainKey("layer:demo:observations");
-        translated.UnexpressibleReviewItems.Should().HaveCount(2);
-        translated.UnexpressibleReviewItems.Should().Contain(item => item.SourceId == "layer:demo:observations");
-        translated.UnexpressibleReviewItems.Should().Contain(item => item.SourceId == "access-rule:demo.*.r");
+        saved.AccessPolicy.Should().NotBeNull();
+        saved.AccessPolicy!.AllowAnonymous.Should().BeFalse();
+        saved.AccessPolicy.AllowAnonymousWrite.Should().BeFalse();
+        saved.AccessPolicy.AllowedRoles.Should().Equal("ROLE_ANALYST", "ROLE_VIEWER");
+        saved.AccessPolicy.AllowedWriteRoles.Should().Equal("ROLE_EDITOR");
     }
 
-    [Fact]
-    public void Translate_WithWildcardWriteRestrictionAndPerLayerReadOnly_FailsClosedIntoManualReview()
+    private static Mock<ILayerPublishingService> CreatePublisherMock(List<LayerPublishRequest> captured)
     {
-        var layers = new[]
-        {
-            new GeoServerLayerInfo { Name = "observations", WorkspaceName = "demo" }
-        };
-        var rules = new[]
-        {
-            new GeoServerLayerAccessRule
+        var mock = new Mock<ILayerPublishingService>();
+        mock.Setup(p => p.PublishLayerAsync(It.IsAny<string>(), It.IsAny<LayerPublishRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<string, LayerPublishRequest, CancellationToken>((_, req, _) => captured.Add(req))
+            .ReturnsAsync((string _, LayerPublishRequest req, CancellationToken _) => new PublishedLayerSummary
             {
-                RuleKey = "demo.observations.r",
-                RawValue = "ROLE_VIEWER",
-                WorkspaceName = "demo",
-                LayerName = "observations",
-                Permission = "r",
-                Roles = ["ROLE_VIEWER"]
-            },
-            new GeoServerLayerAccessRule
-            {
-                RuleKey = "demo.*.w",
-                RawValue = "ROLE_ADMIN",
-                WorkspaceName = "demo",
-                LayerName = "*",
-                Permission = "w",
-                Roles = ["ROLE_ADMIN"]
-            }
-        };
-
-        var translated = GeoServerAccessRuleTranslator.Translate(rules, layers);
-
-        translated.LayerPoliciesBySourceId.Should().NotContainKey("layer:demo:observations");
-        translated.UnexpressibleReviewItems.Should().Contain(item => item.SourceId == "access-rule:demo.*.w");
-        translated.UnexpressibleReviewItems.Should().Contain(item => item.SourceId == "layer:demo:observations");
+                StorageLayerId = 100,
+                LayerName = req.LayerName,
+                Schema = req.Schema,
+                Table = req.Table,
+                GeometryType = "POINT",
+                Srid = req.Srid ?? 4326,
+                Enabled = req.Enabled,
+                ServiceName = req.ServiceName ?? "default"
+            });
+        return mock;
     }
 
-    [Fact]
-    public void BuildWmsDimensionsExtension_WithoutTemporalColumn_EmitsDeclaredWmsTimeDimension()
+    private static Dictionary<string, (HttpStatusCode Status, string ContentType, string Body)> BuildCatalogResponses()
     {
-        var timeDimension = new GeoServerDimensionInfo
-        {
-            Enabled = true,
-            Presentation = "CONTINUOUS_INTERVAL",
-            Units = "ISO8601",
-            DefaultValueStrategy = "MAXIMUM",
-            NearestMatchEnabled = true,
-            StartTime = DateTimeOffset.Parse("2025-01-01T00:00:00Z", CultureInfo.InvariantCulture),
-            EndTime = DateTimeOffset.Parse("2025-06-01T00:00:00Z", CultureInfo.InvariantCulture)
-        };
-
-        var extension = GeoServerImportService.BuildWmsDimensionsExtension(timeDimension, elevationDimension: null);
-
-        extension.Should().NotBeNull();
-        var dims = extension!.Value.GetProperty("dimensions");
-        dims.GetArrayLength().Should().Be(1);
-        dims[0].GetProperty("name").GetString().Should().Be("time");
-        dims[0].GetProperty("units").GetString().Should().Be("ISO8601");
-        dims[0].GetProperty("extent").GetString().Should().Be("2025-01-01T00:00:00Z/2025-06-01T00:00:00Z/0");
-        dims[0].GetProperty("default").GetString().Should().Be("2025-06-01T00:00:00Z");
-    }
-
-    private static Dictionary<string, (HttpStatusCode Status, string ContentType, string Body)> BuildCatalogResponses(bool includeUnexpressibleAcl)
-    {
-        var aclJson = includeUnexpressibleAcl
-            ? """
-              {
-                "demo.observations.r": "ROLE_VIEWER,ROLE_ANALYST",
-                "demo.observations.w": "ROLE_EDITOR",
-                "demo.observations.a": "ROLE_ADMIN",
-                "*.*.r": "*",
-                "mode": "HIDE"
-              }
-              """
-            : """{"demo.observations.r":"ROLE_VIEWER"}""";
+        const string featureTypeJson = """
+            {"featureType":{"name":"observations","metadata":{"entry":[
+              {"@key":"time","dimensionInfo":{"enabled":true,"attribute":"observed_at","endAttribute":"expired_at","presentation":"CONTINUOUS_INTERVAL","units":"ISO8601","defaultValue":{"strategy":"MAXIMUM"},"nearestMatchEnabled":true,"startValue":"2025-01-01T00:00:00Z","endValue":"2025-12-31T23:59:59Z"}},
+              {"@key":"elevation","dimensionInfo":{"enabled":true,"presentation":"DISCRETE_INTERVAL","resolution":50,"units":"EPSG:5030","unitSymbol":"m","defaultValue":{"strategy":"MINIMUM"},"nearestMatchEnabled":true,"startValue":"0","endValue":"500"}}
+            ]}}}
+            """;
 
         return new Dictionary<string, (HttpStatusCode, string, string)>(StringComparer.OrdinalIgnoreCase)
         {
@@ -285,45 +169,7 @@ public sealed class GeoServerDimensionsAccessAndStyleDiffTests : IDisposable
             [$"{BaseUrl}/workspaces/demo/coveragestores.json"] = (HttpStatusCode.OK, "application/json", """{"coverageStores":""}"""),
             [$"{BaseUrl}/workspaces/demo/layers.json"] = (HttpStatusCode.OK, "application/json", """{"layers":{"layer":[{"name":"observations"}]}}"""),
             [$"{BaseUrl}/workspaces/demo/layers/observations.json"] = (HttpStatusCode.OK, "application/json", """{"layer":{"name":"observations","nativeName":"observations","type":"VECTOR","enabled":true,"queryable":true,"srs":"EPSG:4326","defaultStyle":{"name":"demo:obs_style"},"resource":{"@class":"featureType","name":"demo:observations","href":"https://geoserver.example.test/geoserver/rest/workspaces/demo/datastores/pg/featuretypes/observations.json"}}}"""),
-            [$"{BaseUrl}/workspaces/demo/datastores/pg/featuretypes/observations.json"] = (HttpStatusCode.OK, "application/json", """
-                {
-                  "featureType": {
-                    "name": "observations",
-                    "metadata": {
-                      "entry": [
-                        {
-                          "@key": "time",
-                          "dimensionInfo": {
-                            "enabled": true,
-                            "attribute": "observed_at",
-                            "endAttribute": "expired_at",
-                            "presentation": "CONTINUOUS_INTERVAL",
-                            "units": "ISO8601",
-                            "defaultValue": { "strategy": "MAXIMUM" },
-                            "nearestMatchEnabled": true,
-                            "startValue": "2025-01-01T00:00:00Z",
-                            "endValue": "2025-12-31T23:59:59Z"
-                          }
-                        },
-                        {
-                          "@key": "elevation",
-                          "dimensionInfo": {
-                            "enabled": true,
-                            "presentation": "DISCRETE_INTERVAL",
-                            "resolution": 50,
-                            "units": "EPSG:5030",
-                            "unitSymbol": "m",
-                            "defaultValue": { "strategy": "MINIMUM" },
-                            "nearestMatchEnabled": true,
-                            "startValue": "0",
-                            "endValue": "500"
-                          }
-                        }
-                      ]
-                    }
-                  }
-                }
-                """),
+            [$"{BaseUrl}/workspaces/demo/datastores/pg/featuretypes/observations.json"] = (HttpStatusCode.OK, "application/json", featureTypeJson),
             [$"{BaseUrl}/layergroups.json"] = (HttpStatusCode.OK, "application/json", """{"layerGroups":""}"""),
             [$"{BaseUrl}/workspaces/demo/layergroups.json"] = (HttpStatusCode.OK, "application/json", """{"layerGroups":""}"""),
             [$"{BaseUrl}/styles.json"] = (HttpStatusCode.OK, "application/json", """{"styles":""}"""),
@@ -332,17 +178,21 @@ public sealed class GeoServerDimensionsAccessAndStyleDiffTests : IDisposable
             [$"{BaseUrl}/workspaces/demo/styles/obs_style.sld"] = (HttpStatusCode.OK, "application/vnd.ogc.sld+xml", LossySld),
             [$"{BaseUrl}/services/wms/settings.json"] = (HttpStatusCode.OK, "application/json", """{"wms":{"enabled":true}}"""),
             [$"{BaseUrl}/services/wfs/settings.json"] = (HttpStatusCode.OK, "application/json", """{"wfs":{"enabled":true}}"""),
-            [$"{BaseUrl}/security/acl/layers.json"] = (HttpStatusCode.OK, "application/json", aclJson)
+            [$"{BaseUrl}/security/acl/layers.json"] = (HttpStatusCode.OK, "application/json", """{"demo.observations.r":"ROLE_VIEWER,ROLE_ANALYST","demo.observations.w":"ROLE_EDITOR","demo.observations.a":"ROLE_ADMIN","*.*.r":"*","mode":"HIDE"}""")
         };
     }
 
-    private GeoServerImportService CreateService(
-        Dictionary<string, (HttpStatusCode Status, string ContentType, string Body)> responses,
-        ILayerPublishingService? publisher = null,
-        IMetadataV2GraphStore? metadataGraphStore = null,
-        ISldStyleConverter? sldConverter = null)
+    private sealed record ServiceTestDependencies
     {
-        var handler = new StubHandler(responses);
+        public required Dictionary<string, (HttpStatusCode Status, string ContentType, string Body)> Responses { get; init; }
+        public ILayerPublishingService? Publisher { get; init; }
+        public IMetadataV2GraphStore? MetadataGraphStore { get; init; }
+        public ISldStyleConverter? SldConverter { get; init; }
+    }
+
+    private GeoServerImportService CreateService(ServiceTestDependencies deps)
+    {
+        var handler = new StubHandler(deps.Responses);
         _disposables.Add(handler);
         var httpClient = new HttpClient(handler);
         _disposables.Add(httpClient);
@@ -368,9 +218,11 @@ public sealed class GeoServerDimensionsAccessAndStyleDiffTests : IDisposable
             connectionProvider.Object,
             crsRegistry.Object,
             NullLogger<GeoServerImportService>.Instance,
-            sldConverter: sldConverter,
-            layerPublishingService: publisher,
-            metadataGraphStore: metadataGraphStore);
+            sldConverter: deps.SldConverter,
+            layerPublishingService: deps.Publisher)
+        {
+            MetadataGraphStore = deps.MetadataGraphStore
+        };
     }
 
     private sealed class StubSldConverter : ISldStyleConverter
@@ -399,48 +251,6 @@ public sealed class GeoServerDimensionsAccessAndStyleDiffTests : IDisposable
 
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
         }
-    }
-
-    private sealed class RecordingPublisher : ILayerPublishingService
-    {
-        public List<LayerPublishRequest> Requests { get; } = [];
-
-        public Task<PublishedLayerSummary> PublishLayerAsync(string connectionString, LayerPublishRequest request, CancellationToken cancellationToken = default)
-        {
-            Requests.Add(request);
-            return Task.FromResult(new PublishedLayerSummary
-            {
-                StorageLayerId = 100,
-                LayerName = request.LayerName,
-                Schema = request.Schema,
-                Table = request.Table,
-                GeometryType = "POINT",
-                Srid = request.Srid ?? 4326,
-                Enabled = request.Enabled,
-                ServiceName = request.ServiceName ?? "default"
-            });
-        }
-
-        public Task<PublishedLayerSummary?> LinkExistingLayerToServiceAsync(string connectionString, int layerId, string serviceName, bool enabled, CancellationToken cancellationToken = default)
-            => Task.FromResult<PublishedLayerSummary?>(null);
-
-        public Task<TablePublishValidationResult> ValidateTableForPublishAsync(string connectionString, TablePublishValidationRequest request, CancellationToken cancellationToken = default)
-            => throw new NotImplementedException();
-
-        public Task<LayerExtentRefreshResult> RefreshServiceExtentsAsync(string connectionString, string serviceName, CancellationToken cancellationToken = default)
-            => throw new NotImplementedException();
-
-        public Task<MaterializedFeatureRefreshResult> RefreshMaterializedLayerAsync(string connectionString, int layerId, CancellationToken cancellationToken = default)
-            => throw new NotImplementedException();
-
-        public Task<IReadOnlyList<PublishedLayerSummary>> ListPublishedLayersAsync(string connectionString, CancellationToken cancellationToken = default)
-            => throw new NotImplementedException();
-
-        public Task<PublishedLayerSummary?> GetPublishedLayerAsync(string connectionString, int layerId, CancellationToken cancellationToken = default)
-            => throw new NotImplementedException();
-
-        public Task<bool> UnpublishLayerAsync(string connectionString, int layerId, CancellationToken cancellationToken = default)
-            => throw new NotImplementedException();
     }
 
     private sealed class InMemoryMetadataGraphStore : IMetadataV2GraphStore

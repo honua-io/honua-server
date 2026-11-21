@@ -53,6 +53,14 @@ internal static class GeoServerAccessRuleTranslator
         return new GeoServerAccessRuleTranslationResult(policies, context.ReviewItems.ToArray());
     }
 
+    private enum WildcardWriteScope
+    {
+        None,
+        Applicable
+    }
+
+    private readonly record struct PolicyBuildResult(AccessPolicy? Policy, string? ConflictReason);
+
     private static Dictionary<string, AccessPolicy> BuildPolicies(
         TranslationContext context,
         Dictionary<string, string> workspaceBySourceId)
@@ -62,13 +70,15 @@ internal static class GeoServerAccessRuleTranslator
         {
             var hasWildcardWrite = context.HasGlobalWildcardWrite ||
                 (workspaceBySourceId.TryGetValue(sourceId, out var ws) && context.WildcardWriteWorkspaces.Contains(ws));
-            if (accumulator.TryBuildPolicy(hasWildcardWrite, out var policy, out var conflictReason))
+            var scope = hasWildcardWrite ? WildcardWriteScope.Applicable : WildcardWriteScope.None;
+            var built = accumulator.BuildPolicy(scope);
+            if (built.Policy != null)
             {
-                policies[sourceId] = policy!;
+                policies[sourceId] = built.Policy;
             }
-            else if (conflictReason != null)
+            else if (built.ConflictReason != null)
             {
-                context.ReviewItems.Add(CreateReviewItem(sourceId, conflictReason));
+                context.ReviewItems.Add(CreateReviewItem(sourceId, built.ConflictReason));
             }
         }
 
@@ -262,26 +272,25 @@ internal static class GeoServerAccessRuleTranslator
         private static bool IsAuthenticatedRole(string role)
             => string.Equals(role, "ROLE_AUTHENTICATED", StringComparison.OrdinalIgnoreCase);
 
-        public bool TryBuildPolicy(bool hasWildcardWriteRule, out AccessPolicy? policy, out string? conflictReason)
+        public PolicyBuildResult BuildPolicy(WildcardWriteScope wildcardWriteScope)
         {
-            policy = null;
-            conflictReason = null;
-
             if (_readBlocked || _writeBlocked || (!_hasRead && !_hasWrite))
             {
-                return false;
+                return default;
             }
 
-            if (hasWildcardWriteRule && !_hasWrite)
+            if (wildcardWriteScope == WildcardWriteScope.Applicable && !_hasWrite)
             {
-                conflictReason = "A wildcard write rule applies to this layer without an explicit per-layer write rule; policy deferred so read roles do not silently grant write access.";
-                return false;
+                return new PolicyBuildResult(
+                    null,
+                    "A wildcard write rule applies to this layer without an explicit per-layer write rule; policy deferred so read roles do not silently grant write access.");
             }
 
             if (_anyAuthenticatedWrite && _readRoles.Count > 0 && !_allowAnonymousWrite)
             {
-                conflictReason = "GeoServer write rule grants ROLE_AUTHENTICATED while read is role-restricted; requires manual review so access is not widened.";
-                return false;
+                return new PolicyBuildResult(
+                    null,
+                    "GeoServer write rule grants ROLE_AUTHENTICATED while read is role-restricted; requires manual review so access is not widened.");
             }
 
             var allowedRoles = _allowAnonymousRead || _anyAuthenticatedRead || _readRoles.Count == 0
@@ -291,14 +300,15 @@ internal static class GeoServerAccessRuleTranslator
                 ? null
                 : _writeRoles.OrderBy(static r => r, StringComparer.Ordinal).ToArray();
 
-            policy = new AccessPolicy
-            {
-                AllowAnonymous = _allowAnonymousRead,
-                AllowAnonymousWrite = _allowAnonymousWrite,
-                AllowedRoles = allowedRoles,
-                AllowedWriteRoles = allowedWriteRoles
-            };
-            return true;
+            return new PolicyBuildResult(
+                new AccessPolicy
+                {
+                    AllowAnonymous = _allowAnonymousRead,
+                    AllowAnonymousWrite = _allowAnonymousWrite,
+                    AllowedRoles = allowedRoles,
+                    AllowedWriteRoles = allowedWriteRoles
+                },
+                null);
         }
     }
 }

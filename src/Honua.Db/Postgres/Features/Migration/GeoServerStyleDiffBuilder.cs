@@ -93,91 +93,84 @@ internal static class GeoServerStyleDiffBuilder
         StyleInspectionTarget target,
         ISldStyleConverter? sldConverter)
     {
-        var diffs = new List<MigrationLayerStyleDiff>();
-        var seenConstructs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
+        var collector = new StyleDiffCollector(target);
         if (sldConverter != null)
         {
-            AddConverterDiagnostics(target, sldConverter.Convert(target.SldContent), seenConstructs, diffs);
+            collector.AddConversion(sldConverter.Convert(target.SldContent));
         }
 
-        AddXmlConstructDiffs(target, seenConstructs, diffs);
-
-        return diffs
-            .OrderBy(static d => d.Construct, StringComparer.Ordinal)
-            .ThenBy(static d => d.Severity, StringComparer.Ordinal)
-            .ThenBy(static d => d.Message, StringComparer.Ordinal)
-            .ToArray();
+        collector.AddXmlConstructs();
+        return collector.ToOrderedArray();
     }
 
-    private static void AddConverterDiagnostics(
-        StyleInspectionTarget target,
-        SldStyleConversionResult conversion,
-        HashSet<string> seenConstructs,
-        List<MigrationLayerStyleDiff> diffs)
+    private sealed class StyleDiffCollector(StyleInspectionTarget target)
     {
-        AppendDiagnostics(target, conversion.Warnings, "warning", seenConstructs, diffs);
-        AppendDiagnostics(target, conversion.Errors, "error", seenConstructs, diffs);
-    }
+        private readonly HashSet<string> _seenConstructs = new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<MigrationLayerStyleDiff> _diffs = [];
 
-    private static void AppendDiagnostics(
-        StyleInspectionTarget target,
-        IReadOnlyList<string> messages,
-        string severity,
-        HashSet<string> seenConstructs,
-        List<MigrationLayerStyleDiff> diffs)
-    {
-        foreach (var raw in messages)
+        public void AddConversion(SldStyleConversionResult conversion)
         {
-            var (construct, message) = ParseDiagnostic(raw);
-            seenConstructs.Add(construct);
-            diffs.Add(new MigrationLayerStyleDiff
+            AppendMessages(conversion.Warnings, "warning");
+            AppendMessages(conversion.Errors, "error");
+        }
+
+        public void AddXmlConstructs()
+        {
+            XDocument doc;
+            try
+            {
+                doc = RemoteXmlDocumentParser.Parse(target.SldContent);
+            }
+            catch (Exception)
+            {
+                return;
+            }
+
+            if (!_seenConstructs.Contains("ElseFilter") && HasElement(doc, "ElseFilter"))
+            {
+                AddWarning("ElseFilter", "ElseFilter has no portable MapLibre equivalent; rule will render unfiltered.");
+            }
+
+            if (!_seenConstructs.Contains("TextSymbolizer") && HasElement(doc, "TextSymbolizer"))
+            {
+                AddWarning("TextSymbolizer", "TextSymbolizer labels are not drawn by the server-side raster renderer.");
+            }
+        }
+
+        public MigrationLayerStyleDiff[] ToOrderedArray()
+            => _diffs
+                .OrderBy(static d => d.Construct, StringComparer.Ordinal)
+                .ThenBy(static d => d.Severity, StringComparer.Ordinal)
+                .ThenBy(static d => d.Message, StringComparer.Ordinal)
+                .ToArray();
+
+        private void AppendMessages(IReadOnlyList<string> messages, string severity)
+        {
+            foreach (var raw in messages)
+            {
+                var (construct, message) = ParseDiagnostic(raw);
+                _seenConstructs.Add(construct);
+                _diffs.Add(new MigrationLayerStyleDiff
+                {
+                    StyleId = target.StyleId,
+                    StyleName = target.StyleName,
+                    Construct = construct,
+                    Severity = severity,
+                    Message = message
+                });
+            }
+        }
+
+        private void AddWarning(string construct, string message)
+        {
+            _seenConstructs.Add(construct);
+            _diffs.Add(new MigrationLayerStyleDiff
             {
                 StyleId = target.StyleId,
                 StyleName = target.StyleName,
                 Construct = construct,
-                Severity = severity,
+                Severity = "warning",
                 Message = message
-            });
-        }
-    }
-
-    private static void AddXmlConstructDiffs(
-        StyleInspectionTarget target,
-        HashSet<string> seenConstructs,
-        List<MigrationLayerStyleDiff> diffs)
-    {
-        XDocument doc;
-        try
-        {
-            doc = RemoteXmlDocumentParser.Parse(target.SldContent);
-        }
-        catch (Exception)
-        {
-            return;
-        }
-
-        if (!seenConstructs.Contains("ElseFilter") && HasElement(doc, "ElseFilter"))
-        {
-            diffs.Add(new MigrationLayerStyleDiff
-            {
-                StyleId = target.StyleId,
-                StyleName = target.StyleName,
-                Construct = "ElseFilter",
-                Severity = "warning",
-                Message = "ElseFilter has no portable MapLibre equivalent; rule will render unfiltered."
-            });
-        }
-
-        if (!seenConstructs.Contains("TextSymbolizer") && HasElement(doc, "TextSymbolizer"))
-        {
-            diffs.Add(new MigrationLayerStyleDiff
-            {
-                StyleId = target.StyleId,
-                StyleName = target.StyleName,
-                Construct = "TextSymbolizer",
-                Severity = "warning",
-                Message = "TextSymbolizer labels are not drawn by the server-side raster renderer."
             });
         }
     }
