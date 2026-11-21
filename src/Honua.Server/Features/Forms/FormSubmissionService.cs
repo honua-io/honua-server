@@ -321,7 +321,10 @@ internal sealed class FormSubmissionService
         catch (ReadOnlyFeatureWriteException ex)
         {
             FormSubmissionLog.SubmissionFailed(_logger, ex, packageVersion.FormId, packageVersion.Version, submissionId);
-            var refused = BuildFailedResponse(submissionId, packageVersion, request, "The form's target layer does not accept edits.", editMayHaveCommitted, committedEditResult, committedTargetFeatureId);
+            // When nothing was dispatched, resending cannot succeed until the target layer is republished.
+            var refused = editMayHaveCommitted
+                ? BuildFailedResponse(submissionId, packageVersion, request, ReadOnlyTargetReason, editMayHaveCommitted, committedEditResult, committedTargetFeatureId)
+                : BuildReadOnlyRefusal(submissionId, packageVersion, request);
             await PreserveOrReleaseClaimAsync(submissionId, refused, editMayHaveCommitted).ConfigureAwait(false);
             await RecordAuditAsync(context, "forms.submission.create", packageVersion.FormId, AuditOutcome.Failure, $"{{\"version\":{packageVersion.Version},\"readOnly\":true}}", CancellationToken.None).ConfigureAwait(false);
             return Results.Json(refused, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: StatusCodes.Status405MethodNotAllowed);
@@ -988,6 +991,24 @@ internal sealed class FormSubmissionService
                 Retryable = retryable,
                 Reason = retryable ? "Submission policy denied this operation." : "Submission must be corrected before retry."
             }
+        };
+
+    private const string ReadOnlyTargetReason = "The form's target layer does not accept edits.";
+
+    private static FormSubmissionResponse BuildReadOnlyRefusal(
+        Guid submissionId,
+        FormPackageVersion packageVersion,
+        FormSubmissionRequest request)
+        => new()
+        {
+            SubmissionId = submissionId,
+            Status = "failed",
+            FormId = packageVersion.FormId,
+            FormVersion = packageVersion.Version,
+            Operation = request.Operation,
+            TargetFeatureId = request.TargetFeatureId,
+            EditOutcome = new FormEditOutcome { Succeeded = false, Error = "Submission could not be applied." },
+            Retry = new FormSubmissionRetryGuidance { Retryable = false, Reason = ReadOnlyTargetReason }
         };
 
     private static FormSubmissionResponse BuildFailedResponse(

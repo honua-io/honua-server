@@ -34,7 +34,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Forms;
 
-public sealed class FormSubmissionServiceTests
+public sealed partial class FormSubmissionServiceTests
 {
     private static readonly MetadataV2OwnerEditPolicy EnabledOwnerPolicy = new()
     {
@@ -581,7 +581,7 @@ public sealed class FormSubmissionServiceTests
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status405MethodNotAllowed);
         var body = ReadResponseBody(context);
-        body.Retry!.Retryable.Should().BeTrue();
+        body.Retry!.Retryable.Should().BeFalse("resending cannot succeed until the target layer is republished");
         body.Retry.Reason.Should().Contain("does not accept edits").And.NotContain("Provider is read-only.");
         body.EditOutcome!.Succeeded.Should().BeFalse();
         body.EditOutcome.Error.Should().Be("Submission could not be applied.");
