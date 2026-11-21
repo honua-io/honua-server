@@ -124,8 +124,10 @@ internal sealed partial class TileOperationExecutionCore
             parquet, Convert.ToHexStringLower(SHA256.HashData(parquet)));
         try
         {
+            // Describe before storing: S3 storage closes the archive stream once it has uploaded it.
+            var described = Describe(context, artifacts, build);
             var checks = await StoreAndCheckAsync(context, artifacts, current.JobId, graphProvider, cancellationToken).ConfigureAwait(false);
-            var descriptor = Validated(context, capture, Describe(context, artifacts, build), checks);
+            var descriptor = Validated(context, capture, described, checks);
             var layer = await LayerFactsAsync(context, services, cancellationToken).ConfigureAwait(false);
             var companions = new ExportCompanionInput(descriptor, layer);
             companions = companions with { Thumbnail = TryRenderThumbnail(context, capture, companions) };
