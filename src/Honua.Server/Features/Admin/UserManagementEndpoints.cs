@@ -5,6 +5,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Identity.Domain;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -48,29 +49,29 @@ internal static partial class UserManagementEndpoints
             .WithTags("Admin", "Users")
             .RequireAdminAuthorization();
 
-        group.MapGet("/", HandleListUsers)
-            .WithDisplayName("List Users")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var list = AdminHttpOperationRouteBinding.ForAccess("admin.user.list", "/users");
+        group.MapMethods(list.RoutePattern, list.Methods, HandleListUsers)
+            .WithAdminOperation(list.Definition).WithDisplayName("List Users");
 
-        group.MapGet("/{id}", HandleGetUser)
-            .WithDisplayName("Get User")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var get = AdminHttpOperationRouteBinding.ForAccess("admin.user.get", "/users");
+        group.MapMethods(get.RoutePattern, get.Methods, HandleGetUser)
+            .WithAdminOperation(get.Definition).WithDisplayName("Get User");
 
         // Granting roles or removing identities changes identity authority, so general admin
         // write is not enough.
-        group.MapPut("/{id}/roles", HandleUpdateUserRoles)
-            .WithDisplayName("Update User Roles")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
+        var updateRoles = AdminHttpOperationRouteBinding.ForAccess("admin.user.roles.update", "/users");
+        group.MapMethods(updateRoles.RoutePattern, updateRoles.Methods, HandleUpdateUserRoles)
+            .WithAdminOperation(updateRoles.Definition).WithDisplayName("Update User Roles")
             .RequireAdminCredentialManagementAuthorization();
 
-        group.MapDelete("/{id}", HandleDeleteUser)
-            .WithDisplayName("Deprovision User")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }))
+        var delete = AdminHttpOperationRouteBinding.ForAccess("admin.user.deprovision", "/users");
+        group.MapMethods(delete.RoutePattern, delete.Methods, HandleDeleteUser)
+            .WithAdminOperation(delete.Definition).WithDisplayName("Deprovision User")
             .RequireAdminCredentialManagementAuthorization();
 
-        group.MapGet("/{id}/effective-permissions", HandleGetEffectivePermissions)
-            .WithDisplayName("Get User Effective Permissions")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var effective = AdminHttpOperationRouteBinding.ForAccess("admin.user.effective-permissions", "/users");
+        group.MapMethods(effective.RoutePattern, effective.Methods, HandleGetEffectivePermissions)
+            .WithAdminOperation(effective.Definition).WithDisplayName("Get User Effective Permissions");
     }
 
     private static UserResponse ToResponse(ManagedUser u) => new()

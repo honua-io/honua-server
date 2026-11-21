@@ -67,10 +67,11 @@ internal static class CoordinatedReleaseControlEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
-        group.MapPost("/operations/{operationId}/rollback", HandleRollback)
+        var rollback = AdminHttpOperationRouteBinding.ForOperate("admin.metadata.coordinated-releases.rollback", "/metadata/coordinated-releases");
+        group.MapMethods(rollback.RoutePattern, rollback.Methods, HandleRollback)
+            .WithAdminOperation(rollback.Definition)
             .WithDisplayName("Roll Back Coordinated Release")
             .WithSummary("Requests the single coordinated rollback that unwinds completed steps in reverse.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<CoordinatedReleaseOperationResponse>()
             .ProducesProblem(StatusCodes.Status404NotFound);
     }

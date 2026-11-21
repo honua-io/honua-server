@@ -3,6 +3,7 @@
 
 using System.ComponentModel.DataAnnotations;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
@@ -30,26 +31,31 @@ internal static partial class OAuthClientEndpoints
             .RequireAdminAuthorization()
             .RequirePlatformAdminAuthority();
 
-        clients.MapGet("/", HandleListClients)
-            .WithDisplayName("List OAuth Clients")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var listClients = AdminHttpOperationRouteBinding.ForAccess("admin.oauth-client.list", "/oauth-clients");
+        clients.MapMethods(listClients.RoutePattern, listClients.Methods, HandleListClients)
+            .WithAdminOperation(listClients.Definition).WithDisplayName("List OAuth Clients");
 
         // Registering or deleting a client issues or removes a credential, so general admin
         // write is not enough.
-        clients.MapPost("/", HandleCreateClient)
-            .WithDisplayName("Register OAuth Client")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+        var registerClient = AdminHttpOperationRouteBinding.ForAccess("admin.oauth-client.register", "/oauth-clients");
+        clients.MapMethods(registerClient.RoutePattern, registerClient.Methods, HandleCreateClient)
+            .WithAdminOperation(registerClient.Definition).WithDisplayName("Register OAuth Client")
             .RequireAdminCredentialManagementAuthorization();
 
-        clients.MapGet("/{id:guid}", HandleGetClient)
-            .WithDisplayName("Get OAuth Client")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var getClient = AdminHttpOperationRouteBinding.ForAccess("admin.oauth-client.get", "/oauth-clients", "/{id:guid}");
+        clients.MapMethods(getClient.RoutePattern, getClient.Methods, HandleGetClient)
+            .WithAdminOperation(getClient.Definition).WithDisplayName("Get OAuth Client");
 
-        clients.MapDelete("/{id:guid}", HandleDeleteClient)
-            .WithDisplayName("Delete OAuth Client")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }))
+        var deleteClient = AdminHttpOperationRouteBinding.ForAccess("admin.oauth-client.delete", "/oauth-clients", "/{id:guid}");
+        clients.MapMethods(deleteClient.RoutePattern, deleteClient.Methods, HandleDeleteClient)
+            .WithAdminOperation(deleteClient.Definition).WithDisplayName("Delete OAuth Client")
             .RequireAdminCredentialManagementAuthorization();
 
+        MapOAuthScopeEndpoints(endpoints);
+    }
+
+    private static void MapOAuthScopeEndpoints(IEndpointRouteBuilder endpoints)
+    {
         var scopes = endpoints.MapGroup("/api/v{version:apiVersion}/admin/oauth-scopes")
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .WithApiVersionSet()
@@ -58,21 +64,21 @@ internal static partial class OAuthClientEndpoints
             .RequireAdminAuthorization()
             .RequirePlatformAdminAuthority();
 
-        scopes.MapGet("/", HandleListScopes)
-            .WithDisplayName("List OAuth Scopes")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var listScopes = AdminHttpOperationRouteBinding.ForAccess("admin.oauth-scope.list", "/oauth-scopes");
+        scopes.MapMethods(listScopes.RoutePattern, listScopes.Methods, HandleListScopes)
+            .WithAdminOperation(listScopes.Definition).WithDisplayName("List OAuth Scopes");
 
         // A scope's permissions become the authority of every client token that requests it, so
         // redefining one is a credential change, like registering the client itself.
-        scopes.MapPut("/", HandleDefineScope)
-            .WithDisplayName("Define OAuth Scope")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
+        var defineScope = AdminHttpOperationRouteBinding.ForAccess("admin.oauth-scope.define", "/oauth-scopes");
+        scopes.MapMethods(defineScope.RoutePattern, defineScope.Methods, HandleDefineScope)
+            .WithAdminOperation(defineScope.Definition).WithDisplayName("Define OAuth Scope")
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
             .RequireCredentialManagementAuthority();
 
-        scopes.MapDelete("/{scope}", HandleDeleteScope)
-            .WithDisplayName("Delete OAuth Scope")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }))
+        var deleteScope = AdminHttpOperationRouteBinding.ForAccess("admin.oauth-scope.delete", "/oauth-scopes");
+        scopes.MapMethods(deleteScope.RoutePattern, deleteScope.Methods, HandleDeleteScope)
+            .WithAdminOperation(deleteScope.Definition).WithDisplayName("Delete OAuth Scope")
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
             .RequireCredentialManagementAuthority();
     }

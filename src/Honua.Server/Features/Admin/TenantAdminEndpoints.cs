@@ -12,6 +12,7 @@ using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 
@@ -54,33 +55,33 @@ internal static partial class TenantAdminEndpoints
                     : ValueTask.FromResult<object?>(gate);
             });
 
-        group.MapGet("/", HandleListTenants)
-            .WithDisplayName("List Tenants")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var list = AdminHttpOperationRouteBinding.ForAccess("admin.tenant.list", "/tenants");
+        group.MapMethods(list.RoutePattern, list.Methods, HandleListTenants)
+            .WithAdminOperation(list.Definition).WithDisplayName("List Tenants");
 
-        group.MapPost("/", HandleCreateTenant)
-            .WithDisplayName("Create Tenant")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+        var create = AdminHttpOperationRouteBinding.ForAccess("admin.tenant.create", "/tenants");
+        group.MapMethods(create.RoutePattern, create.Methods, HandleCreateTenant)
+            .WithAdminOperation(create.Definition).WithDisplayName("Create Tenant");
 
-        group.MapGet("/usage", HandleUsage)
-            .WithDisplayName("Export Tenant Billing Usage")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var usage = AdminHttpOperationRouteBinding.ForAccess("admin.tenant.usage.export", "/tenants");
+        group.MapMethods(usage.RoutePattern, usage.Methods, HandleUsage)
+            .WithAdminOperation(usage.Definition).WithDisplayName("Export Tenant Billing Usage");
 
-        group.MapGet("/{tenantId}", HandleGetTenant)
-            .WithDisplayName("Get Tenant")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var get = AdminHttpOperationRouteBinding.ForAccess("admin.tenant.get", "/tenants");
+        group.MapMethods(get.RoutePattern, get.Methods, HandleGetTenant)
+            .WithAdminOperation(get.Definition).WithDisplayName("Get Tenant");
 
-        group.MapPost("/{tenantId}/suspend", HandleSuspendTenant)
-            .WithDisplayName("Suspend Tenant")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+        var suspend = AdminHttpOperationRouteBinding.ForAccess("admin.tenant.suspend", "/tenants");
+        group.MapMethods(suspend.RoutePattern, suspend.Methods, HandleSuspendTenant)
+            .WithAdminOperation(suspend.Definition).WithDisplayName("Suspend Tenant");
 
-        group.MapPost("/{tenantId}/resume", HandleResumeTenant)
-            .WithDisplayName("Resume Tenant")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+        var resume = AdminHttpOperationRouteBinding.ForAccess("admin.tenant.resume", "/tenants");
+        group.MapMethods(resume.RoutePattern, resume.Methods, HandleResumeTenant)
+            .WithAdminOperation(resume.Definition).WithDisplayName("Resume Tenant");
 
-        group.MapDelete("/{tenantId}", HandleDeleteTenant)
-            .WithDisplayName("Delete Tenant")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
+        var delete = AdminHttpOperationRouteBinding.ForAccess("admin.tenant.delete", "/tenants");
+        group.MapMethods(delete.RoutePattern, delete.Methods, HandleDeleteTenant)
+            .WithAdminOperation(delete.Definition).WithDisplayName("Delete Tenant");
     }
 
     private static TenantResponse ToResponse(TenantRecord t) => new()

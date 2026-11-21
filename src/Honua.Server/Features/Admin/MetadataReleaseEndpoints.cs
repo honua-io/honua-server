@@ -4,6 +4,7 @@
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Console;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -35,28 +36,32 @@ internal static class MetadataReleaseEndpoints
             .Produces<MetadataEnvironmentBindingsResponse>()
             .WithRouteAgentRule("Changes nothing.");
 
-        group.MapPost("/release-packages", HandleCreateReleasePackage)
+        var createPackage = AdminHttpOperationRouteBinding.ForOperate("admin.metadata.release-packages.create", "/metadata");
+        group.MapMethods(createPackage.RoutePattern, createPackage.Methods, HandleCreateReleasePackage)
+            .WithAdminOperation(createPackage.Definition)
             .WithDisplayName("Create Metadata Release Package")
             .WithSummary("Persists a Metadata v2 release package for semantic cross-environment promotion.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<MetadataReleasePackage>(StatusCodes.Status201Created);
 
-        group.MapGet("/release-packages", HandleListReleasePackages)
+        var listPackages = AdminHttpOperationRouteBinding.ForOperate("admin.metadata.release-packages.list", "/metadata");
+        group.MapMethods(listPackages.RoutePattern, listPackages.Methods, HandleListReleasePackages)
+            .WithAdminOperation(listPackages.Definition)
             .WithDisplayName("List Metadata Release Packages")
             .WithSummary("Returns release-package summaries for the GitOps releases surface, newest first.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<MetadataReleasePackageListResponse>();
 
-        group.MapGet("/release-packages/{packageId:guid}", HandleGetReleasePackage)
+        var getPackage = AdminHttpOperationRouteBinding.ForOperate("admin.metadata.release-packages.get", "/metadata", "/release-packages/{packageId:guid}");
+        group.MapMethods(getPackage.RoutePattern, getPackage.Methods, HandleGetReleasePackage)
+            .WithAdminOperation(getPackage.Definition)
             .WithDisplayName("Get Metadata Release Package")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<MetadataReleasePackage>()
             .ProducesProblem(StatusCodes.Status404NotFound);
 
-        group.MapGet("/release-packages/{packageId:guid}/gitops-manifest", HandleGetGitOpsManifest)
+        var manifest = AdminHttpOperationRouteBinding.ForOperate("admin.metadata.release-packages.gitops-manifest", "/metadata", "/release-packages/{packageId:guid}/gitops-manifest");
+        group.MapMethods(manifest.RoutePattern, manifest.Methods, HandleGetGitOpsManifest)
+            .WithAdminOperation(manifest.Definition)
             .WithDisplayName("Get Metadata Release GitOps Manifest")
             .WithSummary("Exports a persisted release package as a GitOps-safe JSON manifest.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<GitOpsMetadataReleaseManifest>()
             .ProducesProblem(StatusCodes.Status404NotFound);
     }
