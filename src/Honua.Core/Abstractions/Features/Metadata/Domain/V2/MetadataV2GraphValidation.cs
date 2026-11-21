@@ -47,7 +47,6 @@ public static partial class MetadataV2GraphValidator
         ValidateResources(errors, graph.Resources, storageBindingsById);
         ValidateCompositeRelationships(errors, resourcesById);
         ValidatePublications(errors, graph.Publications, resourcesById, storageBindingsById, serviceIds);
-        ValidatePublicationEditStorage(errors, graph);
         ValidateUnboundPublicationLayerIndexes(errors, graph, resourcesById);
         ValidateServices(errors, graph.Services, publicationsById);
         ValidatePublicationPrimary(errors, graph.Publications);

@@ -52,7 +52,7 @@ public sealed class SourceBackedWriteGuardFeatureWriterTests
         var write = () => WriteAsync(writer, kind, SourceLayer);
 
         (await write.Should().ThrowAsync<ReadOnlyFeatureWriteException>())
-            .Which.Message.Should().Contain("honua_data.imported_points");
+            .Which.Message.Should().Contain("source table").And.NotContain("imported_points");
         inner.Calls.Should().Be(0, "a refused write must never reach the managed store");
     }
 
@@ -67,6 +67,25 @@ public sealed class SourceBackedWriteGuardFeatureWriterTests
         await WriteAsync(writer, kind, UnpublishedLayer);
 
         inner.Calls.Should().Be(2);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public void FindSourceTable_SourceBackedLayer_NamesItsTable()
+        => SourceBackedWriteGuardFeatureWriter.FindSourceTable(Snapshot(JsonNode.Parse(Graph)!), SourceLayer)
+            .Should().Be("honua_data.imported_points");
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task DisposedGraphProvider_FailsClosed()
+    {
+        var inner = new CountingWriter();
+        var writer = new SourceBackedWriteGuardFeatureWriter(inner, new DisposedGraphProvider());
+
+        var write = () => writer.CreateAsync(SourceLayer, NewFeature(0));
+
+        await write.Should().ThrowAsync<ObjectDisposedException>();
+        inner.Calls.Should().Be(0);
     }
 
     [UnitTest]
@@ -156,6 +175,15 @@ public sealed class SourceBackedWriteGuardFeatureWriterTests
 
         public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
             => ValueTask.FromResult(snapshot);
+    }
+
+    private sealed class DisposedGraphProvider : IMetadataV2GraphProvider
+    {
+        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
+            => throw new ObjectDisposedException(nameof(IMetadataV2GraphProvider));
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
+            => throw new ObjectDisposedException(nameof(IMetadataV2GraphProvider));
     }
 
     private sealed class CountingWriter : IFeatureWriter

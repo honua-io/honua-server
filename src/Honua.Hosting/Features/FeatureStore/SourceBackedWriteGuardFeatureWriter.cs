@@ -69,16 +69,17 @@ public sealed class SourceBackedWriteGuardFeatureWriter(IFeatureWriter inner, IM
         {
             snapshot = await metadata.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex) when (ex is not ObjectDisposedException)
         {
             // A host wired for storage-only access has no graph, so no layer can be bound to a source table.
             return;
         }
 
-        if (FindSourceTable(snapshot, layerId) is { } source)
+        // The message stays generic: some surfaces return it to the caller, and the table name is internal.
+        if (FindSourceTable(snapshot, layerId) is not null)
         {
             throw new ReadOnlyFeatureWriteException(
-                $"This layer is published over the source table '{source}', which this server cannot write through. " +
+                "This layer is published over a source table, which this server cannot write through. " +
                 "Edit the source table directly and refresh the layer, or republish the data into the managed feature store.");
         }
     }
@@ -87,9 +88,7 @@ public sealed class SourceBackedWriteGuardFeatureWriter(IFeatureWriter inner, IM
     // the managed writer serves it (managed binding, no binding, or no publication at all).
     internal static string? FindSourceTable(MetadataV2GraphSnapshot snapshot, int layerId)
     {
-        var resourcesById = snapshot.Graph.Resources
-            .GroupBy(static resource => resource.Metadata.Id, StringComparer.Ordinal)
-            .ToDictionary(static group => group.Key, static group => group.First(), StringComparer.Ordinal);
+        var resourcesById = snapshot.Index.ResourcesById;
         string? source = null;
         foreach (var publication in snapshot.Graph.Publications)
         {
@@ -112,7 +111,7 @@ public sealed class SourceBackedWriteGuardFeatureWriter(IFeatureWriter inner, IM
 
     private static string? SourceTableOf(
         MetadataV2StorageBinding? binding,
-        Dictionary<string, MetadataV2Object> resourcesById)
+        IReadOnlyDictionary<string, MetadataV2Object> resourcesById)
     {
         if (binding is not { StorageType: MetadataV2StorageType.RelationalTable }
             || !resourcesById.TryGetValue(binding.ResourceId, out var resource))

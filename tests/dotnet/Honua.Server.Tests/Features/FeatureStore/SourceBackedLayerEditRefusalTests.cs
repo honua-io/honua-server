@@ -55,6 +55,7 @@ public sealed class SourceBackedLayerEditRefusalTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed, body);
         body.Should().NotContain("\"success\":true", body);
+        body.Should().NotContain(SourceTable, "the refusal must not disclose the internal table name");
         (await CountAsync(schema, $"SELECT COUNT(*) FROM \"{schema}\".features WHERE attributes->>'name' = '{Marker}'"))
             .Should().Be(0, "a refused edit must not reach the managed features table");
         (await CountAsync(schema, $"SELECT COUNT(*) FROM {SourceTable}")).Should().Be(1);
