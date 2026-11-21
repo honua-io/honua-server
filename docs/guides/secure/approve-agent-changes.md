@@ -10,11 +10,9 @@ change in every edition. The requesting person may make that decision; a
 second person is not required by this model. The agent cannot approve on your
 behalf, and typing “yes” in a conversation is not a recorded server approval.
 
-**Availability:** human-session enforcement and requester approval are implemented
-in source. Rely on them only after the matching server and Console versions
-have been installed and qualified together. Older deployments can still reject
-approval by the requester or accept credential types that the new model rejects.
-This guide does not certify an installed deployment.
+**Version note:** human-session enforcement and requester approval are live in
+rc.2. Upgrade the server and Console together; older deployments can still
+reject approval by the requester or accept credential types that rc.2 rejects.
 
 ## What an agent must have approved
 
@@ -50,7 +48,7 @@ grant approval authority.
 
 1. Keep the operation and proposal references returned by the agent. A
    submitted or awaiting-approval result means the change has not completed.
-2. Sign in to Console as yourself and open **Approvals** (`/inbox`), or follow
+2. Sign in to Console as yourself and open **Approvals** (`/console/inbox`), or follow
    the proposal's **Open approval** link when one is supplied.
 3. Select that proposal. Review its target environment, resource, requested
    change, warnings, and exact saved version or revision. Check that it is the

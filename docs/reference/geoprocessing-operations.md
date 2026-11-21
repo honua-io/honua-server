@@ -1,14 +1,14 @@
 ---
 type: reference
 title: "Geoprocessing operations"
-description: "Catalog of the built-in geoprocessing processes (process catalog honua.processcatalog.builtin.v1)."
+description: "Catalog of the built-in geoprocessing processes (process catalog honua.process_catalog.builtin.v1)."
 resource: "honua://capability/process.geoprocessing"
 ---
 # Geoprocessing operations
 
 Catalog of the built-in geoprocessing processes (process catalog `honua.process_catalog.builtin.v1`). Protocol adapters consume the catalog's execution-capability metadata instead of maintaining their own callable-process lists: OGC API Processes (`/ogc/processes/processes`) projects job processes and honors their advertised synchronous/asynchronous modes, the GeoServices REST GPServer adapter (`/rest/services/{serviceId}/GPServer`) derives synchronous execution from the declared modes, and MCP exposes the complete classification. For a submit/poll/fetch walkthrough see [run geoprocessing](../guides/query-analyze/run-geoprocessing.md); to write your own process, see [author a geoprocessing process](../guides/query-analyze/gp-devkit-authoring.md).
 
-The catalog currently registers **101 processes** across 16 families. A build gate keeps this page in step with the catalog: a registered process id missing here, or a count that drifts, fails the build.
+The catalog currently registers **101 processes** across 17 families. A build gate keeps this page in step with the catalog: a registered process id missing here, or a count that drifts, fails the build.
 
 Execution notes that apply across families:
 
@@ -23,7 +23,7 @@ Execution notes that apply across families:
 - **Runtime profile.** Processes marked *native* below declare `RuntimeProfile = native` and execute out-of-process in the heavyweight GDAL/PDAL worker image; the lean GDAL-free serving image validates their plans (parameter shape + per-process semantic rules) but never executes them. **A deployment without the GDAL worker cannot run any native process** — all `surface.*`, all `raster.*`, the native `conversion.*` (raster/OGR/point-cloud) idioms, `proximity.euclidean-*`, `source.ogr`, `gdal.*`, and `pcloud.translate`. 30 of the 101 processes are native.
 - **GP workspace controls.** Managed-profile tasks use the configured PostgreSQL workspace store for `env:workspace` and `env:overwriteOutput`. Named creation enforces the configured per-owner active workspace-count limit atomically across labels and optional scopes. The native GDAL worker has no workspace lifecycle provider: GPServer rejects these two controls for native-profile tasks before submission, and the worker also rejects them on older queued or directly authored jobs. This is an explicit limitation; native-worker workspace output is not supported. `Geoprocessing:Workspace:EnableAutomaticCleanup=false` disables both polling and scheduled automatic sweeps.
 - **Delegated cloud inference.** `imagery.classify` delegates ML inference to a configured cloud endpoint (`Geoprocessing:ImageryInference`) — Honua bundles no model runtime. When no backend is configured the process stays advertised but every execution fails with a clear "no cloud inference backend is configured" message (no silent stub, no fake result).
-- **Raster sourcing.** Native raster/surface processes read the raster as base64-encoded GeoTIFF bytes on the `source` parameter; `layerId`/`rasterId` selectors are declared but layer-resolved sourcing is a follow-on and `source` remains required today.
+- **Raster sourcing.** Native raster/surface processes accept either base64-encoded GeoTIFF bytes on `source` or a catalog `layerId`/`rasterId` selector resolved at submit time and materialized onto `source` (at least one of `source`, `layerId`, or `rasterId` is required).
 - **Inline FeatureCollections.** Managed `*-managed`, `overlay.*`, `proximity.near*`, `statistics.*`, `transform.*`, `source.*`, and `sink.*` processes exchange features as `data:application/geo+json;base64` data URIs so they compose as workflow nodes.
 - **Approval gate.** `data-management.delete-features` and `data-management.calculate-field` are destructive and require operator approval.
 - **Deferred role revalidation.** Approval resumes re-resolve current roles for identities managed by the configured membership source and fail closed when the submitter is inactive or lost required membership. For identity-provider modes that cannot answer membership queries, the durable submitter snapshot remains authoritative with an operator warning; resubmit pending approvals after revoking roles in that mode.
@@ -47,7 +47,7 @@ Single-geometry operations; inputs are base64-encoded WKB plus an SRID. Managed 
 
 | Process ID | Description | Key parameters | Entry points |
 | --- | --- | --- | --- |
-| `geometry.buffer` | Polygon at a distance around the input geometry (planar; distance in the input CRS's coordinate units). `geodesic=true` is rejected at plan validation. | `wkb`, `srid`, `distance` (CRS units, > 0), `geodesic` | job, workflow |
+| `geometry.buffer` | Polygon at a distance around the input geometry (planar in the input CRS's coordinate units, or geodesic when `geodesic=true`). | `wkb`, `srid`, `distance` (> 0), `geodesic`, `unit` | job, workflow |
 | `geometry.simplify` | Douglas-Peucker simplification, topology-preserving by default. | `wkb`, `srid`, `tolerance`, `preserveTopology` | job, workflow |
 | `geometry.project` | Reproject between spatial references. | `wkb`, `fromSrid`, `toSrid` | job, workflow |
 | `geometry.make-valid` | Repair self-intersections, duplicate vertices, ring orientation. | `wkb`, `srid` | job, workflow |
@@ -55,8 +55,8 @@ Single-geometry operations; inputs are base64-encoded WKB plus an SRID. Managed 
 | `geometry.intersect` | Intersection of two geometries. | `targetWkb`, `intersectorWkb`, `srid` | job, workflow |
 | `geometry.clip` | Clip to the bounding envelope of a clip geometry. | `targetWkb`, `clipEnvelopeWkb`, `srid` | job, workflow |
 | `geometry.difference` | Subtract an eraser geometry. | `targetWkb`, `eraserWkb`, `srid` | job, workflow |
-| `geometry.area` | Planar area of a polygon in squared CRS units (no geodesic conversion). | `wkb`, `srid` | job, workflow |
-| `geometry.length` | Planar length of a line (polygon perimeter) in CRS units (no geodesic conversion). | `wkb`, `srid` | job, workflow |
+| `geometry.area` | Planar or geodesic (WGS84 ellipsoid) area of a polygon. | `wkb`, `srid`, `geodesic`, `unit` | job, workflow |
+| `geometry.length` | Planar or geodesic (WGS84 ellipsoid) length of a line (or polygon perimeter). | `wkb`, `srid`, `geodesic`, `unit` | job, workflow |
 | `geometry.centroid` | Centroid point. | `wkb`, `srid` | job, workflow |
 | `geometry.convex-hull` | Convex hull (PostGIS `ST_ConvexHull` semantics). | `wkb`, `srid` | job, workflow |
 | `geometry.dissolve` | Union by optional group key, one feature per group. | `wkbs`, `srid`, `groupKeys` | job, workflow |
@@ -136,7 +136,7 @@ Layer-level counterparts of the geometry-scoped operations; accept the shared Ge
 
 ## Surface analysis (8) — native
 
-DEM-derived raster products executed by the GDAL worker via `gdaldem` / `gdal_contour` / `gdal_viewshed`. All take `source` (base64 GeoTIFF DEM). **Require the GDAL worker.**
+DEM-derived raster products executed by the GDAL worker via `gdaldem` / `gdal_contour` / `gdal_viewshed`. All take `source` (base64 GeoTIFF DEM) or a `layerId`/`rasterId` resolved at submit time. **Require the GDAL worker.**
 
 | Process ID | Description | Key parameters | Entry points |
 | --- | --- | --- | --- |
@@ -151,7 +151,7 @@ DEM-derived raster products executed by the GDAL worker via `gdaldem` / `gdal_co
 
 ## Raster (13) — native
 
-Raster analysis and mutation executed by the GDAL worker via `gdalwarp` / `gdalinfo` / `gdal_grid` / `gdal_calc.py`. All take `source` (base64 GeoTIFF) unless noted. **Require the GDAL worker.**
+Raster analysis and mutation executed by the GDAL worker via `gdalwarp` / `gdalinfo` / `gdal_grid` / `gdal_calc.py`. All take `source` (base64 GeoTIFF) or a `layerId`/`rasterId` resolved at submit time unless noted. **Require the GDAL worker.**
 
 | Process ID | Description | Key parameters | Entry points |
 | --- | --- | --- | --- |
@@ -207,7 +207,7 @@ Bulk, layer-level mutation workflows. `delete-features` and `calculate-field` ar
 
 | Process ID | Description | Key parameters | Entry points |
 | --- | --- | --- | --- |
-| `import.dataset` | End-to-end durable import: stage → import/chunk → flatten to a typed layer → optional raster tiling → extent/MVT refresh → provenance. The canonical execution layer the geospatial-mcp `publish_data` family submits into. Managed. | `connection`, `sourcePath`, `fileName`, `tableName`, `layerName`, `serviceName`, `targetSrid`, `rasterLayerId`, … | job, workflow |
+| `import.dataset` | End-to-end durable import: stage → import/chunk → publish with source attributes in a JSON properties column → optional raster tiling → extent/MVT refresh → provenance. The canonical execution layer the geospatial-mcp `publish_data` family submits into. Managed. | `connection`, `sourcePath`, `fileName`, `tableName`, `layerName`, `serviceName`, `targetSrid`, `rasterLayerId`, … | job, workflow |
 
 ## Transform (12)
 
@@ -256,6 +256,23 @@ Terminate a workflow by writing the input FeatureCollection and emitting a resul
 
 Native-format sinks (shapefile, GeoPackage) are deferred to the GDAL worker stream; for those, convert with `gdal.ogr2ogr`.
 
+### File-sink destinations and cancellation
+
+For `sink.geojson-file` and `sink.quarantine`, `path` is a relative file name
+inside a server-owned job and attempt directory. The result receipt's `path`
+identifies its actual location relative to the configured output root;
+`requestedPath` preserves the submitted name. A different owner, tenant, job, or
+retry cannot replace a prior output, and repeating a write within one attempt
+fails rather than overwriting existing bytes. Quarantine's approval exception
+applies to these isolated artifacts, never an existing caller-selected destination.
+
+Both sinks check cancellation and the execution lease immediately before their
+create-only rename. After a successful rename they record committed-effect
+evidence with an uncancelled token. Filesystem rename and the job lease store
+are separate transactions: a lease lost in that final gap cannot be rolled back
+atomically, and a rejected receipt surfaces as an execution error. Attempt isolation
+still prevents that stale write from replacing the next attempt's output.
+
 ## Routing (3)
 
 Managed routing jobs use the configured canonical routing provider. They fail explicitly when that provider or the requested capability is unavailable. GeoServices exposes these jobs through both GPServer and NAServer web-tool aliases; submission, polling, and named results use the shared durable job runtime.
@@ -282,20 +299,3 @@ Full stock-client routing compatibility remains tracked by issue #5192.
 - [Run geoprocessing guide](../guides/query-analyze/run-geoprocessing.md)
 - [OGC APIs reference](protocols/ogc-apis.md)
 - [gRPC ProcessService](protocols/grpc.md)
-
-### File-sink destinations and cancellation
-
-For `sink.geojson-file` and `sink.quarantine`, `path` is a relative file name
-inside a server-owned job and attempt directory. The result receipt's `path`
-identifies its actual location relative to the configured output root;
-`requestedPath` preserves the submitted name. A different owner, tenant, job, or
-retry cannot replace a prior output, and repeating a write within one attempt
-fails rather than overwriting existing bytes. Quarantine's approval exception
-applies to these isolated artifacts, never an existing caller-selected destination.
-
-Both sinks check cancellation and the execution lease immediately before their
-create-only rename. After a successful rename they record committed-effect
-evidence with an uncancelled token. Filesystem rename and the job lease store
-are separate transactions: a lease lost in that final gap cannot be rolled back
-atomically, and a rejected receipt surfaces as an execution error. Attempt isolation
-still prevents that stale write from replacing the next attempt's output.

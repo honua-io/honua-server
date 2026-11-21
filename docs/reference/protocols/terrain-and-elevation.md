@@ -4,7 +4,9 @@ title: "Terrain and elevation"
 description: "Honua serves registered raster/DEM datasets two ways: Terrain-RGB PNG tiles for MapLibre/Mapbox raster-dem rendering, and JSON elevation endpoints for numeric point, profile, and surface-analysis queries."
 resource: "honua://capability/serve.elevation"
 resources:
+  - "honua://capability/raster.terrain-rgb"
   - "honua://capability/analytics.line-of-sight"
+  - "honua://capability/analytics.viewshed"
   - "honua://capability/analytics.sun-shadow"
   - "honua://capability/analytics.slice"
 ---
@@ -20,10 +22,10 @@ Honua serves registered raster/DEM datasets two ways: Terrain-RGB PNG tiles for 
 | GET | `/terrain/{datasetId}/{z}/{x}/{y}.png` | 256x256 Terrain-RGB elevation tile (Mapbox encoding). |
 | GET | `/elevation/{datasetId}/value` | Numeric elevation at one coordinate. |
 | GET | `/elevation/{datasetId}/profile` | Elevation samples along a WKT LineString. |
-| POST | `/elevation/{datasetId}/line-of-sight` | Point-to-point visibility over the elevation surface. |
-| POST | `/elevation/{datasetId}/viewshed` | Visible-area analysis from an observer point. |
-| POST | `/elevation/{datasetId}/sun-shadow` | Sun/shadow analysis for a date/time. |
-| POST | `/elevation/{datasetId}/slice` | Vertical slice through the elevation surface. |
+| POST | `/elevation/{datasetId}/line-of-sight` | Point-to-point visibility over the elevation surface (Pro tier; `402` when entitlement inactive). |
+| POST | `/elevation/{datasetId}/viewshed` | Visible-area analysis from an observer point (Pro tier; `402` when entitlement inactive). |
+| POST | `/elevation/{datasetId}/sun-shadow` | Sun/shadow analysis for a date/time (Pro tier; `402` when entitlement inactive). |
+| POST | `/elevation/{datasetId}/slice` | Vertical slice through the elevation surface (Pro tier; `402` when entitlement inactive). |
 
 `{datasetId}` accepts a numeric layer id or a layer collection name. The Terrain protocol must be enabled for the tile routes and the Elevation protocol for the query routes (both are part of the default protocol set when `EnabledProtocols` is omitted). Tile coordinates are validated against the configured `Limits:Tiles` zoom range.
 
@@ -55,7 +57,7 @@ Values are dataset-native: band 1 only, no vertical-datum transformation (`null`
 
 ## Errors
 
-All errors use `application/problem+json`: `400` for missing/non-finite inputs, `422` for invalid WKT, out-of-range `sampleCount`/`interval`, unknown CRS, out-of-envelope WGS 84 coordinates, or source rasters with missing/mixed/unknown SRIDs, `404` for unknown datasets, datasets without registered rasters, or a disabled protocol, and `401`/`403` for access denial.
+Handler errors use `application/problem+json`: `400` for missing/non-finite inputs (malformed non-numeric query parameters such as `x=notanumber` are rejected by route parameter binding with HTTP `400` and an empty body before reaching the handler), `422` for invalid WKT, out-of-range `sampleCount`/`interval`, unknown CRS, out-of-envelope WGS 84 coordinates, or source rasters with missing/mixed/unknown SRIDs, `404` for unknown datasets, datasets without registered rasters, or a disabled protocol, `402` for Pro elevation-analysis endpoints (`line-of-sight`, `viewshed`, `sun-shadow`, `slice`) when the required entitlement is inactive (checked before dataset lookup, so an unknown dataset also returns `402` when unlicensed), and `401`/`403` for access denial.
 
 ## Limits configuration
 

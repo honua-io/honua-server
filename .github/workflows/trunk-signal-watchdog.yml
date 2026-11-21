@@ -2,9 +2,15 @@ name: Trunk signal watchdog
 
 # Fails loudly when trunk CI stops producing results. Failure responders only react to runs that fail;
 # a trunk whose runs are all cancelled or stuck in the queue produces no failure event at all.
+# GitHub drops most scheduled runs on this repository, so workflow_run drives active-trunk checks
+# while the half-hourly schedule remains the fallback for quiet periods.
 on:
   schedule:
     - cron: "*/30 * * * *"
+  workflow_run:
+    workflows: ["CI", "Full CI dispatch"]
+    branches: [trunk]
+    types: [completed]
   workflow_dispatch:
 
 permissions: {}
@@ -16,8 +22,10 @@ concurrency:
 jobs:
   watch:
     name: Trunk signal watchdog
-    if: github.repository == 'honua-io/honua-server'
-    runs-on: ubuntu-latest
+    if: >-
+      github.repository == 'honua-io/honua-server' &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       actions: read

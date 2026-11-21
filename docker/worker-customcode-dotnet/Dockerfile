@@ -25,7 +25,7 @@
 ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:11.0.100-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea
 # Declared before the first FROM so the runtime stage FROM can use it.
 # Matches the Ubuntu 26.04 (Resolute) OS generation of DOTNET_SDK_IMAGE and worker-gdal.
-ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.13.1@sha256:aff1d5515aa0e9b50be34ab11d6c0c2cfabc23cdcb7a2e0bc5748101eedb3e4a
+ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.13.3@sha256:2dd0f81ef927ff4c3d4dbe4f73c029dc86d4073974c0564f8e196f6e1412e2e0
 # The shipped SDK is copied from this untouched stage, so it is exactly the digest-pinned image's.
 FROM ${DOTNET_SDK_IMAGE} AS sdk
 
@@ -77,18 +77,19 @@ RUN dotnet build samples/RasterTool/RasterTool.csproj \
       --output /tmp/raster-build \
  && test -f /tmp/raster-build/RasterTool.dll
 RUN mkdir -p /tmp/gdalprobe \
+ && cp Directory.Packages.props /tmp/gdalprobe/Directory.Packages.props \
  && cat > /tmp/gdalprobe/Probe.csproj <<EOF
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
-    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="MaxRev.Gdal.Core" Version="3.12.4.520" />
-    <PackageReference Include="MaxRev.Gdal.LinuxRuntime.Minimal" Version="3.12.4.520" />
+    <PackageReference Include="MaxRev.Gdal.Core" />
+    <PackageReference Include="MaxRev.Gdal.LinuxRuntime.Minimal" />
   </ItemGroup>
 </Project>
 EOF

@@ -38,15 +38,17 @@ internal sealed class OpsNotificationReminderRunner(
         // Composite posture includes unconfigured sources, so inspect the individual sources instead.
         var sources = evaluation.Posture.Sources.Where(source =>
             source.BackendKind != EvidencePostureVocabulary.BackendKinds.Composite).ToArray();
+        var actionableSubjects = actionable.Keys.ToArray();
         if (sources.Length > 0 && sources.All(source =>
             source.Completeness == EvidencePostureVocabulary.Completeness.NotConfigured ||
             EvidencePostureFactory.IsActionable(EvidencePostureFactory.Validate(source, now))))
         {
-            await schedules.CloseMissingFindingsAsync(actionable.Keys.ToArray(), now, cancellationToken)
+            await schedules.CloseMissingFindingsAsync(actionableSubjects, now, cancellationToken)
                 .ConfigureAwait(false);
         }
         await schedules.ObserveAwaitingAsync(100, cancellationToken).ConfigureAwait(false);
-        var due = await schedules.ListDueAsync(now, 100, cancellationToken).ConfigureAwait(false);
+        var due = await schedules.ListDueForDispatchAsync(new(now, 100, actionableSubjects), cancellationToken)
+            .ConfigureAwait(false);
         foreach (var schedule in due)
         {
             await DispatchAsync(schedule, actionable, cancellationToken).ConfigureAwait(false);
@@ -70,7 +72,8 @@ internal sealed class OpsNotificationReminderRunner(
         }
         else if (!findings.ContainsKey(schedule.SubjectId))
         {
-            await DeferUnlessRecentlyReportedAsync(schedule, cancellationToken).ConfigureAwait(false);
+            // Leave findings absent from this replica's evaluation untouched so another replica
+            // that observes the finding can dispatch it on schedule without being deferred.
             return;
         }
 
@@ -95,19 +98,6 @@ internal sealed class OpsNotificationReminderRunner(
                 : OpsNotificationCadence.NextNotice(schedule.Severity, schedule.FirstSeenAt, now);
             await schedules.TryAdvanceAsync(schedule, next, cancellationToken).ConfigureAwait(false);
         }
-    }
-
-    // A finding some replica reported in the last two passes is still live there, and that replica sends the ordinal;
-    // deferring it here would keep pushing it past that replica's passes. Rows nobody reported recently are deferred so
-    // they cannot starve later reminders.
-    private async Task DeferUnlessRecentlyReportedAsync(OpsNotificationSchedule schedule, CancellationToken cancellationToken)
-    {
-        var now = timeProvider.GetUtcNow();
-        if (schedule.LastSeenAt is { } seen && seen >= now - PostgresOpsNotificationStore.RecentObservation)
-        {
-            return;
-        }
-        await schedules.TryDeferAsync(schedule, now.AddMinutes(1), cancellationToken).ConfigureAwait(false);
     }
 
     private static OpsNotification BuildNotification(OpsNotificationSchedule schedule, OperationProposal? proposal)

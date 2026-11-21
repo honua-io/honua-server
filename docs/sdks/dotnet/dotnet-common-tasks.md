@@ -14,6 +14,8 @@ Two of the most common reads with the Honua .NET SDK: querying a FeatureServer l
 
 ```csharp
 using Honua.Sdk.GeoServices.FeatureServer;
+using Honua.Sdk.GeoServices.FeatureServer.Models; // FeatureServerQueryParams
+using Microsoft.Extensions.DependencyInjection;
 
 var fs = host.Services.GetRequiredService<IHonuaFeatureServerClient>();
 
@@ -23,14 +25,17 @@ var result = await fs.QueryAsync(
     query: new FeatureServerQueryParams
     {
         Where          = "status = 'open'",
-        OutFields      = new[] { "name", "status" },
+        OutFields      = "name,status", // comma-separated
         ReturnGeometry = true,
         ResultRecordCount = 100,
     });
 
-foreach (var feature in result.Features)
+foreach (var feature in result.Features ?? [])
 {
-    Console.WriteLine(feature.Attributes["name"]);
+    if (feature.Attributes?.TryGetValue("name", out var name) == true)
+    {
+        Console.WriteLine(name);
+    }
 }
 ```
 
@@ -49,6 +54,8 @@ The `Where`, `OutFields`, and paging fields map directly onto the FeatureServer 
 
 ```csharp
 using Honua.Sdk.Catalogs.Stac;
+using Honua.Sdk.Catalogs.Stac.Models; // StacSearchRequest
+using Microsoft.Extensions.DependencyInjection;
 
 var stac = host.Services.GetRequiredService<IHonuaStacClient>();
 
@@ -56,7 +63,7 @@ var stac = host.Services.GetRequiredService<IHonuaStacClient>();
 var collections = await stac.ListCollectionsAsync();
 
 // Search items by bounding box and time, POSTing a search request.
-var items = await stac.SearchPostAsync(new StacSearchRequest
+var items = await stac.PostSearchAsync(new StacSearchRequest
 {
     Collections = new[] { "imagery" },
     Bbox        = new[] { -122.5, 37.7, -122.3, 37.9 },
@@ -64,7 +71,7 @@ var items = await stac.SearchPostAsync(new StacSearchRequest
     Limit       = 10,
 });
 
-foreach (var item in items.Features)
+foreach (var item in items.Features ?? [])
 {
     Console.WriteLine($"{item.Id} @ {item.Collection}");
 }

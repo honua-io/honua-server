@@ -5,6 +5,7 @@ using Honua.Alerts;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
+using Honua.Core.Features.Infrastructure.Health;
 using Honua.FileStorage;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Honua.Infrastructure.Events;
@@ -14,8 +15,6 @@ using Microsoft.Extensions.Options;
 using System.Diagnostics;
 
 namespace Honua.Server.Features.HealthCheck;
-
-using Honua.Core.Features.Infrastructure.Health;
 
 internal sealed class ReadinessCheckService : IReadinessCheckService
 {

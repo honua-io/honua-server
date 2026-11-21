@@ -23,13 +23,21 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Wms13)]
-public sealed class OgcClassicWmsTests : IAsyncLifetime
+public sealed class OgcClassicWmsTests : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
+    public OgcClassicWmsTests(WebAppFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    private static async Task<WebAppFixture> CreateDedicatedFixtureAsync()
+    {
+        var fixture = new WebAppFixture();
+        await fixture.InitializeAsync();
+        return fixture;
+    }
 
     [IntegrationTest]
     [Operation(Operations.Wms)]
@@ -76,12 +84,14 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /ogc/services/{serviceId}/wms")]
     public async Task Wms_GetCapabilities_WithWmsEnabledAndMapServerDisabled_ReturnsXml()
     {
+        await using var fixture = await CreateDedicatedFixtureAsync();
+
         // Protocol gating reads MetadataV2Service.Protocols.
-        _fixture.UpdateV2ServiceMetadata(
+        fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
             enabledProtocols: [MetadataV2ServiceProtocols.Wms]);
 
-        var response = await _fixture.Client.GetAsync(
+        var response = await fixture.Client.GetAsync(
             $"/ogc/services/{WebAppFixture.TestServiceId}/wms?SERVICE=WMS&REQUEST=GetCapabilities");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -197,9 +207,10 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms111_GetCapabilities_UsesDtdCompatibleServiceAndDimensionElements()
     {
-        await SeedWms111DimensionsAndContactAsync();
+        await using var fixture = await CreateDedicatedFixtureAsync();
+        await SeedWms111DimensionsAndContactAsync(fixture);
 
-        var response = await _fixture.Client.GetAsync(
+        var response = await fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.1.1");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -227,21 +238,21 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         style.Should().BeGreaterThan(metadataUrl);
     }
 
-    private Task SeedWms111DimensionsAndContactAsync()
+    private static Task SeedWms111DimensionsAndContactAsync(WebAppFixture fixture)
     {
-        _fixture.SetV2ResourceExtension(WebAppFixture.TestLayerId, "wms", DeclaredDimensionJson.WmsTime);
-        _fixture.MutateV2ResourceObjectMetadata(WebAppFixture.TestLayerId, metadata => metadata with
+        fixture.SetV2ResourceExtension(WebAppFixture.TestLayerId, "wms", DeclaredDimensionJson.WmsTime);
+        fixture.MutateV2ResourceObjectMetadata(WebAppFixture.TestLayerId, metadata => metadata with
         {
             Links = [new MetadataV2Link { Rel = "describedby", Href = "https://example.com/metadata/autos", Type = "application/xml" }]
         });
-        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
-        ((TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>()).SetGraph(snapshot.Graph with
+        var snapshot = fixture.GetCurrentV2GraphSnapshot();
+        ((TestMetadataV2GraphProvider)fixture.GetService<IMetadataV2GraphProvider>()).SetGraph(snapshot.Graph with
         {
             Services = snapshot.Graph.Services.Select(service => service with
             {
                 Metadata = service.Metadata with { ContactPoint = new MetadataV2ContactPoint { Name = "Operations", Email = "ops@example.com" } }
             }).ToArray()
-        }, schema: _fixture.CurrentSchema);
+        }, schema: fixture.CurrentSchema);
         return Task.CompletedTask;
     }
 
@@ -252,9 +263,10 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms111_GetCapabilities_ElevationDimensionUsesEpsgVerticalDatum()
     {
-        _fixture.SetV2ResourceExtension(WebAppFixture.TestLayerId, "wms", DeclaredDimensionJson.WmsElevation);
+        await using var fixture = await CreateDedicatedFixtureAsync();
+        fixture.SetV2ResourceExtension(WebAppFixture.TestLayerId, "wms", DeclaredDimensionJson.WmsElevation);
 
-        var response = await _fixture.Client.GetAsync(
+        var response = await fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.1.1");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -280,10 +292,12 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetCapabilities_ServiceExtentInWebMercator_ReprojectsGeographicBounds()
     {
+        await using var fixture = await CreateDedicatedFixtureAsync();
+
         // V2 cutover: capabilities reads its bbox off MetadataV2Object.Spatial.Bbox
         // (V2 has no service-level extent). Set Web Mercator bounds on the layer the
         // test service publishes so the OgcExtentTransformer reproject branch fires.
-        _fixture.UpdateV2ResourceMetadata(
+        fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
             spatial: new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ObjectSpatial
             {
@@ -297,7 +311,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
                 },
             });
         // Route the global honua.services UPDATE through the schema-mutation advisory lock.
-        await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
+        await fixture.Postgres.ApplyGlobalSeedSqlAsync(
             """
             UPDATE honua.services
             SET service_extent = ST_MakeEnvelope(
@@ -309,9 +323,9 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             WHERE service_name = @serviceName;
             """,
             command => command.Parameters.AddWithValue("serviceName", WebAppFixture.TestServiceId),
-            _fixture.CurrentSchema);
+            fixture.CurrentSchema);
 
-        var response = await _fixture.Client.GetAsync(
+        var response = await fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -742,14 +756,16 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /ogc/services/{serviceId}/wms")]
     public async Task Wms_OgcRoute_GetFeatureInfo_WithGmlFormat_CitesSchemaOnSameMountAndVersion()
     {
+        await using var fixture = await CreateDedicatedFixtureAsync();
+
         // The GML schema location must name the endpoint and WMS version that
         // answered the request. With MapServer disabled the OGC mount is the only WMS endpoint, so
         // a schema location pinned to the MapServer mount at 1.1.1 cannot even be dereferenced.
-        _fixture.UpdateV2ServiceMetadata(
+        fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
             enabledProtocols: [MetadataV2ServiceProtocols.Wms]);
 
-        var response = await _fixture.Client.GetAsync(
+        var response = await fixture.Client.GetAsync(
             $"/ogc/services/{WebAppFixture.TestServiceId}/wms?SERVICE=WMS&REQUEST=GetFeatureInfo&VERSION=1.3.0&BBOX=-180,-90,180,90&CRS=CRS:84&WIDTH=256&HEIGHT=256&LAYERS={WebAppFixture.TestLayerId}&QUERY_LAYERS={WebAppFixture.TestLayerId}&INFO_FORMAT=application/vnd.ogc.gml&I=41&J=74");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -762,7 +778,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         schemaUri.Query.Should().Contain("VERSION=1.3.0");
         schemaUri.Query.Should().Contain("REQUEST=GetFeatureInfoSchema");
 
-        await AssertGmlFeatureInfoValidatesAgainstCitedSchemaAsync(content);
+        await AssertGmlFeatureInfoValidatesAgainstCitedSchemaAsync(content, fixture.Client);
     }
 
     private static string ReadGmlSchemaLocation(string content)
@@ -777,11 +793,11 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         return schemaLocation;
     }
 
-    private async Task<Uri> AssertGmlFeatureInfoValidatesAgainstCitedSchemaAsync(string content)
+    private async Task<Uri> AssertGmlFeatureInfoValidatesAgainstCitedSchemaAsync(string content, HttpClient? client = null)
     {
         var schemaLocation = ReadGmlSchemaLocation(content);
 
-        var schemaResponse = await _fixture.Client.GetAsync(schemaLocation);
+        var schemaResponse = await (client ?? _fixture.Client).GetAsync(schemaLocation);
         var schemaContent = await schemaResponse.Content.ReadAsStringAsync();
         schemaResponse.StatusCode.Should().Be(HttpStatusCode.OK, schemaContent);
 
@@ -839,7 +855,9 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetFeatureInfo_FiltersInternalAttributes()
     {
-        await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!))
+        await using var fixture = await CreateDedicatedFixtureAsync();
+
+        await using (var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema!))
         {
             await using var command = connection.CreateCommand();
             command.CommandText = """
@@ -852,7 +870,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             await command.ExecuteNonQueryAsync();
         }
 
-        var response = await _fixture.Client.GetAsync(
+        var response = await fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetFeatureInfo&VERSION=1.3.0&BBOX=-180,-90,180,90&CRS=CRS:84&WIDTH=256&HEIGHT=256&LAYERS={WebAppFixture.TestLayerId}&QUERY_LAYERS={WebAppFixture.TestLayerId}&INFO_FORMAT=application/json&I=41&J=74");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -878,7 +896,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             properties.GetRawText().Should().Be(feature.GetProperty("attributes").GetRawText());
         }
 
-        using var textResponse = await _fixture.Client.GetAsync(
+        using var textResponse = await fixture.Client.GetAsync(
             response.RequestMessage!.RequestUri!.ToString().Replace("INFO_FORMAT=application/json", "INFO_FORMAT=text/plain", StringComparison.Ordinal));
         var text = await textResponse.Content.ReadAsStringAsync();
         textResponse.StatusCode.Should().Be(HttpStatusCode.OK, text);
@@ -1251,13 +1269,15 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /ogc/services/{serviceId}/wms")]
     public async Task Wms_OgcRoute_GetFeatureInfo_WithWmsEnabledAndMapServerDisabled_ReturnsSeededFeature()
     {
-        _fixture.UpdateV2ServiceMetadata(
+        await using var fixture = await CreateDedicatedFixtureAsync();
+
+        fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
             enabledProtocols: [MetadataV2ServiceProtocols.Wms]);
 
         // I=41/J=74 over the whole-world CRS:84 bbox lands on the seeded point at
         // (lon=-122.5, lat=37.5), so a correct pixel -> world -> feature lookup must find it.
-        var response = await _fixture.Client.GetAsync(
+        var response = await fixture.Client.GetAsync(
             $"/ogc/services/{WebAppFixture.TestServiceId}/wms?SERVICE=WMS&REQUEST=GetFeatureInfo&VERSION=1.3.0&BBOX=-180,-90,180,90&CRS=CRS:84&WIDTH=256&HEIGHT=256&LAYERS={WebAppFixture.TestLayerId}&QUERY_LAYERS={WebAppFixture.TestLayerId}&INFO_FORMAT=text/plain&I=41&J=74");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -1279,13 +1299,15 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /ogc/services/{serviceId}/wms")]
     public async Task Wms_OgcRoute_GetMap_InvalidLayer_ReturnsXmlServiceException()
     {
-        _fixture.UpdateV2ServiceMetadata(
+        await using var fixture = await CreateDedicatedFixtureAsync();
+
+        fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
             enabledProtocols: [MetadataV2ServiceProtocols.Wms]);
 
         // A WMS client must get an OGC ServiceExceptionReport, not a JSON problem document,
         // on the OGC-native route as well as on the MapServer alias.
-        var response = await _fixture.Client.GetAsync(
+        var response = await fixture.Client.GetAsync(
             $"/ogc/services/{WebAppFixture.TestServiceId}/wms?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-180,-90,180,90&WIDTH=256&HEIGHT=256&CRS=CRS:84&FORMAT=image/png&LAYERS=NonExistant&STYLES=");
 
         var content = await response.Content.ReadAsStringAsync();

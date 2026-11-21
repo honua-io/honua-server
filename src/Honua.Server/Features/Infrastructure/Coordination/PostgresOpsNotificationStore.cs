@@ -11,6 +11,11 @@ namespace Honua.ControlPlane;
 
 internal sealed record OpsNotificationSubject(string Source, string SubjectId, OpsFindingSeverity Severity);
 
+internal readonly record struct OpsNotificationDueQuery(
+    DateTimeOffset Now,
+    int Limit,
+    IReadOnlyList<string>? ActiveFindingSubjects = null);
+
 internal sealed record OpsNotificationSchedule
 {
     public required string Source { get; init; }
@@ -20,9 +25,6 @@ internal sealed record OpsNotificationSchedule
     public required OpsFindingSeverity Severity { get; init; }
     public required int NoticeNumber { get; init; }
     public required long Revision { get; init; }
-
-    // When any replica last reported the subject; null when the row was not read with it.
-    public DateTimeOffset? LastSeenAt { get; init; }
 }
 
 internal sealed class PostgresOpsNotificationStore(
@@ -41,9 +43,6 @@ internal sealed class PostgresOpsNotificationStore(
     // Each replica samples some sources on its own cadence (sign-in providers every five minutes), so one replica's
     // pass can miss a finding another still reports. An episode closes only after no replica has seen it for longer.
     internal static readonly TimeSpan FindingAbsenceGrace = TimeSpan.FromMinutes(10);
-
-    // Two reminder passes: a finding reported this recently is still live on some replica.
-    internal static readonly TimeSpan RecentObservation = TimeSpan.FromMinutes(2);
 
     internal static DateTimeOffset FirstNotice(OpsFindingSeverity severity, DateTimeOffset firstSeen)
         => severity >= OpsFindingSeverity.Critical ? firstSeen : firstSeen + WarningSettle;
@@ -175,16 +174,39 @@ internal sealed class PostgresOpsNotificationStore(
 
     public Task<IReadOnlyList<OpsNotificationSchedule>> ListDueAsync(DateTimeOffset now, int limit,
         CancellationToken cancellationToken = default)
+        => ListDueCoreAsync(new(now, limit), cancellationToken);
+
+    // Filter finding rows to subjects this replica actually observed so a replica that does not
+    // see a finding cannot defer another replica's due reminder or starve actionable rows.
+    public Task<IReadOnlyList<OpsNotificationSchedule>> ListDueForDispatchAsync(
+        OpsNotificationDueQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query.ActiveFindingSubjects);
+        return ListDueCoreAsync(query, cancellationToken);
+    }
+
+    private Task<IReadOnlyList<OpsNotificationSchedule>> ListDueCoreAsync(
+        OpsNotificationDueQuery query,
+        CancellationToken cancellationToken)
         => database.ExecuteAsync<IReadOnlyList<OpsNotificationSchedule>>(async (connection, _, token) =>
         {
-            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(query.Limit);
+            var subjectFilter = query.ActiveFindingSubjects is null
+                ? string.Empty
+                : " AND (source = 'proposal' OR (source = 'finding' AND subject_id = ANY(@active)))";
             await using var command = new NpgsqlCommand($"""
-                SELECT source, subject_id, episode_id, first_seen_at, severity, notice_number, revision, last_seen_at
-                FROM {_schedules} WHERE closed_at IS NULL AND next_notice_at <= @now
+                SELECT source, subject_id, episode_id, first_seen_at, severity, notice_number, revision
+                FROM {_schedules} WHERE closed_at IS NULL AND next_notice_at <= @now{subjectFilter}
                 ORDER BY next_notice_at, source, subject_id LIMIT @limit
                 """, connection);
-            command.Parameters.AddWithValue("now", now);
-            command.Parameters.AddWithValue("limit", Math.Min(limit, 100));
+            command.Parameters.AddWithValue("now", query.Now);
+            command.Parameters.AddWithValue("limit", Math.Min(query.Limit, 100));
+            if (query.ActiveFindingSubjects is not null)
+            {
+                command.Parameters.Add(new NpgsqlParameter("active", NpgsqlDbType.Array | NpgsqlDbType.Text)
+                { Value = query.ActiveFindingSubjects as string[] ?? query.ActiveFindingSubjects.ToArray() });
+            }
             var schedules = new List<OpsNotificationSchedule>();
             await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
             while (await reader.ReadAsync(token).ConfigureAwait(false))
@@ -197,8 +219,7 @@ internal sealed class PostgresOpsNotificationStore(
                     FirstSeenAt = reader.GetFieldValue<DateTimeOffset>(3),
                     Severity = (OpsFindingSeverity)reader.GetInt32(4),
                     NoticeNumber = reader.GetInt32(5),
-                    Revision = reader.GetInt64(6),
-                    LastSeenAt = reader.GetFieldValue<DateTimeOffset>(7)
+                    Revision = reader.GetInt64(6)
                 });
             }
             return schedules;

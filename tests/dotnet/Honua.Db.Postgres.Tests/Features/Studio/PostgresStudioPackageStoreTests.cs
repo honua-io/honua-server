@@ -50,7 +50,7 @@ public sealed partial class PostgresStudioPackageStoreTests(PostgresFixture fixt
             draft = await writer.CreateDraftAsync(draft);
             var firstVersion = await writer.CreateVersionAsync(draft, "approved map", "tester");
 
-            StudioPublicationRequest Request(
+            static StudioPublicationRequest Request(
                 StudioContentVersion version,
                 string? route,
                 DateTimeOffset? createdAt = null) => new()

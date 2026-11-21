@@ -13,9 +13,9 @@
       },
       "Geospatial.Grpc": {
         "type": "Direct",
-        "requested": "[1.3.0, )",
-        "resolved": "1.3.0",
-        "contentHash": "tDQ7QyYdIHBEic0FWjml1CHhPIc1k2dILXG5x0vrV2cSjWjpkg0ExpO8dwnZ+CJS+WcPfGu1xBpXEPtbthdcRw==",
+        "requested": "[1.5.0, )",
+        "resolved": "1.5.0",
+        "contentHash": "sggyeiKXrOwEfMfM+EwSbwBMoPr0ir9oLKPOp0ZYco7hlp+H4TjUhHOeXZybEOd36uDWRIrK3PYZQmTOGMte+w==",
         "dependencies": {
           "Google.Protobuf": "3.36.2",
           "Grpc.Core.Api": "2.85.0"
@@ -1124,7 +1124,7 @@
       "honua.geoprocessing": {
         "type": "Project",
         "dependencies": {
-          "Geospatial.Grpc": "[1.3.0, )",
+          "Geospatial.Grpc": "[1.5.0, )",
           "Honua.Core": "[2026.1.1, )",
           "Honua.Core.Abstractions": "[2026.1.1, )",
           "Honua.Geometry": "[2026.1.1, )",
@@ -1350,7 +1350,7 @@
       "honua.scene": {
         "type": "Project",
         "dependencies": {
-          "Geospatial.Grpc": "[1.3.0, )",
+          "Geospatial.Grpc": "[1.5.0, )",
           "Google.Protobuf": "[3.36.2, )",
           "Grpc.AspNetCore": "[2.80.0, )",
           "Grpc.Core.Api": "[2.85.0, )",

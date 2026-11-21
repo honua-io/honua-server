@@ -1,19 +1,22 @@
 ---
 type: reference
 title: "ImageServer admin operations → Honua admin API"
-description: "GeoServices REST ImageServer exposes a set of admin/mutation operations (addRasters, deleteRasters, updateRaster, uploads, downloadRasters, validate, calculateVolume, computeMultidimensionalInfo, computeTiePoints)."
+description: "Maps GeoServices REST ImageServer admin/mutation operations (addRasters, deleteRasters, updateRaster, uploads, downloadRasters, validate) to the Honua admin API and notes analytic/inspection operations shipped directly on ImageServer."
 resource: "honua://capability/serve.geoservices-imageserver"
 ---
 # ImageServer admin operations → Honua admin API
 
 GeoServices REST ImageServer exposes a set of **admin/mutation** operations
 (`addRasters`, `deleteRasters`, `updateRaster`, `uploads`, `downloadRasters`,
-`validate`, `calculateVolume`, `computeMultidimensionalInfo`,
-`computeTiePoints`). Honua intentionally does **not** re-implement these as
-GeoServices-REST mutations on the (anonymous, read-only) ImageServer surface.
-Instead, raster ingestion and mutation are owned by the canonical, admin-authorized
-Honua admin API, which enforces layer homogeneity, advisory locks, EXTERNAL-TOAST
-storage, statistics, and tile pre-generation atomically through a single hardened
+`validate`) alongside analytic and inspection operations (`calculateVolume`,
+`computeMultidimensionalInfo`, `computeTiePoints`). Honua intentionally does
+**not** re-implement catalog mutations as GeoServices-REST mutations on the
+(anonymous, read-only) ImageServer surface; analytic and multidimensional
+inspection operations (`calculateVolume`, `computeTiePoints`,
+`multidimensionalInfo`) ship directly on ImageServer. Instead, raster ingestion
+and mutation are owned by the canonical, admin-authorized Honua admin API,
+which enforces layer homogeneity, advisory locks, EXTERNAL-TOAST storage,
+statistics, and tile pre-generation atomically through a single hardened
 pipeline.
 
 This page maps each GeoServices REST ImageServer admin op to its Honua admin equivalent for
@@ -24,12 +27,12 @@ GeoServices REST-client users migrating to Honua.
 | `addRasters` | `POST /api/v1/admin/import/raster` (multipart GeoTIFF/PNG/JPEG upload) and `POST /api/v1/admin/cloud-rasters` (register a cloud-hosted COG) | Supported (single-file, synchronous) |
 | `deleteRasters` | `DELETE /api/v1/admin/import/raster/{rasterId}` (cascades to statistics, tiles, and sensor metadata) and `DELETE /api/v1/admin/cloud-rasters/{id}` for registered COGs | Supported |
 | `updateRaster` | `PATCH /api/v1/admin/import/raster/{rasterId}` (update `name`, `description`, `acquisitionDate`) | Supported |
-| `uploads` | Synchronous import only via `POST /api/v1/admin/import/raster`; async raster jobs are deferred | Partial |
+| `uploads` | `POST /api/v1/admin/import/raster` for direct synchronous uploads up to the sync size limit; `POST /api/v1/admin/import/uploads` and the staged-import job pipeline for larger files | Supported (admin import API) |
 | `downloadRasters` | None (clients hold the source data) | Not supported by design |
 | `validate` | File validation occurs at import time | Not supported by design |
-| `calculateVolume` | None — analytic, not catalog mutation | Deferred (raster-analysis scope) |
-| `computeMultidimensionalInfo` | Single `acquisitionDate` per raster | Partial (no true multidimensional cube) |
-| `computeTiePoints` | None — photogrammetry; ties to the sensor-model work | Deferred |
+| `calculateVolume` | Shipped directly on ImageServer (`GET`/`POST /rest/services/{id}/ImageServer/calculateVolume`) | Supported on ImageServer |
+| `computeMultidimensionalInfo` | Shipped on ImageServer (`GET`/`POST /rest/services/{id}/ImageServer/multidimensionalInfo` and `/slices`) plus `POST /api/v1/admin/multidim-coverages` (with `/refresh` GDAL scan) and `POST /api/v1/admin/zarr-stores` | Supported (see [imagery and raster](../../guides/imagery-and-raster.md) for Zarr/worker limits) |
+| `computeTiePoints` | Shipped directly on ImageServer (`GET`/`POST /rest/services/{id}/ImageServer/computeTiePoints`) | Supported on ImageServer |
 
 ## Why admin-API canonical instead of GeoServices-REST parity
 

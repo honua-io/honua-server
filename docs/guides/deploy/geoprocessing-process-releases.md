@@ -24,7 +24,7 @@ All routes are under `/api/v1/admin/gp/process-releases` and require admin crede
 | `POST /` | Publish a lock (the request body is the lock JSON). Idempotent by digest: `201` the first time, `200` afterwards with `created: false`. |
 | `GET /?process=<name>` | List published releases, newest first. |
 | `GET /{digest}` | The lock document as published. |
-| `GET /bindings` | Every live binding plus the server's execution contract version and supported target kinds. |
+| `GET /bindings` | List of live bindings (`{"bindings": [...]}`). Each binding entry includes `serverContractVersion`, `supportedTargets`, and `scheduleReconciliation`; when no bindings exist yet, read `GET /bindings/{process}` for those server fields. |
 | `GET /bindings/{process}` | The live binding of one process; `bindingVersion` is `0` and `lockDigest` is `null` before the first activation. This is what a deployment reads as `expectedBindingVersion`. |
 | `POST /bindings/{process}/activate` | Activate a release. `200` with the new binding, or `409` with `reasons[]`, `details[]` and the live binding. |
 

@@ -60,7 +60,7 @@ services:
           memory: 2g
 
   postgres:
-    image: ghcr.io/honua-io/honua-server@sha256:d9df4cd19ac018b1e626d7c74a1400d7affb8de48dbe5ed67a862589c4e3d998
+    image: ghcr.io/honua-io/honua-server@sha256:e60f2e287f6bddfaa7e1ac0bab082f83580a6ba242a98d0933d55e1e577e6fa0
     environment:
       POSTGRES_DB: honua
       POSTGRES_USER: honua

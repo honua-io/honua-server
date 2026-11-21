@@ -9,226 +9,302 @@ namespace Honua.Server.Features.Styling.Sld;
 internal static class SldToMapLibreConverter
 {
     private const double WebMercatorScaleReference = 559_082_264.028d;
-
     private const int MaxZoom = 24;
     private const int MinZoom = 0;
-
     private const int MaxSanitizedIdentifierLength = 64;
+
+    private static readonly HashSet<string> SupportedSymbolMarks = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "square",
+        "triangle",
+        "star",
+        "cross",
+        "x"
+    };
 
     public static SldConversionResult Convert(SldDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
 
-        var diagnostics = new List<SldConversionDiagnostic>(document.ParseDiagnostics);
-        var layers = new List<MapLibreStyleLayer>();
-        var ruleCounter = 0;
-
-        foreach (var named in document.NamedLayers)
+        var accumulator = new ConversionAccumulator(document.ParseDiagnostics);
+        foreach (var fts in document.NamedLayers
+                     .SelectMany(n => n.UserStyles)
+                     .SelectMany(u => u.FeatureTypeStyles))
         {
-            foreach (var userStyle in named.UserStyles)
-            {
-                foreach (var fts in userStyle.FeatureTypeStyles)
-                {
-                    foreach (var rule in fts.Rules)
-                    {
-                        var ruleIndex = ruleCounter++;
-                        ConvertRule(named, userStyle, fts, rule, ruleIndex, layers, diagnostics);
-                    }
-                }
-            }
+            ConvertFeatureTypeStyle(fts, accumulator);
         }
 
         return new SldConversionResult
         {
-            Layers = layers.ToArray(),
-            Diagnostics = diagnostics.ToArray(),
+            Layers = accumulator.Layers.ToArray(),
+            Diagnostics = accumulator.Diagnostics.ToArray(),
             DetectedVersion = document.Version
         };
     }
 
-    private static void ConvertRule(
-        SldNamedLayer named,
-        SldUserStyle userStyle,
-        SldFeatureTypeStyle fts,
-        SldRule rule,
-        int ruleIndex,
-        List<MapLibreStyleLayer> layers,
-        List<SldConversionDiagnostic> diagnostics)
+    private static void ConvertFeatureTypeStyle(SldFeatureTypeStyle fts, ConversionAccumulator accumulator)
     {
-        // Always fold ruleIndex into ruleId so two SLD rules sharing a Name still
-        // produce distinct MapLibre layer ids — MapLibreStyleNormalizer rejects
-        // duplicate ids, which would turn an otherwise valid SLD into a 400 at
-        // import time.
-        var sanitized = SanitizeIdentifier(rule.Name);
-        var ruleId = sanitized != null
-            ? $"{sanitized}-{ruleIndex}"
-            : $"rule{ruleIndex}";
-        var minZoom = ScaleToZoom(rule.MaxScaleDenominator);
-        var maxZoom = ScaleToZoom(rule.MinScaleDenominator);
-        var filter = BuildFilter(rule.Filter);
+        var resolvedRules = new ResolvedRuleFilter[fts.Rules.Count];
+        var elseState = CollectSiblingFilterState(fts.Rules, resolvedRules, accumulator.Diagnostics);
 
-        if (filter == null && rule.Filter is SldFilterUnsupported unsupported)
+        for (var i = 0; i < fts.Rules.Count; i++)
         {
-            // Diagnostic was already emitted at parse time; render unfiltered.
-            _ = unsupported;
-        }
+            var rule = fts.Rules[i];
+            var ruleIndex = accumulator.NextRuleIndex();
+            var context = new SldDiagnosticContext(accumulator.Diagnostics, rule.Name);
+            var resolved = rule.Kind == SldRuleKind.ElseFilter
+                ? ResolveElseFilter(elseState, context)
+                : resolvedRules[i];
 
-        var symbolizerIndex = 0;
-        foreach (var symbolizer in rule.Symbolizers)
-        {
-            switch (symbolizer)
+            if (resolved.Disposition == RuleFilterDisposition.Include)
             {
-                case SldPointSymbolizer point:
-                    layers.Add(BuildPointLayer(point, ruleId, symbolizerIndex, filter, minZoom, maxZoom, diagnostics, rule.Name));
-                    break;
-                case SldLineSymbolizer line:
-                    layers.Add(BuildLineLayer(line, ruleId, symbolizerIndex, filter, minZoom, maxZoom));
-                    break;
-                case SldPolygonSymbolizer polygon:
-                    BuildPolygonLayers(polygon, ruleId, symbolizerIndex, filter, minZoom, maxZoom, layers);
-                    break;
-                case SldTextSymbolizer text:
-                    layers.Add(BuildTextLayer(text, ruleId, symbolizerIndex, filter, minZoom, maxZoom, diagnostics, rule.Name));
-                    break;
+                EmitRuleLayers(rule, BuildRuleMetadata(rule, ruleIndex, resolved.Filter), accumulator);
             }
-
-            symbolizerIndex++;
         }
     }
 
-    private static MapLibreStyleLayer BuildPointLayer(
-        SldPointSymbolizer point,
-        string ruleId,
-        int symbolizerIndex,
-        MapLibreExpression? filter,
-        double? minZoom,
-        double? maxZoom,
-        List<SldConversionDiagnostic> diagnostics,
-        string? ruleName)
+    private static ElseFilterState CollectSiblingFilterState(
+        IReadOnlyList<SldRule> rules,
+        ResolvedRuleFilter[] resolvedRules,
+        List<SldConversionDiagnostic> diagnostics)
+    {
+        var tracker = new SiblingFilterTracker();
+
+        for (var i = 0; i < rules.Count; i++)
+        {
+            var rule = rules[i];
+            if (rule.Kind == SldRuleKind.ElseFilter)
+            {
+                continue;
+            }
+
+            var resolved = ResolveStandardRuleFilter(rule, new SldDiagnosticContext(diagnostics, rule.Name));
+            resolvedRules[i] = resolved;
+            tracker.Record(rule, resolved);
+        }
+
+        return new ElseFilterState { SiblingFilters = tracker.Filters, Status = tracker.Status };
+    }
+
+    private static ResolvedRuleFilter ResolveStandardRuleFilter(SldRule rule, SldDiagnosticContext context)
+    {
+        if (rule.Filter == null)
+        {
+            return new ResolvedRuleFilter { Disposition = RuleFilterDisposition.Include };
+        }
+
+        var converted = BuildFilterExpression(rule.Filter, context);
+        return converted.HasValue
+            ? new ResolvedRuleFilter { Filter = converted, Disposition = RuleFilterDisposition.Include }
+            : new ResolvedRuleFilter { Disposition = RuleFilterDisposition.Omit };
+    }
+
+    private static ResolvedRuleFilter ResolveElseFilter(ElseFilterState state, SldDiagnosticContext context)
+    {
+        if (state.Status == ElseSiblingStatus.HasUnsupported)
+        {
+            context.Diagnostics.Add(Warn(
+                "ElseFilter",
+                "ElseFilter cannot be computed because a sibling rule has an unsupported filter; rule omitted.",
+                context.RuleName));
+            return new ResolvedRuleFilter { Disposition = RuleFilterDisposition.Omit };
+        }
+
+        if (state.Status == ElseSiblingStatus.HasUnconditional)
+        {
+            context.Warn("ElseFilter", "ElseFilter is unreachable because a sibling rule has no filter; rule omitted.");
+            return new ResolvedRuleFilter { Disposition = RuleFilterDisposition.Omit };
+        }
+
+        if (state.Status == ElseSiblingStatus.HasScaledSibling)
+        {
+            context.Warn("ElseFilter", "ElseFilter negation does not fold sibling scale denominators; features outside a sibling scale range may still be excluded.");
+        }
+
+        return new ResolvedRuleFilter
+        {
+            Filter = NegateSiblingFilters(state.SiblingFilters),
+            Disposition = RuleFilterDisposition.Include
+        };
+    }
+
+    private static MapLibreExpression? NegateSiblingFilters(List<MapLibreExpression> siblingFilters)
+    {
+        if (siblingFilters.Count == 0)
+        {
+            return null;
+        }
+
+        if (siblingFilters.Count == 1)
+        {
+            return SldExpressionConverter.Expr("!", siblingFilters[0]);
+        }
+
+        var anyExpr = SldExpressionConverter.Expr("any", siblingFilters.ToArray());
+        return SldExpressionConverter.Expr("!", anyExpr);
+    }
+
+    private static RuleLayerMetadata BuildRuleMetadata(SldRule rule, int ruleIndex, MapLibreExpression? filter)
+    {
+        var sanitized = SanitizeIdentifier(rule.Name);
+        return new RuleLayerMetadata
+        {
+            RuleId = sanitized != null ? $"{sanitized}-{ruleIndex}" : $"rule{ruleIndex}",
+            RuleName = rule.Name,
+            Filter = filter,
+            MinZoom = ScaleToZoom(rule.MaxScaleDenominator),
+            MaxZoom = ScaleToZoom(rule.MinScaleDenominator)
+        };
+    }
+
+    private static void EmitRuleLayers(SldRule rule, RuleLayerMetadata meta, ConversionAccumulator accumulator)
+    {
+        var context = new SldDiagnosticContext(accumulator.Diagnostics, rule.Name);
+        for (var i = 0; i < rule.Symbolizers.Count; i++)
+        {
+            var slot = new SymbolizerSlot { Meta = meta, Index = i, Context = context };
+            switch (rule.Symbolizers[i])
+            {
+                case SldPointSymbolizer point:
+                    accumulator.Layers.Add(BuildPointLayer(point, slot));
+                    break;
+                case SldLineSymbolizer line:
+                    accumulator.Layers.Add(BuildLineLayer(line, slot));
+                    break;
+                case SldPolygonSymbolizer polygon:
+                    BuildPolygonLayers(polygon, slot, accumulator.Layers);
+                    break;
+                case SldTextSymbolizer text:
+                    accumulator.Layers.Add(BuildTextLayer(text, slot));
+                    break;
+            }
+        }
+    }
+
+    private static MapLibreStyleLayer BuildPointLayer(SldPointSymbolizer point, SymbolizerSlot slot)
     {
         if (point.ExternalGraphic != null && point.Mark == null)
         {
-            var paint = new Dictionary<string, MapLibreExpression>();
-            var layout = new Dictionary<string, MapLibreExpression>
-            {
-                ["icon-image"] = new MapLibreExpression(point.ExternalGraphic.OnlineResourceHref ?? string.Empty)
-            };
-            if (point.Size.HasValue)
-            {
-                // SLD Graphic Size is an absolute size in the symbolizer unit (pixels by default
-                // per OGC SE 1.1.0 § 11.3.2). MapLibre icon-size is a scale factor relative to the
-                // sprite's intrinsic dimensions (1.0 = native size). Without sprite metadata we
-                // cannot compute a meaningful scale factor, so omit icon-size and surface a
-                // diagnostic rather than silently mis-scaling the sprite.
-                diagnostics.Add(Warn(
-                    "Graphic.Size",
-                    $"SLD Graphic Size ({point.Size.Value}) is in pixels; MapLibre icon-size is a scale factor. icon-size omitted — provide sprite metadata to set the scale factor.",
-                    ruleName));
-            }
-
-            if (point.Opacity.HasValue)
-            {
-                paint["icon-opacity"] = new MapLibreExpression(point.Opacity.Value);
-            }
-
-            return new MapLibreStyleLayer
-            {
-                Id = $"{ruleId}-{symbolizerIndex}",
-                Type = "symbol",
-                Filter = filter,
-                MinZoom = minZoom,
-                MaxZoom = maxZoom,
-                Paint = paint.Count > 0 ? paint : null,
-                Layout = layout
-            };
+            return BuildExternalGraphicLayer(point, slot);
         }
 
-        var circlePaint = new Dictionary<string, MapLibreExpression>();
-        var radius = point.Size.HasValue ? point.Size.Value / 2d : 5d;
-        circlePaint["circle-radius"] = new MapLibreExpression(radius);
-
-        // Color and opacity are emitted as separate paint properties (matching the
-        // polygon-fill convention). Baking the opacity into rgba() would double-apply
-        // it once MapLibre multiplies *-color alpha by *-opacity.
-        var fillColor = point.Mark?.Fill?.Color;
-        if (!string.IsNullOrEmpty(fillColor))
+        if (point.Mark?.WellKnownName is { Length: > 0 } well && SupportedSymbolMarks.Contains(well))
         {
-            circlePaint["circle-color"] = new MapLibreExpression(NormalizeColor(fillColor, null));
+            return BuildWellKnownMarkSymbolLayer(point, well, slot);
         }
 
-        if (point.Mark?.Fill?.Opacity is { } fillOpacity)
+        return BuildCircleLayer(point, slot);
+    }
+
+    private static MapLibreStyleLayer BuildExternalGraphicLayer(SldPointSymbolizer point, SymbolizerSlot slot)
+    {
+        var paint = new Dictionary<string, MapLibreExpression>();
+        var layout = new Dictionary<string, MapLibreExpression>
         {
-            circlePaint["circle-opacity"] = new MapLibreExpression(fillOpacity);
-        }
-        else if (point.Opacity is { } graphicOpacity)
+            ["icon-image"] = new MapLibreExpression(point.ExternalGraphic!.OnlineResourceHref ?? string.Empty)
+        };
+
+        if (point.Size != null)
         {
-            circlePaint["circle-opacity"] = new MapLibreExpression(graphicOpacity);
+            var sizeDesc = point.Size is SldLiteralValue lit ? lit.Value : "expression";
+            slot.Context.Diagnostics.Add(Warn(
+                "Graphic.Size",
+                $"SLD Graphic Size ({sizeDesc}) is in pixels; MapLibre icon-size is a scale factor. icon-size omitted — provide sprite metadata to set the scale factor.",
+                slot.Context.RuleName));
         }
 
-        // Stroke color and opacity are emitted as separate paint properties
-        // (matching the polygon-fill / line / circle-fill convention).
-        // circle-stroke-opacity is a first-class MapLibre paint property.
-        var strokeColor = point.Mark?.Stroke?.Color;
-        if (!string.IsNullOrEmpty(strokeColor))
+        if (SldExpressionConverter.ConvertValue(point.Rotation, SldValueTargetKind.Number, slot.Context) is { } rotate)
         {
-            circlePaint["circle-stroke-color"] = new MapLibreExpression(NormalizeColor(strokeColor, null));
+            layout["icon-rotate"] = rotate;
         }
 
-        if (point.Mark?.Stroke?.Opacity is { } strokeOpacity)
+        if (SldExpressionConverter.ConvertValue(point.Opacity, SldValueTargetKind.Opacity, slot.Context) is { } opacity)
         {
-            circlePaint["circle-stroke-opacity"] = new MapLibreExpression(strokeOpacity);
+            paint["icon-opacity"] = opacity;
         }
 
-        if (point.Mark?.Stroke?.Width is { } strokeWidth)
+        return CreateLayer(slot, new LayerSpec { Type = "symbol", Paint = paint.Count > 0 ? paint : null, Layout = layout });
+    }
+
+    private static MapLibreStyleLayer BuildWellKnownMarkSymbolLayer(
+        SldPointSymbolizer point,
+        string wellKnownName,
+        SymbolizerSlot slot)
+    {
+        var iconName = $"{SldSharedConstants.WellKnownMarkPrefix}{wellKnownName.ToLowerInvariant()}";
+        slot.Context.Warn(
+            "Mark.WellKnownName",
+            $"WellKnownName '{wellKnownName}' was mapped to symbol icon-image '{iconName}'; supply that sprite in the client style to render the mark.");
+        var layout = new Dictionary<string, MapLibreExpression>
         {
-            circlePaint["circle-stroke-width"] = new MapLibreExpression(strokeWidth);
+            ["icon-image"] = new MapLibreExpression(iconName)
+        };
+        var paint = new Dictionary<string, MapLibreExpression>();
+
+        if (SldExpressionConverter.ConvertValue(point.Size, SldValueTargetKind.Number, slot.Context) is { } sizeExpr)
+        {
+            layout["icon-size"] = ScaleIconSize(sizeExpr);
         }
+
+        if (SldExpressionConverter.ConvertValue(point.Rotation, SldValueTargetKind.Number, slot.Context) is { } rotate)
+        {
+            layout["icon-rotate"] = rotate;
+        }
+
+        var colorSource = point.Mark?.Fill?.Color ?? point.Mark?.Stroke?.Color;
+        if (SldExpressionConverter.ConvertValue(colorSource, SldValueTargetKind.Color, slot.Context) is { } color)
+        {
+            paint["icon-color"] = color;
+        }
+
+        var opacitySource = point.Mark?.Fill?.Opacity ?? point.Opacity;
+        if (SldExpressionConverter.ConvertValue(opacitySource, SldValueTargetKind.Opacity, slot.Context) is { } opacity)
+        {
+            paint["icon-opacity"] = opacity;
+        }
+
+        return CreateLayer(slot, new LayerSpec { Type = "symbol", Paint = paint.Count > 0 ? paint : null, Layout = layout });
+    }
+
+    private static MapLibreExpression ScaleIconSize(MapLibreExpression sizeExpr)
+    {
+        return sizeExpr.Kind == MapLibreExpressionKind.Number
+            ? new MapLibreExpression(sizeExpr.NumberValue / SldSharedConstants.WellKnownMarkBaseSizePx)
+            : SldExpressionConverter.Expr("/", sizeExpr, new MapLibreExpression(SldSharedConstants.WellKnownMarkBaseSizePx));
+    }
+
+    private static MapLibreStyleLayer BuildCircleLayer(SldPointSymbolizer point, SymbolizerSlot slot)
+    {
+        var paint = new Dictionary<string, MapLibreExpression>
+        {
+            ["circle-radius"] = SldExpressionConverter.ConvertValue(point.Size, SldValueTargetKind.HalfNumber, slot.Context)
+                ?? new MapLibreExpression(5d)
+        };
+
+        AddIfPresent(paint, "circle-color", SldExpressionConverter.ConvertValue(point.Mark?.Fill?.Color, SldValueTargetKind.Color, slot.Context));
+        AddIfPresent(paint, "circle-opacity", SldExpressionConverter.ConvertValue(point.Mark?.Fill?.Opacity ?? point.Opacity, SldValueTargetKind.Opacity, slot.Context));
+        AddIfPresent(paint, "circle-stroke-color", SldExpressionConverter.ConvertValue(point.Mark?.Stroke?.Color, SldValueTargetKind.Color, slot.Context));
+        AddIfPresent(paint, "circle-stroke-opacity", SldExpressionConverter.ConvertValue(point.Mark?.Stroke?.Opacity, SldValueTargetKind.Opacity, slot.Context));
+        AddIfPresent(paint, "circle-stroke-width", SldExpressionConverter.ConvertValue(point.Mark?.Stroke?.Width, SldValueTargetKind.Number, slot.Context));
 
         if (point.Mark?.WellKnownName is { Length: > 0 } well
             && !string.Equals(well, "circle", StringComparison.OrdinalIgnoreCase))
         {
-            diagnostics.Add(Warn(
+            slot.Context.Diagnostics.Add(Warn(
                 "Mark.WellKnownName",
                 $"WellKnownName '{well}' is rendered as a generic circle; MapLibre requires a sprite for shape support.",
-                ruleName));
+                slot.Context.RuleName));
         }
 
-        return new MapLibreStyleLayer
-        {
-            Id = $"{ruleId}-{symbolizerIndex}",
-            Type = "circle",
-            Filter = filter,
-            MinZoom = minZoom,
-            MaxZoom = maxZoom,
-            Paint = circlePaint
-        };
+        return CreateLayer(slot, new LayerSpec { Type = "circle", Paint = paint });
     }
 
-    private static MapLibreStyleLayer BuildLineLayer(
-        SldLineSymbolizer line,
-        string ruleId,
-        int symbolizerIndex,
-        MapLibreExpression? filter,
-        double? minZoom,
-        double? maxZoom)
+    private static MapLibreStyleLayer BuildLineLayer(SldLineSymbolizer line, SymbolizerSlot slot)
     {
         var paint = new Dictionary<string, MapLibreExpression>();
-        if (!string.IsNullOrEmpty(line.Stroke.Color))
-        {
-            // Pass null for opacity: line-opacity is set as a separate paint
-            // property below, so baking opacity into rgba() would double-apply.
-            paint["line-color"] = new MapLibreExpression(NormalizeColor(line.Stroke.Color, null));
-        }
-
-        if (line.Stroke.Width.HasValue)
-        {
-            paint["line-width"] = new MapLibreExpression(line.Stroke.Width.Value);
-        }
-
-        if (line.Stroke.Opacity.HasValue)
-        {
-            paint["line-opacity"] = new MapLibreExpression(line.Stroke.Opacity.Value);
-        }
+        AddIfPresent(paint, "line-color", SldExpressionConverter.ConvertValue(line.Stroke.Color, SldValueTargetKind.Color, slot.Context));
+        AddIfPresent(paint, "line-width", SldExpressionConverter.ConvertValue(line.Stroke.Width, SldValueTargetKind.Number, slot.Context));
+        AddIfPresent(paint, "line-opacity", SldExpressionConverter.ConvertValue(line.Stroke.Opacity, SldValueTargetKind.Opacity, slot.Context));
 
         if (line.Stroke.DashArray is { Length: > 0 } dashArray)
         {
@@ -238,10 +314,7 @@ internal static class SldToMapLibreConverter
         Dictionary<string, MapLibreExpression>? layout = null;
         if (!string.IsNullOrEmpty(line.Stroke.LineCap))
         {
-            layout = new Dictionary<string, MapLibreExpression>
-            {
-                ["line-cap"] = new MapLibreExpression(line.Stroke.LineCap)
-            };
+            layout = new Dictionary<string, MapLibreExpression> { ["line-cap"] = new MapLibreExpression(line.Stroke.LineCap) };
         }
 
         if (!string.IsNullOrEmpty(line.Stroke.LineJoin))
@@ -250,107 +323,41 @@ internal static class SldToMapLibreConverter
             layout["line-join"] = new MapLibreExpression(line.Stroke.LineJoin);
         }
 
-        return new MapLibreStyleLayer
-        {
-            Id = $"{ruleId}-{symbolizerIndex}",
-            Type = "line",
-            Filter = filter,
-            MinZoom = minZoom,
-            MaxZoom = maxZoom,
-            Paint = paint,
-            Layout = layout
-        };
+        return CreateLayer(slot, new LayerSpec { Type = "line", Paint = paint, Layout = layout });
     }
 
-    private static void BuildPolygonLayers(
-        SldPolygonSymbolizer polygon,
-        string ruleId,
-        int symbolizerIndex,
-        MapLibreExpression? filter,
-        double? minZoom,
-        double? maxZoom,
-        List<MapLibreStyleLayer> layers)
+    private static void BuildPolygonLayers(SldPolygonSymbolizer polygon, SymbolizerSlot slot, List<MapLibreStyleLayer> layers)
     {
-        // Emit a fill layer only when the SLD PolygonSymbolizer carries a Fill.
-        // StyleTranslator.ResolveFillStyle defaults missing fill-color to opaque black,
-        // so emitting an empty fill layer for stroke-only polygons would produce an
-        // unintended solid fill.
         if (polygon.Fill != null)
         {
             var fillPaint = new Dictionary<string, MapLibreExpression>();
-            if (polygon.Fill.Color is { Length: > 0 } fillColor)
-            {
-                fillPaint["fill-color"] = new MapLibreExpression(NormalizeColor(fillColor, null));
-            }
-
-            if (polygon.Fill.Opacity is { } fillOpacity)
-            {
-                fillPaint["fill-opacity"] = new MapLibreExpression(fillOpacity);
-            }
-
-            // Outline lives on the dedicated line layer below (when Stroke is present);
-            // setting fill-outline-color in addition would render two outlines.
-            layers.Add(new MapLibreStyleLayer
-            {
-                Id = $"{ruleId}-{symbolizerIndex}",
-                Type = "fill",
-                Filter = filter,
-                MinZoom = minZoom,
-                MaxZoom = maxZoom,
-                Paint = fillPaint.Count > 0 ? fillPaint : null
-            });
+            AddIfPresent(fillPaint, "fill-color", SldExpressionConverter.ConvertValue(polygon.Fill.Color, SldValueTargetKind.Color, slot.Context));
+            AddIfPresent(fillPaint, "fill-opacity", SldExpressionConverter.ConvertValue(polygon.Fill.Opacity, SldValueTargetKind.Opacity, slot.Context));
+            layers.Add(CreateLayer(slot, new LayerSpec { Type = "fill", Paint = fillPaint.Count > 0 ? fillPaint : null }));
         }
 
-        if (polygon.Stroke is { } stroke)
+        if (polygon.Stroke is not { } stroke)
         {
-            // SLD/SE default stroke width is 1.0 px when the CssParameter is omitted.
-            var linePaint = new Dictionary<string, MapLibreExpression>
-            {
-                ["line-width"] = new MapLibreExpression(stroke.Width ?? 1d)
-            };
-
-            if (!string.IsNullOrEmpty(stroke.Color))
-            {
-                // Pass null for opacity: line-opacity is set as a separate paint
-                // property below, so baking opacity into rgba() would double-apply.
-                linePaint["line-color"] = new MapLibreExpression(NormalizeColor(stroke.Color, null));
-            }
-
-            if (stroke.Opacity.HasValue)
-            {
-                linePaint["line-opacity"] = new MapLibreExpression(stroke.Opacity.Value);
-            }
-
-            if (stroke.DashArray is { Length: > 0 } dashArray)
-            {
-                linePaint["line-dasharray"] = ToExpressionArray(dashArray);
-            }
-
-            // The id suffix flags this as the polygon outline. When the polygon also has
-            // a Fill, the fill layer above keeps the canonical id and this layer carries
-            // the "-outline" suffix for stable round-trip identity.
-            var outlineSuffix = polygon.Fill != null ? "-outline" : string.Empty;
-            layers.Add(new MapLibreStyleLayer
-            {
-                Id = $"{ruleId}-{symbolizerIndex}{outlineSuffix}",
-                Type = "line",
-                Filter = filter,
-                MinZoom = minZoom,
-                MaxZoom = maxZoom,
-                Paint = linePaint
-            });
+            return;
         }
+
+        var linePaint = new Dictionary<string, MapLibreExpression>
+        {
+            ["line-width"] = SldExpressionConverter.ConvertValue(stroke.Width, SldValueTargetKind.Number, slot.Context)
+                ?? new MapLibreExpression(1d)
+        };
+        AddIfPresent(linePaint, "line-color", SldExpressionConverter.ConvertValue(stroke.Color, SldValueTargetKind.Color, slot.Context));
+        AddIfPresent(linePaint, "line-opacity", SldExpressionConverter.ConvertValue(stroke.Opacity, SldValueTargetKind.Opacity, slot.Context));
+        if (stroke.DashArray is { Length: > 0 } dashArray)
+        {
+            linePaint["line-dasharray"] = ToExpressionArray(dashArray);
+        }
+
+        var suffix = polygon.Fill != null ? "-outline" : string.Empty;
+        layers.Add(CreateLayer(slot, new LayerSpec { Type = "line", Paint = linePaint, IdSuffix = suffix }));
     }
 
-    private static MapLibreStyleLayer BuildTextLayer(
-        SldTextSymbolizer text,
-        string ruleId,
-        int symbolizerIndex,
-        MapLibreExpression? filter,
-        double? minZoom,
-        double? maxZoom,
-        List<SldConversionDiagnostic> diagnostics,
-        string? ruleName)
+    private static MapLibreStyleLayer BuildTextLayer(SldTextSymbolizer text, SymbolizerSlot slot)
     {
         var layout = new Dictionary<string, MapLibreExpression>();
         var paint = new Dictionary<string, MapLibreExpression>();
@@ -361,147 +368,129 @@ internal static class SldToMapLibreConverter
         }
         else
         {
-            diagnostics.Add(Warn(
+            slot.Context.Diagnostics.Add(Warn(
                 "TextSymbolizer.Label",
                 "TextSymbolizer is missing a Label expression; text layer will not render.",
-                ruleName));
+                slot.Context.RuleName));
         }
 
+        ApplyTextFontAndPlacement(text, layout, slot.Context);
+        ApplyTextFillAndHalo(text, paint, slot.Context);
+
+        return CreateLayer(slot, new LayerSpec { Type = "symbol", Paint = paint.Count > 0 ? paint : null, Layout = layout });
+    }
+
+    private static void ApplyTextFontAndPlacement(
+        SldTextSymbolizer text,
+        Dictionary<string, MapLibreExpression> layout,
+        SldDiagnosticContext context)
+    {
         if (text.Font?.Family is { Length: > 0 } family)
         {
             layout["text-font"] = new MapLibreExpression(new[] { new MapLibreExpression(family) });
         }
 
-        if (text.Font?.Size is { } size)
+        AddIfPresent(layout, "text-size", SldExpressionConverter.ConvertValue(text.Font?.Size, SldValueTargetKind.Number, context));
+        if (text.Placement is not { } placement)
         {
-            layout["text-size"] = new MapLibreExpression(size);
+            return;
         }
 
-        // Color and opacity are emitted as separate paint properties: MapLibre exposes
-        // text-opacity as a first-class paint property, so baking the alpha into rgba()
-        // would double-apply the alpha once MapLibre multiplies text-color × text-opacity.
-        if (text.Fill?.Color is { Length: > 0 } color)
+        if (placement.Kind == SldPlacementKind.Line)
         {
-            paint["text-color"] = new MapLibreExpression(NormalizeColor(color, null));
+            layout["symbol-placement"] = new MapLibreExpression("line");
+            return;
         }
 
-        if (text.Fill?.Opacity is { } textOpacity)
+        if (!string.IsNullOrEmpty(placement.TextAnchor))
         {
-            paint["text-opacity"] = new MapLibreExpression(textOpacity);
+            layout["text-anchor"] = new MapLibreExpression(placement.TextAnchor);
         }
 
-        if (text.Halo != null)
+        if (placement.Offset is { Length: 2 } offset)
         {
-            if (text.Halo.Radius is { } radius)
-            {
-                paint["text-halo-width"] = new MapLibreExpression(radius);
-            }
-
-            if (text.Halo.Fill?.Color is { Length: > 0 } haloColor)
-            {
-                paint["text-halo-color"] = new MapLibreExpression(NormalizeColor(haloColor, text.Halo.Fill.Opacity));
-            }
+            var emScale = ResolveFontSizePx(text.Font?.Size);
+            layout["text-offset"] = ToExpressionArray([offset[0] / emScale, offset[1] / emScale]);
         }
 
-        return new MapLibreStyleLayer
+        AddIfPresent(layout, "text-rotate", SldExpressionConverter.ConvertValue(placement.Rotation, SldValueTargetKind.Number, context));
+    }
+
+    private static double ResolveFontSizePx(SldValueExpression? size)
+    {
+        return size is SldLiteralValue lit
+            && double.TryParse(lit.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            && parsed > 0d
+            ? parsed
+            : SldSharedConstants.DefaultFontSizePx;
+    }
+
+    private static void ApplyTextFillAndHalo(
+        SldTextSymbolizer text,
+        Dictionary<string, MapLibreExpression> paint,
+        SldDiagnosticContext context)
+    {
+        AddIfPresent(paint, "text-color", SldExpressionConverter.ConvertValue(text.Fill?.Color, SldValueTargetKind.Color, context));
+        AddIfPresent(paint, "text-opacity", SldExpressionConverter.ConvertValue(text.Fill?.Opacity, SldValueTargetKind.Opacity, context));
+        if (text.Halo == null)
         {
-            Id = $"{ruleId}-{symbolizerIndex}",
-            Type = "symbol",
-            Filter = filter,
-            MinZoom = minZoom,
-            MaxZoom = maxZoom,
-            Paint = paint.Count > 0 ? paint : null,
-            Layout = layout
+            return;
+        }
+
+        AddIfPresent(paint, "text-halo-width", SldExpressionConverter.ConvertValue(text.Halo.Radius, SldValueTargetKind.Number, context));
+        if (text.Halo.Fill?.Color is SldLiteralValue haloColorLit)
+        {
+            double? haloOpacity = text.Halo.Fill.Opacity is SldLiteralValue opLit
+                && double.TryParse(opLit.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+                ? parsed
+                : null;
+            paint["text-halo-color"] = new MapLibreExpression(SldExpressionConverter.NormalizeColor(haloColorLit.Value, haloOpacity));
+        }
+        else
+        {
+            AddIfPresent(paint, "text-halo-color", SldExpressionConverter.ConvertValue(text.Halo.Fill?.Color, SldValueTargetKind.Color, context));
+        }
+    }
+
+    private static MapLibreExpression? BuildFilterExpression(SldFilter filter, SldDiagnosticContext context)
+    {
+        return filter switch
+        {
+            SldFilterAnd and => BuildCompoundFilter("all", and.Operands, context),
+            SldFilterOr or => BuildCompoundFilter("any", or.Operands, context),
+            SldFilterNot not => BuildFilterExpression(not.Operand, context) is { } inner
+                ? SldExpressionConverter.Expr("!", inner)
+                : null,
+            SldFilterComparison comparison => BuildComparison(comparison),
+            SldFilterLike like => SldLikeFilterConverter.Convert(like, context),
+            SldFilterUnsupported => null,
+            _ => null
         };
     }
 
-    private static MapLibreExpression? BuildFilter(SldFilter? filter)
+    private static MapLibreExpression? BuildCompoundFilter(
+        string op,
+        IReadOnlyList<SldFilter> children,
+        SldDiagnosticContext context)
     {
-        if (filter == null)
+        if (children.Count == 0)
         {
             return null;
         }
 
-        return BuildFilterExpression(filter);
-    }
-
-    private static MapLibreExpression? BuildFilterExpression(SldFilter filter)
-    {
-        switch (filter)
+        var operands = new List<MapLibreExpression> { new(op) };
+        foreach (var child in children)
         {
-            case SldFilterAnd and:
-                {
-                    if (and.Operands.Count == 0)
-                    {
-                        return null;
-                    }
-
-                    var operands = new List<MapLibreExpression> { new("all") };
-                    // Not converted to .Select(...): the loop must bail out (return null for
-                    // the whole compound filter) as soon as any operand fails to convert,
-                    // rather than eagerly converting every operand first.
-                    foreach (var converted in (and.Operands).Select(operand => BuildFilterExpression(operand)))
-                    {
-                        if (!converted.HasValue)
-                        {
-                            // Drop the entire compound filter rather than silently narrow the
-                            // rule to the supported operands. Diagnostic was emitted at parse
-                            // time when the operand is SldFilterUnsupported.
-                            return null;
-                        }
-
-                        operands.Add(converted.Value);
-                    }
-
-                    return new MapLibreExpression(operands.ToArray());
-                }
-
-            case SldFilterOr or:
-                {
-                    if (or.Operands.Count == 0)
-                    {
-                        return null;
-                    }
-
-                    var operands = new List<MapLibreExpression> { new("any") };
-                    // Not converted to .Select(...): the loop must bail out (return null for
-                    // the whole compound filter) as soon as any operand fails to convert,
-                    // rather than eagerly converting every operand first.
-                    foreach (var converted in (or.Operands).Select(operand => BuildFilterExpression(operand)))
-                    {
-                        if (!converted.HasValue)
-                        {
-                            // Drop the entire compound filter rather than silently broaden the
-                            // rule by removing an OR operand.
-                            return null;
-                        }
-
-                        operands.Add(converted.Value);
-                    }
-
-                    return new MapLibreExpression(operands.ToArray());
-                }
-
-            case SldFilterNot not:
-                {
-                    var inner = BuildFilterExpression(not.Operand);
-                    if (!inner.HasValue)
-                    {
-                        return null;
-                    }
-
-                    return new MapLibreExpression(new[] { new MapLibreExpression("!"), inner.Value });
-                }
-
-            case SldFilterComparison comparison:
-                return BuildComparison(comparison);
-
-            case SldFilterUnsupported:
+            var converted = BuildFilterExpression(child, context);
+            if (!converted.HasValue)
+            {
                 return null;
+            }
 
-            default:
-                return null;
+            operands.Add(converted.Value);
         }
+
+        return new MapLibreExpression(operands.ToArray());
     }
 
     private static MapLibreExpression BuildComparison(SldFilterComparison comparison)
@@ -517,39 +506,35 @@ internal static class SldToMapLibreConverter
             _ => "=="
         };
 
-        var literal = ParseLiteralExpression(comparison.Literal);
-        var get = new MapLibreExpression(new[]
-        {
-            new MapLibreExpression("get"),
-            new MapLibreExpression(comparison.PropertyName)
-        });
-
-        return new MapLibreExpression(new[]
-        {
-            new MapLibreExpression(op),
-            get,
-            literal
-        });
+        return SldExpressionConverter.Expr(
+            op,
+            SldExpressionConverter.Expr("get", new MapLibreExpression(comparison.PropertyName)),
+            SldExpressionConverter.ParseLiteralExpression(comparison.Literal));
     }
 
-    private static MapLibreExpression ParseLiteralExpression(string literal)
+    private static MapLibreStyleLayer CreateLayer(SymbolizerSlot slot, LayerSpec spec)
     {
-        if (string.Equals(literal, "true", StringComparison.OrdinalIgnoreCase))
+        return new MapLibreStyleLayer
         {
-            return new MapLibreExpression(true);
-        }
+            Id = $"{slot.Meta.RuleId}-{slot.Index}{spec.IdSuffix}",
+            Type = spec.Type,
+            Filter = slot.Meta.Filter,
+            MinZoom = slot.Meta.MinZoom,
+            MaxZoom = slot.Meta.MaxZoom,
+            Paint = spec.Paint,
+            Layout = spec.Layout
+        };
+    }
 
-        if (string.Equals(literal, "false", StringComparison.OrdinalIgnoreCase))
+    private static void AddIfPresent(
+        Dictionary<string, MapLibreExpression> target,
+        string key,
+        MapLibreExpression? value)
+    {
+        if (value.HasValue)
         {
-            return new MapLibreExpression(false);
+            target[key] = value.Value;
         }
-
-        if (double.TryParse(literal, NumberStyles.Float, CultureInfo.InvariantCulture, out var number))
-        {
-            return new MapLibreExpression(number);
-        }
-
-        return new MapLibreExpression(literal);
     }
 
     private static double? ScaleToZoom(double? scaleDenominator)
@@ -560,43 +545,7 @@ internal static class SldToMapLibreConverter
         }
 
         var zoom = Math.Log2(WebMercatorScaleReference / scaleDenominator.Value);
-        zoom = Math.Round(Math.Clamp(zoom, MinZoom, MaxZoom), 2, MidpointRounding.AwayFromZero);
-        return zoom;
-    }
-
-    private static string NormalizeColor(string color, double? opacity)
-    {
-        if (string.IsNullOrWhiteSpace(color))
-        {
-            return color;
-        }
-
-        // SLD AARRGGBB hex (alpha-prefixed) needs to become rgba() for MapLibre.
-        if (color.Length == 9 && color[0] == '#'
-            && TryParseHexByte(color.AsSpan(1, 2), out var a)
-            && TryParseHexByte(color.AsSpan(3, 2), out var r)
-            && TryParseHexByte(color.AsSpan(5, 2), out var g)
-            && TryParseHexByte(color.AsSpan(7, 2), out var b))
-        {
-            var alpha = a / 255d;
-            return string.Create(CultureInfo.InvariantCulture, $"rgba({r},{g},{b},{alpha:0.###})");
-        }
-
-        if (opacity.HasValue && opacity.Value < 1d && opacity.Value >= 0d
-            && color.Length == 7 && color[0] == '#'
-            && TryParseHexByte(color.AsSpan(1, 2), out var rr)
-            && TryParseHexByte(color.AsSpan(3, 2), out var gg)
-            && TryParseHexByte(color.AsSpan(5, 2), out var bb))
-        {
-            return string.Create(CultureInfo.InvariantCulture, $"rgba({rr},{gg},{bb},{opacity.Value:0.###})");
-        }
-
-        return color;
-    }
-
-    private static bool TryParseHexByte(ReadOnlySpan<char> span, out int value)
-    {
-        return int.TryParse(span, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value);
+        return Math.Round(Math.Clamp(zoom, MinZoom, MaxZoom), 2, MidpointRounding.AwayFromZero);
     }
 
     private static MapLibreExpression ToExpressionArray(double[] values)
@@ -623,10 +572,6 @@ internal static class SldToMapLibreConverter
             return null;
         }
 
-        // Cap stack usage independently of the (1 MiB) body cap. Without this, a
-        // pathological SLD Name element could drive a multi-megabyte stackalloc.
-        // ruleIndex still guarantees ruleId uniqueness when truncation collapses
-        // two distinct names to the same prefix.
         var bufferLength = Math.Min(span.Length, MaxSanitizedIdentifierLength);
         Span<char> buffer = stackalloc char[bufferLength];
         var written = 0;
@@ -657,4 +602,93 @@ internal static class SldToMapLibreConverter
         Message = message,
         RuleName = ruleName
     };
+
+    private enum RuleFilterDisposition
+    {
+        Include,
+        Omit
+    }
+
+    private enum ElseSiblingStatus
+    {
+        AllFiltered,
+        HasScaledSibling,
+        HasUnconditional,
+        HasUnsupported
+    }
+
+    private sealed class ConversionAccumulator(IReadOnlyList<SldConversionDiagnostic> initialDiagnostics)
+    {
+        private int _ruleCounter;
+        public List<MapLibreStyleLayer> Layers { get; } = [];
+        public List<SldConversionDiagnostic> Diagnostics { get; } = new(initialDiagnostics);
+        public int NextRuleIndex() => _ruleCounter++;
+    }
+
+    private sealed record ResolvedRuleFilter
+    {
+        public MapLibreExpression? Filter { get; init; }
+        public RuleFilterDisposition Disposition { get; init; }
+    }
+
+    private sealed record ElseFilterState
+    {
+        public required List<MapLibreExpression> SiblingFilters { get; init; }
+        public ElseSiblingStatus Status { get; init; }
+    }
+
+    private sealed record RuleLayerMetadata
+    {
+        public required string RuleId { get; init; }
+        public string? RuleName { get; init; }
+        public MapLibreExpression? Filter { get; init; }
+        public double? MinZoom { get; init; }
+        public double? MaxZoom { get; init; }
+    }
+
+    private sealed class SiblingFilterTracker
+    {
+        public List<MapLibreExpression> Filters { get; } = [];
+        public ElseSiblingStatus Status { get; private set; } = ElseSiblingStatus.AllFiltered;
+
+        public void Record(SldRule rule, ResolvedRuleFilter resolved)
+        {
+            var hasScale = rule.MinScaleDenominator.HasValue || rule.MaxScaleDenominator.HasValue;
+            if (resolved.Disposition == RuleFilterDisposition.Omit)
+            {
+                Status = ElseSiblingStatus.HasUnsupported;
+            }
+            else if (resolved.Filter.HasValue)
+            {
+                Filters.Add(resolved.Filter.Value);
+                if (hasScale && Status == ElseSiblingStatus.AllFiltered)
+                {
+                    Status = ElseSiblingStatus.HasScaledSibling;
+                }
+            }
+            else if (!hasScale && Status != ElseSiblingStatus.HasUnsupported)
+            {
+                Status = ElseSiblingStatus.HasUnconditional;
+            }
+            else if (hasScale && Status == ElseSiblingStatus.AllFiltered)
+            {
+                Status = ElseSiblingStatus.HasScaledSibling;
+            }
+        }
+    }
+
+    private sealed record LayerSpec
+    {
+        public required string Type { get; init; }
+        public Dictionary<string, MapLibreExpression>? Paint { get; init; }
+        public Dictionary<string, MapLibreExpression>? Layout { get; init; }
+        public string IdSuffix { get; init; } = string.Empty;
+    }
+
+    private sealed record SymbolizerSlot
+    {
+        public required RuleLayerMetadata Meta { get; init; }
+        public int Index { get; init; }
+        public SldDiagnosticContext Context { get; init; }
+    }
 }

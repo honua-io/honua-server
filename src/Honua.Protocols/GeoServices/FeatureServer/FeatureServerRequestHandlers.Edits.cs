@@ -1104,13 +1104,6 @@ internal static partial class FeatureServerEndpoints
     // An applyEdits control this server cannot honor is a 400, not an accepted no-op, because ignoring it would drop edits or change the promised result.
     private static IResult? CreateUnsupportedEditControlError(HttpContext context, ApplyEditsRequest request)
     {
-        if (request.UseGlobalIds)
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "useGlobalIds is not supported",
-                ["Set useGlobalIds to false and supply objectIds in attributes."]);
-        }
-
         if (request.Attachments is { Length: > 0 })
         {
             return StandardErrorHelpers.CreateBadRequest(context,

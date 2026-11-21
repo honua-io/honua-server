@@ -160,7 +160,7 @@ internal static class FeatureChangeLogSeeder
             return null;
         }
 
-        string Coordinate(double x, double y)
+        static string Coordinate(double x, double y)
             => string.Create(CultureInfo.InvariantCulture, $"[{x},{y}]");
 
         if (envelope[0].CompareTo(envelope[2]) == 0 && envelope[1].CompareTo(envelope[3]) == 0)

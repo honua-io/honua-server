@@ -26,11 +26,25 @@ internal static class AuthenticationChallenge
     internal static void AppendCredentialChallenges(HttpContext context, ApiKeyAuthenticationOptions? options)
     {
         ArgumentNullException.ThrowIfNull(context);
-        context.Response.Headers.Append("WWW-Authenticate", ApiKeyChallenge);
+        AppendUniqueChallenge(context, ApiKeyChallenge);
         if (OffersBasic(context.Request, options))
         {
-            context.Response.Headers.Append("WWW-Authenticate", BasicChallenge);
+            AppendUniqueChallenge(context, BasicChallenge);
         }
+    }
+
+    internal static void AppendUniqueChallenge(HttpContext context, string challenge)
+    {
+        var existing = context.Response.Headers.WWWAuthenticate;
+        for (var i = 0; i < existing.Count; i++)
+        {
+            if (string.Equals(existing[i], challenge, StringComparison.Ordinal))
+            {
+                return;
+            }
+        }
+
+        context.Response.Headers.Append("WWW-Authenticate", challenge);
     }
 
     // Request.IsHttps reflects direct TLS and trusted forwarded HTTPS once ForwardedHeaders has run,

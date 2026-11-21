@@ -139,6 +139,7 @@ internal static partial class FeatureServerEndpoints
         public static readonly FrozenSet<string> QueryRelatedRecords = new[]
             {
                 "objectIds",
+                "globalIds",
                 "relationshipId",
                 "outFields",
                 "where",

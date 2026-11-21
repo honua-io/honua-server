@@ -845,15 +845,17 @@ internal sealed partial class FeatureServerQueryHandler(
                 // f=pbf must return the ExtentCountResult arm of the FeatureCollectionPBuffer
                 // QueryResult oneof (application/x-protobuf), mirroring the count path; otherwise
                 // the extent branch silently degrades to JSON.
-                if (string.Equals(format, "pbf", StringComparison.OrdinalIgnoreCase) && extentInfo is not null)
+                if (string.Equals(format, "pbf", StringComparison.OrdinalIgnoreCase))
                 {
-                    var (extentPayload, extentContentType) = PbfQueryFormatter.FormatExtentAsPbf(
-                        extentInfo.Xmin,
-                        extentInfo.Ymin,
-                        extentInfo.Xmax,
-                        extentInfo.Ymax,
-                        extentInfo.SpatialReference.Wkid,
-                        extentCount);
+                    var (extentPayload, extentContentType) = extentInfo is not null
+                        ? PbfQueryFormatter.FormatExtentAsPbf(
+                            extentInfo.Xmin,
+                            extentInfo.Ymin,
+                            extentInfo.Xmax,
+                            extentInfo.Ymax,
+                            extentInfo.SpatialReference.Wkid,
+                            extentCount)
+                        : PbfQueryFormatter.FormatEmptyExtentAsPbf(extentCount);
                     return await CreateCachedBytesResultAsync(extentPayload, extentContentType);
                 }
 
@@ -911,14 +913,18 @@ internal sealed partial class FeatureServerQueryHandler(
                 }
                 else
                 {
-                    var result = await _queryExecutor.QueryObjectIdsWithValidationAsync(
-                        queryLayer.Service,
-                        queryLayer.Resource,
-                        queryLayer.Publication,
-                        queryLayer.StorageLayerId,
+                    var probed = await _queryExecutor.QueryObjectIdsWithLimitProbeAsync(
+                        new V2LayerQueryTarget
+                        {
+                            Service = queryLayer.Service,
+                            Resource = queryLayer.Resource,
+                            Publication = queryLayer.Publication,
+                            StorageLayerId = queryLayer.StorageLayerId
+                        },
                         query,
                         cancellationToken).ConfigureAwait(false);
-                    objectIds = result.IsDefault ? [] : result.ToArray();
+                    objectIds = probed.ObjectIds.IsDefault ? [] : probed.ObjectIds.ToArray();
+                    idsExceededTransferLimit = probed.ExceededTransferLimit;
                 }
 
                 stopwatch.Stop();
@@ -963,11 +969,12 @@ internal sealed partial class FeatureServerQueryHandler(
                 return StandardErrorHelpers.CreateBadRequest(context, quantizationError ?? "Invalid quantizationParameters.");
             }
 
-            // quantization must post-process the materialized featureSet, so route it through
-            // the materialized path instead of the streaming writer. returnExceededLimitFeatures
-            // is accept-and-ignore: Honua already returns the page plus
-            // exceededTransferLimit, so it does not change the streaming decision.
-            var useStreaming = effectiveLimit > StreamingThreshold && !isPbf && !isFgb && !isGeobuf && !isParquet && !isArrow
+            // quantization must post-process the materialized featureSet for JSON, so route JSON
+            // through the materialized path instead of the streaming writer. PBF applies
+            // quantization per feature inside PbfQueryFormatter and streams into a bounded spool
+            // whenever Z/M detection and runtime-field discovery are not needed.
+            var usePbfStreaming = isPbf && CanStreamPbf(queryLayer.Resource, validatedParams, effectiveLimit);
+            var useStreaming = usePbfStreaming || (effectiveLimit > StreamingThreshold && !isPbf && !isFgb && !isGeobuf && !isParquet && !isArrow
                 && quantizationTransform is null
                 // The materialized formatter discovers runtime fields (notably the
                 // returnDistance column) and emits pjson/102100 aliases consistently.
@@ -975,7 +982,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 && requestedOutSrAlias is null
                 && !validatedParams.ReturnDistance
                 && !hasUnknownRequestedFields
-                && !validatedParams.ReturnDistinctValues;
+                && !validatedParams.ReturnDistinctValues);
 
             if (!useStreaming)
             {
@@ -1228,17 +1235,19 @@ internal sealed partial class FeatureServerQueryHandler(
                 };
             }
 
-            await _queryExecutor.StreamQueryAsync(
-                queryLayer.Service,
-                queryLayer.Resource,
-                queryLayer.Publication,
-                queryLayer.StorageLayerId,
-                query,
-                validatedParams,
-                outputSrid,
-                context,
-                format,
-                cancellationToken);
+            await ExecuteStreamingQueryAsync(
+                queryLayer,
+                new StreamingQueryDispatch
+                {
+                    UsePbfStreaming = usePbfStreaming,
+                    Query = query,
+                    ValidatedParams = validatedParams,
+                    OutputSrid = outputSrid,
+                    QuantizationTransform = quantizationTransform,
+                    Context = context,
+                    Format = format
+                },
+                cancellationToken).ConfigureAwait(false);
 
             HonuaTelemetry.SetSuccess(featureActivity);
             return _streamingResult;
@@ -2054,7 +2063,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(queryLayer.Resource);
 
-        if (validatedParams.ReturnCountOnly)
+        if (validatedParams.ReturnCountOnly && !validatedParams.ReturnExtentOnly)
         {
             var stopwatch = Stopwatch.StartNew();
             var (count, countError) = await ResolveReturnCountAsync(
@@ -2134,6 +2143,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 ObjectIds = result.Items
                         .Select(feature => GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName))
                         .ToArray(),
+                ExceededTransferLimit = result.HasMoreResults,
                 Features = null
             };
         }
@@ -2982,8 +2992,8 @@ internal sealed partial class FeatureServerQueryHandler(
                 fieldTypes[schemaField.Name] = schemaField.Type;
             }
 
-            // Also allow objectid
-            fieldNames.Add(FieldNames.ObjectId);
+            var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+            fieldNames.Add(objectIdFieldName);
 
             foreach (var element in document.RootElement.EnumerateArray())
             {
@@ -3021,7 +3031,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 // name "objectid" is not a column on those layers.
                 if (statisticType == StatisticType.Count && onField == "*")
                 {
-                    onField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+                    onField = objectIdFieldName;
                 }
 
                 if (!fieldNames.Contains(onField))
@@ -3050,7 +3060,7 @@ internal sealed partial class FeatureServerQueryHandler(
                     OutStatisticFieldName = outAlias,
                     FieldType = fieldTypes.TryGetValue(onField, out var resolvedFieldType)
                         ? resolvedFieldType
-                        : string.Equals(onField, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase)
+                        : string.Equals(onField, objectIdFieldName, StringComparison.OrdinalIgnoreCase)
                             ? MetadataV2FieldType.BigInteger
                             : null
                 });
@@ -3348,7 +3358,7 @@ internal sealed partial class FeatureServerQueryHandler(
     // layer schema, mirroring the onStatisticField/outFields/orderByFields
     // existence checks. An unvalidated groupBy column would otherwise reach the
     // database and surface as a 500 instead of a structured 400.
-    private static bool TryParseGroupByFields(
+    internal static bool TryParseGroupByFields(
         string groupByFieldsForStatistics,
         MetadataV2Object resource,
         out ImmutableArray<string> groupByFields,
@@ -3372,7 +3382,7 @@ internal sealed partial class FeatureServerQueryHandler(
             resource.SchemaFields.Select(f => f.Name),
             StringComparer.OrdinalIgnoreCase)
         {
-            FieldNames.ObjectId
+            GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource)
         };
 
         var missingField = parsed.FirstOrDefault(field => !fieldNames.Contains(field));

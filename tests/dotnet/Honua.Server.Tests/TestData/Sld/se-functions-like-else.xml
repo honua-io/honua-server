@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<StyledLayerDescriptor version="1.1.0"
+    xmlns="http://www.opengis.net/sld"
+    xmlns:se="http://www.opengis.net/se"
+    xmlns:ogc="http://www.opengis.net/ogc">
+  <NamedLayer>
+    <se:Name>parcels-advanced</se:Name>
+    <UserStyle>
+      <se:Name>advanced-constructs</se:Name>
+      <se:FeatureTypeStyle>
+        <se:Rule>
+          <se:Name>san-prefix</se:Name>
+          <ogc:Filter>
+            <ogc:PropertyIsLike wildCard="%" singleChar="_" escapeChar="\">
+              <ogc:PropertyName>name</ogc:PropertyName>
+              <ogc:Literal>San %</ogc:Literal>
+            </ogc:PropertyIsLike>
+          </ogc:Filter>
+          <se:PolygonSymbolizer>
+            <se:Fill>
+              <se:SvgParameter name="fill">
+                <se:Recode fallbackValue="#cccccc">
+                  <se:LookupValue><ogc:PropertyName>zone_code</ogc:PropertyName></se:LookupValue>
+                  <se:MapItem><se:Data>1</se:Data><se:Value>#e41a1c</se:Value></se:MapItem>
+                  <se:MapItem><se:Data>2</se:Data><se:Value>#377eb8</se:Value></se:MapItem>
+                </se:Recode>
+              </se:SvgParameter>
+              <se:SvgParameter name="fill-opacity">
+                <se:Interpolate mode="linear" method="numeric">
+                  <se:LookupValue><ogc:PropertyName>density</ogc:PropertyName></se:LookupValue>
+                  <se:InterpolationPoint><se:Data>0</se:Data><se:Value>0.2</se:Value></se:InterpolationPoint>
+                  <se:InterpolationPoint><se:Data>100</se:Data><se:Value>0.9</se:Value></se:InterpolationPoint>
+                </se:Interpolate>
+              </se:SvgParameter>
+            </se:Fill>
+          </se:PolygonSymbolizer>
+        </se:Rule>
+        <se:Rule>
+          <se:Name>other-parcels</se:Name>
+          <se:ElseFilter/>
+          <se:PolygonSymbolizer>
+            <se:Fill>
+              <se:SvgParameter name="fill">
+                <se:Categorize>
+                  <se:LookupValue><ogc:PropertyName>area</ogc:PropertyName></se:LookupValue>
+                  <se:Value>#ffffcc</se:Value>
+                  <se:Threshold>1000</se:Threshold>
+                  <se:Value>#41b6c4</se:Value>
+                  <se:Threshold>5000</se:Threshold>
+                  <se:Value>#225ea8</se:Value>
+                </se:Categorize>
+              </se:SvgParameter>
+            </se:Fill>
+          </se:PolygonSymbolizer>
+        </se:Rule>
+      </se:FeatureTypeStyle>
+    </UserStyle>
+  </NamedLayer>
+</StyledLayerDescriptor>

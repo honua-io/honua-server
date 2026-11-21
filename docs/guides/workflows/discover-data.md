@@ -114,7 +114,7 @@ workflow:
 
 # Discover and disambiguate data
 
-Translate the user's topic into candidate searches, preserving their geographic and temporal intent. A title is only a clue. Examine coverage, publisher, timestamp meaning, schema, geometry, and access before selecting a resource.
+Translate the user's topic into candidate searches, preserving their geographic and temporal intent. A title is only a clue. Examine coverage, publisher, timestamp meaning, schema, geometry, and access before selecting a resource. Candidate discovery uses `honua_list_layers` on the default `/mcp` endpoint and `honua_ground_candidates` in the `analyze` workflow view (`/mcp?view=analyze`).
 
 Follow the catalog's pagination and visibility rules. An empty response may reflect permissions; it does not justify probing another tenant. Read representative records only through authorized surfaces.
 

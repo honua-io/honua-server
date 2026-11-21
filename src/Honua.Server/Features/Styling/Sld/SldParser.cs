@@ -11,6 +11,8 @@ namespace Honua.Server.Features.Styling.Sld;
 internal static class SldParser
 {
     private const int MaxInputCharacters = 1_048_576; // 1 MiB - migration uploads are small.
+    private const double AnchorLowerBound = 0.33d;
+    private const double AnchorUpperBound = 0.67d;
 
     private static readonly char[] DashArraySeparators = [' ', ','];
 
@@ -181,6 +183,7 @@ internal static class SldParser
     {
         string? name = null;
         SldFilter? filter = null;
+        var isElseFilter = false;
         double? minScale = null;
         double? maxScale = null;
         var symbolizers = new List<SldSymbolizer>();
@@ -196,10 +199,7 @@ internal static class SldParser
                     filter = SldFilterParser.ParseFilter(child, diagnostics, name);
                     break;
                 case "ElseFilter":
-                    diagnostics.Add(Warn(
-                        "ElseFilter",
-                        "ElseFilter has no portable MapLibre equivalent; rule will render unfiltered.",
-                        name));
+                    isElseFilter = true;
                     break;
                 case "VendorOption":
                     diagnostics.Add(Warn(
@@ -238,7 +238,15 @@ internal static class SldParser
             }
         }
 
-        return new SldRule(name, filter, minScale, maxScale, symbolizers);
+        return new SldRule
+        {
+            Name = name,
+            Filter = filter,
+            Kind = isElseFilter ? SldRuleKind.ElseFilter : SldRuleKind.Standard,
+            MinScaleDenominator = minScale,
+            MaxScaleDenominator = maxScale,
+            Symbolizers = symbolizers
+        };
     }
 
     private static SldPointSymbolizer ParsePointSymbolizer(
@@ -248,8 +256,10 @@ internal static class SldParser
     {
         SldMark? mark = null;
         SldExternalGraphic? externalGraphic = null;
-        double? size = null;
-        double? opacity = null;
+        SldValueExpression? size = null;
+        SldValueExpression? opacity = null;
+        SldValueExpression? rotation = null;
+        var parseContext = new SldDiagnosticContext(diagnostics, ruleName);
 
         EmitSymbolizerVendorOptionDiagnostics(element, diagnostics, ruleName, "PointSymbolizer");
 
@@ -267,22 +277,26 @@ internal static class SldParser
                         externalGraphic = ParseExternalGraphic(graphicChild, diagnostics, ruleName);
                         break;
                     case "Size":
-                        size = ParseDouble(graphicChild.Value);
+                        size = SldExpressionParser.ParseValueExpression(graphicChild, parseContext, "Graphic.Size");
                         break;
                     case "Opacity":
-                        opacity = ParseDouble(graphicChild.Value);
+                        opacity = SldExpressionParser.ParseValueExpression(graphicChild, parseContext, "Graphic.Opacity");
                         break;
                     case "Rotation":
-                        diagnostics.Add(Warn(
-                            "Rotation",
-                            "Graphic Rotation is not yet mapped to icon-rotate; value preserved as warning.",
-                            ruleName));
+                        rotation = SldExpressionParser.ParseValueExpression(graphicChild, parseContext, "Graphic.Rotation");
                         break;
                 }
             }
         }
 
-        return new SldPointSymbolizer(mark, externalGraphic, size, opacity);
+        return new SldPointSymbolizer
+        {
+            Mark = mark,
+            ExternalGraphic = externalGraphic,
+            Size = size,
+            Opacity = opacity,
+            Rotation = rotation
+        };
     }
 
     private static SldMark ParseMark(XElement element, List<SldConversionDiagnostic> diagnostics, string? ruleName)
@@ -380,19 +394,92 @@ internal static class SldParser
         EmitSymbolizerVendorOptionDiagnostics(element, diagnostics, ruleName, "TextSymbolizer");
 
         var label = ParseLabelExpression(ChildLocal(element, "Label"), diagnostics, ruleName);
-        var font = ParseFont(ChildLocal(element, "Font"));
+        var font = ParseFont(ChildLocal(element, "Font"), new SldDiagnosticContext(diagnostics, ruleName));
         var fill = ParseFill(ChildLocal(element, "Fill"), diagnostics, ruleName, "TextSymbolizer Fill");
         var halo = ParseHalo(ChildLocal(element, "Halo"), diagnostics, ruleName);
+        var placement = ParseLabelPlacement(ChildLocal(element, "LabelPlacement"), new SldDiagnosticContext(diagnostics, ruleName));
 
-        if (ChildLocal(element, "LabelPlacement") != null)
+        return new SldTextSymbolizer
         {
-            diagnostics.Add(Warn(
-                "LabelPlacement",
-                "LabelPlacement is partially mapped: only basic point/line placement defaults are honored.",
-                ruleName));
+            Label = label,
+            Font = font,
+            Fill = fill,
+            Halo = halo,
+            Placement = placement
+        };
+    }
+
+    private static SldLabelPlacement? ParseLabelPlacement(XElement? element, SldDiagnosticContext context)
+    {
+        if (element == null)
+        {
+            return null;
         }
 
-        return new SldTextSymbolizer(label, font, fill, halo);
+        if (ChildLocal(element, "LinePlacement") != null)
+        {
+            return new SldLabelPlacement { Kind = SldPlacementKind.Line };
+        }
+
+        var pointPlacement = ChildLocal(element, "PointPlacement");
+        if (pointPlacement == null)
+        {
+            return null;
+        }
+
+        return new SldLabelPlacement
+        {
+            Kind = SldPlacementKind.Point,
+            TextAnchor = ParseAnchorPoint(ChildLocal(pointPlacement, "AnchorPoint")),
+            Offset = ParseDisplacementOffset(ChildLocal(pointPlacement, "Displacement")),
+            Rotation = SldExpressionParser.ParseValueExpression(
+                ChildLocal(pointPlacement, "Rotation"),
+                context,
+                "LabelPlacement.Rotation")
+        };
+    }
+
+    private static string? ParseAnchorPoint(XElement? anchorElement)
+    {
+        if (anchorElement == null)
+        {
+            return null;
+        }
+
+        var x = ParseDouble(ChildLocal(anchorElement, "AnchorPointX")?.Value) ?? 0.5d;
+        var y = ParseDouble(ChildLocal(anchorElement, "AnchorPointY")?.Value) ?? 0.5d;
+
+        var horizontal = x < AnchorLowerBound ? "left" : x > AnchorUpperBound ? "right" : string.Empty;
+        var vertical = y < AnchorLowerBound ? "bottom" : y > AnchorUpperBound ? "top" : string.Empty;
+
+        if (horizontal.Length == 0 && vertical.Length == 0)
+        {
+            return "center";
+        }
+
+        if (horizontal.Length == 0)
+        {
+            return vertical;
+        }
+
+        return vertical.Length == 0 ? horizontal : $"{vertical}-{horizontal}";
+    }
+
+    private static double[]? ParseDisplacementOffset(XElement? displacementElement)
+    {
+        if (displacementElement == null)
+        {
+            return null;
+        }
+
+        var dx = ParseDouble(ChildLocal(displacementElement, "DisplacementX")?.Value);
+        var dy = ParseDouble(ChildLocal(displacementElement, "DisplacementY")?.Value);
+        if (!dx.HasValue && !dy.HasValue)
+        {
+            return null;
+        }
+
+        return [dx ?? 0d, -(dy ?? 0d)];
     }
 
     private static string? ParseLabelExpression(
@@ -437,8 +524,8 @@ internal static class SldParser
             return null;
         }
 
-        string? color = null;
-        double? opacity = null;
+        SldValueExpression? color = null;
+        SldValueExpression? opacity = null;
         foreach (var child in fill.Elements())
         {
             if (child.Name.LocalName == "GraphicFill")
@@ -461,13 +548,14 @@ internal static class SldParser
             }
 
             var paramName = child.Attribute("name")?.Value;
+            var parseContext = new SldDiagnosticContext(diagnostics, ruleName);
             switch (paramName)
             {
                 case "fill":
-                    color = child.Value?.Trim();
+                    color = SldExpressionParser.ParseValueExpression(child, parseContext, $"{scope}.fill");
                     break;
                 case "fill-opacity":
-                    opacity = ParseDouble(child.Value);
+                    opacity = SldExpressionParser.ParseValueExpression(child, parseContext, $"{scope}.fill-opacity");
                     break;
             }
         }
@@ -494,12 +582,13 @@ internal static class SldParser
             return null;
         }
 
-        string? color = null;
-        double? opacity = null;
-        double? width = null;
+        SldValueExpression? color = null;
+        SldValueExpression? opacity = null;
+        SldValueExpression? width = null;
         string? lineCap = null;
         string? lineJoin = null;
         double[]? dashArray = null;
+        var parseContext = new SldDiagnosticContext(diagnostics, ruleName);
 
         foreach (var child in stroke.Elements())
         {
@@ -527,13 +616,13 @@ internal static class SldParser
             switch (paramName)
             {
                 case "stroke":
-                    color = value;
+                    color = SldExpressionParser.ParseValueExpression(child, parseContext, $"{scope}.stroke");
                     break;
                 case "stroke-opacity":
-                    opacity = ParseDouble(value);
+                    opacity = SldExpressionParser.ParseValueExpression(child, parseContext, $"{scope}.stroke-opacity");
                     break;
                 case "stroke-width":
-                    width = ParseDouble(value);
+                    width = SldExpressionParser.ParseValueExpression(child, parseContext, $"{scope}.stroke-width");
                     break;
                 case "stroke-linecap":
                     lineCap = value;
@@ -560,10 +649,18 @@ internal static class SldParser
             return null;
         }
 
-        return new SldStroke(color, opacity, width, lineCap, lineJoin, dashArray);
+        return new SldStroke
+        {
+            Color = color,
+            Opacity = opacity,
+            Width = width,
+            LineCap = lineCap,
+            LineJoin = lineJoin,
+            DashArray = dashArray
+        };
     }
 
-    private static SldFont? ParseFont(XElement? font)
+    private static SldFont? ParseFont(XElement? font, SldDiagnosticContext context)
     {
         if (font == null)
         {
@@ -571,37 +668,22 @@ internal static class SldParser
         }
 
         string? family = null;
-        double? size = null;
+        SldValueExpression? size = null;
         string? style = null;
         string? weight = null;
-
-        foreach (var css in font.Elements())
+        foreach (var css in font.Elements().Where(e => e.Name.LocalName is "CssParameter" or "SvgParameter"))
         {
-            if (css.Name.LocalName != "CssParameter" && css.Name.LocalName != "SvgParameter")
-            {
-                continue;
-            }
-
-            var paramName = css.Attribute("name")?.Value;
             var value = css.Value?.Trim();
-            switch (paramName)
+            switch (css.Attribute("name")?.Value)
             {
-                case "font-family":
-                    family = value;
-                    break;
-                case "font-size":
-                    size = ParseDouble(value);
-                    break;
-                case "font-style":
-                    style = value;
-                    break;
-                case "font-weight":
-                    weight = value;
-                    break;
+                case "font-family": family = value; break;
+                case "font-size": size = SldExpressionParser.ParseValueExpression(css, context, "Font.font-size"); break;
+                case "font-style": style = value; break;
+                case "font-weight": weight = value; break;
             }
         }
 
-        return new SldFont(family, size, style, weight);
+        return new SldFont { Family = family, Size = size, Style = style, Weight = weight };
     }
 
     private static SldHalo? ParseHalo(XElement? halo, List<SldConversionDiagnostic> diagnostics, string? ruleName)
@@ -611,7 +693,10 @@ internal static class SldParser
             return null;
         }
 
-        var radius = ParseDouble(ChildLocal(halo, "Radius")?.Value);
+        var radius = SldExpressionParser.ParseValueExpression(
+            ChildLocal(halo, "Radius"),
+            new SldDiagnosticContext(diagnostics, ruleName),
+            "Halo.Radius");
         var fill = ParseFill(ChildLocal(halo, "Fill"), diagnostics, ruleName, "Halo Fill");
         return new SldHalo(radius, fill);
     }

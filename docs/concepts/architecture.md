@@ -84,14 +84,14 @@ Read-only providers support query, count, extent, and pagination; they report un
 
 ## Optional infrastructure
 
-- **Shared cache** — optional response caching for multi-node deployments; per-node memory is the fallback. Durable jobs, governed proposals and approvals, and workflow orchestration use PostgreSQL.
+- **Per-replica cache** — each replica keeps its response cache in memory; no external cache service is needed. Durable jobs, governed proposals and approvals, and workflow orchestration use PostgreSQL.
 - **File storage** — attachments, imports, and raster assets use the local filesystem by default; S3-compatible storage (including MinIO) and Azure Blob Storage are configurable alternatives (`FileStorage__Provider`).
 
 ## Compute tier
 
 The serving image is deliberately lean: the native-AOT web images contain no GDAL/OGR CLI, no
 native GDAL/PROJ/GEOS libraries, and no .NET GDAL bindings. Query, edit, render, and the managed
-geoprocessing processes all run in-process. Thirty of the 98 geoprocessing processes declare
+geoprocessing processes all run in-process. Thirty of the 101 geoprocessing processes declare
 `RuntimeProfile = native` and cannot: they execute out-of-process in the heavyweight GDAL/PDAL
 worker image (`docker/worker-gdal/Dockerfile`, ADR-0038).
 
@@ -128,13 +128,13 @@ and the [ops control plane section](../guides/deploy/cloud-deployments.md#ops-co
 
 ## Deployment topology
 
-The same image runs in three shapes.
+The same image runs in two shapes.
 
 **Single container.** One process, one host, local file storage.
 Docker Compose evaluation stacks and air-gapped single-host installs. Not zero-downtime.
 
 **Stateless replicas behind an edge.** The production shape: several identical containers sharing one
-PostGIS and one file store, behind an ALB, ingress, or Application Gateway. No session
+PostGIS and one file store, behind an ALB or Kubernetes ingress. No session
 affinity is needed. That edge terminates TLS *and*, on most targets, carries out rollouts — Honua's
 deploy API shifts weights or swaps revisions through it:
 
@@ -174,6 +174,6 @@ See [Authentication](../guides/secure/authentication.md) and [TLS and mTLS](../g
 - [Protocols](protocols.md) — the full protocol-to-endpoint matrix
 - [Data model](data-model.md) — connections, layers, services, and styles
 - [Docker Compose deployment](../guides/deploy/docker-compose.md) and [Kubernetes](../guides/deploy/kubernetes.md)
-- [Cloud deployment patterns](../guides/deploy/cloud-deployments.md) — ECS/Fargate, Lambda, EKS/AKS
+- [Cloud deployment patterns](../guides/deploy/cloud-deployments.md) — ECS/Fargate, Lambda, EKS
 - [Upgrade and roll back](../guides/deploy/upgrade-and-rollback.md) — canary gates, rollback taxonomy
 - [Operations](../guides/deploy/backup-and-restore.md) — jobs, workflows, monitoring

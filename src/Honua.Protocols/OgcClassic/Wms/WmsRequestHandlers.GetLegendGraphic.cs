@@ -88,6 +88,14 @@ internal static partial class WmsRequestHandlers
         }
 
         var layer = resolvedLayers[0];
+        if (OgcClassicRasterSupport.IsRasterResource(layer.Resource))
+        {
+            return CreateWmsServiceException(
+                context,
+                "OperationNotSupported",
+                $"Layer '{GetWmsLayerDisplayName(layer)}' has no legend-renderable symbology.");
+        }
+
         var styleCatalog = context.RequestServices.GetRequiredService<ILayerStyleCatalog>();
 
         // Same style source, same cache, same parse as GetMap: the legend cannot show
