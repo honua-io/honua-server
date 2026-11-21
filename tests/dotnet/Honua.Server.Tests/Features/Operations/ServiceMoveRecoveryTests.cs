@@ -182,7 +182,7 @@ public sealed class ServiceMoveRecoveryTests
             .Returns(AuthorizationResult.Success());
         var operatorAuth = Substitute.For<IOperatorAuthorizationEvaluator>();
         operatorAuth.EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(AccessDecision.Denied("denied")));
+            .Returns(Task.FromResult(AccessDecision.Forbidden("denied")));
         var approvals = Substitute.For<IOperatorApprovalEvaluator>();
         var catalog = Substitute.For<IMetadataV2GraphStore>();
         catalog.GetCurrentAsync(Arg.Any<CancellationToken>())
@@ -227,7 +227,7 @@ public sealed class ServiceMoveRecoveryTests
     {
         var store = Substitute.For<IOperationInstanceStore>();
         store.TryCreateAsync(Arg.Any<OperationHandle>(), Arg.Any<CancellationToken>())
-            .Returns<Task<bool>>(_ => throw new CapabilityUnavailableException("operation-instances", "system-database"));
+            .Returns<Task<bool>>(_ => throw new CapabilityUnavailableException("operation-instances", "system-database", "configure system-database", "unavailable"));
         await using var services = new ServiceCollection().AddSingleton(store).BuildServiceProvider();
         var context = new DefaultHttpContext { RequestServices = services };
         var graph = Graph();
