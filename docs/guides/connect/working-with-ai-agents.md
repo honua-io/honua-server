@@ -142,8 +142,9 @@ Don't replace the serving container by hand, run `docker compose down --volumes`
 
 ## 7. Operating skills
 
-The package's `skills/` directory contains five optional Agent Skills:
+The package's `skills/` directory contains six optional Agent Skills:
 
+- `skills/honua-exports/SKILL.md`: cloud-native file Exports, approvals and public URL readback.
 - `skills/honua-install/SKILL.md`: install, readiness and secret files.
 - `skills/honua-ops/SKILL.md`: findings, approved restarts, upgrade and rollback.
 - `skills/honua-services/SKILL.md`: import, publish, filtered queries and readback.
