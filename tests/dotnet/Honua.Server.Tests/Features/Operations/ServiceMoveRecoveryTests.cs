@@ -163,7 +163,6 @@ public sealed class ServiceMoveRecoveryTests
     [UnitTest]
     public async Task PostAsync_AlreadyRestored_EnforcesOperatorAuthorizationBeforeRecording()
     {
-        var graph = Graph();
         var details = new Dictionary<string, string>(StringComparer.Ordinal);
         ServiceMoveEvidence.Write(details, new ServiceMoveEvidenceRecord("survey", "after", [new ServiceFolderAssignment("service", "maps")]));
         var instanceStore = Substitute.For<IOperationInstanceStore>();
@@ -177,33 +176,36 @@ public sealed class ServiceMoveRecoveryTests
             UpdatedAt = DateTimeOffset.UtcNow,
             Result = new OperationResultSummary { Summary = "Move service completed.", Details = details }
         });
-        var authorization = Substitute.For<IAuthorizationService>();
-        authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object?>(), AuthenticationExtensions.AdminPolicy)
-            .Returns(AuthorizationResult.Success());
         var operatorAuth = Substitute.For<IOperatorAuthorizationEvaluator>();
         operatorAuth.EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(AccessDecision.Forbidden("denied")));
-        var approvals = Substitute.For<IOperatorApprovalEvaluator>();
         var catalog = Substitute.For<IMetadataV2GraphStore>();
         catalog.GetCurrentAsync(Arg.Any<CancellationToken>())
-            .Returns(new MetadataV2GraphSnapshot(graph, "published", DateTimeOffset.UtcNow));
+            .Returns(new MetadataV2GraphSnapshot(Graph(), "published", DateTimeOffset.UtcNow));
         await using var services = new ServiceCollection()
-            .AddSingleton(authorization)
+            .AddSingleton(AllowAdmin())
             .AddSingleton(instanceStore)
             .AddSingleton(catalog)
-            .AddSingleton(new OperatorApprovalGate(operatorAuth, approvals, NullLogger<OperatorApprovalGate>.Instance))
+            .AddSingleton(new OperatorApprovalGate(operatorAuth, Substitute.For<IOperatorApprovalEvaluator>(), NullLogger<OperatorApprovalGate>.Instance))
             .BuildServiceProvider();
         var context = new DefaultHttpContext
         {
             RequestServices = services,
-            User = new ClaimsPrincipal(new ClaimsIdentity(
-                [new Claim(ClaimTypes.NameIdentifier, "operator"), new Claim(ClaimTypes.Role, "Admin")], "test"))
+            User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "operator"), new Claim(ClaimTypes.Role, "Admin")], "test"))
         };
 
         var result = await ServiceMoveCompensation.PostAsync(context, "opinst-restored");
 
         result.Should().BeAssignableTo<IStatusCodeHttpResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         await instanceStore.DidNotReceive().TryCreateAsync(Arg.Any<OperationHandle>(), Arg.Any<CancellationToken>());
+    }
+
+    private static IAuthorizationService AllowAdmin()
+    {
+        var authorization = Substitute.For<IAuthorizationService>();
+        authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object?>(), AuthenticationExtensions.AdminPolicy)
+            .Returns(AuthorizationResult.Success());
+        return authorization;
     }
 
     [UnitTest]
