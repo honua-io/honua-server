@@ -745,7 +745,12 @@ unknown or invalid routing still fails closed. A full-build fallback retains
 these Stage 0 CPU limits and disables build analyzers; its validation scope is
 unchanged. Stage 0 uses
 `HONUA_STAGE0_MAX_CPU_COUNT` (default 5, range 1–16) and reports restore, build,
-and test durations separately. Host queue/sync timings are reported by the
+and test durations separately. After the one build, the no-build test commands
+(affected unit projects and every selected shard, including integration shards
+under `--integration`) run concurrently, `HONUA_STAGE0_TEST_PARALLELISM` at a
+time (default 3, at most the Stage 0 CPU count, checked before the build). Every
+command keeps its own log and TRX check. A failure or interrupt starts no queued
+command, and the run fails once the running ones finish. Host queue/sync timings are reported by the
 local lane runner; they are separate from execution time.
 
 Trailing `selective_base` dispatches use their verified base for the managed
