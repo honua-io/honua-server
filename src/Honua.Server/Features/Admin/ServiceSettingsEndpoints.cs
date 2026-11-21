@@ -71,7 +71,7 @@ internal static partial class ServiceSettingsEndpoints
         MapServiceLayerMetadataEndpoints(group);
     }
 
-    private static void MapServiceLayerMetadataEndpoints(RouteGroupBuilder group)
+    private static void MapServiceLayerMetadataEndpoints(IEndpointRouteBuilder group)
     {
         group.MapGet("/{serviceName}/layers/{serviceLayerIndex:int}/metadata", HandleGetLayerMetadata)
             .WithDisplayName("Get Layer Metadata")
