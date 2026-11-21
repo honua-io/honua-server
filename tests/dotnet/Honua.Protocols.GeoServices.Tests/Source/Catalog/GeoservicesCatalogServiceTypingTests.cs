@@ -127,6 +127,32 @@ public sealed class GeoservicesCatalogServiceTypingTests : IClassFixture<Geoserv
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services")]
+    public async Task GetServicesDirectory_PrivateLayerlessGpServices_AnswerWithoutChallenges()
+    {
+        var restricted = new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["gp-runner"] };
+        var graph = BuildTypingGraph(builder =>
+        {
+            for (var index = 0; index < 3; index++)
+            {
+                builder.AddService($"svc-typing-private-gp-{index}", $"typing-private-gp-{index}",
+                    protocols: [ServiceProtocols.GPServer], accessPolicy: restricted);
+            }
+        });
+        await using var fixture = await CreateFixtureAsync(BuildRasterStoreWithRasters(), graph);
+
+        var response = await fixture.Client.GetAsync("/rest/services?f=json");
+
+        // The directory hides what an anonymous caller cannot use and still answers 200, so
+        // it must not offer a credential challenge for each hidden service.
+        response.Be200Ok();
+        response.Headers.WwwAuthenticate.Should().BeEmpty();
+        (await GetServicesByNameAsync(fixture, "typing-private-gp-0")).Should().BeEmpty();
+        (await GetServicesByNameAsync(fixture, GpServiceName)).Should().ContainSingle();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services")]
     public async Task GetServicesDirectory_DuplicatePublicationNameAndType_ReturnsOneEntry()
     {
         var builder = new TestMetadataV2GraphBuilder();
@@ -220,7 +246,7 @@ public sealed class GeoservicesCatalogServiceTypingTests : IClassFixture<Geoserv
         return fixture;
     }
 
-    private static MetadataV2Graph BuildTypingGraph()
+    private static MetadataV2Graph BuildTypingGraph(Action<TestMetadataV2GraphBuilder>? extend = null)
     {
         var anonymous = new AccessPolicy { AllowAnonymous = true };
         var builder = new TestMetadataV2GraphBuilder();
@@ -269,6 +295,7 @@ public sealed class GeoservicesCatalogServiceTypingTests : IClassFixture<Geoserv
         builder.AddService("svc-typing-gp", GpServiceName,
             protocols: [ServiceProtocols.GPServer], accessPolicy: anonymous);
 
+        extend?.Invoke(builder);
         return builder.Build();
     }
 

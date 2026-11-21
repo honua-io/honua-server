@@ -6,6 +6,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Infrastructure.Authentication;
 
@@ -46,6 +47,33 @@ internal static partial class AccessPolicyHelpers
         return new(EvaluateServicePolicy(context.Services, context.Principal, null, service,
             ScopeForOperation(context.Operation), context.Operation), ServiceAccessBasis.Policy);
     }
+
+    // Directory listings drop the services a caller cannot query and still answer 200, so this
+    // evaluation writes no challenge header and records only a grant, never a refusal.
+    internal static async Task<bool> CanQueryListedServiceAsync(
+        HttpContext context,
+        MetadataV2Service service,
+        CancellationToken cancellationToken = default)
+    {
+        var evaluation = await EvaluateServiceAccessCoreAsync(
+            CreateServiceAccessContext(context, AuthorizationOperation.Query), service, cancellationToken).ConfigureAwait(false);
+        if (evaluation.Basis is not ServiceAccessBasis.PermissionGrant)
+        {
+            ResponseAccessVerdict.ObserveGrant(context, evaluation.Decision);
+        }
+
+        return evaluation.Decision.IsAllowed;
+    }
+
+    internal static ServiceAccessContext CreateServiceAccessContext(HttpContext context, AuthorizationOperation operation)
+        => new()
+        {
+            Services = context.RequestServices,
+            Principal = context.User,
+            TenantId = TenantScopeHelpers.ResolveRequestTenantId(context),
+            Operation = operation,
+            RequestCache = context.Items
+        };
 
     internal static IResult? CreateServiceAccessDeniedResult(HttpContext context, ServiceAccessEvaluation evaluation)
         => evaluation.Basis switch
