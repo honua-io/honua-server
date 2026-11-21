@@ -247,7 +247,7 @@ public sealed class FilterPlanCompilerTests
     [Operation(Operations.Query)]
     public void Compile_TemporalOnExactTimestampField_ReturnsTemporalPredicate()
     {
-        // exactTypes layers declare TIMESTAMPTZ columns as TimestampOffset (#9022).
+        // exactTypes layers declare TIMESTAMPTZ columns as TimestampOffset.
         var exactResource = CreateResource(
             "exact_layer",
             MetadataV2GeometryType.None,

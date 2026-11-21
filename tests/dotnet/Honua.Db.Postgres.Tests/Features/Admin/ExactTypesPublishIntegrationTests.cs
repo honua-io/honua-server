@@ -86,7 +86,7 @@ public sealed class ExactTypesPublishIntegrationTests(PostgresFixture fixture) :
     [IntegrationTest]
     public async Task PublishWithExactTypes_AcceptsExactTimestampAsTemporalField()
     {
-        // #9022: an exact TimestampOffset field may be the layer's temporal start field.
+        // An exact TimestampOffset field may be the layer's temporal start field.
         var published = await CreateService().PublishLayerAsync(
             ConnectionString(), ExactRequest(new MetadataV2ObjectTemporal { StartTimeField = "signed" }));
 

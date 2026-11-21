@@ -167,7 +167,7 @@ public sealed class TemporalExtentHelpersTests
     [UnitTest]
     public void TryResolveOptInTemporalFieldsV2_ExactTimestampFields_SelectsThem()
     {
-        // exactTypes layers declare TIMESTAMPTZ columns as TimestampOffset (#9022).
+        // exactTypes layers declare TIMESTAMPTZ columns as TimestampOffset.
         var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-layer-0", Name = "exact_layer" },

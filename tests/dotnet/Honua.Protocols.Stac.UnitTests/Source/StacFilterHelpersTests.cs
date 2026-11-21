@@ -474,7 +474,7 @@ public sealed class StacFilterHelpersTests
     [UnitTest]
     public void ResolveTemporalField_WithExactTimestampFallbackFields_ReturnsStartAndEnd()
     {
-        // exactTypes layers declare TIMESTAMPTZ columns as TimestampOffset (#9022).
+        // exactTypes layers declare TIMESTAMPTZ columns as TimestampOffset.
         var resource = CreateResource(
             [
                 new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
