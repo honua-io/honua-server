@@ -18,7 +18,13 @@ internal sealed record PublicExportCanaryResult
     public static PublicExportCanaryResult Unreadable(string detail) => new() { IsReadable = false, Detail = detail };
 }
 
-internal sealed record PublicExportCanaryFailure(string PublicationId, string Version, Uri PublicUrl, string Detail);
+internal sealed record PublicExportCanaryFailure
+{
+    public required string PublicationId { get; init; }
+    public required string Version { get; init; }
+    public required Uri PublicUrl { get; init; }
+    public required string Detail { get; init; }
+}
 
 internal interface IPublicExportCanary
 {

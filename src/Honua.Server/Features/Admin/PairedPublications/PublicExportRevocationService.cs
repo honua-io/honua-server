@@ -9,29 +9,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Features.Admin.PairedPublications;
 
-internal sealed record PublicExportRevocationRequest(string PublicationId, string Reason, string ChangeId);
-
-internal sealed record PublicExportRevocationDependencies
-{
-    public required IPublicExportStateStore StateStore { get; init; }
-
-    public required PublicExportEligibility Eligibility { get; init; }
-
-    public required IMetadataV2GraphProvider GraphProvider { get; init; }
-
-    public required CdnInvalidationService CdnInvalidation { get; init; }
-
-    public required IPublicExportOpsNotifier OpsNotifier { get; init; }
-
-    public required IConfiguration Configuration { get; init; }
-
-    public IPublicPublicationDestination? Destination { get; init; }
-
-    public ICdnInvalidationStatusReader? StatusReader { get; init; }
-
-    public IHttpContextAccessor? HttpContextAccessor { get; init; }
-}
-
 // Durable revocation state machine for public Exports:
 // Requested -> ObjectsDeleted -> CatalogRewritten -> InvalidationCreated(id) -> Completed.
 // Persisted before every step so a crash between any two steps resumes cleanly on restart.

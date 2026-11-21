@@ -1,7 +1,27 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Infrastructure.SharedCaching;
+using Microsoft.Extensions.Configuration;
+
 namespace Honua.Server.Features.Admin.PairedPublications;
+
+internal sealed record PublicExportRevocationRequest(string PublicationId, string Reason, string ChangeId);
+
+internal sealed record PublicExportRevocationDependencies
+{
+    public required IPublicExportStateStore StateStore { get; init; }
+    public required PublicExportEligibility Eligibility { get; init; }
+    public required IMetadataV2GraphProvider GraphProvider { get; init; }
+    public required CdnInvalidationService CdnInvalidation { get; init; }
+    public required IPublicExportOpsNotifier OpsNotifier { get; init; }
+    public required IConfiguration Configuration { get; init; }
+    public IPublicPublicationDestination? Destination { get; init; }
+    public ICdnInvalidationStatusReader? StatusReader { get; init; }
+    public IHttpContextAccessor? HttpContextAccessor { get; init; }
+}
 
 // Resumes any non-terminal public export revocation records on startup and retries them on a steady cadence.
 internal sealed partial class PublicExportRevocationHostedService(

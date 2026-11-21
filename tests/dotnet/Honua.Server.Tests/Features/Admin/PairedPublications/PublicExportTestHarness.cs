@@ -155,7 +155,6 @@ internal sealed class PromotionHarness
         var canary = new Mock<IPublicExportCanary>();
         canary.Setup(c => c.CheckAsync(It.IsAny<Uri>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(opts.CanaryResult ?? PublicExportCanaryResult.Readable);
-
         var notifier = new Mock<IPublicExportOpsNotifier>();
         notifier.Setup(n => n.NotifyCanaryFailedAsync(It.IsAny<PublicExportCanaryFailure>(), It.IsAny<CancellationToken>()))
             .Callback<PublicExportCanaryFailure, CancellationToken>((failure, _) => canaryNotices.Add(failure))
@@ -164,25 +163,17 @@ internal sealed class PromotionHarness
         IPublicPublicationDestination? destination = opts.DestinationConfigured
             ? new PublicPublicationDestination(publicStorage.Storage.Object, new Uri("https://cdn.example.test/"))
             : null;
-
-        var promoter = new PublicExportPromoter(
-            new PublicExportPromoterDependencies
-            {
-                PrivateStorage = privateStorage.Object,
-                Eligibility = CreateEligibility(opts),
-                StateStore = stateStore,
-                Canary = canary.Object,
-                OpsNotifier = notifier.Object
-            },
-            destination);
+        var deps = new PublicExportPromoterDependencies
+        {
+            PrivateStorage = privateStorage.Object, Eligibility = CreateEligibility(opts),
+            StateStore = stateStore, Canary = canary.Object, OpsNotifier = notifier.Object
+        };
 
         return new PromotionHarness
         {
-            Promoter = promoter,
+            Promoter = new PublicExportPromoter(deps, destination),
             Input = BuildInput(opts, privateStorage.Object, descriptor),
-            StateStore = stateStore,
-            PublicStorage = publicStorage,
-            CanaryNotices = canaryNotices
+            StateStore = stateStore, PublicStorage = publicStorage, CanaryNotices = canaryNotices
         };
     }
 

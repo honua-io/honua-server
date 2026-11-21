@@ -50,11 +50,13 @@ internal sealed class PublicExportPromoter(
 
     internal const string NotConfiguredMessage = "public data is not configured";
 
-    private sealed record ArtifactCopySpec(
-        string FileName,
-        string ContentType,
-        string? KnownSha256,
-        PublicPublicationProvenance Provenance);
+    private sealed record ArtifactCopySpec
+    {
+        public required string FileName { get; init; }
+        public required string ContentType { get; init; }
+        public string? KnownSha256 { get; init; }
+        public required PublicPublicationProvenance Provenance { get; init; }
+    }
 
     public async Task<PublicExportDeliveryStatus> PromoteAsync(
         PublicExportPromotionInput input,
@@ -78,7 +80,12 @@ internal sealed class PublicExportPromoter(
 
         var collectionUrl = await CopyFileAsync(
             input,
-            new ArtifactCopySpec(ExportCollectionDocument.FileName, ExportCollectionDocument.MediaType, null, provenance),
+            new ArtifactCopySpec
+            {
+                FileName = ExportCollectionDocument.FileName,
+                ContentType = ExportCollectionDocument.MediaType,
+                Provenance = provenance
+            },
             cancellationToken).ConfigureAwait(false);
 
         var record = BuildPromotedRecord(input, collectionUrl);
@@ -131,7 +138,13 @@ internal sealed class PublicExportPromoter(
 
         var detail = canaryResult.Detail ?? "Public canary request failed.";
         await deps.OpsNotifier.NotifyCanaryFailedAsync(
-            new PublicExportCanaryFailure(record.PublicationId, record.Version, collectionUrl, detail),
+            new PublicExportCanaryFailure
+            {
+                PublicationId = record.PublicationId,
+                Version = record.Version,
+                PublicUrl = collectionUrl,
+                Detail = detail
+            },
             cancellationToken).ConfigureAwait(false);
 
         return new PublicExportDeliveryStatus(PublicExportDeliveryStatus.PromotedUnreadable)
@@ -150,14 +163,24 @@ internal sealed class PublicExportPromoter(
         var descriptor = input.Descriptor;
         await CopyFileAsync(
             input,
-            new ArtifactCopySpec(descriptor.Artifacts.Pmtiles.Href, PmtilesPublicationArtifact.MediaTypeValue,
-                descriptor.Artifacts.Pmtiles.Sha256, provenance),
+            new ArtifactCopySpec
+            {
+                FileName = descriptor.Artifacts.Pmtiles.Href,
+                ContentType = PmtilesPublicationArtifact.MediaTypeValue,
+                KnownSha256 = descriptor.Artifacts.Pmtiles.Sha256,
+                Provenance = provenance
+            },
             cancellationToken).ConfigureAwait(false);
 
         await CopyFileAsync(
             input,
-            new ArtifactCopySpec(descriptor.Artifacts.Geoparquet.Href, GeoparquetPublicationArtifact.MediaTypeValue,
-                descriptor.Artifacts.Geoparquet.Sha256, provenance),
+            new ArtifactCopySpec
+            {
+                FileName = descriptor.Artifacts.Geoparquet.Href,
+                ContentType = GeoparquetPublicationArtifact.MediaTypeValue,
+                KnownSha256 = descriptor.Artifacts.Geoparquet.Sha256,
+                Provenance = provenance
+            },
             cancellationToken).ConfigureAwait(false);
 
         foreach (var companion in ExportCompanionFiles.FileNames)
@@ -171,7 +194,12 @@ internal sealed class PublicExportPromoter(
 
             await CopyFileAsync(
                 input,
-                new ArtifactCopySpec(companion, CompanionContentType(companion, metadata.ContentType), null, provenance),
+                new ArtifactCopySpec
+                {
+                    FileName = companion,
+                    ContentType = CompanionContentType(companion, metadata.ContentType),
+                    Provenance = provenance
+                },
                 cancellationToken).ConfigureAwait(false);
         }
     }
@@ -200,14 +228,13 @@ internal sealed class PublicExportPromoter(
                     cancellationToken).ConfigureAwait(false);
             }
 
-            return await UploadBufferedAsync(artifactKey, stream, spec, cancellationToken).ConfigureAwait(false);
+            return await UploadBufferedAsync((artifactKey, spec), stream, cancellationToken).ConfigureAwait(false);
         }
     }
 
     private async Task<Uri> UploadBufferedAsync(
-        PublicPublicationArtifactKey artifactKey,
+        (PublicPublicationArtifactKey Key, ArtifactCopySpec Spec) target,
         Stream stream,
-        ArtifactCopySpec spec,
         CancellationToken cancellationToken)
     {
         using var buffered = new MemoryStream();
@@ -216,12 +243,12 @@ internal sealed class PublicExportPromoter(
         var sha256 = Convert.ToHexStringLower(SHA256.HashData(bytes));
         using var uploadStream = new MemoryStream(bytes, writable: false);
         return await destination!.PutAsync(
-            new PublicPublicationArtifact(artifactKey, uploadStream, spec.ContentType)
+            new PublicPublicationArtifact(target.Key, uploadStream, target.Spec.ContentType)
             {
                 SizeBytes = bytes.Length,
                 Sha256 = sha256,
                 CachePolicy = StoredObjectCachePolicy.PublicImmutable,
-                Provenance = spec.Provenance
+                Provenance = target.Spec.Provenance
             },
             cancellationToken).ConfigureAwait(false);
     }
