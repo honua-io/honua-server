@@ -99,6 +99,7 @@ public sealed class SourceBackedLayerEditRefusalTests : IAsyncLifetime
         using var content = new StringContent(request, Encoding.UTF8, "text/xml");
         using var response = await client.PostAsync("/services", content);
         var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
         var description = XDocument.Parse(body).Descendants()
             .Where(static element => element.Name.LocalName == "ServiceDescription")
             .Single(element => Child(element, "Name") == ServiceName && Child(element, "Type") == "FeatureServer");

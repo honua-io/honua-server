@@ -313,18 +313,22 @@ internal static partial class FeatureServerEndpoints
     internal static string BuildServiceCapabilitiesV2(MetadataV2Service service)
         => BuildServiceCapabilitiesV2(service, [], supportsAttachmentUploads: false, offlineSyncEnabled: true);
 
-    // The service capabilities a directory listing shows: editing only where a routable publication's storage
-    // can take managed writes, the same rule the service metadata applies.
-    internal static string BuildListedServiceCapabilitiesV2(
-        MetadataV2Service service, MetadataV2GraphSnapshot snapshot, bool offlineSyncEnabled)
+    // A service as a directory listing sees it: the resources the caller may discover through it.
+    internal sealed record ListedService(
+        MetadataV2Service Service, MetadataV2GraphSnapshot Snapshot, IReadOnlyCollection<MetadataV2Object> VisibleResources);
+
+    // The service capabilities a directory listing shows: editing only where a publication the caller can see
+    // has storage that takes managed writes, the same rule the service metadata applies.
+    internal static string BuildListedServiceCapabilitiesV2(ListedService listed, bool offlineSyncEnabled)
     {
+        var (service, snapshot, visible) = listed;
         IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Object Resource)> publications =
         [
             .. snapshot.PublicationsForService(service.Metadata.Id)
                 .Where(snapshot.IsRoutable)
                 .Select(publication => (Publication: ManagedWriteStorage.WithoutUnservableEdits(snapshot, service, publication),
                     Resource: snapshot.ResolveResource(publication)))
-                .Where(static pair => pair.Resource is not null)
+                .Where(pair => pair.Resource is not null && visible.Contains(pair.Resource))
                 .Select(static pair => (pair.Publication, pair.Resource!))
         ];
         return BuildServiceCapabilitiesV2(service, publications, supportsAttachmentUploads: false, offlineSyncEnabled);
