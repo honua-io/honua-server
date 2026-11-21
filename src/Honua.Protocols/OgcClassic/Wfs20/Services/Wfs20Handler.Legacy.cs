@@ -126,6 +126,7 @@ internal sealed partial class Wfs20Handler
         string? propertyName,
         string? srsName,
         string? resultType,
+        string? cqlFilter = null,
         CancellationToken cancellationToken = default)
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
@@ -197,7 +198,8 @@ internal sealed partial class Wfs20Handler
                 offset: 0,
                 count: limit,
                 cancellationToken,
-                wfsVersion: version).ConfigureAwait(false);
+                wfsVersion: version,
+                cqlFilter: cqlFilter).ConfigureAwait(false);
 
             if (isHitsRequest)
             {

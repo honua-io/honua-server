@@ -484,7 +484,8 @@ internal sealed partial class Wfs20Handler
             propertyName: null,
             srsName: null,
             resultType: null,
-            cancellationToken).ConfigureAwait(false);
+            cqlFilter: null,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
 

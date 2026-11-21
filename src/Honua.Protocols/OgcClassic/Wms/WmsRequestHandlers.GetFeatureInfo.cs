@@ -175,9 +175,9 @@ internal static partial class WmsRequestHandlers
             return nonQueryableError;
         }
 
-        if (!TryNormalizeFeatureInfoFormat(GetQueryValue(query, "INFO_FORMAT"), out var infoFormat))
+        if (!TryNormalizeFeatureInfoFormat(GetQueryValue(query, "INFO_FORMAT"), out var infoFormat, allowHtml: true))
         {
-            return CreateWmsServiceException(context, "InvalidFormat", "Unsupported INFO_FORMAT. Supported values are text/plain, application/vnd.ogc.gml, and application/json.");
+            return CreateWmsServiceException(context, "InvalidFormat", "Unsupported INFO_FORMAT. Supported values are text/plain, text/html, application/vnd.ogc.gml, and application/json.");
         }
 
         var filterResult = TryParseWmsLayerFilters(context, query, mapLayers);
@@ -255,6 +255,7 @@ internal static partial class WmsRequestHandlers
         var plainText = new StringBuilder();
         var jsonFeatures = new List<OgcClassicFeatureInfoFeature>();
         var gmlFeatures = new List<OgcClassicFeatureInfoFeature>();
+        var htmlFeatures = new List<WmsPopupHtmlFormatter.FeatureEntry>();
 
         foreach (var layer in queryLayers)
         {
@@ -348,6 +349,12 @@ internal static partial class WmsRequestHandlers
                     continue;
                 }
 
+                if (string.Equals(infoFormat, HtmlMimeType, StringComparison.OrdinalIgnoreCase))
+                {
+                    htmlFeatures.Add(new WmsPopupHtmlFormatter.FeatureEntry(layerName, layer.Resource, attributes));
+                    continue;
+                }
+
                 plainText.Append("Layer=").Append(layerName).AppendLine();
                 foreach (var attribute in attributes.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
                 {
@@ -386,6 +393,12 @@ internal static partial class WmsRequestHandlers
                 + $"?SERVICE=WMS&VERSION={schemaVersion}&REQUEST={WmsGmlFeatureInfoSchemaRequest}";
             var gml = BuildWmsGmlFeatureInfo(gmlFeatures, schemaUrl);
             return Results.Content(gml, GmlFeatureInfoMimeType, Encoding.UTF8, StatusCodes.Status200OK);
+        }
+
+        if (string.Equals(infoFormat, HtmlMimeType, StringComparison.OrdinalIgnoreCase))
+        {
+            var html = WmsPopupHtmlFormatter.BuildHtml(htmlFeatures);
+            return Results.Content(html, HtmlMimeType, Encoding.UTF8, StatusCodes.Status200OK);
         }
 
         var body = plainText.Length > 0

@@ -109,7 +109,12 @@ internal static partial class WmsRequestHandlers
 
         if (!TryNormalizeWmsMapFormat(formatValue, out var imageFormat, out var contentType))
         {
-            return CreateWmsServiceException(context, "InvalidFormat", "FORMAT must be image/png or image/jpeg.");
+            return CreateWmsServiceException(context, "InvalidFormat", "FORMAT must be image/png, image/png8, image/jpeg, or image/webp.");
+        }
+
+        if (!TryParseWmsFormatOptionsDpi(GetQueryValue(query, "FORMAT_OPTIONS"), out var requestedDpi, out var formatOptionsError))
+        {
+            return CreateWmsServiceException(context, "InvalidParameterValue", formatOptionsError);
         }
 
         var exceptionsValue = GetQueryValue(query, "EXCEPTIONS");
@@ -180,7 +185,7 @@ internal static partial class WmsRequestHandlers
         AppendWmsWarnings(context, temporalResult.Warnings);
         activity?.SetTag("wms.time_applied", layerTemporalFilters is not null);
 
-        var effectiveTransparent = transparent && string.Equals(imageFormat, "png", StringComparison.OrdinalIgnoreCase);
+        var effectiveTransparent = transparent && !string.Equals(imageFormat, "jpg", StringComparison.OrdinalIgnoreCase);
         await using var renderLease = await context.RequestServices
             .GetRequiredService<RasterRenderCapacityLimiter>()
             .TryAcquireAsync(imageWidth, imageHeight, cancellationToken)
@@ -226,16 +231,38 @@ internal static partial class WmsRequestHandlers
 
         var canvas = surface.Canvas;
         canvas.Clear(effectiveTransparent ? SKColors.Transparent : backgroundColor);
-        var transformFn = SkiaMapRenderer.BuildTransform(requestedExtent, imageWidth, imageHeight);
 
-        // BBOX + WIDTH/HEIGHT + CRS fix the scale the map is drawn at, which is what a style's
-        // minzoom/maxzoom is authored against.
+        var hasDpiScaling = requestedDpi.HasValue;
+        var dpiScale = hasDpiScaling ? requestedDpi!.Value / DefaultWmsDpi : 1.0;
+        Func<double, double, SKPoint> transformFn;
+        int zoomImageWidth;
+        int zoomImageHeight;
+
+        if (hasDpiScaling)
+        {
+            var logicalWidth = imageWidth / dpiScale;
+            var logicalHeight = imageHeight / dpiScale;
+            canvas.Save();
+            canvas.Scale((float)dpiScale, (float)dpiScale);
+            transformFn = SkiaMapRenderer.BuildTransform(requestedExtent, logicalWidth, logicalHeight);
+            zoomImageWidth = Math.Max(1, (int)Math.Round(logicalWidth));
+            zoomImageHeight = Math.Max(1, (int)Math.Round(logicalHeight));
+        }
+        else
+        {
+            transformFn = SkiaMapRenderer.BuildTransform(requestedExtent, imageWidth, imageHeight);
+            zoomImageWidth = imageWidth;
+            zoomImageHeight = imageHeight;
+        }
+
+        // BBOX + WIDTH/HEIGHT + CRS (and optional FORMAT_OPTIONS=dpi:) fix the scale the map is
+        // drawn at, which is what a style's minzoom/maxzoom is authored against.
         var renderZoom = await DeriveRenderZoomAsync(
             context,
             requestedExtent,
             requestSrid,
-            imageWidth,
-            imageHeight,
+            zoomImageWidth,
+            zoomImageHeight,
             cancellationToken).ConfigureAwait(false);
         activity?.SetTag("wms.render_zoom", renderZoom.Level);
 
@@ -246,10 +273,27 @@ internal static partial class WmsRequestHandlers
 
             if (OgcClassicRasterSupport.IsRasterResource(layer.Resource))
             {
-                totalFeatureCount += await TryDrawWmsRasterLayerAsync(
-                    context,
-                    (canvas, new(layer.StorageLayerId, requestedExtent, requestSrid, imageWidth, imageHeight)),
-                    cancellationToken).ConfigureAwait(false);
+                if (hasDpiScaling)
+                {
+                    canvas.Save();
+                    canvas.ResetMatrix();
+                }
+
+                try
+                {
+                    totalFeatureCount += await TryDrawWmsRasterLayerAsync(
+                        context,
+                        (canvas, new(layer.StorageLayerId, requestedExtent, requestSrid, imageWidth, imageHeight)),
+                        cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    if (hasDpiScaling)
+                    {
+                        canvas.Restore();
+                    }
+                }
+
                 continue;
             }
 
@@ -306,22 +350,25 @@ internal static partial class WmsRequestHandlers
                 layer,
                 featureReader,
                 cancellationToken).ConfigureAwait(false);
-            var renderedPointCount = await TryRenderRasterPointFastPathAsync(
-                canvas,
-                layerReader,
-                layer.StorageLayerId,
-                geometryType,
-                stylePlan,
-                featureQuery,
-                requestedExtent,
-                imageWidth,
-                imageHeight,
-                transformFn,
-                cancellationToken).ConfigureAwait(false);
-            if (renderedPointCount >= 0)
+            if (!hasDpiScaling)
             {
-                totalFeatureCount += renderedPointCount;
-                continue;
+                var renderedPointCount = await TryRenderRasterPointFastPathAsync(
+                    canvas,
+                    layerReader,
+                    layer.StorageLayerId,
+                    geometryType,
+                    stylePlan,
+                    featureQuery,
+                    requestedExtent,
+                    imageWidth,
+                    imageHeight,
+                    transformFn,
+                    cancellationToken).ConfigureAwait(false);
+                if (renderedPointCount >= 0)
+                {
+                    totalFeatureCount += renderedPointCount;
+                    continue;
+                }
             }
 
             var features = await QueryRasterFeaturesAsync(layerReader, layer.StorageLayerId, featureQuery, cancellationToken);
@@ -332,6 +379,11 @@ internal static partial class WmsRequestHandlers
 
             totalFeatureCount += features.Length;
             RenderLayerToCanvas(canvas, features, stylePlan.StyleLayers, transformFn, geometryType, renderZoom);
+        }
+
+        if (hasDpiScaling)
+        {
+            canvas.Restore();
         }
 
         var imageBytes = SkiaMapRenderer.EncodeSurface(surface, imageFormat);

@@ -324,13 +324,16 @@ internal sealed class SkiaMapRenderer : IDisposable
     }
 
     internal static Func<double, double, SKPoint> BuildTransform(RenderExtent extent, int imageWidth, int imageHeight)
+        => BuildTransform(extent, (double)imageWidth, (double)imageHeight);
+
+    internal static Func<double, double, SKPoint> BuildTransform(RenderExtent extent, double imageWidth, double imageHeight)
     {
         var extentWidth = CoordinateTransformer.GetEffectiveWidth(extent);
         var extentHeight = extent.Height;
 
         if (extentWidth <= 0 || extentHeight <= 0)
         {
-            return (_, _) => new SKPoint(imageWidth / 2f, imageHeight / 2f);
+            return (_, _) => new SKPoint((float)(imageWidth / 2.0), (float)(imageHeight / 2.0));
         }
 
         var scaleX = imageWidth / extentWidth;
@@ -360,6 +363,11 @@ internal sealed class SkiaMapRenderer : IDisposable
 
     internal static byte[] EncodeSurface(SKSurface surface, string format)
     {
+        if (string.Equals(format, "png8", StringComparison.OrdinalIgnoreCase))
+        {
+            return Png8Encoder.Encode(surface);
+        }
+
         using var image = surface.Snapshot();
         var imageFormat = format.ToLowerInvariant() switch
         {

@@ -116,6 +116,7 @@ internal static class Wfs20Utilities
         public const string StartIndex = "STARTINDEX";
         public const string SortBy = "SORTBY";
         public const string Filter = "FILTER";
+        public const string CqlFilter = "CQL_FILTER";
         public const string BBox = "BBOX";
         public const string ResourceId = "RESOURCEID";
         public const string FeatureId = "FEATUREID";
@@ -171,6 +172,7 @@ internal static class Wfs20Utilities
             ParameterNames.StartIndex,
             ParameterNames.SortBy,
             ParameterNames.Filter,
+            ParameterNames.CqlFilter,
             ParameterNames.BBox,
             ParameterNames.ResourceId,
             ParameterNames.FeatureId,

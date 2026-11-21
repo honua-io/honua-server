@@ -19,6 +19,10 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux"
+                      Condition="'$(HonuaUseSkiaNoDependencies)' != 'true'" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies"
+                      Condition="'$(HonuaUseSkiaNoDependencies)' == 'true'" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../../src/Honua.Protocols/OgcClassic/Honua.Protocols.OgcClassic.csproj" />
