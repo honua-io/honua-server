@@ -284,14 +284,20 @@ public sealed class OpsControlPlaneHardeningTests
     {
         var keyId = Guid.NewGuid();
         var store = Substitute.For<IAdminApiKeyStore>();
-        store.GetAsync(keyId, Arg.Any<CancellationToken>()).Returns(new AdminApiKeyRecord
-        {
-            Id = keyId,
-            Name = "support-breakglass",
-            KeyPrefix = "honua_test",
-            Permissions = [AdminApiKeyPermission.OpsRead, AdminApiKeyPermission.OpsPropose],
-            CreatedAt = DateTimeOffset.UtcNow,
-        });
+        var now = DateTimeOffset.UtcNow;
+        store.GetAsync(keyId, Arg.Any<CancellationToken>()).Returns(new AdminApiKeyRecord(
+            Id: keyId,
+            Name: "support-breakglass",
+            KeyPrefix: "honua_test",
+            KeyHash: [],
+            Permissions: [AdminApiKeyPermission.OpsRead, AdminApiKeyPermission.OpsPropose],
+            CreatedAt: now,
+            UpdatedAt: now,
+            ExpiresAt: null,
+            LastUsedAt: null,
+            RotatedAt: null,
+            RevokedAt: null,
+            CreatedBy: null));
         var authority = new OperationProposerApiKeyAuthority(TimeProvider.System, store);
 
         var record = await authority.GetCurrentRecordAsync($"ApiKey:api-key:{keyId:D}", CancellationToken.None);
