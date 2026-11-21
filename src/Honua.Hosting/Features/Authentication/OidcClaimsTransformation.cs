@@ -63,7 +63,13 @@ internal sealed class OidcClaimsTransformation(
         // mappings. A claim such as `permission` can be a legitimate mapping SOURCE
         // without being allowed to authorize a request under its original claim type.
         RemoveReservedProvenanceClaims(principal);
-        var mappingSource = identity.Clone();
+
+        // The snapshot keeps provider authority claims readable as mapping sources after the
+        // strip below. Without custom mappings and with nothing to strip, the live identity reads
+        // the same claims before AddClaims, so the per-request clone is skipped.
+        var needsPreStripClone = _options.ClaimsMapping.CustomMappings.Count > 0
+            || CanonicalSecurityActor.HasUnstampedAuthorityClaim(identity);
+        var mappingSource = needsPreStripClone ? identity.Clone() : identity;
 
         // The admin permission grammar, the credential-kind discriminator, the API-key
         // identity and the rate-limit tier are minted by this process's own authentication
@@ -333,9 +339,21 @@ internal sealed class OidcClaimsTransformation(
     {
         foreach (var claimsIdentity in principal.Identities)
         {
-            foreach (var claim in claimsIdentity.Claims
-                         .Where(claim => ReservedProvenanceClaimTypes.Contains(claim.Type))
-                         .ToArray())
+            List<Claim>? toRemove = null;
+            foreach (var claim in claimsIdentity.Claims)
+            {
+                if (ReservedProvenanceClaimTypes.Contains(claim.Type))
+                {
+                    (toRemove ??= []).Add(claim);
+                }
+            }
+
+            if (toRemove is null)
+            {
+                continue;
+            }
+
+            foreach (var claim in toRemove)
             {
                 claimsIdentity.TryRemoveClaim(claim);
             }
@@ -346,11 +364,22 @@ internal sealed class OidcClaimsTransformation(
     {
         foreach (var claimsIdentity in principal.Identities)
         {
-            foreach (var claim in claimsIdentity.Claims
-                         .Where(static claim =>
-                             claim.Type.StartsWith("honua:", StringComparison.OrdinalIgnoreCase)
-                             && !CanonicalSecurityActor.IsFrameworkOwnedClaim(claim))
-                         .ToArray())
+            List<Claim>? toRemove = null;
+            foreach (var claim in claimsIdentity.Claims)
+            {
+                if (claim.Type.StartsWith("honua:", StringComparison.OrdinalIgnoreCase)
+                    && !CanonicalSecurityActor.IsFrameworkOwnedClaim(claim))
+                {
+                    (toRemove ??= []).Add(claim);
+                }
+            }
+
+            if (toRemove is null)
+            {
+                continue;
+            }
+
+            foreach (var claim in toRemove)
             {
                 claimsIdentity.TryRemoveClaim(claim);
             }

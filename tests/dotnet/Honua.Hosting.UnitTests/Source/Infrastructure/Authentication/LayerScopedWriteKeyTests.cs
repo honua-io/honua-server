@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Security.Claims;
 using FluentAssertions;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
@@ -127,5 +128,36 @@ public sealed class LayerScopedWriteKeyTests
         LayerScopedWriteKey.IsScopedWriteKey(["read:*"]).Should().BeFalse();
         LayerScopedWriteKey.ConfersFullAdmin(["read:*"]).Should().BeFalse();
         LayerScopedWriteKey.ConfersFullAdmin(["admin:read", "read:*"]).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void IsScopeGovernedPrincipal_MatchesScopedAuthTypesAndGovernanceRoles()
+    {
+        LayerScopedWriteKey.IsScopeGovernedPrincipal(null).Should().BeFalse();
+
+        var unscoped = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "reader")], "Bearer"));
+        LayerScopedWriteKey.IsScopeGovernedPrincipal(unscoped).Should().BeFalse();
+
+        var writeKey = new ClaimsPrincipal(new ClaimsIdentity([new Claim("auth_type", LayerScopedWriteKey.AuthType)], "ApiKey"));
+        LayerScopedWriteKey.IsScopedWritePrincipal(writeKey).Should().BeTrue();
+        LayerScopedWriteKey.IsScopeGovernedPrincipal(writeKey).Should().BeTrue();
+
+        var scopedRole = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, LayerScopedWriteKey.ScopedKeyRole)], "ApiKey"));
+        LayerScopedWriteKey.IsScopeGovernedPrincipal(scopedRole).Should().BeTrue();
+
+        var customRoleClaimType = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("roles", LayerScopedWriteKey.ScopedKeyRole)], "Bearer", ClaimTypes.Name, "roles"));
+        LayerScopedWriteKey.IsScopeGovernedPrincipal(customRoleClaimType).Should().BeTrue();
+
+        // Warm up, then pin zero heap allocation on the hot unscoped check.
+        _ = LayerScopedWriteKey.IsScopeGovernedPrincipal(unscoped);
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (var i = 0; i < 1000; i++)
+        {
+            _ = LayerScopedWriteKey.IsScopeGovernedPrincipal(unscoped);
+        }
+
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        allocated.Should().BeLessThan(256);
     }
 }
