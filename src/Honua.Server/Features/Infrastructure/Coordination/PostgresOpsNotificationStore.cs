@@ -35,6 +35,10 @@ internal sealed class PostgresOpsNotificationStore(
     // OpsNotificationCadence because Honua.Infrastructure.Monitoring already depends on this namespace.
     internal static readonly TimeSpan WarningSettle = TimeSpan.FromMinutes(15);
 
+    // Each replica samples some sources on its own cadence (sign-in providers every five minutes), so one replica's
+    // pass can miss a finding another still reports. An episode closes only after no replica has seen it for longer.
+    internal static readonly TimeSpan FindingAbsenceGrace = TimeSpan.FromMinutes(10);
+
     internal static DateTimeOffset FirstNotice(OpsFindingSeverity severity, DateTimeOffset firstSeen)
         => severity >= OpsFindingSeverity.Critical ? firstSeen : firstSeen + WarningSettle;
 
@@ -235,8 +239,10 @@ internal sealed class PostgresOpsNotificationStore(
             await using var command = new NpgsqlCommand($"""
                 UPDATE {_schedules} SET closed_at = @now, revision = revision + 1
                 WHERE source = 'finding' AND closed_at IS NULL AND NOT (subject_id = ANY(@active))
+                    AND last_seen_at <= @seen_before
                 """, connection);
             command.Parameters.AddWithValue("now", now);
+            command.Parameters.AddWithValue("seen_before", now - FindingAbsenceGrace);
             command.Parameters.Add(new NpgsqlParameter("active", NpgsqlDbType.Array | NpgsqlDbType.Text)
             { Value = activeSubjects.ToArray() });
             return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);

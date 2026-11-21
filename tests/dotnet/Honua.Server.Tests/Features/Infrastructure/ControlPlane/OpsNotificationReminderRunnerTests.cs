@@ -341,6 +341,7 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         (await store.ListDueAsync(clock.Now.AddMinutes(1), 100)).Should().ContainSingle()
             .Which.EpisodeId.Should().Be(original.EpisodeId);
         recovered.EvaluateAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<OpsFinding>());
+        clock.Now += PostgresOpsNotificationStore.FindingAbsenceGrace;
         await Runner(recovered).RunAsync(CancellationToken.None);
         (await store.ListDueAsync(clock.Now.AddMinutes(1), 100)).Should().BeEmpty();
     }
