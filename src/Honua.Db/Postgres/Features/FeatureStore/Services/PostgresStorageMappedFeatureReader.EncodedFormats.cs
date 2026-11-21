@@ -30,7 +30,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFlatGeobufFe
         CancellationToken cancellationToken)
     {
         query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
-        var features = await ExecuteFeatureQueryAsync(query, probeLimit: false, cancellationToken).ConfigureAwait(false);
+        var features = await ExecuteFeatureQueryAsync(query, cancellationToken).ConfigureAwait(false);
         return FlatGeobufFeatureWriter.Write(features, new FlatGeobufFeatureWriter.ExportOptions
         {
             Resource = _resource,
