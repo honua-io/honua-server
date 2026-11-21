@@ -163,7 +163,7 @@ internal sealed partial class SpecGroundingService
             }
             catch (InvalidOperationException ex)
             {
-                return RejectInvalidMutation(ex, warnings, retried);
+                return RejectInvalidMutation(ex, warnings, clarificationAnswer);
             }
         }
 
@@ -187,7 +187,7 @@ internal sealed partial class SpecGroundingService
         }
         catch (InvalidOperationException ex)
         {
-            return RejectInvalidMutation(ex, warnings, retried);
+            return RejectInvalidMutation(ex, warnings, clarificationAnswer);
         }
 
         var outputDiagnostics = _validator.Validate(nextDocument, catalogSnapshot).Diagnostics;
@@ -245,8 +245,9 @@ internal sealed partial class SpecGroundingService
     private SpecGroundingResult RejectInvalidMutation(
         InvalidOperationException exception,
         List<SpecDiagnostic> warnings,
-        bool retried)
+        ClarificationResponse? clarificationAnswer)
     {
+        var retried = clarificationAnswer is not null;
         const string message = "The proposed mutation could not be applied to the spec.";
         warnings.Add(SpecDiagnostic.Error(
             SpecDiagnosticCode.UnknownReference,
