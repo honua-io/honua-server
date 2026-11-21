@@ -11,6 +11,19 @@ internal static class ConsolePrincipal
     private const string ApiKeyIdClaim = "api_key_id";
     private const string ApiKeyNameClaim = "api_key_name";
 
+    private static readonly string[] StableIdClaims = [ClaimTypes.NameIdentifier, SubjectClaim, ApiKeyIdClaim];
+
+    // The caller's own identifier, never a display name another caller can share.
+    public static string? ResolveStableActorId(ClaimsPrincipal principal)
+    {
+        if (principal?.Identity is not { IsAuthenticated: true })
+            return null;
+
+        return StableIdClaims
+            .Select(principal.FindFirstValue)
+            .FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value));
+    }
+
     public static string? ResolveActorId(ClaimsPrincipal principal)
     {
         if (principal?.Identity is not { IsAuthenticated: true })
@@ -18,16 +31,8 @@ internal static class ConsolePrincipal
             return null;
         }
 
-        var candidate = principal.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (!string.IsNullOrWhiteSpace(candidate))
-            return candidate;
-
-        candidate = principal.FindFirstValue(SubjectClaim);
-        if (!string.IsNullOrWhiteSpace(candidate))
-            return candidate;
-
-        candidate = principal.FindFirstValue(ApiKeyIdClaim);
-        if (!string.IsNullOrWhiteSpace(candidate))
+        var candidate = ResolveStableActorId(principal);
+        if (candidate is not null)
             return candidate;
 
         candidate = principal.FindFirstValue(ApiKeyNameClaim);

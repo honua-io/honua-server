@@ -77,4 +77,9 @@ public sealed record ConsoleContentItem
     // The sidecar is an opaque JSON element so the model stays AOT-safe.
     [JsonPropertyName("typeMetadata")]
     public JsonElement? TypeMetadata { get; init; }
+
+    public bool IsPersonalTo(string ownerId)
+        => string.Equals(OwnerId, ownerId, StringComparison.Ordinal)
+            && Visibility == ConsoleVisibility.Personal
+            && string.IsNullOrWhiteSpace(TeamScopeId);
 }
