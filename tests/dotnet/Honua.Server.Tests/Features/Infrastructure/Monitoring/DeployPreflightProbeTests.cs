@@ -151,7 +151,15 @@ public sealed class DeployPreflightProbeTests
         var maxAge = DeployPreflightProbe.BackgroundMigrationPlanMaxAge;
 
         await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync(maxAge);
-        await CachingProbe(migrationRunner, migrationState, cache, "Host=other;Database=honua").ProbeAsync(maxAge);
+        var otherDatabase = new DeployPreflightProbe(
+            DatabaseAt("Host=other;Database=honua"),
+            new StubReadinessCheckService(),
+            migrationRunner,
+            migrationState,
+            new DatabaseCompatibilityState(),
+            NullLogger<DeployPreflightProbe>.Instance,
+            migrationPlanCache: cache);
+        await otherDatabase.ProbeAsync(maxAge);
         migrationRunner.PlanCount.Should().Be(2, "a different connection string is a different database");
 
         migrationRunner.NextPlan = DatabaseMigrationPlan.Failed(new InvalidOperationException("journal unreadable"));
@@ -178,18 +186,20 @@ public sealed class DeployPreflightProbeTests
         migrationRunner.PlanCount.Should().Be(3);
     }
 
+    private static IConfiguration DatabaseAt(string connectionString)
+        => new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = connectionString
+            })
+            .Build();
+
     private static DeployPreflightProbe CachingProbe(
         IDatabaseMigrationRunner migrationRunner,
         MigrationState migrationState,
-        DeployPreflightMigrationPlanCache cache,
-        string connectionString = "Host=db;Database=honua;Username=test;Password=secret")
+        DeployPreflightMigrationPlanCache cache)
         => new(
-            new ConfigurationBuilder()
-                .AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["ConnectionStrings:DefaultConnection"] = connectionString
-                })
-                .Build(),
+            DatabaseAt("Host=db;Database=honua;Username=test;Password=secret"),
             new StubReadinessCheckService(),
             migrationRunner,
             migrationState,
