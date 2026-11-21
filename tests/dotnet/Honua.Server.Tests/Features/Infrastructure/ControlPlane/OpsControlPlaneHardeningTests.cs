@@ -261,6 +261,10 @@ public sealed class OpsControlPlaneHardeningTests
     }
 
     [UnitTest]
+    public void ProposalEndpoints_SanitizeExecutionPayload_WithholdsUnparseablePayload()
+        => ProposalEndpoints.SanitizeExecutionPayload("password=secret-val&target=ecs-prod").Should().BeNull();
+
+    [UnitTest]
     public void AdminApiKeyPermission_OpsPropose_AuthorizesProposeAndReadWithoutGrantingAdminWrite()
     {
         var identity = new ClaimsIdentity(

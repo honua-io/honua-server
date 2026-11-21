@@ -352,45 +352,33 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/deploy/operations/{operationId}")]
     [Endpoint("GET /api/v1/admin/deploy/operations")]
-    public async Task Reads_ByTenantBoundAdminWithoutPlatformRole_DoNotPublishTheSealedGrantIdentity()
+    public async Task Reads_ByTenantBoundAdminWithoutPlatformRole_AreRefusedWithoutTheSealedGrantIdentity()
     {
-        // A tenant-bound admin without a platform role must not read tenant-a's grantId, actor and tenant.
-        // It can actuate no compensation, so it is shown none of the grant's identity.
+        // Deploy reads are platform administration: a tenant-bound admin without a platform role is
+        // refused, so it never sees tenant-a's grantId, actor or tenant.
         using var tenantA = CreateBearerClient(TenantAPlatformAdmin);
         using var tenantC = CreateBearerClient(TenantCAdmin);
         var activation = await CreateProtectedActivationAsync(tenantA, TenantAPlatformAdmin.TenantId);
+        var grantId = activation.Protection.GetProperty("grantId").GetString()!;
 
-        var single = await tenantC.GetAsync($"/api/v1/admin/deploy/operations/{activation.OperationId}");
-        single.StatusCode.Should().Be(HttpStatusCode.OK, await single.Content.ReadAsStringAsync());
-        using (var document = JsonDocument.Parse(await single.Content.ReadAsStringAsync()))
+        foreach (var path in new[]
+                 {
+                     $"/api/v1/admin/deploy/operations/{activation.OperationId}",
+                     "/api/v1/admin/deploy/operations?pageSize=200",
+                 })
         {
-            AssertGrantIdentityRedacted(document.RootElement.GetProperty("protection"));
-        }
-
-        var list = await tenantC.GetAsync("/api/v1/admin/deploy/operations?pageSize=200");
-        list.StatusCode.Should().Be(HttpStatusCode.OK, await list.Content.ReadAsStringAsync());
-        using (var document = JsonDocument.Parse(await list.Content.ReadAsStringAsync()))
-        {
-            var item = document.RootElement.GetProperty("items").EnumerateArray()
-                .Single(candidate => candidate.GetProperty("operationId").GetString() == activation.OperationId);
-            AssertGrantIdentityRedacted(item.GetProperty("protection"));
+            using var response = await tenantC.GetAsync(path);
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden, body);
+            using var document = JsonDocument.Parse(body);
+            document.RootElement.GetProperty("code").GetString().Should().Be("platform_admin_required");
+            body.Should().NotContain(grantId);
         }
 
         // The sealed principal still reads the terms it has to quote back.
         var own = await GetOperationAsync(activation.OperationId, tenantA);
         own.GetProperty("protection").GetProperty("grantId").GetString()
             .Should().Be(activation.Protection.GetProperty("grantId").GetString());
-    }
-
-    private static void AssertGrantIdentityRedacted(JsonElement protection)
-    {
-        foreach (var property in new[] { "grantId", "actor", "tenantId" })
-        {
-            (protection.TryGetProperty(property, out var value) && value.ValueKind != JsonValueKind.Null)
-                .Should().BeFalse($"'{property}' is part of the sealed grant identity");
-        }
-
-        protection.GetProperty("phase").GetString().Should().NotBeNullOrWhiteSpace();
     }
 
     [Fact]
