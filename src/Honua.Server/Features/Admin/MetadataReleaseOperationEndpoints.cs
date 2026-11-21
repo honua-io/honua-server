@@ -4,6 +4,7 @@
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Capabilities;
 using Honua.ControlPlane;
@@ -31,10 +32,11 @@ internal static class MetadataReleaseOperationEndpoints
             .RequireAdminAuthorization()
             .RequirePlatformAdminAuthority();
 
-        group.MapGet("/{packageId}/operation", HandleGetMetadataReleaseOperation)
+        var status = AdminHttpOperationRouteBinding.ForOperate("admin.metadata.releases.status", "/metadata/releases");
+        group.MapMethods(status.RoutePattern, status.Methods, HandleGetMetadataReleaseOperation)
+            .WithAdminOperation(status.Definition)
             .WithDisplayName("Get Metadata Release Operation")
             .WithDescription("Gets the most recent metadata release operation for a package ID. Retry attempts remain stable by operation ID through /api/v1/admin/deploy/operations/{operationId}.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<DeployOperationResponse>()
             .ProducesProblem(StatusCodes.Status404NotFound);
     }

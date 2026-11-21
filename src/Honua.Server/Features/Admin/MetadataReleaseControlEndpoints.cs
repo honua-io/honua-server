@@ -4,6 +4,7 @@
 using Honua.Core.Exceptions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.ControlPlane;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
@@ -25,10 +26,11 @@ internal static class MetadataReleaseControlEndpoints
             .RequireAdminAuthorization()
             .RequirePlatformAdminAuthority();
 
-        group.MapPost("/operations", HandleCreateMetadataReleaseOperation)
+        var activate = AdminHttpOperationRouteBinding.ForOperate("admin.metadata.releases.activate", "/metadata/releases");
+        group.MapMethods(activate.RoutePattern, activate.Methods, HandleCreateMetadataReleaseOperation)
+            .WithAdminOperation(activate.Definition)
             .WithDisplayName("Create Metadata Release Operation")
             .WithSummary("Submits an additive metadata-release layer-evolution lifecycle operation.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<DeployOperationResponse>(StatusCodes.Status201Created)
             .ProducesProblem(StatusCodes.Status400BadRequest);
     }

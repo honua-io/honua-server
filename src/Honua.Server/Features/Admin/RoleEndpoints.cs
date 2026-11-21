@@ -6,6 +6,7 @@ using Asp.Versioning.Builder;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -46,31 +47,31 @@ internal static partial class RoleEndpoints
             .WithTags("Admin", "Roles")
             .RequireAdminAuthorization();
 
-        group.MapGet("/", HandleListRoles)
-            .WithDisplayName("List Roles")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var list = AdminHttpOperationRouteBinding.ForAccess("admin.role.list", "/roles");
+        group.MapMethods(list.RoutePattern, list.Methods, HandleListRoles)
+            .WithAdminOperation(list.Definition).WithDisplayName("List Roles");
 
         // Role definitions decide what every holder of the role may do. Assigning a role to a user
         // already needs credential-management authority, so defining what it grants does too.
-        group.MapPost("/", HandleCreateRole)
-            .WithDisplayName("Create Role")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+        var create = AdminHttpOperationRouteBinding.ForAccess("admin.role.create", "/roles");
+        group.MapMethods(create.RoutePattern, create.Methods, HandleCreateRole)
+            .WithAdminOperation(create.Definition).WithDisplayName("Create Role")
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
             .RequireCredentialManagementAuthority();
 
-        group.MapGet("/{id:guid}", HandleGetRole)
-            .WithDisplayName("Get Role")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var get = AdminHttpOperationRouteBinding.ForAccess("admin.role.get", "/roles", "/{id:guid}");
+        group.MapMethods(get.RoutePattern, get.Methods, HandleGetRole)
+            .WithAdminOperation(get.Definition).WithDisplayName("Get Role");
 
-        group.MapPut("/{id:guid}", HandleUpdateRole)
-            .WithDisplayName("Update Role")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
+        var update = AdminHttpOperationRouteBinding.ForAccess("admin.role.update", "/roles", "/{id:guid}");
+        group.MapMethods(update.RoutePattern, update.Methods, HandleUpdateRole)
+            .WithAdminOperation(update.Definition).WithDisplayName("Update Role")
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
             .RequireCredentialManagementAuthority();
 
-        group.MapDelete("/{id:guid}", HandleDeleteRole)
-            .WithDisplayName("Delete Role")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }))
+        var delete = AdminHttpOperationRouteBinding.ForAccess("admin.role.delete", "/roles", "/{id:guid}");
+        group.MapMethods(delete.RoutePattern, delete.Methods, HandleDeleteRole)
+            .WithAdminOperation(delete.Definition).WithDisplayName("Delete Role")
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
             .RequireCredentialManagementAuthority();
 
@@ -79,13 +80,13 @@ internal static partial class RoleEndpoints
 
     private static void MapPermissionEndpoints(IVersionedEndpointRouteBuilder group)
     {
-        group.MapGet("/{id:guid}/permissions", HandleGetPermissions)
-            .WithDisplayName("Get Role Permissions")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var getPermissions = AdminHttpOperationRouteBinding.ForAccess("admin.role.permissions.get", "/roles", "/{id:guid}/permissions");
+        group.MapMethods(getPermissions.RoutePattern, getPermissions.Methods, HandleGetPermissions)
+            .WithAdminOperation(getPermissions.Definition).WithDisplayName("Get Role Permissions");
 
-        group.MapPut("/{id:guid}/permissions", HandleSetPermissions)
-            .WithDisplayName("Set Role Permissions")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
+        var setPermissions = AdminHttpOperationRouteBinding.ForAccess("admin.role.permissions.set", "/roles", "/{id:guid}/permissions");
+        group.MapMethods(setPermissions.RoutePattern, setPermissions.Methods, HandleSetPermissions)
+            .WithAdminOperation(setPermissions.Definition).WithDisplayName("Set Role Permissions")
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
             .RequireCredentialManagementAuthority();
     }

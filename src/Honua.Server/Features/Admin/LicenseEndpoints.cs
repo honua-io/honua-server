@@ -4,6 +4,7 @@
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
@@ -55,9 +56,10 @@ internal static partial class LicenseEndpoints
             .WithDisplayName("Upload License")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
-        group.MapGet("/entitlements", HandleGetEntitlements)
-            .WithDisplayName("Get Entitlements")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var entitlements = AdminHttpOperationRouteBinding.ForOperate("admin.license.entitlements", "/license");
+        group.MapMethods(entitlements.RoutePattern, entitlements.Methods, HandleGetEntitlements)
+            .WithAdminOperation(entitlements.Definition)
+            .WithDisplayName("Get Entitlements");
     }
 
     private static async Task<Results<Ok<ApiResponse<LicenseStatusResponse>>, ProblemHttpResult>>

@@ -6,6 +6,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Models;
@@ -43,22 +44,22 @@ internal static partial class FieldMaskPolicyEndpoints
             .WithTags("Admin", "FieldMask")
             .RequireAdminAuthorization();
 
-        group.MapGet("/", HandleListPolicies)
-            .WithDisplayName("List Field-Mask Policies")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var list = AdminHttpOperationRouteBinding.ForAccess("admin.field-mask-policy.list", "/field-mask-policies");
+        group.MapMethods(list.RoutePattern, list.Methods, HandleListPolicies)
+            .WithAdminOperation(list.Definition).WithDisplayName("List Field-Mask Policies");
 
-        group.MapPost("/", HandleCreatePolicy)
-            .WithDisplayName("Create Field-Mask Policy")
-            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+        var create = AdminHttpOperationRouteBinding.ForAccess("admin.field-mask-policy.create", "/field-mask-policies");
+        group.MapMethods(create.RoutePattern, create.Methods, HandleCreatePolicy)
+            .WithAdminOperation(create.Definition).WithDisplayName("Create Field-Mask Policy")
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
 
-        group.MapGet("/{id:guid}", HandleGetPolicy)
-            .WithDisplayName("Get Field-Mask Policy")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var get = AdminHttpOperationRouteBinding.ForAccess("admin.field-mask-policy.get", "/field-mask-policies", "/{id:guid}");
+        group.MapMethods(get.RoutePattern, get.Methods, HandleGetPolicy)
+            .WithAdminOperation(get.Definition).WithDisplayName("Get Field-Mask Policy");
 
-        group.MapDelete("/{id:guid}", HandleDeletePolicy)
-            .WithDisplayName("Delete Field-Mask Policy")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }))
+        var delete = AdminHttpOperationRouteBinding.ForAccess("admin.field-mask-policy.delete", "/field-mask-policies", "/{id:guid}");
+        group.MapMethods(delete.RoutePattern, delete.Methods, HandleDeletePolicy)
+            .WithAdminOperation(delete.Definition).WithDisplayName("Delete Field-Mask Policy")
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
     }
 

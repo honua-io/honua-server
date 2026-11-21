@@ -31,12 +31,36 @@ internal static partial class AdminHttpOperationRouteBinding
     public static AdminOperationRouteBinding ForApi(
         string operationId,
         string groupPrefix,
-        string? relativeTemplate = null)
-    {
-        var binding = new AdminOperationRouteBinding(
+        string? relativeTemplate = null) =>
+        ForDefinition(
             AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == operationId),
             groupPrefix,
             relativeTemplate);
+
+    public static AdminOperationRouteBinding ForOperate(
+        string operationId,
+        string groupPrefix,
+        string? relativeTemplate = null) =>
+        ForDefinition(
+            AdminOperateOperationCatalog.Definitions.Single(item => item.OperationId == operationId),
+            groupPrefix,
+            relativeTemplate);
+
+    public static AdminOperationRouteBinding ForAccess(
+        string operationId,
+        string groupPrefix,
+        string? relativeTemplate = null) =>
+        ForDefinition(
+            AdminAccessOperationCatalog.Definitions.Single(item => item.OperationId == operationId),
+            groupPrefix,
+            relativeTemplate);
+
+    private static AdminOperationRouteBinding ForDefinition(
+        IAdminHttpOperationDefinition definition,
+        string groupPrefix,
+        string? relativeTemplate)
+    {
+        var binding = new AdminOperationRouteBinding(definition, groupPrefix, relativeTemplate);
         _ = ResolveValidatedRelativeTemplate(binding);
         return binding;
     }
@@ -163,6 +187,11 @@ internal static partial class AdminHttpOperationRouteBinding
             return "/";
         }
 
+        if (normalizedPrefix == "/")
+        {
+            return binding.Definition.Path;
+        }
+
         if (binding.Definition.Path.StartsWith(normalizedPrefix + "/", StringComparison.Ordinal))
         {
             return binding.Definition.Path[normalizedPrefix.Length..];
@@ -176,6 +205,11 @@ internal static partial class AdminHttpOperationRouteBinding
     {
         var cleanPrefix = prefix.TrimEnd('/');
         var cleanRelative = relative.StartsWith('/') ? relative : "/" + relative;
+        if (string.IsNullOrEmpty(cleanPrefix))
+        {
+            return cleanRelative;
+        }
+
         return cleanRelative == "/" ? cleanPrefix : cleanPrefix + cleanRelative;
     }
 
