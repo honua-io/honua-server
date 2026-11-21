@@ -13,14 +13,25 @@ namespace Honua.Server.Features.Admin.Exports;
 
 internal readonly record struct ExportListPage(int? Limit = null, int? Offset = null);
 
+internal sealed record ExportCatalogDependencies
+{
+    public required ICloudFileStorage Storage { get; init; }
+
+    public required IOptions<CloudStorageOptions> Options { get; init; }
+
+    public required ITileCacheJobService Jobs { get; init; }
+
+    public PublicExportRevocationService? PublicRevocation { get; init; }
+}
+
 // Describes Exports from what storage and the job log hold: the pointer names the current Version,
 // version folders hold earlier ones, and the newest export job says whether one is running or failed.
-internal sealed partial class ExportCatalog(
-    ICloudFileStorage storage,
-    IOptions<CloudStorageOptions> options,
-    ITileCacheJobService jobs,
-    PublicExportRevocationService? publicRevocation = null)
+internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
 {
+    private readonly ICloudFileStorage storage = deps.Storage;
+    private readonly IOptions<CloudStorageOptions> options = deps.Options;
+    private readonly ITileCacheJobService jobs = deps.Jobs;
+    private readonly PublicExportRevocationService? publicRevocation = deps.PublicRevocation;
     internal const string NotPublicReason = "The public data path is not enabled for Exports on this installation.";
     internal const int DefaultListLimit = 50;
     internal const int MaxListLimit = 200;
@@ -163,7 +174,12 @@ internal sealed partial class ExportCatalog(
 
     private static ExportResponse BuildResponse(
         string exportId, ExportState state, (string BaseUrl, IReadOnlyList<ExportVersionResponse> Versions) detail)
-        => new()
+    {
+        var publicDelivery = state.Current is not null && state.Job?.PublishedExportVersion?.Version == state.Current.Version
+            ? state.Job.PublishedExportVersion.Public
+            : null;
+        var isPublic = publicDelivery?.Status == PublicExportDeliveryStatus.Promoted && !string.IsNullOrWhiteSpace(publicDelivery.CollectionUrl);
+        return new()
         {
             Id = exportId,
             Title = state.Current?.Title ?? exportId,
@@ -174,11 +190,13 @@ internal sealed partial class ExportCatalog(
             CollectionUrl = state.Current is null
                 ? null
                 : FileUrl(detail.BaseUrl, exportId, VersionFilePath(state.Current.Version, ExportCollectionDocument.FileName)),
-            NotPublicReason = NotPublicReason,
+            PublicUrl = isPublic ? publicDelivery!.CollectionUrl : null,
+            NotPublicReason = isPublic ? null : publicDelivery?.Reason ?? NotPublicReason,
             JobId = state.Job?.JobId,
             Message = state.Job?.Status == OperationStatus.Failed ? state.Job.ErrorMessage : null,
             Versions = detail.Versions
         };
+    }
 
     private static async Task<IReadOnlyList<ExportVersionResponse>> LoadVersionsAsync(
         ExportState state, string baseUrl, CancellationToken cancellationToken)

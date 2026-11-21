@@ -226,11 +226,13 @@ public sealed class PublicExportRevocationTests
         privateStorage.Setup(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
         var jobs = new Mock<ITileCacheJobService>();
-        var catalog = new ExportCatalog(
-            privateStorage.Object,
-            Options.Create(new CloudStorageOptions()),
-            jobs.Object,
-            harness.Service);
+        var catalog = new ExportCatalog(new ExportCatalogDependencies
+        {
+            Storage = privateStorage.Object,
+            Options = Options.Create(new CloudStorageOptions()),
+            Jobs = jobs.Object,
+            PublicRevocation = harness.Service
+        });
 
         var deleted = await catalog.UnpublishAsync("parcels", CancellationToken.None);
 

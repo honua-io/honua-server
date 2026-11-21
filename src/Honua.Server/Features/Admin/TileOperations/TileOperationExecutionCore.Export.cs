@@ -444,7 +444,7 @@ internal sealed partial class TileOperationExecutionCore
         }
     }
 
-    private static async Task<PublicExportDeliveryStatus?> TryPromotePublicAsync(
+    private async Task<PublicExportDeliveryStatus?> TryPromotePublicAsync(
         ExportPublishContext context,
         ExportVersion descriptor,
         CancellationToken cancellationToken)
@@ -464,7 +464,18 @@ internal sealed partial class TileOperationExecutionCore
             LayerIndex = context.Source.Published.Publication.LayerIndex ?? context.Source.StorageLayerId,
             MetadataRevision = context.Source.MetadataRevision
         };
-        return await context.PublicPromoter.PromoteAsync(input, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await context.PublicPromoter.PromoteAsync(input, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+        {
+            TileOperationLog.ExportPublicPromotionFailed(_logger, VersionLabel(context.Run), ex);
+            return new PublicExportDeliveryStatus(PublicExportDeliveryStatus.StaysSignedIn)
+            {
+                Reason = "Public promotion failed; Export remains on signed-in routes."
+            };
+        }
     }
 
     private static async Task PutCompanionFilesAsync(

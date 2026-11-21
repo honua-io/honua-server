@@ -54,4 +54,7 @@ internal static partial class TileOperationLog
 
     [LoggerMessage(EventId = 9223, Level = LogLevel.Warning, Message = "Export {ExportVersion} was published without a thumbnail because rendering failed.")]
     public static partial void ExportThumbnailSkipped(ILogger logger, string exportVersion, Exception exception);
+
+    [LoggerMessage(EventId = 9224, Level = LogLevel.Warning, Message = "Public promotion failed for export {ExportVersion}; the Export remains active on signed-in routes.")]
+    public static partial void ExportPublicPromotionFailed(ILogger logger, string exportVersion, Exception exception);
 }

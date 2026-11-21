@@ -85,6 +85,21 @@ internal sealed partial class PublicExportRevocationService(
         ArgumentException.ThrowIfNullOrWhiteSpace(request.PublicationId);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Reason);
 
+        if (deps.Destination is null)
+        {
+            var timestamp = _timeProvider.GetUtcNow();
+            return new PublicExportRevocationRecord
+            {
+                RevocationId = $"rev-{Guid.NewGuid():N}",
+                PublicationId = request.PublicationId,
+                Reason = request.Reason,
+                ChangeId = string.IsNullOrWhiteSpace(request.ChangeId) ? CdnPurgeCause.NoRequest : request.ChangeId,
+                State = PublicExportRevocationState.Completed,
+                CreatedAt = timestamp,
+                UpdatedAt = timestamp
+            };
+        }
+
         var pending = await deps.StateStore.ListPendingRevocationsAsync(cancellationToken).ConfigureAwait(false);
         var existing = pending.FirstOrDefault(item =>
             string.Equals(item.PublicationId, request.PublicationId, StringComparison.Ordinal));
