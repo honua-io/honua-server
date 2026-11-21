@@ -109,7 +109,11 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
     {
         Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the schema-divergence lane.");
 
-        var connectionString = await postgres.CreateFreshDatabaseAsync();
+        var requirement = (DatabaseSchemaRequirement)requirementValue;
+        // Raster writes refuse a feature-only install before the schema floor, so the raster
+        // write case needs the extension a journaled raster migration implies.
+        var connectionString = await postgres.CreateFreshDatabaseAsync(
+            enablePostGisRaster: requirement == DatabaseSchemaRequirement.RasterExternalStorage);
         await ExecuteAsync(connectionString, arrangeSql);
         var before = await CaptureStateAsync(connectionString);
 
@@ -117,7 +121,6 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Database:Schema"] = "honua" })
             .Build();
         var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, configuration);
-        var requirement = (DatabaseSchemaRequirement)requirementValue;
         var storeOperation = (StoreOperation)storeOperationValue;
 
         // Upgrade/preflight receipt: planning cannot report a usable migration plan over a
