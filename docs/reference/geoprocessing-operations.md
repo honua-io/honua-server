@@ -1,7 +1,7 @@
 ---
 type: reference
 title: "Geoprocessing operations"
-description: "Catalog of the built-in geoprocessing processes (process catalog honua.processcatalog.builtin.v1)."
+description: "Catalog of the built-in geoprocessing processes (process catalog honua.process_catalog.builtin.v1)."
 resource: "honua://capability/process.geoprocessing"
 ---
 # Geoprocessing operations
@@ -256,6 +256,23 @@ Terminate a workflow by writing the input FeatureCollection and emitting a resul
 
 Native-format sinks (shapefile, GeoPackage) are deferred to the GDAL worker stream; for those, convert with `gdal.ogr2ogr`.
 
+### File-sink destinations and cancellation
+
+For `sink.geojson-file` and `sink.quarantine`, `path` is a relative file name
+inside a server-owned job and attempt directory. The result receipt's `path`
+identifies its actual location relative to the configured output root;
+`requestedPath` preserves the submitted name. A different owner, tenant, job, or
+retry cannot replace a prior output, and repeating a write within one attempt
+fails rather than overwriting existing bytes. Quarantine's approval exception
+applies to these isolated artifacts, never an existing caller-selected destination.
+
+Both sinks check cancellation and the execution lease immediately before their
+create-only rename. After a successful rename they record committed-effect
+evidence with an uncancelled token. Filesystem rename and the job lease store
+are separate transactions: a lease lost in that final gap cannot be rolled back
+atomically, and a rejected receipt surfaces as an execution error. Attempt isolation
+still prevents that stale write from replacing the next attempt's output.
+
 ## Routing (3)
 
 Managed routing jobs use the configured canonical routing provider. They fail explicitly when that provider or the requested capability is unavailable. GeoServices exposes these jobs through both GPServer and NAServer web-tool aliases; submission, polling, and named results use the shared durable job runtime.
@@ -282,20 +299,3 @@ Full stock-client routing compatibility remains tracked by issue #5192.
 - [Run geoprocessing guide](../guides/query-analyze/run-geoprocessing.md)
 - [OGC APIs reference](protocols/ogc-apis.md)
 - [gRPC ProcessService](protocols/grpc.md)
-
-### File-sink destinations and cancellation
-
-For `sink.geojson-file` and `sink.quarantine`, `path` is a relative file name
-inside a server-owned job and attempt directory. The result receipt's `path`
-identifies its actual location relative to the configured output root;
-`requestedPath` preserves the submitted name. A different owner, tenant, job, or
-retry cannot replace a prior output, and repeating a write within one attempt
-fails rather than overwriting existing bytes. Quarantine's approval exception
-applies to these isolated artifacts, never an existing caller-selected destination.
-
-Both sinks check cancellation and the execution lease immediately before their
-create-only rename. After a successful rename they record committed-effect
-evidence with an uncancelled token. Filesystem rename and the job lease store
-are separate transactions: a lease lost in that final gap cannot be rolled back
-atomically, and a rejected receipt surfaces as an execution error. Attempt isolation
-still prevents that stale write from replacing the next attempt's output.
