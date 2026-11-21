@@ -40,9 +40,10 @@ internal static partial class AdminHttpOperationBinding
         return binding;
     }
 
-    public static RouteHandlerBuilder ApplyOperationMetadata(
-        RouteHandlerBuilder endpoint,
-        IAdminHttpOperationDefinition definition) =>
+    public static TBuilder ApplyOperationMetadata<TBuilder>(
+        TBuilder endpoint,
+        IAdminHttpOperationDefinition definition)
+        where TBuilder : IEndpointConventionBuilder =>
         endpoint.WithName(definition.OpenApiOperationId).WithMetadata(definition);
 
     public static string ResolveValidatedRelativeTemplate(AdminOperationRouteBinding binding)

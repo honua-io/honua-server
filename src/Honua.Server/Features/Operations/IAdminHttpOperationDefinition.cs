@@ -11,8 +11,9 @@ namespace Honua.Server.Features.Operations;
 
 internal static class AdminOperationEndpointExtensions
 {
-    public static RouteHandlerBuilder WithAdminOperation(
-        this RouteHandlerBuilder endpoint, IAdminHttpOperationDefinition definition)
+    public static TBuilder WithAdminOperation<TBuilder>(
+        this TBuilder endpoint, IAdminHttpOperationDefinition definition)
+        where TBuilder : IEndpointConventionBuilder
         => AdminHttpOperationBinding.ApplyOperationMetadata(endpoint, definition);
 }
 
