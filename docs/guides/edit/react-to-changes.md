@@ -122,7 +122,7 @@ The workflow is three requests, and the third belongs in a `finally` block:
 
 > Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/feature-events/replay?limit=100`.
 
-Page with `cursor` (and optional `from`/`to` ISO 8601 bounds, `limit` 1–1000): process each event idempotently, persist the returned `nextCursor`, repeat while `hasMore=true`. Events are read from the PostgreSQL change log, which every edit writes in its own transaction. Admin replay reads the retained change rows after the supplied numeric cursor; it does not enforce the live stream resume window. Live SSE and WebSocket subscriptions apply `Realtime__Retention__features` (default 24 hours) and `Realtime__ResumeMaxEvents` (default 10000) when deciding whether to resume or require a new snapshot. Admin recovery cannot retrieve change rows that have been pruned.
+Page with `cursor` (and optional `from`/`to` ISO 8601 bounds, `limit` 1–1000): process each event idempotently, persist the returned `NextCursor`, repeat while `HasMore=true` (this admin payload uses PascalCase property names: `Events`, `NextCursor`, `HasMore`). Events are read from the PostgreSQL change log, which every edit writes in its own transaction. Admin replay reads the retained change rows after the supplied numeric cursor; it does not enforce the live stream resume window. Live SSE and WebSocket subscriptions apply `Realtime__Retention__features` (default 24 hours) and `Realtime__ResumeMaxEvents` (default 10000) when deciding whether to resume or require a new snapshot. Admin recovery cannot retrieve change rows that have been pruned.
 
 ### 8. Manage live sessions (admin)
 
@@ -173,6 +173,7 @@ Then insert a feature in another terminal ([Edit features](edit-features.md)) an
 
 | Symptom | Fix |
 |---|---|
+| `404` with `type: honua:capability-experimental-disabled` on `/api/v1/streaming/*` or, for admin callers, `/api/v1/admin/streaming/features/sessions` | The experimental capability is off (the default). Set `Capabilities:Experimental:realtime.feature-streams:Enabled=true` and restart. |
 | `403` before the stream connects | Community edition fails closed; streaming needs Pro or Enterprise. Capabilities reports `enabled=false`. |
 | `401` or `403` on an unfiltered stream | All-layer streams require admin: anonymous callers get `401`, signed-in non-admins `403`. Subscribe with explicit `layers=` / `serviceId=` scopes instead. |
 | `invalid-subscription` error frame on a WebSocket | A non-admin WebSocket opens without query scopes, but an unscoped `subscribe` frame is refused on the socket (no HTTP `401`/`403`). Add `serviceId`, `layerId` or `layers` to the frame. |
