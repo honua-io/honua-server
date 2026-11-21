@@ -90,6 +90,69 @@ public sealed class PooledResponseBufferTests
         actual.Body.Should().Equal(expected.Body);
     }
 
+    [UnitTheory]
+    [InlineData("text/xml", false)]
+    [InlineData("application/vnd.ogc.wms_xml", true)]
+    public async Task PooledTextBuilder_ToUtf8Result_WritesTheSameResponseAsResultsContent(string mediaType, bool utf8Charset)
+    {
+        var builder = CreateChunkedText();
+        var text = builder.ToString();
+        var expected = await ExecuteAsync(utf8Charset
+            ? Results.Content(text, mediaType, Encoding.UTF8)
+            : Results.Content(text, mediaType));
+
+        var contentType = utf8Charset ? PooledUtf8ContentResult.WithUtf8Charset(mediaType) : mediaType;
+        var actual = await ExecuteAsync(PooledTextBuilder.ToUtf8Result(builder, contentType));
+
+        actual.ContentType.Should().Be(expected.ContentType);
+        actual.ContentLength.Should().Be(expected.ContentLength);
+        actual.Body.Should().Equal(expected.Body);
+    }
+
+    [UnitTest]
+    public void PooledTextBuilder_EncodeUtf8_MatchesEncodingGetBytesAcrossChunkBoundaries()
+    {
+        var builder = CreateChunkedText();
+        using var buffer = new PooledByteBuffer(initialCapacity: 16);
+
+        PooledTextBuilder.EncodeUtf8(builder, buffer);
+
+        buffer.WrittenSpan.ToArray().Should().Equal(Encoding.UTF8.GetBytes(builder.ToString()));
+    }
+
+    [UnitTest]
+    public void PooledTextBuilder_Return_ClearsTheBuilderForTheNextRent()
+    {
+        var builder = PooledTextBuilder.Rent();
+        builder.Append("<Capabilities/>");
+        PooledTextBuilder.Return(builder);
+
+        var next = PooledTextBuilder.Rent();
+        try
+        {
+            next.Length.Should().Be(0);
+        }
+        finally
+        {
+            PooledTextBuilder.Return(next);
+        }
+    }
+
+    // One character per append into a one-character builder, so the text spans many chunks and the opening
+    // surrogate pair is split between the first two. It also holds a lone low surrogate and ends on a lone high
+    // surrogate, which UTF-8 encodes as U+FFFD.
+    private static StringBuilder CreateChunkedText()
+    {
+        var builder = new StringBuilder(capacity: 1);
+        var text = "\uD834\uDD1E" + CreateXmlText() + " 😀 lone \uDC00 end \uD83D";
+        foreach (var character in text)
+        {
+            builder.Append(character);
+        }
+
+        return builder;
+    }
+
     // The test owns the buffer; the result also disposes it when executed, and Dispose is idempotent.
     private static PooledUtf8ContentResult CreatePooledResult(PooledByteBuffer buffer, string text)
     {

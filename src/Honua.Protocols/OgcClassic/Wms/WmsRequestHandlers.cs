@@ -59,6 +59,8 @@ internal static partial class WmsRequestHandlers
     private static readonly Version _wms13SemanticVersion = new(1, 3, 0);
     private static readonly string[] _wms13CapabilitiesMediaTypes = [WmsCapabilitiesMimeType];
     private static readonly string[] _wms111CapabilitiesMediaTypes = [Wms111CapabilitiesMimeType, WmsCapabilitiesMimeType];
+    private static readonly string WmsCapabilitiesUtf8ContentType = PooledUtf8ContentResult.WithUtf8Charset(WmsCapabilitiesMimeType);
+    private static readonly string Wms111CapabilitiesUtf8ContentType = PooledUtf8ContentResult.WithUtf8Charset(Wms111CapabilitiesMimeType);
 
     private readonly record struct WmsLayer(
         MetadataV2Object Resource,
@@ -167,8 +169,17 @@ internal static partial class WmsRequestHandlers
 
                 OgcClassicLog.WmsRequested(logger, serviceId, "GetCapabilities");
                 var metadataService = svcDef with { Metadata = PublishedMetadataProjection.ForCapabilities(snapshot.Graph, svcDef) };
-                var xml = await BuildWmsCapabilities(context, metadataService, new(accessibleLayers, challengeLayers), capabilitiesVersion).ConfigureAwait(false);
-                return Results.Content(xml, GetWmsCapabilitiesMimeType(capabilitiesVersion), Encoding.UTF8, StatusCodes.Status200OK);
+                var capabilities = PooledTextBuilder.Rent();
+                try
+                {
+                    await BuildWmsCapabilities(capabilities, context, metadataService, new(accessibleLayers, challengeLayers), capabilitiesVersion).ConfigureAwait(false);
+                    return PooledTextBuilder.ToUtf8Result(
+                        capabilities, GetWmsCapabilitiesUtf8ContentType(capabilitiesVersion));
+                }
+                finally
+                {
+                    PooledTextBuilder.Return(capabilities);
+                }
             }
 
             if (string.Equals(requestType, "GetMap", StringComparison.OrdinalIgnoreCase))
@@ -1034,8 +1045,9 @@ internal static partial class WmsRequestHandlers
     private static string[] GetWmsCapabilitiesMediaTypes(string version)
         => IsWms111Version(version) ? _wms111CapabilitiesMediaTypes : _wms13CapabilitiesMediaTypes;
 
-    private static string GetWmsCapabilitiesMimeType(string version)
-        => IsWms111Version(version) ? Wms111CapabilitiesMimeType : WmsCapabilitiesMimeType;
+    // The Content-Type Results.Content(xml, capabilitiesMimeType, Encoding.UTF8) set for this version.
+    private static string GetWmsCapabilitiesUtf8ContentType(string version)
+        => IsWms111Version(version) ? Wms111CapabilitiesUtf8ContentType : WmsCapabilitiesUtf8ContentType;
 
     private static string GetWmsExceptionMimeType(string? exceptionsValue, string? version)
         => WmsServiceExceptionReport.GetMimeType(exceptionsValue, version);
