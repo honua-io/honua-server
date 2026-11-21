@@ -26,9 +26,10 @@ public sealed class AdminOperationApprovalBridgeTests
     {
         var mapper = new ServicePublishApprovalRequestMapper();
 
-        var mapped = mapper.Map(
-            ServicePublishOperation.BuildDescriptor(),
-            new OperationRequest
+        var mapped = mapper.Map(new OperationApprovalRequestContext
+        {
+            Descriptor = ServicePublishOperation.BuildDescriptor(),
+            Request = new OperationRequest
             {
                 OperationId = ServicePublishOperation.OperationId,
                 ConnectionId = "connection-1",
@@ -41,8 +42,9 @@ public sealed class AdminOperationApprovalBridgeTests
                     ["layerName"] = "Roads",
                 },
             },
-            Context() with { TenantId = "tenant-a", SchemaName = "tenant_a" },
-            Decision());
+            Context = Context() with { TenantId = "tenant-a", SchemaName = "tenant_a" },
+            Decision = Decision(),
+        });
 
         mapped.Kind.Should().Be(OperationClass.ServicePublish);
         mapped.Kind.Should().NotBe(OperationClass.AdminConfigChange);
@@ -355,15 +357,11 @@ public sealed class AdminOperationApprovalBridgeTests
     {
         public string OperationId => "admin.test";
 
-        public OperationGatewayRequest Map(
-            IOperationDescriptor descriptor,
-            OperationRequest request,
-            OperationPolicyContext context,
-            PolicyDecision decision)
+        public OperationGatewayRequest Map(OperationApprovalRequestContext input)
             => new()
             {
                 Kind = OperationClass.AdminConfigChange,
-                RequestedBy = context.PrincipalId,
+                RequestedBy = input.Context.PrincipalId,
                 ExecutionPayload = "{}",
                 IdempotencyKey = idempotencyKey,
             };

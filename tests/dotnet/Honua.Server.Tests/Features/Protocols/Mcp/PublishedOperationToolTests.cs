@@ -1086,10 +1086,7 @@ public sealed partial class PublishedOperationToolTests
         public string OperationId => operationId;
 
         public Honua.Core.Features.ControlPlane.Abstractions.OperationGatewayRequest Map(
-            IOperationDescriptor descriptor,
-            OperationRequest request,
-            OperationPolicyContext context,
-            PolicyDecision decision)
+            OperationApprovalRequestContext input)
             => new() { Kind = Honua.Core.Features.Guardrails.Domain.OperationClass.AdminConfigChange };
 
         public OperationApprovalReplayMapping MapReplay(

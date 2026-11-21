@@ -116,8 +116,7 @@ public sealed partial class AiAdmissionControlOperationTests
         using var initial = Services(store, requester);
         var prepared = await new AiAdmissionControlExecutor(Stop, initial).PrepareAsync(Request(), context);
         var mapper = new AiAdmissionControlApprovalMapper(Stop);
-        var mapped = mapper.Map(AiAdmissionControlOperation.Descriptor(Stop), prepared, context,
-            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+        var mapped = mapper.Map(new OperationApprovalRequestContext { Descriptor = AiAdmissionControlOperation.Descriptor(Stop), Request = prepared, Context = context, Decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval } });
         var now = DateTimeOffset.UtcNow;
         var proposal = new OperationProposal
         {

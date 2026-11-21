@@ -952,12 +952,10 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
 {
     public string OperationId { get; } = operationId;
 
-    public OperationGatewayRequest Map(
-        IOperationDescriptor descriptor,
-        OperationRequest request,
-        OperationPolicyContext context,
-        PolicyDecision decision)
+    public OperationGatewayRequest Map(OperationApprovalRequestContext input)
     {
+        ArgumentNullException.ThrowIfNull(input);
+        var (descriptor, request, context, decision) = (input.Descriptor, input.Request, input.Context, input.Decision);
         if (!string.Equals(descriptor.OperationId, OperationId, StringComparison.Ordinal)
             || !string.Equals(request.OperationId, OperationId, StringComparison.Ordinal)
             || !request.Parameters.TryGetValue(StudioDraftOperations.PayloadParameter, out var payload)

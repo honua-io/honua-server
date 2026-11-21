@@ -697,11 +697,13 @@ public sealed class OperationsToolsetTests
             };
 
             var mapper = new AdminOperateOperationApprovalRequestMapper(definition, store);
-            var mapped = mapper.Map(
-                descriptor,
-                request,
-                context,
-                new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+            var mapped = mapper.Map(new OperationApprovalRequestContext
+            {
+                Descriptor = descriptor,
+                Request = request,
+                Context = context,
+                Decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval },
+            });
 
             mapped.ExecutionPayload.Should().NotContain(secret);
             mapped.Plan!.ExecutionPayload.Should().NotContain(secret);
@@ -731,9 +733,10 @@ public sealed class OperationsToolsetTests
             TenantId = "tenant-4187",
         };
 
-        new AdminOperateOperationApprovalRequestMapper(definition, store).Map(
-            descriptor,
-            new OperationRequest
+        new AdminOperateOperationApprovalRequestMapper(definition, store).Map(new OperationApprovalRequestContext
+        {
+            Descriptor = descriptor,
+            Request = new OperationRequest
             {
                 OperationId = definition.OperationId,
                 Parameters = new Dictionary<string, string?>
@@ -741,8 +744,9 @@ public sealed class OperationsToolsetTests
                     ["clientSecret"] = "secret-value",
                 },
             },
-            context,
-            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+            Context = context,
+            Decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval },
+        });
 
         store.LastTtl.Should().Be(TimeSpan.FromDays(30));
     }
@@ -917,11 +921,17 @@ public sealed class OperationsToolsetTests
             }
         };
 
-        var mapped = mapper.Map(descriptor, request, new OperationPolicyContext
+        var mapped = mapper.Map(new OperationApprovalRequestContext
         {
-            TenantId = "requester-tenant",
-            SchemaName = "tenant_schema"
-        }, new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+            Descriptor = descriptor,
+            Request = request,
+            Context = new OperationPolicyContext
+            {
+                TenantId = "requester-tenant",
+                SchemaName = "tenant_schema"
+            },
+            Decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval },
+        });
         var replay = mapper.MapReplay(mapped);
 
         replay.TenantId.Should().Be("requester-tenant");
@@ -1076,10 +1086,13 @@ public sealed class OperationsToolsetTests
                 descriptor => descriptor.OperationId == definition.OperationId);
             var request = new OperationRequest { OperationId = definition.OperationId };
             var mapped = new AdminOperateOperationApprovalRequestMapper(definition).Map(
-                descriptor,
-                request,
-                new OperationPolicyContext(),
-                new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+                new OperationApprovalRequestContext
+                {
+                    Descriptor = descriptor,
+                    Request = request,
+                    Context = new OperationPolicyContext(),
+                    Decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval },
+                });
 
             mapped.Kind.Should().Be(
                 metadataReleaseOperations.Contains(definition.OperationId)
@@ -1326,14 +1339,26 @@ public sealed class OperationsToolsetTests
         };
 
         var decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval };
-        var map = () => mapper.Map(descriptor, request, new OperationPolicyContext(), decision);
+        var map = () => mapper.Map(new OperationApprovalRequestContext
+        {
+            Descriptor = descriptor,
+            Request = request,
+            Context = new OperationPolicyContext(),
+            Decision = decision,
+        });
 
         map.Should().Throw<InvalidOperationException>().WithMessage("*secretReference*");
 
-        var safe = mapper.Map(descriptor, request with
+        var safe = mapper.Map(new OperationApprovalRequestContext
         {
-            Parameters = new Dictionary<string, string?> { ["secretReference"] = "vault://connection" }
-        }, new OperationPolicyContext(), decision);
+            Descriptor = descriptor,
+            Request = request with
+            {
+                Parameters = new Dictionary<string, string?> { ["secretReference"] = "vault://connection" }
+            },
+            Context = new OperationPolicyContext(),
+            Decision = decision,
+        });
         safe.OperationId.Should().Be(definition.OperationId);
     }
 

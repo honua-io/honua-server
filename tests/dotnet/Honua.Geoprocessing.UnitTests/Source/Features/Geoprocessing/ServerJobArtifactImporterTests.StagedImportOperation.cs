@@ -52,8 +52,13 @@ public sealed partial class ServerJobArtifactImporterTests
         var harness = await OperationHarnessAsync();
         var prepared = await harness.PrepareProposalAsync();
         IOperationApprovalRequestMapper mapper = new StagedImportApprovalMapper();
-        var gateway = mapper.Map(StagedImportOperation.BuildDescriptors()[1], prepared, harness.Context(),
-            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval, Reason = "operator approval" });
+        var gateway = mapper.Map(new OperationApprovalRequestContext
+        {
+            Descriptor = StagedImportOperation.BuildDescriptors()[1],
+            Request = prepared,
+            Context = harness.Context(),
+            Decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval, Reason = "operator approval" },
+        });
         harness.Recording.Request.Should().BeNull("a proposal must not import");
 
         var replay = mapper.MapReplay(gateway).Request;
@@ -272,8 +277,13 @@ public sealed partial class ServerJobArtifactImporterTests
         };
         var discardDescriptor = StagedImportOperation.BuildDescriptors()
             .Single(d => d.OperationId == StagedImportOperation.DiscardOperationId);
-        var gateway = mapper.Map(discardDescriptor, discardRequest, harness.Context(),
-            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval, Reason = "operator approval" });
+        var gateway = mapper.Map(new OperationApprovalRequestContext
+        {
+            Descriptor = discardDescriptor,
+            Request = discardRequest,
+            Context = harness.Context(),
+            Decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval, Reason = "operator approval" },
+        });
         var replay = mapper.MapReplay(gateway).Request;
 
         var first = await harness.Discard.SubmitAsync(replay, approved, CancellationToken.None);

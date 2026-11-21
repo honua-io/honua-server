@@ -10,21 +10,7 @@ public interface IOperationApprovalRequestMapper
 {
     string OperationId { get; }
 
-    OperationGatewayRequest Map(
-        IOperationDescriptor descriptor,
-        OperationRequest request,
-        OperationPolicyContext context,
-        PolicyDecision decision) =>
-        Map(new OperationApprovalRequestContext
-        {
-            Descriptor = descriptor,
-            Request = request,
-            Context = context,
-            Decision = decision,
-        });
-
-    OperationGatewayRequest Map(OperationApprovalRequestContext input) =>
-        throw new NotImplementedException();
+    OperationGatewayRequest Map(OperationApprovalRequestContext input);
 
     OperationApprovalReplayMapping MapReplay(OperationGatewayRequest request);
 }

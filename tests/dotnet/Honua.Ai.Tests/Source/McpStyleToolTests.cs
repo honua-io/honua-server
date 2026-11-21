@@ -317,8 +317,13 @@ public sealed partial class McpStyleToolTests
             .Returns(call =>
             {
                 var mapper = new StylePresetApprovalMapper();
-                var gateway = mapper.Map(call.Arg<IOperationDescriptor>(), call.Arg<OperationRequest>(),
-                    call.Arg<OperationPolicyContext>(), call.Arg<PolicyDecision>());
+                var gateway = mapper.Map(new OperationApprovalRequestContext
+                {
+                    Descriptor = call.Arg<IOperationDescriptor>(),
+                    Request = call.Arg<OperationRequest>(),
+                    Context = call.Arg<OperationPolicyContext>(),
+                    Decision = call.Arg<PolicyDecision>(),
+                });
                 gateway.Plan!.Summary.Should().Contain(ServiceId).And.Contain("layer '0'").And.Contain(PresetStyleId);
                 gateway.Plan.Summary.Should().StartWith(dryRun ? "Preview" : "Apply");
                 var replay = mapper.MapReplay(gateway);
@@ -580,8 +585,13 @@ public sealed partial class McpStyleToolTests
             .Returns(call =>
             {
                 var mapper = new StylePresetApprovalMapper();
-                var gateway = mapper.Map(call.Arg<IOperationDescriptor>(), call.Arg<OperationRequest>(),
-                    call.Arg<OperationPolicyContext>(), call.Arg<PolicyDecision>());
+                var gateway = mapper.Map(new OperationApprovalRequestContext
+                {
+                    Descriptor = call.Arg<IOperationDescriptor>(),
+                    Request = call.Arg<OperationRequest>(),
+                    Context = call.Arg<OperationPolicyContext>(),
+                    Decision = call.Arg<PolicyDecision>(),
+                });
                 capturedReplay = mapper.MapReplay(gateway).Request;
                 return new OperationApprovalBridgeResult
                 {
