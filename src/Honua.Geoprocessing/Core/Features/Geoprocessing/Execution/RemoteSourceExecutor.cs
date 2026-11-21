@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -10,6 +11,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
@@ -106,6 +108,9 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         DagSourceRequest request;
         try
         {
+            using var jobScope = JobSecurityScope.Current is null && job.Audit?.SubmitterSecurityContext is not null
+                ? JobSecurityScope.Begin(job.Audit.SubmitterSecurityContext)
+                : null;
             request = await BuildRequestAsync(inputs, services, cancellationToken).ConfigureAwait(false);
         }
         catch (TransformInputException ex)
@@ -358,6 +363,7 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
 
         try
         {
+            var registry = services.GetService<ISecureConnectionRegistry>();
             string connectionString;
             if (hasId)
             {
@@ -366,10 +372,22 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
                     throw new TransformInputException("connectionId must be a valid GUID.");
                 }
 
+                if (registry is not null)
+                {
+                    var registered = await registry.GetConnectionAsync(connectionId, cancellationToken).ConfigureAwait(false);
+                    EnsureConnectionTenantScope(registered);
+                }
+
                 connectionString = await resolver.ResolveConnectionStringAsync(connectionId, cancellationToken).ConfigureAwait(false);
             }
             else
             {
+                if (registry is not null)
+                {
+                    var registered = await registry.GetConnectionByNameAsync(connectionName!, cancellationToken).ConfigureAwait(false);
+                    EnsureConnectionTenantScope(registered);
+                }
+
                 connectionString = await resolver.ResolveConnectionStringAsync(connectionName!, cancellationToken).ConfigureAwait(false);
             }
 
@@ -394,6 +412,23 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
             // caller — only PublicMessage is) so BuildRequestAsync's catch can log the
             // real cause instead of a bare "could not be resolved" with no diagnostic.
             throw new TransformInputException("secure connection could not be resolved.", ex);
+        }
+    }
+
+    internal static void EnsureConnectionTenantScope(DataConnection? connection)
+    {
+        if (connection is null)
+        {
+            return;
+        }
+
+        var connectionTenant = connection.TenantId
+            ?? (connection.Properties.TryGetValue("tenantId", out var t) ? t as string : null);
+        var callerTenant = JobSecurityScope.Current?.Submitter?.TenantId;
+        if (!string.IsNullOrWhiteSpace(connectionTenant)
+            && !string.Equals(connectionTenant, callerTenant, StringComparison.Ordinal))
+        {
+            throw new UnauthorizedAccessException("Connection is not accessible in the active tenant scope.");
         }
     }
 

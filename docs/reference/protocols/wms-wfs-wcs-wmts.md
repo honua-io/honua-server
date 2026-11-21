@@ -144,7 +144,10 @@ when desktop clients need to see that a protected layer exists before signing in
 Capabilities then also list each protected layer by name only (the name is the
 title; no abstract, keywords, extent, dimension or legend), and a request that
 names one answers `401` with a `WWW-Authenticate` challenge, or `403` for a
-signed-in caller without access, whatever the `EXCEPTIONS` format. Layers of
+signed-in caller without access, whatever the `EXCEPTIONS` format. Desktop
+clients that prompt only for Basic need Basic compatibility enabled over HTTPS
+(see the authentication guide); the challenge then offers Basic too. Failed
+Basic attempts count toward the per-source authentication lockout. Layers of
 another tenant are never listed. The option applies to WMS only; WMTS, WFS and
 WCS keep listing readable layers only.
 `"hide"` (or no option) keeps the default. Values are case-insensitive strings;

@@ -36,14 +36,14 @@ internal sealed partial class AwsEcsAlbDeployBackend
         CancellationToken cancellationToken)
     {
         var spec = operation.Deploy!;
-        if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision) || string.IsNullOrWhiteSpace(spec.CurrentRevision))
+        if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision) || string.IsNullOrWhiteSpace(spec.DesiredRevision))
         {
             return null;
         }
 
         var service = await EcsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken)
             .ConfigureAwait(false);
-        if (IsAllowedServiceRevision(spec.CurrentRevision, service.TaskDefinitionArn))
+        if (IsAllowedServiceRevision(spec.DesiredRevision, service.TaskDefinitionArn))
         {
             return null;
         }

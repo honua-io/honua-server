@@ -11,15 +11,37 @@ internal static class ControlPlaneNotReadyGuard
 {
     internal const string ProblemCode = "control_plane_not_ready";
 
-    public static IResult? TryRefuse(HttpContext context, DegradedStartupContext? degradedStartup)
+    public static IResult? TryRefuse(
+        HttpContext context,
+        DegradedStartupContext? degradedStartup,
+        MigrationState? migrationState = null)
     {
         ArgumentNullException.ThrowIfNull(context);
-        if (degradedStartup is not { IsAwaitingDatabase: true } degraded)
+        if (degradedStartup is { IsAwaitingDatabase: true } degraded)
         {
-            return null;
+            return CreateNotReadyResult(context, degraded.ReasonCode ?? ReadinessReasonCodes.DatabaseStartupDegraded);
         }
 
-        var reasonCode = degraded.ReasonCode ?? ReadinessReasonCodes.DatabaseStartupDegraded;
+        if (migrationState is { IsReady: false } migrations &&
+            migrations.Status is MigrationLifecycleStatus.Running or MigrationLifecycleStatus.Failed)
+        {
+            var reasonCode = migrations.IsFailed
+                ? ReadinessReasonCodes.MigrationsFailed
+                : ReadinessReasonCodes.MigrationsInProgress;
+            return CreateNotReadyResult(context, reasonCode);
+        }
+
+        return null;
+    }
+
+    public static IResult? TryRefuse(HttpContext context)
+        => TryRefuse(
+            context,
+            context.RequestServices.GetService<DegradedStartupContext>(),
+            context.RequestServices.GetService<MigrationState>());
+
+    private static IResult CreateNotReadyResult(HttpContext context, string reasonCode)
+    {
         context.Response.Headers[ReadinessReasonCodes.HeaderName] = reasonCode;
         return Results.Json(
             new ControlPlaneEventProblem(
@@ -29,7 +51,4 @@ internal static class ControlPlaneNotReadyGuard
             statusCode: StatusCodes.Status503ServiceUnavailable,
             contentType: "application/problem+json");
     }
-
-    public static IResult? TryRefuse(HttpContext context)
-        => TryRefuse(context, context.RequestServices.GetService<DegradedStartupContext>());
 }

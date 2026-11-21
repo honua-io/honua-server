@@ -15,7 +15,9 @@ public enum RollbackFunctionalQueryVerdict
 
     ServedErrorEnvelope = 3,
 
-    Unreachable = 4
+    Unreachable = 4,
+
+    NotConfigured = 5
 }
 
 public enum RollbackDataPlaneDisposition
@@ -203,7 +205,8 @@ public static class RollbackDataPlaneCompletion
         var identityProven = evidence.PriorRevisionIdentityProven &&
             !string.IsNullOrWhiteSpace(evidence.ServingRevision);
         var readinessProven = evidence.HealthyEndpointCount > 0;
-        var queryProven = evidence.FunctionalQuery == RollbackFunctionalQueryVerdict.MatchedPriorMarker;
+        var queryProven = evidence.FunctionalQuery is RollbackFunctionalQueryVerdict.MatchedPriorMarker
+            or RollbackFunctionalQueryVerdict.NotConfigured;
 
         if (identityProven && readinessProven && queryProven)
         {
@@ -211,7 +214,9 @@ public static class RollbackDataPlaneCompletion
                 evidence,
                 RollbackDataPlaneDisposition.RolledBack,
                 ReasonRolledBack,
-                "Restored revision identity, readiness, and the functional query are proven.");
+                evidence.FunctionalQuery == RollbackFunctionalQueryVerdict.NotConfigured
+                    ? "Restored revision identity and readiness are proven (no functional query configured)."
+                    : "Restored revision identity, readiness, and the functional query are proven.");
         }
 
         if (!IsWindowExpired(evidence, utcNow))
@@ -297,12 +302,12 @@ public static class RollbackDataPlaneCompletion
         => new()
         {
             Url = ReadParameter(parameters, FunctionalQueryUrlParameterKey),
-            ExpectedContains = ReadParameter(parameters, FunctionalQueryExpectedContainsParameterKey)
-                ?? ReadParameter(parameters, LocalFunctionalQueryExpectedContainsParameterKey),
-            ForbiddenContains = ReadParameter(parameters, FunctionalQueryForbiddenContainsParameterKey)
-                ?? ReadParameter(parameters, LocalFunctionalQueryForbiddenContainsParameterKey),
-            ExpectedSha256 = ReadParameter(parameters, FunctionalQueryExpectedSha256ParameterKey)
-                ?? ReadParameter(parameters, LocalFunctionalQueryExpectedSha256ParameterKey),
+            ExpectedContains = ReadParameter(parameters, LocalFunctionalQueryExpectedContainsParameterKey)
+                ?? ReadParameter(parameters, FunctionalQueryExpectedContainsParameterKey),
+            ForbiddenContains = ReadParameter(parameters, LocalFunctionalQueryForbiddenContainsParameterKey)
+                ?? ReadParameter(parameters, FunctionalQueryForbiddenContainsParameterKey),
+            ExpectedSha256 = ReadParameter(parameters, LocalFunctionalQueryExpectedSha256ParameterKey)
+                ?? ReadParameter(parameters, FunctionalQueryExpectedSha256ParameterKey),
             ExpectedStatusCode = ReadInt(parameters, FunctionalQueryExpectedStatusParameterKey, 100, 599) ?? 200,
             TimeoutSeconds = ReadInt(parameters, FunctionalQueryTimeoutSecondsParameterKey, 1, 60) ?? 5
         };
@@ -313,7 +318,12 @@ public static class RollbackDataPlaneCompletion
         CancellationToken cancellationToken)
     {
         var expectation = ReadFunctionalExpectation(parameters);
-        if (!expectation.IsConfigured || string.IsNullOrWhiteSpace(expectation.Url) || probe is null)
+        if (string.IsNullOrWhiteSpace(expectation.Url))
+        {
+            return RollbackFunctionalQueryVerdict.NotConfigured;
+        }
+
+        if (!expectation.IsConfigured || probe is null)
         {
             return RollbackFunctionalQueryVerdict.NotProven;
         }

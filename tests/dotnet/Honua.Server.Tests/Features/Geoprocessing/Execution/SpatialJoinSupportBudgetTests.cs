@@ -90,7 +90,7 @@ public sealed class SpatialJoinSupportBudgetTests
 
         var act = () => SpatialJoinSupport.Join(
             target, index, SpatialJoinPredicate.Intersects, distance: 0, carryFields: [], stats: [],
-            budget: null, cts.Token);
+            budget: null, cancellationToken: cts.Token);
 
         act.Should().Throw<OperationCanceledException>();
     }

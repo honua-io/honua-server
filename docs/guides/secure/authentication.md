@@ -557,7 +557,7 @@ For a true per-application client identity (rather than reusing a human API key)
 | Desktop GIS clients, native client SDKs, legacy GeoServices REST applications | `generateToken` portal tokens |
 | Native operator clients in locked-down environments | Client certificates — [TLS and mTLS](tls-and-mtls.md) |
 
-A legacy Basic compatibility mode (`HONUA_ENABLE_BASIC_AUTH_COMPAT=true`, with `HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH=true` enforced in production) maps the Basic password to the admin API key; use it only during migrations.
+A legacy Basic compatibility mode (`HONUA_ENABLE_BASIC_AUTH_COMPAT=true`, with `HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH=true` enforced in production) maps the Basic password to the admin API key; use it only during migrations. While it is on, every `401` that offers the `ApiKey` challenge also offers `WWW-Authenticate: Basic`, except on a plain-HTTP request when HTTPS is required for Basic.
 
 ### SensorThings reads (Preview)
 

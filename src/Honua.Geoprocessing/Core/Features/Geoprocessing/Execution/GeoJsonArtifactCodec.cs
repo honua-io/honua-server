@@ -10,8 +10,11 @@ namespace Honua.Geoprocessing.Execution;
 internal static class GeoJsonArtifactCodec
 {
     public static GeoJsonReader CreateReader()
+        => CreateReader(srid: 4326);
+
+    public static GeoJsonReader CreateReader(int srid)
         => new(
-            NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory(srid: 4326),
+            NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory(srid),
             new JsonSerializerSettings(),
             dimension: 3);
 

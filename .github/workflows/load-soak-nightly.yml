@@ -66,6 +66,10 @@ jobs:
       # posture is edge rate limiting (ADR-0004); disable the app-level limiter here
       # so the load/soak run measures the server, not the throttle.
       RateLimiting__Enabled: "false"
+      # For the same reason, queue anonymous reads rather than shedding them: under the nightly
+      # profile's single-host flood the pool saturates and anonymous pressure admission refuses
+      # OGC, OData and FeatureServer queries with 503, which measures the shedder, not the server.
+      Limits__Connections__AnonymousPressureAdmissionEnabled: "false"
       Security__DisableHttpsRedirection: "true"
       Security__ConnectionEncryption__MasterKey: "load-soak-master-key-${{ github.run_id }}-${{ github.run_attempt }}-padding0000"
       # Production startup requires the canonical operation policy to be active

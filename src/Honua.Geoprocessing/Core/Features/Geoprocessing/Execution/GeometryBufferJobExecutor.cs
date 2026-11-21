@@ -83,17 +83,6 @@ internal sealed partial class GeometryBufferJobExecutor : IProcessExecutor
             return JobExecutionResult.Failed("Invalid buffer inputs: geometry is empty.");
         }
 
-        // The first slice intentionally treats `distance` as units of the input
-        // CRS. CRS-aware (geodesic) buffering is classified as manual-review and
-        // is rejected here to avoid silently mis-applying meters to a 4326
-        // geometry.
-        if (inputs.Geodesic)
-        {
-            return JobExecutionResult.Failed(
-                "Geodesic buffering is not yet supported in the first-slice executor; submit with geodesic=false " +
-                "and supply distance in the input CRS units.");
-        }
-
         if (!GeometrySridGuard.TryValidateEmbeddedSrid(geometry, inputs.Srid, out var sridError))
         {
             Log.InvalidInputs(_logger, job.OperationId, sridError);
@@ -108,7 +97,9 @@ internal sealed partial class GeometryBufferJobExecutor : IProcessExecutor
         Geometry buffered;
         try
         {
-            buffered = BufferCooperatively(geometry, inputs.Distance, cancellationToken);
+            buffered = inputs.Geodesic && GeodesicGeometryOperations.IsGeographicSrid(inputs.Srid)
+                ? GeodesicGeometryOperations.BufferGeodesic(geometry, inputs.Distance * inputs.MetersPerUnit, cancellationToken)
+                : BufferCooperatively(geometry, inputs.Geodesic ? inputs.Distance * inputs.MetersPerUnit : inputs.Distance, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -287,6 +278,13 @@ internal sealed partial class GeometryBufferJobExecutor : IProcessExecutor
             return false;
         }
 
+        var unitRaw = TryGetPrefixed(parameters, prefix, "unit", out var rawUnit) ? rawUnit : null;
+        if (!GeodesicGeometryOperations.TryNormalizeLinearUnit(unitRaw, out _, out var metersPerUnit))
+        {
+            error = $"invalid input 'unit' '{unitRaw}'; expected meters, kilometers, feet, yards, miles, or nautical-miles";
+            return false;
+        }
+
         byte[] wkbBytes;
         try
         {
@@ -304,7 +302,7 @@ internal sealed partial class GeometryBufferJobExecutor : IProcessExecutor
             return false;
         }
 
-        inputs = new BufferInputs(wkbBytes, srid, distance, geodesic);
+        inputs = new BufferInputs(wkbBytes, srid, distance, geodesic, metersPerUnit);
         return true;
     }
 
@@ -359,7 +357,7 @@ internal sealed partial class GeometryBufferJobExecutor : IProcessExecutor
         return buffer.ToArray();
     }
 
-    private readonly record struct BufferInputs(byte[] WkbBytes, int Srid, double Distance, bool Geodesic);
+    private readonly record struct BufferInputs(byte[] WkbBytes, int Srid, double Distance, bool Geodesic, double MetersPerUnit);
 
     private static partial class Log
     {

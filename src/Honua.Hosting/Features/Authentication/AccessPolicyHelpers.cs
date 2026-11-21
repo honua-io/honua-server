@@ -49,11 +49,13 @@ internal static partial class AccessPolicyHelpers
 
     internal static void AppendAuthenticationChallenge(HttpContext context)
     {
-        context.Response.Headers.Append(
-            "WWW-Authenticate",
-            AttemptedBearerCredential(context.Request)
-                ? "Bearer"
-                : "ApiKey realm=\"Honua Admin\", header=\"X-API-Key\"");
+        if (AttemptedBearerCredential(context.Request))
+        {
+            context.Response.Headers.Append("WWW-Authenticate", "Bearer");
+            return;
+        }
+
+        AuthenticationChallenge.AppendCredentialChallenges(context);
     }
 
     // Portal tokens travel as an Authorization or X-Esri-Authorization bearer, the `token` query
