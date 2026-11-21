@@ -16,6 +16,7 @@ using Honua.Server.Features.Operations.Status;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Monitoring;
 
@@ -79,7 +80,10 @@ internal static class ObservabilityServiceCollectionExtensions
             .Bind(configuration.GetSection(OpsAutonomyOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
-        services.AddSingleton<IManagedComposeObserver, ManagedComposeObserver>();
+        services.AddSingleton<IManagedComposeObserver>(sp => new ManagedComposeObserver(
+            new(sp.GetRequiredService<IComposeExecutorClient>(), sp.GetRequiredService<IOptions<ComposeExecutorOptions>>().Value),
+            sp.GetRequiredService<IOptionsMonitor<ControlPlaneOptions>>(), sp.GetRequiredService<TimeProvider>(),
+            sp.GetService<ILogger<ManagedComposeObserver>>()));
         services.AddScoped<IOpsHealthSnapshotService, OpsHealthSnapshotService>();
         // Singleton: the scoped engine must still report a store source's last successful collection
         // after a failed read in a later scope.
