@@ -138,8 +138,11 @@ internal static class StacV2Lookups
         var matches = visibleStac
             .Where(item => MatchesCollectionId(item.Publication, collectionId, numericId))
             .ToArray();
+        // Only collections the caller may read decide whether a layer index is ambiguous.
         return numericId.HasValue
-            ? SelectNumericStacResolution(matches, collectionId)
+            ? SelectNumericStacResolution(
+                matches.Where(m => AccessPolicyHelpers.IsResourceAccessible(context, m.Resource, m.Service)).ToArray(),
+                collectionId)
             : SelectNamedStacResolution(matches);
     }
 

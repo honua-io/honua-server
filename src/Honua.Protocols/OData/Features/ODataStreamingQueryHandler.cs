@@ -368,15 +368,6 @@ internal sealed partial class ODataStreamingQueryHandler(
                 layerId = layerResolution.LayerId;
             }
 
-            // Validate that the delta token's layer ID matches the requested layer
-            if (deltaLayerId.HasValue && layerId.HasValue && deltaLayerId.Value != layerId.Value)
-            {
-                return ODataUtilityService.CreateODataError(
-                    context,
-                    "InvalidQueryOption",
-                    "$deltatoken does not match the requested layer.");
-            }
-
             var (streamingLayer, layerError) = await ValidateStreamingLayerAsync(context, layerId.Value, effectiveToken);
             if (layerError is not null)
             {
@@ -384,6 +375,15 @@ internal sealed partial class ODataStreamingQueryHandler(
             }
 
             var (layerValidation, storageLayerId) = streamingLayer;
+
+            // A delta token records the storage layer id, so compare after the route id is resolved.
+            if (deltaLayerId.HasValue && deltaLayerId.Value != storageLayerId)
+            {
+                return ODataUtilityService.CreateODataError(
+                    context,
+                    "InvalidQueryOption",
+                    "$deltatoken does not match the requested layer.");
+            }
             var publicLayerId = storageLayerId;
             var resource = layerValidation.Resource!;
             var featureReader = await (_featureProviderResolver

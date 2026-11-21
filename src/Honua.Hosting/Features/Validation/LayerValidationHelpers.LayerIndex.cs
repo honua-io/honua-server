@@ -47,12 +47,49 @@ internal static partial class LayerValidationHelpers
             MetadataV2GraphSnapshot snapshot,
             int layerId,
             string? requiredProtocol)
-        => ResolveV2TripleForTenant(
+    {
+        var resolved = ResolveV2TripleForTenant(
             snapshot,
             layerId,
             requiredProtocol,
             TenantScopeHelpers.ResolveRequestTenantId(context),
             applyTenantScope: true);
+        return resolved.AmbiguityError is null
+            ? resolved
+            : ResolveAmongReadableIndexCandidates(context, snapshot, (layerId, requiredProtocol));
+    }
+
+    // Only layers the caller may read decide whether a layer index is ambiguous, so a hidden layer is never disclosed.
+    private static (MetadataV2Layer? Publication, MetadataV2Object? Resource, MetadataV2Service? Service, string? AmbiguityError)
+        ResolveAmongReadableIndexCandidates(
+            HttpContext context,
+            MetadataV2GraphSnapshot snapshot,
+            (int LayerId, string? RequiredProtocol) lookup)
+    {
+        var readable = snapshot.Graph.Publications
+            .Where(p => p.LayerIndex == lookup.LayerId && snapshot.IsRoutable(p) && IsReadablePublication(context, snapshot, p))
+            .ToList();
+        if (readable.Count == 0)
+        {
+            return (null, null, null, null);
+        }
+
+        var ambiguity = CheckAmbiguousLayerCandidates(snapshot, readable, lookup);
+        return ambiguity is not null
+            ? (null, null, null, ambiguity)
+            : SelectTripleFromCandidates(snapshot, readable, lookup.RequiredProtocol);
+    }
+
+    private static bool IsReadablePublication(HttpContext context, MetadataV2GraphSnapshot snapshot, MetadataV2Layer publication)
+    {
+        var resource = snapshot.ResolveResource(publication);
+        var service = snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var resolvedService)
+            ? resolvedService
+            : null;
+        return resource is not null
+            && TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service)
+            && AccessPolicyHelpers.IsResourceAccessible(context, resource, service);
+    }
 
     internal static (MetadataV2Layer? Publication, MetadataV2Object? Resource, MetadataV2Service? Service, string? AmbiguityError)
         ResolveV2TripleForTenant(
@@ -99,8 +136,9 @@ internal static partial class LayerValidationHelpers
     private static (MetadataV2Layer? Publication, string? AmbiguityError) TryResolveNumericCollection(
         MetadataV2GraphSnapshot snapshot,
         (string CollectionId, string? RequiredProtocol) lookup,
-        Func<MetadataV2Layer, bool> isVisible)
+        (Func<MetadataV2Layer, bool> IsVisible, Func<MetadataV2Layer, bool> IsReadable) filters)
     {
+        var isVisible = filters.IsVisible;
         if (!int.TryParse(lookup.CollectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var numericId))
         {
             return (null, null);
@@ -114,7 +152,7 @@ internal static partial class LayerValidationHelpers
         }
 
         var indexCandidates = snapshot.Graph.Publications
-            .Where(p => p.LayerIndex == numericId && isVisible(p))
+            .Where(p => p.LayerIndex == numericId && isVisible(p) && filters.IsReadable(p))
             .ToList();
         if (indexCandidates.Count == 0)
         {

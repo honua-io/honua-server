@@ -260,28 +260,14 @@ internal static class SearchEndpoints
                 // path (ServiceLocalId, Path, Metadata.Name, Metadata.Id, storage layer ID, or
                 // legacy numeric ID) so human-readable slugs (e.g. "sentinel-2-l2a") and numeric
                 // IDs both work without requiring integer parsing.
-                targets = targets.Where(t =>
+                var selection = SelectRequestedCollections(targets.ToArray(), requestedCollections);
+                if (selection.AmbiguityError is not null)
                 {
-                    var pub = t.Publication;
-                    foreach (var requestedId in requestedCollections)
-                    {
-                        int? numericId = int.TryParse(
-                            requestedId,
-                            System.Globalization.NumberStyles.Integer,
-                            System.Globalization.CultureInfo.InvariantCulture,
-                            out var parsed)
-                            ? parsed
-                            : null;
+                    StacTelemetry.SetFailed(activity, "ambiguous_collection");
+                    return StandardErrorHelpers.CreateConflict(context, selection.AmbiguityError);
+                }
 
-                        if (StacV2Lookups.MatchesCollectionId(pub, requestedId, numericId) ||
-                            (numericId.HasValue && t.StorageLayerId == numericId.Value))
-                        {
-                            return true;
-                        }
-                    }
-
-                    return false;
-                });
+                targets = selection.Targets;
             }
 
             if (request.Ids is { IsDefault: false } requestedIds && requestedIds.Length > 0)
@@ -2104,5 +2090,38 @@ internal static class SearchEndpoints
             context,
             "Tenant context is required to search STAC items.");
         return false;
+    }
+
+    private readonly record struct RequestedCollectionSelection(
+        StacV2Lookups.ResolvedStacPublication[] Targets,
+        string? AmbiguityError);
+
+    // A numeric id names a storage layer when one has it; otherwise it falls back to a layer index held by one collection only.
+    private static RequestedCollectionSelection SelectRequestedCollections(
+        StacV2Lookups.ResolvedStacPublication[] targets,
+        ImmutableArray<string> requestedCollections)
+    {
+        var selected = new HashSet<StacV2Lookups.ResolvedStacPublication>();
+        foreach (var requestedId in requestedCollections)
+        {
+            int? numericId = int.TryParse(requestedId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+                ? parsed
+                : null;
+            var byStorage = numericId.HasValue
+                ? targets.Where(t => t.StorageLayerId == numericId.Value).ToArray()
+                : [];
+            var matches = byStorage.Length > 0
+                ? byStorage
+                : targets.Where(t => StacV2Lookups.MatchesCollectionId(t.Publication, requestedId, numericId)).ToArray();
+            if (numericId.HasValue && byStorage.Length == 0
+                && matches.Select(static m => m.Resource.Metadata.Id).Distinct(StringComparer.Ordinal).Skip(1).Any())
+            {
+                return new([], $"Collection id '{requestedId}' is a layer index shared by several services. Use the collection id listed by /stac/collections.");
+            }
+
+            selected.UnionWith(matches);
+        }
+
+        return new(targets.Where(selected.Contains).ToArray(), null);
     }
 }

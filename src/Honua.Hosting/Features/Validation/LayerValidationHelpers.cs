@@ -425,7 +425,10 @@ internal static partial class LayerValidationHelpers
                 TenantScopeHelpers.IsPublicationVisible(context, p, matchedResource, matchedService);
         }
 
-        var (numericPublication, numericAmbiguity) = TryResolveNumericCollection(snapshot, (collectionId, requiredProtocol), IsTenantVisible);
+        var (numericPublication, numericAmbiguity) = TryResolveNumericCollection(
+            snapshot,
+            (collectionId, requiredProtocol),
+            (IsTenantVisible, p => IsReadablePublication(context, snapshot, p)));
         if (TryCreateAmbiguousLayerResult(context, numericAmbiguity) is { } ambiguousResult) return ambiguousResult;
         publication = numericPublication;
 
