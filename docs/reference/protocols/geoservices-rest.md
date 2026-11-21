@@ -73,7 +73,7 @@ Registered but **not implemented** (return a spec-shaped not-implemented error):
 
 ### Layer index
 
-`{layerId}` in these paths is the layer's `serviceLayerIndex`: the `id` listed for it in the service document at `/rest/services/{serviceId}/FeatureServer?f=json`. It is an integer scoped to one service, assigned when the layer is published. It is not always `0`, and a layer migrated from another GeoServices server does not keep its source number, so read it from the service document instead of assuming it.
+`{layerId}` in these paths is the layer's `serviceLayerIndex`: the `id` listed for it in the service document at `/rest/services/{serviceId}/FeatureServer?f=json`. It is an integer scoped to one service. New services default to the next free integer starting at `0`, a publish request may name an unused `serviceLayerIndex`, and GeoServices migration preserves each layer's source number. Existing installs keep their current indexes, so read `id` from the service document when targeting an existing service.
 
 > Open `https://server.example.com/rest/services/roads/FeatureServer?f=json` in a browser, take a layer `id`, then open `https://server.example.com/rest/services/roads/FeatureServer/{id}/query?where=1%3D1&outFields=*&resultRecordCount=10&f=json`.
 

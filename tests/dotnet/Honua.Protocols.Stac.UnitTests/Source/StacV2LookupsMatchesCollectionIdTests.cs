@@ -2,9 +2,13 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.Stac.Services;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
@@ -98,5 +102,30 @@ public sealed class StacV2LookupsMatchesCollectionIdTests
         // ServiceLocalId/Path/Name/Id are all empty so only the numeric fallback would fire,
         // but numericId is null therefore the result must be false.
         result.Should().BeFalse("numeric layer fallback must only fire when the caller parsed a valid int");
+    }
+
+    [UnitTest]
+    public async Task ResolveStacPublicationResultAsync_TwoServicesWithLayerZero_ResolvesByStorageIdAndRejectsAmbiguousZero()
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddService("svc-a", "svc-a", protocols: ["Stac"])
+            .AddService("svc-b", "svc-b", protocols: ["Stac"])
+            .AddResource("res-a", "parcels_a", storageLayerId: 10)
+            .AddResource("res-b", "roads_b", storageLayerId: 11)
+            .AddPublication("pub-stac-a-0", "svc-a", "res-a", layerIndex: 0, publicationType: MetadataV2LayerType.StacCollection)
+            .AddPublication("pub-stac-b-0", "svc-b", "res-b", layerIndex: 0, publicationType: MetadataV2LayerType.StacCollection)
+            .Build();
+        var services = new ServiceCollection();
+        services.AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph));
+        var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
+
+        var byStorage = await StacV2Lookups.ResolveStacPublicationResultAsync(context, "11", CancellationToken.None);
+        byStorage.AmbiguityError.Should().BeNull();
+        byStorage.Publication.Should().NotBeNull();
+        byStorage.Publication!.Value.Resource.Metadata.Id.Should().Be("res-b");
+
+        var ambiguous = await StacV2Lookups.ResolveStacPublicationResultAsync(context, "0", CancellationToken.None);
+        ambiguous.Publication.Should().BeNull();
+        ambiguous.AmbiguityError.Should().NotBeNull().And.Contain("svc-a").And.Contain("svc-b");
     }
 }

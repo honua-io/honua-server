@@ -161,16 +161,23 @@ internal sealed partial class OutputCacheInvalidationService
     }
 
     private static string[] PublishedNamesOfLayer(MetadataV2GraphSnapshot snapshot, string? editedService, int layerId)
-        =>
+    {
+        var publications = string.IsNullOrEmpty(editedService)
+            ? ResolvePublicationsForUnscopedLayerId(snapshot, layerId)
+            : snapshot.Graph.Publications
+                .Where(publication => publication.LayerIndex == layerId || snapshot.ResolveStorageLayerId(publication) == layerId)
+                .ToArray();
+
+        return
         [
-            .. snapshot.Graph.Publications
-                .Where(publication => publication.LayerIndex == layerId)
+            .. publications
                 .Select(publication => snapshot.Index.ServicesById.GetValueOrDefault(publication.ServiceId))
                 .OfType<MetadataV2Service>()
                 .Where(service => string.IsNullOrEmpty(editedService)
                     || Names(service).Contains(editedService, StringComparer.OrdinalIgnoreCase))
                 .SelectMany(service => new[] { service.Metadata.Name, service.EffectivePublicName }),
         ];
+    }
 
     private static string[] Names(MetadataV2Service service) => [service.Metadata.Id, service.Metadata.Name, service.EffectivePublicName];
 }

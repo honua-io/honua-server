@@ -93,7 +93,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
     {
         var normalizedServiceIds = await ResolveLayerServiceIdsAsync(serviceId, serviceLayerIndex, cancellationToken).ConfigureAwait(false);
         var ogcCollectionIds = serviceLayerIndex.HasValue
-            ? await ResolveLayerCollectionIdsAsync(serviceLayerIndex.Value, cancellationToken).ConfigureAwait(false)
+            ? await ResolveLayerCollectionIdsAsync(serviceId, serviceLayerIndex.Value, cancellationToken).ConfigureAwait(false)
             : [];
         var tags = new List<string>();
         var responsePatterns = new List<string>();
@@ -376,7 +376,8 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
                 return [];
             }
             var serviceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var pub in snapshot.Graph.Publications.Where(publication => publication.LayerIndex == layerId.Value && snapshot.IsRoutable(publication)))
+            var matchedPublications = ResolvePublicationsForUnscopedLayerId(snapshot, layerId.Value);
+            foreach (var pub in matchedPublications)
             {
                 if (snapshot.Index.ServicesById.TryGetValue(pub.ServiceId, out var service))
                 {
@@ -393,6 +394,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
     }
 
     private async Task<string[]> ResolveLayerCollectionIdsAsync(
+        string? serviceId,
         int layerId,
         CancellationToken cancellationToken)
     {
@@ -408,15 +410,14 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
             {
                 return collectionIds.ToArray();
             }
-            foreach (var pub in snapshot.Graph.Publications)
-            {
-                var resource = snapshot.ResolveResource(pub);
-                if (pub.LayerIndex != layerId)
-                {
-                    continue;
-                }
 
-                AddPublicationCollectionAliases(collectionIds, pub, resource);
+            var matchedPublications = string.IsNullOrWhiteSpace(serviceId)
+                ? ResolvePublicationsForUnscopedLayerId(snapshot, layerId)
+                : ResolvePublicationsForScopedLayer(snapshot, serviceId, layerId);
+
+            foreach (var pub in matchedPublications)
+            {
+                AddPublicationCollectionAliases(collectionIds, pub, snapshot.ResolveResource(pub));
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -425,6 +426,37 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
         }
 
         return collectionIds.ToArray();
+    }
+
+    private static MetadataV2Layer[] ResolvePublicationsForUnscopedLayerId(
+        MetadataV2GraphSnapshot snapshot,
+        int layerId)
+    {
+        var byStorage = snapshot.PublicationsForStorageLayer(layerId).ToArray();
+        if (byStorage.Length > 0)
+        {
+            return byStorage;
+        }
+
+        return snapshot.Graph.Publications
+            .Where(publication => publication.LayerIndex == layerId && snapshot.IsRoutable(publication))
+            .ToArray();
+    }
+
+    private static MetadataV2Layer[] ResolvePublicationsForScopedLayer(
+        MetadataV2GraphSnapshot snapshot,
+        string serviceId,
+        int layerId)
+    {
+        var trimmed = serviceId.Trim();
+        return snapshot.Graph.Publications
+            .Where(publication =>
+                publication.LayerIndex == layerId &&
+                snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) &&
+                (string.Equals(service.Metadata.Id, trimmed, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(service.Metadata.Name, trimmed, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(service.EffectivePublicName, trimmed, StringComparison.OrdinalIgnoreCase)))
+            .ToArray();
     }
 
     private async Task<string[]> ResolveCollectionIdsAsync(
@@ -448,8 +480,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
 
             if (int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
             {
-                matchedPub = snapshot.Graph.Publications
-                    .Where(p => p.LayerIndex == layerId)
+                matchedPub = ResolvePublicationsForUnscopedLayerId(snapshot, layerId)
                     .OrderBy(p => p.Metadata.Id, StringComparer.Ordinal)
                     .FirstOrDefault();
                 if (matchedPub is not null)

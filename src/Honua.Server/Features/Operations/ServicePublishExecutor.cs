@@ -218,6 +218,7 @@ internal sealed class ServicePublishExecutor
             ExactTypes = GetBool(request, "exactTypes"),
             Fields = request.Fields,
             ServiceName = request.ServiceName,
+            ServiceLayerIndex = GetInt(request, "serviceLayerIndex"),
             FolderId = request.Parameters.TryGetValue("folderId", out var folderId)
                 ? new MetadataV2FolderSelection(folderId) : default,
             PublicName = request.Parameters.GetValueOrDefault("publicName"),

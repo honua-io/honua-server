@@ -169,8 +169,15 @@ internal static class CollectionEndpoints
         {
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
 
-            var resolved = await StacV2Lookups.ResolveStacPublicationAsync(
+            var resolution = await StacV2Lookups.ResolveStacPublicationResultAsync(
                 context, collectionId, cancellationToken).ConfigureAwait(false);
+            if (resolution.AmbiguityError is not null)
+            {
+                StacTelemetry.SetFailed(activity, "collection_ambiguous");
+                return StandardErrorHelpers.CreateConflict(context, resolution.AmbiguityError);
+            }
+
+            var resolved = resolution.Publication;
             if (resolved is null)
             {
                 StacTelemetry.SetFailed(activity, "collection_not_found");
@@ -244,9 +251,14 @@ internal static class CollectionEndpoints
         {
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
 
-            var resolved = await StacV2Lookups.ResolveStacPublicationAsync(
+            var resolution = await StacV2Lookups.ResolveStacPublicationResultAsync(
                 context, collectionId, cancellationToken).ConfigureAwait(false);
+            if (resolution.AmbiguityError is not null)
+            {
+                return StandardErrorHelpers.CreateConflict(context, resolution.AmbiguityError);
+            }
 
+            var resolved = resolution.Publication;
             if (resolved is null)
             {
                 StacLog.CollectionNotFound(logger, collectionId);

@@ -26,6 +26,73 @@ public sealed class LayerValidationHelpersV2Tests
 {
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public async Task ValidateLayerWithAccessV2_TwoServicesWithLayerZero_ResolvesByStorageIdAndReturnsConflictOnZero()
+    {
+        var context = BuildTwoServiceLayerZeroContext();
+
+        var storageA = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
+            context, layerId: 10, LayerValidationHelpers.ValidationProtocol.ProblemJson, AccessScope.Read);
+        storageA.IsValid.Should().BeTrue();
+        storageA.Resource!.Metadata.Id.Should().Be("res-a");
+
+        var storageB = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
+            context, layerId: 11, LayerValidationHelpers.ValidationProtocol.OData, AccessScope.Read, ServiceProtocols.OData);
+        storageB.IsValid.Should().BeTrue();
+        storageB.Resource!.Metadata.Id.Should().Be("res-b");
+
+        var ambiguousTiles = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
+            context, layerId: 0, LayerValidationHelpers.ValidationProtocol.ProblemJson, AccessScope.Read);
+        ambiguousTiles.IsValid.Should().BeFalse();
+        (ambiguousTiles.ErrorResult as IStatusCodeHttpResult)?.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+
+        var ambiguousDefault = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
+            context, layerId: 0, AccessScope.Read);
+        ambiguousDefault.IsValid.Should().BeFalse();
+        (ambiguousDefault.ErrorResult as IStatusCodeHttpResult)?.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task ValidateCollectionWithAccessV2_TwoServicesWithLayerZero_ResolvesByStorageIdAndReturnsConflictOnZero()
+    {
+        var context = BuildTwoServiceLayerZeroContext();
+
+        var storageA = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
+            context, "10", AccessScope.Read, ServiceProtocols.OgcFeatures);
+        storageA.IsValid.Should().BeTrue();
+        storageA.Resource!.Metadata.Id.Should().Be("res-a");
+
+        var ambiguous = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
+            context, "0", AccessScope.Read, ServiceProtocols.OgcFeatures);
+        ambiguous.IsValid.Should().BeFalse();
+        (ambiguous.ErrorResult as IStatusCodeHttpResult)?.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+    }
+
+    private static DefaultHttpContext BuildTwoServiceLayerZeroContext()
+    {
+        var policy = new AccessPolicy { AllowAnonymous = true };
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddService("svc-a", "svc-a", protocols: [ServiceProtocols.FeatureServer, ServiceProtocols.OgcFeatures, ServiceProtocols.OData])
+            .AddService("svc-b", "svc-b", protocols: [ServiceProtocols.FeatureServer, ServiceProtocols.OgcFeatures, ServiceProtocols.OData])
+            .AddResource("res-a", "parcels_a", storageLayerId: 10)
+            .AddResource("res-b", "roads_b", storageLayerId: 11)
+            .AddPublication("pub-a-0", "svc-a", "res-a", layerIndex: 0, publicationType: MetadataV2LayerType.EsriFeatureLayer)
+            .AddPublication("pub-b-0", "svc-b", "res-b", layerIndex: 0, publicationType: MetadataV2LayerType.EsriFeatureLayer)
+            .Build();
+        graph = graph with
+        {
+            Services = graph.Services.Select(s => s with { AccessPolicy = policy }).ToArray(),
+            Resources = graph.Resources.Select(r => r with { AccessPolicy = policy }).ToArray(),
+        };
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
+        services.AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph));
+        return new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public async Task ValidateLayerWithAccessV2_PublicationMatch_ReturnsTriple()
     {
         var (context, _) = BuildContext(allowAnonymous: true);

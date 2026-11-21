@@ -99,7 +99,7 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
         {
             publication.ResourceId.Should().Be(resource.Metadata.Id);
             publication.StorageBindingId.Should().Be(binding.Metadata.Id);
-            publication.Identifier.Value.Should().Be("1");
+            publication.Identifier.Value.Should().Be("0");
         });
         saved.Connections.Select(connection => connection.Metadata.Id)
             .Should().BeEquivalentTo(managed ? [] : new[] { connectionId.ToString("D") });
@@ -157,8 +157,8 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
             item.ServiceId == "svc-publish-linked").Which;
         publication.ResourceId.Should().Be(targetResourceId);
         publication.StorageBindingId.Should().Be(graph.Resources.Single(resource => resource.Metadata.Id == targetResourceId).PrimaryStorageBindingId);
-        publication.Identifier.Value.Should().Be("1");
-        publication.LayerIndex.Should().Be(1);
+        publication.Identifier.Value.Should().Be("0");
+        publication.LayerIndex.Should().Be(0);
         linked.Resources.Where(resource => resource.Metadata.Id != targetResourceId)
             .Should().BeEquivalentTo(graph.Resources.Where(resource => resource.Metadata.Id != targetResourceId));
         linked.Publications.Where(item => item.ResourceId != targetResourceId)
@@ -3736,7 +3736,7 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
             ]
         };
 
-        var action = () => PostgreSqlLayerPublishingService.BuildLinkedLayerMetadataV2Graph(
+        var updated = PostgreSqlLayerPublishingService.BuildLinkedLayerMetadataV2Graph(
             graph,
             "beta",
             101,
@@ -3744,14 +3744,15 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
             4326,
             now);
 
-        var exception = action.Should().Throw<LayerPublishingException>().Which;
-        exception.ErrorKind.Should().Be(LayerPublishingErrorKind.Conflict);
-        exception.LayerId.Should().Be(101);
-        exception.Message.Should().Contain("already publishes FeatureServer layer 101");
-        graph.Publications.Where(publication =>
+        updated.Publications.Single(publication =>
+                publication.ServiceId == "service-beta" &&
+                publication.ResourceId == "resource-alpha" &&
+                publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer)
+            .LayerIndex.Should().Be(102);
+        updated.Publications.Where(publication =>
                 publication.PublicationType == MetadataV2LayerType.StacCollection)
             .Should().ContainSingle().Which.Metadata.Id.Should().Be("pub-stac-alpha-101");
-        graph.Publications.Single(publication => publication.Metadata.Id == "pub-beta-101")
+        updated.Publications.Single(publication => publication.Metadata.Id == "pub-beta-101")
             .ResourceId.Should().Be("resource-beta");
     }
 
@@ -3830,7 +3831,7 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
             publication.ServiceId == "service-beta" &&
             publication.ResourceId == "resource-alpha" &&
             publication.StorageBindingId == "binding-alpha" &&
-            publication.LayerIndex == 101 &&
+            publication.LayerIndex == 102 &&
             publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer);
         updated.Resources.Single(resource => resource.Metadata.Id == "resource-alpha").Status.Lifecycle
             .Should().Be(MetadataV2LifecycleStatus.Retired);
@@ -4096,7 +4097,7 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
         var publication = updated!.Publications.Should().ContainSingle().Which;
         publication.ResourceId.Should().Be("resource-canonical");
         publication.StorageBindingId.Should().Be("binding-layer-101");
-        publication.LayerIndex.Should().Be(101);
+        publication.LayerIndex.Should().Be(0);
     }
 
     [global::Xunit.Trait("Tier", "Fast")]

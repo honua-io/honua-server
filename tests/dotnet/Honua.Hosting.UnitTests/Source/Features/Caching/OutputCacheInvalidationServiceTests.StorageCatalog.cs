@@ -15,6 +15,22 @@ namespace Honua.Server.Tests.Features.Caching;
 
 public sealed partial class OutputCacheInvalidationServiceTests
 {
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task InvalidateLayerAsync_TwoServicesWithLayerZero_EvictsOnlyTargetedServiceCollection()
+    {
+        var graph = CreateFeatureServerGraph(("alpha", [0]), ("beta", [0]));
+        var outputCache = Substitute.For<IOutputCacheStore>();
+        var responseCache = Substitute.For<IResponseCache>();
+        var invalidator = new OutputCacheInvalidationService(outputCache, responseCache, null,
+            CreateScopeFactory(graph), null, NullLogger<OutputCacheInvalidationService>.Instance);
+
+        await invalidator.InvalidateLayerAsync("alpha", 0, CancellationToken.None);
+
+        await outputCache.Received().EvictByTagAsync("collection:pub-alpha-0", Arg.Any<CancellationToken>());
+        await outputCache.DidNotReceive().EvictByTagAsync("collection:pub-beta-0", Arg.Any<CancellationToken>());
+    }
+
     [UnitTheory]
     [InlineData(false)]
     [InlineData(true)]

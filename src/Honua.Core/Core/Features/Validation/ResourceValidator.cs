@@ -40,50 +40,57 @@ public sealed class ResourceValidator : IResourceValidator
         CancellationToken cancellationToken = default)
     {
         var snapshot = await RequireV2SnapshotAsync(cancellationToken).ConfigureAwait(false);
-
-        // A single storage layer index can be published more than once (for
-        // example a feature dataset and a raster sidecar that share the same
-        // integer layer id, as the client-compat seed does for layer 2000).
-        // Prefer the publication whose backing resource resolves to a usable
-        // storage-layer handle so the integer-collection-id contract returns a
-        // storage-backed layer rather than an arbitrary first match (which may
-        // be a raster resource with no integer storage handle, leaving callers
-        // such as OGC API Maps unable to resolve the layer). Fall back to any
-        // matching publication's resource so existing single-publication and
-        // non-storage-backed cases keep their previous behaviour.
-        MetadataV2Object? firstResource = null;
-        foreach (var candidate in snapshot.Graph.Publications)
+        var byStorage = snapshot.ResolveStorageResource(layerId);
+        if (byStorage.IsAmbiguous)
         {
-            if (candidate.LayerIndex != layerId)
-            {
-                continue;
-            }
-
-            // Admin-disable flips the publication/resource lifecycle to
-            // MetadataV2LifecycleStatus.Retired — skip them so disabled layers 404 on
-            // every protocol surface that resolves layers by integer id (OGC
-            // collections, Maps, OData), mirroring ValidateServiceLayerV2Async.
-            var candidateResource = snapshot.ResolveResource(candidate);
-            if (!snapshot.IsRoutable(candidate))
-            {
-                continue;
-            }
-
-            firstResource ??= candidateResource!;
-
-            if (snapshot.ResolveStorageLayerId(candidate).HasValue)
-            {
-                return ResourceValidationResult.Success(candidateResource!);
-            }
+            return ResourceValidationResult.AmbiguousIdentifier<MetadataV2Object>(byStorage.ConflictDetail!);
         }
 
-        if (firstResource is null)
+        if (byStorage.Resource is not null)
+        {
+            return ResourceValidationResult.Success(byStorage.Resource);
+        }
+
+        return ResolveUniqueLayerIndex(snapshot, layerId);
+    }
+
+    private static ResourceValidationResult<MetadataV2Object> ResolveUniqueLayerIndex(
+        MetadataV2GraphSnapshot snapshot,
+        int layerId)
+    {
+        var matches = snapshot.Graph.Publications
+            .Where(candidate => candidate.LayerIndex == layerId && snapshot.IsRoutable(candidate))
+            .Select(candidate => (Publication: candidate, Resource: snapshot.ResolveResource(candidate)))
+            .Where(entry => entry.Resource is not null)
+            .ToArray();
+
+        if (matches.Length == 0)
         {
             return ResourceValidationResult.NotFound<MetadataV2Object>(
                 ErrorMessages.NotFound.FormatLayer(layerId));
         }
 
-        return ResourceValidationResult.Success(firstResource);
+        var distinctResources = matches
+            .Select(static entry => entry.Resource!)
+            .DistinctBy(static resource => resource.Metadata.Id)
+            .ToArray();
+
+        if (distinctResources.Length == 1)
+        {
+            return ResourceValidationResult.Success(distinctResources[0]);
+        }
+
+        var serviceNames = matches
+            .Select(entry => snapshot.Index.ServicesById.TryGetValue(entry.Publication.ServiceId, out var service)
+                && !string.IsNullOrWhiteSpace(service.Metadata.Name)
+                    ? service.Metadata.Name
+                    : entry.Publication.ServiceId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(static name => name, StringComparer.OrdinalIgnoreCase)
+            .Select(static name => $"'{name}'");
+
+        return ResourceValidationResult.AmbiguousIdentifier<MetadataV2Object>(
+            $"Layer index {layerId} is ambiguous across multiple services ({string.Join(", ", serviceNames)}). Use the storage layer id or a service-scoped route.");
     }
 
     public async Task<ResourceValidationResult<MetadataV2Object>> ValidateCollectionV2Async(
@@ -119,7 +126,7 @@ public sealed class ResourceValidator : IResourceValidator
         if (int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerIndex))
         {
             var byIndex = await ValidateLayerV2Async(layerIndex, cancellationToken).ConfigureAwait(false);
-            if (byIndex.IsValid)
+            if (byIndex.IsValid || byIndex.ErrorCode == ResourceValidationError.AmbiguousIdentifier)
             {
                 return byIndex;
             }

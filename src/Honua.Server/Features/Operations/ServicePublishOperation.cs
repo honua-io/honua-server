@@ -37,6 +37,7 @@ internal static class ServicePublishOperation
             Optional("geometryType", "Geometry type", WorkflowSchemaValueType.Text),
             Optional("primaryKey", "Primary key", WorkflowSchemaValueType.Text),
             Optional("srid", "Target SRID", WorkflowSchemaValueType.WholeNumber),
+            Optional("serviceLayerIndex", "GeoServices layer index within the service; omitted uses the next free index from 0", WorkflowSchemaValueType.WholeNumber),
             Optional("folderId", "Folder id; omitted preserves membership, null selects root for a new service; use service.move to change existing membership", WorkflowSchemaValueType.Text),
             Optional("publicName", "Immutable public service name", WorkflowSchemaValueType.Text),
             Optional("namespace", "Publication namespace; omitted is unscoped", WorkflowSchemaValueType.Text),

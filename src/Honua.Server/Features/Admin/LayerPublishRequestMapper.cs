@@ -59,6 +59,13 @@ internal static class LayerPublishRequestMapper
                 $"Validation failed: {governanceError}");
         }
 
+        if (request.ServiceLayerIndex is < 0)
+        {
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Validation,
+                "Validation failed: serviceLayerIndex must be zero or greater.");
+        }
+
         if (!TryParseStorageMode(request.StorageMode, out var storageMode))
         {
             throw new LayerPublishingException(
@@ -101,6 +108,7 @@ internal static class LayerPublishRequestMapper
             Subtypes = request.Subtypes,
             AttributeRules = request.AttributeRules,
             ServiceName = request.ServiceName,
+            ServiceLayerIndex = request.ServiceLayerIndex,
             FolderId = request.FolderId,
             PublicName = request.PublicName,
             Namespace = request.Namespace,
@@ -142,6 +150,7 @@ internal static class LayerPublishRequestMapper
             Subtypes = request.Subtypes,
             AttributeRules = request.AttributeRules,
             ServiceName = request.ServiceName,
+            ServiceLayerIndex = request.ServiceLayerIndex,
             FolderId = request.FolderId,
             PublicName = request.PublicName,
             Namespace = request.Namespace,

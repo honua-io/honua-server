@@ -521,57 +521,72 @@ internal sealed partial class ODataSearchService
     {
         var (layerId, context, requireCount, requireTextSearch) = request;
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var tenantId = context is null ? null : TenantScopeHelpers.ResolveRequestTenantId(context);
+        var candidates = SelectODataLayerCandidates(snapshot, layerId, tenantId);
 
-        foreach (var publication in TenantScopeHelpers.FilterVisiblePublications(
-                     snapshot, snapshot.Graph.Publications, context is null ? null : TenantScopeHelpers.ResolveRequestTenantId(context))
-                     .Where(p => p.LayerIndex == layerId)
-                     .OrderByDescending(p => p.IsPrimary)
-                     .ThenBy(p => ResolveServiceName(snapshot, p), StringComparer.OrdinalIgnoreCase))
+        foreach (var publication in candidates)
         {
-            if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service))
-            {
-                continue;
-            }
-
-            if (!IsODataProtocolEnabled(service))
-            {
-                continue;
-            }
-
+            var service = snapshot.Index.ServicesById[publication.ServiceId];
             var resource = snapshot.ResolveResource(publication);
-            if (!snapshot.IsRoutable(publication))
+            if (resource is null)
             {
                 continue;
             }
 
-            // The endpoint authorized one publication for this index; never read another one
-            // the caller may not query.
             if (context is not null && !await AccessPolicyHelpers.IsResourceAccessibleAsync(
-                    context, resource!, service, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false))
+                    context, resource, service, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false))
             {
                 continue;
             }
 
             var storageLayerId = snapshot.ResolveStorageLayerId(publication)
-                ?? snapshot.ResolveStorageLayerId(resource!);
+                ?? snapshot.ResolveStorageLayerId(resource);
             if (!storageLayerId.HasValue)
             {
                 continue;
             }
 
             var reader = await _providerResolver.ResolveQueryReaderAsync(
-                snapshot, service, resource!, publication, storageLayerId.Value,
+                snapshot, service, resource, publication, storageLayerId.Value,
                 requireCount, requireTextSearch, cancellationToken).ConfigureAwait(false);
 
-            return new ResolvedODataLayer(
-                reader,
-                publication,
-                resource!,
-                layerId,
-                storageLayerId.Value);
+            return new ResolvedODataLayer(reader, publication, resource, layerId, storageLayerId.Value);
         }
 
         throw new ResourceNotFoundException($"Layer {layerId} not found");
+    }
+
+    private static MetadataV2Layer[] SelectODataLayerCandidates(
+        MetadataV2GraphSnapshot snapshot,
+        int layerId,
+        string? tenantId)
+    {
+        var visiblePublications = TenantScopeHelpers.FilterVisiblePublications(
+                snapshot, snapshot.Graph.Publications, tenantId)
+            .Where(p => snapshot.IsRoutable(p) &&
+                        snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var svc) &&
+                        IsODataProtocolEnabled(svc))
+            .ToArray();
+
+        var candidates = visiblePublications
+            .Where(p => snapshot.ResolveStorageLayerId(p) == layerId)
+            .ToArray();
+        if (candidates.Length == 0)
+        {
+            candidates = visiblePublications
+                .Where(p => p.LayerIndex == layerId)
+                .ToArray();
+            if (candidates.Select(static p => p.ResourceId).Distinct(StringComparer.Ordinal).Skip(1).Any())
+            {
+                throw new InvalidOperationException(
+                    $"Layer index {layerId} is ambiguous across multiple OData services. Use the storage layer id.");
+            }
+        }
+
+        return candidates
+            .OrderByDescending(p => p.IsPrimary)
+            .ThenBy(p => ResolveServiceName(snapshot, p), StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static ResolvedRelatedResource? ResolveRelatedResource(

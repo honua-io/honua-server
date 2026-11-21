@@ -149,7 +149,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // by its ETag; a rejected scope leaves the SQL layer transaction uncommitted.
         ValidatePublicationScope(graph, serviceName, publicationScope, requireExistingScopedService);
         var now = DateTimeOffset.UtcNow;
-        var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
         // Managed storage belongs to the server, even when the source route has a connection ID.
         var storageConnectionId = storage.IsManagedStore ? null : request.ConnectionId;
         var graphLayerKey = BuildLayerGraphId("layer", layerId, storageConnectionId);
@@ -178,11 +177,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
             {
                 TemporalColumn = ResolveTemporalColumnForPublish(request.TemporalColumn, fields)
             });
+        var serviceLayerIndex = ResolvePublishedLayerIndex(
+            graph, (service.Metadata.Id, serviceName, request.ServiceLayerIndex), (resource.Metadata.Id, binding.Metadata.Id));
+        var layerIndexText = serviceLayerIndex.ToString(CultureInfo.InvariantCulture);
         var featurePublication = BuildPublishedPublication(
             service,
             resource,
             binding,
-            layerIdText,
+            layerIndexText,
             graphLayerKey,
             request.LayerName.Trim(),
             MetadataV2LayerType.EsriFeatureLayer,
@@ -195,7 +197,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             service,
             resource,
             binding,
-            layerIdText,
+            layerIndexText,
             graphLayerKey,
             request.LayerName.Trim(),
             MetadataV2LayerType.StacCollection,
@@ -281,12 +283,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 $"Published layer metadata v2 graph is invalid: {string.Join("; ", validation.Errors)}");
         }
 
-        return await PersistMetadataV2MutationAsync(
+        var mutation = await PersistMetadataV2MutationAsync(
                 graph,
                 updatedGraph,
                 expectedEtag,
                 cancellationToken)
             .ConfigureAwait(false);
+        return mutation with { ServiceLayerIndex = serviceLayerIndex };
     }
 
     private Task<MetadataV2GraphMutation> UpsertLinkedLayerMetadataV2Async(
@@ -321,12 +324,16 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 $"Linked layer metadata v2 graph is invalid: {string.Join("; ", validation.Errors)}");
         }
 
-        return await PersistMetadataV2MutationAsync(
+        var mutation = await PersistMetadataV2MutationAsync(
                 graph,
                 updatedGraph,
                 expectedEtag,
                 cancellationToken)
             .ConfigureAwait(false);
+        return mutation with
+        {
+            ServiceLayerIndex = FindLinkedServiceLayerIndex(updatedGraph, serviceName, layer.StorageLayerId)
+        };
     }
 
     private Task<MetadataV2GraphMutation?> UpdateLayerLifecycleMetadataV2Async(
@@ -2936,26 +2943,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
         else
         {
-            var collidingFeaturePublication = graph.Publications.FirstOrDefault(publication =>
-                string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
-                publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&
-                publication.LayerIndex == layerId &&
-                (!string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) ||
-                 !string.Equals(publication.StorageBindingId, binding.Metadata.Id, StringComparison.Ordinal)));
-            if (collidingFeaturePublication is not null)
-            {
-                throw new LayerPublishingException(
-                    LayerPublishingErrorKind.Conflict,
-                    $"Service '{serviceName}' already publishes FeatureServer layer {layerId} from another storage binding.",
-                    layerId);
-            }
-
-            var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
+            var serviceLayerIndex = ResolvePublishedLayerIndex(
+                graph, (service.Metadata.Id, serviceName, null), (resource.Metadata.Id, binding.Metadata.Id));
+            var layerIndexText = serviceLayerIndex.ToString(CultureInfo.InvariantCulture);
             featurePublication = BuildPublishedPublication(
                 service,
                 resource,
                 binding,
-                layerIdText,
+                layerIndexText,
                 BuildLayerGraphId("layer", layerId, storageScope?.ManagedLayerIds?.Contains(layerId) == true ? null : storageScope?.ConnectionId),
                 layerName,
                 MetadataV2LayerType.EsriFeatureLayer,

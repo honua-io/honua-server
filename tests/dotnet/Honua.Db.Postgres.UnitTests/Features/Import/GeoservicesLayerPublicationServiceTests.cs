@@ -16,6 +16,42 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoservicesLayerPublicationServiceTests
 {
+    [Fact]
+    public async Task TryPublishImportedLayerAsync_PreservesSourceLayerIdAsServiceLayerIndex()
+    {
+        LayerPublishRequest? captured = null;
+        var publishing = new Mock<ILayerPublishingService>(MockBehavior.Strict);
+        publishing.Setup(service => service.PublishLayerAsync("Host=unused", It.IsAny<LayerPublishRequest>(), CancellationToken.None))
+            .Callback<string, LayerPublishRequest, CancellationToken>((_, req, _) => captured = req)
+            .ReturnsAsync(new PublishedLayerSummary
+            {
+                StorageLayerId = 42,
+                ServiceLayerIndex = 3,
+                LayerName = "Parcels",
+                Schema = "honua_data",
+                Table = "parcels",
+                GeometryType = "Polygon",
+                Srid = 4326,
+                ServiceName = "planning",
+                Enabled = true,
+            });
+        var publication = new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance, publishing.Object);
+        var warnings = new List<string>();
+
+        var result = await publication.TryPublishImportedLayerAsync(new()
+        {
+            ServiceUrl = "https://example.com/rest/services/Planning/FeatureServer",
+            LayerId = 3,
+            TableName = "parcels",
+            ServiceName = "planning",
+        }, "honua_data", new() { Id = 3, Name = "Parcels", Fields = [] }, warnings, null, "job", DateTimeOffset.UtcNow,
+            1, "Host=unused", CancellationToken.None);
+
+        result.Should().NotBeNull();
+        captured.Should().NotBeNull();
+        captured!.ServiceLayerIndex.Should().Be(3);
+    }
+
     [Theory]
     [InlineData(false, LayerPublishingErrorKind.Conflict)]
     [InlineData(false, LayerPublishingErrorKind.Validation)]

@@ -20,10 +20,15 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         var (graph, _) = await LoadCurrentOrEmptyGraphAsync(cancellationToken).ConfigureAwait(false);
         var metadataByLayerId = IndexSourceGovernanceByStorageLayer(graph, serviceName, storageScope);
+        var indexByLayerId = IndexServiceLayerIndicesByStorageLayer(graph, serviceName, storageScope);
         return layers
-            .Select(layer => metadataByLayerId.TryGetValue(layer.StorageLayerId, out var metadata)
-                ? HydrateSourceGovernance(layer, metadata)
-                : layer)
+            .Select(layer =>
+            {
+                var serviceLayerIndex = indexByLayerId.TryGetValue(layer.StorageLayerId, out var idx) ? idx : layer.ServiceLayerIndex;
+                return metadataByLayerId.TryGetValue(layer.StorageLayerId, out var metadata)
+                    ? HydrateSourceGovernance(layer, metadata, serviceLayerIndex)
+                    : layer;
+            })
             .ToArray();
     }
 
@@ -33,9 +38,39 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string serviceName, LayerStorageScope? storageScope = null)
     {
         var metadataByLayerId = IndexSourceGovernanceByStorageLayer(graph, serviceName, storageScope);
+        var indexByLayerId = IndexServiceLayerIndicesByStorageLayer(graph, serviceName, storageScope);
+        var serviceLayerIndex = indexByLayerId.TryGetValue(layer.StorageLayerId, out var idx) ? idx : layer.ServiceLayerIndex;
         return metadataByLayerId.TryGetValue(layer.StorageLayerId, out var metadata)
-            ? HydrateSourceGovernance(layer, metadata)
+            ? HydrateSourceGovernance(layer, metadata, serviceLayerIndex)
             : layer;
+    }
+
+    private static Dictionary<int, int?> IndexServiceLayerIndicesByStorageLayer(
+        MetadataV2Graph graph,
+        string serviceName,
+        LayerStorageScope? storageScope)
+    {
+        var service = ResolveUniquePublishedFeatureService(graph, serviceName, layerId: null);
+        if (service is null)
+        {
+            return new Dictionary<int, int?>();
+        }
+
+        var snapshot = new MetadataV2GraphSnapshot(graph, "\"service-layer-index\"", DateTimeOffset.UtcNow);
+        var result = new Dictionary<int, int?>();
+        foreach (var publication in graph.Publications.Where(publication =>
+                     string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal) &&
+                     publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer)
+                 .OrderByDescending(snapshot.IsRoutable))
+        {
+            var binding = snapshot.ResolveStorageBinding(publication);
+            if (binding?.StorageLayerId is { } layerId && BindingMatchesStorageScope(binding, storageScope))
+            {
+                result.TryAdd(layerId, publication.LayerIndex);
+            }
+        }
+
+        return result;
     }
 
     internal static IReadOnlyDictionary<int, MetadataV2ObjectMetadata> IndexSourceGovernanceByStorageLayer(
@@ -95,10 +130,12 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
     private static PublishedLayerSummary HydrateSourceGovernance(
         PublishedLayerSummary layer,
-        MetadataV2ObjectMetadata metadata)
+        MetadataV2ObjectMetadata metadata,
+        int? serviceLayerIndex = null)
         => new()
         {
             StorageLayerId = layer.StorageLayerId,
+            ServiceLayerIndex = serviceLayerIndex ?? layer.ServiceLayerIndex,
             LayerName = layer.LayerName,
             Description = layer.Description,
             Schema = layer.Schema,

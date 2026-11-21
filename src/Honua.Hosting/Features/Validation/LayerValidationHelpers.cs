@@ -45,13 +45,16 @@ internal static partial class LayerValidationHelpers
         {
             400 => "InvalidRequest",
             404 => "ResourceNotFound",
+            409 => "AmbiguousIdentifier",
             _ => "Error"
         };
 
         var factory = ODataErrorFactoryOverride;
         if (factory is null)
         {
-            return StandardErrorHelpers.CreateNotFound(context, message);
+            return statusCode == StatusCodes.Status409Conflict
+                ? StandardErrorHelpers.CreateConflict(context, message)
+                : StandardErrorHelpers.CreateNotFound(context, message);
         }
         return factory(context, errorCode, message, statusCode);
     }
@@ -62,6 +65,7 @@ internal static partial class LayerValidationHelpers
         {
             400 => StandardErrorHelpers.CreateBadRequest(context, message),
             404 => StandardErrorHelpers.CreateNotFound(context, message),
+            409 => StandardErrorHelpers.CreateConflict(context, message),
             _ => StandardErrorHelpers.CreateInternalServerError(context, message)
         };
     }
@@ -74,6 +78,7 @@ internal static partial class LayerValidationHelpers
             StatusCodes.Status401Unauthorized => "Unauthorized",
             StatusCodes.Status403Forbidden => "Forbidden",
             StatusCodes.Status404NotFound => "Not Found",
+            StatusCodes.Status409Conflict => "Conflict",
             _ => "Error"
         };
         return ProblemDetailsHelpers.CreateProblem(context, "about:blank", statusCode, title, message);
@@ -119,7 +124,11 @@ internal static partial class LayerValidationHelpers
             : cancellationToken;
 
         var snapshot = await GetV2SnapshotAsync(context, effectiveToken).ConfigureAwait(false);
-        var (publication, resource, service) = ResolveV2Triple(context, snapshot, layerId, requiredProtocol);
+        var (publication, resource, service, ambiguityError) = ResolveV2Triple(context, snapshot, layerId, requiredProtocol);
+        if (TryCreateAmbiguousLayerResult(context, ambiguityError, protocol) is { } ambiguousResult)
+        {
+            return ambiguousResult;
+        }
 
         if (publication is null || !snapshot.IsRoutable(publication))
         {
@@ -129,14 +138,12 @@ internal static partial class LayerValidationHelpers
             }
 
             var msg = $"Layer {layerId} not found";
-            var error = protocol switch
-            {
-                ValidationProtocol.OData => CreateODataError(context, msg, StatusCodes.Status404NotFound),
-                ValidationProtocol.OgcFeatures => CreateOgcError(context, msg, StatusCodes.Status404NotFound),
-                ValidationProtocol.ProblemJson => CreateProblemJsonError(context, msg, StatusCodes.Status404NotFound),
-                _ => StandardErrorHelpers.CreateNotFound(context, msg),
-            };
-            return new MetadataV2ValidationResult(false, null, null, null, error);
+            return new MetadataV2ValidationResult(
+                false,
+                null,
+                null,
+                null,
+                CreateProtocolError(context, protocol, (msg, StatusCodes.Status404NotFound)));
         }
 
         // Per-operation RBAC grants are consulted first via the shared seam; the coarse
@@ -192,7 +199,7 @@ internal static partial class LayerValidationHelpers
         // Challenge only what authenticating could open. Resolution falls back to a publication
         // whose service does not serve the requested protocol, and its own tenant would still
         // get 404 there, so that layer stays 404 and its existence is not disclosed.
-        var (hidden, _, hiddenService) = ResolveV2TripleForTenant(snapshot, layerId, requiredProtocol, tenantId: null, applyTenantScope: false);
+        var (hidden, _, hiddenService, _) = ResolveV2TripleForTenant(snapshot, layerId, requiredProtocol, tenantId: null, applyTenantScope: false);
         if (hidden is null
             || (!string.IsNullOrWhiteSpace(requiredProtocol) && hiddenService is not null
                 && !MetadataV2ServiceProtocols.IsProtocolEnabled(hiddenService, requiredProtocol)))
@@ -227,7 +234,8 @@ internal static partial class LayerValidationHelpers
         CancellationToken cancellationToken = default)
     {
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
-        var (publication, resource, service) = ResolveV2Triple(context, snapshot, layerId, requiredProtocol);
+        var (publication, resource, service, ambiguityError) = ResolveV2Triple(context, snapshot, layerId, requiredProtocol);
+        if (TryCreateAmbiguousLayerResult(context, ambiguityError) is { } ambiguousResult) return ambiguousResult;
 
         if (publication is null || !snapshot.IsRoutable(publication))
         {
@@ -237,20 +245,14 @@ internal static partial class LayerValidationHelpers
         }
 
         var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
-            context, resource!, operation,
-            service, cancellationToken).ConfigureAwait(false);
-        if (accessError != null)
-        {
-            return new MetadataV2ValidationResult(false, publication, resource, service, accessError);
-        }
+            context, resource!, operation, service, cancellationToken).ConfigureAwait(false);
+        if (accessError != null) return new MetadataV2ValidationResult(false, publication, resource, service, accessError);
 
         if (!string.IsNullOrWhiteSpace(requiredProtocol) && service is not null &&
             !MetadataV2ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
         {
-            var error = StandardErrorHelpers.CreateNotFound(
-                context,
-                $"{requiredProtocol} is not enabled for this service.");
-            return new MetadataV2ValidationResult(false, publication, resource, service, error);
+            return new MetadataV2ValidationResult(false, publication, resource, service,
+                StandardErrorHelpers.CreateNotFound(context, $"{requiredProtocol} is not enabled for this service."));
         }
 
         ValidatedMetadataSnapshot.Remember(context, resource!, snapshot);
@@ -452,6 +454,13 @@ internal static partial class LayerValidationHelpers
                 string.Equals(p.Metadata.Id, collectionId, StringComparison.OrdinalIgnoreCase) && IsTenantVisible(p));
         }
 
+        if (publication is null)
+        {
+            var (numericPublication, numericAmbiguity) = TryResolveNumericCollection(snapshot, (collectionId, requiredProtocol), IsTenantVisible);
+            if (TryCreateAmbiguousLayerResult(context, numericAmbiguity) is { } ambiguousResult) return ambiguousResult;
+            publication = numericPublication;
+        }
+
         if (publication is null && !string.IsNullOrWhiteSpace(requiredProtocol))
         {
             var protocolMatches = snapshot.Graph.Publications.Where(p =>
@@ -586,7 +595,7 @@ internal static partial class LayerValidationHelpers
         CancellationToken cancellationToken = default)
     {
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
-        var (publication, resource, service) = ResolveV2Triple(context, snapshot, layerId, requiredProtocol);
+        var (publication, resource, service, _) = ResolveV2Triple(context, snapshot, layerId, requiredProtocol);
 
         if (publication is null || !snapshot.IsRoutable(publication))
         {
@@ -671,28 +680,13 @@ internal static partial class LayerValidationHelpers
         CancellationToken cancellationToken = default)
     {
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
-
-        // Prefer the publication whose type is the canonical surface for the protocol
-        // before falling back to the lexicographically earliest service name. LINQ ordering
-        // is stable, preserving the first graph entry when names compare equal.
-        return snapshot.Graph.Publications
-            .Where(publication => publication.LayerIndex == layerId && snapshot.IsRoutable(publication))
-            .Select(publication => (
-                Publication: publication,
-                Service: ResolveVisibleProtocolService(
-                    context,
-                    snapshot,
-                    publication,
-                    requiredProtocol)))
-            .Where(candidate => candidate.Service is not null)
+        return ResolveVisibleProtocolCandidates(context, snapshot, (layerId, requiredProtocol))
             .OrderByDescending(candidate =>
                 MetadataV2ServiceProtocols.IsPreferredPublicationType(
                     requiredProtocol,
                     candidate.Publication.PublicationType))
-            .ThenBy(
-                candidate => candidate.Service!.Metadata.Name,
-                StringComparer.OrdinalIgnoreCase)
-            .Select(candidate => candidate.Service!.Metadata.Name)
+            .ThenBy(candidate => candidate.Service.Metadata.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(candidate => candidate.Service.Metadata.Name)
             .FirstOrDefault();
     }
 
@@ -730,89 +724,6 @@ internal static partial class LayerValidationHelpers
     {
         var provider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         return await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private static (MetadataV2Layer? Publication, MetadataV2Object? Resource, MetadataV2Service? Service)
-        ResolveV2Triple(
-            HttpContext context,
-            MetadataV2GraphSnapshot snapshot,
-            int layerId,
-            string? requiredProtocol)
-        => ResolveV2TripleForTenant(
-            snapshot,
-            layerId,
-            requiredProtocol,
-            TenantScopeHelpers.ResolveRequestTenantId(context),
-            applyTenantScope: true);
-
-    internal static (MetadataV2Layer? Publication, MetadataV2Object? Resource, MetadataV2Service? Service)
-        ResolveV2TripleForTenant(
-            MetadataV2GraphSnapshot snapshot,
-            int layerId,
-            string? requiredProtocol,
-            string? tenantId,
-            bool applyTenantScope)
-    {
-        // Resolution order (now deterministic):
-        //   1. requiredProtocol matches AND publication.IsPrimary
-        //   2. requiredProtocol matches (any)
-        //   3. publication.IsPrimary
-        //   4. lexicographically earliest by service name
-        var candidatePublications = snapshot.Graph.Publications
-            .Where(p => p.LayerIndex == layerId && snapshot.IsRoutable(p))
-            .Where(p =>
-            {
-                if (!applyTenantScope)
-                {
-                    return true;
-                }
-
-                var resource = snapshot.ResolveResource(p);
-                var service = snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var resolvedService)
-                    ? resolvedService
-                    : null;
-                return MetadataV2TenantVisibility.IsVisibleToTenant(p, resource, service, tenantId);
-            })
-            .ToList();
-
-        if (!string.IsNullOrWhiteSpace(requiredProtocol))
-        {
-            var preferred = candidatePublications
-                .Where(p =>
-                    snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var s) &&
-                    MetadataV2ServiceProtocols.IsProtocolEnabled(s, requiredProtocol))
-                .OrderByDescending(p => MetadataV2ServiceProtocols.IsPreferredPublicationType(requiredProtocol, p.PublicationType))
-                .ThenByDescending(p => p.IsPrimary)
-                .FirstOrDefault();
-            if (preferred is not null)
-            {
-                var preferredResource = snapshot.ResolveResource(preferred);
-                var preferredService = snapshot.Index.ServicesById.TryGetValue(preferred.ServiceId, out var resolvedPreferredService)
-                    ? resolvedPreferredService
-                    : null;
-                return (preferred, preferredResource, preferredService);
-            }
-        }
-
-        var publication = candidatePublications
-            .OrderByDescending(p => p.IsPrimary)
-            .ThenBy(p =>
-                snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var s)
-                    ? s.Metadata.Name
-                    : p.ServiceId,
-                StringComparer.OrdinalIgnoreCase)
-            .FirstOrDefault();
-
-        if (publication is null)
-        {
-            return (null, null, null);
-        }
-
-        var resource = snapshot.ResolveResource(publication);
-        var service = snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var resolvedService)
-            ? resolvedService
-            : null;
-        return (publication, resource, service);
     }
 
     // A grant for one edit operation does not authorize another; a null operation keeps the coarse any-write check for a mixed batch.

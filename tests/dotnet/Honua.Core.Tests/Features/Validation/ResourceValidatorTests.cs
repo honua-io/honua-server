@@ -589,6 +589,62 @@ public sealed class ResourceValidatorTests
         };
     }
 
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task ValidateLayerV2Async_TwoServicesWithLayerZero_ResolvesByStorageIdAndRejectsAmbiguousIndex()
+    {
+        var validator = new ResourceValidator(new TestMetadataV2GraphProvider(TwoServicesWithLayerZeroGraph()));
+
+        var byStorageA = await validator.ValidateLayerV2Async(10);
+        byStorageA.IsValid.Should().BeTrue();
+        byStorageA.Resource!.Metadata.Id.Should().Be("res-a");
+
+        var byStorageB = await validator.ValidateLayerV2Async(11);
+        byStorageB.IsValid.Should().BeTrue();
+        byStorageB.Resource!.Metadata.Id.Should().Be("res-b");
+
+        var ambiguous = await validator.ValidateLayerV2Async(0);
+        ambiguous.IsValid.Should().BeFalse();
+        ambiguous.ErrorCode.Should().Be(ResourceValidationError.AmbiguousIdentifier);
+        ambiguous.ErrorMessage.Should().Contain("svc-a").And.Contain("svc-b");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task ValidateCollectionV2Async_TwoServicesWithLayerZero_ResolvesByStorageIdAndRejectsAmbiguousZero()
+    {
+        var validator = new ResourceValidator(new TestMetadataV2GraphProvider(TwoServicesWithLayerZeroGraph()));
+
+        var byStorage = await validator.ValidateCollectionV2Async("11");
+        byStorage.IsValid.Should().BeTrue();
+        byStorage.Resource!.Metadata.Id.Should().Be("res-b");
+
+        var ambiguous = await validator.ValidateCollectionV2Async("0");
+        ambiguous.IsValid.Should().BeFalse();
+        ambiguous.ErrorCode.Should().Be(ResourceValidationError.AmbiguousIdentifier);
+    }
+
+    private static MetadataV2Graph TwoServicesWithLayerZeroGraph()
+        => new()
+        {
+            Resources = [FeatureResource("res-a", "parcels_a", "storage-10"), FeatureResource("res-b", "roads_b", "storage-11")],
+            StorageBindings = [RelationalBinding("storage-10", "res-a", 10), RelationalBinding("storage-11", "res-b", 11)],
+            Services = [ProtocolService("svc-a"), ProtocolService("svc-b")],
+            Publications = [FeaturePub("pub-a-0", ("svc-a", "res-a", "storage-10")), FeaturePub("pub-b-0", ("svc-b", "res-b", "storage-11"))],
+        };
+
+    private static MetadataV2Object FeatureResource(string id, string name, string bindingId)
+        => new() { Metadata = new() { Id = id, Name = name }, Type = MetadataV2ObjectType.FeatureDataset, Status = ActiveStatus(), StorageBindingIds = [bindingId], PrimaryStorageBindingId = bindingId };
+
+    private static MetadataV2StorageBinding RelationalBinding(string id, string resourceId, int storageLayerId)
+        => new() { Metadata = new() { Id = id, Name = id }, Status = ActiveStatus(), ResourceId = resourceId, StorageType = MetadataV2StorageType.RelationalTable, Locator = $"public.{resourceId}", StorageLayerId = storageLayerId };
+
+    private static MetadataV2Service ProtocolService(string id)
+        => new() { Metadata = new() { Id = id, Name = id }, Status = ActiveStatus(), Protocols = [ServiceProtocols.FeatureServer, ServiceProtocols.OgcFeatures, ServiceProtocols.OData] };
+
+    private static MetadataV2Layer FeaturePub(string id, (string ServiceId, string ResourceId, string BindingId) target)
+        => new() { Metadata = new() { Id = id, Name = "0" }, Status = ActiveStatus(), ResourceId = target.ResourceId, ServiceId = target.ServiceId, StorageBindingId = target.BindingId, PublicationType = MetadataV2LayerType.EsriFeatureLayer, Identifier = new() { Value = "0", IsNumeric = true }, IsPrimary = true };
+
     private static MetadataV2Status ActiveStatus()
         => new() { Lifecycle = MetadataV2LifecycleStatus.Active };
 }

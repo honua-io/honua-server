@@ -98,6 +98,7 @@ internal sealed partial class GeoservicesLayerPublicationService
             SupportsAttachments = supportsAttachments,
             Fields = [],
             ServiceName = request.ServiceName,
+            ServiceLayerIndex = layerInfo.Id >= 0 ? layerInfo.Id : null,
             PublicName = request.Target?.PublicName,
             FolderId = request.Target is { } target ? new(target.FolderId) : default,
             Namespace = request.Target?.Namespace,

@@ -63,6 +63,8 @@ public sealed class LayerPublishRequest
 
     public string? ServiceName { get; init; }
 
+    public int? ServiceLayerIndex { get; init; }
+
     // A grouping namespace requires a trusted tenant context; null keeps the legacy unscoped publication, and an existing service cannot be retagged.
     public string? Namespace { get; init; }
 
@@ -212,6 +214,8 @@ public sealed class PublishedLayerSummary
 
     // Deprecated wire alias of StorageLayerId; published clients still read layerId.
     public int LayerId => StorageLayerId;
+
+    public int? ServiceLayerIndex { get; init; }
 
     public required string LayerName { get; init; }
 

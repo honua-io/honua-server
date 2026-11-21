@@ -250,6 +250,13 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 "Layer name is required.");
         }
 
+        if (request.ServiceLayerIndex is < 0)
+        {
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Validation,
+                "serviceLayerIndex must be zero or greater.");
+        }
+
         if (!LayerPublishSourceMetadataBounds.TryValidate(request, out var sourceMetadataError))
         {
             throw new LayerPublishingException(LayerPublishingErrorKind.Validation, sourceMetadataError!);
@@ -624,6 +631,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         return new PublishedLayerSummary
         {
             StorageLayerId = layerId,
+            ServiceLayerIndex = metadataMutation?.ServiceLayerIndex,
             LayerName = request.LayerName.Trim(),
             Description = request.Description,
             License = request.SourceGovernance?.License,
@@ -1273,5 +1281,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     internal sealed record MetadataV2GraphMutation(
         MetadataV2Graph PreviousGraph,
         MetadataV2Graph PersistedGraph,
-        string PersistedEtag);
+        string PersistedEtag)
+    {
+        public int? ServiceLayerIndex { get; init; }
+    }
 }

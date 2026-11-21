@@ -98,6 +98,9 @@ public sealed class PublishLayerRequest
     [StringLength(64)]
     public string? ServiceName { get; init; }
 
+    [Range(0, int.MaxValue)]
+    public int? ServiceLayerIndex { get; init; }
+
     [StringLength(128, MinimumLength = 1)]
     public string? Namespace { get; init; }
 
