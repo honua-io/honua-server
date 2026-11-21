@@ -280,11 +280,11 @@ services:
       - ./secrets/keyring.pfx:/var/lib/honua/keyring.pfx:ro
     secrets: [postgres_password, honua_admin_password, honua_audit_chain_key, honua_master_key, honua_keyring_password]
   postgres:
-    image: honua-postgis-proj-grids:17-honua-d9df4cd1
+    image: honua-postgis-proj-grids:17-honua-e60f2e28
     build:
       context: ./docker/proj-grids
       args:
-        BASE_IMAGE: ghcr.io/honua-io/honua-server@sha256:d9df4cd19ac018b1e626d7c74a1400d7affb8de48dbe5ed67a862589c4e3d998
+        BASE_IMAGE: ghcr.io/honua-io/honua-server@sha256:e60f2e287f6bddfaa7e1ac0bab082f83580a6ba242a98d0933d55e1e577e6fa0
     pull_policy: missing
     environment:
       POSTGRES_DB: honua
