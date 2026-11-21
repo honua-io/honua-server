@@ -90,9 +90,9 @@ internal sealed class OpsSelfCheckSource(
             }
             return new(tag.GetString()!, uri);
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException timedOut) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new HttpRequestException("Public release check timed out.");
+            throw new HttpRequestException("Public release check timed out.", timedOut);
         }
     }
 

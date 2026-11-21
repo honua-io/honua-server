@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Net;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
@@ -8,6 +10,8 @@ using Honua.Core.Features.Observability.Domain;
 using Honua.Infrastructure.Monitoring;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.Logging;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
@@ -256,6 +260,86 @@ public sealed class OpsSelfChecksTests
         Assert.Equal(clock.Now, recovered.Sources[0].ObservedAt);
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Release_FailedRead_RetriesBeforeDailyIntervalAndSuccessClearsWarning()
+    {
+        var clock = new TestClock();
+        var source = new FakeSource { ReleaseFailure = new HttpRequestException("feed down"), Release = new("2026.2", ReleaseNotes) };
+        using var checks = new OpsSelfChecks(clock, source);
+        var failed = await checks.EvaluateAsync();
+        var warning = Assert.Single(failed, finding => finding.Rule == OpsSelfChecks.CollectionRule);
+        Assert.Equal("public-release-feed", warning.Subject.WorkloadId);
+
+        clock.Advance(TimeSpan.FromMinutes(4));
+        await checks.EvaluateAsync();
+        Assert.Equal(1, source.ReleaseReads);
+        source.ReleaseFailure = null;
+        clock.Advance(TimeSpan.FromMinutes(1));
+        var recovered = await checks.EvaluateWithEvidenceAsync();
+        Assert.Equal(2, source.ReleaseReads);
+        Assert.DoesNotContain(recovered.Findings, finding => finding.Rule == OpsSelfChecks.CollectionRule);
+        Assert.Contains(recovered.Findings, finding => finding.Rule == OpsSelfChecks.ReleaseRule);
+        Assert.All(recovered.Sources, evidence => Assert.True(EvidencePostureFactory.IsActionable(evidence)));
+
+        clock.Advance(TimeSpan.FromHours(23));
+        await checks.EvaluateAsync();
+        Assert.Equal(2, source.ReleaseReads);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Release_RepeatedFailures_BackOffUpToOneHour()
+    {
+        var clock = new TestClock();
+        var source = new FakeSource { ReleaseFailure = new HttpRequestException("feed down") };
+        using var checks = new OpsSelfChecks(clock, source);
+        await checks.EvaluateAsync();
+        var reads = new List<int>();
+        for (var minute = 1; minute <= 195; minute++)
+        {
+            clock.Advance(TimeSpan.FromMinutes(1));
+            var before = source.ReleaseReads;
+            await checks.EvaluateAsync();
+            if (source.ReleaseReads > before)
+            {
+                reads.Add(minute);
+            }
+        }
+        Assert.Equal([5, 15, 35, 75, 135, 195], reads);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task FailedRead_LogsFailureClassWithoutExceptionText()
+    {
+        var logger = Substitute.For<ILogger<OpsSelfChecks>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var source = new FakeSource
+        {
+            ReleaseFailure = new HttpRequestException("private-feed-detail", null, HttpStatusCode.Forbidden),
+            ProviderFailure = new InvalidOperationException("private-store-detail")
+        };
+        using var checks = new OpsSelfChecks(new TestClock(), source, logger);
+        await checks.EvaluateAsync();
+        var messages = logger.ReceivedCalls().Where(call => call.GetMethodInfo().Name == nameof(ILogger.Log))
+            .Select(call => call.GetArguments()[2]?.ToString() ?? string.Empty).ToArray();
+        Assert.Contains("Scheduled self-check public-release-feed could not finish: HttpRequestException status 403.", messages);
+        Assert.Contains("Scheduled self-check sign-in-providers could not finish: InvalidOperationException.", messages);
+        Assert.All(messages, message => Assert.DoesNotContain("private-", message, StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void DescribeFailure_NamesTransportCause()
+    {
+        var refused = new HttpRequestException(HttpRequestError.ConnectionError, "connect",
+            new HttpRequestException("pinned", new SocketException((int)SocketError.ConnectionRefused)));
+        Assert.Equal("HttpRequestException ConnectionError (SocketException ConnectionRefused)", OpsSelfChecks.DescribeFailure(refused));
+        var timedOut = new HttpRequestException("timed out", new TaskCanceledException());
+        Assert.Equal("HttpRequestException Unknown (TaskCanceledException)", OpsSelfChecks.DescribeFailure(timedOut));
+    }
+
     private static readonly Uri ReleaseNotes = new("https://github.com/honua-io/honua-server/releases/tag/v2026.2");
 
     private sealed class TestClock : TimeProvider
@@ -272,6 +356,7 @@ public sealed class OpsSelfChecksTests
         public IReadOnlyList<OpsIdentityProviderHealth> Providers { get; set; } = [];
         public OpsPublishedRelease? Release { get; set; }
         public Exception? ProviderFailure { get; set; }
+        public Exception? ReleaseFailure { get; set; }
         public TaskCompletionSource? ProbeGate { get; init; }
         public int ProviderReads { get; private set; }
         public int ReleaseReads { get; private set; }
@@ -293,7 +378,7 @@ public sealed class OpsSelfChecksTests
         public Task<OpsPublishedRelease?> ReadLatestReleaseAsync(CancellationToken cancellationToken)
         {
             ReleaseReads++;
-            return Task.FromResult(Release);
+            return ReleaseFailure is null ? Task.FromResult(Release) : Task.FromException<OpsPublishedRelease?>(ReleaseFailure);
         }
     }
 }
