@@ -23,7 +23,7 @@ internal sealed class WorkflowRollbackApprovalRequestMapper(string operationId) 
         var (descriptor, request, context, decision) = (input.Descriptor, input.Request, input.Context, input.Decision);
         if (descriptor.OperationId != OperationId || request.OperationId != OperationId)
         {
-            throw new ArgumentException("Rollback approval requires the exact operation identity.", nameof(request));
+            throw new ArgumentException("Rollback approval requires the exact operation identity.", nameof(input));
         }
 
         Validate(request);

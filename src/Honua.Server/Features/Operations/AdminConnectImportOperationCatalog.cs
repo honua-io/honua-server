@@ -201,7 +201,7 @@ internal sealed class AdminConnectImportApprovalRequestMapper(
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(decision);
         if (descriptor.OperationId != OperationId || request.OperationId != OperationId)
-            throw new ArgumentException($"The mapper only accepts {OperationId} requests.", nameof(request));
+            throw new ArgumentException($"The mapper only accepts {OperationId} requests.", nameof(input));
         var payload = AdminConnectImportApprovalPayload.From(request, context);
         var serialized = JsonSerializer.Serialize(payload,
             AdminConnectImportApprovalJsonContext.Default.AdminConnectImportApprovalPayload);

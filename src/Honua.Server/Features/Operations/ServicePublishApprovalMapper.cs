@@ -27,7 +27,7 @@ internal sealed class ServicePublishApprovalRequestMapper : IOperationApprovalRe
         if (!string.Equals(descriptor.OperationId, OperationId, StringComparison.Ordinal) ||
             !string.Equals(request.OperationId, OperationId, StringComparison.Ordinal))
         {
-            throw new ArgumentException("The mapper only accepts service.publish requests.", nameof(request));
+            throw new ArgumentException("The mapper only accepts service.publish requests.", nameof(input));
         }
 
         var payload = ServicePublishApprovalPayload.From(request, context);

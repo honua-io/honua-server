@@ -961,7 +961,7 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
             || !request.Parameters.TryGetValue(StudioDraftOperations.PayloadParameter, out var payload)
             || string.IsNullOrWhiteSpace(payload))
         {
-            throw new ArgumentException("The Studio approval mapper requires its exact typed payload.", nameof(request));
+            throw new ArgumentException("The Studio approval mapper requires its exact typed payload.", nameof(input));
         }
 
         var plan = BuildPlan(payload);

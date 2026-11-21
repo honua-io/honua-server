@@ -237,7 +237,7 @@ internal sealed class AdminOperateOperationApprovalRequestMapper(
         ArgumentNullException.ThrowIfNull(decision);
         if (descriptor.OperationId != OperationId || request.OperationId != OperationId)
         {
-            throw new ArgumentException($"The mapper only accepts {OperationId} requests.", nameof(request));
+            throw new ArgumentException($"The mapper only accepts {OperationId} requests.", nameof(input));
         }
 
         var payload = AdminApiOperationApprovalPayload.From(request, context, secretStore);

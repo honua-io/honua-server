@@ -21,7 +21,7 @@ internal sealed class StylePresetApprovalMapper : IOperationApprovalRequestMappe
         var (descriptor, request, context, decision) = (input.Descriptor, input.Request, input.Context, input.Decision);
         if (descriptor.OperationId != OperationId || request.OperationId != OperationId)
         {
-            throw new ArgumentException("The mapper only accepts style.apply-preset requests.", nameof(request));
+            throw new ArgumentException("The mapper only accepts style.apply-preset requests.", nameof(input));
         }
         StylePresetTargetPin.RequirePin(request);
         var payload = new StylePresetApprovalPayload

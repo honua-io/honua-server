@@ -51,7 +51,7 @@ public sealed partial class ServerJobArtifactImporterTests
     {
         var harness = await OperationHarnessAsync();
         var prepared = await harness.PrepareProposalAsync();
-        IOperationApprovalRequestMapper mapper = new StagedImportApprovalMapper();
+        var mapper = new StagedImportApprovalMapper();
         var gateway = mapper.Map(new OperationApprovalRequestContext
         {
             Descriptor = StagedImportOperation.BuildDescriptors()[1],
@@ -269,7 +269,7 @@ public sealed partial class ServerJobArtifactImporterTests
         var approved = harness.Context() with { ApprovedProposalId = "proposal-1" };
         await harness.Import.SubmitAsync(prepared, approved, CancellationToken.None);
 
-        IOperationApprovalRequestMapper mapper = new StagedImportApprovalMapper(StagedImportOperation.DiscardOperationId);
+        var mapper = new StagedImportApprovalMapper(StagedImportOperation.DiscardOperationId);
         var discardRequest = new OperationRequest
         {
             OperationId = StagedImportOperation.DiscardOperationId,
