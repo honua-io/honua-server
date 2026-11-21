@@ -12,6 +12,7 @@ public sealed class SpecGroundingRemoveMissingTests
     [Theory]
     [InlineData("remove source nope")]
     [InlineData("remove compute nope")]
+    [InlineData("show rivers on the map; remove source nope")]
     public async Task Mutate_RemovingMissingId_ReturnsInvalidMutationWithoutNextSpec(string turn)
     {
         using var harness = new SpecGroundingHarness(SpecGroundingTestSupport.CreateLayer(1, "Rivers"));
