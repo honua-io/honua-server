@@ -621,7 +621,7 @@ public sealed class SpatialAnalyticsRestTests : IClassFixture<SpatialAnalyticsRe
         // So target A must match exactly {J1}, target B must match exactly {J3} — matchCount 1
         // each, with the carried label/weight identifying precisely which join row matched.
         const double earthEquatorialRadiusMeters = 6378137.0;
-        double LonDelta(double degrees) => earthEquatorialRadiusMeters * degrees * Math.PI / 180.0;
+        static double LonDelta(double degrees) => earthEquatorialRadiusMeters * degrees * Math.PI / 180.0;
 
         await fixture.Postgres.ExecuteAsync(
             """

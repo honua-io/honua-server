@@ -222,12 +222,12 @@ internal static partial class PrintingToolsEndpoints
                 var response = name == "SubmitJob"
                     ? await HandleSubmitJob(context, cancellationToken).ConfigureAwait(false)
                     : await HandleExecute(context, cancellationToken).ConfigureAwait(false);
-                if ((response as IValueHttpResult)?.Value is PrintSubmitJobResponse submitted && submitted.JobId is not null)
+                if (response is IValueHttpResult { Value: PrintSubmitJobResponse { JobId: not null } submitted })
                 {
                     return CreateSoapResponse(soap, operation.Name.Namespace, name + "Response", new XElement("Result", submitted.JobId));
                 }
 
-                if ((response as IValueHttpResult)?.Value is PrintExecuteResponse executed
+                if (response is IValueHttpResult { Value: PrintExecuteResponse executed }
                     && executed.Results is { Length: > 0 } printed
                     && printed[0].Value?.Url is { Length: > 0 } url)
                 {
@@ -440,7 +440,7 @@ internal static partial class PrintingToolsEndpoints
 
     private static IResult FaultFromResult(IResult response, XNamespace soap, string fallback)
     {
-        var message = (response as IValueHttpResult)?.Value is Microsoft.AspNetCore.Mvc.ProblemDetails problem
+        var message = response is IValueHttpResult { Value: Microsoft.AspNetCore.Mvc.ProblemDetails problem }
             ? problem.Detail ?? problem.Title ?? fallback
             : fallback;
         return CreateSoapFaultFromResult(response, message, soap);

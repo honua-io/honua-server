@@ -42,6 +42,7 @@ file_header_template = unset
 [tests/dotnet/Honua.Core.Tests/GlobalUsings.cs]
 file_header_template = unset
 
+[*.cs]
 ###############################
 # .NET Coding Conventions     #
 ###############################
@@ -83,13 +84,13 @@ dotnet_style_prefer_compound_assignment = true:suggestion
 dotnet_style_prefer_simplified_interpolation = true:suggestion
 dotnet_style_prefer_simplified_boolean_expressions = true:suggestion
 
-# Null-checking preferences
-dotnet_style_coalesce_expression = true:warning
-dotnet_style_null_propagation = true:warning
+# Null-checking preferences (#8707: pinned to suggestion; Release probe found 102 IDE0270 and 58 IDE0031 pre-existing sites)
+dotnet_style_coalesce_expression = true:suggestion
+dotnet_style_null_propagation = true:suggestion
 dotnet_style_prefer_is_null_check_over_reference_equality_method = true:warning
 
-# File header (enforced)
-dotnet_diagnostic.IDE0073.severity = warning
+# File header (#8707: pinned to suggestion; Release probe found 96 pre-existing IDE0073 sites)
+dotnet_diagnostic.IDE0073.severity = suggestion
 
 ###############################
 # C# Coding Conventions       #
@@ -318,8 +319,8 @@ dotnet_naming_style.async_suffix.capitalization = pascal_case
 # Analyzer Diagnostics        #
 ###############################
 
-# IDE0005: Remove unnecessary using
-dotnet_diagnostic.IDE0005.severity = warning
+# IDE0005: Remove unnecessary using (#8707: pinned to suggestion; Release probe found 742 pre-existing sites)
+dotnet_diagnostic.IDE0005.severity = suggestion
 
 # IDE0011: Add braces (we allow single-line without braces)
 dotnet_diagnostic.IDE0011.severity = suggestion
@@ -327,14 +328,14 @@ dotnet_diagnostic.IDE0011.severity = suggestion
 # IDE0044: Make field readonly
 dotnet_diagnostic.IDE0044.severity = warning
 
-# IDE0051: Remove unused private member
-dotnet_diagnostic.IDE0051.severity = warning
+# IDE0051: Remove unused private member (#8707: pinned to suggestion; Release probe found 7 pre-existing sites)
+dotnet_diagnostic.IDE0051.severity = suggestion
 
-# IDE0052: Remove unread private member
-dotnet_diagnostic.IDE0052.severity = warning
+# IDE0052: Remove unread private member (#8707: pinned to suggestion; Release probe found 10 pre-existing sites including retained OTel gauge fields)
+dotnet_diagnostic.IDE0052.severity = suggestion
 
-# IDE0055: Formatting rule
-dotnet_diagnostic.IDE0055.severity = warning
+# IDE0055: Formatting rule (#8707: pinned to suggestion; Release probe found 4,250 pre-existing sites, enforced separately by CI format gate)
+dotnet_diagnostic.IDE0055.severity = suggestion
 
 # IDE0060: Remove unused parameter
 dotnet_diagnostic.IDE0060.severity = suggestion
@@ -376,7 +377,6 @@ dotnet_diagnostic.CS8618.severity = suggestion
 
 # Corvus.Text.Json 5.7.9 performance analyzers also flow to consuming projects.
 # Keep only UTF-8/conversion suggestions advisory; correctness/resource and IL/AOT rules remain enforced.
-[*.cs]
 dotnet_diagnostic.CTJ001.severity = suggestion
 dotnet_diagnostic.CTJ002.severity = suggestion
 
