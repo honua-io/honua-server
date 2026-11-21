@@ -534,17 +534,22 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
                 return true;
             }
 
-            var rawName = nameElement.GetString()?.Trim();
-            if (string.IsNullOrEmpty(rawName))
+            var rawValue = nameElement.GetString();
+            if (rawValue is null)
             {
                 return true;
             }
 
-            // Reject URLs, file paths, and control characters before GDAL parses the CRS.
-            if (rawName.Any(char.IsControl))
+            if (rawValue.Any(char.IsControl))
             {
                 error = "'zones' crs.properties.name contains control characters.";
                 return false;
+            }
+
+            var rawName = rawValue.Trim();
+            if (string.IsNullOrEmpty(rawName))
+            {
+                return true;
             }
 
             if (TryNormalizeUrnEpsg(rawName, out var epsgToken))
