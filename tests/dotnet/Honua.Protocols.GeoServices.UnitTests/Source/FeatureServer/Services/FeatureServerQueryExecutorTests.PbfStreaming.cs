@@ -10,6 +10,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -18,7 +19,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 
 public sealed partial class FeatureServerQueryExecutorTests
 {
-    [Fact]
+    [UnitTest]
     public async Task StreamPbfQueryAsync_UsesLimitPlusOneProbeAndMatchesMaterializedPbf()
     {
         var featureReader = Substitute.For<IFeatureReader>();

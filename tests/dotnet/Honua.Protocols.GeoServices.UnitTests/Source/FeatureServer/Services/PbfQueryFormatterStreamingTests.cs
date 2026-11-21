@@ -323,19 +323,15 @@ public sealed partial class PbfQueryFormatterTests
     [InlineData(122)] // EDQUOT
     public void PbfFeatureSpool_ScratchFullOnCreateOrWrite_ThrowsServiceUnavailableWithRetryAfter(int hresult)
     {
-        using (var createSpool = new PbfFeatureSpool(16, () => throw new IOException("No space left on device", hresult)))
-        {
-            var createAct = () => createSpool.Write(new byte[32]);
-            createAct.Should().Throw<ServiceUnavailableException>()
-                .Where(ex => ex.RetryAfterSeconds == PbfFeatureSpool.ScratchFullRetryAfterSeconds);
-        }
+        using var createSpool = new PbfFeatureSpool(16, () => throw new IOException("No space left on device", hresult));
+        var createAct = () => createSpool.Write(new byte[32]);
+        createAct.Should().Throw<ServiceUnavailableException>()
+            .Where(ex => ex.RetryAfterSeconds == PbfFeatureSpool.ScratchFullRetryAfterSeconds);
 
-        using (var writeSpool = new PbfFeatureSpool(16, () => new FailingWriteStream(hresult)))
-        {
-            var writeAct = () => writeSpool.Write(new byte[32]);
-            writeAct.Should().Throw<ServiceUnavailableException>()
-                .Where(ex => ex.RetryAfterSeconds == PbfFeatureSpool.ScratchFullRetryAfterSeconds);
-        }
+        using var writeSpool = new PbfFeatureSpool(16, () => new FailingWriteStream(hresult));
+        var writeAct = () => writeSpool.Write(new byte[32]);
+        writeAct.Should().Throw<ServiceUnavailableException>()
+            .Where(ex => ex.RetryAfterSeconds == PbfFeatureSpool.ScratchFullRetryAfterSeconds);
     }
 
     private static async IAsyncEnumerable<Feature> ToAsyncEnumerable(

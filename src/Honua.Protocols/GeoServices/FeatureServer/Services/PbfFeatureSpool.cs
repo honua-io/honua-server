@@ -19,9 +19,6 @@ internal sealed class PbfFeatureSpool : IDisposable
     internal const string ScratchFullClientMessage =
         "The server's temporary storage is full. Retry the PBF request shortly.";
 
-    // ENOSPC and EDQUOT (Linux), ERROR_HANDLE_DISK_FULL and ERROR_DISK_FULL (Windows HRESULTs).
-    private static readonly int[] StorageFullErrorCodes = [28, 122, unchecked((int)0x80070027), unchecked((int)0x80070070)];
-
     private readonly int _memorySpillThresholdBytes;
     private readonly Func<Stream> _scratchFactory;
 
@@ -169,25 +166,12 @@ internal sealed class PbfFeatureSpool : IDisposable
             {
                 scratch.Dispose();
             }
-            catch (IOException ex) when (IsStorageFull(ex))
+            catch (IOException ex) when (PrivateTempFile.IsStorageFull(ex))
             {
                 // A buffered scratch stream may retry refused bytes on close; the OS still
                 // closes and deletes the handle, and the caller already received 503.
             }
         }
-    }
-
-    internal static bool IsStorageFull(Exception? exception)
-    {
-        for (var current = exception; current is not null; current = current.InnerException)
-        {
-            if (current is IOException && Array.IndexOf(StorageFullErrorCodes, current.HResult) >= 0)
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static Stream CreateDefaultScratchStream()
@@ -224,7 +208,7 @@ internal sealed class PbfFeatureSpool : IDisposable
         {
             scratch = _scratchFactory();
         }
-        catch (IOException ex) when (IsStorageFull(ex))
+        catch (IOException ex) when (PrivateTempFile.IsStorageFull(ex))
         {
             throw new ServiceUnavailableException(ScratchFullClientMessage, ScratchFullRetryAfterSeconds);
         }
@@ -262,7 +246,7 @@ internal sealed class PbfFeatureSpool : IDisposable
         {
             scratch.Write(data);
         }
-        catch (IOException ex) when (IsStorageFull(ex))
+        catch (IOException ex) when (PrivateTempFile.IsStorageFull(ex))
         {
             throw new ServiceUnavailableException(ScratchFullClientMessage, ScratchFullRetryAfterSeconds);
         }
@@ -275,7 +259,7 @@ internal sealed class PbfFeatureSpool : IDisposable
             scratch.Flush();
             scratch.Seek(0, SeekOrigin.Begin);
         }
-        catch (IOException ex) when (IsStorageFull(ex))
+        catch (IOException ex) when (PrivateTempFile.IsStorageFull(ex))
         {
             throw new ServiceUnavailableException(ScratchFullClientMessage, ScratchFullRetryAfterSeconds);
         }
