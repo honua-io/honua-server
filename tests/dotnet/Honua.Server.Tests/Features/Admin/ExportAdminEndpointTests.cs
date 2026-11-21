@@ -183,6 +183,21 @@ public sealed partial class ExportEndpointTests
     [Endpoint("GET /api/v1/exports/{exportId}/current.json")]
     public async Task RetryFailedExportJob_AfterUnpublish_ReturnsConflictAndStaysUnpublished()
     {
+        var failedJobId = await SeedFailedExportJobAsync();
+
+        using var deleted = await _client.DeleteAsync($"{ExportsRoute}/{_exportId}");
+        deleted.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var retry = await _client.PostAsync($"{JobsRoute}/{failedJobId}/retry", content: null);
+        retry.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await retry.Content.ReadAsStringAsync()).Should().Contain("/api/v1/admin/exports");
+
+        using var current = await _client.GetAsync($"/api/v1/exports/{_exportId}/current.json");
+        current.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    private async Task<string> SeedFailedExportJobAsync()
+    {
         var jobStore = _fixture.GetOptionalService<IExecutionJobStore>()!;
         var progressStore = _fixture.GetOptionalService<IUniversalProgressStore>()!;
         var batchOptions = _fixture.GetOptionalService<IOptions<TileCacheBatchOptions>>()?.Value ?? new TileCacheBatchOptions();
@@ -219,16 +234,7 @@ public sealed partial class ExportEndpointTests
             },
             TimeSpan.FromMinutes(5),
             CancellationToken.None);
-
-        using var deleted = await _client.DeleteAsync($"{ExportsRoute}/{_exportId}");
-        deleted.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        using var retry = await _client.PostAsync($"{JobsRoute}/{failedJobId}/retry", content: null);
-        retry.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        (await retry.Content.ReadAsStringAsync()).Should().Contain("/api/v1/admin/exports");
-
-        using var current = await _client.GetAsync($"/api/v1/exports/{_exportId}/current.json");
-        current.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        return failedJobId;
     }
 
     [IntegrationTest]

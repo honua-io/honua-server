@@ -87,17 +87,7 @@ internal sealed partial class PublicExportRevocationService(
 
         if (deps.Destination is null)
         {
-            var timestamp = _timeProvider.GetUtcNow();
-            return new PublicExportRevocationRecord
-            {
-                RevocationId = $"rev-{Guid.NewGuid():N}",
-                PublicationId = request.PublicationId,
-                Reason = request.Reason,
-                ChangeId = string.IsNullOrWhiteSpace(request.ChangeId) ? CdnPurgeCause.NoRequest : request.ChangeId,
-                State = PublicExportRevocationState.Completed,
-                CreatedAt = timestamp,
-                UpdatedAt = timestamp
-            };
+            return CreateRevocationRecord(request, PublicExportRevocationState.Completed);
         }
 
         var pending = await deps.StateStore.ListPendingRevocationsAsync(cancellationToken).ConfigureAwait(false);
@@ -108,19 +98,26 @@ internal sealed partial class PublicExportRevocationService(
             return await AdvanceAsync(existing, cancellationToken).ConfigureAwait(false);
         }
 
+        var record = CreateRevocationRecord(request, PublicExportRevocationState.Requested);
+        await deps.StateStore.SaveRevocationAsync(record, cancellationToken).ConfigureAwait(false);
+        return await AdvanceAsync(record, cancellationToken).ConfigureAwait(false);
+    }
+
+    private PublicExportRevocationRecord CreateRevocationRecord(
+        PublicExportRevocationRequest request,
+        PublicExportRevocationState state)
+    {
         var now = _timeProvider.GetUtcNow();
-        var record = new PublicExportRevocationRecord
+        return new PublicExportRevocationRecord
         {
             RevocationId = $"rev-{Guid.NewGuid():N}",
             PublicationId = request.PublicationId,
             Reason = request.Reason,
             ChangeId = string.IsNullOrWhiteSpace(request.ChangeId) ? CdnPurgeCause.NoRequest : request.ChangeId,
-            State = PublicExportRevocationState.Requested,
+            State = state,
             CreatedAt = now,
             UpdatedAt = now
         };
-        await deps.StateStore.SaveRevocationAsync(record, cancellationToken).ConfigureAwait(false);
-        return await AdvanceAsync(record, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task ResumePendingAsync(CancellationToken cancellationToken)
