@@ -2391,11 +2391,13 @@ internal static class WmtsRequestHandlers
             return null;
         }
 
-        var extent = OgcTileExtent.ExpandDegenerateAxes(transformedExtent.Value, ResolveWmtsMaxZoom(context));
-        var minLon = Math.Min(extent.MinLon, extent.MaxLon);
-        var minLat = Math.Min(extent.MinLat, extent.MaxLat);
-        var maxLon = Math.Max(extent.MinLon, extent.MaxLon);
-        var maxLat = Math.Max(extent.MinLat, extent.MaxLat);
+        var extent = TileExtent.ExpandDegenerateAxes(transformedExtent.Value, ResolveWmtsMaxZoom(context));
+        // ows:WGS84BoundingBox cannot cross the dateline; advertise the full longitude range.
+        var crossesDateline = extent.MinLon > extent.MaxLon;
+        var minLon = crossesDateline ? -180d : extent.MinLon;
+        var maxLon = crossesDateline ? 180d : extent.MaxLon;
+        var minLat = extent.MinLat;
+        var maxLat = extent.MaxLat;
 
         return (
             $"{FormatWmtsCoordinate(minLon)} {FormatWmtsCoordinate(minLat)}",
