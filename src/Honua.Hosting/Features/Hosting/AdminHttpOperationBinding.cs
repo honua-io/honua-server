@@ -175,9 +175,10 @@ internal static partial class AdminHttpOperationBinding
             return binding.Definition.Path;
         }
 
-        if (normalizedDefPath.StartsWith(normalizedPrefix + "/", StringComparison.Ordinal))
+        // Slice the raw catalog path so parameter names and constraints reach the route unchanged.
+        if (binding.Definition.Path.StartsWith(normalizedPrefix + "/", StringComparison.Ordinal))
         {
-            return normalizedDefPath[normalizedPrefix.Length..];
+            return binding.Definition.Path[normalizedPrefix.Length..];
         }
 
         throw new InvalidOperationException(

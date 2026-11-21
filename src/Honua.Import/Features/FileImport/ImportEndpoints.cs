@@ -84,7 +84,9 @@ internal static partial class ImportEndpoints
     private static AdminOperationRouteBinding BindImportOperation(
         Dictionary<string, IAdminHttpOperationDefinition> definitions,
         string operationId) =>
-        AdminHttpOperationBinding.ForDefinition(definitions[operationId], "/import");
+        definitions.TryGetValue(operationId, out var definition)
+            ? AdminHttpOperationBinding.ForDefinition(definition, "/import")
+            : throw new InvalidOperationException($"Import operation '{operationId}' is missing from the admin operation catalog.");
 
     private static void MapImportPreviewRoutes(
         IEndpointRouteBuilder group,
