@@ -57,8 +57,11 @@ public sealed class SourceBackedLayerEditRefusalTests : IAsyncLifetime
         using var response = await client.PostAsync($"/rest/services/{ServiceName}/FeatureServer/1/applyEdits", content);
         var body = await response.Content.ReadAsStringAsync();
 
-        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed, body);
-        body.Should().NotContain("\"success\":true", body);
+        // GeoServices reports errors in the body of an HTTP 200, as Esri clients expect.
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var json = JsonDocument.Parse(body);
+        json.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(405, body);
+        json.RootElement.TryGetProperty("addResults", out _).Should().BeFalse(body);
         body.Should().NotContain(SourceTable, "the refusal must not disclose the internal table name");
         (await CountAsync(schema, $"SELECT COUNT(*) FROM \"{schema}\".features WHERE attributes->>'name' = '{Marker}'"))
             .Should().Be(0, "a refused edit must not reach the managed features table");
