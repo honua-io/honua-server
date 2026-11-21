@@ -389,15 +389,72 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         OpsNotificationReminderRunner Runner() => new(store, findings, harness.CreateProposalStore(),
             notifications, clock, Substitute.For<IAlertDispatchHealth>());
         await Runner().RunAsync(CancellationToken.None);
-        await outbox.DidNotReceive().CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
-            Arg.Any<IReadOnlyList<AlertOutboxEntry>>(), Arg.Any<CancellationToken>());
-        // A restarted runner can reach the later active finding while the missing episodes remain open.
-        await Runner().RunAsync(CancellationToken.None);
+        // Active findings are dispatched immediately without waiting for absent episodes to be deferred.
         await outbox.Received(1).CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
             Arg.Is<IReadOnlyList<AlertOutboxEntry>>(entries => entries.Count == 1 &&
                 entries[0].AlertEvent.DedupeKey.Contains("finding:finding-1:")), Arg.Any<CancellationToken>());
+        // A second pass does not duplicate the notice and leaves all 100 absent episodes untouched.
+        await Runner().RunAsync(CancellationToken.None);
+        await outbox.Received(1).CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+            Arg.Any<IReadOnlyList<AlertOutboxEntry>>(), Arg.Any<CancellationToken>());
         var preserved = await store.ListDueAsync(clock.Now.AddMinutes(1), 100);
         preserved.Should().BeEquivalentTo(original, options => options.Excluding(row => row.Revision));
+    }
+
+    [IntegrationTest]
+    public async Task TwoReplicas_AbsentReplicaDoesNotDeferActiveReplicaReminder()
+    {
+        await using var harness = await ControlPlaneStateHarness.CreateAsync(database, nameof(OpsNotificationReminderRunnerTests));
+        var clock = new ReminderClock(DateTimeOffset.UtcNow);
+        var storeA = harness.CreateNotificationStore();
+        var findingsA = CreateFindings();
+        findingsA.EvaluateAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => new[] { Finding(clock.GetUtcNow(), OpsFindingSeverity.Critical) });
+        var outboxA = Substitute.For<IAlertOutboxWriter>();
+        var outboxB = Substitute.For<IAlertOutboxWriter>();
+        var options = new AlertOptions { Enabled = true, Ops = new AlertOpsOptions { Enabled = true, Channels = ["webhook"] } };
+        var runnerA = new OpsNotificationReminderRunner(storeA, findingsA, harness.CreateProposalStore(),
+            CreateNotifications(outboxA, options), clock, Substitute.For<IAlertDispatchHealth>());
+        var runnerB = new OpsNotificationReminderRunner(harness.CreateNotificationStore(), CreateIncompleteEmptyFindings(clock),
+            harness.CreateProposalStore(), CreateNotifications(outboxB, options), clock, Substitute.For<IAlertDispatchHealth>());
+
+        await storeA.ObserveAsync(new("finding", "finding-1", OpsFindingSeverity.Critical), clock.Now);
+        await runnerB.RunAsync(CancellationToken.None);
+        clock.Now = clock.Now.AddSeconds(15);
+        await runnerB.RunAsync(CancellationToken.None);
+        clock.Now = clock.Now.AddSeconds(15);
+
+        await runnerA.RunAsync(CancellationToken.None);
+        await outboxB.DidNotReceive().CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+            Arg.Any<IReadOnlyList<AlertOutboxEntry>>(), Arg.Any<CancellationToken>());
+        await outboxA.Received(1).CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+            Arg.Is<IReadOnlyList<AlertOutboxEntry>>(entries => entries.Count == 1 &&
+                entries[0].AlertEvent.DedupeKey.EndsWith(":Critical:0", StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>());
+
+        clock.Now = clock.Now.AddMinutes(30);
+        await runnerB.RunAsync(CancellationToken.None);
+        clock.Now = clock.Now.AddSeconds(10);
+        await runnerA.RunAsync(CancellationToken.None);
+        await outboxA.Received(1).CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+            Arg.Is<IReadOnlyList<AlertOutboxEntry>>(entries => entries.Count == 1 &&
+                entries[0].AlertEvent.DedupeKey.EndsWith(":Critical:1", StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>());
+    }
+
+    private static IOpsFindingsEvidenceSource CreateIncompleteEmptyFindings(TimeProvider clock)
+    {
+        var source = CreateFindings();
+        source.EvaluateWithEvidenceAsync(Arg.Any<CancellationToken>()).Returns(_ => new OpsFindingsEvaluation
+        {
+            EvaluatedAt = clock.GetUtcNow(),
+            Findings = [],
+            Posture = EvidencePostureFactory.Build(clock.GetUtcNow(), [EvidencePostureFactory.Unavailable(
+                EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations,
+                EvidencePostureVocabulary.BackendKinds.DurableStore, "workflow-store",
+                EvidencePostureVocabulary.ReasonCodes.SourceUnavailable)])
+        });
+        return source;
     }
 
     private static IOpsFindingsEvidenceSource CreateFindings()
