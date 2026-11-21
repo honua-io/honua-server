@@ -22,7 +22,7 @@ namespace Honua.Protocols.GeoServices.ImageServer;
 
 internal static partial class ImageServerSoapEndpoints
 {
-    internal const int MaxKeyPropertiesSelectedBands = 256;
+    internal const int MaxKeyPropertiesSelectedBands = ImageServerRequestLimits.MaxBandIds;
     private readonly record struct ServiceInfoExtras(
         bool SupportsTime,
         XElement? StartTimeFieldName,

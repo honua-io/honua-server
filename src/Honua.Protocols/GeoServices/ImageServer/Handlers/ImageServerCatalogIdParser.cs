@@ -19,6 +19,12 @@ internal static class ImageServerCatalogIdParser
         }
 
         var trimmed = raw.Trim();
+        if (ImageServerRequestLimits.ExceedsListLimit(trimmed, ImageServerRequestLimits.MaxRasterIds))
+        {
+            error = $"rasterIds may list at most {ImageServerRequestLimits.MaxRasterIds} catalog object IDs.";
+            return false;
+        }
+
         if (trimmed.StartsWith('['))
         {
             try
@@ -80,6 +86,12 @@ internal static class ImageServerCatalogIdParser
         }
 
         var trimmed = raw.Trim();
+        if (ImageServerRequestLimits.ExceedsListLimit(trimmed, ImageServerRequestLimits.MaxBandIds))
+        {
+            error = $"bandIds may list at most {ImageServerRequestLimits.MaxBandIds} bands.";
+            return false;
+        }
+
         if (trimmed.StartsWith('['))
         {
             try
