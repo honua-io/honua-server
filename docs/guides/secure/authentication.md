@@ -116,8 +116,11 @@ that work and add request restrictions when you create them:
 - A restricted key cannot be exchanged for a portal token (`generateToken` or the
   OAuth2 `client_credentials` fallback), because the token would not carry the key's
   restrictions.
-- Refusals answer like an invalid key (`401`, or the GeoServices REST `498` invalid-token error on
-  GeoServices routes) and are logged at Warning with event id `4118`, naming the key
+- Refusals answer like an invalid key. A key sent in `X-API-Key` or `Authorization: ApiKey`
+  is treated as no credential: a route that requires authentication answers `401` (on
+  GeoServices routes, error `499` token required in an HTTP 200 body), and an anonymously
+  readable route serves the request anonymously. A key sent as a token (the `token` field or
+  parameter, or a `Bearer` header) gets GeoServices error `498` invalid token on GeoServices routes. Refusals are logged at Warning with event id `4118`, naming the key
   id and the failed restriction but never the key.
 
 Referrer restrictions stop other websites from using a key inside a browser; they do
