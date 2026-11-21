@@ -142,10 +142,13 @@ Don't replace the serving container by hand, run `docker compose down --volumes`
 
 ## 7. Operating skills
 
-The package's `skills/` directory contains two optional Agent Skills:
+The package's `skills/` directory contains five optional Agent Skills:
 
+- `skills/honua-install/SKILL.md`: install, readiness and secret files.
 - `skills/honua-ops/SKILL.md`: findings, approved restarts, upgrade and rollback.
 - `skills/honua-services/SKILL.md`: import, publish, filtered queries and readback.
+- `skills/honua-studio-maps/SKILL.md`: saved Studio map styles, versions and audience.
+- `skills/honua-tuning/SKILL.md`: measured layer publication budgets.
 
 Install the relevant skills from this directory before starting your host:
 

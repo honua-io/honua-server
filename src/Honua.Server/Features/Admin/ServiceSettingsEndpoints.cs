@@ -75,6 +75,7 @@ internal static partial class ServiceSettingsEndpoints
             .Produces<ApiResponse<object>>(400)
             .Produces<ApiResponse<object>>(404)
             .ProducesProblem(409)
+            .ProducesProblem(422)
             .ProducesProblem(500)
             .ProducesProblem(501)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
@@ -386,6 +387,13 @@ internal static partial class ServiceSettingsEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure($"Invalid source governance: {governanceError}"));
             }
 
+            if (RefuseInvalidExtrusion(request.Extrusion, resource) is { } extrusionRefusal)
+            {
+                return extrusionRefusal;
+            }
+
+            var extrusion = NormalizeExtrusionUnit(request.Extrusion);
+
             var connections = context.RequestServices.GetRequiredService<IAdoNetDatabaseConnectionProvider>();
             var mutation = await MutateResourceByIdAsync(
                 graphStore,
@@ -434,6 +442,7 @@ internal static partial class ServiceSettingsEndpoints
 
                     next = next with
                     {
+                        Extrusion = extrusion ?? next.Extrusion,
                         Metadata = governanceRequested
                             ? ApplySourceGovernancePatch(
                                 next.Metadata,
@@ -466,14 +475,7 @@ internal static partial class ServiceSettingsEndpoints
             await InvalidateServiceCatalogCacheAsync(context, graphProvider, serviceName, logger,
                 request.Editing is not null ? persistedResource.Metadata.Id : null).ConfigureAwait(false);
 
-            var response = BuildLayerMetadataResponse(
-                serviceLayerIndex,
-                persistedResource.Metadata.Name,
-                persistedResource.Metadata,
-                persistedResource.AccessPolicy,
-                persistedResource.Temporal,
-                null,
-                persistedResource.Editing);
+            var response = BuildLayerMetadataResponse(serviceLayerIndex, persistedResource);
             return TypedResults.Ok(ApiResponse<LayerMetadataResponse>.CreateSuccess(response));
         }
         catch (ArgumentException ex) when (request.Editing is not null)
@@ -582,20 +584,16 @@ internal static partial class ServiceSettingsEndpoints
         };
     }
 
-    private static LayerMetadataResponse BuildLayerMetadataResponse(
-        int serviceLayerIndex,
-        string layerName,
-        MetadataV2ObjectMetadata metadata,
-        AccessPolicy? accessPolicy,
-        MetadataV2ObjectTemporal? timeInfo,
-        RasterMosaicResponse? rasterMosaic,
-        MetadataV2ObjectEditing? editing)
+    private static LayerMetadataResponse BuildLayerMetadataResponse(int serviceLayerIndex, MetadataV2Object resource)
     {
+        var metadata = resource.Metadata;
+        var accessPolicy = resource.AccessPolicy;
+        var timeInfo = resource.Temporal;
         return new LayerMetadataResponse
         {
             ServiceLayerIndex = serviceLayerIndex,
-            LayerName = layerName,
-            Editing = editing,
+            LayerName = metadata.Name,
+            Editing = resource.Editing,
             License = metadata.License,
             Attribution = metadata.Attribution,
             Publisher = metadata.Publisher,
@@ -614,7 +612,44 @@ internal static partial class ServiceSettingsEndpoints
                 EndTimeField = timeInfo.EndTimeField,
                 TrackIdField = timeInfo.TrackIdField
             } : null,
-            RasterMosaic = rasterMosaic
+            Extrusion = resource.Extrusion
+        };
+    }
+
+    // Validates an incoming extrusion block against the layer's fields, as the scene guide documents:
+    // an invalid block is refused with 422 and the validator's stable codes, never silently dropped.
+    private static ProblemHttpResult? RefuseInvalidExtrusion(MetadataV2ExtrusionInfo? extrusion, MetadataV2Object resource)
+    {
+        if (extrusion is null)
+        {
+            return null;
+        }
+
+        var errors = MetadataV2ExtrusionValidator.Validate(extrusion, resource.SchemaFields);
+        return errors.Count == 0
+            ? null
+            : TypedResults.Problem(
+                title: "Invalid extrusion",
+                detail: $"The extrusion block is invalid: {string.Join(", ", errors)}.",
+                statusCode: StatusCodes.Status422UnprocessableEntity,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["code"] = errors[0]
+                });
+    }
+
+    private static MetadataV2ExtrusionInfo? NormalizeExtrusionUnit(MetadataV2ExtrusionInfo? extrusion)
+    {
+        if (extrusion is null)
+        {
+            return null;
+        }
+
+        MetadataV2VerticalUnits.TryNormalize(extrusion.Unit, out var unit);
+        return extrusion with
+        {
+            Unit = unit,
+            AdditionalProperties = null
         };
     }
 

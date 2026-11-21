@@ -134,8 +134,9 @@ requiring a direct database load.
 Operators can set `Import__Limits__MaxVertices`, `Import__Limits__MaxRings`, and
 `Import__Limits__MaxWkbSize` (bytes) to positive values for their deployment's
 resource budget. An error identifies the exceeded bound; review the source
-geometry and deployment limits before retrying. The upload `/import/limits`
-endpoint reports file limits, not these per-feature geometry bounds.
+geometry and deployment limits before retrying. `GET /api/v1/admin/import/limits`
+reports the effective bounds as `maxVertices`, `maxRings`, and `maxWkbSize`,
+alongside the file limits.
 
 ## Source fields
 

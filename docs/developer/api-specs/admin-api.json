@@ -220,7 +220,7 @@
     },
     {
       "name": "Tile Operations",
-      "description": "Asynchronous tile cache seed/warm/invalidate/purge/archive/publish jobs. Response payloads on this surface use PascalCase property names."
+      "description": "Asynchronous tile cache seed/warm/invalidate/purge/archive/publish jobs. Response payloads on this surface use camelCase property names."
     },
     {
       "name": "Field Mask Policies",
@@ -4138,6 +4138,16 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "description": "The extrusion block is invalid. The problem's `code` is the first stable EXTRUSION_* code; `detail` lists every code.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -21620,7 +21630,7 @@
           "Tile Operations"
         ],
         "summary": "List Tile Operation Jobs",
-        "description": "Lists tile operation jobs. By default only active (queued/processing) jobs are returned; pass `activeOnly=false` to include completed, failed, and cancelled jobs. Response property names are PascalCase.",
+        "description": "Lists tile operation jobs. By default only active (queued/processing) jobs are returned; pass `activeOnly=false` to include completed, failed, and cancelled jobs. Response property names are camelCase.",
         "operationId": "listTileOperationJobs",
         "parameters": [
           {
@@ -21661,7 +21671,7 @@
           "Tile Operations"
         ],
         "summary": "Start Tile Operation Job",
-        "description": "Queues a tile operation for asynchronous execution and returns 202 with the job id and status/cancel URLs. `operation` is required; `seed`/`warm` require `layerId` or `serviceId`; `archive` and `publish` require `layerId`; `bbox`, when supplied, must contain exactly four values `[minLon, minLat, maxLon, maxLat]` and `minZoom` must not exceed `maxZoom`. Every operation is submitted as a TileCache execution job, run once by whichever node claims it, on the configured batch backend or the `local` job worker. Response property names are PascalCase.",
+        "description": "Queues a tile operation for asynchronous execution and returns 202 with the job id and status/cancel URLs. `operation` is required; `seed`/`warm` require `layerId` or `serviceId`; `archive` and `publish` require `layerId`; `bbox`, when supplied, must contain exactly four values `[minLon, minLat, maxLon, maxLat]` and `minZoom` must not exceed `maxZoom`. Every operation is submitted as a TileCache execution job, run once by whichever node claims it, on the configured batch backend or the `local` job worker. Response property names are camelCase.",
         "operationId": "startTileOperationJob",
         "requestBody": {
           "required": true,
@@ -21715,7 +21725,7 @@
           "Tile Operations"
         ],
         "summary": "Get Tile Operation Job Status",
-        "description": "Returns progress and status details for a tile operation job. Response property names are PascalCase and `Status` is the numeric `OperationStatus` value.",
+        "description": "Returns progress and status details for a tile operation job. Response property names are camelCase and `status` is the numeric `OperationStatus` value.",
         "operationId": "getTileOperationJob",
         "parameters": [
           {
@@ -29721,6 +29731,9 @@
           },
           "editing": {
             "$ref": "#/components/schemas/MetadataV2ResourceEditing"
+          },
+          "extrusion": {
+            "$ref": "#/components/schemas/LayerExtrusion"
           }
         }
       },
@@ -29898,6 +29911,9 @@
           },
           "editing": {
             "$ref": "#/components/schemas/MetadataV2EditingPatch"
+          },
+          "extrusion": {
+            "$ref": "#/components/schemas/LayerExtrusion"
           }
         }
       },
@@ -50724,60 +50740,60 @@
       },
       "TileOperationStartResult": {
         "type": "object",
-        "description": "Response property names are PascalCase.",
+        "description": "Response property names are camelCase.",
         "properties": {
-          "JobId": {
+          "jobId": {
             "type": "string"
           },
-          "Message": {
+          "message": {
             "type": "string"
           },
-          "StatusUrl": {
+          "statusUrl": {
             "type": "string"
           },
-          "CancelUrl": {
+          "cancelUrl": {
             "type": "string"
           }
         }
       },
       "TileOperationCancelResult": {
         "type": "object",
-        "description": "Response property names are PascalCase.",
+        "description": "Response property names are camelCase.",
         "properties": {
-          "JobId": {
+          "jobId": {
             "type": "string"
           },
-          "Message": {
+          "message": {
             "type": "string"
           }
         }
       },
       "TileOperationRetryResult": {
         "type": "object",
-        "description": "Response property names are PascalCase.",
+        "description": "Response property names are camelCase.",
         "properties": {
-          "OriginalJobId": {
+          "originalJobId": {
             "type": "string"
           },
-          "RetryJobId": {
+          "retryJobId": {
             "type": "string"
           },
-          "StatusUrl": {
+          "statusUrl": {
             "type": "string"
           }
         }
       },
       "TileOperationListResult": {
         "type": "object",
-        "description": "Response property names are PascalCase.",
+        "description": "Response property names are camelCase.",
         "properties": {
-          "Jobs": {
+          "jobs": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TileOperationProgressView"
             }
           },
-          "TotalCount": {
+          "totalCount": {
             "type": "integer",
             "format": "int32"
           }
@@ -50785,28 +50801,28 @@
       },
       "TileOperationProgressView": {
         "type": "object",
-        "description": "Progress record for an asynchronous tile lifecycle operation. Property names are PascalCase.",
+        "description": "Progress record for an asynchronous tile lifecycle operation. Property names are camelCase.",
         "properties": {
-          "JobId": {
+          "jobId": {
             "type": "string"
           },
-          "Operation": {
+          "operation": {
             "type": "string"
           },
-          "ServiceId": {
+          "serviceId": {
             "type": "string",
             "nullable": true
           },
-          "LayerId": {
+          "layerId": {
             "type": "integer",
             "format": "int32",
             "nullable": true
           },
-          "TileMatrixSetId": {
+          "tileMatrixSetId": {
             "type": "string",
             "nullable": true
           },
-          "Status": {
+          "status": {
             "type": "integer",
             "format": "int32",
             "enum": [
@@ -50818,75 +50834,75 @@
             ],
             "description": "Numeric OperationStatus: 0 Queued, 1 Processing, 2 Completed, 3 Failed, 4 Cancelled."
           },
-          "TotalTiles": {
+          "totalTiles": {
             "type": "integer",
             "format": "int64"
           },
-          "ProcessedTiles": {
+          "processedTiles": {
             "type": "integer",
             "format": "int64"
           },
-          "SuccessfulTiles": {
+          "successfulTiles": {
             "type": "integer",
             "format": "int64"
           },
-          "FailedTiles": {
+          "failedTiles": {
             "type": "integer",
             "format": "int64"
           },
-          "ArchiveSizeBytes": {
+          "archiveSizeBytes": {
             "type": "integer",
             "format": "int64"
           },
-          "ArchiveFileId": {
+          "archiveFileId": {
             "type": "string",
             "nullable": true
           },
-          "TileCompression": {
+          "tileCompression": {
             "type": "string",
             "nullable": true,
             "description": "Tile compression written to the PMTiles header (`none` or `gzip`) for archive and publish jobs; null for other operations."
           },
-          "DownloadUrl": {
+          "downloadUrl": {
             "type": "string",
             "nullable": true
           },
-          "PublishedArtifact": {
+          "publishedArtifact": {
             "$ref": "#/components/schemas/TileOpsPublishedArtifact"
           },
-          "PublishedPublication": {
+          "publishedPublication": {
             "$ref": "#/components/schemas/TileOpsPublishedPublication"
           },
-          "StartedAt": {
+          "startedAt": {
             "type": "string",
             "format": "date-time"
           },
-          "CompletedAt": {
+          "completedAt": {
             "type": "string",
             "format": "date-time",
             "nullable": true
           },
-          "ErrorMessage": {
+          "errorMessage": {
             "type": "string",
             "nullable": true
           },
-          "Warnings": {
+          "warnings": {
             "type": "array",
             "items": {
               "type": "string"
             }
           },
-          "CurrentPhase": {
+          "currentPhase": {
             "type": "string",
             "nullable": true
           },
-          "PercentComplete": {
+          "percentComplete": {
             "type": "number",
             "format": "double",
             "nullable": true,
             "description": "Computed completion percentage; null while the total tile count is unknown."
           },
-          "Duration": {
+          "duration": {
             "type": "string",
             "description": "Elapsed time serialized as a .NET TimeSpan string (for example `00:01:23.4560000`)."
           }
@@ -50895,23 +50911,23 @@
       "TileOpsPublishedPublication": {
         "type": "object",
         "nullable": true,
-        "description": "The version a completed `paired-publish` activated. Property names are PascalCase.",
+        "description": "The version a completed `paired-publish` activated. Property names are camelCase.",
         "properties": {
-          "PublicationId": {
+          "publicationId": {
             "type": "string"
           },
-          "Version": {
+          "version": {
             "type": "string"
           },
-          "CaptureId": {
+          "captureId": {
             "type": "string",
             "description": "Embedded in both artifacts' metadata as `honua:captureId`."
           },
-          "DescriptorKey": {
+          "descriptorKey": {
             "type": "string",
             "description": "Storage key of the version's STAC collection document (collection.json)."
           },
-          "PointerKey": {
+          "pointerKey": {
             "type": "string",
             "description": "Storage key of the publication's current-version pointer."
           }
@@ -50920,57 +50936,65 @@
       "TileOpsPublishedArtifact": {
         "type": "object",
         "nullable": true,
-        "description": "PMTiles artifact descriptor emitted by a `publish` operation. Property names are PascalCase.",
+        "description": "PMTiles artifact descriptor emitted by a `publish` operation. Property names are camelCase.",
         "properties": {
-          "ArtifactId": {
+          "artifactId": {
             "type": "string"
           },
-          "StorageProvider": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Numeric CloudStorageProvider value."
+          "storageProvider": {
+            "type": "string",
+            "enum": [
+              "Local",
+              "AwsS3",
+              "AzureBlob"
+            ],
+            "description": "CloudStorageProvider name."
           },
-          "Bucket": {
+          "bucket": {
             "type": "string"
           },
-          "ObjectKey": {
+          "objectKey": {
             "type": "string"
           },
-          "ContentType": {
+          "contentType": {
             "type": "string",
             "example": "application/vnd.pmtiles"
           },
-          "SizeBytes": {
+          "sizeBytes": {
             "type": "integer",
             "format": "int64"
           },
-          "UrlStrategy": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Numeric PMTilesUrlStrategy value (public URL, signed URL, or range proxy)."
+          "urlStrategy": {
+            "type": "string",
+            "enum": [
+              "PublicUrl",
+              "SignedUrl",
+              "RangeProxy"
+            ],
+            "description": "PMTilesUrlStrategy name."
           },
-          "AccessUrl": {
+          "accessUrl": {
             "type": "string",
             "description": "Absolute public/presigned URL, or the root-relative `/api/v1/tiles/pmtiles/{artifactId}` proxy path."
           },
-          "AccessUrlExpiresAt": {
+          "accessUrlExpiresAt": {
             "type": "string",
             "format": "date-time",
             "nullable": true
           },
-          "PublishedAt": {
+          "publishedAt": {
             "type": "string",
             "format": "date-time"
           },
-          "MinZoom": {
+          "minZoom": {
             "type": "integer",
             "format": "int32"
           },
-          "MaxZoom": {
+          "maxZoom": {
             "type": "integer",
             "format": "int32"
           },
-          "Bounds": {
+          "bounds": {
             "type": "array",
             "nullable": true,
             "items": {
@@ -50979,12 +51003,12 @@
             },
             "description": "WGS84 bounding box as [west, south, east, north]."
           },
-          "LayerId": {
+          "layerId": {
             "type": "integer",
             "format": "int32",
             "nullable": true
           },
-          "ServiceId": {
+          "serviceId": {
             "type": "string",
             "nullable": true
           }
@@ -54815,6 +54839,46 @@
           "timestamp": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "LayerExtrusion": {
+        "type": "object",
+        "nullable": true,
+        "description": "3D extrusion for scene generation and FeatureServer extrusionInfo. An invalid block is rejected with 422 and stable EXTRUSION_* codes.",
+        "required": [
+          "heightField"
+        ],
+        "properties": {
+          "heightField": {
+            "type": "string",
+            "description": "Numeric field holding the feature height."
+          },
+          "baseHeightField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional numeric field holding the base elevation."
+          },
+          "unit": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "meters",
+              "feet",
+              "usSurveyFeet"
+            ],
+            "description": "Vertical unit; defaults to meters."
+          },
+          "defaultHeight": {
+            "type": "number",
+            "format": "double",
+            "nullable": true,
+            "minimum": 0,
+            "description": "Height used when the height field is null."
+          },
+          "materialHint": {
+            "type": "string",
+            "nullable": true
           }
         }
       }
