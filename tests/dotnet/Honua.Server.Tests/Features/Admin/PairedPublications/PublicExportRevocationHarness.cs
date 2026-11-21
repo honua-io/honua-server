@@ -149,11 +149,7 @@ internal sealed class RevocationHarness
         };
         if (opts.IncludeParcelsPublication)
         {
-            publications.Add(new MetadataV2Layer
-            {
-                Metadata = new MetadataV2ObjectMetadata { Id = "pub-parcels", Name = "parcels" },
-                ServiceId = "svc-parcels", ResourceId = "res-parcels", LayerIndex = 0
-            });
+            publications.Add(new MetadataV2Layer { Metadata = new MetadataV2ObjectMetadata { Id = "pub-parcels", Name = "parcels" }, ServiceId = "svc-parcels", ResourceId = "res-parcels", LayerIndex = 0 });
         }
 
         var graph = new MetadataV2Graph
@@ -166,16 +162,8 @@ internal sealed class RevocationHarness
             ],
             Resources =
             [
-                new MetadataV2Object
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "parcels" },
-                    AccessPolicy = new AccessPolicy { AllowAnonymous = opts.AnonymousAllowed }
-                },
-                new MetadataV2Object
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "res-roads", Name = "roads" },
-                    AccessPolicy = new AccessPolicy { AllowAnonymous = true }
-                }
+                new MetadataV2Object { Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "parcels" }, AccessPolicy = new AccessPolicy { AllowAnonymous = opts.AnonymousAllowed } },
+                new MetadataV2Object { Metadata = new MetadataV2ObjectMetadata { Id = "res-roads", Name = "roads" }, AccessPolicy = new AccessPolicy { AllowAnonymous = true } }
             ],
             Publications = publications
         };

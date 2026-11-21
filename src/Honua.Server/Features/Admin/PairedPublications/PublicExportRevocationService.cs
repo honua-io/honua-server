@@ -140,7 +140,18 @@ internal sealed partial class PublicExportRevocationService(
         var current = record;
         try
         {
-            return await ExecuteRemainingStepsAsync(current, cancellationToken).ConfigureAwait(false);
+            while (current.State != PublicExportRevocationState.Completed)
+            {
+                var next = await ExecuteNextStepAsync(current, cancellationToken).ConfigureAwait(false);
+                if (next.State == current.State)
+                {
+                    return next;
+                }
+
+                current = next;
+            }
+
+            return current;
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -149,32 +160,17 @@ internal sealed partial class PublicExportRevocationService(
         }
     }
 
-    private async Task<PublicExportRevocationRecord> ExecuteRemainingStepsAsync(
+    private Task<PublicExportRevocationRecord> ExecuteNextStepAsync(
         PublicExportRevocationRecord current,
         CancellationToken cancellationToken)
-    {
-        if (current.State == PublicExportRevocationState.Requested)
+        => current.State switch
         {
-            current = await DeleteObjectsAsync(current, cancellationToken).ConfigureAwait(false);
-        }
-
-        if (current.State == PublicExportRevocationState.ObjectsDeleted)
-        {
-            current = await RewriteCatalogAsync(current, cancellationToken).ConfigureAwait(false);
-        }
-
-        if (current.State == PublicExportRevocationState.CatalogRewritten)
-        {
-            current = await CreateInvalidationAsync(current, cancellationToken).ConfigureAwait(false);
-        }
-
-        if (current.State == PublicExportRevocationState.InvalidationCreated)
-        {
-            current = await PollInvalidationAsync(current, cancellationToken).ConfigureAwait(false);
-        }
-
-        return current;
-    }
+            PublicExportRevocationState.Requested => DeleteObjectsAsync(current, cancellationToken),
+            PublicExportRevocationState.ObjectsDeleted => RewriteCatalogAsync(current, cancellationToken),
+            PublicExportRevocationState.CatalogRewritten => CreateInvalidationAsync(current, cancellationToken),
+            PublicExportRevocationState.InvalidationCreated => PollInvalidationAsync(current, cancellationToken),
+            _ => Task.FromResult(current)
+        };
 
     private async Task<PublicExportRevocationRecord> DeleteObjectsAsync(
         PublicExportRevocationRecord record,
