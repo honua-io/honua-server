@@ -36,7 +36,7 @@ namespace Honua.Server.Tests.Features.FeatureStore;
 [Collection("Database")]
 [Protocol(TestProtocols.TestQuality)]
 [Operation(Operations.Query)]
-public sealed class PostgresBoundedSpatialPlannerIntegrationTests(DatabaseFixtureAdapter fixture) : IAsyncLifetime
+public sealed partial class PostgresBoundedSpatialPlannerIntegrationTests(DatabaseFixtureAdapter fixture) : IAsyncLifetime
 {
     private readonly string _schema = "planner_read_" + Guid.NewGuid().ToString("N");
     private NpgsqlDataSource _source = null!;
@@ -172,7 +172,6 @@ public sealed class PostgresBoundedSpatialPlannerIntegrationTests(DatabaseFixtur
 
     [IntegrationTheory]
     [InlineData("larger-page")]
-    [InlineData("later-page")]
     [InlineData("custom-order")]
     [InlineData("descending-id")]
     [InlineData("multiple-order-fields")]
@@ -187,8 +186,7 @@ public sealed class PostgresBoundedSpatialPlannerIntegrationTests(DatabaseFixtur
     {
         var query = shape switch
         {
-            "larger-page" => Bbox() with { Limit = 101 },
-            "later-page" => Bbox() with { Offset = 1 },
+            "larger-page" => Bbox() with { Limit = 1001 },
             "custom-order" => Bbox() with { OrderBy = [new OrderByClause("label")] },
             "descending-id" => Bbox() with { OrderBy = [new OrderByClause("id", ascending: false)] },
             "multiple-order-fields" => Bbox() with { OrderBy = [new OrderByClause("id"), new OrderByClause("label")] },
