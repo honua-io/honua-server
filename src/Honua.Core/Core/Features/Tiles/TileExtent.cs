@@ -11,19 +11,22 @@ public static class TileExtent
     {
         // An epsilon can still round to zero pixels; use a finest-zoom tile span.
         var tileSpan = Math.ScaleB(360.0, -Math.Clamp(maxZoom, 0, TileMath.MaxSupportedZoomLevel));
-        var longitude = ExpandAxis((extent.MinLon, extent.MaxLon), tileSpan, 180);
-        var latitude = ExpandAxis((extent.MinLat, extent.MaxLat), tileSpan, 90);
+        var longitude = extent.MinLon > extent.MaxLon
+            ? (Min: extent.MinLon, Max: extent.MaxLon)
+            : ExpandAxis((extent.MinLon, extent.MaxLon), tileSpan, 180);
+        var latitude = ExpandAxis((Math.Min(extent.MinLat, extent.MaxLat), Math.Max(extent.MinLat, extent.MaxLat)), tileSpan, 90);
         return (longitude.Min, latitude.Min, longitude.Max, latitude.Max);
     }
 
     // Any axis narrower than one finest-zoom tile (a single point, a reprojected point padded
     // by the extent margin, or a line whose stored float bbox is a few millionths wide) becomes
-    // one tile centred on it. A dateline-crossing longitude (min > max) keeps its edges, as the
-    // OGC extent reprojection does.
+    // one tile centred on it, so a low Tiles:MaxTileZoom widens small layers to its tile size.
+    // A dateline-crossing longitude (min > max) keeps its edges, as the OGC extent reprojection
+    // does; surfaces that cannot express one advertise the full longitude range instead.
     private static (double Min, double Max) ExpandAxis((double Min, double Max) axis, double span, double limit)
     {
         var width = Math.Min(span, 2 * limit);
-        if (axis.Max < axis.Min || axis.Max - axis.Min >= width)
+        if (axis.Max - axis.Min >= width)
         {
             return axis;
         }

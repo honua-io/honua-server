@@ -70,5 +70,6 @@ public sealed class TileJsonDegenerateBoundsTests : IAsyncLifetime
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         json.RootElement.GetProperty("bounds").EnumerateArray().Select(value => value.GetDouble())
             .Should().Equal(-180.0, -19.0, 180.0, -16.0);
+        json.RootElement.GetProperty("center")[0].GetDouble().Should().Be(0);
     }
 }

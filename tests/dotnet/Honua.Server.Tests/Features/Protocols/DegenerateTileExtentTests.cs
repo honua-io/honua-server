@@ -82,6 +82,30 @@ public sealed class DegenerateTileExtentTests : IAsyncLifetime
             .BeEquivalentTo(new MetadataV2Bbox { West = west, South = south, East = east, North = north });
     }
 
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wmts10)]
+    [Operation(Operations.Wmts, Operations.GetMetadata)]
+    [Endpoint("GET /ogc/services/{serviceId}/wmts")]
+    [InterfaceOperation(TestProtocols.Wmts10, "GetCapabilities")]
+    public async Task Capabilities_DatelineCrossingLayer_AdvertisesFullLongitudeRange()
+    {
+        var resource = _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[1];
+        _fixture.UpdateV2ResourceMetadata(1, spatial: resource.Spatial! with
+        {
+            Bbox = new MetadataV2Bbox { West = 177, South = -19, East = -178, North = -16 }
+        });
+
+        using var response = await _fixture.Client.GetAsync("/ogc/services/test/wmts?SERVICE=WMTS&REQUEST=GetCapabilities");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        XNamespace wmts = "http://www.opengis.net/wmts/1.0";
+        XNamespace ows = "http://www.opengis.net/ows/1.1";
+        var bounds = XDocument.Parse(await response.Content.ReadAsStringAsync()).Descendants(wmts + "Layer")
+            .Single(element => element.Element(ows + "Identifier")!.Value == "1").Element(ows + "WGS84BoundingBox")!;
+        Coordinates(bounds.Element(ows + "LowerCorner")!.Value).Should().Equal(-180, -19);
+        Coordinates(bounds.Element(ows + "UpperCorner")!.Value).Should().Equal(180, -16);
+    }
+
     private static double[] Coordinates(string value) => value.Split(' ', StringSplitOptions.RemoveEmptyEntries)
         .Select(number => double.Parse(number, CultureInfo.InvariantCulture)).ToArray();
 
@@ -177,6 +201,15 @@ public sealed class TileExtentTests
         var extent = TileExtent.ExpandDegenerateAxes((177.0, -19.0, -178.0, -16.0), 18);
 
         extent.Should().Be((177.0, -19.0, -178.0, -16.0));
+    }
+
+    [UnitTest]
+    public void ExpandDegenerateAxes_InvertedLatitude_IsOrderedSouthToNorth()
+    {
+        var extent = TileExtent.ExpandDegenerateAxes((170.0, -16.0, 175.0, -19.0), 18);
+
+        extent.MinLat.Should().Be(-19.0);
+        extent.MaxLat.Should().Be(-16.0);
     }
 
     [UnitTest]
