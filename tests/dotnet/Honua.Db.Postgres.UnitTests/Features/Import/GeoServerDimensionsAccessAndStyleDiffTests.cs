@@ -206,12 +206,13 @@ public sealed class GeoServerDimensionsAccessAndStyleDiffTests : IDisposable
 
         var crsRegistry = new Mock<ICrsRegistry>();
         crsRegistry
-            .Setup(static r => r.ResolveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string input, CancellationToken _) => new CrsResolutionResult
-            {
-                NormalizedAuthorityCode = input,
-                Srid = 4326
-            });
+            .Setup(static r => r.ResolveBySridAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .Returns((int srid, CancellationToken _) => new ValueTask<CrsDefinition?>(
+                srid switch
+                {
+                    4326 => new CrsDefinition("http://www.opengis.net/def/crs/EPSG/0/4326", 4326, AxisOrder.EastNorth, true),
+                    _ => null
+                }));
 
         return new GeoServerImportService(
             restClient,
@@ -273,7 +274,7 @@ public sealed class GeoServerDimensionsAccessAndStyleDiffTests : IDisposable
                     }
                 ]
             };
-            Current = new MetadataV2GraphSnapshot(graph, "etag-1", 1, DateTimeOffset.UtcNow);
+            Current = new MetadataV2GraphSnapshot(graph, "etag-1", DateTimeOffset.UtcNow);
         }
 
         public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
@@ -289,7 +290,7 @@ public sealed class GeoServerDimensionsAccessAndStyleDiffTests : IDisposable
                 throw new MetadataV2GraphConcurrencyException("Conflict", expectedEtag, Current.Etag);
             }
 
-            Current = new MetadataV2GraphSnapshot(graph, $"etag-{Current.Revision + 1}", Current.Revision + 1, DateTimeOffset.UtcNow);
+            Current = new MetadataV2GraphSnapshot(graph, $"etag-{Current.Revision + 1}", DateTimeOffset.UtcNow);
             return Task.FromResult(Current);
         }
 
