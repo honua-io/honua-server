@@ -23,7 +23,7 @@ public sealed class RealtimeSecurityTriggerTests(DatabaseFixtureAdapter database
         "136_CreateAdminApiKeys.sql", "149_CreateSecurityState.sql"
     ];
 
-    [Fact]
+    [UnitTest]
     public void Migration_IsAcceptedAsAdditiveByProductionSafetyClassifier()
     {
         using var stream = typeof(PostgresRealtimeEventLog).Assembly
