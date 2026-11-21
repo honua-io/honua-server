@@ -103,6 +103,24 @@ public readonly record struct FeatureQuery
 
     public static FeatureQuery WithSpatialFilter(SpatialFilter spatialFilter)
         => new() { SpatialFilter = spatialFilter };
+
+    // NearestCount selects the N nearest features in all; Offset and Limit page within them, and Limit
+    // (which carries the service record cap) bounds every page.
+    public int? ResolveNearestNeighborRowLimit()
+    {
+        var remaining = NearestNeighborRowsAfterOffset();
+        return remaining.HasValue && Limit.HasValue
+            ? Math.Min(remaining.Value, Limit.Value)
+            : remaining ?? Limit;
+    }
+
+    public bool NearestNeighborCountExceedsLimit()
+        => NearestNeighborRowsAfterOffset() is int remaining && Limit is int limit && remaining > limit;
+
+    private int? NearestNeighborRowsAfterOffset()
+        => SpatialFilter is { SpatialRelationship: SpatialRelationship.NearestNeighbor, NearestCount: int nearestCount }
+            ? Math.Max(0, nearestCount - Offset.GetValueOrDefault())
+            : null;
 }
 
 public readonly record struct TemporalFilter

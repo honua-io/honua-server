@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Text.Json;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -18,6 +19,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
@@ -221,13 +223,19 @@ internal static partial class FeatureServerEndpoints
             return whereError!;
         }
 
+        // Feature responses page at the service record cap and read one probe row for
+        // exceededTransferLimit; count and ids responses carry no page, as on query.
+        var featurePage = !returnIdsOnly && !returnCountOnly;
+        var pageLimit = featurePage
+            ? ResolveTopFeaturesPageLimit(resultRecordCount, ResolveMaxRecordCount(context))
+            : resultRecordCount;
         query = query with
         {
             TopFilter = topFilter,
             SpatialReferenceSrid = resource.ReadSrid(),
             OutputSrid = outputSrid,
             Offset = resultOffset,
-            Limit = resultRecordCount
+            Limit = featurePage && pageLimit < int.MaxValue ? pageLimit + 1 : pageLimit
         };
 
         var outFieldsStr = GetValueString(values, "outFields");
@@ -253,7 +261,9 @@ internal static partial class FeatureServerEndpoints
         {
             var featureReader = await ResolveAnalyticsFeatureReaderAsync(
                 context, snapshot, service, resource, publication, storageLayerId.Value, cancellationToken).ConfigureAwait(false);
-            result = await featureReader.QueryTopFeaturesAsync(storageLayerId.Value, query, cancellationToken);
+            result = TrimTopFeaturesPage(
+                await featureReader.QueryTopFeaturesAsync(storageLayerId.Value, query, cancellationToken),
+                pageLimit);
         }
         catch (NotSupportedException)
         {
@@ -331,6 +341,20 @@ internal static partial class FeatureServerEndpoints
         return CreateTopFeaturesJsonResult(
             BuildTopFeaturesJsonResponse(result, schemaResource, returnGeometry, outputSrid), topFeaturesIsPretty);
     }
+
+    internal static int ResolveTopFeaturesPageLimit(int? resultRecordCount, int maxRecordCount)
+    {
+        var cap = Math.Max(1, maxRecordCount);
+        return resultRecordCount is > 0 ? Math.Min(resultRecordCount.Value, cap) : cap;
+    }
+
+    internal static QueryResult<Feature> TrimTopFeaturesPage(QueryResult<Feature> result, int? pageLimit)
+        => pageLimit is int limit && result.Items.Length > limit
+            ? QueryResult<Feature>.Create(limit, result.Items.RemoveRange(limit, result.Items.Length - limit), hasMoreResults: true)
+            : result;
+
+    private static int ResolveMaxRecordCount(HttpContext context)
+        => context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Query.MaxRecordCount;
 
     internal static QueryResponse BuildTopFeaturesJsonResponse(
         QueryResult<Feature> result,

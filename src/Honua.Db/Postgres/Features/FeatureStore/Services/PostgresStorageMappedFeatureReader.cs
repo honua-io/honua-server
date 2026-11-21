@@ -159,6 +159,26 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return await QueryCoreAsync(query, cancellationToken).ConfigureAwait(false);
     }
 
+    // A page cut short of the nearest count reads one probe row so the more-results flag is exact.
+    private async Task<QueryResult<Feature>> QueryNearestNeighborsAsync(
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        var probe = query.NearestNeighborCountExceedsLimit();
+        var nearestItems = await ExecuteFeatureQueryAsync(
+            probe ? query with { Limit = query.Limit + 1 } : query,
+            cancellationToken).ConfigureAwait(false);
+        var hasMoreNearest = probe && nearestItems.Length > query.Limit;
+        if (hasMoreNearest)
+        {
+            nearestItems = nearestItems.RemoveAt(nearestItems.Length - 1);
+        }
+
+        return nearestItems.Length == 0 && !hasMoreNearest
+            ? QueryResult<Feature>.Empty()
+            : QueryResult<Feature>.Create(nearestItems.Length, nearestItems, hasMoreNearest);
+    }
+
     // Only public entry points resolve security. Nested count/page operations use
     // this same resolved query, including when no row filter or field mask applies.
     private async Task<QueryResult<Feature>> QueryCoreAsync(
@@ -167,10 +187,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     {
         if (IsNearestNeighborQuery(query))
         {
-            var nearestItems = await ExecuteFeatureQueryAsync(query, cancellationToken).ConfigureAwait(false);
-            return nearestItems.Length == 0
-                ? QueryResult<Feature>.Empty()
-                : QueryResult<Feature>.Create(nearestItems.Length, nearestItems, hasMoreResults: false);
+            return await QueryNearestNeighborsAsync(query, cancellationToken).ConfigureAwait(false);
         }
 
         var offset = query.Offset.GetValueOrDefault();
@@ -461,7 +478,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         }
 
         var hasMoreResults = rows.Count > query.Limit.Value;
-        // Only the probe row is dropped; a nearest-neighbour query reads its own count, not limit + 1.
         var items = rows.ToImmutable(hasMoreResults ? rows.Count - 1 : rows.Count);
         return PagedQueryResult<Feature>.Create(items, hasMoreResults);
     }
@@ -1403,19 +1419,16 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private static void AppendPagination(SqlBuilder sql, FeatureQuery query, bool probeLimit = false)
     {
-        var spatialFilter = query.SpatialFilter;
-        var isNearestNeighbor = spatialFilter.HasValue &&
-                                spatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
-        var nearestCount = isNearestNeighbor
-            ? spatialFilter.GetValueOrDefault().NearestCount
-            : null;
+        var isNearestNeighbor = IsNearestNeighborQuery(query);
         var limit = isNearestNeighbor
-            ? nearestCount ?? query.Limit
+            ? query.ResolveNearestNeighborRowLimit()
             : query.Limit;
 
         if (limit.HasValue)
         {
-            var effectiveLimit = probeLimit && !isNearestNeighbor
+            // A nearest-neighbour page needs the probe row only when its count reaches past the page.
+            var probe = probeLimit && (!isNearestNeighbor || query.NearestNeighborCountExceedsLimit());
+            var effectiveLimit = probe
                 ? checked(limit.Value + 1)
                 : limit.Value;
             sql.Append(CultureInfo.InvariantCulture, $" LIMIT {sql.AddParameter(effectiveLimit)}");
