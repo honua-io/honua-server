@@ -10,7 +10,7 @@ Install the Honua Python SDK, construct a client, authenticate with an API key, 
 
 **Prerequisites:** A running Honua server ([quickstart](../../get-started/quickstart.md)) with at least one published layer ([publish layers](../../guides/publish/publish-layers.md)), Python 3.11 or newer, and an API key (see [Authenticate clients](../../guides/secure/authentication.md) — the SDK landing page shows how to [mint a scoped key](../README.md#authentication)).
 
-The data-plane SDK ships as `honua-sdk` on PyPI and is imported as `honua_sdk`. The current release is **0.1.18** and requires **Python ≥ 3.11**. A companion control-plane package, `honua-admin` (imported as `honua_admin`, class `HonuaAdminClient`), is currently **0.1.12** and wraps `/api/v1/admin/*`.
+The data-plane SDK ships as `honua-sdk` on PyPI and is imported as `honua_sdk`. The release certified for 2026.1-rc.2 is **0.3.2** and requires **Python ≥ 3.11**. A companion control-plane package, `honua-admin` (imported as `honua_admin`, class `HonuaAdminClient`), is also **0.3.2** and wraps `/api/v1/admin/*`.
 
 ## Steps
 
@@ -43,13 +43,14 @@ with HonuaClient(
     print(services)
 ```
 
-For OIDC instead of an API key, pass `bearer_token=...` or an `auth_provider` callable. An `AsyncHonuaClient` with the same constructor is available for `async`/`await` code.
+For OIDC instead of an API key, pass `auth_provider=`: `StaticAuthProvider({"Authorization": f"Bearer {token}"})` for a fixed token, or `CallableAuthProvider(callback)` where `callback()` returns the headers for each request (both from `honua_sdk`). The older `bearer_token=` argument is deprecated and warns. An `AsyncHonuaClient` with the same constructor is available for `async`/`await` code.
 
 ### 3. Make your first call
 
 Query a published layer through the protocol-neutral `Source` / `Query` API. This works against any published layer regardless of which protocol serves it — point the `SourceLocator` at one of your own services:
 
 ```python
+import os
 from honua_sdk import HonuaClient, Query, SourceDescriptor, SourceLocator
 
 with HonuaClient("http://localhost:8080", api_key=os.environ["HONUA_API_KEY"]) as client:
@@ -85,7 +86,7 @@ A wrong or missing key raises an authentication error from the client. Confirm `
 | `client.feature_server(service_id)` | FeatureServer client | GeoServices REST-style FeatureServer queries |
 | `client.ogc_features()` | OGC Features client | OGC API Features collections and items |
 | `client.stac()` | STAC client | STAC collections and item search |
-| `HonuaAdminClient(base_url, api_key=...)` (from `honua_admin`) | admin client | Control plane — compatibility, connections, imports |
+| `HonuaAdminClient(base_url, api_key=...)` (from `honua_admin`) | admin client | Control plane — compatibility, connections, file uploads |
 
 ## Troubleshoot
 
