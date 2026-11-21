@@ -10,7 +10,7 @@ The admin API is Honua's control-plane REST surface at `/api/v1/admin/*`. It pow
 
 ## Authentication
 
-All admin endpoints require authentication except the anonymous capabilities handshake (`GET /api/v1/admin/capabilities`) and runtime OpenAPI document (`GET /api/v1/admin/openapi.json`). Send `X-API-Key` with the admin password or a scoped API key, or `Authorization: Bearer <jwt>` when OIDC is enabled. A valid mapped client certificate can also authenticate when mTLS is configured. See [Authentication](../../guides/secure/authentication.md).
+All admin endpoints require authentication except the sign-in endpoints under `/api/v1/admin/auth/*`, the capabilities handshake (`GET /api/v1/admin/capabilities`), and the runtime OpenAPI document (`GET /api/v1/admin/openapi.json`). Send `X-API-Key` with the admin password or a scoped API key, or `Authorization: Bearer <jwt>` when OIDC is enabled. A valid mapped client certificate can also authenticate when mTLS is configured. See [Authentication](../../guides/secure/authentication.md).
 
 ## Endpoint groups
 
@@ -44,9 +44,9 @@ Each capability record reports:
 |---|---|
 | `supported` | The server build registers the backing implementation. |
 | `available` | Usable for this request after the deployment profile, configuration, environment, authentication, license, and policy checks. A configured profile makes a capability that maps to a route unavailable when that route's key is not enabled. A capability with no mapped route is unchanged. |
-| `reasonCode` | Present only when unavailable; stable values include `unsupported`, `experimental-disabled`, `disabled-by-configuration`, `deployment-profile-excluded`, `license-required`, `entitlement-inactive`, `insufficient-policy`, `environment-unavailable`, and `workspace-scope-required`. Preview surfaces are opt-in through `Capabilities:Experimental:<capability-id>:Enabled=true`. |
+| `reasonCode` | Present only when unavailable; stable values include `unsupported`, `experimental-disabled`, `disabled-by-configuration`, `deployment-profile-excluded`, `protocol-profile-excluded`, `dependency-unavailable`, `durable-runner-required`, `license-required`, `entitlement-inactive`, `insufficient-policy`, `environment-unavailable`, and `workspace-scope-required`. Preview surfaces are opt-in through `Capabilities:Experimental:<capability-id>:Enabled=true`. |
 | `lifecycle` | Product lifecycle classification. Customer alerting (`alerts.geofence`) and SensorThings report `preview`, and realtime feature streams report `experimental`, for 2026.1; alerting qualification evidence does not promote it to GA. |
-| `optInRequired` | Whether the capability must be explicitly enabled. Preview and Experimental realtime capabilities remain declared but unavailable with `experimental-disabled` until opted in. |
+| `optInRequired` | Whether the capability must be explicitly enabled. Preview and Experimental realtime capabilities remain declared but unavailable until opted in (reporting `disabled-by-configuration` on the default manifest path, or `experimental-disabled` when `Capabilities:ManifestFromRegistry=true`). |
 
 The document also carries `transports` (REST, GeoServices, OGC, OData, STAC, tiles, gRPC, MCP, QGIS, mTLS), `limits` (query, analysis, upload, and job limits), and `policies` (license and entitlement state). The manifest is informational only — operation endpoints remain the source of truth for authorization and resource checks. Do not persist it as an authorization cache.
 
@@ -66,8 +66,7 @@ Customer alert zones, rules, evaluation, and delivery channels are Preview in
 existing feature-status log event; this opt-in does not constitute a GA
 availability or support commitment.
 
-
-Control-plane SDKs should instead call `GET /api/v1/admin/capabilities` once per session and branch on its `data.compatibility` object (server version, control-plane major, feature flags). `data.compatibility.contractVersions` lists every contract the server serves (`admin`, `metadata`, `geoservices`, `ogc`, `stac`, `grpc`) with its exact version, as declared in the repository's `eng/release/component-versions.v1.json`; the server refuses to start when that declaration differs from what it serves. The capabilities handshake is readable anonymously so `checkCompatibility()` can run before credentials exist, and `GET /api/v1/admin/openapi.json` is also readable anonymously; every other admin endpoint requires authentication.
+Control-plane SDKs should call `GET /api/v1/admin/capabilities` once per session and branch on its `data.compatibility` object (server version, control-plane major, feature flags). `data.compatibility.contractVersions` lists every contract the server serves (`admin`, `metadata`, `geoservices`, `ogc`, `stac`, `grpc`) with its exact version, as declared in the repository's `eng/release/component-versions.v1.json`; the server refuses to start when that declaration differs from what it serves. The capabilities handshake is readable anonymously so `checkCompatibility()` can run before credentials exist (see [Authentication](#authentication) for the full anonymous allowlist).
 
 ## OpenAPI specs
 
