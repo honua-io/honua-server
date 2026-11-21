@@ -21,10 +21,11 @@ internal sealed partial class HonuaFeatureService
         var plan = await PrepareRelatedReadAsync(request, context).ConfigureAwait(false);
         var services = context.GetHttpContext().RequestServices;
         var store = await ResolveRelatedStoreAsync(plan.Origin, plan.Related, context).ConfigureAwait(false);
+        var now = (services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
         var tokens = new GrpcRelatedPageTokens(services.GetRequiredService<IDataProtectionProvider>(),
             RelatedTokenBinding(request, plan.Origin, context));
         var cursor = string.IsNullOrEmpty(request.PageToken) ? (RelatedPageCursor?)null :
-            tokens.Decode(request.PageToken, DateTimeOffset.UtcNow);
+            tokens.Decode(request.PageToken, now);
         var relationship = RelatedQuery.ForObjects(request.ObjectIds.Order().ToArray(), plan.Related.StorageLayerId,
             plan.Relationship.OriginKeyField, plan.Relationship.DestinationKeyField) with
         {
@@ -85,7 +86,8 @@ internal sealed partial class HonuaFeatureService
             context.GetHttpContext().RequestServices, context.CancellationToken).ConfigureAwait(false);
         return new RelatedReadPlan
         {
-            Request = request, Origin = origin, Related = related, Relationship = descriptor, Query = query, Fields = fields
+            Request = request, Origin = origin, Related = related, Relationship = descriptor, Query = query, Fields = fields,
+            Now = (context.GetHttpContext().RequestServices.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow()
         };
     }
 
@@ -162,6 +164,7 @@ internal sealed partial class HonuaFeatureService
         public required Proto.RelationshipDescriptor Relationship { get; init; }
         public required QueryContext Query { get; init; }
         public required MetadataV2Field[] Fields { get; init; }
+        public DateTimeOffset Now { get; init; }
     }
 
 }

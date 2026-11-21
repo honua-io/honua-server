@@ -14,6 +14,7 @@ internal sealed class GrpcRelatedPageTokens(IDataProtectionProvider protection, 
 {
     private const int PayloadLength = 26;
     private const int LifetimeSeconds = 900;
+    private const int ClockSkewSeconds = 60;
 
     internal string Encode(RelatedPageCursor position, DateTimeOffset now)
     {
@@ -41,7 +42,7 @@ internal sealed class GrpcRelatedPageTokens(IDataProtectionProvider protection, 
             }
             var issued = BinaryPrimitives.ReadInt64BigEndian(payload.AsSpan(1));
             var current = now.ToUnixTimeSeconds();
-            if (issued > current || issued < current - LifetimeSeconds)
+            if (issued > current + ClockSkewSeconds || issued < current - LifetimeSeconds)
             {
                 throw InvalidToken();
             }

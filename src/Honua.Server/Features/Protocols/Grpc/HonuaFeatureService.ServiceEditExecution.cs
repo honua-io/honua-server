@@ -14,7 +14,31 @@ namespace Honua.Server.Features.Protocols.Grpc;
 
 internal sealed partial class HonuaFeatureService
 {
+    // Intentional divergence from single-layer ApplyEdits: under rollback_on_failure, a hook or
+    // attribute-rule rejection rolls back the multi-layer transaction and returns per-layer results
+    // with code 1000 (recorded in any durable receipt) instead of throwing INVALID_ARGUMENT.
     private async Task<Proto.ApplyServiceEditsResponse> ExecuteServiceEditsAsync(ServiceEditExecution execution)
+    {
+        var run = await RunServiceTransactionAsync(execution).ConfigureAwait(false);
+        var commitOutcome = run.CommitOutcome;
+        // Persist rolled-back keyed receipts only after the outer transaction has released its connection.
+        if (run.Outcome == ServiceEditOutcome.RolledBack && execution.Keyed is not null)
+        {
+            commitOutcome = await CommitRolledBackReceiptAsync(execution, run.Response).ConfigureAwait(false);
+        }
+        if (commitOutcome != FeatureWriterTransactionCommitOutcome.Committed)
+        {
+            return await ReplayServiceReceiptAsync(execution).ConfigureAwait(false);
+        }
+        execution.Keyed?.Complete(run.Response, execution.Fingerprint);
+        if (run.Outcome == ServiceEditOutcome.Committed)
+        {
+            await FinalizeCommittedServiceEditsAsync(execution, run.Written, run.Reported).ConfigureAwait(false);
+        }
+        return run.Response;
+    }
+
+    private async Task<ServiceTransactionRun> RunServiceTransactionAsync(ServiceEditExecution execution)
     {
         var call = execution.Call;
         await using var transaction = await BeginServiceTransactionAsync(call.Context).ConfigureAwait(false);
@@ -23,27 +47,35 @@ internal sealed partial class HonuaFeatureService
             throw new RpcException(new Status(StatusCode.FailedPrecondition,
                 "The transaction provider does not support durable service edit receipts."));
         }
-        var results = await ApplyServiceLayersAsync(execution, transaction).ConfigureAwait(false);
-        var reported = results.Select((result, index) => execution.Edits[index].Gate!.Merge(result)).ToArray();
+        var written = await ApplyServiceLayersAsync(execution, transaction).ConfigureAwait(false);
+        var reported = written.Select((result, index) => execution.Edits[index].Gate!.Merge(result)).ToArray();
         var rolledBack = call.Request.RollbackOnFailure && reported.Any(result => result.HasErrors);
         if (rolledBack)
         {
             await RollbackServiceResultsAsync(transaction, reported).ConfigureAwait(false);
         }
-        var layerResults = new ServiceEditResults(reported,
-            rolledBack ? ServiceEditOutcome.RolledBack : ServiceEditOutcome.Committed);
-        var response = BuildServiceEditResponse(execution.Edits, layerResults);
-        var outcome = await CommitServiceEditsAsync(transaction, execution, response).ConfigureAwait(false);
-        if (outcome != FeatureWriterTransactionCommitOutcome.Committed)
+        var outcome = rolledBack ? ServiceEditOutcome.RolledBack : ServiceEditOutcome.Committed;
+        var response = BuildServiceEditResponse(execution.Edits, new ServiceEditResults(reported, outcome));
+        var commitOutcome = rolledBack
+            ? FeatureWriterTransactionCommitOutcome.Committed
+            : await CommitActiveTransactionAsync(transaction, execution, response).ConfigureAwait(false);
+        return new ServiceTransactionRun
         {
-            return await ReplayServiceReceiptAsync(execution).ConfigureAwait(false);
-        }
-        execution.Keyed?.Complete(response, execution.Fingerprint);
-        if (!rolledBack)
-        {
-            await FinalizeCommittedServiceEditsAsync(execution, results, reported).ConfigureAwait(false);
-        }
-        return response;
+            Written = written,
+            Reported = reported,
+            Outcome = outcome,
+            Response = response,
+            CommitOutcome = commitOutcome
+        };
+    }
+
+    private sealed record ServiceTransactionRun
+    {
+        public required FeatureEditResult[] Written { get; init; }
+        public required FeatureEditResult[] Reported { get; init; }
+        public required ServiceEditOutcome Outcome { get; init; }
+        public required Proto.ApplyServiceEditsResponse Response { get; init; }
+        public required FeatureWriterTransactionCommitOutcome CommitOutcome { get; init; }
     }
 
     private static async Task RollbackServiceResultsAsync(
@@ -119,29 +151,34 @@ internal sealed partial class HonuaFeatureService
             perOperationGeometryChanged: BuildPerOperationGeometryChanged(edit.Gate!.Without(edit.RequestBatch)),
             cancellationToken: edit.Call.Context.CancellationToken);
 
-    private async Task<FeatureWriterTransactionCommitOutcome> CommitServiceEditsAsync(
+    private static async Task<FeatureWriterTransactionCommitOutcome> CommitActiveTransactionAsync(
         IFeatureWriterTransaction transaction, ServiceEditExecution execution,
         Proto.ApplyServiceEditsResponse response)
     {
-        var rolledBack = response.Error is not null;
         var keyed = execution.Keyed;
         if (keyed is null)
         {
-            return rolledBack ? FeatureWriterTransactionCommitOutcome.Committed
-                : await transaction.CommitAsync(execution.Call.Context.CancellationToken).ConfigureAwait(false);
+            return await transaction.CommitAsync(execution.Call.Context.CancellationToken).ConfigureAwait(false);
         }
-        var receipt = new FeatureWriterTransactionReceipt
-        {
-            Scope = keyed.Scope,
-            ExpiresAt = execution.Call.Receipts.ResponseExpiresAt,
-            Payload = GrpcServiceEditsReceipts.EncodeReceipt(response, execution.Fingerprint)
-        };
+        var receipt = BuildServiceReceipt(execution, response);
         try
         {
-            if (!rolledBack)
-            {
-                return await transaction.CommitAsync(receipt, execution.Call.Context.CancellationToken).ConfigureAwait(false);
-            }
+            return await transaction.CommitAsync(receipt, execution.Call.Context.CancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            keyed.RetainAmbiguous();
+            throw;
+        }
+    }
+
+    private async Task<FeatureWriterTransactionCommitOutcome> CommitRolledBackReceiptAsync(
+        ServiceEditExecution execution, Proto.ApplyServiceEditsResponse response)
+    {
+        var keyed = execution.Keyed!;
+        var receipt = BuildServiceReceipt(execution, response);
+        try
+        {
             await using var receiptTransaction = await BeginServiceTransactionAsync(execution.Call.Context).ConfigureAwait(false);
             return await receiptTransaction.CommitAsync(receipt, execution.Call.Context.CancellationToken).ConfigureAwait(false);
         }
@@ -152,11 +189,20 @@ internal sealed partial class HonuaFeatureService
         }
     }
 
+    private static FeatureWriterTransactionReceipt BuildServiceReceipt(
+        ServiceEditExecution execution, Proto.ApplyServiceEditsResponse response)
+        => new()
+        {
+            Scope = execution.Keyed!.Scope,
+            ExpiresAt = execution.Call.Receipts.ResponseExpiresAt,
+            Payload = GrpcServiceEditsReceipts.EncodeReceipt(response, execution.Fingerprint)
+        };
+
     private static async Task<Proto.ApplyServiceEditsResponse> ReplayServiceReceiptAsync(ServiceEditExecution execution)
     {
         if (execution.Keyed is not { } keyed)
         {
-            throw OutcomeMayHaveCommitted();
+            throw new RpcException(new Status(StatusCode.Aborted, "The service edit commit outcome is unknown."));
         }
         keyed.RetainAmbiguous();
         var recorded = await keyed.ReadCommittedAsync(CancellationToken.None).ConfigureAwait(false);

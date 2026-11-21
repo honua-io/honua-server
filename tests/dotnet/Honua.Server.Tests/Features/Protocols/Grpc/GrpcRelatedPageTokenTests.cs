@@ -40,7 +40,7 @@ public sealed class GrpcRelatedPageTokenTests
     }
 
     [UnitTheory]
-    [InlineData(-1)]
+    [InlineData(-61)]
     [InlineData(901)]
     public void Continuation_RejectsFutureOrExpiredToken(int seconds)
     {
@@ -48,6 +48,16 @@ public sealed class GrpcRelatedPageTokenTests
         var action = () => new GrpcRelatedPageTokens(_protection, "query").Decode(token, _now.AddSeconds(seconds));
 
         action.Should().Throw<RpcException>().Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+    }
+
+    [UnitTest]
+    public void Continuation_AllowsMinorClockSkewWithinWindow()
+    {
+        var position = new RelatedPageCursor(5, 9);
+        var token = new GrpcRelatedPageTokens(_protection, "query").Encode(position, _now);
+
+        new GrpcRelatedPageTokens(_protection, "query").Decode(token, _now.AddSeconds(-30))
+            .Should().Be(position);
     }
 
     [UnitTheory]

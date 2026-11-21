@@ -40,10 +40,17 @@ internal sealed partial class HonuaFeatureService
         return Convert.ToHexString(SHA256.HashData(stream.ToArray()));
     }
 
+    private static readonly HashSet<string> EphemeralTokenClaimTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "exp", "iat", "nbf", "jti", "auth_time", "nonce"
+    };
+
     private static void WriteRelatedIdentity(BinaryWriter writer, ClaimsIdentity identity)
     {
         writer.Write(identity.AuthenticationType ?? string.Empty);
-        var claims = identity.Claims.OrderBy(claim => claim.Type, StringComparer.Ordinal)
+        var claims = identity.Claims
+            .Where(static claim => !EphemeralTokenClaimTypes.Contains(claim.Type))
+            .OrderBy(claim => claim.Type, StringComparer.Ordinal)
             .ThenBy(claim => claim.Value, StringComparer.Ordinal).ThenBy(claim => claim.Issuer, StringComparer.Ordinal).ToArray();
         writer.Write(claims.Length);
         foreach (var claim in claims)
@@ -83,7 +90,7 @@ internal sealed partial class HonuaFeatureService
             }
             var last = page.Positions[^1];
             response.NextPageToken = tokens.Encode(
-                new RelatedPageCursor(last.OriginId, last.RelatedFeature?.Id), DateTimeOffset.UtcNow);
+                new RelatedPageCursor(last.OriginId, last.RelatedFeature?.Id), plan.Now);
         }
         return response;
     }
