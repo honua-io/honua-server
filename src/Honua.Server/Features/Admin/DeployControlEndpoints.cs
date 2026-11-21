@@ -113,6 +113,11 @@ internal static partial class DeployControlEndpoints
         [FromServices] IOptionsMonitor<ControlPlaneOptions> controlPlaneOptions,
         HttpContext context)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         var snapshot = await deployPreflightProbe.ProbeAsync(context.RequestAborted).ConfigureAwait(false);
         var includeDiagnostics = ShouldIncludeDiagnostics(context);
         var observer = includeDiagnostics ? context.RequestServices.GetService<IManagedComposeObserver>() : null;
@@ -323,6 +328,11 @@ internal static partial class DeployControlEndpoints
         [FromServices] DeployWorkflowService deployWorkflowService,
         CancellationToken cancellationToken)
     {
+        if (PlatformDeployAuthority.Deny(request.HttpContext) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         var query = request.Query;
         var redactRecoveryGrantIdentity = ShouldRedactRecoveryGrantIdentity(request.HttpContext);
 
@@ -428,6 +438,11 @@ internal static partial class DeployControlEndpoints
         HttpContext context,
         [FromServices] IWorkflowOperationReconciler? reconciler = null)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         try
         {
             var operation = await deployWorkflowService.GetAsync(operationId, context.RequestAborted).ConfigureAwait(false);

@@ -151,7 +151,8 @@ internal sealed partial class OperationHumanApprovalAuthority(
             || CanonicalSecurityActor.Resolve(context.User)?.ActorId != human.ActorId
             || capability.SessionReference != human.SessionReference || capability.ClaimsDigest != human.ClaimsDigest
             || capability.ExpiresAt > human.ExpiresAt
-            || (target.ExpiresAt is { } targetExpiry && capability.ExpiresAt > targetExpiry))
+            || (target.ExpiresAt is { } targetExpiry && capability.ExpiresAt > targetExpiry)
+            || IsSelfApprovalBlocked(target, human.ActorId))
             throw new HumanApprovalRequiredException();
         return new VerifiedHumanDecision
         {
@@ -162,6 +163,29 @@ internal sealed partial class OperationHumanApprovalAuthority(
             ApprovedAt = now,
         };
     }
+
+    private bool IsSelfApprovalBlocked(HumanApprovalTarget target, string approverActorId)
+    {
+        if (string.IsNullOrWhiteSpace(target.RequestedBy)
+            || !string.Equals(target.RequestedBy, approverActorId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var configured = configuration["Operations:Approval:AllowSelfApproval"];
+        if (bool.TryParse(configured, out var allowSelfApproval))
+        {
+            return !allowSelfApproval;
+        }
+
+        return target.IsAgentInitiated;
+    }
+
+    private static bool IsAgentInitiatedProposal(OperationProposal proposal)
+        => proposal.Initiation?.Kind == OperationInitiationKind.Agent
+            || proposal.Initiation?.Channel is OperationInitiationChannel.Mcp or OperationInitiationChannel.InternalAgent
+            || !string.IsNullOrWhiteSpace(proposal.RequestedByAgent)
+            || (proposal.RequestedBy?.Contains(":support-agent:", StringComparison.OrdinalIgnoreCase) == true);
 
     private static string? ResolveRequestTenant(HumanApprovalTarget target, HttpContext context)
     {
@@ -184,7 +208,9 @@ internal sealed partial class OperationHumanApprovalAuthority(
     private static HumanApprovalTarget ProposalTarget(OperationProposal proposal, string bindingDigest) => new(
         "operation-proposal", proposal.ProposalId, proposal.Version, proposal.TenantId,
         bindingDigest, proposal.Evidence?.ExpiresAt,
-        principal => OperationApprovalAuthorization.PermitsOperationScope(principal, proposal));
+        principal => OperationApprovalAuthorization.PermitsOperationScope(principal, proposal),
+        proposal.RequestedBy,
+        IsAgentInitiatedProposal(proposal));
 
     public static void RefuseNonHumanTransport(HttpContext context)
     {
@@ -279,7 +305,8 @@ internal sealed partial class OperationHumanApprovalAuthority(
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
     private sealed record HumanApprovalTarget(string Kind, string Id, long Version, string? TenantId,
-        string BindingDigest, DateTimeOffset? ExpiresAt, Func<ClaimsPrincipal, bool> PermitsScope);
+        string BindingDigest, DateTimeOffset? ExpiresAt, Func<ClaimsPrincipal, bool> PermitsScope,
+        string? RequestedBy = null, bool IsAgentInitiated = false);
     private sealed record HumanApprovalGrant(DateTimeOffset ExpiresAt, string Capability);
     private sealed record VerifiedHumanDecision
     {

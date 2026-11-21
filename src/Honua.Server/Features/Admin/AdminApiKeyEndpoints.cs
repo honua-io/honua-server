@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using Honua.Core.Features.AuditLog;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
@@ -93,6 +95,20 @@ internal static partial class AdminApiKeyEndpoints
             restrictions,
             context.RequestAborted);
 
+        if (IsSupportSessionKey(kind.Permissions))
+        {
+            var audited = await TryAuditSupportSessionKeyAsync(
+                context,
+                "ops.support_session.granted",
+                result.Record,
+                context.RequestAborted).ConfigureAwait(false);
+            if (!audited)
+            {
+                await store.RevokeAsync(result.Record.Id, context.RequestAborted).ConfigureAwait(false);
+                throw new InvalidOperationException("Support session grant aborted: tamper-evident audit log write failed.");
+            }
+        }
+
         LogApiKeyCreated(logger, result.Record.Id, result.Record.Name);
         var response = new AdminApiKeySecretResponse
         {
@@ -147,6 +163,19 @@ internal static partial class AdminApiKeyEndpoints
         if (record is null)
         {
             return TypedResults.NotFound(ApiResponse<object>.Failure("API key not found"));
+        }
+
+        if (IsSupportSessionKey(record.Permissions))
+        {
+            var audited = await TryAuditSupportSessionKeyAsync(
+                context,
+                "ops.support_session.revoked",
+                record,
+                context.RequestAborted).ConfigureAwait(false);
+            if (!audited)
+            {
+                throw new InvalidOperationException("Support session revocation audit failed: tamper-evident audit log write failed.");
+            }
         }
 
         LogApiKeyRevoked(logger, id);
@@ -218,6 +247,47 @@ internal static partial class AdminApiKeyEndpoints
         };
 
         return TypedResults.Ok(ApiResponse<AdminApiKeyEffectivePermissionsResponse>.CreateSuccess(response));
+    }
+
+    private static bool IsSupportSessionKey(IReadOnlyList<string> permissions)
+        => permissions.Any(static permission =>
+            string.Equals(permission?.Trim(), AdminApiKeyPermission.OpsPropose, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(permission?.Trim(), AdminApiKeyPermission.OpsRead, StringComparison.OrdinalIgnoreCase));
+
+    private static async Task<bool> TryAuditSupportSessionKeyAsync(
+        HttpContext context,
+        string action,
+        AdminApiKeyRecord record,
+        CancellationToken cancellationToken)
+    {
+        var auditLog = context.RequestServices.GetService<IAuditLog>();
+        if (auditLog is null || auditLog is NullAuditLog || !auditLog.IsPersisted)
+        {
+            return true;
+        }
+
+        var actor = ResolveCreator(context) ?? AuditEvent.AnonymousActor;
+        var permissionsList = string.Join(",", record.Permissions);
+        var escapedName = record.Name.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
+        var escapedPerms = permissionsList.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
+        var expiresAt = record.ExpiresAt?.ToString("O") ?? "none";
+        var details = $"{{\"keyId\":\"{record.Id:D}\",\"name\":\"{escapedName}\",\"permissions\":\"{escapedPerms}\",\"expiresAt\":\"{expiresAt}\"}}";
+        var auditId = await auditLog.RecordAsync(
+            new AuditEvent
+            {
+                Timestamp = DateTimeOffset.UtcNow,
+                EventType = AuditEventType.AdminAction,
+                Actor = actor,
+                ActorType = actor == AuditEvent.AnonymousActor ? AuditActorType.Anonymous : AuditActorType.UserId,
+                ResourceType = "ops_support_session",
+                ResourceId = record.Id.ToString("D"),
+                Action = action,
+                Outcome = AuditOutcome.Success,
+                CorrelationId = context.TraceIdentifier ?? record.Id.ToString("D"),
+                Details = details,
+            },
+            cancellationToken).ConfigureAwait(false);
+        return !string.IsNullOrWhiteSpace(auditId);
     }
 
     private static AdminApiKeyKindResult ResolveKind(

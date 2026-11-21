@@ -22,6 +22,18 @@ internal sealed partial class AwsEcsAlbDeployBackend
 
     private readonly record struct PreparedTaskDefinition(string? TaskDefinitionArn, DeploySubmissionResult? Failure);
 
+    private static bool IsSingleServiceRollingMode(DeployOperationSpec spec, AwsEcsAlbDeployTarget target)
+    {
+        var stableName = GetParameter(spec.Parameters, "aws.ecs.stable_service");
+        return string.IsNullOrWhiteSpace(stableName) ||
+            string.Equals(stableName, target.CanaryService, StringComparison.Ordinal);
+    }
+
+    private static bool HasDualTargetGroupRouting(AwsEcsAlbDeployTarget target)
+        => !string.IsNullOrWhiteSpace(target.ListenerRuleArn) &&
+            !string.IsNullOrWhiteSpace(target.CanaryTargetGroupArn) &&
+            !string.IsNullOrWhiteSpace(target.StableTargetGroupArn);
+
     private static void AppendImageConvergencePlan(
         DeployOperationSpec spec,
         List<string> blockingReasons,
@@ -45,9 +57,11 @@ internal sealed partial class AwsEcsAlbDeployBackend
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(GetParameter(spec.Parameters, "aws.ecs.stable_service")))
+        var target = ResolveTarget(spec);
+        if (IsSingleServiceRollingMode(spec, target))
         {
-            blockingReasons.Add("ECS image convergence requires aws.ecs.stable_service to verify the rollback revision.");
+            warnings.Add(
+                "No separate aws.ecs.stable_service is configured; image convergence will perform an in-place single-service rolling update.");
         }
 
         var migrationTask = GetParameter(spec.Parameters, MigrationTaskParameter);
@@ -75,6 +89,37 @@ internal sealed partial class AwsEcsAlbDeployBackend
         }
 
         var service = await EcsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken).ConfigureAwait(false);
+        if (IsSingleServiceRollingMode(spec, target))
+        {
+            var isConverged = EvaluateDeploymentConvergence(service, operation.ProviderOperationId!).IsConverged;
+            var isHealthy = service.DesiredCount > 0 && service.RunningCount >= service.DesiredCount;
+            if (isHealthy && !string.IsNullOrWhiteSpace(target.CanaryTargetGroupArn))
+            {
+                var singleHealth = await AlbClient.DescribeTargetHealthAsync(target.CanaryTargetGroupArn, target.Region, cancellationToken).ConfigureAwait(false);
+                isHealthy = singleHealth.HealthyCount >= service.DesiredCount;
+            }
+
+            if (!isConverged || !isHealthy)
+            {
+                return new DeployObservation
+                {
+                    Status = WorkflowOperationStatus.Reconciling,
+                    ProviderOperationId = operation.ProviderOperationId,
+                    ObservedRevision = service.TaskDefinitionArn,
+                    RollbackRecommended = true,
+                    Message = "ECS single-service candidate is unhealthy; rollback is required."
+                };
+            }
+
+            return new DeployObservation
+            {
+                Status = WorkflowOperationStatus.Reconciling,
+                ProviderOperationId = operation.ProviderOperationId,
+                ObservedRevision = operation.ProviderOperationId,
+                Message = "ECS single-service rolling candidate is converged and entering observation."
+            };
+        }
+
         var health = await AlbClient.DescribeTargetHealthAsync(target.CanaryTargetGroupArn!, target.Region, cancellationToken).ConfigureAwait(false);
         var rule = await AlbClient.GetListenerRuleWeightsAsync(target.ListenerRuleArn!, target.Region, cancellationToken).ConfigureAwait(false);
         var weights = SummarizeAlbWeights(rule, target);
@@ -169,14 +214,38 @@ internal sealed partial class AwsEcsAlbDeployBackend
     {
         var spec = operation.Deploy ?? throw new InvalidOperationException("Deploy metadata is missing.");
         var target = ResolveTarget(spec);
-        EnsureValidTarget(target);
-        var stableName = GetParameter(spec.Parameters, "aws.ecs.stable_service")
-            ?? throw new InvalidOperationException("Stable ECS service is required to verify rollback identity.");
-        if (string.Equals(stableName, target.CanaryService, StringComparison.Ordinal))
+        var singleService = IsSingleServiceRollingMode(spec, target);
+        EnsureValidTarget(target, requireAlbRouting: !singleService);
+
+        if (singleService)
         {
-            throw new InvalidOperationException("Stable and canary ECS services must be distinct.");
+            var currentSingle = await EcsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken).ConfigureAwait(false);
+            if (!ReleaseImageDigest.IsEcsTaskDefinitionArn(currentSingle.TaskDefinitionArn))
+            {
+                throw new InvalidOperationException("ECS service revision could not be verified.");
+            }
+
+            var preparedSingle = await PrepareReleaseImageAsync(operation, spec, target, cancellationToken).ConfigureAwait(false);
+            if (preparedSingle.Failure is not null || preparedSingle.TaskDefinitionArn is null)
+            {
+                throw new InvalidOperationException("ECS image or migration preparation failed; verify provider state.");
+            }
+
+            var afterSingle = await EcsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken).ConfigureAwait(false);
+            if (!string.Equals(currentSingle.TaskDefinitionArn, afterSingle.TaskDefinitionArn, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("ECS service revision changed during preparation.");
+            }
+
+            return new DeployCheckpoint
+            {
+                CandidateRevision = preparedSingle.TaskDefinitionArn,
+                StableRevision = currentSingle.TaskDefinitionArn!,
+                OriginalServiceRevision = currentSingle.TaskDefinitionArn!
+            };
         }
 
+        var stableName = GetParameter(spec.Parameters, "aws.ecs.stable_service")!;
         var stable = await EcsClient.DescribeServiceAsync(target.Cluster!, stableName, target.Region, cancellationToken).ConfigureAwait(false);
         var current = await EcsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken).ConfigureAwait(false);
         if (!ReleaseImageDigest.IsEcsTaskDefinitionArn(stable.TaskDefinitionArn) ||
@@ -211,10 +280,9 @@ internal sealed partial class AwsEcsAlbDeployBackend
     {
         var spec = operation.Deploy ?? throw new InvalidOperationException("Deploy metadata is missing.");
         var target = ResolveTarget(spec);
-        EnsureValidTarget(target);
+        var singleService = IsSingleServiceRollingMode(spec, target);
+        EnsureValidTarget(target, requireAlbRouting: !singleService);
         await EnsureAlarmAdmissionAsync(spec, cancellationToken).ConfigureAwait(false);
-        var stableName = GetParameter(spec.Parameters, "aws.ecs.stable_service")
-            ?? throw new InvalidOperationException("Stable ECS service is required.");
         if (!ReleaseImageDigest.IsEcsTaskDefinitionArn(operation.ProviderOperationId) ||
             !ReleaseImageDigest.IsEcsTaskDefinitionArn(spec.CurrentRevision) ||
             !ReleaseImageDigest.IsEcsTaskDefinitionArn(operation.ObservedState))
@@ -222,11 +290,32 @@ internal sealed partial class AwsEcsAlbDeployBackend
             throw new InvalidOperationException("ECS checkpoint is incomplete.");
         }
 
-        if (string.Equals(stableName, target.CanaryService, StringComparison.Ordinal))
+        if (singleService)
         {
-            throw new InvalidOperationException("Stable and canary ECS services must be distinct.");
+            var currentSingle = await EcsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken).ConfigureAwait(false);
+            if (!string.Equals(currentSingle.TaskDefinitionArn, spec.CurrentRevision, StringComparison.Ordinal) &&
+                !string.Equals(currentSingle.TaskDefinitionArn, operation.ObservedState, StringComparison.Ordinal) &&
+                !string.Equals(currentSingle.TaskDefinitionArn, operation.ProviderOperationId, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("ECS service revision changed after preparation.");
+            }
+
+            if (!string.Equals(currentSingle.TaskDefinitionArn, operation.ProviderOperationId, StringComparison.Ordinal))
+            {
+                await EcsClient.UpdateServiceTaskDefinitionAsync(target.Cluster!, target.CanaryService!,
+                    operation.ProviderOperationId!, target.Region, cancellationToken).ConfigureAwait(false);
+            }
+
+            return new DeployObservation
+            {
+                Status = WorkflowOperationStatus.Submitted,
+                ProviderOperationId = operation.ProviderOperationId,
+                ObservedRevision = currentSingle.TaskDefinitionArn,
+                Message = "ECS single-service rolling activation submitted; awaiting convergence."
+            };
         }
 
+        var stableName = GetParameter(spec.Parameters, "aws.ecs.stable_service")!;
         var stable = await EcsClient.DescribeServiceAsync(target.Cluster!, stableName, target.Region, cancellationToken).ConfigureAwait(false);
         var current = await EcsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(stable.TaskDefinitionArn, spec.CurrentRevision, StringComparison.Ordinal) ||
@@ -275,14 +364,19 @@ internal sealed partial class AwsEcsAlbDeployBackend
 
         await EnsureAlarmAdmissionAsync(spec, cancellationToken).ConfigureAwait(false);
         var target = ResolveTarget(spec);
-        var stableName = GetParameter(spec.Parameters, "aws.ecs.stable_service")
-            ?? throw new InvalidOperationException("Stable ECS service is required.");
+        var singleService = IsSingleServiceRollingMode(spec, target);
         if (!ReleaseImageDigest.IsEcsTaskDefinitionArn(operation.ProviderOperationId) ||
             !ReleaseImageDigest.IsEcsTaskDefinitionArn(spec.CurrentRevision))
         {
             throw new InvalidOperationException("ECS checkpoint is incomplete.");
         }
 
+        if (singleService)
+        {
+            return await CompleteSingleServiceProtectionAsync(operation, target, cancellationToken).ConfigureAwait(false);
+        }
+
+        var stableName = GetParameter(spec.Parameters, "aws.ecs.stable_service")!;
         var stable = await EcsClient.DescribeServiceAsync(target.Cluster!, stableName, target.Region, cancellationToken).ConfigureAwait(false);
         var rule = await AlbClient.GetListenerRuleWeightsAsync(target.ListenerRuleArn!, target.Region, cancellationToken).ConfigureAwait(false);
         var weights = SummarizeAlbWeights(rule, target);
@@ -331,16 +425,72 @@ internal sealed partial class AwsEcsAlbDeployBackend
         return new DeployObservation { Status = WorkflowOperationStatus.Succeeded, ProviderOperationId = operation.ProviderOperationId, Message = "Stable service is healthy on the candidate revision." };
     }
 
+    private async Task<DeployObservation> CompleteSingleServiceProtectionAsync(
+        WorkflowOperationRecord operation,
+        AwsEcsAlbDeployTarget target,
+        CancellationToken cancellationToken)
+    {
+        var service = await EcsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken).ConfigureAwait(false);
+        var primary = service.Deployments.FirstOrDefault(deployment =>
+            string.Equals(deployment.Status, "PRIMARY", StringComparison.OrdinalIgnoreCase));
+        if (string.Equals(primary?.RolloutState, "FAILED", StringComparison.OrdinalIgnoreCase))
+        {
+            return new DeployObservation { Status = WorkflowOperationStatus.Failed, Message = "ECS service rollout failed." };
+        }
+
+        var convergence = EvaluateDeploymentConvergence(service, operation.ProviderOperationId!);
+        var healthy = service.DesiredCount > 0 && service.RunningCount >= service.DesiredCount;
+        var healthTargetGroupArn = target.CanaryTargetGroupArn ?? target.StableTargetGroupArn;
+        if (healthy && !string.IsNullOrWhiteSpace(healthTargetGroupArn))
+        {
+            var health = await AlbClient.DescribeTargetHealthAsync(healthTargetGroupArn, target.Region, cancellationToken).ConfigureAwait(false);
+            healthy = health.HealthyCount >= service.DesiredCount;
+        }
+
+        if (!convergence.IsConverged || !healthy)
+        {
+            if (primary?.CreatedAt is { } startedAt && DateTimeOffset.UtcNow > startedAt.AddMinutes(30))
+            {
+                return new DeployObservation { Status = WorkflowOperationStatus.Failed, Message = "ECS service convergence exceeded its time limit." };
+            }
+
+            return new DeployObservation { Status = WorkflowOperationStatus.Reconciling, Message = "Waiting for the ECS service to become healthy." };
+        }
+
+        return new DeployObservation
+        {
+            Status = WorkflowOperationStatus.Succeeded,
+            ProviderOperationId = operation.ProviderOperationId,
+            ObservedRevision = operation.ProviderOperationId,
+            Message = "ECS service is healthy on the candidate revision."
+        };
+    }
+
     private async System.Threading.Tasks.Task RestoreStableServiceWhenReadyAsync(
         WorkflowOperationRecord operation, DeployOperationSpec spec, AwsEcsAlbDeployTarget target, CancellationToken cancellationToken)
     {
-        var stableName = GetParameter(spec.Parameters, "aws.ecs.stable_service")
-            ?? throw new InvalidOperationException("Stable ECS service is required.");
         if (!ReleaseImageDigest.IsEcsTaskDefinitionArn(spec.CurrentRevision))
         {
             throw new InvalidOperationException("Stable rollback revision is missing.");
         }
 
+        if (IsSingleServiceRollingMode(spec, target))
+        {
+            var currentService = await EcsClient.DescribeServiceAsync(target.Cluster!, target.CanaryService!, target.Region, cancellationToken).ConfigureAwait(false);
+            if (!string.Equals(currentService.TaskDefinitionArn, spec.CurrentRevision, StringComparison.Ordinal))
+            {
+                if (!string.Equals(currentService.TaskDefinitionArn, operation.ProviderOperationId, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("ECS service revision changed during rollback.");
+                }
+
+                await EcsClient.UpdateServiceTaskDefinitionAsync(target.Cluster!, target.CanaryService!, spec.CurrentRevision!, target.Region, cancellationToken).ConfigureAwait(false);
+            }
+
+            return;
+        }
+
+        var stableName = GetParameter(spec.Parameters, "aws.ecs.stable_service")!;
         var stable = await EcsClient.DescribeServiceAsync(target.Cluster!, stableName, target.Region, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(stable.TaskDefinitionArn, spec.CurrentRevision, StringComparison.Ordinal))
         {

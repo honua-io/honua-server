@@ -1,10 +1,13 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Net;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Validation;
+using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
 
@@ -65,18 +68,22 @@ internal interface IDeployHealthProbe
     Task<DeployGoldenQueryResult> ProbeGoldenQueryAsync(DeployGoldenQueryRequest request, CancellationToken cancellationToken);
 }
 
-internal sealed class HttpDeployHealthProbe(IHttpClientFactory httpClientFactory) : IDeployHealthProbe
+internal sealed class HttpDeployHealthProbe(
+    IHttpClientFactory httpClientFactory,
+    IOptionsMonitor<ControlPlaneOptions>? controlPlaneOptions = null) : IDeployHealthProbe
 {
     private const int MinimumSamples = 1;
     private const int MaximumSamples = 20;
     private const int ReadinessBodyInspectionLimit = 65_536;
+
+    private bool AllowPrivateNetworkProbes => controlPlaneOptions?.CurrentValue.AllowPrivateNetworkProbes == true;
 
     public async Task<DeployHealthProbeResult> ProbeAsync(
         DeployHealthProbeRequest request,
         CancellationToken cancellationToken)
     {
         var validation = await DeployProbeUrlPolicy
-            .ValidateAsync(request.Url, cancellationToken)
+            .ValidateAsync(request.Url, AllowPrivateNetworkProbes, cancellationToken)
             .ConfigureAwait(false);
 
         if (!validation.IsValid || validation.Uri is null)
@@ -151,7 +158,7 @@ internal sealed class HttpDeployHealthProbe(IHttpClientFactory httpClientFactory
         CancellationToken cancellationToken)
     {
         var validation = await DeployProbeUrlPolicy
-            .ValidateAsync(request.Url, cancellationToken)
+            .ValidateAsync(request.Url, AllowPrivateNetworkProbes, cancellationToken)
             .ConfigureAwait(false);
 
         if (!validation.IsValid || validation.Uri is null)
@@ -292,8 +299,125 @@ internal sealed class HttpDeployHealthProbe(IHttpClientFactory httpClientFactory
 // Planning and the runtime share one destination rule, so the plan refuses the URLs the probe would refuse.
 internal static class DeployProbeUrlPolicy
 {
+    internal const string AllowPrivateNetworksEnvVar = "HONUA_DEPLOY_PROBE_ALLOW_PRIVATE_NETWORKS";
+    private const string LinkLocalBlockedMessage =
+        "resolves to a link-local or instance-metadata address, which is unconditionally blocked.";
+
     public static Task<OutboundHttpUrlValidationResult> ValidateAsync(string url, CancellationToken cancellationToken)
-        => OutboundHttpUrlValidator.ValidateAsync(url, cancellationToken);
+        => ValidateAsync(url, allowPrivateNetworks: false, cancellationToken);
+
+    public static Task<OutboundHttpUrlValidationResult> ValidateAsync(
+        string url,
+        bool allowPrivateNetworks,
+        CancellationToken cancellationToken)
+        => ValidateAsync(url, allowPrivateNetworks, Dns.GetHostAddressesAsync, cancellationToken);
+
+    internal static async Task<OutboundHttpUrlValidationResult> ValidateAsync(
+        string url,
+        bool allowPrivateNetworks,
+        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
+        CancellationToken cancellationToken)
+    {
+        var allowPrivate = allowPrivateNetworks || IsPrivateNetworksEnvEnabled();
+        var result = await OutboundHttpUrlValidator
+            .ValidateAsync(url, hostAddressResolver, allowPrivate, cancellationToken)
+            .ConfigureAwait(false);
+        if (!result.IsValid || result.Uri is null || !allowPrivate)
+        {
+            return result;
+        }
+
+        return await EnforceLinkLocalBlockAsync(result.Uri, hostAddressResolver, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static bool IsPrivateNetworksEnvEnabled()
+        => string.Equals(
+            Environment.GetEnvironmentVariable(AllowPrivateNetworksEnvVar),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+
+    private static async Task<OutboundHttpUrlValidationResult> EnforceLinkLocalBlockAsync(
+        Uri uri,
+        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
+        CancellationToken cancellationToken)
+    {
+        if (IPAddress.TryParse(uri.Host, out var literalAddress))
+        {
+            return IsLinkLocalAddress(literalAddress)
+                ? OutboundHttpUrlValidationResult.Failure(LinkLocalBlockedMessage, OutboundHttpUrlFailureReason.DisallowedAddress)
+                : OutboundHttpUrlValidationResult.Success(uri);
+        }
+
+        IPAddress[] addresses;
+        try
+        {
+            addresses = await hostAddressResolver(uri.DnsSafeHost, cancellationToken).ConfigureAwait(false);
+        }
+        catch (SocketException)
+        {
+            return OutboundHttpUrlValidationResult.Failure(
+                "could not be verified because host name resolution is currently unavailable; the destination was not contacted.",
+                OutboundHttpUrlFailureReason.HostResolutionUnavailable);
+        }
+        catch (ArgumentException)
+        {
+            return OutboundHttpUrlValidationResult.Failure(
+                LinkLocalBlockedMessage,
+                OutboundHttpUrlFailureReason.DisallowedAddress);
+        }
+
+        if (addresses.Length == 0 || addresses.Any(IsLinkLocalAddress))
+        {
+            return OutboundHttpUrlValidationResult.Failure(
+                LinkLocalBlockedMessage,
+                OutboundHttpUrlFailureReason.DisallowedAddress);
+        }
+
+        return OutboundHttpUrlValidationResult.Success(uri);
+    }
+
+    internal static bool IsLinkLocalAddress(IPAddress address)
+    {
+        if (address.IsIPv4MappedToIPv6)
+        {
+            address = address.MapToIPv4();
+        }
+
+        if (address.AddressFamily == AddressFamily.InterNetwork)
+        {
+            var bytes = address.GetAddressBytes();
+            return bytes[0] == 169 && bytes[1] == 254;
+        }
+
+        if (address.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            var bytes = address.GetAddressBytes();
+            if (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80)
+            {
+                return true;
+            }
+
+            if (bytes.AsSpan(0, 8).IndexOfAnyExcept((byte)0) < 0 &&
+                ((bytes[8] == 0 && bytes[9] == 0 && bytes[10] == 0 && bytes[11] == 0) ||
+                 (bytes[8] == 0xff && bytes[9] == 0xff && bytes[10] == 0 && bytes[11] == 0)))
+            {
+                return IsLinkLocalAddress(new IPAddress(bytes.AsSpan(12, 4)));
+            }
+
+            if (bytes[0] == 0x00 && bytes[1] == 0x64 && bytes[2] == 0xff && bytes[3] == 0x9b)
+            {
+                return IsLinkLocalAddress(new IPAddress(bytes.AsSpan(12, 4)));
+            }
+
+            if (bytes[0] == 0x20 && bytes[1] == 0x02)
+            {
+                return IsLinkLocalAddress(new IPAddress(bytes.AsSpan(2, 4)));
+            }
+        }
+
+        return false;
+    }
 }
 
 internal static class DeployProbeBodyInspector
