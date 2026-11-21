@@ -30,18 +30,29 @@ internal sealed record ServerJobArtifactImportReceiptPrototype(
     string ContentSha256,
     string CrsState);
 
-internal sealed record ServerJobArtifactImportDiscardScope(
-    string TenantId,
-    string ActorId,
-    string IntentId,
-    string ExpectedTable);
+internal sealed record ServerJobArtifactImportDiscardScope
+{
+    public required string TenantId { get; init; }
 
-internal sealed record ServerJobArtifactImportDiscardReceipt(
-    string IntentId,
-    string Schema,
-    string Table,
-    string PhysicalTable,
-    bool AlreadyDiscarded);
+    public required string ActorId { get; init; }
+
+    public required string IntentId { get; init; }
+
+    public required string ExpectedTable { get; init; }
+}
+
+internal sealed record ServerJobArtifactImportDiscardReceipt
+{
+    public required string IntentId { get; init; }
+
+    public required string Schema { get; init; }
+
+    public required string Table { get; init; }
+
+    public required string PhysicalTable { get; init; }
+
+    public required bool AlreadyDiscarded { get; init; }
+}
 
 // The shared catalog remembers one committed command so a restart cannot append a second copy.
 internal interface IServerJobArtifactImportLedger

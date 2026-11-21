@@ -58,37 +58,16 @@ internal sealed class MemoryServerJobArtifactImportLedger : IServerJobArtifactIm
         {
             if (_entries.TryGetValue(key, out var existing))
             {
-                if (existing.Discarded)
-                {
-                    throw new ServerJobArtifactImportDiscardedException(scope.IntentId);
-                }
-
-                if (!string.Equals(existing.Fingerprint, scope.Fingerprint, StringComparison.Ordinal))
-                {
-                    throw new ServerJobArtifactImportConflictException(scope.IntentId);
-                }
-
-                return existing.Receipt;
+                return ResolveExistingReceipt(existing, scope);
             }
 
             var receipt = await import(MemoryAttempt.Instance, cancellationToken).ConfigureAwait(false);
-            var entry = new Entry(scope.Fingerprint, scope.Table, receipt, Discarded: false);
+            var entry = new Entry { Fingerprint = scope.Fingerprint, LogicalTable = scope.Table, Receipt = receipt };
             if (!_entries.TryAdd(key, entry))
             {
-                if (_entries.TryGetValue(key, out existing))
-                {
-                    if (existing.Discarded)
-                    {
-                        throw new ServerJobArtifactImportDiscardedException(scope.IntentId);
-                    }
-
-                    if (string.Equals(existing.Fingerprint, scope.Fingerprint, StringComparison.Ordinal))
-                    {
-                        return existing.Receipt;
-                    }
-                }
-
-                throw new ServerJobArtifactImportConflictException(scope.IntentId);
+                return _entries.TryGetValue(key, out existing)
+                    ? ResolveExistingReceipt(existing, scope)
+                    : throw new ServerJobArtifactImportConflictException(scope.IntentId);
             }
 
             return receipt;
@@ -116,35 +95,12 @@ internal sealed class MemoryServerJobArtifactImportLedger : IServerJobArtifactIm
 
             if (existing.Discarded)
             {
-                return new ServerJobArtifactImportDiscardReceipt(
-                    existing.Receipt.IntentId,
-                    existing.Receipt.Schema,
-                    existing.LogicalTable,
-                    existing.Receipt.PhysicalTable,
-                    AlreadyDiscarded: true);
+                return BuildAlreadyDiscardedReceipt(existing);
             }
 
-            var ownedByName = existing.LogicalTable.StartsWith("staged_", StringComparison.Ordinal)
-                && string.Equals(existing.LogicalTable, scope.ExpectedTable, StringComparison.Ordinal)
-                && (string.Equals(existing.Receipt.PhysicalTable, scope.ExpectedTable, StringComparison.Ordinal)
-                    || string.Equals(existing.Receipt.PhysicalTable, "imported_" + scope.ExpectedTable, StringComparison.Ordinal));
-            if (!ownedByName || (_isOwned is not null && !_isOwned(existing.Receipt.Schema, existing.Receipt.PhysicalTable)))
-            {
-                throw new ServerJobArtifactImportNotOwnedException(existing.Receipt.Schema, existing.Receipt.PhysicalTable);
-            }
-
-            if (_isReferenced is not null && _isReferenced(existing.Receipt.Schema, existing.Receipt.PhysicalTable))
-            {
-                throw new ServerJobArtifactImportReferencedException(existing.Receipt.Schema, existing.Receipt.PhysicalTable);
-            }
-
+            EnsureDiscardPermitted(existing, scope);
             _entries[key] = existing with { Discarded = true };
-            return new ServerJobArtifactImportDiscardReceipt(
-                existing.Receipt.IntentId,
-                existing.Receipt.Schema,
-                existing.LogicalTable,
-                existing.Receipt.PhysicalTable,
-                AlreadyDiscarded: false);
+            return BuildFreshDiscardReceipt(existing);
         }
         finally
         {
@@ -152,11 +108,63 @@ internal sealed class MemoryServerJobArtifactImportLedger : IServerJobArtifactIm
         }
     }
 
-    private sealed record Entry(
-        string Fingerprint,
-        string LogicalTable,
-        ServerJobArtifactImportReceipt Receipt,
-        bool Discarded);
+    private static ServerJobArtifactImportReceipt ResolveExistingReceipt(Entry existing, ServerJobArtifactImportScope scope)
+    {
+        if (existing.Discarded)
+        {
+            throw new ServerJobArtifactImportDiscardedException(scope.IntentId);
+        }
+
+        if (!string.Equals(existing.Fingerprint, scope.Fingerprint, StringComparison.Ordinal))
+        {
+            throw new ServerJobArtifactImportConflictException(scope.IntentId);
+        }
+
+        return existing.Receipt;
+    }
+
+    private void EnsureDiscardPermitted(Entry existing, ServerJobArtifactImportDiscardScope scope)
+    {
+        var ownedByName = existing.LogicalTable.StartsWith("staged_", StringComparison.Ordinal)
+            && string.Equals(existing.LogicalTable, scope.ExpectedTable, StringComparison.Ordinal)
+            && (string.Equals(existing.Receipt.PhysicalTable, scope.ExpectedTable, StringComparison.Ordinal)
+                || string.Equals(existing.Receipt.PhysicalTable, "imported_" + scope.ExpectedTable, StringComparison.Ordinal));
+        if (!ownedByName || (_isOwned is not null && !_isOwned(existing.Receipt.Schema, existing.Receipt.PhysicalTable)))
+        {
+            throw new ServerJobArtifactImportNotOwnedException(existing.Receipt.Schema, existing.Receipt.PhysicalTable);
+        }
+
+        if (_isReferenced is not null && _isReferenced(existing.Receipt.Schema, existing.Receipt.PhysicalTable))
+        {
+            throw new ServerJobArtifactImportReferencedException(existing.Receipt.Schema, existing.Receipt.PhysicalTable);
+        }
+    }
+
+    private static ServerJobArtifactImportDiscardReceipt BuildFreshDiscardReceipt(Entry existing) => new()
+    {
+        IntentId = existing.Receipt.IntentId,
+        Schema = existing.Receipt.Schema,
+        Table = existing.LogicalTable,
+        PhysicalTable = existing.Receipt.PhysicalTable,
+        AlreadyDiscarded = false,
+    };
+
+    private static ServerJobArtifactImportDiscardReceipt BuildAlreadyDiscardedReceipt(Entry existing) => new()
+    {
+        IntentId = existing.Receipt.IntentId,
+        Schema = existing.Receipt.Schema,
+        Table = existing.LogicalTable,
+        PhysicalTable = existing.Receipt.PhysicalTable,
+        AlreadyDiscarded = true,
+    };
+
+    private sealed record Entry
+    {
+        public required string Fingerprint { get; init; }
+        public required string LogicalTable { get; init; }
+        public required ServerJobArtifactImportReceipt Receipt { get; init; }
+        public bool Discarded { get; init; }
+    }
 
     private sealed class MemoryAttempt : IServerJobArtifactImportAttempt
     {

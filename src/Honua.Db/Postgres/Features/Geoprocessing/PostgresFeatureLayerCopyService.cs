@@ -30,6 +30,9 @@ internal sealed class PostgresFeatureLayerCopyService(
     ILayerPublishingService publisher,
     IFieldMaskSource? fieldMasks = null) : IFeatureLayerCopyService
 {
+    private readonly string _layersTable = publisher is Features.Admin.PostgreSqlLayerPublishingService pgPublisher
+        ? pgPublisher.LayersTable
+        : SchemaSearchPath.QualifyTable("layers", PostgresSchemaConfiguration.DefaultMetadataSchema);
     public async Task<FeatureLayerCopyResult> CopyAsync(int sourceLayerId, string targetLayerName,
         FeatureQuery query, string operationId, long maxBytes, CancellationToken cancellationToken)
     {
@@ -189,7 +192,7 @@ internal sealed class PostgresFeatureLayerCopyService(
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var lookup = new NpgsqlCommand("SELECT layer_id FROM honua.layers WHERE table_schema = @schema AND table_name = @table", connection);
+        await using var lookup = new NpgsqlCommand($"SELECT layer_id FROM {_layersTable} WHERE table_schema = @schema AND table_name = @table", connection);
         lookup.Parameters.AddWithValue("schema", schema);
         lookup.Parameters.AddWithValue("table", table);
         var layerId = await lookup.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
@@ -206,7 +209,7 @@ internal sealed class PostgresFeatureLayerCopyService(
             }, current.Etag, cancellationToken).ConfigureAwait(false);
         }
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        await using var remove = new NpgsqlCommand("DELETE FROM honua.layers WHERE table_schema = @schema AND table_name = @table", connection, transaction);
+        await using var remove = new NpgsqlCommand($"DELETE FROM {_layersTable} WHERE table_schema = @schema AND table_name = @table", connection, transaction);
         remove.Parameters.AddWithValue("schema", schema);
         remove.Parameters.AddWithValue("table", table);
         await remove.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);

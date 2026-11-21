@@ -68,26 +68,30 @@ public sealed class StagedImportMcpIntegrationTests
             denied.GetRawText().Should().Contain("permission_denied");
             denied.GetRawText().Should().NotContain("previewFingerprint");
 
-            // Propose and approve discard of the staged table; table is dropped, second discard is idempotent,
-            // and a retried import with the same intent is refused rather than returning a receipt for a dropped table.
-            var discardProposalId = await CallProposalAsync(agent, "honua_op_dataset_stage_discard",
-                new Dictionary<string, object?>(StringComparer.Ordinal) { ["intentId"] = "intent-staged" });
-            (await RowCountAsync(fixture, schema, physicalTable)).Should().Be(1, "discard proposal must not drop before approval");
-            var discardHandle = await HumanApprovedOperation.ApproveAndReadHandleAsync(fixture, discardProposalId);
-            discardHandle.GetProperty("status").GetString().Should().Be("Completed", discardHandle.GetRawText());
-            discardHandle.GetProperty("result").GetProperty("details").GetProperty("alreadyDiscarded").GetString().Should().Be("false");
-            (await RowCountAsync(fixture, schema, physicalTable)).Should().BeNull("approved discard must drop the staged table");
-
-            var repeatDiscardProposalId = await CallProposalAsync(agent, "honua_op_dataset_stage_discard",
-                new Dictionary<string, object?>(StringComparer.Ordinal) { ["intentId"] = "intent-staged" });
-            var repeatDiscardHandle = await HumanApprovedOperation.ApproveAndReadHandleAsync(fixture, repeatDiscardProposalId);
-            repeatDiscardHandle.GetProperty("status").GetString().Should().Be("Completed", repeatDiscardHandle.GetRawText());
-            repeatDiscardHandle.GetProperty("result").GetProperty("details").GetProperty("alreadyDiscarded").GetString().Should().Be("true");
+            await AssertApprovedDiscardAndIdempotentRepeatAsync(fixture, agent, (schema, physicalTable));
         }
         finally
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    private static async Task AssertApprovedDiscardAndIdempotentRepeatAsync(
+        WebAppFixture fixture, HttpClient agent, (string Schema, string PhysicalTable) target)
+    {
+        var discardProposalId = await CallProposalAsync(agent, "honua_op_dataset_stage_discard",
+            new Dictionary<string, object?>(StringComparer.Ordinal) { ["intentId"] = "intent-staged" });
+        (await RowCountAsync(fixture, target.Schema, target.PhysicalTable)).Should().Be(1, "discard proposal must not drop before approval");
+        var discardHandle = await HumanApprovedOperation.ApproveAndReadHandleAsync(fixture, discardProposalId);
+        discardHandle.GetProperty("status").GetString().Should().Be("Completed", discardHandle.GetRawText());
+        discardHandle.GetProperty("result").GetProperty("details").GetProperty("alreadyDiscarded").GetString().Should().Be("false");
+        (await RowCountAsync(fixture, target.Schema, target.PhysicalTable)).Should().BeNull("approved discard must drop the staged table");
+
+        var repeatDiscardProposalId = await CallProposalAsync(agent, "honua_op_dataset_stage_discard",
+            new Dictionary<string, object?>(StringComparer.Ordinal) { ["intentId"] = "intent-staged" });
+        var repeatDiscardHandle = await HumanApprovedOperation.ApproveAndReadHandleAsync(fixture, repeatDiscardProposalId);
+        repeatDiscardHandle.GetProperty("status").GetString().Should().Be("Completed", repeatDiscardHandle.GetRawText());
+        repeatDiscardHandle.GetProperty("result").GetProperty("details").GetProperty("alreadyDiscarded").GetString().Should().Be("true");
     }
 
     [IntegrationTest]

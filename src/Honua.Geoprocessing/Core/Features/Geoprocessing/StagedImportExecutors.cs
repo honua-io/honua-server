@@ -181,7 +181,13 @@ internal sealed class StagedImportDiscardExecutor(IServiceProvider services) : I
         _ = await StagedImportOperation.AuthorizedPrincipalAsync(services, cancellationToken).ConfigureAwait(false);
         var expectedTable = StagedImportOperation.DestinationTable(tenantId, actorId, intentId);
         var receipt = await ServerJobArtifactImporter.DiscardAsync(
-            new ServerJobArtifactImportDiscardScope(tenantId, actorId, intentId, expectedTable),
+            new ServerJobArtifactImportDiscardScope
+            {
+                TenantId = tenantId,
+                ActorId = actorId,
+                IntentId = intentId,
+                ExpectedTable = expectedTable,
+            },
             services.GetRequiredService<IServerJobArtifactImportLedger>(),
             cancellationToken).ConfigureAwait(false);
         var summary = receipt.AlreadyDiscarded

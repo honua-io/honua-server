@@ -350,10 +350,10 @@ internal static class OperationsServiceCollectionExtensions
             Honua.Geoprocessing.StagedImportOperation.ImportOperationId);
         services.TryAddDeferredOperationExecutor<Honua.Geoprocessing.StagedImportDiscardExecutor>(
             Honua.Geoprocessing.StagedImportOperation.DiscardOperationId);
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationApprovalRequestMapper,
-            Honua.Geoprocessing.StagedImportApprovalMapper>());
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationApprovalRequestMapper,
-            Honua.Geoprocessing.StagedImportDiscardApprovalMapper>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationApprovalRequestMapper>(
+            new Honua.Geoprocessing.StagedImportApprovalMapper(Honua.Geoprocessing.StagedImportOperation.ImportOperationId)));
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationApprovalRequestMapper>(
+            new Honua.Geoprocessing.StagedImportApprovalMapper(Honua.Geoprocessing.StagedImportOperation.DiscardOperationId)));
         services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
     }
 }

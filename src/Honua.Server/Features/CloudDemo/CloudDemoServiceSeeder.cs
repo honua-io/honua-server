@@ -85,12 +85,16 @@ internal sealed class CloudDemoServiceSeeder(
                 Startup.ServerCoreSchemaMigrations.Manifest.Attachments!,
                 transaction as NpgsqlTransaction ?? throw new InvalidOperationException("Demo seeding requires the active PostgreSQL transaction."),
                 cancellationToken: cancellationToken).ConfigureAwait(false);
+            var metadataSchema = string.IsNullOrWhiteSpace(configuration?["Database:Schema"])
+                ? PostgresSchemaConfiguration.DefaultMetadataSchema
+                : configuration!["Database:Schema"]!;
+            var layersTable = SchemaSearchPath.QualifyTable("layers", metadataSchema);
             var attachmentTable = SchemaSearchPath.QualifyTable("attachments", physicalAttachmentSchema);
             foreach (var statement in statements)
             {
                 var boundStatement = statement == ResetReadOnlyFeatureDataSql || statement == ResetWritableFeatureDataSql
                     ? statement.Replace("honua.attachments", attachmentTable, StringComparison.Ordinal)
-                    : statement;
+                    : statement.Replace("honua.layers", layersTable, StringComparison.Ordinal);
                 await ExecuteSqlAsync(connection, transaction, boundStatement, cancellationToken).ConfigureAwait(false);
             }
 

@@ -99,7 +99,8 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
 
         try
         {
-            return await DiscardLockedAsync(connection, scope, scopeKey, cancellationToken).ConfigureAwait(false);
+            var request = new DiscardRequest(connection, scope, scopeKey);
+            return await DiscardLockedAsync(request, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -117,12 +118,23 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
     }
 
     private async Task<ServerJobArtifactImportDiscardReceipt> DiscardLockedAsync(
-        NpgsqlConnection connection,
-        ServerJobArtifactImportDiscardScope scope,
-        string scopeKey,
+        DiscardRequest request,
         CancellationToken cancellationToken)
     {
-        var existing = await ReadAsync(connection, scopeKey, cancellationToken).ConfigureAwait(false);
+        var existing = await ReadAsync(request.Connection, request.ScopeKey, cancellationToken).ConfigureAwait(false);
+        ValidateDiscardableReceipt(existing, request.Scope);
+        if (existing!.Phase == Discarded)
+        {
+            return ToAlreadyDiscardedReceipt(existing);
+        }
+
+        EnsureOwnedStagedTarget(existing, request.Scope.ExpectedTable);
+        await DropAndMarkDiscardedAsync(request, existing, cancellationToken).ConfigureAwait(false);
+        return ToFreshDiscardReceipt(existing);
+    }
+
+    private static void ValidateDiscardableReceipt(StoredReceipt? existing, ServerJobArtifactImportDiscardScope scope)
+    {
         if (existing is null
             || !string.Equals(existing.TenantId, scope.TenantId, StringComparison.Ordinal)
             || !string.Equals(existing.ActorId, scope.ActorId, StringComparison.Ordinal)
@@ -140,26 +152,25 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
         {
             throw new ServerJobArtifactImportIncompleteException();
         }
-
-        if (existing.Phase == Discarded)
-        {
-            return new ServerJobArtifactImportDiscardReceipt(
-                existing.IntentId,
-                existing.SchemaName,
-                existing.TableName,
-                existing.PhysicalTable,
-                AlreadyDiscarded: true);
-        }
-
-        EnsureOwnedStagedTarget(existing, scope.ExpectedTable);
-        await DropAndMarkDiscardedAsync(connection, existing, scopeKey, cancellationToken).ConfigureAwait(false);
-        return new ServerJobArtifactImportDiscardReceipt(
-            existing.IntentId,
-            existing.SchemaName,
-            existing.TableName,
-            existing.PhysicalTable,
-            AlreadyDiscarded: false);
     }
+
+    private static ServerJobArtifactImportDiscardReceipt ToFreshDiscardReceipt(StoredReceipt existing) => new()
+    {
+        IntentId = existing.IntentId,
+        Schema = existing.SchemaName,
+        Table = existing.TableName,
+        PhysicalTable = existing.PhysicalTable!,
+        AlreadyDiscarded = false,
+    };
+
+    private static ServerJobArtifactImportDiscardReceipt ToAlreadyDiscardedReceipt(StoredReceipt existing) => new()
+    {
+        IntentId = existing.IntentId,
+        Schema = existing.SchemaName,
+        Table = existing.TableName,
+        PhysicalTable = existing.PhysicalTable!,
+        AlreadyDiscarded = true,
+    };
 
     private void EnsureOwnedStagedTarget(StoredReceipt existing, string expectedTable)
     {
@@ -179,25 +190,34 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
     }
 
     private async Task DropAndMarkDiscardedAsync(
-        NpgsqlConnection connection,
+        DiscardRequest request,
         StoredReceipt existing,
-        string scopeKey,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await request.Connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        var tx = new TransactionContext(request.Connection, transaction);
+        if (await IsReferencedByLayerAsync(tx, existing, cancellationToken).ConfigureAwait(false)
+            || await IsReferencedByStorageBindingAsync(tx, existing, cancellationToken).ConfigureAwait(false))
+        {
+            throw new ServerJobArtifactImportReferencedException(existing.SchemaName, existing.PhysicalTable!);
+        }
+
+        await DropOwnedTableAsync(tx, existing, cancellationToken).ConfigureAwait(false);
+        await MarkReceiptDiscardedAsync(tx, request.ScopeKey, cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task DropOwnedTableAsync(
+        TransactionContext tx,
+        StoredReceipt existing,
         CancellationToken cancellationToken)
     {
         var physical = existing.PhysicalTable!;
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        if (await IsReferencedByLayerOrBindingAsync(
-                connection, transaction, existing.SchemaName, physical, existing.TableName, cancellationToken)
-            .ConfigureAwait(false))
-        {
-            throw new ServerJobArtifactImportReferencedException(existing.SchemaName, physical);
-        }
-
         bool existsAndOwned;
         try
         {
             existsAndOwned = await ImportTableOwnership.AssertOwnedAsync(
-                connection, existing.SchemaName, physical, cancellationToken).ConfigureAwait(false);
+                tx.Connection, existing.SchemaName, physical, cancellationToken).ConfigureAwait(false);
         }
         catch (ImportTableOwnershipException)
         {
@@ -208,11 +228,17 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
         {
             await using var drop = new NpgsqlCommand(
                 $"DROP TABLE {SqlIdentifier.QuoteIdentifier(existing.SchemaName)}.{SqlIdentifier.QuoteIdentifier(physical)} RESTRICT",
-                connection,
-                transaction);
+                tx.Connection,
+                tx.Transaction);
             await drop.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
+    }
 
+    private async Task MarkReceiptDiscardedAsync(
+        TransactionContext tx,
+        string scopeKey,
+        CancellationToken cancellationToken)
+    {
         await using var update = new NpgsqlCommand(
             $"""
             UPDATE {_table}
@@ -221,27 +247,22 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
             WHERE scope_key = @scope_key
               AND phase = '{Committed}'
             """,
-            connection,
-            transaction);
+            tx.Connection,
+            tx.Transaction);
         update.Parameters.AddWithValue("scope_key", scopeKey);
         var updated = await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         if (updated != 1)
         {
             throw new ServerJobArtifactImportInProgressException();
         }
-
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<bool> IsReferencedByLayerOrBindingAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        string schema,
-        string physicalTable,
-        string logicalTable,
+    private async Task<bool> IsReferencedByLayerAsync(
+        TransactionContext tx,
+        StoredReceipt existing,
         CancellationToken cancellationToken)
     {
-        await using (var layerCommand = new NpgsqlCommand(
+        await using var layerCommand = new NpgsqlCommand(
             $"""
             SELECT 1
             FROM {_layersTable}
@@ -249,18 +270,20 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
               AND (lower(table_name) = lower(@physical_table) OR lower(table_name) = lower(@logical_table))
             LIMIT 1
             """,
-            connection,
-            transaction))
-        {
-            layerCommand.Parameters.AddWithValue("schema", schema);
-            layerCommand.Parameters.AddWithValue("physical_table", physicalTable);
-            layerCommand.Parameters.AddWithValue("logical_table", logicalTable);
-            if (await layerCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null)
-            {
-                return true;
-            }
-        }
+            tx.Connection,
+            tx.Transaction);
+        layerCommand.Parameters.AddWithValue("schema", existing.SchemaName);
+        layerCommand.Parameters.AddWithValue("physical_table", existing.PhysicalTable!);
+        layerCommand.Parameters.AddWithValue("logical_table", existing.TableName);
+        return await layerCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
+    }
 
+    private async Task<bool> IsReferencedByStorageBindingAsync(
+        TransactionContext tx,
+        StoredReceipt existing,
+        CancellationToken cancellationToken)
+    {
+        var physical = existing.PhysicalTable!;
         await using var bindingCommand = new NpgsqlCommand(
             $"""
             SELECT 1
@@ -273,13 +296,13 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
                    AND lower(replace(sb.locator, '"', '')) IN (lower(@physical_table), lower(@logical_table)))
             LIMIT 1
             """,
-            connection,
-            transaction);
-        bindingCommand.Parameters.AddWithValue("schema", schema);
-        bindingCommand.Parameters.AddWithValue("physical_table", physicalTable);
-        bindingCommand.Parameters.AddWithValue("logical_table", logicalTable);
-        bindingCommand.Parameters.AddWithValue("qualified_physical", $"{schema}.{physicalTable}");
-        bindingCommand.Parameters.AddWithValue("qualified_logical", $"{schema}.{logicalTable}");
+            tx.Connection,
+            tx.Transaction);
+        bindingCommand.Parameters.AddWithValue("schema", existing.SchemaName);
+        bindingCommand.Parameters.AddWithValue("physical_table", physical);
+        bindingCommand.Parameters.AddWithValue("logical_table", existing.TableName);
+        bindingCommand.Parameters.AddWithValue("qualified_physical", $"{existing.SchemaName}.{physical}");
+        bindingCommand.Parameters.AddWithValue("qualified_logical", $"{existing.SchemaName}.{existing.TableName}");
         return await bindingCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
     }
 
@@ -519,20 +542,22 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
             return null;
         }
 
-        return new StoredReceipt(
-            reader.GetString(0),
-            reader.GetString(1),
-            reader.GetString(2),
-            reader.GetString(3),
-            reader.IsDBNull(4) ? null : reader.GetString(4),
-            reader.IsDBNull(5) ? null : reader.GetInt32(5),
-            reader.IsDBNull(6) ? null : reader.GetInt32(6),
-            reader.IsDBNull(7) ? null : reader.GetInt32(7),
-            reader.IsDBNull(8) ? null : reader.GetString(8),
-            reader.IsDBNull(9) ? null : reader.GetString(9),
-            reader.GetString(10),
-            reader.GetString(11),
-            reader.GetString(12));
+        return new StoredReceipt
+        {
+            Phase = reader.GetString(0),
+            Fingerprint = reader.GetString(1),
+            SchemaName = reader.GetString(2),
+            TableName = reader.GetString(3),
+            PhysicalTable = reader.IsDBNull(4) ? null : reader.GetString(4),
+            FeatureCount = reader.IsDBNull(5) ? null : reader.GetInt32(5),
+            SourceSrid = reader.IsDBNull(6) ? null : reader.GetInt32(6),
+            TargetSrid = reader.IsDBNull(7) ? null : reader.GetInt32(7),
+            ContentSha256 = reader.IsDBNull(8) ? null : reader.GetString(8),
+            CrsState = reader.IsDBNull(9) ? null : reader.GetString(9),
+            IntentId = reader.GetString(10),
+            TenantId = reader.GetString(11),
+            ActorId = reader.GetString(12),
+        };
     }
 
     private static void BindScope(NpgsqlCommand command, ServerJobArtifactImportScope scope, string scopeKey)
@@ -631,20 +656,31 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
         }
     }
 
-    private sealed record StoredReceipt(
-        string Phase,
-        string Fingerprint,
-        string SchemaName,
-        string TableName,
-        string? PhysicalTable,
-        int? FeatureCount,
-        int? SourceSrid,
-        int? TargetSrid,
-        string? ContentSha256,
-        string? CrsState,
-        string IntentId,
-        string TenantId,
-        string ActorId);
+    private readonly record struct DiscardRequest(
+        NpgsqlConnection Connection,
+        ServerJobArtifactImportDiscardScope Scope,
+        string ScopeKey);
+
+    private readonly record struct TransactionContext(
+        NpgsqlConnection Connection,
+        NpgsqlTransaction Transaction);
+
+    private sealed record StoredReceipt
+    {
+        public required string Phase { get; init; }
+        public required string Fingerprint { get; init; }
+        public required string SchemaName { get; init; }
+        public required string TableName { get; init; }
+        public string? PhysicalTable { get; init; }
+        public int? FeatureCount { get; init; }
+        public int? SourceSrid { get; init; }
+        public int? TargetSrid { get; init; }
+        public string? ContentSha256 { get; init; }
+        public string? CrsState { get; init; }
+        public required string IntentId { get; init; }
+        public required string TenantId { get; init; }
+        public required string ActorId { get; init; }
+    }
 
     private sealed class Attempt(
         PostgresServerJobArtifactImportLedger ledger,
