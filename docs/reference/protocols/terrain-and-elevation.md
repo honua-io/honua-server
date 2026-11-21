@@ -57,7 +57,7 @@ Values are dataset-native: band 1 only, no vertical-datum transformation (`null`
 
 ## Errors
 
-All errors use `application/problem+json`: `400` for missing/non-finite inputs, `422` for invalid WKT, out-of-range `sampleCount`/`interval`, unknown CRS, out-of-envelope WGS 84 coordinates, or source rasters with missing/mixed/unknown SRIDs, `404` for unknown datasets, datasets without registered rasters, or a disabled protocol, `402` for Pro elevation-analysis endpoints (`line-of-sight`, `viewshed`, `sun-shadow`, `slice`) when the required entitlement is inactive, and `401`/`403` for access denial.
+All errors use `application/problem+json`: `400` for missing/non-finite inputs, `422` for invalid WKT, out-of-range `sampleCount`/`interval`, unknown CRS, out-of-envelope WGS 84 coordinates, or source rasters with missing/mixed/unknown SRIDs, `404` for unknown datasets, datasets without registered rasters, or a disabled protocol, `402` for Pro elevation-analysis endpoints (`line-of-sight`, `viewshed`, `sun-shadow`, `slice`) when the required entitlement is inactive (checked before dataset lookup, so an unknown dataset also returns `402` when unlicensed), and `401`/`403` for access denial.
 
 ## Limits configuration
 
