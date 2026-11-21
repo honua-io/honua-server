@@ -21,11 +21,42 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
 public sealed partial class GrpcGlobalIdEditTests
 {
-    [UnitTheory]
-    [InlineData(false)]
-    [InlineData(true)]
+    private enum ServiceReplaySource { Local, Durable }
+
+    [UnitFact]
     [Endpoint("POST /geospatial.v1.FeatureService/ApplyServiceEdits")]
-    public async Task ServiceReplay_AfterGlobalIdsBecomeMasked_FiltersEveryLayer(bool durable)
+    public Task ServiceReplay_LocalReceipt_AfterGlobalIdsBecomeMasked_FiltersEveryLayer()
+        => AssertServiceReplayFiltersMaskedGlobalIdsAsync(ServiceReplaySource.Local);
+
+    [UnitFact]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyServiceEdits")]
+    public Task ServiceReplay_DurableReceipt_AfterGlobalIdsBecomeMasked_FiltersEveryLayer()
+        => AssertServiceReplayFiltersMaskedGlobalIdsAsync(ServiceReplaySource.Durable);
+
+    private async Task AssertServiceReplayFiltersMaskedGlobalIdsAsync(ServiceReplaySource source)
+    {
+        RegisterSecondGlobalIdLayer();
+        var (request, original) = CreateTwoLayerServiceReplayFixture();
+        var fingerprint = GrpcServiceEditsReceipts.Fingerprint(request);
+        using var receipts = CreateServiceReplayReceipts(source, original, fingerprint);
+        var context = CreateMaskedServiceReplayContext(receipts);
+        if (source == ServiceReplaySource.Local)
+        {
+            var scope = GrpcServiceEditsReceipts.CreateScope(context.GetHttpContext(), new("test", -1, request.IdempotencyKey));
+            using var entry = await receipts.EnterAsync(scope!, CancellationToken.None);
+            entry.Complete(original, fingerprint);
+        }
+
+        var replayed = await _sut.ApplyServiceEdits(request, context);
+
+        replayed.Results.Select(result => result.LayerId).Should().Equal(1, 0);
+        replayed.Results.SelectMany(result => result.Results.AddResults).Select(result => result.ObjectId).Should().Equal(8, 7);
+        replayed.Results.SelectMany(result => result.Results.AddResults).Should().OnlyContain(result => result.GlobalId.Length == 0);
+        original.Results.SelectMany(result => result.Results.AddResults).Should().OnlyContain(result => result.GlobalId == GlobalId);
+        AssertNothingRead();
+    }
+
+    private void RegisterSecondGlobalIdLayer()
     {
         var second = GrpcFeatureServiceTests.CreateTriple(GrpcFeatureServiceTests.CreateService("test"), GlobalIdResource());
         second = second with
@@ -38,6 +69,11 @@ public sealed partial class GrpcGlobalIdEditTests
         };
         _resourceValidator.ValidateServiceLayerV2Async("test", 1, Arg.Any<CancellationToken>())
             .Returns(ResourceValidationResult.Success(second));
+    }
+
+    private static (Proto.ApplyServiceEditsRequest Request, Proto.ApplyServiceEditsResponse Original)
+        CreateTwoLayerServiceReplayFixture()
+    {
         var request = new Proto.ApplyServiceEditsRequest { ServiceId = "test", IdempotencyKey = "service-replay" };
         var original = new Proto.ApplyServiceEditsResponse();
         foreach (var layerId in new[] { 1, 0 })
@@ -52,16 +88,26 @@ public sealed partial class GrpcGlobalIdEditTests
                 }
             });
         }
-        var fingerprint = GrpcServiceEditsReceipts.Fingerprint(request);
-        var store = Substitute.For<IFeatureEditIdempotencyReceipts>();
-        if (durable)
+        return (request, original);
+    }
+
+    private static GrpcServiceEditsReceipts CreateServiceReplayReceipts(
+        ServiceReplaySource source, Proto.ApplyServiceEditsResponse original, string fingerprint)
+    {
+        if (source == ServiceReplaySource.Local)
         {
-#pragma warning disable CA2012 // NSubstitute setup for a ValueTask-returning member.
-            store.TryReadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-                .Returns(_ => new ValueTask<ReadOnlyMemory<byte>?>(GrpcServiceEditsReceipts.EncodeReceipt(original, fingerprint)));
-#pragma warning restore CA2012
+            return new GrpcServiceEditsReceipts();
         }
-        using var receipts = new GrpcServiceEditsReceipts(durable ? store : null);
+        var store = Substitute.For<IFeatureEditIdempotencyReceipts>();
+#pragma warning disable CA2012 // NSubstitute setup for a ValueTask-returning member.
+        store.TryReadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => new ValueTask<ReadOnlyMemory<byte>?>(GrpcServiceEditsReceipts.EncodeReceipt(original, fingerprint)));
+#pragma warning restore CA2012
+        return new GrpcServiceEditsReceipts(store);
+    }
+
+    private ServerCallContext CreateMaskedServiceReplayContext(GrpcServiceEditsReceipts receipts)
+    {
         var masks = Substitute.For<IFieldMaskSource>();
         masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(ImmutableArray.Create("globalid")));
@@ -70,19 +116,6 @@ public sealed partial class GrpcGlobalIdEditTests
             [new PermissionGrant { Service = "test", Layer = "*", Operation = "insert" }],
             services => { services.AddSingleton(masks); services.AddSingleton(receipts); });
         _contexts.Add(context);
-        if (!durable)
-        {
-            var scope = GrpcServiceEditsReceipts.CreateScope(context.GetHttpContext(), new("test", -1, request.IdempotencyKey));
-            using var entry = await receipts.EnterAsync(scope!, CancellationToken.None);
-            entry.Complete(original, fingerprint);
-        }
-
-        var replayed = await _sut.ApplyServiceEdits(request, context);
-
-        replayed.Results.Select(result => result.LayerId).Should().Equal(1, 0);
-        replayed.Results.SelectMany(result => result.Results.AddResults).Select(result => result.ObjectId).Should().Equal(8, 7);
-        replayed.Results.SelectMany(result => result.Results.AddResults).Should().OnlyContain(result => result.GlobalId.Length == 0);
-        original.Results.SelectMany(result => result.Results.AddResults).Should().OnlyContain(result => result.GlobalId == GlobalId);
-        AssertNothingRead();
+        return context;
     }
 }

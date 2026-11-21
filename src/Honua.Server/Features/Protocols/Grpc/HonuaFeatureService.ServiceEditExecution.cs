@@ -28,12 +28,7 @@ internal sealed partial class HonuaFeatureService
         var rolledBack = call.Request.RollbackOnFailure && reported.Any(result => result.HasErrors);
         if (rolledBack)
         {
-            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            for (var index = 0; index < results.Length; index++)
-            {
-                var result = reported[index];
-                reported[index] = FeatureEditResult.Rollback(result.CreateResults, result.UpdateResults, result.DeleteResults);
-            }
+            await RollbackServiceResultsAsync(transaction, reported).ConfigureAwait(false);
         }
         var layerResults = new ServiceEditResults(reported,
             rolledBack ? ServiceEditOutcome.RolledBack : ServiceEditOutcome.Committed);
@@ -46,17 +41,34 @@ internal sealed partial class HonuaFeatureService
         execution.Keyed?.Complete(response, execution.Fingerprint);
         if (!rolledBack)
         {
-            try
-            {
-                await PublishServiceChangesAsync(execution, reported).ConfigureAwait(false);
-            }
-            finally
-            {
-                await Task.WhenAll(execution.Edits.Select((edit, index) => edit.Gate!.RunAfterAsync(results[index])))
-                    .ConfigureAwait(false);
-            }
+            await FinalizeCommittedServiceEditsAsync(execution, results, reported).ConfigureAwait(false);
         }
         return response;
+    }
+
+    private static async Task RollbackServiceResultsAsync(
+        IFeatureWriterTransaction transaction, FeatureEditResult[] reported)
+    {
+        await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+        for (var index = 0; index < reported.Length; index++)
+        {
+            var result = reported[index];
+            reported[index] = FeatureEditResult.Rollback(result.CreateResults, result.UpdateResults, result.DeleteResults);
+        }
+    }
+
+    private async Task FinalizeCommittedServiceEditsAsync(
+        ServiceEditExecution execution, FeatureEditResult[] written, FeatureEditResult[] reported)
+    {
+        try
+        {
+            await PublishServiceChangesAsync(execution, reported).ConfigureAwait(false);
+        }
+        finally
+        {
+            await Task.WhenAll(execution.Edits.Select((edit, index) => edit.Gate!.RunAfterAsync(written[index])))
+                .ConfigureAwait(false);
+        }
     }
 
     private async Task<FeatureEditResult[]> ApplyServiceLayersAsync(

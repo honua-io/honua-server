@@ -2385,28 +2385,8 @@ internal sealed partial class FeatureDataAccess
         var origin = ReplicaUploadOriginScope.Current;
         if (batchTransaction is not null)
         {
-            // A savepoint per row keeps one failed row from aborting the caller's batch
-            // transaction (multi-layer service edits report per-row errors).
-            const string savepoint = "honua_edit_row";
-            var pendingBlobCount = _pendingAttachmentBlobs.Count;
-            await batchTransaction.SaveAsync(savepoint, cancellationToken).ConfigureAwait(false);
-            try
-            {
-                if (origin is not null)
-                {
-                    await SetReplicaUploadOriginAsync(connection, batchTransaction, origin, cancellationToken).ConfigureAwait(false);
-                }
-                var row = await ExecuteEvidenceMutationAsync(new(connection, batchTransaction), mutateAndAppendOutbox, cancellationToken).ConfigureAwait(false);
-                await batchTransaction.ReleaseAsync(savepoint, cancellationToken).ConfigureAwait(false);
-                return row;
-            }
-            catch
-            {
-                _pendingAttachmentBlobs.DiscardAfter(pendingBlobCount);
-                await batchTransaction.RollbackAsync(savepoint, CancellationToken.None).ConfigureAwait(false);
-                await batchTransaction.ReleaseAsync(savepoint, CancellationToken.None).ConfigureAwait(false);
-                throw;
-            }
+            return await RunRowMutationWithSavepointAsync(
+                new(connection, batchTransaction), mutateAndAppendOutbox, cancellationToken).ConfigureAwait(false);
         }
         if (origin is null && !requireTransaction && !FeatureOperationEvidenceScope.IsActive && !TryUseTransactionalOutbox(out _))
         {
@@ -2421,6 +2401,37 @@ internal sealed partial class FeatureDataAccess
         var result = await ExecuteEvidenceMutationAsync(new(connection, rowTransaction), mutateAndAppendOutbox, cancellationToken).ConfigureAwait(false);
         await CommitEditTransactionAsync(rowTransaction, cancellationToken).ConfigureAwait(false);
         return result;
+    }
+
+    private async Task<RowMutationResult<TResult>> RunRowMutationWithSavepointAsync<TResult>(
+        EvidenceMutationContext context,
+        Func<NpgsqlConnection, NpgsqlTransaction?, CancellationToken, Task<TResult>> mutateAndAppendOutbox,
+        CancellationToken cancellationToken)
+    {
+        // A savepoint per row keeps one failed row from aborting the caller's batch
+        // transaction (multi-layer service edits report per-row errors).
+        const string savepoint = "honua_edit_row";
+        var batchTransaction = context.Transaction!;
+        var origin = ReplicaUploadOriginScope.Current;
+        var pendingBlobCount = _pendingAttachmentBlobs.Count;
+        await batchTransaction.SaveAsync(savepoint, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (origin is not null)
+            {
+                await SetReplicaUploadOriginAsync(context.Connection, batchTransaction, origin, cancellationToken).ConfigureAwait(false);
+            }
+            var row = await ExecuteEvidenceMutationAsync(context, mutateAndAppendOutbox, cancellationToken).ConfigureAwait(false);
+            await batchTransaction.ReleaseAsync(savepoint, cancellationToken).ConfigureAwait(false);
+            return row;
+        }
+        catch
+        {
+            _pendingAttachmentBlobs.DiscardAfter(pendingBlobCount);
+            await batchTransaction.RollbackAsync(savepoint, CancellationToken.None).ConfigureAwait(false);
+            await batchTransaction.ReleaseAsync(savepoint, CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
     }
 
     private static async Task SetReplicaUploadOriginAsync(

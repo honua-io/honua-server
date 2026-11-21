@@ -368,24 +368,34 @@ public sealed partial class GrpcFeatureServiceTests
         AssertNoReadWriteOrOutbox();
     }
 
-    [UnitTheory]
-    [InlineData(true, StatusCode.PermissionDenied)]
-    [InlineData(false, StatusCode.FailedPrecondition)]
+    [UnitFact]
     [Endpoint("POST /geospatial.v1.FeatureService/ApplyServiceEdits")]
     [Operation(Operations.ApplyEdits)]
-    public async Task ApplyServiceEdits_SecondLayerDenied_RejectsBeforeTransaction(
-        bool denyAccess, StatusCode expectedStatus)
+    public Task ApplyServiceEdits_SecondLayerAccessDenied_RejectsBeforeTransaction()
+        => AssertSecondLayerRejectedBeforeTransactionAsync(
+            CreateService("test", accessPolicy: new AccessPolicy { AllowedRoles = ["restricted-editor"] }),
+            ["Query", "Create"],
+            StatusCode.PermissionDenied);
+
+    [UnitFact]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyServiceEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public Task ApplyServiceEdits_SecondLayerMissingCapability_RejectsBeforeTransaction()
+        => AssertSecondLayerRejectedBeforeTransactionAsync(
+            _testService,
+            ["Query"],
+            StatusCode.FailedPrecondition);
+
+    private async Task AssertSecondLayerRejectedBeforeTransactionAsync(
+        MetadataV2Service secondService, string[] capabilities, StatusCode expectedStatus)
     {
-        var secondService = denyAccess
-            ? CreateService("test", accessPolicy: new AccessPolicy { AllowedRoles = ["restricted-editor"] })
-            : _testService;
         var second = CreateTriple(secondService, _testResource);
         second = second with
         {
             Publication = second.Publication with
             {
                 Identifier = new MetadataV2LayerIdentifier { Value = "1", IsNumeric = true },
-                Capabilities = denyAccess ? ["Query", "Create"] : ["Query"]
+                Capabilities = capabilities
             },
             StorageLayerId = 1
         };

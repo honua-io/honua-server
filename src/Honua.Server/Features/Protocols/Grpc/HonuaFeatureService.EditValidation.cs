@@ -70,7 +70,7 @@ internal sealed partial class HonuaFeatureService
             .ConfigureAwait(false);
         var requestBatch = batch;
         // RLS is enforced only on reads, so every update/delete target is pre-resolved through
-        // the RLS-enforced reader and fails closed when hidden (#2071).
+        // the RLS-enforced reader and fails closed when hidden.
         var visible = await EnsureEditTargetsVisibleAsync(call.Layer.StorageLayerId, batch, call.Context.CancellationToken)
             .ConfigureAwait(false);
         var rules = ApplyEditRules(call, visible.Batch, visible.Stored);

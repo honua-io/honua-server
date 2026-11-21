@@ -57,37 +57,55 @@ public sealed partial class GrpcMaskedFieldPredicateTests
         AssertNoRead();
     }
 
-    [UnitTheory]
-    [InlineData("secret = 'hidden'", false)]
-    [InlineData("name = 'visible'", true)]
+    [UnitFact]
     [Endpoint("POST /geospatial.v1.FeatureService/QueryRelatedRecords")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/QueryRelatedRecords")]
-    public async Task QueryRelatedRecords_UsesSharedMaskAndFilterPipeline(string predicate, bool permitted)
+    public async Task QueryRelatedRecords_MaskedFieldPredicate_IsRejected()
     {
         var captured = ConfigureRelatedPages();
         var request = RelatedRequest();
-        request.Where = predicate;
+        request.Where = "secret = 'hidden'";
         using var context = CreateRelatedCallContext();
-        if (permitted)
-        {
-            await _sut.QueryRelatedRecords(request, context);
-            captured.Single().Relationship.SqlFilter.Should().NotBeNull();
-        }
-        else
-        {
-            var action = () => _sut.QueryRelatedRecords(request, context);
-            (await action.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
-            captured.Should().BeEmpty();
-        }
+
+        var action = () => _sut.QueryRelatedRecords(request, context);
+
+        (await action.Should().ThrowAsync<RpcException>()).Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        captured.Should().BeEmpty();
         AssertNoRead();
     }
 
-    [UnitTheory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [UnitFact]
     [Endpoint("POST /geospatial.v1.FeatureService/QueryRelatedRecords")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/QueryRelatedRecords")]
-    public async Task QueryRelatedRecords_ForeignContinuation_IsRejectedBeforeProviderRead(bool changeCaller)
+    public async Task QueryRelatedRecords_VisibleFieldPredicate_BindsSqlFilter()
+    {
+        var captured = ConfigureRelatedPages();
+        var request = RelatedRequest();
+        request.Where = "name = 'visible'";
+        using var context = CreateRelatedCallContext();
+
+        await _sut.QueryRelatedRecords(request, context);
+
+        captured.Single().Relationship.SqlFilter.Should().NotBeNull();
+        AssertNoRead();
+    }
+
+    [UnitFact]
+    [Endpoint("POST /geospatial.v1.FeatureService/QueryRelatedRecords")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/QueryRelatedRecords")]
+    public Task QueryRelatedRecords_ContinuationFromDifferentCaller_IsRejectedBeforeProviderRead()
+        => AssertForeignContinuationRejectedAsync((_, context) =>
+            context.GetHttpContext().User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.Name, "another-reader"), new Claim(ClaimTypes.Role, "admin")], "Test")));
+
+    [UnitFact]
+    [Endpoint("POST /geospatial.v1.FeatureService/QueryRelatedRecords")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/QueryRelatedRecords")]
+    public Task QueryRelatedRecords_ContinuationWithChangedWhere_IsRejectedBeforeProviderRead()
+        => AssertForeignContinuationRejectedAsync((request, _) => request.Where = "name = 'changed'");
+
+    private async Task AssertForeignContinuationRejectedAsync(
+        Action<Proto.QueryRelatedRecordsRequest, ServerCallContext> tamper)
     {
         var captured = ConfigureRelatedPages();
         ((IRelationshipStore)_featureReader).QueryRelatedPageAsync(0, Arg.Any<RelatedPageQuery>(), Arg.Any<CancellationToken>())
@@ -95,15 +113,7 @@ public sealed partial class GrpcMaskedFieldPredicateTests
         var request = RelatedRequest();
         using var context = CreateRelatedCallContext();
         request.PageToken = (await _sut.QueryRelatedRecords(request, context)).NextPageToken;
-        if (changeCaller)
-        {
-            context.GetHttpContext().User = new ClaimsPrincipal(new ClaimsIdentity(
-                [new Claim(ClaimTypes.Name, "another-reader"), new Claim(ClaimTypes.Role, "admin")], "Test"));
-        }
-        else
-        {
-            request.Where = "name = 'changed'";
-        }
+        tamper(request, context);
 
         var action = () => _sut.QueryRelatedRecords(request, context);
 

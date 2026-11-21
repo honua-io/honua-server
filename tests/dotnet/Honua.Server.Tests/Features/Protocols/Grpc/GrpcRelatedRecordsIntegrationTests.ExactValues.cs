@@ -23,29 +23,13 @@ public sealed partial class GrpcRelatedRecordsIntegrationTests
     {
         await _fixture.UpdateV2ResourceAsync(WebAppFixture.TestLayerId, resource => resource with
         {
-            SchemaFields = [.. resource.SchemaFields, new MetadataV2Field
-            {
-                Name = "exact_value", Type = type, Nullable = true
-            }]
+            SchemaFields = [.. resource.SchemaFields, new MetadataV2Field { Name = "exact_value", Type = type, Nullable = true }]
         });
         var value = type == MetadataV2FieldType.Decimal
             ? new Proto.AttributeValue { DecimalValue = text }
             : new Proto.AttributeValue { TimestampOffsetValue = text };
-        var request = new Proto.ApplyEditsRequest
-        {
-            ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId,
-            Adds = { new Proto.Feature
-            {
-                Attributes =
-                {
-                    ["name"] = new Proto.AttributeValue { StringValue = "related-exact-value" },
-                    ["category"] = new Proto.AttributeValue { StringValue = Guid.NewGuid().ToString("D") },
-                    ["exact_value"] = value
-                },
-                Geometry = new Proto.Geometry { Point = new Proto.PointGeometry { X = -157.85, Y = 21.30 } }
-            } }
-        };
-        var added = (await _client!.ApplyEditsAsync(request, _headers)).AddResults.Should().ContainSingle().Subject;
+        var added = (await _client!.ApplyEditsAsync(CreateExactValueAddRequest(value), _headers))
+            .AddResults.Should().ContainSingle().Subject;
         added.Success.Should().BeTrue();
 
         var response = await _client.QueryRelatedRecordsAsync(new Proto.QueryRelatedRecordsRequest
@@ -61,4 +45,24 @@ public sealed partial class GrpcRelatedRecordsIntegrationTests
         response.Fields.Should().ContainSingle().Which.FieldType.Should().Be(
             type == MetadataV2FieldType.Decimal ? Proto.FieldType.Decimal : Proto.FieldType.TimestampOffset);
     }
+
+    private static Proto.ApplyEditsRequest CreateExactValueAddRequest(Proto.AttributeValue value)
+        => new()
+        {
+            ServiceId = WebAppFixture.TestServiceId,
+            LayerId = WebAppFixture.TestLayerId,
+            Adds =
+            {
+                new Proto.Feature
+                {
+                    Attributes =
+                    {
+                        ["name"] = new Proto.AttributeValue { StringValue = "related-exact-value" },
+                        ["category"] = new Proto.AttributeValue { StringValue = Guid.NewGuid().ToString("D") },
+                        ["exact_value"] = value
+                    },
+                    Geometry = new Proto.Geometry { Point = new Proto.PointGeometry { X = -157.85, Y = 21.30 } }
+                }
+            }
+        };
 }

@@ -13,14 +13,23 @@ public sealed partial class GrpcServiceEditsIntegrationTests
 {
     private readonly ServiceRecordingHooks _hooks = new();
 
+    private enum ServiceHookRollbackMode { RollbackOnFailure, PartialCommit }
+
     [IntegrationTest]
     [Endpoint("POST /geospatial.v1.FeatureService/ApplyServiceEdits")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/ApplyServiceEdits")]
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task ApplyServiceEdits_HookRejection_RespectsRollbackAndReplaysWithoutHooks(bool rollback)
+    public Task ApplyServiceEdits_HookRejectionWithRollback_RollsBackAndReplaysWithoutHooks()
+        => AssertHookRejectionAsync(ServiceHookRollbackMode.RollbackOnFailure);
+
+    [IntegrationTest]
+    [Endpoint("POST /geospatial.v1.FeatureService/ApplyServiceEdits")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/ApplyServiceEdits")]
+    public Task ApplyServiceEdits_HookRejectionWithoutRollback_CommitsUnrejectedAndReplaysWithoutHooks()
+        => AssertHookRejectionAsync(ServiceHookRollbackMode.PartialCommit);
+
+    private async Task AssertHookRejectionAsync(ServiceHookRollbackMode mode)
     {
+        var rollback = mode == ServiceHookRollbackMode.RollbackOnFailure;
         _hooks.RejectLayer = 1;
         var beforeFirst = await _fixture.CountStoredFeaturesAsync(0);
         var beforeSecond = await _fixture.CountStoredFeaturesAsync(1);
