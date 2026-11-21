@@ -39,11 +39,16 @@ internal static class MapLibreStyleNormalizer
         "case",
         "coalesce",
         "concat",
+        "downcase",
         "get",
         "has",
+        "in",
+        "index-of",
         "interpolate",
+        "length",
         "literal",
         "match",
+        "slice",
         "step",
         "to-number",
         "to-string",
@@ -561,7 +566,8 @@ internal static class MapLibreStyleNormalizer
                 && property is "line-cap" or "line-join")
             || (string.Equals(layerType, "symbol", StringComparison.OrdinalIgnoreCase)
                 && property is "icon-image" or "icon-offset" or "icon-rotate" or "icon-size"
-                    or "text-field" or "text-font" or "text-size");
+                    or "symbol-placement"
+                    or "text-anchor" or "text-field" or "text-font" or "text-offset" or "text-rotate" or "text-size");
 
     private static bool TryValidateStyleProperty(string property, JsonNode? value, string layerId, out string? error)
     {
@@ -580,7 +586,7 @@ internal static class MapLibreStyleNormalizer
                 or "text-size" or "text-halo-width" or "text-halo-blur" =>
                 TryValidateNumberValue(value, property, layerId, allowNegative: false, out error),
 
-            "icon-rotate" =>
+            "icon-rotate" or "text-rotate" =>
                 TryValidateNumberValue(value, property, layerId, allowNegative: true, out error),
 
             "fill-antialias" =>
@@ -595,11 +601,14 @@ internal static class MapLibreStyleNormalizer
             "line-dasharray" =>
                 TryValidateNumberArray(value, property, layerId, requiredLength: null, allowNegative: false, out error),
 
-            "icon-offset" =>
+            "icon-offset" or "text-offset" =>
                 TryValidateNumberArray(value, property, layerId, requiredLength: 2, allowNegative: true, out error),
 
             "visibility" =>
                 TryValidateEnumValue(value, property, layerId, ["none", "visible"], out error),
+
+            "symbol-placement" or "text-anchor" =>
+                (error = ValidateSymbolPlacementEnum(property, value, layerId)) is null,
 
             "line-cap" =>
                 TryValidateEnumValue(value, property, layerId, ["butt", "round", "square"], out error),
@@ -609,6 +618,14 @@ internal static class MapLibreStyleNormalizer
 
             _ => true
         };
+    }
+
+    private static string? ValidateSymbolPlacementEnum(string property, JsonNode? value, string layerId)
+    {
+        string[] allowed = property == "symbol-placement"
+            ? ["point", "line", "line-center"]
+            : ["center", "left", "right", "top", "bottom", "top-left", "top-right", "bottom-left", "bottom-right"];
+        return TryValidateEnumValue(value, property, layerId, allowed, out var error) ? null : error;
     }
 
     private static bool TryValidateColorValue(JsonNode? value, string property, string layerId, out string? error)
@@ -1035,8 +1052,9 @@ internal static class MapLibreStyleNormalizer
         return op switch
         {
             "get" or "has" => TryValidateGetOrHasExpression(items, context, op, out error),
-            "!" or "to-number" or "to-string" or "typeof" => TryValidateFixedArityExpression(items, context, op, 2, out error),
-            "==" or "!=" or "<" or "<=" or ">" or ">=" => TryValidateFixedArityExpression(items, context, op, 3, out error),
+            "!" or "downcase" or "length" or "to-number" or "to-string" or "typeof" => TryValidateFixedArityExpression(items, context, op, 2, out error),
+            "==" or "!=" or "<" or "<=" or ">" or ">=" or "in" => TryValidateFixedArityExpression(items, context, op, 3, out error),
+            "index-of" or "slice" => (error = ValidateBoundedArityExpression(items, context, 3..4)) is null,
             "case" => TryValidateCaseExpression(items, context, out error),
             "match" => TryValidateMatchExpression(items, context, out error),
             "step" => TryValidateStepExpression(items, context, out error),
@@ -1122,6 +1140,27 @@ internal static class MapLibreStyleNormalizer
         }
 
         return true;
+    }
+
+    private static string? ValidateBoundedArityExpression(JsonElement[] items, string context, Range lengthRange)
+    {
+        var minLength = lengthRange.Start.Value;
+        var maxLength = lengthRange.End.Value;
+        if (items.Length < minLength || items.Length > maxLength)
+        {
+            var op = items[0].GetString();
+            return $"MapLibre expression '{op}' in {context} must have between {minLength - 1} and {maxLength - 1} argument(s).";
+        }
+
+        for (var i = 1; i < items.Length; i++)
+        {
+            if (!TryValidateExpression(items[i], context, out var childError))
+            {
+                return childError;
+            }
+        }
+
+        return null;
     }
 
     private static bool TryValidateCaseExpression(JsonElement[] items, string context, out string? error)

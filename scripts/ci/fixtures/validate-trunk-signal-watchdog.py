@@ -360,6 +360,28 @@ vm.runInNewContext('(async () => {' + input.script + '})()', sandbox)
                 self.assertEqual(any(kind == 'failed' and 'Boundary shard' in value for kind, value in calls),
                                  expect_fail)
 
+    def test_triggers_on_ci_and_full_ci_dispatch_workflow_run_with_light_runner_guard(self):
+        triggers = DEFINITION['on']
+        self.assertEqual(triggers.get('schedule'), [{'cron': '*/30 * * * *'}])
+        self.assertIn('workflow_dispatch', triggers)
+        workflow_run = triggers.get('workflow_run')
+        self.assertIsInstance(workflow_run, dict)
+        self.assertEqual(set(workflow_run.get('workflows', [])), {'CI', 'Full CI dispatch'})
+        self.assertEqual(workflow_run.get('branches'), ['trunk'])
+        self.assertEqual(workflow_run.get('types'), ['completed'])
+
+        concurrency = DEFINITION['concurrency']
+        self.assertEqual(concurrency['group'], 'trunk-signal-watchdog')
+        self.assertEqual(concurrency['cancel-in-progress'], 'true')
+
+        watch = DEFINITION['jobs']['watch']
+        canonical = yaml.load(
+            (ROOT / '.github/workflows/flake-quarantine.yml').read_text(),
+            Loader=yaml.BaseLoader,
+        )['jobs']['publish']['runs-on']
+        self.assertEqual(watch['runs-on'], canonical)
+        self.assertIn('github.event.workflow_run.head_repository.full_name == github.repository', watch['if'])
+
 
 if __name__ == '__main__':
     unittest.main()

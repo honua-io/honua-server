@@ -65,11 +65,21 @@ def validate_projects(root, projects):
     return sorted(set(projects))
 
 
-def write_filter(root, projects, target):
-    # Forward P2P references are traversed by restore and graphBuild.
-    members = {path.replace('\\', '/'): path for path in re.findall(
+def solution_members(root):
+    return {path.replace('\\', '/'): path for path in re.findall(
         r'^Project\([^\n]+? = "[^"]+", "([^"]+\.csproj)"',
         (root / 'Honua.sln').read_text(), re.MULTILINE)}
+
+
+def buildable_affected(root, base):
+    # Out-of-solution projects (the docker/ custom-code harness) have their own workflow.
+    buildable = solution_members(root).keys() | STANDALONE_PROJECTS
+    return [p for p in (path.replace('\\', '/') for path in base) if p in buildable]
+
+
+def write_filter(root, projects, target):
+    # Forward P2P references are traversed by restore and graphBuild.
+    members = solution_members(root)
     normalized = {path.replace('\\', '/') for path in projects}
     unknown = normalized - members.keys()
     if unknown:
@@ -248,7 +258,7 @@ def main():
                 parser.error('--output required')
             if args.base_filter:
                 base = json.loads(args.base_filter.read_text())['solution']['projects']
-                projects.extend(p.replace('\\', '/') for p in base)
+                projects.extend(buildable_affected(root, base))
             if args.standalone_output:
                 write_build_plan(root, projects, args)
             else:

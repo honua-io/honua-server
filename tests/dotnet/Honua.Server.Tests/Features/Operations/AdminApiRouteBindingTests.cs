@@ -33,6 +33,32 @@ public sealed class AdminApiRouteBindingTests : IDisposable
     }
 
     [UnitTest]
+    public void AdminOperateCatalog_AllDefinitions_AreBoundToMatchingHttpEndpoints()
+    {
+        using var _ = _factory.CreateClient();
+        var endpoints = _factory.Services.GetServices<EndpointDataSource>()
+            .SelectMany(static source => source.Endpoints)
+            .ToArray();
+
+        var violations = AdminHttpOperationRouteBinding.Validate(endpoints, AdminOperateOperationCatalog.Definitions);
+        violations.Should().BeEmpty(
+            "every AdminOperateOperationCatalog definition must bind its live HTTP route, method, and OpenAPI operation name");
+    }
+
+    [UnitTest]
+    public void AdminAccessCatalog_AllDefinitions_AreBoundToMatchingHttpEndpoints()
+    {
+        using var _ = _factory.CreateClient();
+        var endpoints = _factory.Services.GetServices<EndpointDataSource>()
+            .SelectMany(static source => source.Endpoints)
+            .ToArray();
+
+        var violations = AdminHttpOperationRouteBinding.Validate(endpoints, AdminAccessOperationCatalog.Definitions);
+        violations.Should().BeEmpty(
+            "every AdminAccessOperationCatalog definition must bind its live HTTP route, method, and OpenAPI operation name");
+    }
+
+    [UnitTest]
     public void AdminConnectImportCatalog_AllDefinitions_AreBoundToMatchingHttpEndpoints()
     {
         using var _ = _factory.CreateClient();
@@ -106,6 +132,22 @@ public sealed class AdminApiRouteBindingTests : IDisposable
         var act = () => AdminHttpOperationRouteBinding.ForApi("admin.services.settings.get", "/services", "/{serviceName}/wrong");
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*admin.services.settings.get*");
+    }
+
+    [UnitTest]
+    public void ForOperate_DriftedRelativeTemplate_ThrowsAtRegistration()
+    {
+        var act = () => AdminHttpOperationRouteBinding.ForOperate("admin.cache.status", "/cache", "/wrong");
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*admin.cache.status*");
+    }
+
+    [UnitTest]
+    public void ForAccess_DriftedRelativeTemplate_ThrowsAtRegistration()
+    {
+        var act = () => AdminHttpOperationRouteBinding.ForAccess("admin.role.get", "/roles", "/{id:guid}/wrong");
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*admin.role.get*");
     }
 
     [UnitTest]

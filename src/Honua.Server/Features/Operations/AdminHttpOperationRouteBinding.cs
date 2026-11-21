@@ -18,6 +18,24 @@ internal static class AdminHttpOperationRouteBinding
             groupPrefix,
             relativeTemplate);
 
+    public static AdminOperationRouteBinding ForOperate(
+        string operationId,
+        string groupPrefix,
+        string? relativeTemplate = null) =>
+        AdminHttpOperationBinding.ForDefinition(
+            AdminOperateOperationCatalog.Definitions.Single(item => item.OperationId == operationId),
+            groupPrefix,
+            relativeTemplate);
+
+    public static AdminOperationRouteBinding ForAccess(
+        string operationId,
+        string groupPrefix,
+        string? relativeTemplate = null) =>
+        AdminHttpOperationBinding.ForDefinition(
+            AdminAccessOperationCatalog.Definitions.Single(item => item.OperationId == operationId),
+            groupPrefix,
+            relativeTemplate);
+
     public static AdminOperationRouteBinding ForConnectImport(
         string operationId,
         string groupPrefix,

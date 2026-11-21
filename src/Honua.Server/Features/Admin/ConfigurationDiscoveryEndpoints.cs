@@ -3,6 +3,7 @@
 
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin.Services;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
@@ -32,16 +33,18 @@ internal static class ConfigurationDiscoveryEndpoints
             .WithName("GetConfigurationAutoDocumentation")
             .WithSummary("Get auto-generated configuration documentation");
 
-        _ = group.MapGet("/secrets/validate", HandleValidateSecretsAsync)
-            .WithName("ValidateConfigurationSecrets")
+        var validateSecrets = AdminHttpOperationRouteBinding.ForOperate("admin.configuration.secrets.validate", "/configuration");
+        _ = group.MapMethods(validateSecrets.RoutePattern, validateSecrets.Methods, HandleValidateSecretsAsync)
+            .WithAdminOperation(validateSecrets.Definition)
             .WithSummary("Validate secret references in configuration");
 
         _ = group.MapGet("/audit", HandleGetAuditInfoAsync)
             .WithName("GetConfigurationAuditInfo")
             .WithSummary("Get configuration audit information");
 
-        _ = group.MapGet("/summary", HandleGetConfigurationSummaryAsync)
-            .WithName("GetConfigurationSummary")
+        var summary = AdminHttpOperationRouteBinding.ForOperate("admin.configuration.summary", "/configuration");
+        _ = group.MapMethods(summary.RoutePattern, summary.Methods, HandleGetConfigurationSummaryAsync)
+            .WithAdminOperation(summary.Definition)
             .WithSummary("Get high-level configuration summary");
     }
 
