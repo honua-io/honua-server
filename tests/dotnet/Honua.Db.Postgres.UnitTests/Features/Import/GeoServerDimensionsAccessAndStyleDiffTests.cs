@@ -276,8 +276,11 @@ public sealed class GeoServerDimensionsAccessAndStyleDiffTests : IDisposable
             Current = new MetadataV2GraphSnapshot(graph, "etag-1", 1, DateTimeOffset.UtcNow);
         }
 
-        public Task<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(Current);
+        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(Current);
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<MetadataV2GraphSnapshot?>(Current.Revision == revision ? Current : null);
 
         public Task<MetadataV2GraphSnapshot> SaveAsync(MetadataV2Graph graph, string? expectedEtag, CancellationToken cancellationToken = default)
         {
