@@ -77,7 +77,7 @@ services:
     secrets: [honua_manager_postgres_password, honua_manager_admin_password, honua_manager_audit_chain_key,
               honua_manager_master_key, honua_keyring_password]
   compose-manager-postgres:
-    image: pgrouting/pgrouting:17-3.5-3.7.3@sha256:5e6767abbd1fd9ead84c9988aa31bac71ca292ef8a1fc2e4a5ee2b613ac6a7bb
+    image: ghcr.io/honua-io/honua-server@sha256:d9df4cd19ac018b1e626d7c74a1400d7affb8de48dbe5ed67a862589c4e3d998
     environment:
       POSTGRES_DB: honua_manager
       POSTGRES_USER: honua
@@ -89,10 +89,12 @@ services:
       - source: postgis_init
         target: /docker-entrypoint-initdb.d/10-honua-postgis.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U honua -d honua_manager"]
+      test: ["CMD-SHELL", "test \"$$(head -n 1 /var/lib/postgresql/data/postmaster.pid 2>/dev/null)\" = \"1\" && pg_isready -U honua -d honua_manager"]
       interval: 5s
       timeout: 3s
       retries: 30
+      # The first start on a volume from an older database image rebuilds text indexes first.
+      start_period: 60m
     restart: unless-stopped
   compose-executor:
     image: ${HONUA_EXECUTOR_IMAGE:?Set the immutable executor digest}
