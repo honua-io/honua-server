@@ -23,6 +23,8 @@ Honua serves a STAC API v1.0.0 (SpatioTemporal Asset Catalog) at `/stac` for sta
 | GET | `/stac/queryables` | Catalog-level queryables (JSON Schema of filterable properties). |
 | GET | `/stac/collections/{collectionId}/queryables` | Per-collection queryables (JSON Schema). |
 
+A numeric `{collectionId}` is the id that `/stac/collections` lists: the layer's storage layer id, which is unique across services. A layer index shared by several services returns `409 Conflict`. A non-numeric `{collectionId}` matches the collection name or path.
+
 ## Search parameters
 
 Accepted on `GET /stac/search` as query parameters and on `POST /stac/search` as JSON body fields:

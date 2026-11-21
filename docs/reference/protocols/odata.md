@@ -26,6 +26,8 @@ Honua exposes layers and features as an OData v4 service at `/odata`, so BI tool
 
 Connection-bound publications use their configured provider for reads, including $search, $apply, and entity-by-key lookups. OData writes to connection-bound or secondary providers return HTTP 501 ProviderWriteNotSupported, including batch changesets, until binding-aware writes are supported. Managed layers retain CRUD support.
 
+`{layerId}` is the `Id` that `/odata/Layers` lists for the layer: its storage layer id, which is unique across services. A GeoServices layer index is also accepted when exactly one layer you can read has it; when several services share that index the request returns `409 Conflict` with `AmbiguousIdentifier`, so use the listed `Id`.
+
 PATCH, PUT, and DELETE are also available on the layer-scoped key form `/odata/Layers({layerId})/Features({objectId})` and the legacy form `/odata/Features({layerId},{objectId})`. Legacy aggregation/search routes `/odata/Features({layerId})/$apply` and `/$search` remain available.
 
 On managed PostgreSQL layers, concurrent PATCH requests may return `409 Conflict`, preserving the competing edit. Read the current feature and retry the partial update. Requests whose `If-Match` or `If-None-Match` precondition fails return `412 Precondition Failed`. Fields hidden by field-level security are preserved when omitted from the PATCH. Conditional PUT requests can also return `409` if their read snapshot changes while `If-Match` still matches; a conditional header does not change which fields the replacement stores. Conditions are evaluated against the row snapshot captured under the lock that rejected the edit.
@@ -198,19 +200,21 @@ which is still valid (`mod` is supported) but emits the bin's lower bound rather
 
 ## Examples
 
+The examples use layer `1`; replace it with an `Id` from `/odata/Layers`.
+
 Filtered, projected, and paged query:
 
 ```text
-https://server.example.com/odata/Layers(0)/Features?$filter=population ge 1000000&$select=name,population&$orderby=population desc&$top=10
+https://server.example.com/odata/Layers(1)/Features?$filter=population ge 1000000&$select=name,population&$orderby=population desc&$top=10
 ```
 
 Features within 5 km of a point:
 
 ```text
-https://server.example.com/odata/Layers(0)/Features?$filter=geo.distance(Geometry, geography'SRID=4326;POINT(-122.4 37.8)') lt 5000
+https://server.example.com/odata/Layers(1)/Features?$filter=geo.distance(Geometry, geography'SRID=4326;POINT(-122.4 37.8)') lt 5000
 ```
 
-To create a feature, bind an `@honua/sdk-js` OData source to `Layers(0)/Features` and call `source.applyEdits({ adds: [...] })` using this entity shape:
+To create a feature, bind an `@honua/sdk-js` OData source to `Layers(1)/Features` and call `source.applyEdits({ adds: [...] })` using this entity shape:
 
 ```json
 {
@@ -225,19 +229,19 @@ To create a feature, bind an `@honua/sdk-js` OData source to `Layers(0)/Features
 Aggregation:
 
 ```text
-https://server.example.com/odata/Layers(0)/Features?$apply=groupby((state),aggregate(population with sum as totalPopulation))
+https://server.example.com/odata/Layers(1)/Features?$apply=groupby((state),aggregate(population with sum as totalPopulation))
 ```
 
 Histogram binning into 1,000,000-wide buckets:
 
 ```text
-https://server.example.com/odata/Layers(0)/Features?$apply=compute(floor(population div 1000000) as popBin)
+https://server.example.com/odata/Layers(1)/Features?$apply=compute(floor(population div 1000000) as popBin)
 ```
 
 Filter, then group and aggregate:
 
 ```text
-https://server.example.com/odata/Layers(0)/Features?$apply=filter(population gt 500000)/groupby((state),aggregate($count as cityCount))
+https://server.example.com/odata/Layers(1)/Features?$apply=filter(population gt 500000)/groupby((state),aggregate($count as cityCount))
 ```
 
 ## Conformance
