@@ -308,6 +308,7 @@ Database connection pool and query admission:
 | `Limits__Connections__StatementTimeout` / `LockTimeout` | `00:00:30` | PostgreSQL statement and lock timeouts. |
 | `Limits__Connections__IdleInTransactionTimeout` | `00:01:00` | PostgreSQL idle-in-transaction timeout. |
 | `Limits__Connections__AdaptiveConcurrencyEnabled` | `false` | Adaptive query admission under the concurrency ceiling. |
+| `Limits__Connections__AnonymousPressureAdmissionEnabled` | `true` | Refuse anonymous expensive reads with a retryable 503 while the query gate is under pressure. Set `false` to queue them instead, for example behind an edge that already admits traffic. |
 | `Limits__Connections__AdaptiveConcurrencyMinQueries` | `1` | Adaptive lower bound. |
 | `Limits__Connections__AdaptiveConcurrencyInitialQueries` | `0` (= max) | Adaptive starting limit. |
 | `Limits__Connections__AdaptiveConcurrencyMaxQueries` | `0` (= `MaxConcurrentQueries`) | Adaptive upper bound. |

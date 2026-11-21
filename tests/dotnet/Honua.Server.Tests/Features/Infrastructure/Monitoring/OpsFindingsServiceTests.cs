@@ -1868,6 +1868,9 @@ public sealed partial class OpsFindingsServiceTests
 
         public Task<DeployPreflightSnapshot> ProbeAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(_snapshot);
+
+        public Task<DeployPreflightSnapshot> ProbeAsync(TimeSpan maxMigrationPlanAge, CancellationToken cancellationToken = default)
+            => Task.FromResult(_snapshot);
     }
 
     private sealed class FakeDatabasePressureSignal : IOpsDatabasePressureSignal

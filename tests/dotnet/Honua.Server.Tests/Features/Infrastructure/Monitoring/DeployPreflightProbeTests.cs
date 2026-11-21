@@ -10,6 +10,7 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.HealthCheck;
 using Honua.Core.Features.Infrastructure.Health;
 using Honua.Infrastructure.Monitoring;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -117,6 +118,108 @@ public sealed class DeployPreflightProbeTests
         snapshot.Message.Should().Contain("contract-phase");
     }
 
+    [UnitTest]
+    public async Task ProbeAsync_BackgroundCallers_ReuseAFreshPlanUntilItAgesOrMigrationsRun()
+    {
+        var clock = new ManualClock();
+        var migrationRunner = new CapturingMigrationRunner();
+        var migrationState = new MigrationState();
+        migrationState.MarkSucceeded();
+        var cache = new DeployPreflightMigrationPlanCache(clock);
+        var maxAge = DeployPreflightProbe.BackgroundMigrationPlanMaxAge;
+
+        await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync(maxAge);
+        await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync(maxAge);
+        migrationRunner.PlanCount.Should().Be(1, "a second scope within the max age reuses the plan");
+
+        clock.Advance(maxAge + TimeSpan.FromSeconds(1));
+        await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync(maxAge);
+        migrationRunner.PlanCount.Should().Be(2, "an aged plan is read again");
+
+        migrationState.MarkSucceeded();
+        await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync(maxAge);
+        migrationRunner.PlanCount.Should().Be(3, "migration work invalidates the plan even when the status reads the same");
+    }
+
+    [UnitTest]
+    public async Task ProbeAsync_BackgroundCallers_ReadAgainForAnotherDatabaseOrAfterAFailedRead()
+    {
+        var migrationRunner = new CapturingMigrationRunner();
+        var migrationState = new MigrationState();
+        migrationState.MarkSucceeded();
+        var cache = new DeployPreflightMigrationPlanCache(new ManualClock());
+        var maxAge = DeployPreflightProbe.BackgroundMigrationPlanMaxAge;
+
+        await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync(maxAge);
+        var otherDatabase = new DeployPreflightProbe(
+            DatabaseAt("Host=other;Database=honua"),
+            new StubReadinessCheckService(),
+            migrationRunner,
+            migrationState,
+            new DatabaseCompatibilityState(),
+            NullLogger<DeployPreflightProbe>.Instance,
+            migrationPlanCache: cache);
+        await otherDatabase.ProbeAsync(maxAge);
+        migrationRunner.PlanCount.Should().Be(2, "a different connection string is a different database");
+
+        await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync();
+        await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync(maxAge);
+        migrationRunner.PlanCount.Should().Be(3, "the fresh read is cached for background callers");
+
+        migrationRunner.NextPlan = DatabaseMigrationPlan.Failed(new InvalidOperationException("journal unreadable"));
+        await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync();
+        migrationRunner.NextPlan = DatabaseMigrationPlan.Succeeded();
+        var snapshot = await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync(maxAge);
+
+        migrationRunner.PlanCount.Should().Be(5, "a failed read clears the cached plan");
+        snapshot.Migration.PlanAvailable.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task ProbeAsync_DeployDecisions_AlwaysReadAFreshPlan()
+    {
+        var migrationRunner = new CapturingMigrationRunner();
+        var migrationState = new MigrationState();
+        migrationState.MarkSucceeded();
+        var cache = new DeployPreflightMigrationPlanCache(new ManualClock());
+
+        await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync(DeployPreflightProbe.BackgroundMigrationPlanMaxAge);
+        await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync();
+        await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync();
+
+        migrationRunner.PlanCount.Should().Be(3);
+    }
+
+    private static IConfiguration DatabaseAt(string connectionString)
+        => new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = connectionString
+            })
+            .Build();
+
+    private static DeployPreflightProbe CachingProbe(
+        IDatabaseMigrationRunner migrationRunner,
+        MigrationState migrationState,
+        DeployPreflightMigrationPlanCache cache)
+        => new(
+            DatabaseAt("Host=db;Database=honua;Username=test;Password=secret"),
+            new StubReadinessCheckService(),
+            migrationRunner,
+            migrationState,
+            new DatabaseCompatibilityState(),
+            NullLogger<DeployPreflightProbe>.Instance,
+            migrationPlanCache: cache);
+
+    private sealed class ManualClock : TimeProvider
+    {
+        private DateTimeOffset _now = new(2026, 11, 21, 0, 0, 0, TimeSpan.Zero);
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        public void Advance(TimeSpan by) => _now += by;
+    }
+
     private sealed class StubReadinessCheckService : IReadinessCheckService
     {
         public Task<ReadinessResult> CheckReadinessAsync(CancellationToken cancellationToken = default)
@@ -136,10 +239,15 @@ public sealed class DeployPreflightProbeTests
     {
         public string? LastConnectionString { get; private set; }
 
+        public int PlanCount { get; private set; }
+
+        public DatabaseMigrationPlan NextPlan { get; set; } = DatabaseMigrationPlan.Succeeded();
+
         public Task<DatabaseMigrationPlan> PlanMigrationsAsync(string connectionString, Assembly migrationsAssembly, CancellationToken cancellationToken = default)
         {
             LastConnectionString = connectionString;
-            return Task.FromResult(DatabaseMigrationPlan.Succeeded());
+            PlanCount++;
+            return Task.FromResult(NextPlan);
         }
 
         public Task<DatabaseMigrationResult> RunMigrationsAsync(string connectionString, Assembly migrationsAssembly, CancellationToken cancellationToken = default)
