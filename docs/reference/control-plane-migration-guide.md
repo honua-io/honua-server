@@ -10,6 +10,13 @@ This guide covers migration for the Honua control-plane/admin API only.
 This guide covers the Honua control-plane (admin) API only. For SDK support windows and
 release-channel expectations, see [Server + SDK compatibility](../concepts/ecosystem.md).
 
+## Exports admin API
+
+Paired publications move out of the tile-operations API and become Exports under `/api/v1/admin/exports` (read routes under `/api/v1/exports/{exportId}/...`). There are no aliases for the retired fields or routes.
+
+- `POST /api/v1/admin/tile-operations/jobs` no longer accepts `operation: "paired-publish"` or `"export"`, and `TileOperationStartRequestPayload` drops `publicationId` and `identityField`. Use `POST /api/v1/admin/exports` instead.
+- `TileOperationProgressView` drops `publishedPublication`, and the `TileOpsPublishedPublication` schema is removed. Read Export status, versions, and URLs from `GET /api/v1/admin/exports` and `GET /api/v1/admin/exports/{exportId}`, and unpublish with `DELETE /api/v1/admin/exports/{exportId}`.
+
 ## Forms routes and operation names
 
 Forms authoring routes move from `/api/v1/admin/forms/packages` to

@@ -340,7 +340,9 @@ public sealed partial class ExportEndpointTests(ExportEndpointTests.ExportHost h
     {
         using var response = await _client.PostAsJsonAsync(JobsRoute, new
         {
-            operation, serviceId = WebAppFixture.TestServiceId, layerId = WebAppFixture.TestLayerId
+            operation,
+            serviceId = WebAppFixture.TestServiceId,
+            layerId = WebAppFixture.TestLayerId
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);

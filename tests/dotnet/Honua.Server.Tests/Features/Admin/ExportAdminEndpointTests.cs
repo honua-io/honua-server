@@ -180,8 +180,8 @@ public sealed partial class ExportEndpointTests
     [Endpoint("DELETE /api/v1/admin/exports/{exportId}")]
     public async Task GetAndDeleteExport_Unknown_ReturnNotFound()
     {
-        using var get = await _client.GetAsync($"{ExportsRoute}/never-exported");
-        using var delete = await _client.DeleteAsync($"{ExportsRoute}/never-exported");
+        using var get = await _client.GetAsync("/api/v1/admin/exports/never-exported");
+        using var delete = await _client.DeleteAsync("/api/v1/admin/exports/never-exported");
 
         get.StatusCode.Should().Be(HttpStatusCode.NotFound);
         delete.StatusCode.Should().Be(HttpStatusCode.NotFound);
