@@ -14,13 +14,11 @@ namespace Honua.Infrastructure.Monitoring;
 
 internal interface IDeployPreflightProbe
 {
-    /// <summary>Probes with a freshly read migration plan (deploy decisions).</summary>
+    // Probes with a freshly read migration plan (deploy decisions).
     Task<DeployPreflightSnapshot> ProbeAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Probes, reusing a migration plan read within <paramref name="maxMigrationPlanAge"/>. For
-    /// periodic evaluators, which would otherwise scan every migration journal on each pass.
-    /// </summary>
+    // Probes, reusing a migration plan read within maxMigrationPlanAge. For
+    // periodic evaluators, which would otherwise scan every migration journal on each pass.
     Task<DeployPreflightSnapshot> ProbeAsync(TimeSpan maxMigrationPlanAge, CancellationToken cancellationToken = default);
 }
 
@@ -39,7 +37,7 @@ internal sealed class DeployPreflightProbe(
 {
     private const string MigrationPlanUnavailableMessage = "Migration planning is temporarily unavailable.";
 
-    /// <summary>How stale a migration plan periodic evaluators accept.</summary>
+    // How stale a migration plan periodic evaluators accept.
     internal static readonly TimeSpan BackgroundMigrationPlanMaxAge = TimeSpan.FromMinutes(5);
 
     public Task<DeployPreflightSnapshot> ProbeAsync(CancellationToken cancellationToken = default)

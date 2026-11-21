@@ -162,18 +162,28 @@ public sealed class AnonymousPressureAdmissionTests
         response.Headers.Contains("X-Database-Reached").Should().BeTrue();
     }
 
-    [IntegrationTheory]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
+    [IntegrationTest]
     [Operation(Operations.Infrastructure)]
-    public async Task InvokeAsync_OperatorSwitch_DecidesWhetherPressuredAnonymousWorkQueues(bool enabled, bool reached)
+    public async Task InvokeAsync_OperatorSwitchOff_QueuesPressuredAnonymousWork()
     {
         var limits = new Honua.Core.Configuration.LimitsOptions();
-        limits.Connections.AnonymousPressureAdmissionEnabled = enabled;
+        limits.Connections.AnonymousPressureAdmissionEnabled = false;
         await using var app = await StartAsync(PressuredGate(), limits);
         using var response = await app.GetTestClient().GetAsync("/rest/services/test/FeatureServer/0/query");
 
-        response.Headers.Contains("X-Database-Reached").Should().Be(reached);
+        response.Headers.Contains("X-Database-Reached").Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Infrastructure)]
+    public async Task InvokeAsync_OperatorSwitchOnExplicitly_RefusesPressuredAnonymousWork()
+    {
+        var limits = new Honua.Core.Configuration.LimitsOptions();
+        limits.Connections.AnonymousPressureAdmissionEnabled = true;
+        await using var app = await StartAsync(PressuredGate(), limits);
+        using var response = await app.GetTestClient().GetAsync("/rest/services/test/FeatureServer/0/query");
+
+        response.Headers.Contains("X-Database-Reached").Should().BeFalse();
     }
 
     [IntegrationTest]

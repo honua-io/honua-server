@@ -5,13 +5,11 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// The last successful migration plan read by <see cref="DeployPreflightProbe"/>, shared across
-/// scopes. Background evaluators (ops findings every minute, the health rollup every 45 seconds)
-/// reuse it instead of scanning every migration journal on each pass. A plan is reused only for
-/// the same connection string and the same in-process migration status, so a migration this
-/// process runs is seen at once.
-/// </summary>
+// The last successful migration plan read by DeployPreflightProbe, shared across
+// scopes. Background evaluators (ops findings every minute, the health rollup every 45 seconds)
+// reuse it instead of scanning every migration journal on each pass. A plan is reused only for
+// the same connection string and the same in-process migration status, so a migration this
+// process runs is seen at once.
 internal sealed class DeployPreflightMigrationPlanCache(TimeProvider timeProvider)
 {
     private Entry? _entry;
