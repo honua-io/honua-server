@@ -104,8 +104,7 @@ internal static class GeoParquetReader
             // Read geometry column
             var geometryColumn = await rowGroupReader.ReadColumnAsync(
                 (DataField)schema.Fields[geometryFieldIndex], cancellationToken);
-            var geometryData = geometryColumn.Data as byte[]?[];
-            if (geometryData is null)
+            if (geometryColumn.Data is not byte[]?[] geometryData)
             {
                 throw new InvalidDataException(
                     $"Geometry column '{primaryColumn}' does not contain binary (WKB) data.");

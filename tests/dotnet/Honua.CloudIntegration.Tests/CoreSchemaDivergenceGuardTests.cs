@@ -1075,7 +1075,7 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
                 OR scriptname = '{ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration}';
             """);
         var original = await CaptureLegacyAttachmentAsync(connectionString);
-        IConfiguration Configuration(string? nonce) => new ConfigurationBuilder()
+        static IConfiguration Configuration(string? nonce) => new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Database:Schema"] = schema,

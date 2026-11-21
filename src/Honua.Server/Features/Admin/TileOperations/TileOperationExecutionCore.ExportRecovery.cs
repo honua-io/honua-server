@@ -34,11 +34,15 @@ internal sealed partial class TileOperationExecutionCore
                 throw new ExportException("The stored publication does not match this operation's source.");
             }
 
+            var publicDelivery = await TryPromotePublicAsync(context, previous, cancellationToken).ConfigureAwait(false);
             return progress with
             {
                 PublishedExportVersion = new PublishedExportVersion(previous.ExportId, previous.Version,
                     previous.Capture.CaptureId, context.Store.VersionKey(previous.Version, ExportCollectionDocument.FileName),
-                    context.Store.PointerKey),
+                    context.Store.PointerKey)
+                {
+                    Public = publicDelivery
+                },
                 Status = OperationStatus.Completed,
                 CompletedAt = DateTimeOffset.UtcNow,
                 ErrorMessage = null,

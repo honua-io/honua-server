@@ -1,12 +1,12 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-namespace Honua.Protocols.Ogc.Api.Processes;
-
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Migration.Services;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+
+namespace Honua.Protocols.Ogc.Api.Processes;
 
 internal static class OgcProcessesServiceCollectionExtensions
 {

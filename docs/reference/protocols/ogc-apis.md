@@ -13,7 +13,7 @@ resources:
 ---
 # OGC APIs
 
-Honua implements the modern OGC API family — Features, Maps, Tiles, Coverages, Processes, Records, and Styles — as JSON-first REST surfaces under `/ogc/*`. Every API exposes a landing page, a `conformance` declaration, and (except Records) an OpenAPI document.
+Honua implements the modern OGC API family — Features, Maps, Tiles, Coverages, Processes, Records, and Styles — as JSON-first REST surfaces under `/ogc/*`. Every API exposes a landing page, a `conformance` declaration, and an OpenAPI document.
 
 ## OpenAPI documents
 
@@ -25,7 +25,7 @@ Honua implements the modern OGC API family — Features, Maps, Tiles, Coverages,
 | Coverages | `GET /ogc/coverages/openapi.json` and `GET /ogc/coverages/api` |
 | Processes | `GET /ogc/processes/openapi.json` |
 | Styles | `GET /ogc/styles/openapi.json` |
-| Records | none (landing-page links only) |
+| Records | `GET /ogc/records/openapi.json` |
 
 ## OGC API Features
 
@@ -161,6 +161,7 @@ Read-only catalog discovery over published services and layers (record ids `laye
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/ogc/records`, `/ogc/records/conformance` | Landing page, conformance (read-only core + GeoJSON classes). |
+| GET | `/ogc/records/openapi.json` | OpenAPI document, linked from the landing page as `service-desc`. |
 | GET | `/ogc/records/collections`, `.../collections/{collectionId}` | Single `honua-catalog` collection. |
 | GET | `/ogc/records/collections/{collectionId}/items`, `.../items/{recordId}` | GeoJSON records. |
 

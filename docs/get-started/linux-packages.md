@@ -267,7 +267,9 @@ require(result['objectIdFieldName'] == 'id', 'Unexpected object ID field')
 require(len(result['features']) == 2, 'Expected exactly two published features')
 observed = {}
 for feature in result['features']:
-    attributes, geometry = feature['attributes']['properties'], feature['geometry']
+    raw_properties = feature['attributes']['properties']
+    attributes = json.loads(raw_properties) if isinstance(raw_properties, str) else raw_properties
+    geometry = feature['geometry']
     name = attributes['name']
     require(name not in observed and name in expected, 'Unexpected or duplicate feature name')
     value, lon, lat = expected[name]

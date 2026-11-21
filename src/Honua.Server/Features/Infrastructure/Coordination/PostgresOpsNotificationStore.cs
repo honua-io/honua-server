@@ -11,6 +11,11 @@ namespace Honua.ControlPlane;
 
 internal sealed record OpsNotificationSubject(string Source, string SubjectId, OpsFindingSeverity Severity);
 
+internal readonly record struct OpsNotificationDueQuery(
+    DateTimeOffset Now,
+    int Limit,
+    IReadOnlyList<string>? ActiveFindingSubjects = null);
+
 internal sealed record OpsNotificationSchedule
 {
     public required string Source { get; init; }
@@ -165,16 +170,39 @@ internal sealed class PostgresOpsNotificationStore(
 
     public Task<IReadOnlyList<OpsNotificationSchedule>> ListDueAsync(DateTimeOffset now, int limit,
         CancellationToken cancellationToken = default)
+        => ListDueCoreAsync(new(now, limit), cancellationToken);
+
+    // Filter finding rows to subjects this replica actually observed so a replica that does not
+    // see a finding cannot defer another replica's due reminder or starve actionable rows.
+    public Task<IReadOnlyList<OpsNotificationSchedule>> ListDueForDispatchAsync(
+        OpsNotificationDueQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query.ActiveFindingSubjects);
+        return ListDueCoreAsync(query, cancellationToken);
+    }
+
+    private Task<IReadOnlyList<OpsNotificationSchedule>> ListDueCoreAsync(
+        OpsNotificationDueQuery query,
+        CancellationToken cancellationToken)
         => database.ExecuteAsync<IReadOnlyList<OpsNotificationSchedule>>(async (connection, _, token) =>
         {
-            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(query.Limit);
+            var subjectFilter = query.ActiveFindingSubjects is null
+                ? string.Empty
+                : " AND (source = 'proposal' OR (source = 'finding' AND subject_id = ANY(@active)))";
             await using var command = new NpgsqlCommand($"""
                 SELECT source, subject_id, episode_id, first_seen_at, severity, notice_number, revision
-                FROM {_schedules} WHERE closed_at IS NULL AND next_notice_at <= @now
+                FROM {_schedules} WHERE closed_at IS NULL AND next_notice_at <= @now{subjectFilter}
                 ORDER BY next_notice_at, source, subject_id LIMIT @limit
                 """, connection);
-            command.Parameters.AddWithValue("now", now);
-            command.Parameters.AddWithValue("limit", Math.Min(limit, 100));
+            command.Parameters.AddWithValue("now", query.Now);
+            command.Parameters.AddWithValue("limit", Math.Min(query.Limit, 100));
+            if (query.ActiveFindingSubjects is not null)
+            {
+                command.Parameters.Add(new NpgsqlParameter("active", NpgsqlDbType.Array | NpgsqlDbType.Text)
+                { Value = query.ActiveFindingSubjects as string[] ?? query.ActiveFindingSubjects.ToArray() });
+            }
             var schedules = new List<OpsNotificationSchedule>();
             await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
             while (await reader.ReadAsync(token).ConfigureAwait(false))

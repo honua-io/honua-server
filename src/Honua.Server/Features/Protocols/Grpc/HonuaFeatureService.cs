@@ -3,13 +3,12 @@
 
 using System.Collections.Immutable;
 using Grpc.Core;
+using Honua.Infrastructure.Validation;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Domain;
-using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
-using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
@@ -21,7 +20,6 @@ using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Services;
-using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -168,7 +166,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         }
 
         // Standard feature query
-        foreach (var field in queryContext.SchemaFields)
+        foreach (var field in queryContext.ResponseFields)
         {
             response.Fields.Add(GrpcConversionHelpers.ToProtoField(field));
         }
@@ -294,29 +292,9 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         // gRPC ApplyEdits is an open-protocol edit surface and remains Community.
         // Geometry and attributes go through FeatureMutationValidator before the write.
 
-        var editBatch = ToEditBatch(request);
-        await EnsureWriteAccessAsync(context, layer, editBatch).ConfigureAwait(false);
-        EnsureDeclaredEditCapabilities(layer.Service, layer.Publication, editBatch);
-        EnsureEditLimits(editBatch, _editLimits);
-        // Dropped before the storability check, so a forged value of any wire type is ignored.
-        editBatch = GrpcEditorTracking.OmitClientValues(layer.Resource, editBatch);
-        (editBatch, var globalIds) = await PrepareGlobalIdsAsync(new EditCall(request, layer, context), editBatch)
-            .ConfigureAwait(false);
-        editBatch = await ValidateGrpcMutationsAsync(layer.Resource, editBatch, context.CancellationToken)
-            .ConfigureAwait(false);
-
-        if (layer.Snapshot is { } snapshot)
-        {
-            var storageBinding = snapshot.ResolveStorageBinding(layer.Publication)
-                ?? throw new RpcException(new Status(StatusCode.FailedPrecondition, "The layer has no resolvable storage binding."));
-            if (!FeatureStorageMapping.FromMetadata(layer.Resource, storageBinding).SupportsManagedWrites
-                || !await SupportsGlobalIdWritesAsync(layer, context).ConfigureAwait(false))
-            {
-                throw new RpcException(new Status(
-                    StatusCode.FailedPrecondition,
-                    "The layer's storage binding does not support managed writes."));
-            }
-        }
+        var prepared = await PrepareGrpcEditAsync(new EditCall(request, layer, context)).ConfigureAwait(false);
+        var editBatch = prepared.Batch;
+        var globalIds = prepared.GlobalIds;
 
         var idempotencyKey = request.IdempotencyKey?.Trim();
         GrpcApplyEditsReceipts.Entry? keyedEdit = null;
@@ -344,61 +322,14 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             return FilterResultGlobalIds(globalIds, keyedEdit.Response);
         }
 
-        editBatch = await ResolveGlobalIdTargetsAsync(globalIds, editBatch, context.CancellationToken).ConfigureAwait(false);
-
-        // Per-row geometry-change semantics mirror the inline publish path
-        // (PublishFeatureChangeEventsAsync below): a row is considered to have changed
-        // geometry when the request feature carries non-null WKB. Deletes default to
-        // false. Captured before stored geometry is merged into omitted update fields,
-        // or an attribute-only update would over-report as a geometry change.
-        var requestBatch = editBatch;
-
-        // RLS / permanent-filter enforcement runs only on the read path; the edit SQL
-        // filters by (layer_id, objectid) with no row-level predicate. So every update/delete
-        // target MUST be pre-resolved through the RLS-enforced reader and fail closed when a
-        // row is hidden from the caller — otherwise a caller could mutate or delete a row RLS
-        // hides from them by supplying its objectid. Adds carry no objectid and are
-        // not pre-read. Mirrors the GeoServices/OData/WFS-T not-found guards.
-        // The same read supplies stored geometry for a partial update. Omitted attributes
-        // are merged from the locked row by the writer, not from this snapshot.
-        var visibleTargets = await EnsureEditTargetsVisibleAsync(
-            layer.StorageLayerId, editBatch, context.CancellationToken).ConfigureAwait(false);
-        var call = new EditCall(request, layer, context);
-        var rules = ApplyEditRules(call, visibleTargets.Batch, visibleTargets.Stored);
-        editBatch = rules.Batch;
-        requestBatch = CalculatedEventBatch(requestBatch, rules.Batch);
-        globalIds = globalIds with { ExistingGlobalIds = StoredGlobalIds(visibleTargets.Stored, globalIds.Field) };
-
+        prepared = await PrepareGrpcTargetsAsync(prepared, CallerEditStamp(context)).ConfigureAwait(false);
+        editBatch = prepared.Batch;
+        globalIds = prepared.GlobalIds;
+        var requestBatch = prepared.RequestBatch;
+        var gate = prepared.Gate!;
+        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(gate.Without(requestBatch));
         var grpcHttpContext = context.GetHttpContext()
             ?? throw new InvalidOperationException("HttpContext is required for gRPC outbox dispatch.");
-
-        // The same owner policy the REST edit protocols apply. A gRPC editor must not
-        // update or delete another principal's row, and inserts stamp the owner.
-        var principal = ServiceDataEditorAuthorization.ResolveEditPrincipal(grpcHttpContext);
-        var ownerPrepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
-            _featureReader,
-            layer.StorageLayerId,
-            layer.Resource.OwnerEditPolicy,
-            editBatch,
-            principal,
-            context.CancellationToken).ConfigureAwait(false);
-        if (!ownerPrepared.IsAllowed)
-        {
-            throw new RpcException(new Status(
-                StatusCode.PermissionDenied,
-                ownerPrepared.DenialReason ?? "Edit not permitted."));
-        }
-
-        // Change events carry the stamped tracking values, as GeoServices events do.
-        var stamp = GrpcEditorTracking.CallerStamp(
-            principal.Name,
-            (grpcHttpContext.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow());
-        editBatch = GrpcEditorTracking.Stamp(layer.Resource, ownerPrepared.Batch, stamp);
-        requestBatch = GrpcEditorTracking.Stamp(layer.Resource, requestBatch, stamp);
-        var gate = await CheckEditGateAsync(call, rules with { Batch = editBatch }, visibleTargets.Stored)
-            .ConfigureAwait(false);
-        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(gate.Without(requestBatch));
-
         var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
             grpcHttpContext,
             request.LayerId,
@@ -479,82 +410,6 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         }
 
         return response;
-
-        async Task<FeatureEditBatch> ValidateGrpcMutationsAsync(
-            MetadataV2Object resource,
-            FeatureEditBatch batch,
-            CancellationToken cancellationToken)
-        {
-            var geometryValidator = context.GetHttpContext()?.RequestServices.GetService<IGeometryValidator>()
-                ?? new WkbGeometryValidator(
-                    Options.Create(new LimitsOptions()),
-                    new Honua.Core.Features.FeatureStore.ReadOnlyProviders.ReadOnlyGeometryTopologyValidator("gRPC"),
-                    _logger);
-            var mutationValidator = new FeatureMutationValidator(geometryValidator);
-            var creates = await ValidateFeaturesAsync(batch.Creates, isUpdate: false).ConfigureAwait(false);
-            var updates = await ValidateFeaturesAsync(batch.Updates, isUpdate: true).ConfigureAwait(false);
-            return batch with { Creates = creates, Updates = updates };
-
-            async Task<ImmutableArray<Feature>> ValidateFeaturesAsync(ImmutableArray<Feature> features, bool isUpdate)
-            {
-                if (features.IsDefaultOrEmpty)
-                {
-                    return features.IsDefault ? ImmutableArray<Feature>.Empty : features;
-                }
-
-                var validated = ImmutableArray.CreateBuilder<Feature>(features.Length);
-                foreach (var feature in features)
-                {
-                    var geometry = feature.Geometry;
-                    if (geometry is { Length: > 0 })
-                    {
-                        var geometryResult = await mutationValidator
-                            .ValidateGeometryAsync(resource, geometry, cancellationToken)
-                            .ConfigureAwait(false);
-                        if (!geometryResult.IsValid)
-                        {
-                            throw new RpcException(new Status(
-                                StatusCode.InvalidArgument,
-                                BoundEditValidationMessage(geometryResult.ErrorMessage, "Invalid geometry.")));
-                        }
-
-                        geometry = geometryResult.Geometry;
-                    }
-
-                    var attributesResult = mutationValidator.ValidateAttributes(
-                        resource,
-                        feature.Attributes,
-                        ValidationExtensions.AttributeValidationMode.Strict,
-                        isUpdate);
-                    if (!attributesResult.IsValid)
-                    {
-                        throw new RpcException(new Status(
-                            StatusCode.InvalidArgument,
-                            BoundEditValidationMessage(attributesResult.ErrorMessage, "Invalid attributes.")));
-                    }
-
-                    validated.Add(feature with
-                    {
-                        Geometry = geometry,
-                        Attributes = attributesResult.Value ?? feature.Attributes,
-                    });
-                }
-
-                return validated.MoveToImmutable();
-            }
-        }
-    }
-
-    private static string BoundEditValidationMessage(string? message, string fallback)
-    {
-        if (string.IsNullOrWhiteSpace(message))
-        {
-            return fallback;
-        }
-
-        var singleLine = message.Replace('\r', ' ').Replace('\n', ' ').Trim();
-        const int maxLength = 240;
-        return singleLine.Length <= maxLength ? singleLine : singleLine[..maxLength];
     }
 
     // Records this attempt on this node before any later step can fail, so a retry here
@@ -979,7 +834,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             page.GeometryType = GrpcConversionHelpers.ToProtoGeometryType(layer.GeometryType);
             page.SpatialReference = GrpcConversionHelpers.ToProtoSpatialReference(queryContext.ResponseSpatialReference);
 
-            foreach (var field in queryContext.SchemaFields)
+            foreach (var field in queryContext.ResponseFields)
             {
                 page.Fields.Add(GrpcConversionHelpers.ToProtoField(field));
             }
@@ -1094,14 +949,10 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         query = query with { OutputSrid = outputSrid };
 
         var responseSpatialReference = outputSrid.HasValue
-            ? SpatialReference.Create(
-                outputSrid.Value,
-                request.OutSr?.LatestWkid > 0 ? request.OutSr.LatestWkid : null,
-                vcsWkid: null,
-                latestVcsWkid: null,
-                wkt: string.IsNullOrWhiteSpace(request.OutSr?.Wkt) ? null : request.OutSr!.Wkt)
+            ? BuildResponseSpatialReference(request.OutSr, outputSrid.Value)
             : layer.SpatialReference;
 
+        var schemaFields = layer.AttributeFields.Where(field => !masked.Contains(field.Name)).ToArray();
         var (projected, attributeHiddenFields) = WithGlobalIdField(
             query,
             globalIdField,
@@ -1116,7 +967,9 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         {
             GlobalIdField = globalIdField,
             AttributeHiddenFields = attributeHiddenFields,
-            SchemaFields = layer.AttributeFields.Where(field => !masked.Contains(field.Name)).ToArray(),
+            SchemaFields = schemaFields,
+            ResponseFields = GrpcConversionHelpers.SelectResponseFields(
+                schemaFields, query.OutFields, query.Distinct ? null : layer.ObjectIdFieldName),
         };
     }
 
@@ -1210,6 +1063,23 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         }
     }
 
+    private static SpatialReference BuildResponseSpatialReference(
+        Proto.SpatialReference? requestedOutSr,
+        int outputSrid)
+    {
+        var wkid = requestedOutSr?.Wkid is > 0 and var requestedWkid
+            && SpatialReferenceExtensions.NormalizeWebMercatorSrid(requestedWkid) == outputSrid
+            ? requestedWkid
+            : outputSrid;
+        var wkt = string.IsNullOrWhiteSpace(requestedOutSr?.Wkt) ? null : requestedOutSr.Wkt;
+        return SpatialReference.Create(
+            wkid,
+            outputSrid,
+            vcsWkid: null,
+            latestVcsWkid: null,
+            wkt: wkt);
+    }
+
     private async Task<int?> ResolveSpatialReferenceSridAsync(Proto.SpatialReference? spatialReference, CancellationToken cancellationToken)
     {
         if (spatialReference == null)
@@ -1217,18 +1087,11 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             return null;
         }
 
-        if (spatialReference.LatestWkid > 0)
+        var wkid = GrpcConversionHelpers.TryResolveOutputSrid(spatialReference);
+        if (wkid.HasValue)
         {
             return await _spatialReferenceResolver.ResolveSridAsync(
-                spatialReference.LatestWkid.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                geometrySpatialReference: null,
-                cancellationToken).ConfigureAwait(false);
-        }
-
-        if (spatialReference.Wkid > 0)
-        {
-            return await _spatialReferenceResolver.ResolveSridAsync(
-                spatialReference.Wkid.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                wkid.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 geometrySpatialReference: null,
                 cancellationToken).ConfigureAwait(false);
         }
@@ -1408,8 +1271,11 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
         public IReadOnlySet<string> AttributeHiddenFields { get; init; } = new HashSet<string>();
 
-        // The response schema: attribute fields the caller may see.
+        // Attribute fields the caller may see; typed conversion of every returned attribute uses them.
         public IReadOnlyList<MetadataV2Field> SchemaFields { get; init; } = [];
+
+        // The fields a response declares: those the caller asked for in out_fields, as FeatureServer does.
+        public IReadOnlyList<MetadataV2Field> ResponseFields { get; init; } = [];
     }
 
     private readonly record struct GrpcLayerContext(

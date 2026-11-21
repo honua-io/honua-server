@@ -261,6 +261,86 @@ public sealed class FeatureServerAppendTests
     }
 
     [UnitTest]
+    public async Task LoadAppendUpsertMatches_TimestampOffsetEpochKey_MatchesTheStoredInstant()
+    {
+        using var incoming = JsonDocument.Parse("1795285800000");
+
+        var updates = await UpsertUpdatesAsync(
+            MetadataV2FieldType.TimestampOffset, "2026-11-21T08:30:00.000-10:00", incoming.RootElement.Clone());
+
+        updates.Should().ContainSingle();
+        updates[0].Attributes["gid"].Should().Be(15L);
+    }
+
+    [UnitTest]
+    public async Task LoadAppendUpsertMatches_DecimalNumberKey_MatchesStoredTextOfAnotherScale()
+    {
+        using var incoming = JsonDocument.Parse("12.5");
+
+        var updates = await UpsertUpdatesAsync(MetadataV2FieldType.Decimal, "12.50", incoming.RootElement.Clone());
+
+        updates.Should().ContainSingle();
+        updates[0].Attributes["gid"].Should().Be(15L);
+    }
+
+    [UnitTest]
+    public async Task LoadAppendUpsertMatches_DecimalTextKey_MatchesAStoredDecimal()
+    {
+        var updates = await UpsertUpdatesAsync(MetadataV2FieldType.Decimal, 12.500m, "12.5");
+
+        updates.Should().ContainSingle();
+    }
+
+    [UnitTest]
+    public async Task LoadAppendUpsertMatches_DecimalKey_DoesNotMatchANearbyValue()
+    {
+        var updates = await UpsertUpdatesAsync(MetadataV2FieldType.Decimal, "12.5000000000000000001", "12.5");
+
+        updates.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task LoadAppendUpsertMatches_DecimalKeyThatWouldRound_DoesNotMatchZero()
+    {
+        using var incoming = JsonDocument.Parse("1e-40");
+
+        var updates = await UpsertUpdatesAsync(MetadataV2FieldType.Decimal, "0", incoming.RootElement.Clone());
+
+        updates.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task LoadAppendUpsertMatches_DecimalKey_MatchesAStoredDouble()
+    {
+        var updates = await UpsertUpdatesAsync(MetadataV2FieldType.Decimal, 12.5d, "12.50");
+
+        updates.Should().ContainSingle();
+    }
+
+    private static async Task<IReadOnlyList<GeoServicesFeature>> UpsertUpdatesAsync(
+        MetadataV2FieldType fieldType, object storedValue, object incomingValue)
+    {
+        var resource = TemporalResource(fieldType);
+        var stored = Feature.Create(
+            99,
+            null,
+            ImmutableDictionary<string, object?>.Empty.Add("gid", 15L).Add("observed", storedValue));
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryAsync(4, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(QueryResult<Feature>.Create(1, ImmutableArray.Create(stored))));
+        var incomingFeature = new GeoServicesFeature
+        {
+            Attributes = new Dictionary<string, object?> { ["observed"] = incomingValue }
+        };
+
+        var (matches, error) = await FeatureServerEndpoints.LoadAppendUpsertMatchesAsync(
+            reader, AcceptingFilter(resource), resource, 4, [incomingFeature], "observed", CancellationToken.None);
+
+        error.Should().BeNull();
+        return FeatureServerEndpoints.PartitionAppendFeatures([incomingFeature], matches!, "observed", "gid", fieldType).Updates;
+    }
+
+    [UnitTest]
     public void FindUnsupportedAppendControl_RejectsFieldMappingsAndAllowsExplicitFalse()
     {
         FeatureServerEndpoints.FindUnsupportedAppendControl(
