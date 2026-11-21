@@ -249,9 +249,12 @@ internal sealed class QueryFormatter
     {
         var projectedProperties = CreateProjectedProperties(outFields);
         var buildOptions = CreateFeatureServerGeoJsonBuildOptions(resource, projectedProperties);
-        GeoJsonFeature[] features = result.Items
-            .Select(f => ConvertToGeoJsonFeature(f, resource, returnGeometry, buildOptions, returnZ, returnM, geometryLimits))
-            .ToArray();
+        var items = result.Items;
+        var features = new GeoJsonFeature[items.Length];
+        for (var i = 0; i < features.Length; i++)
+        {
+            features[i] = ConvertToGeoJsonFeature(items[i], resource, returnGeometry, buildOptions, returnZ, returnM, geometryLimits);
+        }
 
         var exceededTransferLimit = result.HasMoreResults;
         var response = new GeoJsonFeatureSet
@@ -326,7 +329,7 @@ internal sealed class QueryFormatter
     {
         var featureBase = GeoJsonFeatureBaseBuilder.Create(feature, resource, buildOptions);
         var geometry = returnGeometry ? ConvertGeometryToGeoJsonFormat(feature.Geometry, geometryLimits, returnZ, returnM) : null;
-        return featureBase.ToGeoJsonFeature(geometry);
+        return featureBase.ToGeoJsonFeatureWithOwnedProperties(geometry);
     }
 
     private static Dictionary<string, object?> FilterAttributes(
