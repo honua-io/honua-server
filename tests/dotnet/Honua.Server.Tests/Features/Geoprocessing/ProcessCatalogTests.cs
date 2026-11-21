@@ -559,20 +559,17 @@ public sealed class ProcessCatalogTests
         distance.Description.Should().NotContain("in meters.",
             "the buffer distance is in the input CRS's coordinate units, not meters");
 
-        // The honest descriptions may mention geodesic/meters while disclaiming them
-        // ("No geodesic conversion is performed"), so assert on the computed-semantics
-        // claim rather than bare substrings.
         var area = _catalog.GetProcess("geometry.area")!;
-        area.Description.Should().NotContain("Computes the geodesic",
-            "the area executor computes planar area, not geodesic");
-        area.Description.Should().Contain("No geodesic conversion is performed");
         area.Description.Should().Contain("planar");
+        area.Description.Should().Contain("geodesic");
+        area.Parameters.Single(p => p.Name == "geodesic").DefaultValue.Should().Be("false");
+        area.Parameters.Should().Contain(p => p.Name == "unit");
 
         var length = _catalog.GetProcess("geometry.length")!;
-        length.Description.Should().NotContain("Computes the geodesic",
-            "the length executor computes planar length, not geodesic");
-        length.Description.Should().Contain("No geodesic conversion is performed");
         length.Description.Should().Contain("planar");
+        length.Description.Should().Contain("geodesic");
+        length.Parameters.Single(p => p.Name == "geodesic").DefaultValue.Should().Be("false");
+        length.Parameters.Should().Contain(p => p.Name == "unit");
     }
 
     [UnitTest]

@@ -18,7 +18,7 @@ internal static class BoundedArtifactWriter
         int srid = 0)
     {
         var extraList = extraMembers as IReadOnlyList<(string Name, object Value)> ?? extraMembers?.ToList();
-        var resolvedSrid = ResolveOutputSrid(srid, extraList, features);
+        var explicitResolvedSrid = ResolveExplicitSrid(srid, extraList);
 
         using var buffer = new LimitedStream(maxBytes, cancellationToken);
         using (var text = new StreamWriter(buffer, new UTF8Encoding(false), 1024, leaveOpen: true))
@@ -28,17 +28,9 @@ internal static class BoundedArtifactWriter
             json.WriteStartObject();
             json.WritePropertyName("type");
             json.WriteValue("FeatureCollection");
-            if (resolvedSrid > 0)
+            if (explicitResolvedSrid > 0)
             {
-                json.WritePropertyName(FeatureArtifactSpatialReference.MemberName);
-                json.WriteStartObject();
-                json.WritePropertyName("schemaVersion");
-                json.WriteValue(FeatureArtifactSpatialReference.SchemaVersion);
-                json.WritePropertyName("state");
-                json.WriteValue("known");
-                json.WritePropertyName("srid");
-                json.WriteValue(resolvedSrid);
-                json.WriteEndObject();
+                WriteSpatialReferenceMember(json, explicitResolvedSrid);
             }
 
             json.WritePropertyName("processId");
@@ -57,6 +49,7 @@ internal static class BoundedArtifactWriter
             json.WritePropertyName("features");
             json.WriteStartArray();
             var encoder = GeoJsonArtifactCodec.CreateWriter();
+            var inferredCrs = explicitResolvedSrid > 0 ? null : new FeatureArtifactSpatialReferenceAccumulator();
             foreach (var feature in features)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -64,19 +57,37 @@ internal static class BoundedArtifactWriter
                 // Flush at feature boundaries as well as the fixed-size text buffer's
                 // boundaries, so an oversized feature stops before touching the next row.
                 json.Flush();
+                inferredCrs?.Add(feature.Geometry);
             }
 
             json.WriteEndArray();
+            if (inferredCrs?.Value is { State: "known", Srid: > 0 } known)
+            {
+                WriteSpatialReferenceMember(json, known.Srid.Value);
+            }
+
             json.WriteEndObject();
         }
 
         return buffer.ToArray();
     }
 
-    private static int ResolveOutputSrid(
+    private static void WriteSpatialReferenceMember(JsonTextWriter json, int srid)
+    {
+        json.WritePropertyName(FeatureArtifactSpatialReference.MemberName);
+        json.WriteStartObject();
+        json.WritePropertyName("schemaVersion");
+        json.WriteValue(FeatureArtifactSpatialReference.SchemaVersion);
+        json.WritePropertyName("state");
+        json.WriteValue("known");
+        json.WritePropertyName("srid");
+        json.WriteValue(srid);
+        json.WriteEndObject();
+    }
+
+    private static int ResolveExplicitSrid(
         int explicitSrid,
-        IReadOnlyList<(string Name, object Value)>? extraMembers,
-        IReadOnlyList<IFeature> features)
+        IReadOnlyList<(string Name, object Value)>? extraMembers)
     {
         if (explicitSrid > 0)
         {
@@ -104,13 +115,7 @@ internal static class BoundedArtifactWriter
             }
         }
 
-        var crs = new FeatureArtifactSpatialReferenceAccumulator();
-        foreach (var feature in features)
-        {
-            crs.Add(feature.Geometry);
-        }
-
-        return crs.Value is { State: "known", Srid: > 0 } known ? known.Srid.Value : 0;
+        return 0;
     }
 
     private sealed class LimitedStream(long maxBytes, CancellationToken cancellationToken) : Stream

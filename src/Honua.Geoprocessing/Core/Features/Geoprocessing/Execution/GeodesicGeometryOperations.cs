@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Shared.Models;
 using NetTopologySuite.Geometries;
 
 namespace Honua.Geoprocessing.Execution;
@@ -17,11 +18,7 @@ internal static class GeodesicGeometryOperations
     private const int MaxVincentyIterations = 200;
     private const double VincentyTolerance = 1e-12;
 
-    internal static bool IsGeographicSrid(int srid) => srid switch
-    {
-        4326 or 4269 or 4979 or 4258 or 4612 or 4283 or 4322 or 4267 => true,
-        _ => false,
-    };
+    internal static bool IsGeographicSrid(int srid) => GeographicSridClassifier.IsGeographicSrid(srid);
 
     internal static double ComputeEllipsoidalDistanceMeters(
         double lat1Deg,
