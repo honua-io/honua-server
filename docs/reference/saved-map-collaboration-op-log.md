@@ -26,7 +26,7 @@ A client submits an append request; the server stamps it into a durable envelope
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `operationId` | string (≤200) | yes | Client-generated, stable id. Re-submitting the same id is idempotent per map. |
-| `actorId` | string | no | Defaults to the authenticated principal's stable identifier (`sub`/name id). |
+| `actorId` | string | no | Ignored for attribution; the server always resolves the actor from the authenticated principal (`NameIdentifier`, `sub`, or `api_key_id`). |
 | `baseCursor` | int64 | no | Server cursor the edit was authored against. Defaults to `0` (empty-log base). |
 | `kind` | enum | yes | Operation kind (see [families](#operation-families)). |
 | `payload` | JSON | no | Stored opaquely; the MVP log does not interpret WebMapDoc fields. |
@@ -74,6 +74,7 @@ Duplicate detection is keyed on `operationId` and, when supplied, `idempotencyKe
 | `headCursor` | Current log head; the cursor to resume from. |
 | `minimumReplayCursor` | Earliest cursor the retained log can replay from. |
 | `operations` | Envelopes after `sinceCursor`. |
+| `message` | Optional human-readable status message (for example when `resyncRequired`). |
 
 `since=0` against an empty or unknown map returns `ok` with no operations. A `since` value above the head or below `minimumReplayCursor` returns `resyncRequired` — the client must reload the saved-map document and resume from `headCursor`.
 

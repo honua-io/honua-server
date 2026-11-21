@@ -1,7 +1,7 @@
 ---
 type: reference
 title: "ImageServer admin operations → Honua admin API"
-description: "GeoServices REST ImageServer exposes a set of admin/mutation operations (addRasters, deleteRasters, updateRaster, uploads, downloadRasters, validate, calculateVolume, computeMultidimensionalInfo, computeTiePoints)."
+description: "Maps GeoServices REST ImageServer admin/mutation operations (addRasters, deleteRasters, updateRaster, uploads, downloadRasters, validate) to the Honua admin API and notes analytic/inspection operations shipped directly on ImageServer."
 resource: "honua://capability/serve.geoservices-imageserver"
 ---
 # ImageServer admin operations → Honua admin API
