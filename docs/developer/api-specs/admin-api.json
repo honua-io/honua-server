@@ -1826,7 +1826,7 @@
             }
           },
           "503": {
-            "description": "The frozen host has no compatible durable remote publication runner. Redis availability alone does not make a worker available. No publication job is accepted.",
+            "description": "This host freezes after the response, so a publish above the row threshold is refused. Configure a managed remote execution workload and the system database, or publish from a long-lived host. No publication job is accepted.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4539,7 +4539,7 @@
             "name": "limit",
             "in": "query",
             "required": false,
-            "description": "Requested log page size. Defaults to 100 and Redis clamps to 1..500.",
+            "description": "Requested log page size. Defaults to 100. The job log store clamps the value to 1..500.",
             "schema": {
               "type": "integer",
               "format": "int32",
@@ -7329,7 +7329,7 @@
             }
           },
           "503": {
-            "description": "Distributed import coordination is unavailable (Redis unhealthy). Retry when coordination recovers.",
+            "description": "Durable import storage is unavailable. Configure the system database and job worker.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7627,7 +7627,7 @@
             }
           },
           "503": {
-            "description": "Distributed import coordination is unavailable (Redis unhealthy). Retry when coordination recovers.",
+            "description": "Durable import storage is unavailable. Configure the system database and job worker.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -18516,7 +18516,7 @@
           "Multidimensional Coverages"
         ],
         "summary": "Get Multidimensional Coverage Scan Job",
-        "description": "Returns the status of a GDAL metadata scan job. On first observation of a succeeded job the scanned metadata is materialized onto the registration (idempotent) and the refreshed registration is embedded in `coverage`. Requires the `raster.multidim-coverage` entitlement; returns 503 when the Redis-backed execution-job substrate is unavailable.",
+        "description": "Returns the status of a GDAL metadata scan job. On first observation of a succeeded job the scanned metadata is materialized onto the registration (idempotent) and the refreshed registration is embedded in `coverage`. Requires the `raster.multidim-coverage` entitlement; returns 503 when the PostgreSQL-backed execution-job substrate is unavailable.",
         "operationId": "getMultidimCoverageScanJob",
         "parameters": [
           {
@@ -18650,7 +18650,7 @@
           "Multidimensional Coverages"
         ],
         "summary": "Refresh Multidimensional Coverage Metadata",
-        "description": "Dispatches an asynchronous GDAL metadata scan for the registration and returns 202 with the queued job id and a `statusUrl` to poll. Requires the `raster.multidim-coverage` entitlement; returns 503 when the Redis-backed execution-job substrate is unavailable. The request body is ignored.",
+        "description": "Dispatches an asynchronous GDAL metadata scan for the registration and returns 202 with the queued job id and a `statusUrl` to poll. Requires the `raster.multidim-coverage` entitlement; returns 503 when the PostgreSQL-backed execution-job substrate is unavailable. The request body is ignored.",
         "operationId": "refreshMultidimCoverage",
         "parameters": [
           {

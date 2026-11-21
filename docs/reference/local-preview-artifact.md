@@ -10,6 +10,12 @@ and [Windows](../get-started/windows-packages.md) instructions select this publi
 preview image while the 2026.1 release channel is unavailable. This is a local
 evaluation artifact, not release promotion or end-to-end platform qualification.
 
+> **Historical observation.** The record below is the 17 October 2026 nightly, which
+> still ran a separate cache container beside PostGIS. Current server images keep jobs,
+> coordination and caches in PostgreSQL and process memory, so the only data service an
+> install needs is PostGIS. Follow the [quickstart](../get-started/quickstart.md) for the
+> current image and Compose file.
+
 | Field | Observed value |
 | --- | --- |
 | Observation date | 2026-10-17 UTC |
