@@ -31,6 +31,9 @@ internal sealed class PooledUtf8ContentResult : IResult
         return header.ToString();
     }
 
+    // Returns the buffer to the pool when a wrapper answers without executing this result (304, 412).
+    internal ValueTask ReleaseAsync() => _content.DisposeAsync();
+
     public async Task ExecuteAsync(HttpContext httpContext)
     {
         ArgumentNullException.ThrowIfNull(httpContext);

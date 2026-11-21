@@ -90,6 +90,82 @@ public sealed class PooledResponseBufferTests
         actual.Body.Should().Equal(expected.Body);
     }
 
+    [UnitTest]
+    public async Task PooledTextBuilder_ToUtf8Result_MatchesResultsContentWithoutCharset()
+    {
+        var builder = CreateChunkedText();
+        var expected = await ExecuteAsync(Results.Content(builder.ToString(), "text/xml"));
+
+        var actual = await ExecuteAsync(PooledTextBuilder.ToUtf8Result(builder, "text/xml"));
+
+        actual.ContentType.Should().Be(expected.ContentType);
+        actual.ContentLength.Should().Be(expected.ContentLength);
+        actual.Body.Should().Equal(expected.Body);
+    }
+
+    [UnitTest]
+    public async Task PooledTextBuilder_ToUtf8Result_MatchesResultsContentWithUtf8Charset()
+    {
+        const string mediaType = "application/vnd.ogc.wms_xml";
+        var builder = CreateChunkedText();
+        var expected = await ExecuteAsync(Results.Content(builder.ToString(), mediaType, Encoding.UTF8));
+
+        var actual = await ExecuteAsync(
+            PooledTextBuilder.ToUtf8Result(builder, PooledUtf8ContentResult.WithUtf8Charset(mediaType)));
+
+        actual.ContentType.Should().Be("application/vnd.ogc.wms_xml; charset=utf-8");
+        actual.ContentType.Should().Be(expected.ContentType);
+        actual.ContentLength.Should().Be(expected.ContentLength);
+        actual.Body.Should().Equal(expected.Body);
+    }
+
+    [UnitTest]
+    public void PooledTextBuilder_EncodeUtf8_MatchesEncodingGetBytesAcrossChunkBoundaries()
+    {
+        var builder = CreateChunkedText();
+        using var buffer = new PooledByteBuffer(initialCapacity: 16);
+
+        PooledTextBuilder.EncodeUtf8(builder, buffer);
+
+        buffer.WrittenSpan.ToArray().Should().Equal(Encoding.UTF8.GetBytes(builder.ToString()));
+    }
+
+    // One character per append into a one-character builder, so the text spans many chunks and the opening
+    // surrogate pair is split between the first two. It also holds a lone low surrogate and ends on a lone high
+    // surrogate, which UTF-8 encodes as U+FFFD.
+    private static StringBuilder CreateChunkedText()
+    {
+        var builder = new StringBuilder(capacity: 1);
+        var text = "\uD834\uDD1E" + CreateXmlText() + " 😀 lone \uDC00 end \uD83D";
+        foreach (var character in text)
+        {
+            builder.Append(character);
+        }
+
+        return builder;
+    }
+
+    [UnitTest]
+    public async Task SharedResponseETag_PooledContentNotModified_ReturnsTheBufferToThePool()
+    {
+        var text = CreateXmlText();
+        using var first = new PooledByteBuffer(initialCapacity: 128);
+        var etag = (await ExecuteWithSharedETagAsync(CreatePooledResult(first, text))).ETag;
+
+        using var buffer = new PooledByteBuffer(initialCapacity: 128);
+        var context = new DefaultHttpContext();
+        context.Request.Method = HttpMethods.Get;
+        context.Request.Headers.IfNoneMatch = etag;
+        context.RequestServices = new ServiceCollection().AddLogging()
+            .AddSingleton<IETagService, ETagService>().BuildServiceProvider();
+
+        var conditional = (IResult)(await SharedResponseETag.ApplyAsync(context, CreatePooledResult(buffer, text)))!;
+        await conditional.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status304NotModified);
+        buffer.CanWrite.Should().BeFalse();
+    }
+
     // The test owns the buffer; the result also disposes it when executed, and Dispose is idempotent.
     private static PooledUtf8ContentResult CreatePooledResult(PooledByteBuffer buffer, string text)
     {

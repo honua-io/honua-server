@@ -335,7 +335,8 @@ internal static partial class WmsRequestHandlers
             .AppendLine("\" />");
     }
 
-    private static async Task<string> BuildWmsCapabilities(
+    private static async Task BuildWmsCapabilities(
+        StringBuilder sb,
         HttpContext context,
         MetadataV2Service service,
         WmsCapabilitiesLayers layers,
@@ -360,7 +361,6 @@ internal static partial class WmsRequestHandlers
                 layer.Publication.Metadata.Id,
                 logger))).ConfigureAwait(false)).OfType<PreparedWmsCapabilitiesLayer>().ToArray();
 
-        var sb = new StringBuilder(8192);
         sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
         if (isWms111)
         {
@@ -545,7 +545,6 @@ internal static partial class WmsRequestHandlers
         sb.AppendLine("    </Layer>");
         sb.AppendLine("  </Capability>");
         sb.Append(isWms111 ? "</WMT_MS_Capabilities>" : "</WMS_Capabilities>").AppendLine();
-        return sb.ToString();
     }
 
     private static string[] GetWmsCapabilitiesCrs(IReadOnlyList<MetadataV2SpatialReference>? supportedCrs, string version)

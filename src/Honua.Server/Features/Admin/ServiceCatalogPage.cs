@@ -22,10 +22,13 @@ internal static class ServiceCatalogPage
     }
 
     internal static ServiceListPage Create(MetadataV2GraphSnapshot snapshot, AdminListQuery query, string? tenantId = null)
+        => Create(snapshot, query, new ServiceListScope { TenantId = tenantId });
+
+    internal static ServiceListPage Create(MetadataV2GraphSnapshot snapshot, AdminListQuery query, ServiceListScope scope)
     {
-        var matches = MatchingServices(snapshot, query, tenantId)
+        var matches = MatchingServices(snapshot, query, scope.TenantId)
             .GroupBy(service => service.Metadata.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(group => ToSummary(snapshot, group))
+            .Select(group => ToSummary(snapshot, group, scope.UnlistedProtocols))
             .ToList();
         matches.Sort(static (left, right) => string.Compare(
             left.ServiceName, right.ServiceName, StringComparison.OrdinalIgnoreCase));
@@ -106,7 +109,8 @@ internal static class ServiceCatalogPage
     // Protocol entries for one logical service share Metadata.Name.
     private static ServiceSummary ToSummary(
         MetadataV2GraphSnapshot snapshot,
-        IGrouping<string, MetadataV2Service> sameName)
+        IGrouping<string, MetadataV2Service> sameName,
+        string[] unlistedProtocols)
     {
         var representative = sameName.First();
         var enabled = sameName
@@ -128,7 +132,7 @@ internal static class ServiceCatalogPage
             Title = representative.Metadata.Title,
             Description = representative.Metadata.Description ?? string.Empty,
             LayerCount = layerCount,
-            EnabledProtocols = enabled.Length == 0 ? ServiceProtocols.All : enabled,
+            EnabledProtocols = enabled.Length == 0 ? unlistedProtocols : enabled,
         };
     }
 
@@ -142,4 +146,12 @@ internal static class ServiceCatalogPage
 
         return matches.Skip(start).Take(query.PageSize).ToArray();
     }
+}
+
+// A service that lists no protocols serves every protocol the install can serve.
+internal sealed record ServiceListScope
+{
+    public string? TenantId { get; init; }
+
+    public string[] UnlistedProtocols { get; init; } = ServiceProtocols.All;
 }

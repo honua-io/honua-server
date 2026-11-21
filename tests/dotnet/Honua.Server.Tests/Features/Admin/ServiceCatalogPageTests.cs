@@ -104,6 +104,28 @@ public sealed class ServiceCatalogPageTests
     }
 
     [UnitTest]
+    public void UnlistedProtocols_WithoutRasterStorage_OmitRasterProtocolsButKeepExplicitOnes()
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("res-a", "a")
+            .AddService("svc-default", "a-default")
+            .AddService("svc-explicit", "b-explicit", protocols: ["FeatureServer", "Terrain"])
+            .AddPublication("pub-a", "svc-default", "res-a")
+            .AddPublication("pub-b", "svc-explicit", "res-a")
+            .Build();
+        var scope = new ServiceListScope { UnlistedProtocols = ServiceProtocols.WithoutRasterStorage };
+
+        var page = ServiceCatalogPage.Create(Snapshot(graph), new AdminListQuery(1, CatalogListLimits.DefaultPageSize, null), scope);
+
+        var unlisted = page.Items.Single(item => item.ServiceName == "a-default").EnabledProtocols;
+        unlisted.Should().Contain("ImageServer").And.NotContain(ServiceProtocols.RequiringRasterStorage);
+        page.Items.Single(item => item.ServiceName == "b-explicit").EnabledProtocols
+            .Should().BeEquivalentTo(["FeatureServer", "Terrain"]);
+        ServiceCatalogPage.Create(Snapshot(graph), new AdminListQuery(1, CatalogListLimits.DefaultPageSize, null))
+            .Items.Single(item => item.ServiceName == "a-default").EnabledProtocols.Should().Contain("Terrain");
+    }
+
+    [UnitTest]
     public void LayerScope_FiltersBeforePaging_AndKeepsEveryServiceExposure()
     {
         const string connection = "11111111-1111-1111-1111-111111111111";

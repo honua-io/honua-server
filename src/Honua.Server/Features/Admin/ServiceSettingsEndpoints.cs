@@ -1,11 +1,13 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Data.Common;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
@@ -104,9 +106,14 @@ internal static partial class ServiceSettingsEndpoints
                 return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound, detail: "Folder not found.");
             }
 
+            var scope = new ServiceListScope
+            {
+                TenantId = tenantId,
+                UnlistedProtocols = await ServableProtocolsAsync(context).ConfigureAwait(false)
+            };
             context.Response.Headers.ETag = snapshot.Etag;
             return TypedResults.Ok(ApiResponse<ServiceListPage>.CreateSuccess(
-                ServiceCatalogPage.Create(snapshot, listQuery, tenantId)));
+                ServiceCatalogPage.Create(snapshot, listQuery, scope)));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -496,6 +503,29 @@ internal static partial class ServiceSettingsEndpoints
                 title: "Layer metadata update failed",
                 detail: "An internal error occurred while updating layer metadata.",
                 statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    // A feature-only install cannot serve terrain or elevation, so the list does not advertise them
+    // for services that leave their protocols unset. Service settings keep the full set, so a save
+    // still stores "all". Without a raster store, or when the check fails, the list keeps the full set.
+    internal static async Task<string[]> ServableProtocolsAsync(HttpContext context)
+    {
+        var rasterStorage = context.RequestServices.GetService<IRasterStorageAvailability>();
+        if (rasterStorage is null)
+        {
+            return MetadataV2ServiceProtocols.All;
+        }
+
+        try
+        {
+            return await rasterStorage.IsInstalledAsync(context.RequestAborted).ConfigureAwait(false)
+                ? MetadataV2ServiceProtocols.All
+                : MetadataV2ServiceProtocols.WithoutRasterStorage;
+        }
+        catch (DbException)
+        {
+            return MetadataV2ServiceProtocols.All;
         }
     }
 

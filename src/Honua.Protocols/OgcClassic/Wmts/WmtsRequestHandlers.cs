@@ -333,18 +333,27 @@ internal static class WmtsRequestHandlers
             var visibleLayers = accessibleLayers
                 .Where(l => ResourceHasGeometry(l.Resource))
                 .ToArray();
-            var xml = await BuildWmtsCapabilitiesAsync(
-                context.Request,
-                svcDef,
-                visibleLayers,
-                snapshot.Graph,
-                sections,
-                wmtsMaxZoom,
-                capabilitiesFeatureReader,
-                tileMatrixSetRegistry,
-                logger,
-                cancellationToken).ConfigureAwait(false);
-            return Results.Content(xml, responseMimeType);
+            var capabilities = PooledTextBuilder.Rent();
+            try
+            {
+                await BuildWmtsCapabilitiesAsync(
+                    capabilities,
+                    context.Request,
+                    svcDef,
+                    visibleLayers,
+                    snapshot.Graph,
+                    sections,
+                    wmtsMaxZoom,
+                    capabilitiesFeatureReader,
+                    tileMatrixSetRegistry,
+                    logger,
+                    cancellationToken).ConfigureAwait(false);
+                return PooledTextBuilder.ToUtf8Result(capabilities, responseMimeType);
+            }
+            finally
+            {
+                PooledTextBuilder.Return(capabilities);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -1244,7 +1253,8 @@ internal static class WmtsRequestHandlers
         return sb.ToString();
     }
 
-    private static async Task<string> BuildWmtsCapabilitiesAsync(
+    private static async Task BuildWmtsCapabilitiesAsync(
+        StringBuilder sb,
         HttpRequest request,
         MetadataV2Service service,
         IReadOnlyList<WmtsLayer> visibleLayers,
@@ -1257,7 +1267,6 @@ internal static class WmtsRequestHandlers
         CancellationToken cancellationToken)
     {
         service = service with { Metadata = PublishedMetadataProjection.ForCapabilities(graph, service) };
-        var sb = new StringBuilder(4096);
         var includeServiceIdentification = sections.HasFlag(WmtsCapabilitiesSections.ServiceIdentification);
         var includeServiceProvider = sections.HasFlag(WmtsCapabilitiesSections.ServiceProvider);
         var includeOperationsMetadata = sections.HasFlag(WmtsCapabilitiesSections.OperationsMetadata);
@@ -1509,8 +1518,6 @@ internal static class WmtsRequestHandlers
         }
 
         sb.AppendLine("</Capabilities>");
-
-        return sb.ToString();
     }
 
     private static bool IsWmtsLayerQueryable(WmtsLayer layer)

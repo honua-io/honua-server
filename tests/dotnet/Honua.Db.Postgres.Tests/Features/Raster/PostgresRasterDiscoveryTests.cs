@@ -47,6 +47,24 @@ public sealed class PostgresRasterDiscoveryTests
     }
 
     [IntegrationTest]
+    public async Task RenderCollectionMap_WithoutOptionalRasterExtension_ReportsNoStorageAndRendersEmptyImage()
+    {
+        await using var database = new PostgreSqlBuilder("postgres:16-alpine").Build();
+        await using var dataSource = await StartDatabaseAsync(database);
+        var availability = new PostgresRasterStorageAvailability(CreateConnectionProvider(dataSource));
+        (await availability.IsInstalledAsync(CancellationToken.None)).Should().BeFalse();
+        var renderer = new PostgresRasterMapRenderer(
+            CreateConnectionProvider(dataSource), NullLogger<PostgresRasterMapRenderer>.Instance, "honua");
+
+        var result = await renderer.RenderCollectionMapAsync(0, PostgresRasterMapRendererTests.WorldPngRequest());
+
+        result.Data.Should().BeEmpty();
+        result.ContentType.Should().Be("image/png");
+        result.Width.Should().Be(256);
+        result.Srid.Should().Be(4326);
+    }
+
+    [IntegrationTest]
     public async Task RasterImport_WithoutOptionalRasterExtension_ReportsStorageUnavailable()
     {
         await using var database = new PostgreSqlBuilder("postgres:16-alpine").Build();

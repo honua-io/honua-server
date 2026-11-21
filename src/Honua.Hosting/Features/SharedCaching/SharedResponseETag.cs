@@ -65,6 +65,7 @@ internal static class SharedResponseETag
                 !tags.MatchesPrecondition(httpContext.Request.Headers.IfMatch.ToString(), etag))
             {
                 httpContext.Response.StatusCode = StatusCodes.Status412PreconditionFailed;
+                await ReleaseAsync().ConfigureAwait(false);
                 return;
             }
 
@@ -72,10 +73,13 @@ internal static class SharedResponseETag
             if (!tags.IsModified(httpContext.Request.Headers.IfNoneMatch.ToString(), etag))
             {
                 httpContext.Response.StatusCode = StatusCodes.Status304NotModified;
+                await ReleaseAsync().ConfigureAwait(false);
                 return;
             }
 
             await result.ExecuteAsync(httpContext).ConfigureAwait(false);
         }
+
+        private ValueTask ReleaseAsync() => result is PooledUtf8ContentResult pooled ? pooled.ReleaseAsync() : ValueTask.CompletedTask;
     }
 }
