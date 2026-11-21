@@ -254,16 +254,10 @@ internal static partial class FeatureServerEndpoints
             if (root.TryGetProperty("calendarBin", out var calendarElement) &&
                 calendarElement.ValueKind == JsonValueKind.Object)
             {
-                if (!calendarElement.TryGetProperty("unit", out var unitElement))
-                {
-                    error = "calendarBin.unit is required.";
-                    return false;
-                }
-
-                var unit = unitElement.GetString();
+                var unit = FeatureServerJsonMembers.ReadString(calendarElement, "unit");
                 if (string.IsNullOrWhiteSpace(unit))
                 {
-                    error = "calendarBin.unit must not be empty.";
+                    error = "calendarBin.unit is required and must be a non-empty string.";
                     return false;
                 }
 
@@ -279,20 +273,25 @@ internal static partial class FeatureServerEndpoints
             if (root.TryGetProperty("fixedBin", out var fixedElement) &&
                 fixedElement.ValueKind == JsonValueKind.Object)
             {
-                if (!fixedElement.TryGetProperty("intervalCount", out var countElement) ||
-                    !countElement.TryGetInt32(out var intervalCount))
+                if (FeatureServerJsonMembers.ReadInt32(fixedElement, "intervalCount") is not { } intervalCount)
                 {
                     error = "fixedBin.intervalCount is required.";
                     return false;
                 }
 
-                if (!fixedElement.TryGetProperty("intervalUnit", out var intervalUnitElement))
+                if (!fixedElement.TryGetProperty("intervalUnit", out _))
                 {
                     error = "fixedBin.intervalUnit is required.";
                     return false;
                 }
 
-                var intervalUnit = intervalUnitElement.GetString()?.ToLowerInvariant() ?? "days";
+                if (FeatureServerJsonMembers.HasMemberOfOtherKind(fixedElement, "intervalUnit", JsonValueKind.String))
+                {
+                    error = "fixedBin.intervalUnit must be a string.";
+                    return false;
+                }
+
+                var intervalUnit = FeatureServerJsonMembers.ReadString(fixedElement, "intervalUnit")?.ToLowerInvariant() ?? "days";
                 var interval = ConvertToTimeSpan(intervalCount, intervalUnit);
 
                 DateTimeOffset? origin = null;

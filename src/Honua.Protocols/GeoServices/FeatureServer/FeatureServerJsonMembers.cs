@@ -15,10 +15,21 @@ internal static class FeatureServerJsonMembers
             ? value.GetString()
             : null;
 
+    public static double? ReadNumber(JsonElement value)
+        => value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number) ? number : null;
+
+    public static double? ReadNumber(JsonElement parent, string member)
+        => parent.TryGetProperty(member, out var value) ? ReadNumber(value) : null;
+
     public static int? ReadInt32(JsonElement parent, string member)
         => parent.TryGetProperty(member, out var value) &&
            value.ValueKind == JsonValueKind.Number &&
            value.TryGetInt32(out var number)
             ? number
             : null;
+
+    public static bool HasMemberOfOtherKind(JsonElement parent, string member, JsonValueKind expected)
+        => parent.TryGetProperty(member, out var value) &&
+           value.ValueKind != JsonValueKind.Null &&
+           value.ValueKind != expected;
 }

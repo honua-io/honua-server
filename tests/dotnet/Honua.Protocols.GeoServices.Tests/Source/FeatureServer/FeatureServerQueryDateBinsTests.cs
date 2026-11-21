@@ -93,6 +93,26 @@ public sealed class FeatureServerQueryDateBinsTests : IClassFixture<FeatureServe
         content.Should().Contain("bin");
     }
 
+    [IntegrationTheory]
+    [Operation(Operations.QueryDateBins)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins")]
+    [InlineData("""{"calendarBin":{"unit":["day"]}}""")]
+    [InlineData("""{"fixedBin":{"intervalCount":"1","intervalUnit":"days"}}""")]
+    [InlineData("""{"fixedBin":{"intervalCount":1,"intervalUnit":7}}""")]
+    public async Task QueryDateBins_WronglyTypedBinMember_ReturnsBadRequest(string bin)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDateBins?binField=timestamp&bin={Uri.EscapeDataString(bin)}&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var error = document.RootElement.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(400);
+        error.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString())
+            .Should().Contain("Invalid bin parameter");
+    }
+
     [IntegrationTest]
     [Operation(Operations.QueryDateBins)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins")]

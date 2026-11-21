@@ -72,6 +72,32 @@ public sealed class FeatureServerQueryBinsTests : IClassFixture<WebAppFixture>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    [IntegrationTheory]
+    [Operation(Operations.QueryBins)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryBins")]
+    [InlineData("""{"fixedIntervalBin":{"field":["objectid"],"intervalSize":10}}""")]
+    [InlineData("""{"fixedIntervalBin":{"field":"objectid","intervalSize":"10"}}""")]
+    [InlineData("""{"fixedIntervalBin":{"field":"objectid","intervalSize":10,"start":"0"}}""")]
+    [InlineData("""{"autoIntervalBin":{"field":"objectid","numBins":"5"}}""")]
+    [InlineData("""{"fixedBoundariesBin":{"field":"objectid","boundaries":[0,"10"]}}""")]
+    [InlineData("""{"dateBin":{"field":"objectid","fixedBin":{"intervalCount":"1"}}}""")]
+    [InlineData("""{"dateBin":{"field":"objectid","fixedBin":{"intervalCount":1,"intervalUnit":7}}}""")]
+    [InlineData("""{"dateBin":{"field":"objectid","calendarBin":{"unit":["day"]}}}""")]
+    [InlineData("""{"classificationBin":{"field":{"name":"category"}}}""")]
+    public async Task QueryBins_WronglyTypedBinMember_ReturnsBadRequest(string bin)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBins?bin={Uri.EscapeDataString(bin)}&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var error = document.RootElement.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(400);
+        error.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString())
+            .Should().Contain("Invalid bin parameter");
+    }
+
     [IntegrationTest]
     [Operation(Operations.QueryBins)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryBins")]

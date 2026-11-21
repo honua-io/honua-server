@@ -151,7 +151,9 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var error = document.RootElement.GetProperty("error");
         error.GetProperty("code").GetInt32().Should().Be(400);
-        error.GetProperty("message").GetString().Should().Be("Invalid topFilter parameter");
+        error.GetProperty("details").EnumerateArray()
+            .Select(detail => detail.GetString())
+            .Should().Contain("Invalid topFilter parameter");
     }
 
     [IntegrationTest]
