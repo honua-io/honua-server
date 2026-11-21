@@ -57,7 +57,7 @@ public sealed partial class GrpcMaskedFieldPredicateTests
         AssertNoRead();
     }
 
-    [UnitFact]
+    [UnitTest]
     [Endpoint("POST /geospatial.v1.FeatureService/QueryRelatedRecords")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/QueryRelatedRecords")]
     public async Task QueryRelatedRecords_MaskedFieldPredicate_IsRejected()
@@ -74,7 +74,7 @@ public sealed partial class GrpcMaskedFieldPredicateTests
         AssertNoRead();
     }
 
-    [UnitFact]
+    [UnitTest]
     [Endpoint("POST /geospatial.v1.FeatureService/QueryRelatedRecords")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/QueryRelatedRecords")]
     public async Task QueryRelatedRecords_VisibleFieldPredicate_BindsSqlFilter()
@@ -90,7 +90,7 @@ public sealed partial class GrpcMaskedFieldPredicateTests
         AssertNoRead();
     }
 
-    [UnitFact]
+    [UnitTest]
     [Endpoint("POST /geospatial.v1.FeatureService/QueryRelatedRecords")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/QueryRelatedRecords")]
     public Task QueryRelatedRecords_ContinuationFromDifferentCaller_IsRejectedBeforeProviderRead()
@@ -98,7 +98,7 @@ public sealed partial class GrpcMaskedFieldPredicateTests
             context.GetHttpContext().User = new ClaimsPrincipal(new ClaimsIdentity(
                 [new Claim(ClaimTypes.Name, "another-reader"), new Claim(ClaimTypes.Role, "admin")], "Test")));
 
-    [UnitFact]
+    [UnitTest]
     [Endpoint("POST /geospatial.v1.FeatureService/QueryRelatedRecords")]
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/QueryRelatedRecords")]
     public Task QueryRelatedRecords_ContinuationWithChangedWhere_IsRejectedBeforeProviderRead()

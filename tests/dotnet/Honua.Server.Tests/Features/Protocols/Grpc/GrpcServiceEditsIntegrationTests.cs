@@ -6,6 +6,7 @@ using Grpc.Core;
 using Grpc.Net.Client;
 using Grpc.Net.Client.Web;
 using Honua.Core.Features.Licensing.Domain;
+using Microsoft.Extensions.DependencyInjection;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -28,6 +29,7 @@ public sealed partial class GrpcServiceEditsIntegrationTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        _fixture.ConfigureServices(services => services.AddSingleton<Honua.Core.Features.Edit.IFeatureEditHooks>(_hooks));
         await _fixture.InitializeAsync();
         _channel = GrpcChannel.ForAddress("http://localhost", new GrpcChannelOptions
         {

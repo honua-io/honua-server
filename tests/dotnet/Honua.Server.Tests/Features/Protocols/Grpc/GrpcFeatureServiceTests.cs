@@ -368,7 +368,7 @@ public sealed partial class GrpcFeatureServiceTests
         AssertNoReadWriteOrOutbox();
     }
 
-    [UnitFact]
+    [UnitTest]
     [Endpoint("POST /geospatial.v1.FeatureService/ApplyServiceEdits")]
     [Operation(Operations.ApplyEdits)]
     public Task ApplyServiceEdits_SecondLayerAccessDenied_RejectsBeforeTransaction()
@@ -377,7 +377,7 @@ public sealed partial class GrpcFeatureServiceTests
             ["Query", "Create"],
             StatusCode.PermissionDenied);
 
-    [UnitFact]
+    [UnitTest]
     [Endpoint("POST /geospatial.v1.FeatureService/ApplyServiceEdits")]
     [Operation(Operations.ApplyEdits)]
     public Task ApplyServiceEdits_SecondLayerMissingCapability_RejectsBeforeTransaction()

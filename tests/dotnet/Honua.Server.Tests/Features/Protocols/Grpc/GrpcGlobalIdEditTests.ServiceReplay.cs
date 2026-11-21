@@ -23,12 +23,12 @@ public sealed partial class GrpcGlobalIdEditTests
 {
     private enum ServiceReplaySource { Local, Durable }
 
-    [UnitFact]
+    [UnitTest]
     [Endpoint("POST /geospatial.v1.FeatureService/ApplyServiceEdits")]
     public Task ServiceReplay_LocalReceipt_AfterGlobalIdsBecomeMasked_FiltersEveryLayer()
         => AssertServiceReplayFiltersMaskedGlobalIdsAsync(ServiceReplaySource.Local);
 
-    [UnitFact]
+    [UnitTest]
     [Endpoint("POST /geospatial.v1.FeatureService/ApplyServiceEdits")]
     public Task ServiceReplay_DurableReceipt_AfterGlobalIdsBecomeMasked_FiltersEveryLayer()
         => AssertServiceReplayFiltersMaskedGlobalIdsAsync(ServiceReplaySource.Durable);
@@ -106,7 +106,7 @@ public sealed partial class GrpcGlobalIdEditTests
         return new GrpcServiceEditsReceipts(store);
     }
 
-    private ServerCallContext CreateMaskedServiceReplayContext(GrpcServiceEditsReceipts receipts)
+    private GrpcFeatureServiceTests.TestServerCallContext CreateMaskedServiceReplayContext(GrpcServiceEditsReceipts receipts)
     {
         var masks = Substitute.For<IFieldMaskSource>();
         masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
