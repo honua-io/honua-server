@@ -27,7 +27,7 @@ Process discovery is open. Omit `Prefer` for bounded synchronous execution when 
 
    Open `http://localhost:8080/ogc/processes/processes/geometry.buffer` in a browser.
 
-   `geometry.buffer` takes `wkb`, `srid`, `distance`, and an optional `geodesic` flag. The current executor performs planar buffering and rejects `geodesic: true`. Despite the legacy parameter name, the OGC route accepts either base64-encoded WKB or a GeoJSON geometry object under its explicit SRID contract. `distance` is expressed in input CRS units. For a metric buffer, use coordinates already expressed in an appropriate projected CRS, or transform geographic input first; changing only the SRID label is not a transformation.
+   `geometry.buffer` takes `wkb`, `srid`, `distance`, and optional `geodesic` and `unit` inputs. Without `geodesic: true` it buffers in the plane of the input CRS. With `geodesic: true` it converts `distance` from `unit` (default meters) and, for a geographic SRID, buffers in a local metric plane around the geometry; see [geoprocessing operations](../../reference/geoprocessing-operations.md). Despite the legacy parameter name, the OGC route accepts either base64-encoded WKB or a GeoJSON geometry object under its explicit SRID contract. Without `geodesic`, `distance` is expressed in input CRS units. For a metric buffer, use coordinates already expressed in an appropriate projected CRS, or transform geographic input first; changing only the SRID label is not a transformation.
 
 3. Execute it. The request returns `201 Created` with a job status document and a `Location` header pointing at the job:
 
