@@ -26,17 +26,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IPagedRawGeoS
         query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
         var probeLimit = query.Limit is > 0 and < int.MaxValue;
         var sql = BuildRawPointSelect(query, probeLimit);
-        var features = new List<RawGeoServicesFeature>(
-            probeLimit ? query.Limit!.Value + 1 : 16);
-
-        await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = CreateReadCommand(connection, sql);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            features.Add(ReadRawPoint(reader));
-        }
-
+        var features = await ReadRawPointsAsync(query, sql, cancellationToken).ConfigureAwait(false);
         if (features.Count == 0)
         {
             return PagedQueryResult<RawGeoServicesFeature>.Empty();
@@ -49,6 +39,42 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IPagedRawGeoS
         }
 
         return PagedQueryResult<RawGeoServicesFeature>.Create(features.ToImmutableArray(), hasMoreResults);
+    }
+
+    private async Task<List<RawGeoServicesFeature>> ReadRawPointsAsync(
+        FeatureQuery query, SqlBuilder sql, CancellationToken cancellationToken)
+    {
+        var features = new List<RawGeoServicesFeature>(
+            query.Limit is > 0 and < int.MaxValue ? query.Limit.Value + 1 : 16);
+        await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        // Eligibility uses the caller's page size, not the probe row. A caller-owned
+        // transaction would retain SET LOCAL beyond this page, so it keeps one command.
+        if (connection.Transaction is null && ShouldUseSerialSpatialPlan(query))
+        {
+            await using var batch = CreateSerialSpatialReadBatch(connection, sql);
+            await using var scoped = await batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await scoped.NextResultAsync(cancellationToken).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException("The scoped planner batch did not return raw point results.");
+            }
+
+            await AddRawPointsAsync(scoped, features, cancellationToken).ConfigureAwait(false);
+            return features;
+        }
+
+        await using var command = CreateReadCommand(connection, sql);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await AddRawPointsAsync(reader, features, cancellationToken).ConfigureAwait(false);
+        return features;
+    }
+
+    private static async Task AddRawPointsAsync(
+        NpgsqlDataReader reader, List<RawGeoServicesFeature> features, CancellationToken cancellationToken)
+    {
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            features.Add(ReadRawPoint(reader));
+        }
     }
 
     private SqlBuilder BuildRawPointSelect(FeatureQuery query, bool probeLimit)

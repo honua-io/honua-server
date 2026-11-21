@@ -39,7 +39,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         } &&
         // SET LOCAL would outlive the batch in an outer transaction. Exclude
         // ambient scopes here and borrowed explicit transactions after opening
-        // the connection lease in ExecuteFeatureQueryAsync.
+        // the connection lease at each read site.
         Transaction.Current == null;
 
     private bool HasDefaultPlannerOrder(FeatureQuery query)

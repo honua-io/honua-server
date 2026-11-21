@@ -36,7 +36,7 @@ namespace Honua.Server.Tests.Features.FeatureStore;
 [Collection("Database")]
 [Protocol(TestProtocols.TestQuality)]
 [Operation(Operations.Query)]
-public sealed class PostgresBoundedSpatialPlannerIntegrationTests(DatabaseFixtureAdapter fixture) : IAsyncLifetime
+public sealed partial class PostgresBoundedSpatialPlannerIntegrationTests(DatabaseFixtureAdapter fixture) : IAsyncLifetime
 {
     private readonly string _schema = "planner_read_" + Guid.NewGuid().ToString("N");
     private NpgsqlDataSource _source = null!;
