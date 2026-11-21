@@ -18,12 +18,16 @@ internal sealed record FolderOperationResponse(int Status, string Payload, strin
 
     internal string? ApprovalRefusal { get; init; }
 
+    internal ServiceMoveEvidenceRecord? MoveEvidence { get; init; }
+
     internal Dictionary<string, string> Details()
     {
         var details = new Dictionary<string, string>(StringComparer.Ordinal) { ["response"] = Payload };
         if (Status >= 400) details["statusCode"] = Status.ToString(CultureInfo.InvariantCulture);
         if (Etag is not null) details["etag"] = Etag;
         if (Location is not null) details["location"] = Location;
+        if (MoveEvidence is { } evidence)
+            ServiceMoveEvidence.Write(details, evidence);
         return details;
     }
 
@@ -32,7 +36,14 @@ internal sealed record FolderOperationResponse(int Status, string Payload, strin
         if (execution.Failure is { } failure) return Failure(failure);
         var saved = execution.Saved ?? throw new InvalidOperationException("Folder mutation did not return a saved snapshot.");
         var mutation = execution.Mutation ?? throw new InvalidOperationException("Folder mutation did not return its result.");
-        if (mutation.Status == 204) return new(204, string.Empty, saved.Etag);
+        if (mutation.Status == 204)
+        {
+            return new(204, string.Empty, saved.Etag)
+            {
+                MoveEvidence = mutation.MovedServiceName is null ? null : new ServiceMoveEvidenceRecord(
+                    mutation.MovedServiceName, saved.Etag, mutation.PriorAssignments)
+            };
+        }
         var folder = saved.Graph.Folders.Single(item => item.Metadata.Id == mutation.Folder!.Metadata.Id);
         var payload = JsonSerializer.Serialize(ApiResponse<MetadataV2Folder>.CreateSuccess(folder),
             FolderJsonContext.Default.ApiResponseMetadataV2Folder);

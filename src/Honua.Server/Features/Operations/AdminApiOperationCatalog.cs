@@ -10,6 +10,7 @@ using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.WorkflowPackages.Domain;
+using Honua.Server.Features.Admin;
 
 namespace Honua.Server.Features.Operations;
 
@@ -148,7 +149,10 @@ internal static class AdminApiOperationCatalog
                 SupportsDryRun = definition.SupportsDryRun
             },
             InputSchema = inputs,
-            OutputSchema = BuildOutputSchema(root, operation)
+            OutputSchema = BuildOutputSchema(root, operation),
+            DeclaredCompensation = definition.OperationId == "service.move"
+                ? new OperationCompensationMetadata(OperationCompensationAvailability.Supported, ServiceMoveEvidence.SupportedReason)
+                : null
         };
     }
 

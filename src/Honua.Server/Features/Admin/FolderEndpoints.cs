@@ -85,6 +85,8 @@ internal static class FolderEndpoints
         var changed = execution.Mutation ?? throw new InvalidOperationException("Folder mutation did not return its result.");
         if (execution.Authorization is not null) MapServiceAuthorization(context, execution.Authorization);
         context.Response.Headers.ETag = saved.Etag;
+        if (command is FolderMutationCommand.Move move)
+            await ServiceMoveEvidence.PersistHttpMoveAsync(context, move, execution).ConfigureAwait(false);
         if (changed.Status == 204) return Results.NoContent();
         var folder = saved.Graph.Folders.Single(f => f.Metadata.Id == changed.Folder!.Metadata.Id);
         if (changed.Status == 201) context.Response.Headers.Location = $"{context.Request.PathBase}/api/v1/admin/folders/{folder.Metadata.Id}";

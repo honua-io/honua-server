@@ -117,6 +117,43 @@ public sealed class FolderEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/folder")]
+    [Endpoint("POST /api/v1/operations/handles/{handleId}/compensate")]
+    public async Task ServiceMove_Compensate_RestoresThePriorFolder_AndRefusesAfterACatalogChange()
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
+        var before = await store.GetCurrentAsync();
+        var priorFolder = before.Graph.Services.Where(service => service.Metadata.Name == "test").Select(service => service.FolderId)
+            .Distinct().Single();
+        SetEtag(await _client.GetAsync("/api/v1/admin/folders"));
+        var created = await _client.PostAsJsonAsync("/api/v1/admin/folders", new { name = "RestoreTarget" });
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var createdBody = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var folderId = createdBody.RootElement.GetProperty("data").GetProperty("metadata").GetProperty("id").GetString();
+        SetEtag(created);
+        var moved = await _client.PutAsJsonAsync("/api/v1/admin/services/test/folder", new { folderId });
+        moved.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var instanceId = moved.Headers.GetValues("X-Honua-Operation-Instance-Id").Single();
+        var restored = await _client.PostAsync($"/api/v1/operations/handles/{instanceId}/compensate", null);
+        restored.StatusCode.Should().Be(HttpStatusCode.OK, await restored.Content.ReadAsStringAsync());
+        await AssertMembership(priorFolder);
+        var repeat = await _client.PostAsync($"/api/v1/operations/handles/{instanceId}/compensate", null);
+        repeat.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        SetEtag(await _client.GetAsync("/api/v1/admin/folders"));
+        var movedAgain = await _client.PutAsJsonAsync("/api/v1/admin/services/test/folder", new { folderId });
+        movedAgain.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var changedInstance = movedAgain.Headers.GetValues("X-Honua-Operation-Instance-Id").Single();
+        SetEtag(movedAgain);
+        (await _client.PostAsJsonAsync("/api/v1/admin/folders", new { name = "UnrelatedCatalogChange" })).StatusCode.Should().Be(HttpStatusCode.Created);
+        var refused = await _client.PostAsync($"/api/v1/operations/handles/{changedInstance}/compensate", null);
+        ((int)refused.StatusCode).Should().Be(412);
+        SetEtag(await _client.GetAsync("/api/v1/admin/folders"));
+        (await _client.PutAsJsonAsync("/api/v1/admin/services/test/folder", new { folderId = priorFolder })).StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/folders")]
     public async Task CreateFolder_WithoutPrecondition_Returns428()
     {
