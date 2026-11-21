@@ -81,9 +81,14 @@ internal static class MapLibreToSldConverter
             rule.Add(new XElement(Sld + "Name", layer.Id));
         }
 
-        var filterElement = ConvertFilter(layer.Filter, diagnostics, layer.Id);
-        if (filterElement != null)
+        if (layer.Filter.HasValue)
         {
+            var filterElement = ConvertFilter(layer.Filter, diagnostics, layer.Id);
+            if (filterElement == null)
+            {
+                return null;
+            }
+
             rule.Add(filterElement);
         }
 
@@ -200,24 +205,7 @@ internal static class MapLibreToSldConverter
 
         if (!string.IsNullOrEmpty(iconImage))
         {
-            var graphic = new XElement(Sld + "Graphic",
-                new XElement(Sld + "ExternalGraphic",
-                    new XElement(Sld + "OnlineResource",
-                        new XAttribute(Xlink + "href", iconImage)),
-                    new XElement(Sld + "Format", "image/png")));
-            var iconSize = TryGetLiteralNumber(layer, "icon-size", diagnostics, isLayout: true);
-            if (iconSize.HasValue)
-            {
-                // MapLibre icon-size is a scale factor (1.0 = native size); SLD Graphic Size is
-                // absolute pixels. Without sprite intrinsic dimensions the conversion is lossy,
-                // so omit <Size> and emit a diagnostic rather than emit a wrong absolute value.
-                diagnostics.Add(Warn(
-                    "icon-size",
-                    $"MapLibre icon-size ({FormatNumber(iconSize.Value)}) is a scale factor; SLD Graphic Size requires absolute pixels. <Size> omitted from export.",
-                    layer.Id));
-            }
-
-            rule.Add(new XElement(Sld + "PointSymbolizer", graphic));
+            rule.Add(BuildSymbolPointSymbolizer(layer, iconImage, diagnostics));
         }
 
         var textSymbolizer = hasText ? TryBuildTextSymbolizer(layer, diagnostics) : null;
@@ -236,6 +224,73 @@ internal static class MapLibreToSldConverter
         }
 
         return true;
+    }
+
+    private static XElement BuildSymbolPointSymbolizer(
+        MapLibreStyleLayer layer,
+        string iconImage,
+        List<SldConversionDiagnostic> diagnostics)
+    {
+        return iconImage.StartsWith(SldSharedConstants.WellKnownMarkPrefix, StringComparison.OrdinalIgnoreCase)
+            ? BuildWellKnownMarkSymbolizer(layer, iconImage[SldSharedConstants.WellKnownMarkPrefix.Length..], diagnostics)
+            : BuildExternalGraphicSymbolizer(layer, iconImage, diagnostics);
+    }
+
+    private static XElement BuildWellKnownMarkSymbolizer(
+        MapLibreStyleLayer layer,
+        string markName,
+        List<SldConversionDiagnostic> diagnostics)
+    {
+        var mark = new XElement(Sld + "Mark", new XElement(Sld + "WellKnownName", markName));
+        var iconColor = TryGetLiteralString(layer, "icon-color", diagnostics);
+        var iconOpacity = TryGetLiteralNumber(layer, "icon-opacity", diagnostics);
+        if (iconColor != null || iconOpacity.HasValue)
+        {
+            mark.Add(BuildFill(iconColor, iconOpacity));
+        }
+
+        var graphic = new XElement(Sld + "Graphic", mark);
+        var iconSize = TryGetLiteralNumber(layer, "icon-size", diagnostics, isLayout: true);
+        if (iconSize.HasValue)
+        {
+            graphic.Add(new XElement(Sld + "Size", FormatNumber(iconSize.Value * SldSharedConstants.WellKnownMarkBaseSizePx)));
+        }
+
+        var iconRotate = TryGetLiteralNumber(layer, "icon-rotate", diagnostics, isLayout: true);
+        if (iconRotate.HasValue)
+        {
+            graphic.Add(new XElement(Sld + "Rotation", FormatNumber(iconRotate.Value)));
+        }
+
+        return new XElement(Sld + "PointSymbolizer", graphic);
+    }
+
+    private static XElement BuildExternalGraphicSymbolizer(
+        MapLibreStyleLayer layer,
+        string iconImage,
+        List<SldConversionDiagnostic> diagnostics)
+    {
+        var externalGraphic = new XElement(Sld + "Graphic",
+            new XElement(Sld + "ExternalGraphic",
+                new XElement(Sld + "OnlineResource",
+                    new XAttribute(Xlink + "href", iconImage)),
+                new XElement(Sld + "Format", "image/png")));
+        var externalSize = TryGetLiteralNumber(layer, "icon-size", diagnostics, isLayout: true);
+        if (externalSize.HasValue)
+        {
+            diagnostics.Add(Warn(
+                "icon-size",
+                $"MapLibre icon-size ({FormatNumber(externalSize.Value)}) is a scale factor; SLD Graphic Size requires absolute pixels. <Size> omitted from export.",
+                layer.Id));
+        }
+
+        var iconRotate = TryGetLiteralNumber(layer, "icon-rotate", diagnostics, isLayout: true);
+        if (iconRotate.HasValue)
+        {
+            externalGraphic.Add(new XElement(Sld + "Rotation", FormatNumber(iconRotate.Value)));
+        }
+
+        return new XElement(Sld + "PointSymbolizer", externalGraphic);
     }
 
     private static string? GetFontFamily(MapLibreStyleLayer layer, List<SldConversionDiagnostic> diagnostics)

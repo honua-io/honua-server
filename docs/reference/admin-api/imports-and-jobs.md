@@ -124,17 +124,17 @@ a new mapping. Unrelated concurrent catalog changes survive compensation.
 | POST | `/api/v1/admin/import/raster` | Import a raster file (GeoTIFF, PNG/JPEG world-file) into PostGIS |
 | GET | `/api/v1/admin/import/raster/formats` | List supported raster formats and extensions |
 | POST | `/api/v1/admin/cloud-rasters` | Register a cloud-optimized GeoTIFF (COG) by URL |
-| GET | `/api/v1/admin/cloud-rasters` | List registered cloud rasters |
+| GET | `/api/v1/admin/cloud-rasters?layerId={layerId}` | List registered cloud rasters for a layer (`layerId` required) |
 | GET | `/api/v1/admin/cloud-rasters/{id}` | Get a registered cloud raster |
 | DELETE | `/api/v1/admin/cloud-rasters/{id}` | Remove a cloud raster registration |
 | POST | `/api/v1/admin/cloud-rasters/{id}/refresh` | Refresh cached cloud raster metadata |
 | POST | `/api/v1/admin/zarr-stores` | Register a Zarr store |
-| GET | `/api/v1/admin/zarr-stores` | List Zarr stores |
+| GET | `/api/v1/admin/zarr-stores?layerId={layerId}` | List Zarr stores for a layer (`layerId` required) |
 | GET | `/api/v1/admin/zarr-stores/{id}` | Get a Zarr store |
 | DELETE | `/api/v1/admin/zarr-stores/{id}` | Remove a Zarr store |
 | POST | `/api/v1/admin/zarr-stores/{id}/refresh` | Refresh Zarr store metadata |
 | POST | `/api/v1/admin/multidim-coverages` | Register a cloud-optimized HDF5/NetCDF4 multidimensional coverage |
-| GET | `/api/v1/admin/multidim-coverages` | List multidimensional coverages |
+| GET | `/api/v1/admin/multidim-coverages?layerId={layerId}` | List multidimensional coverages for a layer (`layerId` required) |
 | GET | `/api/v1/admin/multidim-coverages/{id}` | Get a multidimensional coverage |
 | DELETE | `/api/v1/admin/multidim-coverages/{id}` | Remove a multidimensional coverage |
 | POST | `/api/v1/admin/multidim-coverages/{id}/refresh` | Refresh multidimensional coverage metadata |

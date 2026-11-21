@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database")]
-public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
+public sealed partial class FeatureServerMutationScenarioTests : IAsyncLifetime
 {
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;

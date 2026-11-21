@@ -41,7 +41,7 @@ Honua implements the modern OGC API family — Features, Maps, Tiles, Coverages,
 | POST | `/ogc/features/collections/{collectionId}/items` | Create feature (GeoJSON). |
 | POST | `/ogc/features/collections/{collectionId}/items/batch` | Batch create (Honua extension). |
 | PUT, PATCH, DELETE | `/ogc/features/collections/{collectionId}/items/{featureId}` | Replace, merge-patch, delete. |
-| GET | `/ogc/features/collections/{collectionId}/h3` | H3 aggregation (Honua extension; requires `resolution`). |
+| GET | `/ogc/features/collections/{collectionId}/h3` | H3 aggregation (Honua extension; requires `resolution`; returns `501` when the configured provider does not support H3). |
 | POST | `/ogc/features/collections/{collectionId}/clusters`, `/spatial-join`, `/buffer-aggregate`, `/density` | Spatial analytics extensions (Pro tier; 402 when entitlement inactive). |
 | GET | `/ogc/features/schemas/honua-ogcapi-features.xsd` | GML application schema. |
 
@@ -85,7 +85,7 @@ unadvertised until they are certified. Full operator tables:
 | GET | `/ogc/maps/collections/{collectionId}/map/tiles`, `.../map/tiles/{tileMatrixSetId}` | Map tileset metadata. |
 | GET | `/ogc/maps/map` | Dataset map (multi-collection via `collections=`). |
 
-Key parameters: `bbox`, `bbox-crs`, `crs`, `width`/`height` (1–4096, default 256), `f` (`png`, `jpeg`, `tiff`), `transparent` (default true), `bgcolor` (`0xRRGGBB`), `datetime`, `quality`.
+Key parameters: `bbox`, `bbox-crs`, `crs`, `width`/`height` (1–4096, default 256), `f` (`png`, `jpeg`, `tiff` — `tiff` is supported for raster collections only; vector collections support `png` and `jpeg`, returning `404` on `/map` and `400` on `/styles/{styleId}/map` when `tiff` is requested), `transparent` (default true), `bgcolor` (`0xRRGGBB`), `datetime`, `quality`.
 
 Map rendering and map tileset metadata observe the end-to-end `Limits__Connections__RequestTimeout` budget. An expired budget cancels metadata lookup and rendering through the shared request token and returns the existing HTTP 408 timeout response. Client disconnects also propagate cancellation.
 

@@ -17,6 +17,7 @@ Use the same words in the Console, Studio, SDKs, guides, error messages, APIs, d
 | [Service](service.md) | A named group of Layers with one list of enabled protocols. It belongs to a Folder or the root of its Environment. |
 | [Folder](folder.md) | The grouping of Services within an Environment. Folders do not nest or grant permissions. |
 | [Environment](environment.md) | One Honua server managed by a Console, such as development or production. A database Connection selects data; an Environment selects the server. |
+| [Export](export.md) | Cloud-native files (PMTiles and GeoParquet vector pairs) produced from a Dataset in immutable Versions, described by one Portolan-profile STAC collection document with a `current` pointer. |
 | [Style](style.md) | Drawing and label rules for a Layer or Map. Map overrides do not change shared Layer defaults. |
 | [Map](map.md) | Ordered drawing layers, data references, styles, labels, and view state, with a Draft and saved Versions. |
 | [App](app.md) | A Map with controls, widgets, and interactions, with the same saved-content lifecycle. |
@@ -71,7 +72,7 @@ The canonical names are Dataset, Layer, Map, App, and each other named Studio ki
 
 Review new UI labels, model types, database names, API fields, MCP schemas, public SDK names, guides, and error messages against this table. Block additions that use:
 
-- resource for Dataset, publication for Layer, or content item for a named Studio kind;
+- resource for Dataset, publication for Layer, paired publication for Export, or content item for a named Studio kind;
 - workspace for grouping or tenancy; use Folder or Environment for the corresponding concept;
 - slot, serving target, or projection as object names; use Layer or Service;
 - vendor type names, hosted layer, portal item, or web map for Honua objects;
@@ -111,6 +112,7 @@ Use [workflow guides](../../guides/workflows/README.md) to connect concepts to o
 - [DevOps workflow language](devops-language.md)
 - [Draft, Version, and Released](content-version.md)
 - [Environment](environment.md)
+- [Export](export.md)
 - [Feature set snapshot](feature-set.md)
 - [Filtering and spatial analysis](spatial-analysis.md)
 - [Folder](folder.md)

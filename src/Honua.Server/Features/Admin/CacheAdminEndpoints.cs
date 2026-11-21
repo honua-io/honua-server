@@ -5,6 +5,7 @@ using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Middleware;
@@ -26,15 +27,17 @@ internal static class CacheAdminEndpoints
             .WithTags("Admin", "Cache")
             .RequireAdminAuthorization();
 
-        group.MapGet("/status", HandleGetCacheStatus)
+        var status = AdminHttpOperationRouteBinding.ForOperate("admin.cache.status", "/cache");
+        group.MapMethods(status.RoutePattern, status.Methods, HandleGetCacheStatus)
+            .WithAdminOperation(status.Definition)
             .WithDisplayName("Get Cache Status")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .Produces<ApiResponse<CacheStatusResponse>>();
 
-        group.MapPost("/invalidate", HandleInvalidateCache)
+        var invalidate = AdminHttpOperationRouteBinding.ForOperate("admin.cache.invalidate", "/cache");
+        group.MapMethods(invalidate.RoutePattern, invalidate.Methods, HandleInvalidateCache)
+            .WithAdminOperation(invalidate.Definition)
             .WithDisplayName("Invalidate Cache")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<ApiResponse<CacheInvalidationResponse>>();
     }
 

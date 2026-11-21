@@ -7,6 +7,8 @@ public sealed class QueryRelatedRecordsParameters
 {
     public required long[] ObjectIds { get; init; }
 
+    public string[]? GlobalIds { get; init; }
+
     public required int RelationshipId { get; init; }
 
     public string? OutFields { get; init; }

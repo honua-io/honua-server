@@ -8,9 +8,8 @@ resource: "honua://capability/enrichment.datasets"
 
 The data-enrichment API enriches your own features with attributes drawn from a
 registered reference dataset (administrative boundary, points of interest, or
-demographic reference layer) using a spatial join. It is the
-[CARTO Data Observatory](https://carto.com/data-observatory) enrichment pattern —
-*input features + enrichment dataset → enriched features* — built on Honua's
+demographic reference layer) using a spatial join:
+*input features + enrichment dataset → enriched features*, built on Honua's
 shared spatial-analytics pipeline.
 
 ## Endpoints
@@ -44,11 +43,11 @@ consumers can comply with the data provider's terms. The catalog is persisted in
 `honua.enrichment_datasets` (migration 071), cached through the shared
 generation-stamped catalog scope, and invalidated on register/update/deregister.
 
-`POST /api/enrich` resolves its `datasetId` through this catalog (falling back to
+`POST /api/enrich` resolves its `datasetId` (or legacy `datasetKey`) through this catalog (falling back to
 the configuration catalog key for back-compat), maps the enrichment `method`
-vocabulary (`intersects`, `point-in-polygon`, `within-distance`) to the canonical
-spatial predicates, supports `outputFields` and per-match `aggregates`
-(count/sum/avg/min/max), echoes the dataset attribution in the
+vocabulary (`intersects`, `point-in-polygon`, `within`, `within-distance`; `nearest-neighbor` returns `501` and points to the async `enrichment.enrich` job) to the canonical
+spatial predicates, supports `outputFields` (or legacy `attributes`) and per-match `aggregates`
+(`{ statisticType, onField, outName }` with `count`/`sum`/`avg`/`min`/`max`), echoes the dataset attribution in the
 `X-Honua-Data-Attribution` response header, and returns `413` (pointing to the
 async batch path) when the source selection exceeds the synchronous input cap.
 

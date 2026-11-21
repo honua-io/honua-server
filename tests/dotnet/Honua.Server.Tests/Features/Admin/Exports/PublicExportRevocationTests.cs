@@ -221,6 +221,8 @@ public sealed class PublicExportRevocationTests
     {
         var harness = RevocationHarness.Create(new RevocationScenario { AnonymousAllowed = true });
         var privateStorage = new Mock<ICloudFileStorage>();
+        privateStorage.Setup(s => s.ListFilesAsync(It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
         privateStorage.Setup(s => s.UploadAsync(It.IsAny<FileUploadRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new UploadResult { Success = true });
         privateStorage.Setup(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -257,6 +259,8 @@ public sealed class PublicExportRevocationTests
             StateStoreOverride = failingStateStore.Object
         });
         var privateStorage = new Mock<ICloudFileStorage>();
+        privateStorage.Setup(s => s.ListFilesAsync(It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
         privateStorage.Setup(s => s.UploadAsync(It.IsAny<FileUploadRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new UploadResult { Success = true });
         var catalog = new ExportCatalog(new ExportCatalogDependencies

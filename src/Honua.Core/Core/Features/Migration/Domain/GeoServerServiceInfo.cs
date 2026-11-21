@@ -39,6 +39,8 @@ public sealed record GeoServerServiceInfo
 
     public GeoServerServiceEndpointInfo[] ServiceEndpoints { get; init; } = [];
 
+    public GeoServerSecurityRule[] SecurityRules { get; init; } = [];
+
     public GeoServerMigrationCompatibility? CompatibilityAssessment { get; init; }
 
     public DateTimeOffset DiscoveredAt { get; init; } = DateTimeOffset.UtcNow;
@@ -124,6 +126,10 @@ public sealed record GeoServerLayerInfo
     public GeoServerBoundingBox? LatLonBoundingBox { get; init; }
 
     public GeoServerBoundingBox? NativeBoundingBox { get; init; }
+
+    public GeoServerDimensionInfo? TimeDimension { get; init; }
+
+    public GeoServerDimensionInfo? ElevationDimension { get; init; }
 
     public bool Enabled { get; init; } = true;
 
@@ -327,4 +333,40 @@ public enum GeoServerCompatibilityLevel
     PartiallyCompatible,
 
     Incompatible
+}
+
+public sealed record GeoServerDimensionInfo
+{
+    public bool Enabled { get; init; }
+
+    public string? Attribute { get; init; }
+
+    public string? EndAttribute { get; init; }
+
+    public string? Presentation { get; init; }
+
+    public double? Resolution { get; init; }
+
+    public string? Units { get; init; }
+
+    public string? UnitSymbol { get; init; }
+
+    public bool NearestMatchEnabled { get; init; }
+
+    public string? DefaultValueStrategy { get; init; }
+
+    public string? DefaultValueReference { get; init; }
+}
+
+public sealed record GeoServerSecurityRule
+{
+    public required string RuleKey { get; init; }
+
+    public required string WorkspacePattern { get; init; }
+
+    public required string LayerPattern { get; init; }
+
+    public required string Mode { get; init; }
+
+    public string[] Roles { get; init; } = [];
 }

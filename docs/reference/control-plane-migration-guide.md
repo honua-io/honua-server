@@ -5,9 +5,7 @@ description: "How to generate a client from the checked-in admin OpenAPI contrac
 ---
 # Control Plane API Migration Guide
 
-This guide covers migration for the Honua control-plane/admin API only.
-
-This guide covers the Honua control-plane (admin) API only. For SDK support windows and
+This guide covers migration for the Honua control-plane (admin) API only. For SDK support windows and
 release-channel expectations, see [Server + SDK compatibility](../concepts/ecosystem.md).
 
 ## Exports admin API
