@@ -672,6 +672,17 @@ internal sealed partial class OperationGateway : IOperationGateway, IOpsRemediat
         CancellationToken cancellationToken)
     {
         request = ResolveRequestIdentity(request);
+        if (OperationProposerApiKeyAuthority.IsBootstrapCredentialActor(request.RequestedBy)
+            || OperationProposerApiKeyAuthority.IsBootstrapCredentialActor(request.RequestedByAgent))
+        {
+            return new OperationGatewayResult
+            {
+                Outcome = OperationGatewayOutcome.Blocked,
+                Decision = decision,
+                Message = OperationProposerApiKeyAuthority.BootstrapRefusal
+            };
+        }
+
         var plan = request.Plan ?? new OperationProposalPlan { Summary = $"{request.Kind} operation" };
         if (request.ExecutionPayload != null && plan.ExecutionPayload == null)
             plan = plan with { ExecutionPayload = request.ExecutionPayload };
