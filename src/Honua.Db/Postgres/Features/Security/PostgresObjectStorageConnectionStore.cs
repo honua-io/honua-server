@@ -38,7 +38,7 @@ internal sealed class PostgresObjectStorageConnectionStore : IObjectStorageConne
             DELETE FROM {_setups} WHERE consumed_at IS NULL AND (expires_at <= clock_timestamp() OR external_id IN (
                 SELECT external_id FROM {_setups}
                 WHERE minted_by = @minted_by AND consumed_at IS NULL AND expires_at > clock_timestamp() AND @max_open_for_minter > 0
-                ORDER BY expires_at DESC, external_id
+                ORDER BY created_at DESC, external_id
                 OFFSET GREATEST(@max_open_for_minter - 1, 0)))
             """;
         var sql = $"""

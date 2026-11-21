@@ -238,7 +238,7 @@ Run a pilot subset first. Move production traffic only when the latest evidence 
 
 ## Troubleshoot
 
-- **The service URL is rejected** — use a credential-free HTTPS service root ending in `FeatureServer` or `MapServer`. Plain HTTP, layer URLs, URL userinfo, and credential query parameters such as `token`, `password`, or `apiKey` are rejected with `400`. Other query strings, such as `?f=json`, are not rejected, but pass the bare service root.
+- **The service URL is rejected** — use a credential-free HTTPS service root ending in `FeatureServer` or `MapServer`. Plain HTTP, layer URLs, URL userinfo, query strings (including `?f=json`), and fragments are rejected.
 - **The source needs a token** — configure the secret in the Honua environment and pass only its `env:VARIABLE_NAME` reference.
 - **The secret reference is not permitted or could not be resolved** — the Honua operator must permit the reference under `Security__RequestSecretReferences__*` ([References supplied in a request](../deploy/configuration.md#references-supplied-in-a-request)) and the variable must be set in the server environment. Nothing is permitted by default.
 - **Apply refuses to run** — verify the plan digest, ensure the output path does not already exist, and add `--yes` only after review.

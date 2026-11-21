@@ -127,7 +127,7 @@ public sealed class PostgresObjectStorageConnectionStoreTests(PostgresFixture fi
             for (var i = 0; i <= MaxPerMinter; i++)
             {
                 var externalId = ObjectStoragePolicy.NewExternalId();
-                (await TrySetupAsync(store, "operator-a", externalId, TimeSpan.FromMinutes(60 + i))).Should().BeTrue("a principal at its cap supersedes its own oldest setup");
+                (await TrySetupAsync(store, "operator-a", externalId, TimeSpan.FromMinutes(120 - i))).Should().BeTrue("a principal at its cap supersedes its own oldest setup");
                 minted.Add(externalId);
             }
 
@@ -160,6 +160,31 @@ public sealed class PostgresObjectStorageConnectionStoreTests(PostgresFixture fi
 
             (await TrySetupAsync(store, "operator-new")).Should().BeFalse("the installation-wide cap is reached");
             (await TrySetupAsync(store, "operator-a")).Should().BeTrue("superseding keeps the installation total unchanged");
+        });
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task OpenSetups_WithNoPerMinterAllowance_AreRefusedWithoutDeletingAny()
+    {
+        await WithSchemaAsync(async schema =>
+        {
+            var store = new PostgresObjectStorageConnectionStore(fixture.DataSource, schema);
+            var externalId = ObjectStoragePolicy.NewExternalId();
+            (await TrySetupAsync(store, "operator-a", externalId)).Should().BeTrue();
+            var refused = await store.SaveSetupAsync(
+                new ObjectStorageConnectionSetup
+                {
+                    ExternalId = ObjectStoragePolicy.NewExternalId(),
+                    MintedBy = "operator-a",
+                    Bucket = "customer-imports",
+                    ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+                },
+                maxOpenForMinter: 0,
+                CancellationToken.None);
+
+            refused.Should().BeFalse();
+            (await store.FindOpenSetupAsync(externalId, CancellationToken.None)).Should().NotBeNull();
         });
     }
 
