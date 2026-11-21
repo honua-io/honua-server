@@ -13,6 +13,10 @@ public interface IAiExecutionAdmissionStore
     // The financial invocation is claimed once, and an ambiguous result never authorizes a send.
     Task<bool> CommitFinancialSendAsync(AiAdmissionReservation reservation, CancellationToken cancellationToken);
 
+    // The same claim, naming the refusal: null authorizes the send. A store that cannot say why refuses with financial_stop.
+    async Task<string?> CommitFinancialSendOrDenyAsync(AiAdmissionReservation reservation, CancellationToken cancellationToken)
+        => await CommitFinancialSendAsync(reservation, cancellationToken).ConfigureAwait(false) ? null : "financial_stop";
+
     Task<string> SettleFinancialAsync(AiAdmissionReservation reservation, AiFinancialUsage usage, CancellationToken cancellationToken);
 
     Task<bool> IsCurrentAsync(AiAdmissionReservation reservation, CancellationToken cancellationToken);
