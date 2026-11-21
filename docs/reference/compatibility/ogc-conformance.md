@@ -29,7 +29,7 @@ the canonical passed/total counts and pass rate per suite, including the WFS
   OGC API - Tiles Part 1 and 5 from OGC API - Common.
 - **OGC API - EDR** — Preview surface in release 2026.1. Its remaining CRS,
   temporal-selection, output-format, and MULTIPOINT coordinate behavior is deferred
-  to release 2027.1 and is not a GA conformance claim.
+  to release 2026.2 and is not a GA conformance claim.
 - **WFS 1.0 / 1.1 / 2.0** — the `basic` profile: capabilities, DescribeFeatureType,
   GetFeature, spatial/temporal filters, paging, and managed stored queries. The
   separate WFS 2.0 Transactional leg covers Transaction. LockFeature is not

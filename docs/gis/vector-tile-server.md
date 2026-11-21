@@ -28,7 +28,9 @@ All routes resolve the service by name and return **404** for an unknown service
 Error statuses in this table (400, 404, 422) are GeoServices error codes. The server sends them
 as HTTP 200 with a JSON `error` object whose `code` carries the status, as on the other
 GeoServices REST endpoints, including the tile and resource routes. Read `error.code`, not the
-HTTP status. An empty tile is the exception: it is a plain HTTP 204.
+HTTP status. A layer whose data provider cannot generate vector tiles answers the tile route
+with `error.code` 501 the same way. Successful tiles use the real HTTP status: 200 with the
+Mapbox Vector Tile, or 204 when the tile is empty.
 
 ## Design decisions
 

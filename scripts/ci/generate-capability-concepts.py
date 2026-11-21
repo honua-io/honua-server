@@ -115,10 +115,13 @@ def effective_status(entry: dict, facts: dict) -> str:
     if explicit:
         return explicit
     maturity = facts.get("maturity") or {}
-    if maturity and not maturity.get("implemented"):
+    if any(maturity.values()) and not maturity.get("implemented"):
         for state in MATURITY_STATUS_ORDER:
             if maturity.get(state):
                 return state
+        # Routes exist but none is implemented, preview, deferred or experimental
+        # (for example all partial or planned): never present that as GA.
+        return "preview"
     return "ga"
 
 
@@ -287,13 +290,15 @@ def render(entry: dict, facts: dict, documented: list[tuple[str, str]] | None = 
         lines.append("## Preview")
         lines.append("")
         lines.append(
-            "This capability is Preview. It is off by default, it needs an explicit opt-in to "
-            "enable, and it is not covered by the compatibility promise for the release - so it "
-            "has no customer-facing page in this bundle, and that is deliberate rather than an "
-            "omission. The counts above are real routes and real tests; what they are not is a "
-            "commitment."
+            f"This capability is **{status}**. It is not covered by the compatibility promise for "
+            "the release - so it has no customer-facing page in this bundle, and that is "
+            "deliberate rather than an omission. The counts above are real routes and real "
+            "tests; what they are not is a commitment."
         )
         lines.append("")
+        if status in OPT_IN_STATUS:
+            lines += availability_note(key, status)[2:]
+            lines.append("")
         lines.append("- [Editions and licensing](../../concepts/editions-and-licensing.md) — what Preview means here")
         lines.append("- [All capabilities](README.md)")
     else:
@@ -319,12 +324,15 @@ def availability_note(key: str, status: str) -> list[str]:
     return [
         "## Availability",
         "",
-        f"Status is **{status}**, so this capability can be off on a default install. Read "
-        f"`{key}` in `GET /api/v1/capabilities/manifest` before calling its routes: "
-        "`available: false` with `reasonCode: experimental-disabled` means the routes return "
-        f"404 until `Capabilities:Experimental:{key}:Enabled` is `true` "
-        f"(environment variable `Capabilities__Experimental__{key}__Enabled`). Edition "
-        "licensing still applies once it is enabled.",
+        f"Status is **{status}**. Not every {status} capability is on by default, so read "
+        f"`{key}` in `GET /api/v1/capabilities/manifest` before calling its routes. "
+        "`available: true` means the routes are served. `available: false` with "
+        "`reasonCode: experimental-disabled` means they return 404 until "
+        f"`Capabilities:Experimental:{key}:Enabled` is `true` (or the global "
+        "`Capabilities:Experimental:Enabled`). Set it in configuration or as the container "
+        f"environment variable `Capabilities__Experimental__{key}__Enabled`; a POSIX shell "
+        "cannot `export` a name containing `.` or `-`. Edition licensing still applies once "
+        "it is enabled.",
     ]
 
 
