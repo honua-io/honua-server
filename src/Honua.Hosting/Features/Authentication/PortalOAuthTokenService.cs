@@ -20,8 +20,7 @@ internal sealed class PortalOAuthTokenService(
     PortalJwtAccessTokenService jwtService,
     ClientCredentialsFederationService federation,
     IOptions<PortalTokenAuthenticationOptions> tokenOptions,
-    IPrincipalMembershipSource? membershipSource = null,
-    TimeProvider? timeProvider = null)
+    IPrincipalMembershipSource? membershipSource = null)
 {
     private const string AuthorizationCodeGrant = "authorization_code";
     private const string RefreshTokenGrant = "refresh_token";
@@ -41,7 +40,7 @@ internal sealed class PortalOAuthTokenService(
     private readonly ClientCredentialsFederationService _federation = federation;
     private readonly PortalTokenAuthenticationOptions _tokenOptions = tokenOptions.Value;
     private readonly IPrincipalMembershipSource? _membershipSource = membershipSource;
-    private readonly PortalOAuthClientBinding _clientBinding = new(clientStore, timeProvider ?? TimeProvider.System);
+    private readonly PortalOAuthClientBinding _clientBinding = new(clientStore, TimeProvider.System);
 
     // Optional JWT access-token format (ADR-0068): when enabled the issued
     // access_token is a signed JWT whose jti is the cache reference, so revocation
