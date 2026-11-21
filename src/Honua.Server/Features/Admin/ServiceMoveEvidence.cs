@@ -147,7 +147,7 @@ internal static class ServiceMoveEvidence
         return Encoding.UTF8.GetString(buffer.WrittenSpan);
     }
 
-    private static IReadOnlyList<ServiceFolderAssignment>? ReadAssignments(string json)
+    private static List<ServiceFolderAssignment>? ReadAssignments(string json)
     {
         try
         {
