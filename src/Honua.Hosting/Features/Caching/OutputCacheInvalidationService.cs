@@ -117,6 +117,11 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
             {
                 tags.Add($"collection:{ogcCollectionId.Trim().ToLowerInvariant()}");
                 responsePatterns.Add(ResponseCacheUtilities.BuildOgcCollectionPattern(ogcCollectionId));
+                if (int.TryParse(ogcCollectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var odataLayerId)
+                    && odataLayerId != serviceLayerIndex.Value)
+                {
+                    responsePatterns.Add(ResponseCacheUtilities.BuildODataLayerPattern(odataLayerId));
+                }
             }
         }
 
@@ -446,7 +451,13 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
 
             foreach (var pub in matchedPublications)
             {
-                AddPublicationCollectionAliases(collectionIds, pub, snapshot.ResolveResource(pub));
+                var resource = snapshot.ResolveResource(pub);
+                AddPublicationCollectionAliases(collectionIds, pub, resource);
+                if (snapshot.ResolveStorageLayerId(pub, resource) is int storageLayerId)
+                {
+                    // STAC collections and OData layers advertise the storage layer id.
+                    collectionIds.Add(storageLayerId.ToString(CultureInfo.InvariantCulture));
+                }
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
