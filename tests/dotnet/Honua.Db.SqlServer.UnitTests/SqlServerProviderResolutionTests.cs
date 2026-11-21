@@ -66,7 +66,7 @@ public class SqlServerProviderResolutionTests
     [Fact]
     public async Task GetEstimatesAsync_WithPermanentFilterConfigured_ThrowsNotSupportedException()
     {
-        // BH6-021 regression: GetEstimatesAsync was missing the EnsureNoPermanentFilterAsync
+        // GetEstimatesAsync was missing the EnsureNoPermanentFilterAsync
         // guard that all other public read methods call. A permanent (row-visibility) filter
         // configured on a SQL Server layer must block estimates just as it blocks queries.
         var provider = CreateSqlServerStore(v2Provider: new StubV2Provider(LayerId, permanentFilterExpression: "status = 'active'") { Locator = "dbo.stub_table" });
@@ -289,7 +289,7 @@ public class SqlServerProviderResolutionTests
             Options.Create(new SqlServerOptions()),
             NullLogger<SqlServerFeatureDataAccess>.Instance);
 
-        return new SqlServerFeatureStore(dataAccess, v2Provider, readSecurity);
+        return new SqlServerFeatureStore(dataAccess, v2Provider, readSecurity ?? new LayerReadSecurityResolver(null, null, null, null));
     }
 
     private sealed class ThrowingConnectionFactory : ISqlServerConnectionFactory

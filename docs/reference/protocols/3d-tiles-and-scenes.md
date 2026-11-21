@@ -14,6 +14,32 @@ Honua hosts registered 3D scene datasets as OGC 3D Tiles (`tileset.json` + asset
 
 **Edition and lifecycle:** Existing 3D Tiles serving, scene discovery, elevation, and generation from feature layers remain **Community**. Specialised CityGML/BIM and point-cloud ingest and I3S remain **Enterprise**. These 3D surfaces remain **Experimental in 2026.1**; edition does not imply GA or production support. See [commercial boundaries](../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261).
 
+## Enable the 3D surfaces
+
+Every scene surface on this page is off by default. On a default install its
+routes are not mapped and return `404` (gRPC returns `UNIMPLEMENTED`). Turn on
+each experimental capability you need with its environment variable, then
+restart the server:
+
+| Capability key | Environment variable | Maps |
+| --- | --- | --- |
+| `scene.catalog` | `Capabilities__Experimental__scene.catalog__Enabled=true` | [Scene discovery](#scene-discovery-public-sdk-compatible) (`/api/scenes*`), the [admin scene registry](#scene-dataset-registry-admin) (`/api/v1/admin/scenes*` except generate and ingest), gRPC `SceneService` |
+| `serve.3d-tiles-scene` | `Capabilities__Experimental__serve.3d-tiles-scene__Enabled=true` | [Hosted 3D Tiles serving](#hosted-3d-tiles-serving) (`/scenes/{sceneId}/tileset.json`, assets, `access-envelope`, OpenUSD export), `POST /api/v1/admin/scenes/generate`, gRPC `TileService` |
+| `serve.i3s-scene` | `Capabilities__Experimental__serve.i3s-scene__Enabled=true` | I3S `SceneServer` routes under `/rest/services/{sceneId}/SceneServer` and the `/scenes/{sceneId}/SceneServer` alias |
+| `scene.bim-ingest` | `Capabilities__Experimental__scene.bim-ingest__Enabled=true` | `POST /api/v1/admin/scenes/ingest/citygml` |
+| `scene.pointcloud-ingest` | `Capabilities__Experimental__scene.pointcloud-ingest__Enabled=true` | `POST /api/v1/admin/scenes/ingest/pointcloud` |
+
+`Capabilities__Experimental__Enabled=true` turns on every experimental
+capability at once, including ones outside 3D. Enabling a switch maps the
+routes; it does not grant an edition. The Enterprise routes still return `402`
+without their entitlement. The scene switches need a build that includes the scene
+module (the default `all` protocol profile); a restricted protocol-profile
+build refuses to start when one of them, or the global switch, is set. Elevation (REST elevation, sun-shadow and slice
+routes, gRPC `ElevationService`) and Terrain-RGB tiles have no switch and are
+always on. The resolve responses return tileset URLs, so enable
+`serve.3d-tiles-scene` together with `scene.catalog` for a scene that clients
+can both discover and load.
+
 ## Scene discovery (public, SDK-compatible)
 
 | Method | Path | Purpose |
@@ -102,7 +128,7 @@ The registered tileset serves through the standard [hosted serving](#hosted-3d-t
 
 ## gRPC scene access
 
-`SceneService`, `TileService`, and `ElevationService` expose the same scene/tile/elevation reads over gRPC — see [gRPC](grpc.md).
+`SceneService`, `TileService`, and `ElevationService` expose the same scene/tile/elevation reads over gRPC — see [gRPC](grpc.md). `SceneService` needs `scene.catalog` and `TileService` needs `serve.3d-tiles-scene` ([enable the 3D surfaces](#enable-the-3d-surfaces)); `ElevationService` is always on.
 
 ## Conformance
 
@@ -111,13 +137,15 @@ Hosted tilesets follow the OGC 3D Tiles 1.x content format; the serving routes t
 ## Capability truth table
 
 The routes stay shipped, but the 2026.1 release claim defers the 3D slice to 2026.2;
-this table records runtime truth without promoting it.
+this table records runtime truth without promoting it. The five scene
+capabilities also need their [experimental switch](#enable-the-3d-surfaces);
+without it their routes return `404` whatever the edition.
 
 | Capability key | Edition | Route/surface | Unlicensed result |
 |---|---|---|---|
-| `serve.3d-tiles-scene` | Community | `/scenes/{sceneId}/tileset.json` and assets | Not edition-gated |
+| `serve.3d-tiles-scene` | Community | `/scenes/{sceneId}/tileset.json` and assets | Not edition-gated (experimental switch required) |
 | `serve.i3s-scene` | Enterprise | Canonical and alias `SceneServer` descriptors and persisted node geometry/attribute/texture/statistics resources | `402` |
-| `scene.catalog` | Community | `/api/scenes*` | Not edition-gated |
+| `scene.catalog` | Community | `/api/scenes*` | Not edition-gated (experimental switch required) |
 | `scene.bim-ingest` | Enterprise | `/api/v1/admin/scenes/ingest/citygml` | `402` entitlement response |
 | `scene.pointcloud-ingest` | Enterprise | `/api/v1/admin/scenes/ingest/pointcloud` | `402` entitlement response |
 | `serve.elevation` | Community | Elevation profile/value routes | Not edition-gated |

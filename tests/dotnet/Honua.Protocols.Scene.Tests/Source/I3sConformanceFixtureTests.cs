@@ -85,7 +85,7 @@ public sealed class I3sConformanceFixtureTests : IAsyncLifetime
         violations.Should().BeEmpty("the served scene layer must be I3S-shape conformant");
 
         // The fixture tileset is loadable, so the descriptor must advertise a
-        // fetchable node-page store (#1809).
+        // fetchable node-page store.
         root.TryGetProperty("nodePages", out var nodePages).Should().BeTrue();
         nodePages.GetProperty("nodesPerPage").GetInt32().Should().BePositive();
     }

@@ -47,33 +47,18 @@ public sealed class LayerReadSecurityResolver
         FeatureQuery query,
         CancellationToken cancellationToken)
     {
-        if (CanResolveCombined(query))
+        var resource = await FindResourceAsync(layerId, cancellationToken).ConfigureAwait(false);
+        if (resource is not null)
         {
-            var resource = await FindResourceAsync(layerId, cancellationToken).ConfigureAwait(false);
-            if (resource is not null)
-            {
-                return await ApplyAsync(resource, query, cancellationToken).ConfigureAwait(false);
-            }
+            return await ApplyAsync(resource, query, cancellationToken).ConfigureAwait(false);
         }
 
-        // Resolve each concern independently. A nested caller may already carry one
-        // enforced value, but that must not suppress resolution of the other concern.
-        if (query.EnforcedSqlFilter is null)
+        // A caller's read of a layer the metadata index does not know (for example one removed after the
+        // endpoint resolved it) has no policy to apply, so it is refused rather than read unrestricted.
+        // Server-internal reads outside any caller keep reading unbound tables.
+        if (_v2Provider is not null && _rlsFilterSource?.IsCallerRead == true)
         {
-            var enforcedFilter = await ResolveEnforcedSqlFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
-            if (enforcedFilter is not null)
-            {
-                query = query with { EnforcedSqlFilter = enforcedFilter };
-            }
-        }
-
-        if (query.EnforcedMaskedFields is null)
-        {
-            var maskedFields = await ResolveMaskedFieldsAsync(layerId, cancellationToken).ConfigureAwait(false);
-            if (!maskedFields.IsDefaultOrEmpty)
-            {
-                query = query with { EnforcedMaskedFields = maskedFields };
-            }
+            throw new ResourceAccessDeniedException();
         }
 
         FeatureQuerySecurity.Validate(query);

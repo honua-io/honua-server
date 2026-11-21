@@ -109,7 +109,7 @@ public sealed class AzureKeyVaultLicenseContentResolverTests
     [UnitTest]
     public async Task ResolveLicenseContentAsync_CanonicalSecretIdentifier_UsesVaultAuthorityAndSecretName()
     {
-        // Regression: the canonical Azure Key Vault secret identifier
+        // The canonical Azure Key Vault secret identifier
         // (https://<vault>.vault.azure.net/secrets/<name>) must parse to the vault *authority*
         // (https://myvault.vault.azure.net/) and secret name "license-pro". A naive split on the
         // final '/' folded "/secrets" into the vault base, which silently 404s every fetch so Pro

@@ -99,7 +99,10 @@ public sealed class PostgreSqlTableDiscoveryPoolTests(PostgresFixture fixture, I
 
         var exception = await Record.ExceptionAsync(() => discover(service, alternate.ConnectionString, cancellation.Token));
 
-        exception.Should().BeOfType<PostgresException>().Which.SqlState.Should().Be("3D000");
+        // Listing reports an unopenable target as ServiceUnavailableException around the driver error.
+        var postgres = exception as PostgresException ?? exception?.InnerException as PostgresException;
+        postgres.Should().NotBeNull("the driver error must survive, but discovery threw {0}", exception);
+        postgres!.SqlState.Should().Be("3D000");
     }
 
     private static async Task DiscoverTableAsync(PostgreSqlTableDiscoveryService service, string target, CancellationToken cancellationToken)

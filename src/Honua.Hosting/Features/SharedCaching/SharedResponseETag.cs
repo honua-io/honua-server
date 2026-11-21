@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Helpers;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Net.Http.Headers;
 
@@ -33,6 +34,11 @@ internal static class SharedResponseETag
                 file.EnableRangeProcessing, file.LastModified, EntityTagHeaderValue.Parse(etag));
         }
 
+        if (result is PooledUtf8ContentResult pooled)
+        {
+            return await ApplyToPooledContentAsync(context, pooled, tags).ConfigureAwait(false);
+        }
+
         if (result is ContentHttpResult { StatusCode: null or StatusCodes.Status200OK } text)
         {
             var etag = await ConfigurationResponseETag.ForResponseAsync(context,
@@ -41,6 +47,14 @@ internal static class SharedResponseETag
         }
 
         return result;
+    }
+
+    // Same hash as the ContentHttpResult branch: ComputeETag(string) hashes the UTF-8 bytes.
+    private static async ValueTask<object?> ApplyToPooledContentAsync(HttpContext context, PooledUtf8ContentResult pooled, IETagService tags)
+    {
+        var etag = await ConfigurationResponseETag.ForResponseAsync(context,
+            tags.ComputeETag(pooled.Content.Span), pooled.ContentType).ConfigureAwait(false);
+        return new ConditionalTextResult(pooled, etag, tags);
     }
 
     private sealed class ConditionalTextResult(IResult result, string etag, IETagService tags) : IResult

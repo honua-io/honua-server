@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Text;
 using System.Text.RegularExpressions;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Core.Queries.Filters;
@@ -304,7 +305,7 @@ public static class FeatureQuerySecurity
     {
         if (masked.Contains(field))
         {
-            throw new ArgumentException(
+            throw new MaskedFieldReferenceException(
                 $"Field '{field}' is masked and cannot be used by {surface}.",
                 nameof(field));
         }
@@ -318,7 +319,7 @@ public static class FeatureQuerySecurity
                      FieldSortRegex(field).IsMatch(expression) ||
                      AttributeAccessorRegex(field).IsMatch(expression)))
         {
-            throw new ArgumentException(
+            throw new MaskedFieldReferenceException(
                 $"Field '{field}' is masked and cannot be used by {surface}.",
                 nameof(expression));
         }

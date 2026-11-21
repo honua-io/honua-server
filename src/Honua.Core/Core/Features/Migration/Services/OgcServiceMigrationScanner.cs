@@ -9,6 +9,7 @@ using System.Xml.Linq;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Logging;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
@@ -156,7 +157,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         CancellationToken cancellationToken)
     {
         var capabilitiesXml = await GetBoundedStringAsync(capabilitiesUrl, request, cancellationToken).ConfigureAwait(false);
-        var capabilities = XDocument.Parse(capabilitiesXml, LoadOptions.None);
+        var capabilities = RemoteXmlDocumentParser.Parse(capabilitiesXml, LoadOptions.None);
         return normalizedServiceType switch
         {
             "WFS" => await BuildWfsInventoryAsync(request, serviceUri, capabilitiesUrl, capabilities, cancellationToken).ConfigureAwait(false),
@@ -709,7 +710,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds <= 0 ? 60 : timeoutSeconds));
             var schemaXml = await GetBoundedStringAsync(url, request, timeout.Token).ConfigureAwait(false);
-            var schema = XDocument.Parse(schemaXml, LoadOptions.None);
+            var schema = RemoteXmlDocumentParser.Parse(schemaXml, LoadOptions.None);
             var fields = ExtractFields(schema, featureTypeName);
             return (fields.Length > 0, fields, fields.Length > 0 ? string.Empty : "DescribeFeatureType returned no importable field metadata.");
         }
@@ -734,7 +735,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds <= 0 ? 60 : timeoutSeconds));
             var coverageXml = await GetBoundedStringAsync(url, request, timeout.Token).ConfigureAwait(false);
-            var document = XDocument.Parse(coverageXml, LoadOptions.None);
+            var document = RemoteXmlDocumentParser.Parse(coverageXml, LoadOptions.None);
             return BuildCoverageDescription(coverageId, document, serviceFormats);
         }
         catch (Exception ex) when (IsRecoverableDescribeCoverageException(ex))

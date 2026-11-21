@@ -66,8 +66,8 @@ for session lifecycle and CSRF requirements.
 | `FeatureService` | `DescribeService`, `DescribeLayer`, `QueryFeatures`, `QueryFeaturesStream` (server streaming), `ApplyEdits`, `ListAttachments`, `GetAttachmentUrl`, `UploadAttachment`, `BeginAttachmentUpload`, `UploadAttachmentChunk`, `CommitAttachmentUpload`, `AbortAttachmentUpload`, `DeleteAttachment` | Feature query and edits; respects per-service protocol enablement and access policy. |
 | `ProcessService` | `ValidatePlan`, `DryRunPlan`, `ExecutePlan`, `ExecutePlanStream` (server streaming), `SubmitJob`, `GetJob`, `GetJobResult`, `CancelJob` | Canonical geoprocessing runtime (same backend as GPServer and OGC API Processes). |
 | `SpecService` | `PlanSpec`, `ApplySpec` (server streaming), `CancelApply` | Spec plan/apply engine. |
-| `SceneService` | `ListScenes`, `GetScene` | Scene dataset discovery. |
-| `TileService` | `GetTile`, `StreamTiles` (server streaming) | Tile retrieval. |
+| `SceneService` | `ListScenes`, `GetScene` | Scene dataset discovery. Experimental: registered only when `Capabilities__Experimental__scene.catalog__Enabled=true`; otherwise `UNIMPLEMENTED`. |
+| `TileService` | `GetTile`, `StreamTiles` (server streaming) | Tile retrieval. Experimental: registered only when `Capabilities__Experimental__serve.3d-tiles-scene__Enabled=true`; otherwise `UNIMPLEMENTED`. See [enable the 3D surfaces](3d-tiles-and-scenes.md#enable-the-3d-surfaces). |
 | `ElevationService` | `GetElevation`, `GetElevationProfile` | Elevation point and profile queries. |
 
 ```bash
@@ -98,6 +98,12 @@ also apply to defaults, templates, key-field references and relationship keys.
 The server omits facts absent from canonical metadata, including unknown time
 zones and tracking timestamps. An absent default differs from an explicit null. Structured defaults are encoded
 as JSON in the default value's string branch.
+
+Fields of type `Decimal` and `TimestampOffset` carry exact values in the
+`decimal_value` and `timestamp_offset_value` string branches. A PostgreSQL layer
+reports these types only when it was published with `exactTypes: true` (see
+[Connections and layers](../admin-api/connections-and-layers.md#exact-field-types));
+otherwise `numeric` columns are `Double` and `timestamptz` columns are `DateTime`.
 
 Managed edit capabilities require a writable storage binding, declared publication
 capability and caller authorization. Unsupported operations remain false;

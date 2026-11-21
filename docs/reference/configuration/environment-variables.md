@@ -37,7 +37,7 @@ The unattended allow-list is currently empty because no shipped actuator has pro
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ConnectionStrings__DefaultConnection` | — (**required**) | Primary PostgreSQL/PostGIS connection string. |
+| `ConnectionStrings__DefaultConnection` | — (**required** with the PostgreSQL/PostGIS primary) | Primary PostgreSQL/PostGIS connection string and system database. A host with a DuckDB or MySQL primary has no system database, whether or not this is set, and refuses to start outside Development and Test because the service and layer catalog is stored there. |
 | `DataSource__Provider` | `postgres` | Primary provider: `postgres` (read/write), `duckdb`, or `mysql` (read-only). |
 | `DuckDB__DatabasePath` | — | Path to the DuckDB database file (when `DataSource__Provider=duckdb`). |
 | `DuckDB__ReadOnly` | `true` | Open the DuckDB file read-only. |
@@ -72,6 +72,7 @@ Provider capabilities and versions: [data sources](data-sources/README.md).
 | `Authentication__ClientCertificates__TrustProfiles__N__*` | — | Trust-profile definitions (issuer subjects, SAN types, principal mappings, roles). |
 | `Authentication__ClientCertificates__ForwardedCertificate__Enabled` | `false` | Accept proxy-forwarded client certificates. |
 | `Authentication__ClientCertificates__ForwardedCertificate__TrustedProxyNetworks__N` | — | CIDR ranges allowed to forward certificates. |
+| `Authentication__PortalToken__AllowQueryStringCredentials` | `false` | Accept a password or portal token in the `generateToken` query string (GET, or POST without a form body). Off by default because URLs are recorded by proxies and access logs; turn on only for a legacy client that cannot POST a form body. |
 | `Authentication__PortalToken__OAuth2__AllowedRedirectUris__N` | — (empty rejects all) | Redirect-URI allow-list for the GeoServices REST Portal OAuth2 bridge. |
 | `Authentication__PortalToken__OAuth2__RequirePkce` | `true` | Require PKCE on every authorization-code flow. |
 | `Authentication__PortalToken__OAuth2__RotateRefreshTokens` | `true` | Rotate refresh tokens on each use. |
@@ -146,8 +147,6 @@ After a successful upload, `<LicensePath>.uploaded` takes precedence at startup.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ConnectionStrings__Redis` | — | Redis connection string for job coordination. Caches are per node and do not use it. |
-| `HONUA_REDIS_URL` | — | Docker Compose convenience alias for `ConnectionStrings__Redis`. |
 | `Cache__Enabled` | `true` | Master switch for metadata/response caching. |
 | `Cache__DefaultTtlSeconds` | `300` (shipped config) | Default TTL for cached metadata. |
 | `Cache__ServiceTtlSeconds` | `300` (shipped config) | TTL for cached service metadata. |
@@ -191,16 +190,21 @@ With a system database, MCP session records are shared through the `mcp_sessions
 | `FileStorage__AwsS3__KeyPrefix` | — | Key prefix for objects this server names itself. |
 | `FileStorage__AwsS3__AccessKeyId` / `FileStorage__AwsS3__SecretAccessKey` | — | S3 credentials (prefer instance roles where possible). |
 | `HONUA_STORAGE_PROVIDER`, `HONUA_S3_BUCKET`, `HONUA_S3_REGION`, `HONUA_S3_SERVICE_URL`, `HONUA_S3_FORCE_PATH_STYLE`, `HONUA_S3_ACCESS_KEY_ID`, `HONUA_S3_SECRET_ACCESS_KEY` | — | Docker Compose convenience aliases for the `FileStorage__AwsS3__*` keys. |
+| `GeoServices__ExportTiles__AnonymousArtifactsPerHour` | `30` | Archives that anonymous synchronous MapServer and ImageServer `exportTiles` calls may store per server task per hour. Further anonymous calls get `429` with `Retry-After`; signed-in callers are not counted. `0` refuses anonymous synchronous exports. |
 
 ## Imports and limits
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `Import__ObjectStore__AllowedBuckets__N` | — (empty denies every bucket) | Bucket names the host may import with `s3://`. An entry ending in `*` matches that prefix. Matching is case-insensitive. |
-| `Import__ObjectStore__AssumeRoles__N__RoleArn` | — | IAM role ARN the request may ask the host to assume. |
-| `Import__ObjectStore__AssumeRoles__N__ExternalId` | — | External id for that role's trust policy. Never accepted from the import request, logged, or written to the audit record. |
-| `Import__ObjectStore__Region` | SDK default | Optional region for the customer-bucket client. |
-| `Import__ObjectStore__ServiceUrl` | — | Optional endpoint override for a VPC endpoint or a development emulator. Production imports leave this unset. |
+| `Connections__ObjectStorage__QuickCreateTemplateUrl` | — | HTTPS CloudFormation template that creates the `honua-connection-*` role. The object storage setup endpoint returns a quick-create link only when this is set. |
+| `Connections__ObjectStorage__TrustedPrincipalArn` | — | Principal the role template trusts, passed to the template as `TrustedPrincipalArn`. |
+| `Connections__ObjectStorage__MaxOpenSetupsPerPrincipal` | `5` | Open (unused, unexpired) object storage setups one caller may hold. The installation-wide limit is 100. |
+| `Connections__ObjectStorage__BuiltIn__Enabled` | `false` | Shows listed folders of the installation's own bucket as read-only built-in connections. |
+| `Connections__ObjectStorage__BuiltIn__DataPrefixes__N` | — | One folder under `FileStorage__AwsS3__KeyPrefix` per entry. Folders the server writes are refused. No entry means no data connection. |
+| `Connections__ObjectStorage__BuiltIn__PublicFiles` | `false` | Also shows the public PMTiles prefix as a built-in connection. |
+| `Connections__ObjectStorage__BuiltIn__ExpectedBucketOwner` | — | 12-digit account that must own the bucket; built-ins stay off without it. |
+| `Import__ObjectStore__Region` | SDK default | Optional region for the emulator S3 and STS clients. |
+| `Import__ObjectStore__ServiceUrl` | — | Endpoint override for a development emulator. Refused when the environment is Production. |
 | `Import__ObjectStore__ForcePathStyle` | `false` (on when `ServiceUrl` is set) | Path-style addressing for the customer-bucket client. |
 | `Import__Limits__MaxObjectStoreImportBytes` | 50 GiB | Largest `s3://` object the import will accept. Published as `maxObjectStoreImportBytes` on `GET /api/v1/admin/import/limits`. An object above this size is refused before any byte is read. |
 | `Limits__Imports__MaxPreviewSize` | `10485760` (10 MiB) | Max file size for import preview. |
@@ -213,10 +217,12 @@ With a system database, MCP session records are shared through the `mcp_sessions
 | `LayerPublishing__MaterializationBatchSize` | `5000` | Positive integer row count per keyset snapshot statement within the publication transaction. Larger batches can increase memory use and lock pressure. Invalid values fail at startup. |
 | `Migration__AllowedServiceHostSuffixes__N` | — (unset) | Optional remote GIS migration/import source allowlist. Each entry matches the exact host or its subdomains. Unset permits any otherwise-safe public host; an explicitly empty array rejects all hosts. |
 | `Limits__MaxUploadSizeBytes` | `104857600` (100 MiB) | General upload ceiling. |
-| `Limits__GeoParquet__MaxRowsPerBatch` | `1024` | Maximum rows per Arrow batch and Parquet row group. |
+| `Limits__GeoParquet__MaxRowsPerBatch` | `1024` | Maximum rows per Arrow batch. A query response starts one Parquet row group per batch. |
 | `Limits__GeoParquet__MaxEstimatedBatchBytes` | `8388608` (8 MiB) | Byte admission estimate per batch; an individual row must fit. |
 | `Limits__GeoParquet__MaxEstimatedInputBytes` | `134217728` (128 MiB) | Byte admission estimate for a materialized GeoParquet query result. |
-| `Limits__GeoParquet__MaxResponseBytes` | `67108864` (64 MiB) | Encoded GeoParquet payload and buffer capacity ceiling, including footer. |
+| `Limits__GeoParquet__MaxResponseBytes` | `67108864` (64 MiB) | Encoded HTTP GeoParquet payload ceiling, including footer. Query responses ignore `MaxArtifactBytes`. |
+| `Limits__GeoParquet__RowsPerRowGroup` | unset | Stored-artifact row-group length. Unset uses 16384. Values outside 1–150000 fail startup. HTTP GeoParquet responses ignore this and keep one row group per batch. |
+| `Limits__GeoParquet__MaxArtifactBytes` | unset | Byte cap for a stored GeoParquet artifact. Unset uses `MaxResponseBytes`. It does not raise the HTTP response cap. |
 | `Limits__Query__MaxRecordCount` | `10000` | Max features per query response. |
 | `Limits__Query__DefaultRecordCount` | `1000` | Default page size when the client does not specify one. |
 | `Limits__Query__MaxOffset` | `1000000` | Max pagination offset. |
@@ -227,6 +233,7 @@ With a system database, MCP session records are shared through the `mcp_sessions
 | `Limits__Geometry__MaxVerticesPerGeometry` | `50000` | Max vertices accepted per geometry. Also the most vertices a Geometry Service request may add to one geometry (`densify`, shape-preserving measurement). |
 | `Limits__Geometry__MaxGeometrySize` | `5242880` (5 MiB) | Max geometry payload size. |
 | `Limits__Geometry__MaxCoordinatePrecision` | `8` | Max coordinate decimal precision. |
+| `Limits__Geometry__MaxOverlayCandidatePairs` | `2000000` | Max segment pairs that could cross in one Geometry Service overlay, union, cut, trim, generalization, repair, relation or offset; a quarter of it for callers that are not signed in. Checked before each geometry or pair is computed; a request over it returns a 400 error. |
 | `Limits__Edits__MaxFeaturesPerEdit` | `500` | Max features per edit operation. |
 | `Limits__Edits__MaxEditsPerTransaction` | `2500` | Max edits per transaction. |
 | `Limits__Edits__MaxPayloadSize` | `26214400` (25 MiB) | Max edit payload size. |
@@ -266,7 +273,7 @@ The effective import limits are also served at `GET /api/v1/admin/import/limits`
 | --- | --- | --- |
 | `HONUA_SERVE_API_DOCS` (`ServeApiDocs`) | `true` in Development, else `false` | Serve the interactive API explorer at `/docs` ([details](../openapi-and-explorer.md)). |
 | `HONUA_SKIP_MIGRATIONS` | `false` | Skip database migrations on startup; the server verifies the migration journal against its binary instead. Apply the migrations out of band first with `HONUA_MIGRATE_ONLY=true`. |
-| `HONUA_MIGRATE_ONLY` | `false` | Apply database migrations, print one JSON summary line to standard output and exit, without serving. Runs the PostGIS preflight and every migration-safety setting below; starts no listener or background service and needs no Redis, licence, admin password or encryption key. Also accepted as `--HONUA_MIGRATE_ONLY=true`. Ignores `HONUA_SKIP_MIGRATIONS`; refused inside AWS Lambda. Exit codes and summary fields: [Run migrations out of band](../../guides/deploy/upgrade-and-rollback.md#run-migrations-out-of-band). |
+| `HONUA_MIGRATE_ONLY` | `false` | Apply database migrations, print one JSON summary line to standard output and exit, without serving. Runs the PostGIS preflight and every migration-safety setting below; starts no listener or background service and needs no licence, admin password or encryption key. Also accepted as `--HONUA_MIGRATE_ONLY=true`. Ignores `HONUA_SKIP_MIGRATIONS`; refused inside AWS Lambda. Exit codes and summary fields: [Run migrations out of band](../../guides/deploy/upgrade-and-rollback.md#run-migrations-out-of-band). |
 | `Database__PreferSerialBoundedSpatialReads` | unset (automatic) | Serial planning for eligible source-backed point bbox reads with first-page limits of 1–100 and default ordering. Set `false` to opt out; `true` explicitly enables the same bounded policy. Counts have an independent policy below. Aggregates, streaming, tiles, larger/later pages and caller-owned transactions retain ordinary planning. See the [PostGIS profile](data-sources/postgis.md#bounded-source-backed-spatial-reads). |
 | `Database__DisableJitForSourceSpatialCounts` | `false` | Opt-in transaction-local JIT suppression for exact counts on source-backed point layers with simple intersects/envelope bboxes. Preserves predicates and parallel-worker settings; excludes ambient and borrowed transactions. See the [PostGIS count profile](data-sources/postgis.md#source-backed-spatial-counts). |
 | `Database__PreferSerialSourceSpatialCounts` | unset (automatic) | Serial planning for exact counts associated with eligible bounded source-backed point bbox reads. Standalone and unbounded counts retain database planning. Set `false` to opt out or `true` to include eligible standalone spatial counts. Independent of count JIT suppression and the read option; excludes distinct, non-default versions and caller-owned transactions. See the [PostGIS profile](data-sources/postgis.md#source-backed-spatial-counts). |
@@ -416,10 +423,12 @@ GeoServices `f=parquet` and OData `$format=parquet` share the configured
 `Limits:GeoParquet` budgets. A response that cannot fit is rejected with the shared
 protocol-specific 413 error contract. Reduce the requested page or selected fields,
 or omit geometry. The existing query authorization, ordering and paging are applied
-before encoding; the writer retains that order and never spatially sorts results.
+before encoding; an HTTP GeoParquet response keeps that order. Stored paired-publication
+GeoParquet orders rows by the Hilbert index of each geometry's bbox centre, compresses with
+Zstandard, and sizes row groups separately from the response batch.
 
-Each Arrow batch is admitted by both row count and an estimated byte total, then
-written as its own Parquet row group and disposed. The estimate counts six bytes per
+Each query-response Arrow batch is admitted by both row count and an estimated byte total,
+then written as its own Parquet row group and disposed. The estimate counts six bytes per
 input WKB byte or string character, two per binary-attribute byte, and fixed row,
 attribute and output-column bookkeeping. The input budget is checked before native
 encoding or geometry decoding. A second pass accounts for the discovered schema's

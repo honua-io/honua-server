@@ -813,16 +813,13 @@ public sealed class GeoServicesSqlParser
 
         // A bare date (e.g. `2024-01-01`) is unambiguous; a date+time without an offset
         // (e.g. `2024-01-01T12:00:00`) is not, so AssumeUniversal folds it to UTC below
-        // (see PA-026 note) instead of requiring callers to supply an explicit offset.
+        // instead of requiring callers to supply an explicit offset.
         if (DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var timestamp))
         {
             // Mirror ArcGIS Server behaviour: bare datetime literals without a timezone
             // offset (whether in #...# or quoted form, with or without the TIMESTAMP keyword)
             // are accepted and treated as UTC. AssumeUniversal above already applied this.
-            // Rejecting them broke legacy ArcGIS client queries (honua-server#PA-026).
-            // The `explicitTimestampKeyword` branch was already accepted; now the bare form
-            // is too (a `hasOffsetIndicator` check that used to gate a reject-if-missing
-            // branch was removed by PA-026; it is intentionally not restored here). Callers
+            // Callers
             // that need strict timezone enforcement should apply their own validation before
             // reaching the parser.
 
@@ -1162,24 +1159,16 @@ public sealed class GeoServicesSqlParser
                 if (Peek() == '\'')
                 {
                     Advance();
-                    if (Peek() == '\'')
+                    if (Peek() != '\'')
                     {
-                        Advance();
-                        builder.Append('\'');
-                        continue;
+                        AddToken(TokenType.String, builder.ToString());
+                        return;
                     }
-
-                    AddToken(TokenType.String, builder.ToString());
-                    return;
                 }
 
-                // Bound the literal size so an unbounded single-quoted payload cannot
-                // pin a large StringBuilder in memory before the closing quote arrives.
-                if (builder.Length >= FilterParserGuard.MaxStringLiteralLength)
-                {
-                    FilterParserGuard.EnsureStringLiteralLength(builder.Length + 1, "GeoServicesSQL string literal");
-                }
-
+                // Bound every decoded character, escaped quotes included, so a single-quoted
+                // payload cannot grow past the literal cap before the closing quote arrives.
+                FilterParserGuard.EnsureStringLiteralLength(builder.Length + 1, "GeoServicesSQL string literal");
                 builder.Append(Advance());
             }
 

@@ -37,6 +37,9 @@ internal sealed record WfsDeclaredEncoding
 
     internal bool IsGmlField(string fieldName) => Contains(GmlFields, fieldName);
 
+    // A declared WFS 1.0 schema text cannot drop a field the caller's mask hides, so it is not served then.
+    internal WfsDeclaredEncoding WithoutWfs10Schema() => this with { Wfs10Schema = null };
+
     internal WfsDeclaredEncoding WithoutNamespace() => this with { NamespacePrefix = null, NamespaceUri = null, Wfs10Schema = null };
 
     internal static WfsDeclaredEncoding Read(MetadataV2Object resource)

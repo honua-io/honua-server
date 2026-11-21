@@ -101,7 +101,6 @@ class ProductionComposeTests(unittest.TestCase):
     def test_runtime_secret_overrides_are_honored_in_production(self):
         values = {
             "ConnectionStrings__DefaultConnection": "Host=private-db;Password=" + secrets.token_hex(32),
-            "ConnectionStrings__Redis": "private-redis:6379,password=" + secrets.token_hex(32),
             "Security__ConnectionEncryption__MasterKey": secrets.token_hex(32),
         }
         environment = self.model(**values)["services"]["honua"]["environment"]
@@ -113,7 +112,6 @@ class ProductionComposeTests(unittest.TestCase):
     def test_documented_env_file_command_uses_private_runtime_values(self):
         values = self.values | {
             "ConnectionStrings__DefaultConnection": "Host=private-db;Password=" + secrets.token_hex(32),
-            "ConnectionStrings__Redis": "private-redis:6379,password=" + secrets.token_hex(32),
             "Security__ConnectionEncryption__MasterKey": secrets.token_hex(32),
             "HONUA_KEYRING_PASSWORD": secrets.token_hex(16),
             "Cors__AllowedOrigins__1": "https://second.example.com",
@@ -137,8 +135,8 @@ class ProductionComposeTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, "Documented production env-file command must render")
             environment = json.loads(result.stdout)["services"]["honua"]["environment"]
             self.assertEqual(environment["ASPNETCORE_ENVIRONMENT"], "Production")
-            for key in ("ConnectionStrings__DefaultConnection", "ConnectionStrings__Redis",
-                        "Security__ConnectionEncryption__MasterKey", "HONUA_ADMIN_PASSWORD"):
+            for key in ("ConnectionStrings__DefaultConnection", "Security__ConnectionEncryption__MasterKey",
+                        "HONUA_ADMIN_PASSWORD"):
                 self.assertTrue(hmac.compare_digest(environment[key], values[key]), key)
             for key in ("Cors__AllowedOrigins__1", "Cache__DefaultTtlSeconds", "SecurityHeaders__HstsMaxAge",
                         "Limits__Query__MaxRecordCount", "HONUA_OBSERVABILITY", "Database__MigrationSafety__ContractApplyPolicy"):
@@ -152,7 +150,6 @@ class ProductionComposeTests(unittest.TestCase):
     def test_datastores_are_unpublished_and_api_is_loopback_only(self):
         services = self.model()["services"]
         self.assertFalse(services["postgres"].get("ports"))
-        self.assertFalse(services["redis"].get("ports"))
         for port in services["honua"]["ports"]:
             self.assertEqual(port["host_ip"], "127.0.0.1")
 

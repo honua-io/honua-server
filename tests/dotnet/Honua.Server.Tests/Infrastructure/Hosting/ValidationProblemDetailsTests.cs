@@ -96,7 +96,7 @@ public sealed class ValidationProblemDetailsTests
         return new DefaultHttpContext
         {
             RequestServices = services.BuildServiceProvider(),
-            Request = { Path = "/api/v1/forms/packages/p1/validate" },
+            Request = { Path = "/api/v1/forms/p1/validate" },
             Response = { Body = new MemoryStream() },
         };
     }

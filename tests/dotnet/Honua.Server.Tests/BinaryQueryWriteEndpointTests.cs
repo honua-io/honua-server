@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Tests.ParquetUnitSupport;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -54,7 +55,7 @@ public sealed class BinaryQueryWriteEndpointTests
                 if (format == "parquet")
                 {
                     using var stream = new MemoryStream(bytes);
-                    using var reader = new ParquetSharp.Arrow.FileReader(stream);
+                    using var reader = ArrowParquetTestReader.Open(stream);
                     reader.NumRowGroups.Should().BeGreaterThan(0);
                 }
             }

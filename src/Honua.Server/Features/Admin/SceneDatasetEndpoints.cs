@@ -137,6 +137,12 @@ internal static partial class SceneDatasetEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, validationError);
         }
 
+        if (!SceneAssetRootPolicy.Allows(context.RequestServices, record.AssetRoot))
+        {
+            SceneDatasetEndpointsLog.RegisterValidationFailed(logger, request.Id ?? "<unknown>", SceneAssetRootPolicy.Refusal);
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, SceneAssetRootPolicy.Refusal);
+        }
+
         try
         {
             var saved = await service.RegisterAsync(record, cancellationToken).ConfigureAwait(false);
@@ -232,6 +238,12 @@ internal static partial class SceneDatasetEndpoints
         {
             SceneDatasetEndpointsLog.UpdateValidationFailed(logger, existing.Id, validationError);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, validationError);
+        }
+
+        if (request.AssetRoot is not null && !SceneAssetRootPolicy.Allows(context.RequestServices, updated.AssetRoot))
+        {
+            SceneDatasetEndpointsLog.UpdateValidationFailed(logger, existing.Id, SceneAssetRootPolicy.Refusal);
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, SceneAssetRootPolicy.Refusal);
         }
 
         try

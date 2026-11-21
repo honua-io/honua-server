@@ -24,4 +24,5 @@ node --test \
   scripts/ci/review-gate-evidence.test.js \
   scripts/ci/review-gate-snapshot.test.js \
   scripts/ci/review-stale-shed.test.js \
+  scripts/ci/review-gate-closed-attestation.test.js \
   scripts/ci/auto-merge-ready.test.js

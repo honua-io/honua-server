@@ -33,20 +33,20 @@ internal sealed class SnowflakeFeatureStore : IFeatureDataProvider, IFeatureRead
     private readonly SnowflakeFeatureDataAccess _dataAccess;
     private readonly FeatureProviderBinding? _binding;
     private readonly DataConnection? _boundConnection;
-    private readonly LayerReadSecurityResolver? _readSecurity;
+    private readonly LayerReadSecurityResolver _readSecurity;
 
-    public SnowflakeFeatureStore(SnowflakeFeatureDataAccess dataAccess, LayerReadSecurityResolver? readSecurity = null)
+    public SnowflakeFeatureStore(SnowflakeFeatureDataAccess dataAccess, LayerReadSecurityResolver readSecurity)
         : this(dataAccess, readSecurity, binding: null)
     {
     }
 
     private SnowflakeFeatureStore(
         SnowflakeFeatureDataAccess dataAccess,
-        LayerReadSecurityResolver? readSecurity,
+        LayerReadSecurityResolver readSecurity,
         FeatureProviderBinding? binding)
     {
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
-        _readSecurity = readSecurity;
+        _readSecurity = readSecurity ?? throw new ArgumentNullException(nameof(readSecurity));
         _binding = binding;
         _boundConnection = binding?.Connection;
     }
@@ -201,12 +201,9 @@ internal sealed class SnowflakeFeatureStore : IFeatureDataProvider, IFeatureRead
         // Every read path resolves its layer here, so this is the single seam that refuses a
         // read whose layer carries a read policy this provider cannot enforce (permanent
         // filter, row-level security predicate or field masks).
-        if (_readSecurity is not null)
-        {
-            await _readSecurity
-                .EnsureNoUnenforcedPolicyAsync("Snowflake", layerId, binding.Resource, rejectPermanentFilter: true, cancellationToken)
-                .ConfigureAwait(false);
-        }
+        await _readSecurity
+            .EnsureNoUnenforcedPolicyAsync("Snowflake", layerId, binding.Resource, rejectPermanentFilter: true, cancellationToken)
+            .ConfigureAwait(false);
 
         var mapping = SnowflakeLayerMapping.FromStorage(layerId, binding.StorageMapping);
         var attributeColumns = binding.Resource.SchemaFields

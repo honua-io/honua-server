@@ -14,7 +14,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
-[Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
 public sealed class AlertEntitlementGateTests

@@ -82,10 +82,14 @@ stops at the lock install instead of compiling it from an unverified source down
 ## The contract (job inputs)
 
 The Batch container receives the auth spine as **env vars** (standard Batch
-secret injection, so the token is strippable):
+secret injection, so they are strippable):
 
 - `HONUA_BASE_URL`
-- `HONUA_JOB_TOKEN` — the scoped, job-bound bearer token (from the server)
+- `HONUA_JOB_REDEMPTION_CODE` — a single-use code the harness exchanges once, before
+  fetching source, for the scoped job-bound token
+  (`POST /api/geoprocessing/jobs/{jobId}/attempts/{attempt}/capability`); the server
+  never puts the token itself in the AWS Batch job
+- `HONUA_JOB_TOKEN` — the scoped token directly, for local runs only
 
 The `customcode.*` parameters are resolved in this order (see
 `harness/honua_customcode_harness/jobspec.py`):

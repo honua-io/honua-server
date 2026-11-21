@@ -32,8 +32,6 @@ internal sealed class ComposeExecutorOptions
 
     public string TargetId { get; set; } = "compose-local";
 
-    public string RedisService { get; set; } = "redis";
-
     // This credential is used only for the authenticated version readback.
     public string VersionProbeApiKey { get; set; } = string.Empty;
 
@@ -79,8 +77,7 @@ internal sealed class ComposeExecutorOptions
 
         if (!ComposeExecutorRules.ComposeName().IsMatch(ProjectName)
             || !ComposeExecutorRules.ComposeName().IsMatch(ServiceName)
-            || !ComposeExecutorRules.ComposeName().IsMatch(PostgresService)
-            || (!string.IsNullOrWhiteSpace(RedisService) && !ComposeExecutorRules.ComposeName().IsMatch(RedisService)))
+            || !ComposeExecutorRules.ComposeName().IsMatch(PostgresService))
         {
             return Scope("Compose project and service names are limited to the configured allowlist.");
         }

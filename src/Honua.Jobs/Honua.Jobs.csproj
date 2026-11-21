@@ -25,7 +25,7 @@
 
     <!--
       Durable job-execution substrate (ADR-0031). Hosts the shared claim/lease/
-      heartbeat loop (JobExecutionService), the Redis-backed queue/stores, the
+      heartbeat loop (JobExecutionService), the PostgreSQL-backed queue/stores, the
       reconciliation sweeper, and the small cancellation/metadata helpers. The
       AWS Batch / ECS / Lambda / Azure / Kubernetes provider backends stay in
       Honua.Server (and will be carved into Honua.Cloud.Aws / Honua.Cloud.Azure / Honua.K8s
@@ -33,7 +33,6 @@
       Honua.Worker.Gdal reuse the substrate without taking a ProjectReference on
       Honua.Server.
     -->
-    <PackageReference Include="StackExchange.Redis" />
     <PackageReference Include="Npgsql" />
   </ItemGroup>
 

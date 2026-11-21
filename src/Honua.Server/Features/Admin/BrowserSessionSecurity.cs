@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Antiforgery;
 
 namespace Honua.Server.Features.Admin;
@@ -41,23 +42,21 @@ internal static class BrowserSessionSecurity
                 || (request.Cookies.ContainsKey(AdminAuthSessionStore.AuthSessionCookieName)
                     && (metadata?.GetMetadata<UsesBrowserSessionMetadata>() is not null
                         || !HasAuthenticatedExplicitCredential(context)));
-            // SAML POST bindings validate signed protocol messages and their own correlation state.
+            if (IsCrossOriginSessionWebSocket(context))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+
+            // SAML POST bindings are cross-site by design, so antiforgery cannot apply. They validate
+            // signed protocol messages instead, and the ACS accepts a solicited response only when its
+            // InResponseTo names the request ID held in this browser's data-protected, single-use
+            // correlation cookie (SamlRequestCorrelation); unsolicited responses follow the configured policy.
             if (!safe && requiresCsrf && metadata?.GetMetadata<BrowserCsrfProtocolBindingMetadata>() is null)
             {
-                if (!request.IsHttps || !IsSameOrigin(request))
+                if (!request.IsHttps || !IsSameOrigin(request) || !await PassesAntiforgeryAsync(context).ConfigureAwait(false))
                 {
-                    RejectCsrf(context);
-                    return;
-                }
-
-                try
-                {
-                    await context.RequestServices.GetRequiredService<IAntiforgery>()
-                        .ValidateRequestAsync(context).ConfigureAwait(false);
-                }
-                catch (AntiforgeryValidationException)
-                {
-                    RejectCsrf(context);
+                    await RejectCsrfAsync(context).ConfigureAwait(false);
                     return;
                 }
             }
@@ -66,6 +65,38 @@ internal static class BrowserSessionSecurity
         });
     }
 
+    private static async Task<bool> PassesAntiforgeryAsync(HttpContext context)
+    {
+        try
+        {
+            await context.RequestServices.GetRequiredService<IAntiforgery>()
+                .ValidateRequestAsync(context).ConfigureAwait(false);
+            return true;
+        }
+        catch (AntiforgeryValidationException)
+        {
+            return false;
+        }
+    }
+
+    // A WebSocket upgrade is a GET, so the antiforgery check never sees it. When the browser
+    // session cookie is the credential, the upgrade must come from this origin: same-site
+    // pages on another origin (a sibling subdomain) would otherwise receive the cookie.
+    // Browsers cannot set headers on an upgrade, so a token in the query string also counts
+    // as the caller's own credential.
+    private static bool IsCrossOriginSessionWebSocket(HttpContext context) =>
+        context.WebSockets.IsWebSocketRequest
+        && context.Request.Cookies.ContainsKey(AdminAuthSessionStore.AuthSessionCookieName)
+        && !HasAuthenticatedExplicitCredential(context)
+        && !HasAuthenticatedQueryCredential(context)
+        && !IsSameOrigin(context.Request);
+
+    private static bool HasAuthenticatedQueryCredential(HttpContext context) =>
+        context.User.Identity is { IsAuthenticated: true } identity
+        && identity.AuthenticationType != OidcAuthenticationExtensions.AdminSessionScheme
+        && !context.IsAdminAuthSessionBridged()
+        && context.Items.ContainsKey(PortalTokenAuthenticationExtensions.QueryCredentialKey);
+
     private static bool HasAuthenticatedExplicitCredential(HttpContext context) =>
         context.User.Identity is { IsAuthenticated: true } identity
         && identity.AuthenticationType != OidcAuthenticationExtensions.AdminSessionScheme
@@ -73,19 +104,35 @@ internal static class BrowserSessionSecurity
         && (context.Request.Headers.ContainsKey("X-API-Key")
             || context.Request.Headers.ContainsKey("Authorization"));
 
-    private static void RejectCsrf(HttpContext context)
+    private const string RefusalReason =
+        $"Browser session requests require same-origin HTTPS, the session's antiforgery cookie and a fresh {HeaderName} token.";
+
+    // The refusal names its reason so a Console, or a proxy that drops the antiforgery cookie, is diagnosable.
+    // It stays HTTP 400 on every path, including GeoServices routes whose errors are otherwise HTTP 200.
+    private static async Task RejectCsrfAsync(HttpContext context)
     {
         if (context.Request.ContentType?.StartsWith("application/grpc", StringComparison.OrdinalIgnoreCase) == true)
         {
             context.Response.StatusCode = StatusCodes.Status200OK;
             context.Response.ContentType = "application/grpc";
             context.Response.Headers["grpc-status"] = "7";
-            context.Response.Headers["grpc-message"] = Uri.EscapeDataString(
-                $"Browser session requests require same-origin HTTPS and a fresh {HeaderName} token.");
+            context.Response.Headers["grpc-message"] = Uri.EscapeDataString(RefusalReason);
             return;
         }
 
-        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        if (ProtocolRequestClassifier.IsWmsAlias(context.Request.Path))
+        {
+            // WMS errors are otherwise HTTP 200 service exception reports; this refusal stays HTTP 400.
+            await Results.Text(RefusalReason, "text/plain", statusCode: StatusCodes.Status400BadRequest)
+                .ExecuteAsync(context).ConfigureAwait(false);
+            return;
+        }
+
+        await StandardErrorResponseFormatter.FormatError(
+                context,
+                StandardErrorResponse.BadRequest(RefusalReason),
+                new ErrorResponseFormatterOptions { GeoServicesUseHttpStatus = true })
+            .ExecuteAsync(context).ConfigureAwait(false);
     }
 
     private static bool IsSameOrigin(HttpRequest request)

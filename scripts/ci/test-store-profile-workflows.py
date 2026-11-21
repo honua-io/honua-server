@@ -8,6 +8,42 @@ import unittest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
+_RELEASE_REPOSITORY = 'ghcr.io/honua-io/honua-server@'
+_RELEASE_PLATFORM_DIGEST = 'sha256:' + 'a' * 64
+_RELEASE_REQUESTED_DIGEST = 'sha256:' + 'b' * 64
+_RELEASE_PULL_IDS = (_RELEASE_REPOSITORY, _RELEASE_PLATFORM_DIGEST, _RELEASE_REQUESTED_DIGEST)
+_RELEASE_DOCKER = '''docker() {
+  if [[ "${1-}" == login ]]; then return 0; fi
+  if [[ "${1-} ${2-} ${3-} ${4-}" == "buildx imagetools inspect --raw" ]]; then printf '%s' "$SOURCE_MANIFEST"; return 0; fi
+  if [[ "${1-}" == pull ]]; then return 0; fi
+  if [[ "${1-} ${2-}" == "image inspect" ]]; then printf '%s' "$INSPECT_JSON"; return 0; fi
+  echo "unexpected docker $*" >&2
+  return 1
+}
+'''
+
+
+def _run_release_pull():
+    revision = 'e' * 40
+    index = {'mediaType': 'application/vnd.oci.image.index.v1+json', 'manifests': [
+        {'mediaType': 'application/vnd.oci.image.manifest.v1+json', 'digest': _RELEASE_PLATFORM_DIGEST,
+         'platform': {'os': 'linux', 'architecture': 'amd64'}}]}
+    inspected = [{'RepoDigests': [_RELEASE_REPOSITORY + _RELEASE_PLATFORM_DIGEST],
+                  'Os': 'linux', 'Architecture': 'amd64', 'Id': 'sha256:' + 'c' * 64,
+                  'Config': {'Labels': {'org.opencontainers.image.revision': revision}}}]
+    with tempfile.TemporaryDirectory() as directory:
+        work = Path(directory)
+        (work / 'scripts').symlink_to(ROOT / 'scripts', target_is_directory=True)
+        environment = dict(os.environ, SCAN_IMAGE=_RELEASE_REPOSITORY + _RELEASE_REQUESTED_DIGEST,
+                           SCAN_PLATFORM='linux/amd64', SCAN_REVISION=revision,
+                           SOURCE_MANIFEST=json.dumps(index), INSPECT_JSON=json.dumps(inspected),
+                           REGISTRY_TOKEN='unused', GITHUB_ACTOR='actor', RUNNER_TEMP=str(work),
+                           GITHUB_ENV=str(work / 'env'), GITHUB_SERVER_URL='https://github.com',
+                           GITHUB_REPOSITORY='honua-io/honua-server', GITHUB_RUN_ID='1')
+        subprocess.run(['bash', '-c', _RELEASE_DOCKER + 'export -f docker\nbash scripts/security/bind-platform-image.sh'],
+                       cwd=work, env=environment, check=True)
+        identity = json.loads((work / 'existing-image-identity.json').read_text())
+        return (work / 'env').read_text(), identity, (work / 'requested-manifest.json').is_file()
 
 
 def workflow(name):
@@ -15,6 +51,17 @@ def workflow(name):
 
 
 class StoreProfileWorkflowTests(unittest.TestCase):
+    def test_derived_zarr_worker_uses_serving_host_job_database(self):
+        base = yaml.safe_load((ROOT / 'docker/cng/compose.yml').read_text())
+        overlay = yaml.safe_load((ROOT / 'docker/cng/derived-zarr.yml').read_text())
+        server_environment = dict(entry.split('=', 1) for entry in
+                                  base['services']['honua-server']['environment'])
+        worker = overlay['services']['zarr-worker']
+        self.assertEqual(worker['environment']['ConnectionStrings__DefaultConnection'],
+                         server_environment['ConnectionStrings__DefaultConnection'])
+        self.assertEqual(worker['depends_on']['postgres']['condition'], 'service_healthy')
+        self.assertIn('healthcheck', base['services']['postgres'])
+
     def test_serving_formats_smoke_disables_excluded_test_providers(self):
         script = (ROOT / 'scripts/ci/smoke-serving-formats.sh').read_text()
         override = script.split('cat > "$work/override.yml" <<EOF\n', 1)[1].split('\nEOF', 1)[0]
@@ -110,6 +157,30 @@ class StoreProfileWorkflowTests(unittest.TestCase):
                 self.assertEqual((work / 'release-test.attestation-free-ref.txt').read_text().strip(),
                                  repository + platform_digest)
 
+    def test_release_scan_keeps_the_published_digest_in_the_vex_document(self):
+        steps = workflow('release-security-assets.yml')['jobs']['assets']['steps']
+        pull = next(step['run'] for step in steps
+                    if step.get('name') == 'Pull the release image and bind its identity')
+        vex = next(step['run'] for step in steps
+                   if step.get('name') == 'Generate the release OpenVEX document')
+        trivy = next(step for step in steps if step.get('name') == 'Scan with the release VEX applied')
+        self.assertIn('bash scripts/security/bind-platform-image.sh', pull)
+        self.assertIn('--image "$SCAN_IMAGE"', vex)
+        self.assertIn('"$PLATFORM_REF" != "$SCAN_IMAGE"', vex)
+        script = (ROOT / 'scripts/security/bind-platform-image.sh').read_text()
+        persisted = script.split('>> "$GITHUB_ENV"', 1)[0].rsplit('{', 1)[1]
+        self.assertEqual(['echo "REQUESTED_IMAGE=$requested"', 'echo "RESOLVED_IMAGE=$resolved"'],
+                         [line.strip() for line in persisted.splitlines() if line.strip() and line.strip() != '}'])
+        self.assertEqual(trivy['with']['image-ref'], '${{ env.RESOLVED_IMAGE }}')
+        saved, identity, manifest = _run_release_pull()
+        repository, platform_digest, requested_digest = _RELEASE_PULL_IDS
+        self.assertIn('RESOLVED_IMAGE=' + repository + platform_digest, saved)
+        self.assertIn('REQUESTED_IMAGE=' + repository + requested_digest, saved)
+        self.assertNotIn('SCAN_IMAGE=', saved)
+        self.assertEqual(repository + platform_digest, identity['image'])
+        self.assertEqual(repository + requested_digest, identity['requestedImage'])
+        self.assertTrue(manifest)
+
     def test_shell_free_consumers_use_native_probe_and_external_http(self):
         jobs = workflow('security-nightly.yml')['jobs']
         steps = next(job['steps'] for job in jobs.values()
@@ -132,7 +203,7 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertIn('Publish pristine managed test outputs', producer_names)
         self.assertIn('Honua.Server boot + migrations smoke', producer_names)
         consumer = workflow('ci.yml')['jobs']['runtime-proofs']
-        self.assertEqual(consumer['needs'], 'build')
+        self.assertEqual(consumer['needs'], ['build', 'changes'])
         steps = consumer['steps']
         names = [step.get('name', '') for step in steps]
         verify = steps[names.index(verify_name)]
@@ -144,7 +215,7 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertEqual(verify['env']['HONUA_EXPECTED_STORE_PROFILE'], 'postgis')
         self.assertNotIn('if', verify)
 
-    def test_store_measurement_uses_heavy_runner_and_separate_profile_caches(self):
+    def test_store_measurement_uses_heavy_runner_and_read_only_profile_cache(self):
         jobs = workflow('store-image-size.yml')['jobs']
         job = jobs['measure']
         selector = jobs['runner-select']
@@ -154,8 +225,8 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertEqual(job['runs-on'], "${{ (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(needs.runner-select.outputs.runner || '\"ubuntu-24.04\"') || 'ubuntu-latest' }}")
         self.assertIn('always() && !cancelled()', job['if'])
         admission = workflow('advisory-runner-select.yml')['jobs']['select']
-        self.assertIn('head.repo.full_name == github.repository', admission['runs-on'])
-        self.assertIn('fromJSON(vars.HONUA_LIGHT_RUNNER)', admission['runs-on'])
+        # honua-light hosts only offer the snap AWS CLI, which cannot start in the runner sandbox.
+        self.assertEqual(admission['runs-on'], 'ubuntu-latest')
         budgets = re.fullmatch(
             r"\$\{\{ matrix.compilation == 'aot' && (\d+) \|\| (\d+) \}\}",
             job['timeout-minutes'])
@@ -167,9 +238,28 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertGreater(jit_minutes, 0)
         self.assertLessEqual(jit_minutes, 30)
         build = next(step for step in job['steps'] if step.get('name') == 'Build serving image')
-        self.assertIn('matrix.profile', build['with']['cache-to'])
-        self.assertIn('matrix.compilation', build['with']['cache-to'])
-        self.assertIn('mode=max', build['with']['cache-to'])
+        self.assertEqual(
+            build['with']['cache-from'],
+            'type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:${{ matrix.cache_scope }}')
+        # Per-commit compiler layers are never reused; exporting them only
+        # lengthened every measurement and filled the Actions cache quota.
+        for step in job['steps']:
+            self.assertNotIn('cache-to', step.get('with', {}), step.get('name'))
+
+    def test_store_measurement_builder_keeps_its_cache_between_solves(self):
+        steps = workflow('store-image-size.yml')['jobs']['measure']['steps']
+        setup = next(step for step in steps if step.get('uses', '').startswith('docker/setup-buildx-action@'))
+        config = setup.get('with', {}).get('buildkitd-config-inline', '')
+        self.assertEqual([line.strip() for line in config.splitlines()], ['[worker.oci]', 'gc = false'])
+        self.assertNotIn('cleanup', setup.get('with', {}))
+
+    def test_store_script_tests_run_in_one_measurement_leg(self):
+        job = workflow('store-image-size.yml')['jobs']['measure']
+        legs = [(leg['profile'], leg['compilation']) for leg in job['strategy']['matrix']['include']]
+        self.assertEqual(legs.count(('postgis', 'jit')), 1)
+        tests = next(step for step in job['steps'] if step.get('name') == 'Test measurement and health probe')
+        self.assertEqual(tests.get('if'), "matrix.profile == 'postgis' && matrix.compilation == 'jit'")
+        self.assertNotIn('matrix.', tests['run'])
 
     def test_store_matrix_jobs_use_isolated_local_images(self):
         job = workflow('store-image-size.yml')['jobs']['measure']
@@ -271,19 +361,45 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertEqual(upload['if'], 'always()')
         self.assertEqual(upload['with']['if-no-files-found'], 'error')
 
-    def test_optional_aot_cannot_block_default_publication(self):
+    def test_tag_release_aot_stays_optional(self):
         jobs = workflow('deploy.yml')['jobs']
         self.assertEqual(jobs['build-and-push'].get('continue-on-error'), "${{ matrix.image_key == 'aot' }}")
         self.assertEqual(jobs['publish-manifests'].get('continue-on-error'), "${{ matrix.tag_suffix == '-aot' }}")
+
+    def test_nightly_default_tags_and_customer_package_use_aot(self):
         nightly = workflow('nightly-container-build.yml')['jobs']
-        self.assertIn('manifest-jit', nightly['compose-executor']['needs'])
-        self.assertNotIn('manifest-aot', nightly['compose-executor']['needs'])
-        aot_meta = next(step for step in nightly['manifest-aot']['steps'] if step.get('id') == 'meta')
-        self.assertIn('value=nightly-aot', aot_meta['with']['tags'])
-        self.assertNotIn('value=trunk\n', aot_meta['with']['tags'])
+        executor = nightly['compose-executor']
+        self.assertIn('manifest-aot', executor['needs'])
+        self.assertNotIn('manifest-jit', executor['needs'])
+        executor_text = json.dumps(executor)
+        self.assertIn('needs.manifest-aot.outputs.image', executor_text)
+        self.assertNotIn('needs.manifest-jit.outputs.image', executor_text)
         jit_meta = next(step for step in nightly['manifest-jit']['steps'] if step.get('id') == 'meta')
-        self.assertIn('value=nightly${{ matrix.store_suffix }}', jit_meta['with']['tags'])
-        self.assertIn('value=trunk${{ matrix.store_suffix }}', jit_meta['with']['tags'])
+        bare = [line for line in jit_meta['with']['tags'].splitlines()
+                if re.fullmatch(r'type=raw,value=(nightly|trunk)(-\$\{\{ needs\.[^}]+\}\})?\$\{\{ matrix\.store_suffix \}\}.*', line)]
+        self.assertEqual(len(bare), 4)
+        for line in bare:
+            self.assertTrue(line.endswith(",enable=${{ matrix.store_suffix != '' }}"), line)
+        jit_script = next(step['run'] for step in nightly['manifest-jit']['steps'] if step.get('id') == 'manifest')
+        self.assertIn('subject_ref="${subject_name}:nightly-jit-${{ needs.select-candidate.outputs.sha7 }}"', jit_script)
+
+    def test_nightly_aot_tags_publish_their_default_alias_in_one_index(self):
+        job = workflow('nightly-container-build.yml')['jobs']['manifest-aot']
+        script = next(step['run'] for step in job['steps'] if step.get('id') == 'manifest')
+        mapping = script[script.index('repository='):script.index('destinations=')]
+        create = script[script.index('destinations='):script.index('docker buildx imagetools create')]
+        self.assertIn('"$tag" "$default_tag"', create)
+        for tag, alias in [('nightly-aot', 'nightly'), ('trunk-aot', 'trunk'),
+                           ('nightly-aot-20261117', 'nightly-20261117'), ('nightly-aot-abc1234', 'nightly-abc1234')]:
+            with self.subTest(tag=tag):
+                result = subprocess.run(['bash'], input=mapping + '\nprintf "%s" "$default_tag"',
+                                        env={**os.environ, 'tag': 'ghcr.io/honua/server:' + tag},
+                                        text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, 'ghcr.io/honua/server:' + alias)
+        result = subprocess.run(['bash'], input=mapping, env={**os.environ, 'tag': 'ghcr.io/honua/server:nightly-jit'},
+                                text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
 
     def test_lifecycle_proves_manual_legacy_and_automated_compatible_rollback(self):
         steps = workflow('compose-release-lifecycle.yml')['jobs']['compose-release-lifecycle']['steps']
@@ -295,6 +411,9 @@ class StoreProfileWorkflowTests(unittest.TestCase):
         self.assertIn('HONUA_DEPLOYMENT_CONFIGURATION_ROOT', journey['env'])
         self.assertLess(journey['run'].index('tests/integration/test_compose_manual_rc1_rollback.py'),
                         journey['run'].index('tests/integration/test_compose_release_lifecycle.py'))
+        candidate = next(step for step in steps if step.get('name') == 'Build production candidate image')
+        self.assertEqual(candidate['with']['file'], 'docker/Dockerfile.aot')
+        self.assertIn('buildcache:honua-aot-amd64', candidate['with']['cache-from'])
 
     def test_nightly_jit_tag_mapping_uses_existing_architecture_tags(self):
         job = workflow('nightly-container-build.yml')['jobs']['manifest-jit']

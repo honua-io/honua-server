@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Globalization;
 using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Shared.Models;
@@ -57,6 +58,22 @@ internal static class DatumTransformSql
         var transformedOperand = ClampGeographicOperandForWebMercator(operand, fromSrid, toSrid);
         return $"ST_Transform({transformedOperand}, {toSrid})";
     }
+
+    // Tile statements rebuild the same clamped transform for every tile. Without a catalog
+    // selection the text depends only on the operand and both SRIDs, a set bounded by the
+    // layers' geometry columns and SRIDs, so each is built once.
+    private static readonly ConcurrentDictionary<(string Operand, int FromSrid, int ToSrid), string> KnownSridTransforms = new();
+    private static readonly ConcurrentDictionary<(string Operand, int ToSrid), string> RuntimeSridTransforms = new();
+
+    public static string CachedTransformExpression(string operand, int fromSrid, int toSrid)
+        => KnownSridTransforms.GetOrAdd(
+            (operand, fromSrid, toSrid),
+            static key => BuildTransformExpression(key.Operand, key.ToSrid, selection: null, key.FromSrid));
+
+    public static string CachedTransformExpressionForRuntimeSrid(string operand, int toSrid)
+        => RuntimeSridTransforms.GetOrAdd(
+            (operand, toSrid),
+            static key => BuildTransformExpressionForRuntimeSrid(key.Operand, key.ToSrid));
 
     public static string BuildTransformExpressionForRuntimeSrid(string operand, int toSrid)
     {

@@ -36,7 +36,7 @@ internal static class ImportFormatDispatchGuard
 
 internal sealed partial class InMemoryImportJobService : IImportJobService, IDisposable
 {
-    // PA-016: background import processing is fire-and-forget from the request handler
+    // Background import processing is fire-and-forget from the request handler
     // (`_ = ProcessJobAsync(...)`), so it needs its own ActivitySource — see the
     // detach-from-caller idiom at the top of ProcessJobAsync below.
     private static readonly ActivitySource ActivitySource = new("Honua.Import.Jobs", "1.0.0");
@@ -145,7 +145,7 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
         string? tempFilePath,
         CancellationToken cancellationToken)
     {
-        // PA-016: this method runs fire-and-forget (`_ = ProcessJobAsync(...)`) off the request
+        // This method runs fire-and-forget (`_ = ProcessJobAsync(...)`) off the request
         // handler. Because the async continuation still flows the caller's ExecutionContext,
         // Activity.Current here would be the HTTP request's activity — which ends when the
         // response returns, long before this background job finishes. Capture it as a link
@@ -254,8 +254,7 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                     stopwatch.Elapsed.TotalMilliseconds);
             }
         }
-        // Intentional broad catch: ProcessJobAsync runs fire-and-forget (see PA-016 comment
-        // above) with no caller to observe a thrown exception, so any import-provider failure
+        // Intentional broad catch: ProcessJobAsync runs fire-and-forget with no caller to observe a thrown exception, so any import-provider failure
         // must be caught here, logged, and recorded on the job's progress rather than becoming
         // an unobserved task exception.
         catch (Exception ex) when (ex is not OutOfMemoryException)

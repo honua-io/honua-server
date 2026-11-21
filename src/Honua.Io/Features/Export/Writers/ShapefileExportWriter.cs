@@ -6,6 +6,7 @@ using System.IO.Compression;
 using System.Text;
 using System.Globalization;
 using System.Collections.Immutable;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Services;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Geometries.Utilities;
@@ -40,7 +41,7 @@ internal static class ShapefileExportWriter
         // is a fixed-format hex string (no separators, never rooted), so this combine cannot
         // silently drop Path.GetTempPath().
         var scratchDir = Path.Join(Path.GetTempPath(), "honua-export", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(scratchDir);
+        ExportScratch.Create(scratchDir);
 
         try
         {
@@ -61,7 +62,7 @@ internal static class ShapefileExportWriter
             // changed once records start writing. The layer schema does not carry
             // Z/M presence, so peek the first feature that has a geometry and probe
             // its ordinates to choose the matching Z/M shape-type variant; otherwise
-            // 3D input is silently flattened to 2D on export (#2744).
+            // 3D input is silently flattened to 2D on export.
             Feature? firstFeature = null;
             Geometry? firstGeometry = null;
             // Keep leading unlocated rows on disk while determining the shape dimensions.
@@ -425,7 +426,7 @@ internal static class ShapefileExportWriter
         // ESRI shapefile Z shapes (PointZM/PolyLineZM/PolygonZM/MultiPointZM) always
         // carry an optional M array; the M-only shapes (PointM/…) carry M without Z.
         // Promote the 2D base type to the matching variant so the writer serializes
-        // the source Z (and/or M) ordinates instead of flattening to 2D (#2744).
+        // the source Z (and/or M) ordinates instead of flattening to 2D.
         if (hasZ)
         {
             return baseType switch
@@ -464,6 +465,8 @@ internal static class ShapefileExportWriter
             ExportFieldType.Boolean when value is string s &&
                 bool.TryParse(s, out var parsedBool) => parsedBool,
             ExportFieldType.DateTime or ExportFieldType.Date => NormalizeDbfDateValue(value),
+            // An exact decimal arrives as canonical text; the DBF numeric column takes the double.
+            ExportFieldType.Double when value is string text && ExactAttributeValues.ToFiniteDouble(text) is { } number => number,
             ExportFieldType.String
                 or ExportFieldType.Time
                 or ExportFieldType.Json

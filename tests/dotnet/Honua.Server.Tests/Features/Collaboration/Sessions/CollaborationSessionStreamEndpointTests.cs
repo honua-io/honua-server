@@ -20,7 +20,7 @@ namespace Honua.Server.Tests.Features.Collaboration.Sessions;
 
 [Protocol(Honua.TestKit.Constants.ProtocolNames.Streaming)]
 [Operation(Honua.TestKit.Constants.Operations.Streaming)]
-public sealed class CollaborationSessionStreamEndpointTests
+public sealed partial class CollaborationSessionStreamEndpointTests
 {
     private const string AdminPassword = "collaboration-stream-test-key";
     private const string MapId = "saved-map:ops";

@@ -9,7 +9,10 @@ namespace Honua.Infrastructure.RateLimiting;
 
 internal sealed class AnonymousPressureAdmissionMiddleware(RequestDelegate next)
 {
-    private const int RetryAfterSeconds = 1;
+    // A fixed delay sends every refused client back in the same second, so the retries arrive as
+    // one wave; spreading them over 1-3 seconds lets the queue drain between them.
+    internal const int MinRetryAfterSeconds = 1;
+    internal const int MaxRetryAfterSeconds = 3;
 
     public Task InvokeAsync(HttpContext context)
     {
@@ -23,12 +26,26 @@ internal sealed class AnonymousPressureAdmissionMiddleware(RequestDelegate next)
 
         var pressure = gate.GetPressure();
         return IsUnderPressure(pressure)
-            ? BackpressureResponseWriter.WriteAsync(context, BackpressureKind.Saturated, RetryAfterSeconds)
+            ? BackpressureResponseWriter.WriteAsync(
+                context, BackpressureKind.Saturated, Random.Shared.Next(MinRetryAfterSeconds, MaxRetryAfterSeconds + 1))
             : next(context);
     }
 
+    private const double SaturatedUtilization = 0.8;
+    private const double PainfulQueueWaitMs = 250;
+
+    // Shed on queue pain, not on any queue: a short queue at a busy gate is ordinary burst
+    // behaviour and waits milliseconds. A flood either queues at least as many requests as the
+    // gate has slots, or keeps a queue at a saturated gate while the average queue wait climbs;
+    // either way signed-in requests behind it would wait, so anonymous work gets a retry instead.
+    // The wait average covers every admission (an immediate one counts as zero) and lags the
+    // queue, so it is read only while a queue exists; a value left from an earlier flood must not
+    // refuse work at an empty queue.
     internal static bool IsUnderPressure(DatabaseAdmissionPressure pressure)
-        => pressure.Utilization >= 0.8 || pressure.QueuedWaiters > 0;
+        => (pressure.HasUtilization && pressure.QueuedWaiters >= pressure.CurrentLimit)
+            || (pressure.Utilization >= SaturatedUtilization
+                && pressure.QueuedWaiters > 0
+                && pressure.QueueWaitEwmaMs >= PainfulQueueWaitMs);
 
     private static bool IsExpensive(HttpContext context)
     {

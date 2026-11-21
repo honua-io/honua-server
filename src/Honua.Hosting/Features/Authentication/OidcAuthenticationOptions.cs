@@ -168,8 +168,8 @@ public sealed class TokenValidationOptions
 
     public TimeSpan TokenReplayCacheDuration { get; set; } = TimeSpan.FromHours(24);
 
-    // When the replay store is unreachable a token is accepted without being recorded; enable the fail-closed option when single-use must hold during a store outage.
-    public bool ReplayProtectionFailClosed { get; set; }
+    // When the replay store is unreachable a token is refused, so single-use holds during a store outage; set false only to trade that guarantee for availability.
+    public bool ReplayProtectionFailClosed { get; set; } = true;
 }
 
 public sealed class OktaProviderOptions

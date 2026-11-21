@@ -19,7 +19,6 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Tests.Features.Sharing;
 
-[Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
@@ -47,11 +46,11 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
                 builder.UseSetting("Authentication:PortalToken:RequireHttps", "false");
 
-                // Allow-list the ArcGIS client redirect (#1484 open-redirect mitigation).
+                // Allow-list the ArcGIS client redirect (open-redirect mitigation).
                 builder.UseSetting("Authentication:PortalToken:OAuth2:AllowedRedirectUris:0", RedirectUri);
 
                 // UseOidc stays false. The bridge callback must validate the IdP token
-                // itself whenever OIDC is configured (honua-server#5424).
+                // itself whenever OIDC is configured.
 
                 // A Generic OIDC provider with a static symmetric signing key: the
                 // verifier validates the id_token without JWKS discovery, and the

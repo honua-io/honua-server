@@ -25,7 +25,7 @@ namespace Honua.Server.Tests.Features.Console;
 public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
 {
     private const string AdminPassword = "console-access-admin-key";
-    private const string WorkspaceId = "default";
+    private const string EnvironmentId = "default";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -52,27 +52,50 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
+    [IntegrationTheory]
+    [InlineData("roles")]
+    [InlineData("members")]
+    [Endpoint("GET /api/v1/console/access/{environmentId}/roles")]
+    [Endpoint("GET /api/v1/console/access/{environmentId}/members")]
+    public async Task ConsoleAccess_EnvironmentContract_UsesCanonicalIdentityAndScopes(string endpoint)
+    {
+        var response = await _client.GetAsync($"/api/v1/console/access/{EnvironmentId}/{endpoint}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(EnvironmentId, data.GetProperty("environmentId").GetString());
+        Assert.Equal(EnvironmentId, data.GetProperty("environmentName").GetString());
+        Assert.False(data.TryGetProperty("workspaceId", out _));
+        Assert.False(data.TryGetProperty("workspaceName", out _));
+        if (endpoint == "roles")
+        {
+            var scopes = data.GetProperty("scopes").EnumerateArray()
+                .Select(scope => scope.GetProperty("level").GetString()).ToArray();
+            Assert.Equal(new[] { "environment", "content", "layer", "dataset-field" }, scopes);
+        }
+    }
+
     [IntegrationTest]
-    [Endpoint("GET /api/v1/console/access/{workspaceId}/roles")]
-    [Endpoint("GET /api/v1/console/access/{workspaceId}/members")]
-    [Endpoint("POST /api/v1/console/access/{workspaceId}/roles")]
-    [Endpoint("PUT /api/v1/console/access/{workspaceId}/roles/{roleId}")]
-    [Endpoint("DELETE /api/v1/console/access/{workspaceId}/roles/{roleId}")]
-    [Endpoint("GET /api/v1/console/access/{workspaceId}/roles/audit")]
+    [Endpoint("GET /api/v1/console/access/{environmentId}/roles")]
+    [Endpoint("GET /api/v1/console/access/{environmentId}/members")]
+    [Endpoint("POST /api/v1/console/access/{environmentId}/roles")]
+    [Endpoint("PUT /api/v1/console/access/{environmentId}/roles/{roleId}")]
+    [Endpoint("DELETE /api/v1/console/access/{environmentId}/roles/{roleId}")]
+    [Endpoint("GET /api/v1/console/access/{environmentId}/roles/audit")]
     public async Task ConsoleAccess_AdminLifecycle_ProjectsRolesMembersAndAudit()
     {
-        var overviewResponse = await _client.GetAsync($"/api/v1/console/access/{WorkspaceId}/roles");
+        var overviewResponse = await _client.GetAsync($"/api/v1/console/access/{EnvironmentId}/roles");
         Assert.Equal(HttpStatusCode.OK, overviewResponse.StatusCode);
         var overview = await ReadAsync<ConsoleRbacOverview>(overviewResponse);
-        Assert.Equal(WorkspaceId, overview.WorkspaceId);
+        Assert.Equal(EnvironmentId, overview.EnvironmentId);
         Assert.Contains(overview.Roles, static role => role.Name == "admin" && !role.IsCustom);
         Assert.Contains(overview.Permissions, static permission => permission.Key == "manage-roles");
         Assert.True(overview.CanManageRoles);
 
-        var membersResponse = await _client.GetAsync($"/api/v1/console/access/{WorkspaceId}/members");
+        var membersResponse = await _client.GetAsync($"/api/v1/console/access/{EnvironmentId}/members");
         Assert.Equal(HttpStatusCode.OK, membersResponse.StatusCode);
         var membership = await ReadAsync<ConsoleTeamMembership>(membersResponse);
-        Assert.Equal(WorkspaceId, membership.WorkspaceId);
+        Assert.Equal(EnvironmentId, membership.EnvironmentId);
         Assert.False(membership.CanInvite);
 
         var createRequest = new ConsoleRoleWriteRequest
@@ -86,13 +109,16 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
             ],
         };
         var createResponse = await _client.PostAsJsonAsync(
-            $"/api/v1/console/access/{WorkspaceId}/roles", createRequest, JsonOptions);
+            $"/api/v1/console/access/{EnvironmentId}/roles", createRequest, JsonOptions);
         Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
         var created = await ReadAsync<ConsoleRbacRole>(createResponse);
         Assert.True(created.IsCustom);
         Assert.Contains(created.Grants, static grant => grant.Permission == "publish" && grant.Grant == "granted");
         var roleStore = _fixture.Services.GetRequiredService<IRoleStore>();
         var persistedCreate = Assert.IsType<RoleDefinition>(await roleStore.GetRoleAsync(Guid.Parse(created.Id)));
+        Assert.Contains(persistedCreate.Permissions, static grant =>
+            grant.Service == "console-access" && grant.Layer == EnvironmentId && grant.Operation == "environment-membership");
+        Assert.DoesNotContain(persistedCreate.Permissions, static grant => grant.Operation == "workspace-membership");
         Assert.Contains(persistedCreate.Permissions, static grant => grant.Operation == "query");
         Assert.Contains(persistedCreate.Permissions, static grant => grant.Operation == "publish");
         Assert.DoesNotContain(persistedCreate.Permissions, static grant => grant.Operation == "view-public");
@@ -108,7 +134,7 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
             ],
         };
         var updateResponse = await _client.PutAsJsonAsync(
-            $"/api/v1/console/access/{WorkspaceId}/roles/{created.Id}", updateRequest, JsonOptions);
+            $"/api/v1/console/access/{EnvironmentId}/roles/{created.Id}", updateRequest, JsonOptions);
         Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
         var updated = await ReadAsync<ConsoleRbacRole>(updateResponse);
         Assert.Equal(created.Name, updated.Name);
@@ -116,11 +142,14 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
         Assert.Contains(updated.Grants, static grant => grant.Permission == "comment" && grant.Grant == "granted");
         Assert.Contains(updated.Grants, static grant => grant.Permission == "publish" && grant.Grant == "not-granted");
         var persistedUpdate = Assert.IsType<RoleDefinition>(await roleStore.GetRoleAsync(Guid.Parse(created.Id)));
+        Assert.Contains(persistedUpdate.Permissions, static grant =>
+            grant.Service == "console-access" && grant.Layer == EnvironmentId && grant.Operation == "environment-membership");
+        Assert.DoesNotContain(persistedUpdate.Permissions, static grant => grant.Operation == "workspace-membership");
         Assert.Contains(persistedUpdate.Permissions, static grant => grant.Operation == "write");
         Assert.DoesNotContain(persistedUpdate.Permissions, static grant => grant.Operation == "comment");
 
         var auditResponse = await _client.GetAsync(
-            $"/api/v1/console/access/{WorkspaceId}/roles/audit?pageSize=50");
+            $"/api/v1/console/access/{EnvironmentId}/roles/audit?pageSize=50");
         Assert.Equal(HttpStatusCode.OK, auditResponse.StatusCode);
         var audit = await ReadAsync<ConsoleRoleAuditPage>(auditResponse);
         Assert.Contains(audit.Entries, entry =>
@@ -129,28 +158,28 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
             entry.RoleId == created.Id && entry.Action == "console_access.role.update");
 
         var deleteResponse = await _client.DeleteAsync(
-            $"/api/v1/console/access/{WorkspaceId}/roles/{created.Id}");
+            $"/api/v1/console/access/{EnvironmentId}/roles/{created.Id}");
         Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
 
-        var afterDelete = await _client.GetAsync($"/api/v1/console/access/{WorkspaceId}/roles");
+        var afterDelete = await _client.GetAsync($"/api/v1/console/access/{EnvironmentId}/roles");
         Assert.DoesNotContain((await ReadAsync<ConsoleRbacOverview>(afterDelete)).Roles, role => role.Id == created.Id);
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/console/access/{workspaceId}/roles")]
+    [Endpoint("GET /api/v1/console/access/{environmentId}/roles")]
     public async Task ConsoleAccess_WithoutAdminAuthentication_ReturnsUnauthorized()
     {
         using var anonymous = _fixture.CreateClient();
-        var response = await anonymous.GetAsync($"/api/v1/console/access/{WorkspaceId}/roles");
+        var response = await anonymous.GetAsync($"/api/v1/console/access/{EnvironmentId}/roles");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/console/access/{workspaceId}/roles/audit")]
+    [Endpoint("GET /api/v1/console/access/{environmentId}/roles/audit")]
     public async Task ConsoleAccess_RoleAudit_MalformedCursorReturnsBadRequest()
     {
         var response = await _client.GetAsync(
-            $"/api/v1/console/access/{WorkspaceId}/roles/audit?cursor=not-a-valid-cursor");
+            $"/api/v1/console/access/{EnvironmentId}/roles/audit?cursor=not-a-valid-cursor");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var error = JsonSerializer.Deserialize<ApiResponse<object>>(
@@ -161,48 +190,63 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/console/access/{workspaceId}/roles/{roleId}")]
-    [Endpoint("DELETE /api/v1/console/access/{workspaceId}/roles/{roleId}")]
-    public async Task ConsoleAccess_RoleMutations_CannotCrossWorkspaceBoundary()
+    [Endpoint("PUT /api/v1/console/access/{environmentId}/roles/{roleId}")]
+    [Endpoint("DELETE /api/v1/console/access/{environmentId}/roles/{roleId}")]
+    public async Task ConsoleAccess_RoleMutations_CannotCrossEnvironmentBoundary()
     {
-        const string ownerWorkspace = "mutation-owner";
-        const string otherWorkspace = "mutation-other";
-        var created = await CreateRoleAsync(ownerWorkspace, "owner-only-role");
+        const string ownerEnvironment = "mutation-owner";
+        const string otherEnvironment = "mutation-other";
+        var created = await CreateRoleAsync(ownerEnvironment, "owner-only-role");
         var update = new ConsoleRoleWriteRequest
         {
-            Name = "cross-workspace-update",
+            Name = "cross-environment-update",
             Grants = [],
         };
 
         var updateResponse = await _client.PutAsJsonAsync(
-            $"/api/v1/console/access/{otherWorkspace}/roles/{created.Id}", update, JsonOptions);
+            $"/api/v1/console/access/{otherEnvironment}/roles/{created.Id}", update, JsonOptions);
         Assert.Equal(HttpStatusCode.NotFound, updateResponse.StatusCode);
 
         var deleteResponse = await _client.DeleteAsync(
-            $"/api/v1/console/access/{otherWorkspace}/roles/{created.Id}");
+            $"/api/v1/console/access/{otherEnvironment}/roles/{created.Id}");
         Assert.Equal(HttpStatusCode.NotFound, deleteResponse.StatusCode);
 
         var ownerOverview = await ReadAsync<ConsoleRbacOverview>(
-            await _client.GetAsync($"/api/v1/console/access/{ownerWorkspace}/roles"));
+            await _client.GetAsync($"/api/v1/console/access/{ownerEnvironment}/roles"));
         Assert.Contains(ownerOverview.Roles, role => role.Id == created.Id && role.Name == created.Name);
 
         var otherOverview = await ReadAsync<ConsoleRbacOverview>(
-            await _client.GetAsync($"/api/v1/console/access/{otherWorkspace}/roles"));
+            await _client.GetAsync($"/api/v1/console/access/{otherEnvironment}/roles"));
         Assert.DoesNotContain(otherOverview.Roles, role => role.Id == created.Id);
     }
 
+    [IntegrationTheory]
+    [Endpoint("POST /api/v1/console/access/{environmentId}/roles")]
+    [InlineData("scoped-api-key")]
+    [InlineData("Agent")]
+    [InlineData("viewer")]
+    public async Task ConsoleAccess_ServerAssignedRoleName_IsTaken(string name)
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/console/access/reserved-names/roles",
+            new ConsoleRoleWriteRequest { Name = name, Grants = [] },
+            JsonOptions);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
     [IntegrationTest]
-    [Endpoint("POST /api/v1/console/access/{workspaceId}/roles")]
-    [Endpoint("PUT /api/v1/console/access/{workspaceId}/roles/{roleId}")]
+    [Endpoint("POST /api/v1/console/access/{environmentId}/roles")]
+    [Endpoint("PUT /api/v1/console/access/{environmentId}/roles/{roleId}")]
     public async Task ConsoleAccess_RoleNames_AreGloballyUniqueOnCreate()
     {
-        const string firstWorkspace = "name-owner";
-        const string secondWorkspace = "name-other";
-        const string sharedName = "shared-workspace-role";
-        var firstRole = await CreateRoleAsync(firstWorkspace, sharedName);
+        const string firstEnvironment = "name-owner";
+        const string secondEnvironment = "name-other";
+        const string sharedName = "shared-environment-role";
+        var firstRole = await CreateRoleAsync(firstEnvironment, sharedName);
 
         var createCollision = await _client.PostAsJsonAsync(
-            $"/api/v1/console/access/{secondWorkspace}/roles",
+            $"/api/v1/console/access/{secondEnvironment}/roles",
             new ConsoleRoleWriteRequest { Name = sharedName.ToUpperInvariant(), Grants = [] },
             JsonOptions);
         Assert.Equal(HttpStatusCode.Conflict, createCollision.StatusCode);
@@ -210,21 +254,21 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
 
         // Permission and description updates preserve the immutable role name.
         var preserveOwnName = await _client.PutAsJsonAsync(
-            $"/api/v1/console/access/{firstWorkspace}/roles/{firstRole.Id}",
+            $"/api/v1/console/access/{firstEnvironment}/roles/{firstRole.Id}",
             new ConsoleRoleWriteRequest { Name = firstRole.Name, Grants = [] },
             JsonOptions);
         Assert.Equal(HttpStatusCode.OK, preserveOwnName.StatusCode);
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/console/access/{workspaceId}/roles")]
+    [Endpoint("POST /api/v1/console/access/{environmentId}/roles")]
     public async Task ConsoleAccess_ConcurrentDuplicateRoleCreates_ReturnOneCreatedAndOneConflict()
     {
-        const string workspace = "concurrent-role-name";
+        const string environment = "concurrent-role-name";
         const string roleName = "concurrent-dashboard-reviewer";
         var requests = new[] { roleName, roleName.ToUpperInvariant() }
             .Select(name => _client.PostAsJsonAsync(
-                $"/api/v1/console/access/{workspace}/roles",
+                $"/api/v1/console/access/{environment}/roles",
                 new ConsoleRoleWriteRequest { Name = name, Grants = [] },
                 JsonOptions))
             .ToArray();
@@ -236,17 +280,17 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
         await AssertRoleNameConflictAsync(conflict);
 
         var overview = await ReadAsync<ConsoleRbacOverview>(
-            await _client.GetAsync($"/api/v1/console/access/{workspace}/roles"));
+            await _client.GetAsync($"/api/v1/console/access/{environment}/roles"));
         Assert.Single(overview.Roles, role =>
             string.Equals(role.Name, roleName, StringComparison.OrdinalIgnoreCase));
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/console/access/{workspaceId}/roles/{roleId}")]
+    [Endpoint("PUT /api/v1/console/access/{environmentId}/roles/{roleId}")]
     public async Task ConsoleAccess_RoleRename_WithExistingAssignment_ReturnsBadRequestWithoutOrphaningMember()
     {
-        const string workspace = "immutable-role-name";
-        var role = await CreateRoleAsync(workspace, "assigned-reviewer");
+        const string environment = "immutable-role-name";
+        var role = await CreateRoleAsync(environment, "assigned-reviewer");
         var userStore = _fixture.Services.GetRequiredService<IScimUserStore>();
         var assignedUser = Assert.IsType<ManagedUser>(await userStore.CreateUserAsync(new ScimUserProvisioning
         {
@@ -256,7 +300,7 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
         }));
 
         var renameResponse = await _client.PutAsJsonAsync(
-            $"/api/v1/console/access/{workspace}/roles/{role.Id}",
+            $"/api/v1/console/access/{environment}/roles/{role.Id}",
             new ConsoleRoleWriteRequest { Name = "renamed-reviewer", Grants = [] },
             JsonOptions);
 
@@ -268,12 +312,12 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
         Assert.Contains("cannot be changed", Assert.IsType<string>(error.Message), StringComparison.OrdinalIgnoreCase);
 
         var overview = await ReadAsync<ConsoleRbacOverview>(
-            await _client.GetAsync($"/api/v1/console/access/{workspace}/roles"));
+            await _client.GetAsync($"/api/v1/console/access/{environment}/roles"));
         Assert.Contains(overview.Roles, candidate => candidate.Id == role.Id && candidate.Name == role.Name);
         Assert.DoesNotContain(overview.Roles, static candidate => candidate.Name == "renamed-reviewer");
 
         var membership = await ReadAsync<ConsoleTeamMembership>(
-            await _client.GetAsync($"/api/v1/console/access/{workspace}/members"));
+            await _client.GetAsync($"/api/v1/console/access/{environment}/members"));
         Assert.Contains(membership.Members, member =>
             member.Id == assignedUser.UserId && member.RoleId == role.Id && member.RoleName == role.Name);
     }
@@ -282,8 +326,8 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
     [Endpoint("PUT /api/v1/admin/roles/{id}")]
     public async Task AdminRoleUpdate_RenameAssignedConsoleRole_ReturnsBadRequestWithoutOrphaningMember()
     {
-        const string workspace = "admin-immutable-role-name";
-        var role = await CreateRoleAsync(workspace, "admin-assigned-reviewer");
+        const string environment = "admin-immutable-role-name";
+        var role = await CreateRoleAsync(environment, "admin-assigned-reviewer");
         var userStore = _fixture.Services.GetRequiredService<IScimUserStore>();
         var assignedUser = Assert.IsType<ManagedUser>(await userStore.CreateUserAsync(new ScimUserProvisioning
         {
@@ -305,17 +349,17 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
         Assert.Contains("cannot be changed", Assert.IsType<string>(error.Message), StringComparison.OrdinalIgnoreCase);
 
         var membership = await ReadAsync<ConsoleTeamMembership>(
-            await _client.GetAsync($"/api/v1/console/access/{workspace}/members"));
+            await _client.GetAsync($"/api/v1/console/access/{environment}/members"));
         Assert.Contains(membership.Members, member =>
             member.Id == assignedUser.UserId && member.RoleId == role.Id && member.RoleName == role.Name);
     }
 
     [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/roles/{id}/permissions")]
-    public async Task AdminPermissionReplacement_PreservesConsoleWorkspaceOwnership()
+    public async Task AdminPermissionReplacement_PreservesConsoleEnvironmentOwnership()
     {
-        const string workspace = "admin-permission-owner";
-        var role = await CreateRoleAsync(workspace, "admin-permission-reviewer");
+        const string environment = "admin-permission-owner";
+        var role = await CreateRoleAsync(environment, "admin-permission-reviewer");
 
         var response = await _client.PutAsJsonAsync(
             $"/api/v1/admin/roles/{role.Id}/permissions",
@@ -330,32 +374,39 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var overview = await ReadAsync<ConsoleRbacOverview>(
-            await _client.GetAsync($"/api/v1/console/access/{workspace}/roles"));
+            await _client.GetAsync($"/api/v1/console/access/{environment}/roles"));
         Assert.Contains(overview.Roles, candidate => candidate.Id == role.Id);
+        var roleStore = _fixture.Services.GetRequiredService<IRoleStore>();
+        var persisted = Assert.IsType<RoleDefinition>(await roleStore.GetRoleAsync(Guid.Parse(role.Id)));
+        Assert.Contains(persisted.Permissions, grant =>
+            grant.Service == "console-access" && grant.Layer == environment && grant.Operation == "environment-membership");
+        Assert.DoesNotContain(persisted.Permissions, static grant => grant.Operation == "workspace-membership");
+        Assert.Contains(persisted.Permissions, static grant =>
+            grant.Service == "features" && grant.Layer == "*" && grant.Operation == "query");
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/console/access/{workspaceId}/roles/audit")]
-    public async Task ConsoleAccess_LongWorkspaceId_RetainsMutationAudit()
+    [Endpoint("GET /api/v1/console/access/{environmentId}/roles/audit")]
+    public async Task ConsoleAccess_LongEnvironmentId_RetainsMutationAudit()
     {
-        var workspace = new string('w', 64);
-        var role = await CreateRoleAsync(workspace, "long-workspace-audit-role");
+        var environment = new string('w', 64);
+        var role = await CreateRoleAsync(environment, "long-environment-audit-role");
 
         var audit = await ReadAsync<ConsoleRoleAuditPage>(await _client.GetAsync(
-            $"/api/v1/console/access/{workspace}/roles/audit?pageSize=50"));
+            $"/api/v1/console/access/{environment}/roles/audit?pageSize=50"));
 
         Assert.Contains(audit.Entries, entry =>
             entry.RoleId == role.Id && entry.Action == "console_access.role.create");
     }
 
     [IntegrationTest]
-    [Endpoint("DELETE /api/v1/console/access/{workspaceId}/roles/{roleId}")]
-    [Endpoint("POST /api/v1/console/access/{workspaceId}/roles")]
+    [Endpoint("DELETE /api/v1/console/access/{environmentId}/roles/{roleId}")]
+    [Endpoint("POST /api/v1/console/access/{environmentId}/roles")]
     public async Task ConsoleAccess_DeleteAssignedRole_TombstonesNameAndRemovesPermissions()
     {
-        const string ownerWorkspace = "delete-assigned-owner";
-        const string otherWorkspace = "delete-assigned-other";
-        var role = await CreateRoleAsync(ownerWorkspace, "deleted-assigned-reviewer");
+        const string ownerEnvironment = "delete-assigned-owner";
+        const string otherEnvironment = "delete-assigned-other";
+        var role = await CreateRoleAsync(ownerEnvironment, "deleted-assigned-reviewer");
         var userStore = _fixture.Services.GetRequiredService<IScimUserStore>();
         var assignedUser = Assert.IsType<ManagedUser>(await userStore.CreateUserAsync(new ScimUserProvisioning
         {
@@ -365,7 +416,7 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
         }));
 
         var delete = await _client.DeleteAsync(
-            $"/api/v1/console/access/{ownerWorkspace}/roles/{role.Id}");
+            $"/api/v1/console/access/{ownerEnvironment}/roles/{role.Id}");
         Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
 
         var roleStore = _fixture.Services.GetRequiredService<IRoleStore>();
@@ -385,7 +436,7 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
         Assert.Empty(effective.Permissions);
 
         var recreate = await _client.PostAsJsonAsync(
-            $"/api/v1/console/access/{otherWorkspace}/roles",
+            $"/api/v1/console/access/{otherEnvironment}/roles",
             new ConsoleRoleWriteRequest { Name = role.Name.ToUpperInvariant(), Grants = [] },
             JsonOptions);
         Assert.Equal(HttpStatusCode.Conflict, recreate.StatusCode);
@@ -394,12 +445,12 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("DELETE /api/v1/admin/roles/{id}")]
-    [Endpoint("POST /api/v1/console/access/{workspaceId}/roles")]
+    [Endpoint("POST /api/v1/console/access/{environmentId}/roles")]
     public async Task AdminRoleDelete_AssignedConsoleRoleAlsoReservesName()
     {
-        const string ownerWorkspace = "admin-delete-owner";
-        const string otherWorkspace = "admin-delete-other";
-        var role = await CreateRoleAsync(ownerWorkspace, "admin-deleted-assigned-reviewer");
+        const string ownerEnvironment = "admin-delete-owner";
+        const string otherEnvironment = "admin-delete-other";
+        var role = await CreateRoleAsync(ownerEnvironment, "admin-deleted-assigned-reviewer");
         var userStore = _fixture.Services.GetRequiredService<IScimUserStore>();
         _ = Assert.IsType<ManagedUser>(await userStore.CreateUserAsync(new ScimUserProvisioning
         {
@@ -412,7 +463,7 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
 
         var recreate = await _client.PostAsJsonAsync(
-            $"/api/v1/console/access/{otherWorkspace}/roles",
+            $"/api/v1/console/access/{otherEnvironment}/roles",
             new ConsoleRoleWriteRequest { Name = role.Name, Grants = [] },
             JsonOptions);
         Assert.Equal(HttpStatusCode.Conflict, recreate.StatusCode);
@@ -420,13 +471,13 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/console/access/{workspaceId}/members")]
-    public async Task ConsoleAccess_Members_OnlyIncludeRolesAssignedInRequestedWorkspace()
+    [Endpoint("GET /api/v1/console/access/{environmentId}/members")]
+    public async Task ConsoleAccess_Members_OnlyIncludeRolesAssignedInRequestedEnvironment()
     {
-        const string firstWorkspace = "members-first";
-        const string secondWorkspace = "members-second";
-        var firstRole = await CreateRoleAsync(firstWorkspace, "first-workspace-member");
-        var secondRole = await CreateRoleAsync(secondWorkspace, "second-workspace-member");
+        const string firstEnvironment = "members-first";
+        const string secondEnvironment = "members-second";
+        var firstRole = await CreateRoleAsync(firstEnvironment, "first-environment-member");
+        var secondRole = await CreateRoleAsync(secondEnvironment, "second-environment-member");
         var userStore = _fixture.Services.GetRequiredService<IScimUserStore>();
         var firstOnly = Assert.IsType<ManagedUser>(await userStore.CreateUserAsync(new ScimUserProvisioning
         {
@@ -454,7 +505,7 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
         }));
 
         var firstMembership = await ReadAsync<ConsoleTeamMembership>(
-            await _client.GetAsync($"/api/v1/console/access/{firstWorkspace}/members"));
+            await _client.GetAsync($"/api/v1/console/access/{firstEnvironment}/members"));
         Assert.Contains(firstMembership.Members, member => member.Id == firstOnly.UserId);
         Assert.Contains(firstMembership.Members, member =>
             member.Id == both.UserId && member.RoleName == firstRole.Name);
@@ -462,7 +513,7 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
         Assert.DoesNotContain(firstMembership.Members, member => member.Id == builtInOnly.UserId);
 
         var secondMembership = await ReadAsync<ConsoleTeamMembership>(
-            await _client.GetAsync($"/api/v1/console/access/{secondWorkspace}/members"));
+            await _client.GetAsync($"/api/v1/console/access/{secondEnvironment}/members"));
         Assert.Contains(secondMembership.Members, member => member.Id == secondOnly.UserId);
         Assert.Contains(secondMembership.Members, member =>
             member.Id == both.UserId && member.RoleName == secondRole.Name);
@@ -470,17 +521,17 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
         Assert.DoesNotContain(secondMembership.Members, member => member.Id == builtInOnly.UserId);
 
         var firstOverview = await ReadAsync<ConsoleRbacOverview>(
-            await _client.GetAsync($"/api/v1/console/access/{firstWorkspace}/roles"));
+            await _client.GetAsync($"/api/v1/console/access/{firstEnvironment}/roles"));
         var secondOverview = await ReadAsync<ConsoleRbacOverview>(
-            await _client.GetAsync($"/api/v1/console/access/{secondWorkspace}/roles"));
+            await _client.GetAsync($"/api/v1/console/access/{secondEnvironment}/roles"));
         Assert.Equal(2, firstOverview.MembersAffected);
         Assert.Equal(2, secondOverview.MembersAffected);
     }
 
-    private async Task<ConsoleRbacRole> CreateRoleAsync(string workspaceId, string name)
+    private async Task<ConsoleRbacRole> CreateRoleAsync(string environmentId, string name)
     {
         var response = await _client.PostAsJsonAsync(
-            $"/api/v1/console/access/{workspaceId}/roles",
+            $"/api/v1/console/access/{environmentId}/roles",
             new ConsoleRoleWriteRequest
             {
                 Name = name,
@@ -507,6 +558,6 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
         Assert.NotNull(envelope);
         Assert.False(envelope.Success);
         var message = Assert.IsType<string>(envelope.Message);
-        Assert.Contains("unique across workspaces", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("unique across environments", message, StringComparison.OrdinalIgnoreCase);
     }
 }

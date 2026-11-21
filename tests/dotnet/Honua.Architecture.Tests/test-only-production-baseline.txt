@@ -3,9 +3,6 @@
 # only when the file is gone or production calls it. The architecture test
 # rejects a new line against trunk.
 src/Honua.Analyzers/ReviewBaselineSuppressor.cs
-src/Honua.Core/Core/Features/Metadata/Crosswalk/DcatApWriter.cs
-src/Honua.Core/Core/Features/Metadata/Crosswalk/Iso19115Part3Writer.cs
-src/Honua.Core/Core/Features/Metadata/Crosswalk/Iso19139Writer.cs
 src/Honua.Core/Core/Features/Migration/Domain/MigrationCutoverReadinessAttestationArtifact.cs
 src/Honua.Core/Core/Features/Migration/Services/GeoServicesMigrationParityRunner.cs
 src/Honua.Core/Core/Features/Migration/Services/MigrationAcceptanceApplyStageRunner.cs

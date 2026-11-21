@@ -54,19 +54,49 @@ class RetiredCacheTests(unittest.TestCase):
 
     def test_history_notices_and_policy_sources_pass(self):
         for path in ["CHANGELOG.md", "docs/changelog/2026.md", "THIRD-PARTY-NOTICES.md",
-                     "scripts/ci/check-retired-cache.py", "scripts/ci/check-retired-cache.test.py"]:
+                     "scripts/ci/check-retired-cache.py", "scripts/ci/check-retired-cache.test.py",
+                     "tests/dotnet/Honua.Architecture.SourceTests/RetiredCacheDependencyTests.cs"]:
             self.write(path, "Redis\n")
         self.commit()
         self.assertEqual(self.check().returncode, 0)
 
+    def test_architecture_guard_exemption_is_exact(self):
+        path = "tests/dotnet/Honua.Architecture.SourceTests/RetiredCacheDependencyTestsCopy.cs"
+        self.write(path, "Redis\n")
+        self.commit()
+        result = self.check()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(f"{path}:1:", result.stdout)
+
     def test_ci_routing_data_mirroring_tests_passes(self):
         routing = [".github/ci-shards.json", "scripts/ci/fixtures/full-run-capacity-contracts.json",
                    "scripts/ci/fixtures/live-output-capacity-contracts.json",
-                   "scripts/ci/test-shard-image-selection.py"]
+                   "scripts/ci/test-shard-image-selection.py",
+                   "scripts/ci/analyzer-baseline/AnalyzerBaseline.tsv",
+                   "scripts/ci/retired-terms-allowlist.v1.json"]
         for path in routing:
             self.write(path, "Redis\n")
         self.commit()
         self.assertEqual(self.check().returncode, 0)
+
+    def test_recorded_runs_lambda_preview_and_redaction_pass(self):
+        for path in ["eng/ci/fixtures/shard-promotion/reconciliation.json",
+                     "scripts/cloud/lambda-certification.py",
+                     "src/Honua.Geoprocessing/Core/Features/Geoprocessing/Diagnostics/GpDiagnosticRedactor.cs"]:
+            self.write(path, "Redis\n")
+        self.commit()
+        self.assertEqual(self.check().returncode, 0)
+
+    def test_neighbours_of_scoped_exemptions_fail(self):
+        neighbours = ["eng/ci/fixtures/other/reconciliation.json", "scripts/cloud/ecs-certification.py",
+                      "src/Honua.Server/Features/ControlPlane/ControlPlaneLambdaEventEndpoint.cs"]
+        for path in neighbours:
+            self.write(path, "Redis\n")
+        self.commit()
+        result = self.check()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        for path in neighbours:
+            self.assertIn(f"{path}:1:", result.stdout)
 
     def test_nuget_lock_files_pass_but_similar_names_fail(self):
         self.write("src/Worker/packages.lock.json", '{"StackExchange.Redis": "2.6.122"}\n')

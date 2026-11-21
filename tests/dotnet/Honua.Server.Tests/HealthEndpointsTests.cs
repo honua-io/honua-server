@@ -253,6 +253,28 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
         content.Should().Contain("#");
     }
 
+    // A Prometheus Operator ServiceMonitor can send only an Authorization header.
+    [IntegrationTheory]
+    [Operation(Operations.HealthCheck)]
+    [Endpoint("GET /metrics")]
+    [InlineData("ApiKey", HttpStatusCode.OK)]
+    [InlineData("Bearer", HttpStatusCode.Unauthorized)]
+    public async Task PrometheusMetricsEndpoint_AuthorizationHeaderScheme_DecidesAccess(string scheme, HttpStatusCode expected)
+    {
+        var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+        });
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", $"{scheme} {AdminPassword}");
+
+        var response = await client.GetAsync("/metrics");
+
+        response.StatusCode.Should().Be(expected);
+    }
+
     [IntegrationTest]
     [Operation(Operations.HealthCheck)]
     [Endpoint("GET /healthz/metrics")]

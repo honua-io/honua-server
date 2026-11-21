@@ -31,7 +31,31 @@ public sealed class LayerPublishWireContractTests
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(layer, LayerPublishingJsonContext.Default.PublishedLayerSummary));
 
         Assert.Equal(741, document.RootElement.GetProperty("storageLayerId").GetInt32());
-        Assert.False(document.RootElement.TryGetProperty("layerId", out _));
+        Assert.Equal(741, document.RootElement.GetProperty("layerId").GetInt32());
+    }
+
+    [UnitTest]
+    public void ExtentAndFeatureRefresh_SourceGeneratedJson_KeepsTheLayerIdAlias()
+    {
+        var extent = new LayerExtentRefreshLayerResult { StorageLayerId = 12, LayerName = "Roads" };
+        var features = new MaterializedFeatureRefreshResult
+        {
+            StorageLayerId = 12,
+            LayerName = "Roads",
+            Schema = "public",
+            Table = "roads",
+            MaterializedFeatureCount = 4,
+        };
+
+        using var extentDocument = JsonDocument.Parse(JsonSerializer.Serialize(
+            extent, LayerPublishingJsonContext.Default.LayerExtentRefreshLayerResult));
+        using var featureDocument = JsonDocument.Parse(JsonSerializer.Serialize(
+            features, LayerPublishingJsonContext.Default.MaterializedFeatureRefreshResult));
+
+        Assert.Equal(12, extentDocument.RootElement.GetProperty("storageLayerId").GetInt32());
+        Assert.Equal(12, extentDocument.RootElement.GetProperty("layerId").GetInt32());
+        Assert.Equal(12, featureDocument.RootElement.GetProperty("storageLayerId").GetInt32());
+        Assert.Equal(12, featureDocument.RootElement.GetProperty("layerId").GetInt32());
     }
 
     [UnitTheory]
@@ -103,7 +127,7 @@ public sealed class LayerPublishWireContractTests
         var payload = body.RootElement.GetProperty("data");
         var schema = ResponseDataSchema(spec, "/connections/{id}/layers/jobs/{jobId}", "get", "200");
         AssertDocumentedProperties(schema, payload);
-        Assert.Equal(6, schema.GetProperty("properties").EnumerateObject().Count());
+        Assert.Equal(7, schema.GetProperty("properties").EnumerateObject().Count());
         Assert.Contains(status, schema.GetProperty("properties").GetProperty("status").GetProperty("enum")
             .EnumerateArray().Select(value => value.GetString()));
         Assert.Equal(status, payload.GetProperty("status").GetString());
@@ -113,6 +137,9 @@ public sealed class LayerPublishWireContractTests
         Assert.True(schema.GetProperty("properties").GetProperty("errorMessage").GetProperty("nullable").GetBoolean());
         var actualStorageLayerId = payload.GetProperty("storageLayerId");
         Assert.Equal(storageLayerId, actualStorageLayerId.ValueKind == JsonValueKind.Null ? null : actualStorageLayerId.GetInt32());
+        var layerIdAlias = payload.GetProperty("layerId");
+        Assert.Equal(storageLayerId, layerIdAlias.ValueKind == JsonValueKind.Null ? null : layerIdAlias.GetInt32());
+        Assert.True(schema.GetProperty("properties").GetProperty("layerId").GetProperty("deprecated").GetBoolean());
         Assert.Equal(error, payload.GetProperty("errorMessage").GetString());
     }
 

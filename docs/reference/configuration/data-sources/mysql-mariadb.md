@@ -58,6 +58,8 @@ significantly between 5.7 and 8.0 and the test matrix targets 8.0+.
 
 ## Configuration
 
+The service and layer catalog is stored only in a PostgreSQL/PostGIS system database, so a host whose primary data source is MySQL or MariaDB refuses to start, with a message saying so, in any environment other than Development or Test.
+
 Set `DataSource:Provider` to `mysql` (or its alias `mariadb`) and add a `MySql`
 section to `appsettings.json`:
 

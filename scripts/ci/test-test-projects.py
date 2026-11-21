@@ -143,13 +143,13 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(sorted([self.unit, second]), selections[0]['solution']['projects'])
         self.assertNotIn(self.integration, selections[0]['solution']['projects'])
 
-    def test_mocked_redis_name_does_not_require_resource(self):
+    def test_mocked_postgres_name_does_not_require_resource(self):
         source = (self.root / self.unit).parent / 'Example.cs'
-        source.write_text('class RedisCacheMockTests { Mock<IRedisService> mocked; }')
+        source.write_text('class PostgresStoreMockTests { Mock<IPostgresStore> mocked; }')
         self.assertEqual([], catalog.proposed(self.root, self.unit)['resources'])
         self.assertEqual('unit', catalog.proposed(self.root, self.unit)['role'])
-        source.write_text('class RedisContainerTests { RedisFixture fixture; }')
-        self.assertIn('redis', catalog.proposed(self.root, self.unit)['resources'])
+        source.write_text('class PostgresContainerTests { PostgresFixture fixture; }')
+        self.assertIn('postgres', catalog.proposed(self.root, self.unit)['resources'])
         self.assertEqual('mixed', catalog.proposed(self.root, self.unit)['role'])
 
     def test_unknown_source_build_or_test_changes_select_all_units(self):
@@ -375,6 +375,23 @@ class CatalogTests(unittest.TestCase):
         result = catalog.plan(self.root, self.entries, ['Directory.Build.props'])
         self.assertEqual([self.unit], result['selectedProjects'])
         self.assertEqual('.github/ci-shards.json', result['shardRoutingAuthority'])
+
+    def test_markdown_under_scripts_ci_does_not_select_every_unit(self):
+        markdown = catalog.plan(self.root, self.entries, [
+            'scripts/ci/workflow-inventory.template.md', 'docs/internal/ci/gate-model.md'])
+        self.assertEqual([], markdown['selectedProjects'])
+        self.assertEqual([], markdown['selectionReasons'])
+        executable = catalog.plan(self.root, self.entries, ['scripts/ci/test-projects.py'])
+        self.assertEqual([self.unit], executable['selectedProjects'])
+        still_broad = catalog.plan(self.root, self.entries, [
+            'scripts/ci/workflow-inventory.template.md', 'scripts/ci/test-projects.py'])
+        self.assertEqual([self.unit], still_broad['selectedProjects'])
+        github = catalog.plan(self.root, self.entries, ['.github/workflows/ci.yml'])
+        self.assertEqual([self.unit], github['selectedProjects'])
+        for path in ('Directory.Build.targets', 'Directory.Packages.props', 'global.json',
+                     'NuGet.config', 'Honua.sln', '.github/pull_request_template.md'):
+            selected = catalog.plan(self.root, self.entries, [path])['selectedProjects']
+            self.assertEqual([self.unit], selected, path)
 
 
 if __name__ == '__main__':

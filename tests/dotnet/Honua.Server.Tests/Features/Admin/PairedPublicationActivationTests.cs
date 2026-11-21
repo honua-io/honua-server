@@ -24,7 +24,7 @@ public sealed class PairedPublicationActivationTests
         storage.UploadIfMatchAsync(Arg.Any<FileUploadRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(UploadResult.CreateFailure("A transport failure does not prove rejection."));
         var run = new PairedPublicationRun("test", "version", "capture", DateTimeOffset.UtcNow);
-        var pointer = new PublicationPointer(run.PublicationId, run.Version, "version/descriptor.json", DateTimeOffset.UtcNow);
+        var pointer = new PublicationPointer(run.PublicationId, run.Version, "version/collection.json", DateTimeOffset.UtcNow);
         storage.DownloadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_ => Task.FromResult<Stream?>(activated
                 ? new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(pointer, PublicationDescriptorJsonContext.Default.PublicationPointer))

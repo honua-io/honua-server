@@ -67,7 +67,7 @@ jobs:
     if: github.event_name == 'release' && startsWith(github.ref, 'refs/tags/v')
     uses: ./.github/workflows/publish-authorization.yml
     with:
-      tag-patterns: 'v*'
+      tag-patterns: 'v*.*.*'
 
   publish-release-assets:
     if: github.event_name == 'release' && startsWith(github.ref, 'refs/tags/v')

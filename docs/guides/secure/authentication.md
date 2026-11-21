@@ -47,7 +47,7 @@ the cache between credential changes.
 HONUA_ADMIN_PASSWORD=$ADMIN_PASSWORD
 ```
 
-This is the root credential for `/api/v1/admin/*` (and the JSON metrics/monitoring endpoints). Clients send it in the `X-API-Key` header; failures return `WWW-Authenticate: ApiKey`. Resolve it from a secret manager and rotate it regularly.
+This is the root credential for `/api/v1/admin/*` (and the JSON metrics/monitoring endpoints). Clients send it in the `X-API-Key` header, or as `Authorization: ApiKey <key>` when they can set only the `Authorization` header (a Prometheus Operator ServiceMonitor, for example); failures return `WWW-Authenticate: ApiKey`. Resolve it from a secret manager and rotate it regularly.
 
 Outside Development and Test the server refuses to start without it, unless `Oidc__Enabled=true` and an OIDC provider is fully configured; administrators then sign in through the identity provider. If you keep the password as a break-glass credential next to OIDC, set `Authentication__AdminPassword__LoopbackOnly=true`. The password is then accepted only on a direct loopback connection, from a shell on the host or in the container, on every path that takes it, including `generateToken`. A request that carries a forwarding header (`X-Forwarded-For`, `Forwarded`, `X-Real-IP` and similar) is refused even when its address reads as loopback, so a proxy on the same host must set `X-Forwarded-For`. The setting cannot be used on AWS Lambda. A refusal answers like a wrong password, counts as a failed attempt and is logged at Warning with event id `4123`. Managed API keys are not affected. Tokens and sessions minted from the password on the host stay valid from anywhere until they expire, so sign out or let them expire after break-glass use.
 
@@ -110,7 +110,7 @@ that work and add request restrictions when you create them:
   The secret does not change. The server log names the key id and whether the
   referrer list and the IP list are set, not the patterns or the key.
 - Restrictions apply on every transport the key is accepted on: `X-API-Key`,
-  `Authorization`/`X-Esri-Authorization: Bearer`, the form `token` field and the
+  `Authorization: ApiKey`, `Authorization`/`X-Esri-Authorization: Bearer`, the form `token` field and the
   `token` query parameter. The bootstrap `HONUA_ADMIN_PASSWORD` key is never
   restricted.
 - A restricted key cannot be exchanged for a portal token (`generateToken` or the
@@ -203,7 +203,9 @@ in browser storage:
 
 The browser obtains a CSRF token before signing in and retains it in memory.
 Successful sign-in sets an opaque HttpOnly, Secure, SameSite=Strict cookie lasting
-30 minutes. A fresh CSRF token is required after sign-in because tokens are bound
+30 minutes. Outside the Development and Test environments the session cookies are
+always marked Secure, including behind a TLS-terminating proxy whose forwarded
+headers are not trusted, so SAML sign-in there also needs HTTPS at the browser. A fresh CSRF token is required after sign-in because tokens are bound
 to the current identity. Cookie-authenticated writes, bearer issuance, and logout
 require that token in the `X-Honua-CSRF` header. Logout removes the server-side
 session as well as the browser cookie.
@@ -227,7 +229,10 @@ credentials omitted. The request must have an explicitly allowed Origin. The
 response contains an operator bearer and its expiry without setting cookies.
 Keep the bearer in memory and send it in the Authorization header; its lifetime
 is bounded by the configured operator bearer maximum and 30 minutes. Sign in again
-after expiry. Credentialed CORS never expands wildcard origins. Cookies remain
+after expiry. Rotating the administrator password ends every bearer minted from the
+old password on its next request, the same way it ends portal tokens minted from it.
+While the administrator password's secret store cannot be read, those bearers are
+refused too. Credentialed CORS never expands wildcard origins. Cookies remain
 same-origin; CORS does not authorize cross-origin cookie writes.
 
 The operator bearer carries the administrator session's claims and reaches the
@@ -381,6 +386,16 @@ path. The pending login cookie uses `SameSite=Lax` for the provider redirect; th
 authenticated session cookie uses `SameSite=Strict`. On landing, Console refreshes
 its session identity and CSRF token before sending authenticated mutations.
 
+When the identity provider returns an error instead of a code (for example
+`error=invalid_scope` or `access_denied`), the callback answers `400` with a
+short "Sign-in failed" page. The page names the provider's error code and links
+back to `/console/auth/signin`. It never shows the provider's free-text
+`error_description`; the server logs it with the provider key and error code as
+a warning. An error carrying the attempt's own `state` ends that attempt, so
+**Try again** starts a fresh one. An error with any other `state` leaves the
+pending attempt alone. A callback that arrives after the 15-minute attempt
+expired, or in a different browser, shows the same page without a provider code.
+
 For Amazon Cognito, configure the user-pool issuer as `Authority` and the hosted
 login domain separately for logout:
 
@@ -446,7 +461,9 @@ When `Oidc:TokenValidation:EnableTokenReplayProtection` is enabled, replay regis
 
 Existing cached registrations keep their original expiration. Renew access tokens after upgrading all replay-tracking nodes to obtain the full retention window for new admissions.
 
-The system PostgreSQL database shares replay registrations across nodes. Without a system database data source, registrations use per-node memory; independent replicas need the same system database for cross-node isolation. If the selected replay store is unavailable or faults, the default is to admit the token without recording a replay registration. Set `Oidc:TokenValidation:ReplayProtectionFailClosed=true` to refuse that admission. A PostgreSQL failure does not switch replay tracking to per-node memory.
+The system PostgreSQL database shares replay registrations across nodes. Without a system database data source, registrations use per-node memory; independent replicas need the same system database for cross-node isolation. If the selected replay store is unavailable or faults, the token is refused with 401 by default (`Oidc:TokenValidation:ReplayProtectionFailClosed=true`). Setting it to `false` admits the token without a replay registration during the outage, trading single-use for availability. A PostgreSQL failure does not switch replay tracking to per-node memory.
+
+The ArcGIS-compatible `generateToken` OIDC bridge, including the OAuth sign-in callback, records the presented provider token in the same store as an ordinary HTTP API admission. Exchanging the same token again, or presenting it as an HTTP bearer, is accepted. A token already admitted on MCP or another surface is refused, an exchanged token cannot then open an MCP session, and a store outage follows the fail-closed setting. A provider token whose validity exceeds `TokenReplayCacheDuration` is still exchanged and is recorded for that maximum.
 
 #### Human operation approval
 
@@ -490,7 +507,7 @@ accepting an elicitation or opening a URL grants no approval by itself.
 
 ### 4. Issue GeoServices REST-compatible tokens
 
-GeoServices REST clients, including desktop GIS applications and native client SDKs, authenticate against the portal token endpoint, which is always available:
+GeoServices REST clients, including desktop GIS applications and native client SDKs, authenticate against the portal token endpoint, which is always available. Send the credentials as a POST form body. A password or portal token in the `generateToken` query string (a GET, or a POST without a form body) is refused with a `400` unless `Authentication__PortalToken__AllowQueryStringCredentials=true`; turn that on only for a legacy client that cannot POST a form, because URLs are recorded by proxies and access logs. The OAuth2 `token` endpoint reads its parameters from the form body only.
 
 Applications can call the same endpoint with `username`, `password`, `client: "referer"`, `referer: "https://app.example.com"`, and `expiration: 60`. Desktop GIS clients and other GeoServices REST clients can discover the endpoint when they prompt for credentials.
 
@@ -606,6 +623,9 @@ A wrong or missing key returns `401` with a `WWW-Authenticate: ApiKey` challenge
 | `generateToken` refuses to issue | Issuance is HTTPS-only by default — front the server with TLS (see [TLS and mTLS](tls-and-mtls.md)). |
 | Token works from one host but not another | Portal tokens are bound to `client=referer` or `client=ip`; re-issue with the binding the caller actually presents. |
 | `admin:write` or `admin:manage` key gets `403` creating, rotating or revoking API keys, changing user roles, deprovisioning users or managing OAuth clients | Expected: these routes need full-administrator authority. Use a key granted `admin`, `*` or `admin:*`, the bootstrap credential, an administrator session, or submit the change as a proposal for approval. See [Credential and identity management](../../reference/admin-api/users-roles-licensing.md#credential-and-identity-management). |
+| "Sign-in failed" page with `invalid_scope` | The provider client does not allow every scope Honua requests (`Oidc__Generic__Scopes`, default `openid profile email`). Allow the missing scope on the client, or remove it from the setting. |
+| "Sign-in failed" page with `access_denied`, or another provider code | The provider refused the user or the client. The server log warning names the provider and holds the provider's description. |
+| "Sign-in failed" page without a provider code | The attempt expired or the callback opened in a different browser. Choose **Try again**. |
 | OIDC user signed in but gets `403` on admin routes | The IdP token lacks a role matching `Oidc__AdminRoles`; fix the claims mapping in your IdP. |
 
 More general failures: [Troubleshooting](../deploy/troubleshooting.md).

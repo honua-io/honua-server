@@ -127,7 +127,7 @@ public sealed class LayerValidationHelpersV2Tests
     {
         // The deployed pipeline gives a request without a valid credential the default
         // "public" tenant, which cannot see tenant-a's layer. The receipt candidate answered
-        // 404 "Layer 10 not found" there (honua-server#4778).
+        // 404 "Layer 10 not found" there.
         var context = BuildTenantScopedContext(requestTenant: "public", authenticatedTenant: null);
 
         var result = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(

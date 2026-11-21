@@ -2,19 +2,17 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
-using System.Net.Http.Json;
 using System.Net.WebSockets;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
 public sealed partial class SensorThingsStreamEndpointsTests
 {
-    // Long enough for connect, publish and the first observation, then expires within the case.
-    private static readonly TimeSpan ExpiringCredentialLifetime = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan DurableCredentialLifetime = TimeSpan.FromSeconds(120);
 
     [IntegrationTheory]
@@ -50,72 +48,27 @@ public sealed partial class SensorThingsStreamEndpointsTests
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(120));
         var ct = timeout.Token;
-        var issuer = _fixture.GetService<IPortalTokenIssuer>();
-        const string referer = "https://observation-proof.example/";
-        async Task<PortalTokenIssuance> IssueAsync(bool longLived = false) => await issuer.IssueAsync(
-            new PortalTokenIssueRequest("sta-proof", "STA proof", "tenant-a", ["reader"],
-                PortalTokenClientType.Referer, referer,
-                DateTimeOffset.UtcNow + (expire && !longLived ? ExpiringCredentialLifetime : DurableCredentialLifetime)), ct);
-        PortalTokenIssuance credential;
-        string Path(string token) => $"/sta/v1.1/ObservationsStream?datastreamId=1&token={token}";
-        using var tenantA = _fixture.CreateAdminClient();
-        tenantA.DefaultRequestHeaders.Add("X-Honua-Tenant", "tenant-a");
-        using var tenantB = _fixture.CreateAdminClient();
-        tenantB.DefaultRequestHeaders.Add("X-Honua-Tenant", "tenant-b");
-        async Task<long> PublishAsync(double value)
-        {
-            using var excluded = await tenantB.PostAsJsonAsync("/sta/v1.1/Datastreams(1)/Observations", new { result = -73001.5 }, ct);
-            excluded.StatusCode.Should().Be(HttpStatusCode.Created);
-            using var included = await tenantA.PostAsJsonAsync("/sta/v1.1/Datastreams(1)/Observations", new { result = value }, ct);
-            included.StatusCode.Should().Be(HttpStatusCode.Created);
-            using var body = JsonDocument.Parse(await included.Content.ReadAsStringAsync(ct));
-            return body.RootElement.GetProperty("@iot.id").GetInt64();
-        }
-        async Task<WebSocket> ConnectAsync(string token)
-        {
-            var client = _fixture.CreateWebSocketClient();
-            var configure = client.ConfigureRequest;
-            client.ConfigureRequest = request =>
-            {
-                configure?.Invoke(request);
-                request.Headers.Referer = referer;
-                request.Headers["X-Honua-Test-Schema"] = _fixture.CurrentSchema;
-            };
-            return await client.ConnectAsync(new Uri("ws://localhost" + Path(token)), ct);
-        }
-        async Task InvalidateAsync()
-        {
-            if (!expire) { await issuer.RevokeAsync(credential.Token, ct); }
-        }
-        async Task<JsonDocument> ReadObservationAsync(WebSocket socket)
-        {
-            while (true)
-            {
-                var frame = await ReadSocketFrameAsync(socket, ct);
-                if (frame.RootElement.TryGetProperty("observations", out _)) { return frame; }
-                frame.RootElement.TryGetProperty("code", out _).Should().BeFalse("authorization cannot end before the marked observation");
-                frame.RootElement.GetRawText().Should().NotContain("tenant-b");
-                frame.Dispose();
-            }
-        }
+        using var proof = new ObservationStreamProof(_fixture, ct);
+        ExpiringCredential credential;
         // Warm real ingestion/authentication paths before starting the credential's
         // clock; startup/JIT latency is not part of a connected expiry scenario.
-        _ = await PublishAsync(0.125);
-        credential = await IssueAsync();
+        _ = await proof.PublishAsync(0.125);
         using var bound = CancellationTokenSource.CreateLinkedTokenSource(ct);
         void SetBound() => bound.CancelAfter(expire
             ? credential.ExpiresAt - DateTimeOffset.UtcNow + TimeSpan.FromSeconds(5)
             : TimeSpan.FromSeconds(5));
+        async Task InvalidateAsync()
+        {
+            if (!expire) { await proof.RevokeAsync(credential); }
+        }
 
         if (webSocket)
         {
-            using var socket = await ConnectAsync(credential.Token);
-            using var connected = await ReadSocketFrameAsync(socket, ct);
-            connected.RootElement.GetProperty("status").GetString().Should().Be("connected");
-            var expectedId = await PublishAsync(73.25);
-            using var observation = await ReadObservationAsync(socket);
-            observation.RootElement.GetProperty("observations")[0].GetProperty("result").GetDouble().Should().Be(73.25);
-            observation.RootElement.GetProperty("observations")[0].GetProperty("id").GetInt64().Should().Be(expectedId);
+            var started = await ExpiringCredentials.IssueForSetupAsync(
+                expire ? ExpiringCredentials.Expiring : ExpiringCredentials.Durable, proof.IssueAsync, proof.SubscribeWebSocketAsync);
+            credential = started.Credential;
+            using var socket = started.Result;
+            proof.AssertEverySetupFrameWasClean();
             await InvalidateAsync();
             SetBound();
             var buffer = new byte[4096];
@@ -134,39 +87,30 @@ public sealed partial class SensorThingsStreamEndpointsTests
         }
         else
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, Path(credential.Token));
-            request.Headers.Referrer = new Uri(referer);
-            request.Headers.Accept.ParseAdd("text/event-stream");
-            using var response = await _fixture.Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            using var stream = await response.Content.ReadAsStreamAsync(ct);
-            using var reader = new StreamReader(stream);
-            (await ReadUntilAsync(reader, "event: status", ct)).Should().Contain("connected");
-            var expectedId = await PublishAsync(73.25);
-            var pushed = await ReadUntilAsync(reader, "event: observations", ct);
-            using var observation = JsonDocument.Parse(pushed[(pushed.IndexOf("data: ", StringComparison.Ordinal) + 6)..]);
-            observation.RootElement.GetProperty("observations")[0].GetProperty("result").GetDouble().Should().Be(73.25);
-            observation.RootElement.GetProperty("observations")[0].GetProperty("id").GetInt64().Should().Be(expectedId);
+            var started = await ExpiringCredentials.IssueForSetupAsync(
+                expire ? ExpiringCredentials.Expiring : ExpiringCredentials.Durable, proof.IssueAsync, proof.SubscribeSseAsync);
+            credential = started.Credential;
+            using var response = started.Result;
+            using var reader = proof.SseReader!;
+            proof.AssertEverySetupFrameWasClean();
             await InvalidateAsync();
             SetBound();
             var remaining = await reader.ReadToEndAsync(bound.Token);
             remaining.Should().Contain("\"code\":\"authorization-ended\"").And.NotContain("event: observations");
         }
 
-        using var rejected = new HttpRequestMessage(HttpMethod.Get, Path(credential.Token));
-        rejected.Headers.Referrer = new Uri(referer);
-        rejected.Headers.Accept.ParseAdd("text/event-stream");
+        using var rejected = ObservationStreamProof.SseRequest(credential.Token);
         using var denied = await _fixture.Client.SendAsync(rejected, HttpCompletionOption.ResponseHeadersRead, ct);
         denied.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
 
         // Replacing credentials without a cursor starts a live subscription;
         // verify that it receives newly committed values under the replacement identity.
-        var replacement = await IssueAsync(longLived: true);
-        using var resumed = await ConnectAsync(replacement.Token);
+        var replacement = await proof.IssueAsync(DurableCredentialLifetime);
+        using var resumed = await proof.ConnectAsync(replacement.Token);
         using var handshake = await ReadSocketFrameAsync(resumed, ct);
         handshake.RootElement.GetProperty("status").GetString().Should().Be("connected");
-        var replacementId = await PublishAsync(91.75);
-        using var replacementObservation = await ReadObservationAsync(resumed);
+        var replacementId = await proof.PublishAsync(91.75);
+        using var replacementObservation = await proof.ReadObservationAsync(resumed);
         replacementObservation.RootElement.GetProperty("observations")[0].GetProperty("result").GetDouble().Should().Be(91.75);
         replacementObservation.RootElement.GetProperty("observations")[0].GetProperty("id").GetInt64().Should().Be(replacementId);
     }

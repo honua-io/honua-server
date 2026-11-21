@@ -97,7 +97,7 @@ internal static class StyleEndpointUrlResolver
 
                 if (IsServedOnlyByOwnedVectorTiles(tiles, baseUrl))
                 {
-                    changed |= ClampZoomRange(sourceObject, tileLimits);
+                    changed |= StyleSourceZoomRange.Narrow(sourceObject, tileLimits);
                 }
             }
         }
@@ -162,37 +162,6 @@ internal static class StyleEndpointUrlResolver
 
         return true;
     }
-
-    // Narrow only: an author's tighter range (for example maxzoom 14 to overzoom) is kept, and a
-    // range that lies wholly outside the route's is left as authored rather than inverted.
-    private static bool ClampZoomRange(JsonObject source, TileLimits tileLimits)
-    {
-        var maxZoom = ReadZoom(source, "maxzoom");
-        var minZoom = ReadZoom(source, "minzoom");
-        var clampMax = maxZoom is null || maxZoom > tileLimits.MaxTileZoom;
-        var clampMin = minZoom is null ? tileLimits.MinTileZoom > 0 : minZoom < tileLimits.MinTileZoom;
-        var newMax = clampMax ? tileLimits.MaxTileZoom : maxZoom!.Value;
-        var newMin = clampMin ? tileLimits.MinTileZoom : minZoom ?? 0;
-        if ((!clampMax && !clampMin) || newMin > newMax)
-        {
-            return false;
-        }
-
-        if (clampMax)
-        {
-            source["maxzoom"] = tileLimits.MaxTileZoom;
-        }
-
-        if (clampMin)
-        {
-            source["minzoom"] = tileLimits.MinTileZoom;
-        }
-
-        return true;
-    }
-
-    private static double? ReadZoom(JsonObject source, string propertyName)
-        => source[propertyName] is JsonValue value && value.TryGetValue(out double zoom) && double.IsFinite(zoom) ? zoom : null;
 
     private static bool IsOwnedTileUrl(string url, string baseUrl)
     {

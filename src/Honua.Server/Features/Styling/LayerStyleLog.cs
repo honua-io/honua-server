@@ -26,6 +26,12 @@ internal static partial class LayerStyleLog
     public static partial void ThemeColorParseFailure(ILogger logger, int layerId, string property, string color);
 
     [LoggerMessage(
+        EventId = 6401,
+        Level = LogLevel.Warning,
+        Message = "Storage layer {LayerId} has a saved presentation but resolves to more than one resource or none, so the style write did not retire it; the saved presentation still overrides the new style.")]
+    public static partial void SavedPresentationNotRetired(ILogger logger, int layerId);
+
+    [LoggerMessage(
         EventId = 6405,
         Level = LogLevel.Warning,
         Message = "Failed to synchronize the metadata-v2 style graph for catalog style '{StyleId}'. The catalog update already committed; StyleResourceIds may lag until the next publish.")]

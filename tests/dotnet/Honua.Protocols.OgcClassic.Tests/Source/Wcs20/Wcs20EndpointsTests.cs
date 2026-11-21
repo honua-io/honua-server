@@ -520,6 +520,24 @@ public sealed class Wcs20EndpointsTests : IClassFixture<Wcs20EndpointsTests.Rast
         _exportQueries.Single().ClipRegion.Should().NotBeNull();
     }
 
+    [IntegrationTheory]
+    [InlineData("SUBSET=Long(-100.0,-99.9)&SUBSET=Lat(10.0,10.1)", "SUBSET")]
+    [InlineData("BBOX=-100.0,10.0,-99.9,10.1", "BBOX")]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task Wcs_GetCoverage_WithTrimOutsideCoverage_ReturnsInvalidSubsetting(string trim, string locator)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/tiff&{trim}");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound, content);
+        content.Should().Contain("exceptionCode=\"InvalidSubsetting\"");
+        content.Should().Contain($"locator=\"{locator}\"");
+        _exportQueries.Should().BeEmpty();
+    }
+
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
@@ -739,8 +757,8 @@ public sealed class Wcs20EndpointsTests : IClassFixture<Wcs20EndpointsTests.Rast
     [Endpoint("GET /ogc/wcs/{serviceId}")]
     public async Task Wcs_GetCapabilities_DesktopPath_AdvertisesOperationsWithoutServicesSegment()
     {
-        // ArcGIS Pro treats any {root}/services/{name}/ URL as an ArcGIS Server site
-        // (#4584), so every operation URL a client follows must stay on this form.
+        // ArcGIS Pro treats any {root}/services/{name}/ URL as an ArcGIS Server site,
+        // so every operation URL a client follows must stay on this form.
         var response = await _fixture.Client.GetAsync(
             $"/ogc/wcs/{WebAppFixture.TestServiceId}?SERVICE=WCS&REQUEST=GetCapabilities&VERSION=2.0.1");
 
@@ -879,7 +897,7 @@ public sealed class Wcs20EndpointsTests : IClassFixture<Wcs20EndpointsTests.Rast
     [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
     public async Task Wcs_GetCoverage_AdditionalDimensionAxis_ReturnsInvalidAxisLabelException()
     {
-        // #1872: a well-formed slice on a named non-spatial, non-temporal axis (here a
+        // A well-formed slice on a named non-spatial, non-temporal axis (here a
         // vertical/elevation axis) is parsed and validated against the coverage's
         // registered additional dimension axes. The primary-raster coverage offers no
         // additional axes, so the slice names an axis the coverage does not carry and

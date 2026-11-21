@@ -22,7 +22,7 @@ internal sealed partial class TileOperationExecutionCore
                 "This operation already started a version whose activation is no longer observable; its artifacts were retained. Start a new publish explicitly if needed.");
         }
 
-        var previous = await context.Store.ReadDescriptorAsync(recoveryPointer, cancellationToken).ConfigureAwait(false);
+        var previous = await context.Store.ReadCollectionAsync(recoveryPointer, cancellationToken).ConfigureAwait(false);
         if (previous is not null)
         {
             if (previous.PublicationId != context.Run.PublicationId || previous.Version != recoveryPointer.Version
@@ -37,7 +37,7 @@ internal sealed partial class TileOperationExecutionCore
             return progress with
             {
                 PublishedPublication = new PublishedPublication(previous.PublicationId, previous.Version,
-                    previous.Capture.CaptureId, context.Store.VersionKey(previous.Version, PairedPublicationDescriptorFactory.DescriptorFileName),
+                    previous.Capture.CaptureId, context.Store.VersionKey(previous.Version, ExportCollectionDocument.FileName),
                     context.Store.PointerKey),
                 Status = OperationStatus.Completed,
                 CompletedAt = DateTimeOffset.UtcNow,
@@ -46,7 +46,7 @@ internal sealed partial class TileOperationExecutionCore
             };
         }
 
-        throw new PairedActivationUnknownException("The activated operation's descriptor could not be recovered; its artifacts were retained.");
+        throw new PairedActivationUnknownException("The activated operation's collection document could not be recovered; its artifacts were retained.");
     }
 
     // The switch is not cancellable: once storage may have applied it, the job must learn which
@@ -54,7 +54,7 @@ internal sealed partial class TileOperationExecutionCore
     internal static async Task SwitchPointerAsync(PairedPublicationStore store, PairedPublicationRun run, string? expectedETag)
     {
         var pointer = new PublicationPointer(
-            run.PublicationId, run.Version, $"{run.Version}/{PairedPublicationDescriptorFactory.DescriptorFileName}", DateTimeOffset.UtcNow);
+            run.PublicationId, run.Version, $"{run.Version}/{ExportCollectionDocument.FileName}", DateTimeOffset.UtcNow);
         bool switched;
         try
         {

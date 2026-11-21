@@ -173,6 +173,9 @@ internal sealed class McpArtifactRef
     [JsonPropertyName("uri")]
     public string? Uri { get; set; }
 
+    [JsonPropertyName("referenceSha256")]
+    public string? ReferenceSha256 { get; set; }
+
     [JsonPropertyName("contentType")]
     public string? ContentType { get; set; }
 

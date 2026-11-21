@@ -50,8 +50,7 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
         _connectionPoolMetrics = connectionPoolMetrics;
 
         // Publish the admission ceiling as the pool size so ConnectionPoolMetrics can report a real
-        // utilization ratio to the database health check (previously UpdatePoolSize had no caller, so
-        // utilization was always "unavailable"). The gate's MaxLimit is clamped to the configured Npgsql
+        // utilization ratio to the database health check. The gate's MaxLimit is clamped to the configured Npgsql
         // pool maximum, so it is the effective bound on concurrent connections.
         if (_connectionPoolMetrics is not null && _concurrencyGate is not null)
         {

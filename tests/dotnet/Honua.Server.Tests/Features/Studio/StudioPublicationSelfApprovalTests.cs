@@ -38,7 +38,7 @@ namespace Honua.Server.Tests.Features.Studio;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
-public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
+public sealed partial class StudioPublicationSelfApprovalTests : IAsyncLifetime
 {
     private const string Issuer = AdminAuthEndpointsTests.TestOidcIssuer;
     private const string Audience = AdminAuthEndpointsTests.TestOidcAudience;
@@ -56,7 +56,6 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
-                builder.UseSetting("ConnectionStrings:redis", "");
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
                 // Authentication must be decided by the presented credential only: the dev-auth
                 // bypass would hand the proposer and the approver the same identity.

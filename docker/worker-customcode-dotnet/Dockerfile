@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 #
 # Honua custom-code GP worker (DOTNET runtime) — Phase 2.
 #
@@ -22,7 +22,12 @@
 
 # --- build stage: publish the harness + warm the NuGet cache + sanity-build sample ---
 # Pinned .NET SDK (do NOT use a floating tag).
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0.404-resolute@sha256:f685dd6b5a970778b53cead9a11cf54206c4b4fc3c97e4424a59b8bff9aa43d7
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:11.0.100-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea
+# Declared before the first FROM so the runtime stage FROM can use it.
+ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.12.4@sha256:5828162cffed3af330034ae0c3ada30deb1cfdaecf37585f96ed0924f1d1dfb7
+# The shipped SDK is copied from this untouched stage, so it is exactly the digest-pinned image's.
+FROM ${DOTNET_SDK_IMAGE} AS sdk
+
 FROM ${DOTNET_SDK_IMAGE} AS build
 WORKDIR /src
 
@@ -31,11 +36,22 @@ COPY docker/worker-customcode-dotnet/harness/ ./harness/
 
 WORKDIR /src/harness
 
+# Locked mode does not fail for a project without a lock file, so refuse one here: every
+# harness project (and the warm-cache project) must carry a committed packages.lock.json.
+RUN for project in $(find . -name '*.csproj'); do \
+      test -f "$(dirname "$project")/packages.lock.json" \
+        || { echo "missing packages.lock.json for $project" >&2; exit 1; }; \
+    done
+
 # Publish the harness host (framework-dependent; NOT AOT — it loads user assemblies
-# dynamically). NuGetAudit is off (offline restore from nuget.org only).
+# dynamically). NuGetAudit is off (offline restore from nuget.org only). The harness, sample and
+# warm-cache restores are in locked mode: only package contents whose hashes are committed in
+# the harness packages.lock.json files get in. The build-stage GDAL probe below reuses the
+# packages RasterTool's locked restore just verified; it never ships.
 RUN dotnet publish src/Honua.CustomCode.Harness/Honua.CustomCode.Harness.csproj \
       --configuration Release \
       -p:NuGetAudit=false \
+      -p:RestoreLockedMode=true \
       --output /opt/harness
 
 # IN-BUILD SANITY CHECK (correct-by-construction): restore + build the sample tools.
@@ -44,6 +60,7 @@ RUN dotnet publish src/Honua.CustomCode.Harness/Honua.CustomCode.Harness.csproj 
 RUN dotnet build samples/BufferTool/BufferTool.csproj \
       --configuration Release \
       -p:NuGetAudit=false \
+      -p:RestoreLockedMode=true \
       --output /tmp/sample-build \
  && test -f /tmp/sample-build/BufferTool.dll
 
@@ -55,6 +72,7 @@ RUN dotnet build samples/BufferTool/BufferTool.csproj \
 RUN dotnet build samples/RasterTool/RasterTool.csproj \
       --configuration Release \
       -p:NuGetAudit=false \
+      -p:RestoreLockedMode=true \
       --output /tmp/raster-build \
  && test -f /tmp/raster-build/RasterTool.dll
 RUN mkdir -p /tmp/gdalprobe \
@@ -62,7 +80,7 @@ RUN mkdir -p /tmp/gdalprobe \
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
     <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
@@ -74,6 +92,7 @@ RUN mkdir -p /tmp/gdalprobe \
 </Project>
 EOF
 RUN cat > /tmp/gdalprobe/Program.cs <<EOF
+using System;
 using MaxRev.Gdal.Core;
 using OSGeo.GDAL;
 
@@ -97,17 +116,7 @@ RUN cd /tmp/gdalprobe && dotnet run -c Release -p:NuGetAudit=false
 # --- runtime stage: GDAL-full base + the .NET SDK + git + the warm cache --------------
 # Pinned GDAL "ubuntu-full" base (matches the python image's base family). It ships the
 # full GDAL driver set; .NET tools that shell out to gdal* or P/Invoke GDAL get it here.
-ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.12.4@sha256:5828162cffed3af330034ae0c3ada30deb1cfdaecf37585f96ed0924f1d1dfb7
 FROM ${GDAL_BASE_IMAGE} AS runtime
-
-ARG DOTNET_SDK_CHANNEL=10.0
-# Pin the geo + SDK package versions so the warm cache matches the harness solution.
-ARG NETTOPOLOGYSUITE_VERSION=2.6.0
-ARG HONUA_SDK_DOTNET_VERSION=1.11.1
-# GDAL C# bindings (in-process raster/vector interop). MaxRev bundles its own
-# self-contained native GDAL (no ABI dependence on the base libgdal); 3.12.4.520
-# bundles native GDAL 3.12.4, matching the GDAL-full base image tag.
-ARG MAXREV_GDAL_VERSION=3.12.4.520
 
 ENV DEBIAN_FRONTEND=noninteractive \
     DOTNET_CLI_TELEMETRY_OPTOUT=1 \
@@ -115,55 +124,37 @@ ENV DEBIAN_FRONTEND=noninteractive \
     DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
     NUGET_XMLDOC_MODE=skip
 
-# git (clone user code), ca-certificates (TLS to git host + Honua API), and the deps the
-# dotnet-install script needs. The .NET SDK is required at runtime to `dotnet build` the
-# user's .csproj at job time (this is why we install the SDK, not just the runtime).
+# git (clone user code) and ca-certificates (TLS to git host + Honua API). The .NET SDK
+# is required at runtime to `dotnet build` the user's .csproj at job time (this is why the
+# image carries the SDK, not just the runtime).
 # hadolint ignore=DL3008
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates \
-      curl \
       git \
  && rm -rf /var/lib/apt/lists/*
 
-# Install the pinned .NET SDK onto the GDAL (Ubuntu) base via the official script.
+# The .NET SDK comes from the digest-pinned SDK image of the build stage: the same portable
+# linux-x64 SDK the install script would download, but verified by the image digest and
+# pinned to one version instead of the newest of a channel.
 ENV DOTNET_ROOT=/usr/share/dotnet
-RUN curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
- && chmod +x /tmp/dotnet-install.sh \
- && /tmp/dotnet-install.sh --channel "${DOTNET_SDK_CHANNEL}" --install-dir "${DOTNET_ROOT}" \
- && ln -s "${DOTNET_ROOT}/dotnet" /usr/bin/dotnet \
- && rm -f /tmp/dotnet-install.sh
+COPY --from=sdk /usr/share/dotnet ${DOTNET_ROOT}
+RUN ln -s "${DOTNET_ROOT}/dotnet" /usr/bin/dotnet \
+ && dotnet --info > /dev/null
 
 # The published harness host.
 COPY --from=build /opt/harness /opt/harness
 
-# Pre-warm the NuGet cache (NetTopologySuite + GeoJSON IO + the Honua .NET SDK) so the
-# common user tool builds with NO network restore at job time. We do this by restoring a
-# tiny throwaway project that references the common packages into the shared global
-# packages folder, then deleting the project (the populated cache layer is what we keep).
+# Pre-warm the NuGet cache (NetTopologySuite + GeoJSON IO + the Honua .NET SDK + the GDAL
+# bindings with the linux-x64 native asset) so the common user tool builds with NO network
+# restore at job time. harness/warm is a restore-only project whose versions come from the
+# harness Directory.Packages.props; it restores in locked mode from its committed lock file.
 ENV NUGET_PACKAGES=/opt/nuget/packages
-# The RuntimeIdentifier pulls the linux-x64 native GDAL runtime asset into the warm
-# cache too, so a raster tool builds with NO network restore at job time.
-RUN mkdir -p /tmp/warm \
- && cat > /tmp/warm/warm.csproj <<EOF
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
-    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
-  </PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="NetTopologySuite" Version="${NETTOPOLOGYSUITE_VERSION}" />
-    <PackageReference Include="NetTopologySuite.IO.GeoJSON" Version="4.0.0" />
-    <PackageReference Include="Honua.Sdk" Version="${HONUA_SDK_DOTNET_VERSION}" />
-    <PackageReference Include="MaxRev.Gdal.Core" Version="${MAXREV_GDAL_VERSION}" />
-    <PackageReference Include="MaxRev.Gdal.LinuxRuntime.Minimal" Version="${MAXREV_GDAL_VERSION}" />
-  </ItemGroup>
-</Project>
-EOF
-RUN --mount=type=secret,id=github_actor \
-    --mount=type=secret,id=github_token \
-    sh -c 'cd /tmp/warm && dotnet restore -p:NuGetAudit=false || true' \
+COPY docker/worker-customcode-dotnet/harness/Directory.Build.props \
+     docker/worker-customcode-dotnet/harness/Directory.Packages.props \
+     docker/worker-customcode-dotnet/harness/NuGet.config /tmp/warm/
+COPY docker/worker-customcode-dotnet/harness/warm/ /tmp/warm/warm/
+RUN dotnet restore /tmp/warm/warm/Honua.CustomCode.Warm.csproj -p:RestoreLockedMode=true \
  && rm -rf /tmp/warm
 
 # Non-root user (uid 1001, matching docker/worker-gdal + the python image). The per-job

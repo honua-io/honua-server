@@ -82,7 +82,7 @@ public sealed class NAServerMetadataTests
         // arcpy.nax does not call NAServer/Route/solve. It resolves Esri's ready-to-use
         // routing tool on the utility service and refuses the stand-alone binding when it
         // is absent: "Portal .../NAServer/FindRoutes is not configured with the 'Route'
-        // web tool" (#5192). The parameter names are matched on, so they are pinned.
+        // web tool". The parameter names are matched on, so they are pinned.
         NAServerMetadata.IsUtilityTask(NAServerMetadata.FindRoutesTask).Should().BeTrue();
 
         var info = NAServerMetadata.BuildUtilityTaskInfo(NAServerMetadata.FindRoutesTask);

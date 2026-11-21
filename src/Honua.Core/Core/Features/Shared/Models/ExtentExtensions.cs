@@ -51,7 +51,7 @@ public static class ExtentExtensions
         }
 
         var trimmed = crsUri.Trim();
-        // PA-028: Normalise https:// → http:// before any matching to handle servers that
+        // Normalise https:// → http:// before any matching to handle servers that
         // emit https:// Content-Crs headers (e.g. OgcMapsRenderingHandler.FormatContentCrsHeader).
         var schemeNormalized = trimmed.StartsWith("https://www.opengis.net/", StringComparison.OrdinalIgnoreCase)
             ? "http://" + trimmed["https://".Length..]

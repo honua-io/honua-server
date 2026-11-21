@@ -96,12 +96,12 @@ public sealed class GdalProcessExecutorModeRegistrationTests
             "gdal.gdalwarp",
             "transform.reproject",
             "source.ogr",
-            // Raster analysis tool pack (#2141).
+            // Raster analysis tool pack.
             "raster.resample",
             "raster.interpolate-idw",
             "raster.interpolate-kriging",
             "raster.mosaic",
-            // Raster analysis & terrain GP tool packs (#2239, #2240).
+            // Raster analysis & terrain GP tool packs.
             "raster.map-algebra",
             "raster.spectral-index",
             "raster.reclassify",

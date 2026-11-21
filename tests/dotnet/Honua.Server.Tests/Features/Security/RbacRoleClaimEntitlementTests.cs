@@ -56,7 +56,7 @@ public sealed class RbacRoleClaimEntitlementTests
     [UnitTest]
     public async Task AccessPolicyGrant_CustomRoleClaim_DoesNotSkipRoleList()
     {
-        // The mapped role's query grant must not skip AllowedRoles (#6358), including
+        // The mapped role's query grant must not skip AllowedRoles, including
         // when an Enterprise snapshot admits the custom claim.
         var entitlements = new MutableLicenseEntitlementService(HonuaEdition.Community);
         using var provider = BuildServices(entitlements);

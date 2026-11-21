@@ -20,14 +20,16 @@ HEAVY_JOBS = {
 }
 HOSTED_JOBS = {
     "pr-template-check", "pr-readiness", "supersede-trailing-runs", "changes", "targeted-shards",
-    "producer-runner", "ci-router-validation", "dotnet-foundation-tests", "js-typecheck", "test-all",
+    "ci-router-validation", "dotnet-foundation-tests", "js-typecheck", "test-all",
     "merge-queue-gate", "ci-gate",
 }
 REUSABLE_JOBS = {
     "store-image-proofs": "./.github/workflows/store-image-size.yml",
     "geoparquet-interop": "./.github/workflows/geoparquet-interop.yml",
     "geoarrow-interop": "./.github/workflows/geoarrow-interop-fixture.yml",
+    "producer-runner": "./.github/workflows/advisory-runner-select.yml",
 }
+PRODUCER_RUNNER = "${{ fromJSON(needs.producer-runner.outputs.runner || '\"ubuntu-latest\"') }}"
 PINNED_JOBS = {
     "worker-gdal-tests", "python-integration-tests", "js-integration-tests",
     "esri-leaflet-browser-tests", "maplibre-compat",
@@ -73,10 +75,22 @@ ANALYZER_TESTS_RUNNER = ("matrix.analyzer-partition == 'tests' && ("
                          + planned_heavy("',analyzers-{0},', matrix.analyzer-test-partition") + " || 'ubuntu-latest') || ")
 # Native AOT is not a matrix: every trusted run takes the heavy pool, forks stay hosted.
 AOT_RUNNER = "${{ vars.HONUA_HEAVY_RUNNER" + FORK_GUARD + " || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}"
+# Full runs (the ci.yml run-name rule) take free standard hosted runners; affected runs keep the pool.
+FULL_RUN_HOSTED = ("(github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"
+                   " && (inputs.full_ci || !inputs.selective_base)) && 'ubuntu-latest' || ")
 SHARD_JOBS = {
-    "ci.yml": ("server-tests", "${{ " + TRUSTED_HEAVY_RUNNER + " || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}"),
-    "pr-gate.yml": ("affected-shard", "${{ needs.pr-gate.outputs.heavy_ready == 'true' && " + HEAVY_SHARD_RUNNER + " || 'ubuntu-latest' }}"),
+    "ci.yml": ("server-tests", "${{ " + FULL_RUN_HOSTED + TRUSTED_HEAVY_RUNNER
+               + " || vars.HONUA_CI_HEAVY_RUNNER || 'ubuntu-latest' }}"),
+    "pr-gate.yml": ("affected-shard", "${{ needs.runner-select.outputs.heavy_ready == 'true' && " + HEAVY_SHARD_RUNNER + " || 'ubuntu-latest' }}"),
 }
+
+
+def ephemeral_port_jobs(workflow):
+    """Shard lanes that pass the assigned Postgres port inline, not via the action."""
+    names = [SHARD_JOBS[workflow][0]]
+    if workflow == "pr-gate.yml":
+        names.append("affected-shard-held")
+    return names
 
 
 class ShardRunnerRoutingTests(unittest.TestCase):
@@ -84,46 +98,53 @@ class ShardRunnerRoutingTests(unittest.TestCase):
         name, _ = SHARD_JOBS[workflow]
         return yaml.safe_load((ROOT / ".github/workflows" / workflow).read_text())["jobs"][name]
 
+    def shard_jobs(self, workflow):
+        jobs = yaml.safe_load((ROOT / ".github/workflows" / workflow).read_text())["jobs"]
+        return [(name, jobs[name]) for name in ephemeral_port_jobs(workflow)]
+
     def test_shards_use_their_fork_guarded_pool_with_hosted_fallback(self):
         for workflow, (_, runs_on) in SHARD_JOBS.items():
             with self.subTest(workflow=workflow):
                 self.assertEqual(self.shard_job(workflow)["runs-on"], runs_on)
 
-    def test_full_matrix_never_waits_for_hosted_capacity_when_heavy_is_configured(self):
+    def test_full_runs_take_hosted_runners_and_affected_runs_the_heavy_pool(self):
         expression = self.shard_job("ci.yml")["runs-on"]
         self.assertNotIn("strategy.job-index", expression)
-        probe = """const {expression, event, fork, heavy, fallback} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+        probe = """const {expression, event, fork, heavy, fallback, inputs} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
 const repository = 'owner/repo', source = fork ? 'fork/repo' : repository;
 const payload = event === 'pull_request' ? {pull_request: {head: {repo: {full_name: source}}}} :
     event === 'workflow_run' ? {workflow_run: {head_repository: {full_name: source}}} : {};
-const github = {repository, event: payload}, vars = {HONUA_HEAVY_RUNNER: heavy, HONUA_CI_HEAVY_RUNNER: fallback};
-process.stdout.write(JSON.stringify(new Function('github', 'vars', 'fromJSON', `return (${expression});`)(github, vars, JSON.parse)));
+const github = {repository, event_name: event, event: payload}, vars = {HONUA_HEAVY_RUNNER: heavy, HONUA_CI_HEAVY_RUNNER: fallback};
+process.stdout.write(JSON.stringify(new Function('github', 'vars', 'inputs', 'fromJSON', `return (${expression});`)(github, vars, inputs, JSON.parse)));
 """
         pool = {"group": "honua-heavy", "labels": ["honua-heavy"]}
-        for event, fork, configured, fallback in product(
-                ["push", "workflow_dispatch", "pull_request", "workflow_run"],
-                [False, True], [False, True], ["", "ubuntu-24.04"]):
+        affected = {"full_ci": False, "selective_base": "a" * 40}
+        runs = [("schedule", {}, True), ("workflow_dispatch", {"full_ci": False, "selective_base": ""}, True),
+                ("workflow_dispatch", {**affected, "full_ci": True}, True), ("workflow_dispatch", affected, False),
+                ("push", {}, False), ("pull_request", {}, False), ("workflow_run", {}, False)]
+        for (event, inputs, full), fork, configured, fallback in product(
+                runs, [False, True], [False, True], ["", "ubuntu-24.04"]):
             trusted = event not in {"pull_request", "workflow_run"} or not fork
-            expected = pool if configured and trusted else fallback or "ubuntu-latest"
-            context = {"expression": expression[3:-2].strip(), "event": event,
+            expected = "ubuntu-latest" if full else pool if configured and trusted else fallback or "ubuntu-latest"
+            context = {"expression": expression[3:-2].strip(), "event": event, "inputs": inputs,
                        "fork": fork, "heavy": json.dumps(pool) if configured else "",
                        "fallback": fallback}
-            with self.subTest(event=event, fork=fork, configured=configured, fallback=fallback):
+            with self.subTest(event=event, inputs=inputs, fork=fork, configured=configured, fallback=fallback):
                 result = subprocess.run(["node", "-e", probe], input=json.dumps(context),
                                         text=True, capture_output=True, check=True)
                 self.assertEqual(json.loads(result.stdout), expected)
 
     def test_postgres_uses_an_ephemeral_host_port_that_the_tests_receive(self):
         for workflow in SHARD_JOBS:
-            with self.subTest(workflow=workflow):
-                job = self.shard_job(workflow)
-                self.assertEqual(job["services"]["postgres"]["ports"], [5432])
-                self.assertNotIn("HONUA_TEST_DB_URL", job["env"])
-                urls = [step["env"]["HONUA_TEST_DB_URL"] for step in job["steps"]
-                        if "HONUA_TEST_DB_URL" in step.get("env", {})]
-                self.assertEqual(len(urls), 1)
-                self.assertIn("Port={2}", urls[0])
-                self.assertIn("job.services.postgres.ports['5432']", urls[0])
+            for name, job in self.shard_jobs(workflow):
+                with self.subTest(workflow=workflow, job=name):
+                    self.assertEqual(job["services"]["postgres"]["ports"], [5432])
+                    self.assertNotIn("HONUA_TEST_DB_URL", job["env"])
+                    urls = [step["env"]["HONUA_TEST_DB_URL"] for step in job["steps"]
+                            if "HONUA_TEST_DB_URL" in step.get("env", {})]
+                    self.assertEqual(len(urls), 1)
+                    self.assertIn("Port={2}", urls[0])
+                    self.assertIn("job.services.postgres.ports['5432']", urls[0])
 
 
 class ServicePortIsolationTests(unittest.TestCase):
@@ -139,7 +160,7 @@ class ServicePortIsolationTests(unittest.TestCase):
 
     def assert_assigned_port(self, workflow, name, job):
         self.assertEqual(job["services"]["postgres"]["ports"], [5432])
-        if name == SHARD_JOBS[workflow][0]:
+        if workflow in SHARD_JOBS and name in ephemeral_port_jobs(workflow):
             return  # The shard-specific connection contract is checked above.
         steps = job["steps"]
         configure = [step for step in steps
@@ -217,13 +238,12 @@ SELECTED_RUNNER = (
     " && needs.runner-select.outputs.runner || 'ubuntu-latest' }}"
 )
 PR_GATE_LIGHT_JOBS = {"runner-select", "format", "affected-shards-select", "affected-shards", "ci-router-validation", "required"}
+# Pull-request gate jobs stay hosted. qualify_light on a trunk dispatch is the
+# only path onto honua-light. HONUA_LIGHT_RUNNER places the non-gate workflows.
 LIGHT_RUNNER = (
     "${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/trunk'"
     " && inputs.qualify_light && fromJSON('{\"group\":\"honua-light\",\"labels\":[\"honua-light\"]}')"
-    " || vars.HONUA_LIGHT_RUNNER"
-    " && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)"
-    " && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository)"
-    " && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}"
+    " || 'ubuntu-latest' }}"
 )
 READY_ONLY = "github.event_name != 'pull_request' || !github.event.pull_request.draft"
 DRAFT_FORMAT_ADMISSION = ("always() && !cancelled() && (needs.runner-select.result == 'success' "
@@ -267,7 +287,7 @@ process.stdout.write(JSON.stringify(new Function('context', `const {github, inpu
         scenarios = [
             ("", False, False, "ubuntu-latest"),
             ("", False, True, "ubuntu-latest"),
-            (json.dumps(pool), False, False, pool),
+            (json.dumps(pool), False, False, "ubuntu-latest"),
             (json.dumps(pool), True, False, "ubuntu-latest"),
         ]
         for name, selected, scenario, partition, planned in product(
@@ -289,6 +309,7 @@ process.stdout.write(JSON.stringify(new Function('context', `const {github, inpu
                 self.assertEqual(self.evaluate_routing(probe, context), expected)
         self.assertEqual(self.jobs["format"]["needs"], "runner-select")
         self.assertEqual(self.jobs["fast-tests"]["needs"], "runner-select")
+        self.assertEqual(self.jobs["fast-server-tests"]["needs"], ["runner-select", "server-test-producer"])
         self.assertEqual(self.jobs["format"]["if"], DRAFT_FORMAT_ADMISSION)
         self.assertNotIn("if", self.jobs["fast-tests"])
 
@@ -300,7 +321,7 @@ process.stdout.write(JSON.stringify(new Function('context', `const {github, inpu
         )
         return json.loads(result.stdout)
 
-    def test_light_jobs_use_the_fork_guarded_light_pool_with_hosted_fallback(self):
+    def test_pr_gate_control_jobs_stay_hosted_unless_a_trunk_dispatch_qualifies_light(self):
         for name in PR_GATE_LIGHT_JOBS:
             with self.subTest(job=name):
                 expected = LIGHT_RUNNER
@@ -335,12 +356,8 @@ process.stdout.write(JSON.stringify(new Function('context', `const {github, inpu
             [True, False, None], ["", json.dumps(configured_pool)], [True, False], ["all", "source", "tests"],
         ):
             expected = "ubuntu-latest"
-            if light and (event == "workflow_dispatch" or not fork):
-                expected = configured_pool
-            if event == "workflow_dispatch" and ref == "refs/heads/trunk" and qualify:
+            if event == "workflow_dispatch" and ref == "refs/heads/trunk" and qualify and partition != "tests":
                 expected = {"group": "honua-light", "labels": ["honua-light"]}
-            if partition == "tests":
-                expected = "ubuntu-latest"
             context = {"expression": bracket_contexts(self.jobs["format"]["runs-on"][3:-2].strip()),
                        "event": event, "ref": ref, "qualify": qualify, "light": light, "fork": fork, "partition": partition}
             with self.subTest(event=event, ref=ref, qualify=qualify, light=light, fork=fork):
@@ -356,13 +373,14 @@ process.stdout.write(JSON.stringify(new Function('context', `const {github, inpu
                 self.assertIn("GITHUB_ENV", step["run"])
 
     def test_remaining_control_jobs_stay_hosted(self):
-        planned = {SHARD_JOBS["pr-gate.yml"][0], "fast-tests"}
+        planned = {SHARD_JOBS["pr-gate.yml"][0], "affected-shard-held", "fast-tests", "fast-server-tests"}
         for name in set(self.jobs) - PR_GATE_SELECTED_JOBS - PR_GATE_LIGHT_JOBS - planned:
             with self.subTest(job=name):
                 self.assertEqual(self.jobs[name]["runs-on"], "ubuntu-latest")
 
     def test_planned_start_jobs_use_the_fork_guarded_heavy_pool(self):
         self.assertEqual(self.jobs["fast-tests"]["runs-on"], FAST_RUNNER)
+        self.assertEqual(self.jobs["fast-server-tests"]["runs-on"], FAST_RUNNER)
         probe = JS_HELPERS + """const {expression, planned, fork, heavy, group, partition} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
 const matrix = {'test-group': group, 'analyzer-partition': partition, 'analyzer-test-partition': group};
 const github = {event_name: 'pull_request', ref: 'refs/pull/1/merge', repository: 'owner/repo', event: {pull_request: {head: {repo: {full_name: fork ? 'fork/repo' : 'owner/repo'}}}}};
@@ -400,12 +418,18 @@ process.stdout.write(JSON.stringify(new Function('context', `const {github, inpu
         self.assertEqual(self.jobs["pr-gate"]["outputs"]["heavy_ready"],
                          "${{ needs.runner-select.outputs.heavy_ready }}")
         self.assertEqual(self.jobs["affected-shard"]["needs"],
+                         ["affected-shards-select", "server-test-producer", "runner-select"])
+        self.assertEqual(self.jobs["affected-shard-held"]["needs"],
                          ["affected-shards-select", "pr-gate", "server-test-producer"])
+        self.assertEqual(
+            self.jobs["affected-shard-held"]["runs-on"],
+            "${{ needs.pr-gate.outputs.heavy_ready == 'true' && " + HEAVY_SHARD_RUNNER + " || 'ubuntu-latest' }}",
+        )
 
     def test_only_proven_same_repo_even_shards_use_heavy_runners(self):
         probe = """const {expression, ready, fork, index, heavy} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
 const github = {repository: 'owner/repo', event: {pull_request: {head: {repo: {full_name: fork ? 'fork/repo' : 'owner/repo'}}}}};
-const needs = {'pr-gate': {outputs: {heavy_ready: ready}}};
+const needs = {'pr-gate': {outputs: {heavy_ready: ready}}, 'runner-select': {outputs: {heavy_ready: ready}}};
 const vars = {HONUA_HEAVY_RUNNER: heavy};
 const strategy = {'job-index': index};
 const format = (_, value) => String(value), endsWith = (value, suffix) => value.endsWith(suffix);
@@ -413,7 +437,7 @@ process.stdout.write(JSON.stringify(new Function('context', `const {github, need
 """
         pool = {"group": "honua-heavy", "labels": ["honua-heavy"]}
         expression = self.jobs["affected-shard"]["runs-on"].removeprefix("${{").removesuffix("}}").strip()
-        expression = expression.replace("needs.pr-gate", "needs['pr-gate']").replace("strategy.job-index", "strategy['job-index']")
+        expression = expression.replace("needs.runner-select", "needs['runner-select']").replace("strategy.job-index", "strategy['job-index']")
         for ready, fork, index, configured in product(["true", "false", ""], [False, True], [0, 1, 2], [False, True]):
             context = {"expression": expression, "ready": ready, "fork": fork,
                        "index": index, "heavy": json.dumps(pool) if configured else ""}
@@ -455,7 +479,7 @@ def heartbeat(idle, instance="i-current", age=0):
 
 class GateRunnerSelectionTests(unittest.TestCase):
     def test_sparse_selector_checkouts_include_shared_heartbeat_validator(self):
-        for workflow, job in (("ci.yml", "producer-runner"), ("pr-gate.yml", "runner-select")):
+        for workflow, job in (("pr-gate.yml", "runner-select"), ("advisory-runner-select.yml", "select")):
             jobs = yaml.safe_load((ROOT / ".github/workflows" / workflow).read_text())["jobs"]
             checkout = next(step for step in jobs[job]["steps"] if "sparse-checkout" in step.get("with", {}))
             self.assertIn("scripts/ci/gate-runner-heartbeat.sh", checkout["with"]["sparse-checkout"].splitlines())
@@ -614,86 +638,25 @@ class GateRunnerSelectionTests(unittest.TestCase):
         self.assertEqual(self.selected_runner(HostScenario(), FAILING_AWS), "runner=ubuntu-latest")
 
 
-class CiProducerSelectionTests(unittest.TestCase):
-    def selection(self, payload, environment=None):
-        with tempfile.TemporaryDirectory() as scratch:
-            scratch = Path(scratch)
-            stub = scratch / "aws"
-            stub.write_text(AWS_STUB)
-            stub.chmod(0o755)
-            log = scratch / "calls"
-            log.touch()
-            output = scratch / "output"
-            env = {key: value for key, value in os.environ.items() if not key.startswith("AWS_")}
-            env.update({"PATH": f"{scratch}{os.pathsep}{os.environ['PATH']}",
-                        "GITHUB_OUTPUT": str(output), "AWS_STUB_LOG": str(log),
-                        "AWS_STUB_INSTANCE": "i-current", "AWS_STUB_HEARTBEAT": payload,
-                        "AWS_ACCESS_KEY_ID": "fixture", "HONUA_CI_PRODUCER_RUNNER": "honua-build",
-                        "HONUA_CI_PRODUCER_TRUSTED": "true", **(environment or {})})
-            subprocess.run(["bash", str(ROOT / "scripts/ci/select-ci-producer-runner.sh")],
-                           env=env, check=True, capture_output=True, timeout=5)
-            return output.read_text().strip(), log.read_text().splitlines()
-
-    def test_current_idle_gate_pool_uses_only_two_read_calls(self):
-        output, calls = self.selection(heartbeat(idle=2))
-        self.assertEqual(output, "runner=honua-build")
-        self.assertEqual(len(calls), 2)
-        self.assertTrue(calls[0].startswith("autoscaling describe-auto-scaling-groups "))
-        self.assertTrue(calls[1].startswith("ssm get-parameter "))
-        self.assertIn("/gate-runner/heartbeat", calls[1])
-
-    def test_disabled_untrusted_or_uncredentialed_events_never_call_aws(self):
-        for environment in ({"HONUA_CI_PRODUCER_RUNNER": ""},
-                            {"HONUA_CI_PRODUCER_RUNNER": "honua-heavy"},
-                            {"HONUA_CI_PRODUCER_TRUSTED": "false"}, {"AWS_ACCESS_KEY_ID": ""}):
-            with self.subTest(environment=environment):
-                self.assertEqual(self.selection(heartbeat(idle=2), environment),
-                                 ("runner=ubuntu-latest", []))
-
-    def test_invalid_busy_stale_and_wrong_instance_proofs_fail_closed(self):
-        fresh = json.loads(heartbeat(idle=2))
-        overrides = [{"idle": value} for value in (0, 1, -1, 2.5, "2", True, None)]
-        overrides += [{"at": value} for value in (0, int(time.time()) + 600, "1", True, None)]
-        overrides += [{"instance": "i-old"}, {"at": int(time.time()) - 100}]
-        payloads = [json.dumps({**fresh, **values}) for values in overrides]
-        payloads += ["{", "null", "[]", "{}", "true", '"text"',
-                     json.dumps({**fresh, "idle": 0, "heavy": {"version": 1, "idle": 8}})]
-        for payload in payloads:
-            with self.subTest(payload=payload):
-                output, calls = self.selection(payload)
-                self.assertEqual(output, "runner=ubuntu-latest")
-                self.assertEqual(len(calls), 2)
-
-    def test_unavailable_instance_and_aws_failure_never_wake_or_retry(self):
-        for environment in ({"AWS_STUB_INSTANCE": "None"}, {"AWS_STUB_FAIL": "1"}):
-            with self.subTest(environment=environment):
-                output, calls = self.selection(heartbeat(idle=2), environment)
-                self.assertEqual(output, "runner=ubuntu-latest")
-                self.assertEqual(len(calls), 1)
-                self.assertTrue(calls[0].startswith("autoscaling describe-auto-scaling-groups "))
-
-    def test_multiple_heartbeat_documents_fail_closed_in_either_order(self):
-        fresh = heartbeat(idle=2)
-        for payload in ("{}\n" + fresh, fresh + "\n{}", fresh + "\n" + fresh, ""):
-            with self.subTest(payload=payload):
-                output, calls = self.selection(payload)
-                self.assertEqual(output, "runner=ubuntu-latest")
-                self.assertEqual(len(calls), 2)
-
-    def test_workflow_isolates_producer_and_contains_setup_failure(self):
+class CiProducerRoutingTests(unittest.TestCase):
+    def test_producer_uses_the_shared_advisory_selector(self):
         jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
         selector, build = jobs["producer-runner"], jobs["build"]
-        self.assertEqual(build["runs-on"], "${{ needs.producer-runner.outputs.runner || 'ubuntu-latest' }}")
-        self.assertEqual(build["if"], selector["if"])
+        self.assertEqual(build["runs-on"], PRODUCER_RUNNER)
+        self.assertEqual(selector["if"], build["if"])
         self.assertIn("producer-runner", build["needs"])
-        self.assertEqual(selector["outputs"]["runner"], "${{ steps.select.outputs.runner || 'ubuntu-latest' }}")
+        self.assertEqual(selector["with"], {"hosted-runner": "ubuntu-latest"})
+        self.assertEqual(selector["secrets"], {"wake-role": "${{ secrets.HONUA_PR_GATE_WAKE_ROLE_ARN }}"})
         self.assertEqual(selector["permissions"], {"contents": "read", "id-token": "write"})
-        for step in selector["steps"]:
-            self.assertTrue(step["continue-on-error"])
-            self.assertEqual(step["timeout-minutes"], 1)
-            self.assertIn("HONUA_CI_PRODUCER_RUNNER == 'honua-build'", step["if"])
-            self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", step["if"])
-            self.assertIn("github.event.workflow_run.head_repository.full_name == github.repository", step["if"])
+
+    def test_producer_takes_the_selected_heavy_pool_else_hosted(self):
+        heavy = {"group": "honua-heavy", "labels": ["honua-heavy"]}
+        for selected, expected in ((json.dumps(heavy), heavy), ('"ubuntu-latest"', "ubuntu-latest"), ("", "ubuntu-latest")):
+            with self.subTest(selected=selected):
+                self.assertEqual(evaluate_producer_runner(selected), expected)
+
+    def test_producer_bounds_workers_and_contains_setup_failure(self):
+        build = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]["build"]
         self.assertEqual(build["env"]["DOTNET_PROCESSOR_COUNT"], "4")
         self.assertEqual(build["env"]["DOTNET_CLI_USE_MSBUILD_SERVER"], "false")
         self.assertEqual(build["env"]["MSBUILDDISABLENODEREUSE"], "1")
@@ -707,6 +670,20 @@ class CiProducerSelectionTests(unittest.TestCase):
                 self.assertEqual(step["if"], "runner.environment == 'github-hosted'")
             if step.get("run", "").startswith(("dotnet build ", "scripts/ci/dotnet-restore-retry.sh ")):
                 self.assertIn("-maxcpucount:4", step["run"])
+
+
+def evaluate_producer_runner(selected):
+    """Evaluates the Build & Format runs-on expression for one selector output."""
+    expression = PRODUCER_RUNNER.removeprefix("${{").removesuffix("}}").strip()
+    expression = expression.replace("needs.producer-runner", "needs['producer-runner']")
+    probe = ("const {expression, selected} = JSON.parse(require('fs').readFileSync(0, 'utf8'));"
+             "const needs = {'producer-runner': {outputs: {runner: selected}}};"
+             "process.stdout.write(JSON.stringify(new Function('needs', 'fromJSON',"
+             " `return (${expression});`)(needs, JSON.parse)));")
+    context = json.dumps({"expression": expression, "selected": selected})
+    result = subprocess.run(["node", "-e", probe], input=context, text=True, capture_output=True, check=True)
+    return json.loads(result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -11,7 +11,7 @@ the `Honua.Server.Features.Console` vertical slice and source-generated through
 Tracked by issues **#1162** (content/RBAC baseline) and **#1215** (Share
 access, public-link, and embed API). Subsequent tickets (#1163 — persistent
 store, #1164/#1165 — release lifecycle) build on this surface. Published
-map/dashboard/report/generated-app route state is documented separately in the
+content route state is documented separately in the
 [Content Publication Registry API](content-publication-registry.md) (#1183);
 Console content items may link to those publications through sidecars and
 provenance, but the publication route pointer and share/embed/public-link policy
@@ -97,12 +97,12 @@ publication response contract.
   "provenance": [
     { "kind": "catalog-resource", "itemId": "res-1", "rel": "derived-from" }
   ],
-  "typeMetadata": { "resourceId": "res-1", "fieldCount": 14 }
+  "typeMetadata": { "datasetId": "res-1", "fieldCount": 14 }
 }
 ```
 
-`itemType` is one of: `service`, `layer`, `saved-map`, `dashboard`, `report`,
-`generated-app`, `open-data`. The `typeMetadata` sidecar is an opaque JSON
+`itemType` is one of: `service`, `dataset`, `layer`, `map`, `dashboard`,
+`report`, `app`, `open-data`. The `typeMetadata` sidecar is an opaque JSON
 element whose shape depends on `itemType`. Server writes use source-generated
 serializers — clients decode with typed helpers per `itemType` rather than
 forking the outer DTO. The sidecar shapes are tracked under
@@ -112,24 +112,29 @@ table below.
 | `itemType` | Sidecar fields |
 | --- | --- |
 | `service` | `serviceType`, `routeBase?`, `publications[]`, `serviceId?`, `url?`, `access?`, `folderPath?` |
-| `layer` | `resourceId`, `geometryType?`, `fieldCount?`, `extent?` (EPSG:4326 lon/lat bbox), `serviceId?`, `url?`, `access?`, `folderPath?` |
-| `saved-map` | `layerCount`, `extent?`, `projection?` |
+| `dataset` | `datasetId`, `kind` (`feature-type` or `coverage`), `geometryType?`, `fieldCount` |
+| `layer` | `datasetId`, `geometryType?`, `fieldCount?`, `extent?` (EPSG:4326 lon/lat bbox), `serviceId?`, `url?`, `access?`, `folderPath?` |
+| `map` | `layerCount`, `extent?`, `projection?` |
 | `dashboard` | `widgetCount`, `dataSourceIds[]` |
 | `report` | `templateId?`, `lastRunAt?` |
-| `generated-app` | `appType`, `sourceArtifactId?`, `entryUrl?` |
+| `app` | `appType`, `sourceArtifactId?`, `entryUrl?` |
 | `open-data` | `license?`, `formats[]`, `distributionUrls[]` |
 
 `actions` is always **server-computed** for the requesting principal and never
 stored. Clients should not send it on create/update; the server overwrites it.
 
 Content list, search, detail, session bootstrap and action checks also project
-published services and layers from the current metadata graph. Service IDs and
-the representative publication IDs identify these rows; `resourceId` identifies
-the underlying layer resource. Multiple protocol publications of a resource on
+published Services, Datasets and Layers from the current metadata graph. Service IDs and
+the representative Layer IDs identify Service and Layer rows; Dataset rows use
+the Dataset ID. Layer `datasetId` identifies the underlying Dataset. A Dataset
+appears once across authorized Services and takes the most public authorized
+exposure. Feature Datasets and Tables have kind `feature-type`; Raster Datasets
+have kind `coverage`. An opaque tile Dataset is excluded until its vector or
+raster kind can be determined. Unpublished and unreadable Datasets are excluded. Multiple protocol publications of a resource on
 one service produce one layer row, preferring its primary publication. Metadata
 rows are authorized before filtering, counting and paging with authored items.
 They expose only the `view` action and cannot be edited through content CRUD.
-Their `access` sidecar reuses the Portal `public`, `org`, and `private` policy
+Service and Layer `access` sidecars reuse the Portal `public`, `org`, and `private` policy
 projection; `url` uses the canonical public service path, including its folder.
 These rows do not create authored share or open-data state.
 Service `routeBase` is root-relative, including any configured public path prefix;
@@ -257,6 +262,15 @@ subset is interesting to keep the response compact.
 `null` entries inside the array (e.g. `{"targets":[null]}`) and entries
 that supply neither `itemId` nor `routeKey` are rejected with
 `400 Bad Request` rather than masked as a 500.
+
+## Vocabulary review rule
+
+Content kinds and their C# enum members use Dataset, Layer, Map and App.
+Layer sidecars refer to a Dataset with `datasetId`. Review new catalog fields,
+filters and tests against this list and the [canonical glossary](../../concepts/domain/README.md).
+`ConsoleEnumParserTests` checks canonical JSON names and rejects retired kinds;
+`PublishedContentProjectionTests` checks Dataset authorization, deduplication
+and read-only identity. Extend these checks when adding a content kind.
 
 ## Provenance
 
@@ -423,6 +437,11 @@ eligibility (and, for STAC, publication) before disclosing anything; private,
 ineligible, missing, and unpublished resources all return an identical generic
 `404` that never leaks the item id, title, or existence:
 
+- `GET /open-data/datasets` — anonymous list of eligible open-data page
+  projections in item-id order (`items[]` of `{itemType, page}`, `nextCursor`).
+  `limit` defaults to 25 and is capped at 50. `cursor` is the opaque
+  `nextCursor` of the previous page; it names the last item returned, so paging
+  never reveals how many ineligible items exist, and no total is returned.
 - `GET /open-data/datasets/{id}` — anonymous open-data page projection.
 - `GET /open-data/datasets/{id}/data.json` — DCAT-US 3.0/data.json document.
 - `GET /open-data/datasets/{id}/schema.org` — Schema.org `Dataset` JSON-LD.
@@ -495,3 +514,22 @@ autoscaling ceiling is above one.
 - **OGC alignment** — sidecar shapes for `service` map onto Metadata v2
   publication types; future iterations should track Metadata v2 enum changes
   through shared reuse rather than duplicating shapes.
+
+## Environment access roles
+
+`/api/v1/console/access/{environmentId}/roles` and `/members` return
+`environmentId` and `environmentName`. The role matrix advertises the scopes
+`environment`, `content`, `layer`, and `dataset-field`: Environment-wide role
+assignment, actual content, a Dataset exposed through a Service, and field-level
+Dataset policy respectively. A Folder groups Services; it is not an access scope.
+
+Role writes and role audit use the same Environment identifier. Existing identifier
+values, role IDs and names, memberships, audit actions, and audit resource keys
+remain stable. The database migration replaces the reserved Console role-ownership
+operation with `environment-membership`, merging an existing canonical grant
+without duplicating it. Unrelated grants remain intact. Generic role-permission
+replacement preserves this ownership grant.
+
+Deploy the matching Console client. Retired JSON properties and scope values have
+no aliases. Review changes to the access models, scopes and reserved ownership
+grant together; keep the canonical wire-contract and migration tests passing.

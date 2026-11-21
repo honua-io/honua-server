@@ -95,7 +95,9 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
         {
             executed.Result.WasRolledBack.Should().BeTrue();
             executed.Writer.ApplyCount.Should().Be(0);
-            executed.Reader.QueryCount.Should().Be(1);
+            // Updates read the effective attributes before rules and the owner check.
+            // Deletes without rules only need the owner snapshot.
+            executed.Reader.QueryCount.Should().Be(executed.Result.UpdateResults.IsEmpty ? 1 : 2);
         }
 
         updated[0].Result.UpdateResults[0].ErrorCode.Should().Be(EditOperationResult.NotPermittedErrorCode);

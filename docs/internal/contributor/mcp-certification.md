@@ -13,10 +13,10 @@ and integer ids are distinct. Concurrent duplicate ids are refused. Unknown,
 completed and repeated cancellation notifications create no work.
 
 The session store owns an atomic generation for each active request. Completion
-compares and removes that generation before returning success. Redis makes this
-authority available across replicas; correctness does not depend on pub/sub
-wakeup delivery. Existing session keys remain unchanged. Request keys share the
-session key's Redis Cluster slot. A separate generation-owned principal quota
+compares and removes that generation before returning success. PostgreSQL
+(`PostgresMcpSessionStore`) makes this authority available across replicas;
+correctness does not depend on wakeup delivery. Existing session keys remain
+unchanged. A separate generation-owned principal quota
 reservation is acquired before registration and compensated on refusal/failure;
 uncertain failures refuse admission, and lost compensation expires at its
 original deadline. Active handlers poll without extending the session or request
@@ -35,8 +35,10 @@ job; `honua_cancel_job` and observed worker cessation remain separate proof.
 while an independent PostGIS transaction blocks its production feature read.
 It observes database blocking, sends a second cancellation POST, and requires
 a cancelled response, released provider locks and unchanged row readback while
-the blocking transaction remains owned by the test. Unit and Redis controls
-cover binding, generation reuse, quotas and missed broadcasts. These tests are
+the blocking transaction remains owned by the test. Unit controls (`McpRequestCancellationTests`, `McpSessionSharedStoreTests`)
+cover binding, generation reuse, quotas and missed broadcasts;
+`PostgresMcpSessionStoreTests` covers cross-node session acceptance and idle
+expiry. These tests are
 server implementation evidence; candidate-bound canonical-client cancellation
 qualification remains tracked by [server #6299](https://github.com/honua-io/honua-server/issues/6299).
 
@@ -88,6 +90,7 @@ annotations instead of failing before the server starts.
 - **Trigger:** scheduled/manual full integration runs and PRs labeled `ci/full`, skips dependabot.
 - **Matrix:** `transport: [grpc-web, rest]` — runs the direct-SDK MCP standalone surface against the actual seeded server. MCP itself uses an in-memory client/server transport; the matrix selects the SDK backend transport. This is distinct from native `/mcp` HTTP or stdio-proxy certification.
 - **Steps:** checkout honua-server → shared setup (`.github/actions/setup-honua-mcp`) → install and build the exact selected SDK source → install its MCP file peer → `test:certification` → `test:certification:artifact` using the same live environment → verify actual mode, backend, transport, suite source and successful round trips → artifact upload.
+- **Node:** the certification and smoke jobs pass Node 22.23.3 (SDK engine minimum 22.12). The shared setup action compiles the SDK with a 4 GiB V8 heap. These jobs do not use the workflow `NODE_VERSION` of 20.
 - **Artifact:** `mcp-certification-{transport}`, 30-day retention.
 - **Ref strategy:** the SDK ref is controlled by the `MCP_SDK_REF` env var at the top of `ci.yml`. When set to a branch name, certification runs are useful for development but the artifacts are **not reproducible release evidence** because the same server commit may exercise different SDK test code over time. For release-grade certification, pin `MCP_SDK_REF` to a specific tag or commit SHA (the current value is a pinned commit). The CI job emits a warning annotation when the ref appears to be a branch name rather than a pinned ref. The `workflow_dispatch` `sdk_ref` input overrides the env var for one-off manual replays.
 - **Script guard:** the `setup-honua-mcp` action inspects the SDK `package.json` for `test:certification`, `test:certification:artifact`, and `test:llm-smoke` **before** any heavy setup. If neither `test:certification` nor `test:llm-smoke` is found (e.g. SDK-side work not yet landed), the action skips the server build, database seed, and `npm ci` entirely; the job emits a warning annotation and completes without failure. Artifact generation and upload are also gated on the action's `cert-available` and `cert-artifact-available` outputs, so no artifacts are produced when certification was skipped or the artifact script is absent. If `test:certification` is present but `test:certification:artifact` is missing (partial SDK landing), the job emits a warning annotation noting that no evidence artifacts were produced — this ensures the release-evidence gap is visible even though the certification tests themselves passed.
@@ -98,8 +101,8 @@ annotations instead of failing before the server starts.
 
 - **Depends on:** `mcp-certification` (only runs when `cert_ran == 'true'` — skipped entirely when certification scripts are absent).
 - **`continue-on-error: true`** — failures annotate but do not gate.
-- **Live model driver:** when `BEDROCK_AWS_ACCESS_KEY_ID` and `BEDROCK_AWS_SECRET_ACCESS_KEY` are configured, CI enables the SDK Bedrock driver with `HONUA_EVAL_BEDROCK=1`. The default model is `us.anthropic.claude-sonnet-4-5-20250929-v1:0` in `us-west-2`; override with repository variables `HONUA_MCP_SMOKE_BEDROCK_MODEL` and `HONUA_MCP_SMOKE_AWS_REGION`.
-- **Fallback:** when Bedrock secrets are absent, the smoke lane runs without the live Bedrock driver and emits a notice. The job remains best-effort.
+- **Live model driver:** when repository variable `HONUA_BEDROCK_SMOKE_ROLE_ARN` is set, the smoke job (environment `bedrock-smoke`) assumes that role through OIDC and enables the SDK Bedrock driver with `HONUA_EVAL_BEDROCK=1`. No stored AWS key is used. The default model is `us.anthropic.claude-sonnet-4-5-20250929-v1:0` in `us-west-2`; override with repository variables `HONUA_MCP_SMOKE_BEDROCK_MODEL` and `HONUA_MCP_SMOKE_AWS_REGION`.
+- **Fallback:** when `HONUA_BEDROCK_SMOKE_ROLE_ARN` is not set, the smoke lane runs without the live Bedrock driver and emits a notice. The job remains best-effort.
 - **Artifact:** `mcp-llm-smoke-transcripts`, 30-day retention.
 
 ## How the seed is applied in CI
@@ -159,7 +162,7 @@ environment variables above.
 | `HONUA_LAYER_ID` | cert + smoke | Yes (default: `0`) |
 | `HONUA_MCP_LAYER_ID` | cert | Yes (set by CI to `10`, the published layer id for `test_service_mcp`) |
 | `HONUA_API_KEY` | cert | Seeded development admin credential, matching the server setup action |
-| `BEDROCK_AWS_ACCESS_KEY_ID` / `BEDROCK_AWS_SECRET_ACCESS_KEY` | smoke only | No (enables live Bedrock driver when both are set) |
+| `HONUA_BEDROCK_SMOKE_ROLE_ARN` (repository variable) | smoke only | No (enables the live Bedrock driver through the `bedrock-smoke` environment's OIDC role) |
 | `HONUA_MCP_SMOKE_BEDROCK_MODEL` | smoke only | No repository variable override for the Bedrock model |
 | `HONUA_MCP_SMOKE_AWS_REGION` | smoke only | No repository variable override for the Bedrock region |
 

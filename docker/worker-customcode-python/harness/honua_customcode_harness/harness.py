@@ -4,12 +4,13 @@ Flow (each step is a separately-testable function above):
 
   1. Load + validate job inputs (:mod:`jobspec`): repo_url, git_ref (40-hex SHA),
      entrypoint, deps_manifest, params_json, output_prefix, HONUA_BASE_URL,
-     HONUA_JOB_TOKEN.
+     HONUA_JOB_REDEMPTION_CODE, which is exchanged once for the job capability
+     (:mod:`redeem`); local runs may pass HONUA_JOB_TOKEN directly.
   2. Clone the user code at the pinned SHA and assert HEAD == SHA
      (:mod:`sourcefetch`).
   3. Restore user-declared extra deps (:mod:`deps`) — the SDK + geo stack are
      already baked into the image.
-  4. Build the SCOPED HonuaClient from HONUA_JOB_TOKEN, then STRIP IMDS/token env
+  4. Build the SCOPED HonuaClient from the job capability, then STRIP IMDS/token env
      (:mod:`sandbox`) BEFORE any user code is imported.
   5. Import the entrypoint (:mod:`loader`), build a :class:`GpContext`, call it.
   6. Upload returned artifacts to output_prefix (:mod:`upload`); map the
@@ -21,6 +22,7 @@ error (bad inputs, clone/verify failure), 3 = job cancelled.
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import signal
 import sys
@@ -50,6 +52,7 @@ from .events import (
 )
 from .jobspec import JobSpec, JobSpecError, load_job_spec
 from .loader import EntrypointError, load_entrypoint
+from . import redeem
 from .sandbox import (
     assert_credentials_stripped,
     build_scoped_client,
@@ -152,6 +155,11 @@ def _run_steps(
         spec = load_job_spec(env)
     except JobSpecError as exc:
         log.warn(f"invalid job inputs: {exc}")
+        return EXIT_HARNESS_ERROR
+    try:
+        spec = _redeem(spec, os.environ if env is None else env)
+    except Exception as exc:  # noqa: BLE001 - no capability means the job must not run
+        log.warn(f"job capability redemption failed: {exc}")
         return EXIT_HARNESS_ERROR
 
     # Establish evidence delivery before any source/dependency/user-code phase can fail.
@@ -265,6 +273,14 @@ def _run_steps(
 
     log.info(f"job succeeded: {result.message or 'ok'}")
     return EXIT_OK
+
+
+def _redeem(spec: JobSpec, values: Mapping[str, str]) -> JobSpec:
+    if spec.redemption_code is None:
+        return spec
+    target = redeem.RedemptionTarget(spec.base_url, values.get("HONUA_JOB_ID", ""), values.get("HONUA_JOB_ATTEMPT", ""))
+    capability = redeem.redeem_capability(target, spec.redemption_code)
+    return dataclasses.replace(spec, job_token=capability, redemption_code=None)
 
 
 def _build_uploader(spec: JobSpec, uploader_factory: Any, env=None) -> Any:

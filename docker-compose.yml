@@ -35,35 +35,10 @@ services:
       start_period: 90s
     restart: unless-stopped
 
-  # Redis for the durable local control plane. The quickstart keeps the memory
-  # budget small and uses noeviction so approval/workflow keys are never dropped.
-  redis:
-    image: redis:7.4-alpine
-    ports:
-      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
-    command:
-      [
-        "redis-server",
-        "--appendonly",
-        "yes",
-        "--maxmemory",
-        "${HONUA_REDIS_MAXMEMORY:-64mb}",
-        "--maxmemory-policy",
-        "noeviction"
-      ]
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    restart: unless-stopped
-
   # Named volumes are created as root. Initialize the storage volume for the
   # non-root server UID before Honua starts so imports work on a clean install.
   storage-init:
-    image: redis:7.4-alpine
+    image: alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
     entrypoint: ["sh", "-c"]
     command: ["chown -R ${HONUA_CONTAINER_UID:-1001}:${HONUA_CONTAINER_UID:-1001} /storage"]
     user: "0:0"
@@ -95,7 +70,6 @@ services:
       # Match the stock PostgreSQL service's max_connections. This enables the
       # deployment sizing policy instead of the generic 200-connection default.
       Database__MaxConnections: "100"
-      ConnectionStrings__Redis: "${HONUA_REDIS_URL:-redis:6379}"
       # These values make the documented local reverse-proxy/Console hostnames valid
       # inputs to the production host-validation middleware when this file is reused.
       # For local Console OIDC set HONUA_PUBLIC_BASE_URL to the Console origin.
@@ -115,7 +89,7 @@ services:
       OperateObservabilityFixture__SeedOnStartup: "${HONUA_OPERATE_FIXTURE_SEED_ON_STARTUP:-false}"
       # Development-only defaults for the repo quickstart. Override these before
       # reusing this compose file outside a local developer workstation.
-      HONUA_ADMIN_PASSWORD: "${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
+      HONUA_ADMIN_PASSWORD: "${HONUA_ADMIN_PASSWORD:?Run python3 scripts/docker/quickstart.py to initialize per-install credentials}"
       # Studio customers retain resource authorization and publication approval.
       # This does not enable the optional AI proxy or provider calls.
       Studio__EndUserAuthorization__Enabled: "true"
@@ -140,8 +114,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
       storage-init:
         condition: service_completed_successfully
     healthcheck:
@@ -158,7 +130,7 @@ services:
       - no-new-privileges:true
     # Writable volumes for runtime data
     tmpfs:
-      - /tmp:noexec,nosuid,size=100m
+      - /tmp:noexec,nosuid,size=512m
     volumes:
       - honua_storage:/var/lib/honua/storage
       - honua_logs:/tmp/honua-logs
@@ -176,9 +148,9 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: "http://+:8080"
       HONUA_SERVER_BASE_URL: "http://honua:8080"
-      HONUA_ADMIN_API_KEY: "${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
+      HONUA_ADMIN_API_KEY: "${HONUA_ADMIN_PASSWORD:?Run python3 scripts/docker/quickstart.py to initialize per-install credentials}"
       Honua__Server__BaseUrl: "http://honua:8080"
-      Honua__Server__AdminApiKey: "${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
+      Honua__Server__AdminApiKey: "${HONUA_ADMIN_PASSWORD:?Run python3 scripts/docker/quickstart.py to initialize per-install credentials}"
       Studio__EmbedJsStudio: "true"
     depends_on:
       honua:
@@ -228,7 +200,6 @@ volumes:
   honua_logs:
   honua_cache:
   dotnet_diagnostics:
-  redis_data:
   minio_data:
 
 secrets:

@@ -13,8 +13,8 @@ internal static class FormXlsFormEndpoints
     public static IVersionedEndpointRouteBuilder MapFormXlsFormEndpoints(this IVersionedEndpointRouteBuilder admin)
     {
         admin.MapPost("/import", HandleImport)
-            .WithName("ImportFormPackageXlsForm")
-            .WithSummary("Import an XLSForm workbook as a new draft form package version.")
+            .WithName("ImportFormXlsForm")
+            .WithSummary("Import an XLSForm workbook as a new Form Draft.")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]))
             .Accepts<IFormFile>("multipart/form-data")
             .Produces<FormPackageVersion>(StatusCodes.Status201Created)
@@ -24,8 +24,8 @@ internal static class FormXlsFormEndpoints
             .DisableAntiforgery();
 
         admin.MapGet("/{formId}/export", HandleExport)
-            .WithName("ExportFormPackageXlsForm")
-            .WithSummary("Export the current published form package version as an XLSForm workbook.")
+            .WithName("ExportFormXlsForm")
+            .WithSummary("Export the current Released Form Version as an XLSForm workbook.")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
             .Produces(StatusCodes.Status200OK, contentType: FormXlsFormService.WorkbookContentType)
             .ProducesProblem(StatusCodes.Status404NotFound)

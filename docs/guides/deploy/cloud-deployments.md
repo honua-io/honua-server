@@ -47,7 +47,7 @@ ref policy, and [deployment presets](https://github.com/honua-io/honua-iac/blob/
 The database and observability tiers are separate modules: `aws-data` / `azure-data`
 for the managed PostGIS, and `observability-stack`.
 
-Generic web images are published to Docker Hub (`honuaio/honua-server`) and GHCR (`ghcr.io/honua-io/honua-server`). The rc.2 default is the chiseled JIT image with PostGIS as its only database store. Unsuffixed generic release and nightly tags select that image. Native AOT is a separate, optional `-aot` variant; its promotion requires suite and live-journey parity evidence. Use the matching JIT `-full` variant for additional database stores. See [choose the serving image](choose-serving-image.md) for availability, store inventory, and upgrade checks.
+Generic web images are published to Docker Hub (`honuaio/honua-server`) and GHCR (`ghcr.io/honua-io/honua-server`). The rc.2 default is the native-AOT image with PostGIS as its only database store; the 2026.1 release channel and unsuffixed nightly and trunk tags select it. The tag-triggered `latest` and `vX.Y.Z` tags from `deploy.yml` still select the chiseled JIT image, and every channel keeps an explicit `-jit` variant. Use the matching JIT `-full` variant for additional database stores. See [choose the serving image](choose-serving-image.md) for availability, store inventory, and upgrade checks.
 
 Cloud-targeted tags select their runtime explicitly: `*-ecs-jit` and `*-ecs-jit-full` are JIT variants, while `*-ecs-aot` and `*-lambda-aot` select Native AOT. The shorter `*-ecs` and `*-lambda` compatibility aliases still resolve to the corresponding AOT images; they do not follow the generic default. A published tag does not change the platform support tier in the table above.
 
@@ -63,10 +63,10 @@ These are the generic web image publication contracts (Docker Hub + GHCR). Confi
 | `vX.Y.Z` | A specific PostGIS JIT release | Never (immutable) | `deploy.yml` |
 | `latest-full`, `vX.Y.Z-full` | Corresponding JIT image with additional stores | `latest-full`: stable release or manual default-branch deployment; versioned tag: immutable | `deploy.yml` |
 | `latest-aot`, `vX.Y.Z-aot` | Corresponding optional Native-AOT image | `latest-aot`: stable release or manual default-branch deployment; versioned tag: immutable | `deploy.yml` |
-| `trunk`, `trunk-jit` | Latest certified PostGIS JIT trunk image | A certified nightly candidate is published | `nightly-container-build.yml` |
-| `nightly`, `nightly-YYYYMMDD`, `nightly-<sha7>` | PostGIS JIT moving, dated, and revision-specific nightly images | A certified nightly candidate is published | `nightly-container-build.yml` |
+| `trunk`, `trunk-aot` | Latest certified PostGIS native-AOT trunk image | A certified nightly candidate is published | `nightly-container-build.yml` |
+| `nightly`, `nightly-YYYYMMDD`, `nightly-<sha7>` | PostGIS native-AOT moving, dated, and revision-specific nightly images; each is the same index as its `nightly-aot` tag | A certified nightly candidate is published | `nightly-container-build.yml` |
 | `trunk-jit-full`, `nightly-jit-full`, `nightly-jit-<sha7>-full` | Corresponding JIT nightly with additional stores | A certified nightly candidate is published | `nightly-container-build.yml` |
-| `trunk-aot`, `nightly-aot`, `nightly-aot-<sha7>` | Corresponding optional Native-AOT nightly | A certified nightly candidate is published | `nightly-container-build.yml` |
+| `trunk-jit`, `nightly-jit`, `nightly-jit-<sha7>` | Corresponding PostGIS JIT nightly | A certified nightly candidate is published | `nightly-container-build.yml` |
 
 The getting-started pages use the 2026.1 release channel
 `ghcr.io/honua-io/honua-server:2026.1-rc` (`ghcr.io/honua-io/honua-server:2026.1` at GA), which only release
@@ -74,7 +74,7 @@ promotion moves. The exact digest is in the release's `customer-install-manifest
 (`server.image`). Do not infer that a new variant exists from an older tag.
 
 - **Production / demos**: use the release's install manifest and supported platform variant. The mutable `latest` tags can include manual default-branch deployments; select the release image and pin its digest for deployment and rollback.
-- **Trunk-following consumers**: use `trunk` for the default JIT image, or the explicit full/AOT nightly variant required by your workload. Nightlies follow a [certified candidate](../operate/nightly-images.md), rather than every trunk commit.
+- **Trunk-following consumers**: use `trunk` for the default native-AOT image, or the explicit JIT or full nightly variant required by your workload. Nightlies follow a [certified candidate](../operate/nightly-images.md), rather than every trunk commit.
 - **Additional database stores**: select the matching JIT full image and check the installed store inventory before restoring traffic. File-format imports alone do not require the full image.
 
 ## Pattern by team size
@@ -161,7 +161,7 @@ aws lambda publish-version --function-name honua-prod
 
 ### Keep settings out of the 4 KB Lambda environment
 
-AWS Lambda caps a function's environment variables at 4 KB in total. A Redis-on release cell already
+AWS Lambda caps a function's environment variables at 4 KB in total. A release cell already
 uses most of it, so move settings into a **settings document**: one Secrets Manager secret whose
 value is a JSON object of configuration keys. The function environment then carries a single
 reference:
@@ -228,7 +228,7 @@ How the document behaves:
   override never needs a document edit.
 - **References inside the document:** a value can itself be an `aws:secretsmanager:` reference.
   Startup resolves it exactly as if it had come from the environment (the admin password,
-  connection-encryption master key, audit-chain key, Redis and database connection strings,
+  connection-encryption master key, audit-chain key, database connection strings,
   license content, key-ring certificate). Keep key material in its own secret and reference it;
   do not paste plaintext keys into the document.
 - **Fail-closed:** an unreadable secret, a value that is not JSON, a root that is not a JSON
@@ -257,7 +257,7 @@ If the secret uses a customer-managed KMS key, also grant `kms:Decrypt` on that 
 
 ### How the control-plane event functions dispatch
 
-The three control-plane event functions run with `ControlPlane__TriggerMode=Event`, and `HONUA_CONTROL_PLANE_LAMBDA_HANDLER` picks the handler: `batch-event` (alias `reconcile`) reconciles the execution job named by an EventBridge "Batch Job State Change" event's `detail.jobId`, `backstop` runs one execution-job sweep and one workflow-operation sweep, and `scheduled-tick` runs the tick named by the schedule's `{"kind": "<ScheduledTickKind>"}` input. Schedule `{"kind": "JobStoreRetention"}` every 10 minutes: it deletes jobs, job logs, result packages and leases past their retention, which no Lambda function does on its own. By default they run the `*-lambda-aot` image. Its Lambda Web Adapter posts every non-HTTP invocation as raw JSON to `POST /events` on `127.0.0.1:8080` (the adapter's `AWS_LWA_PASS_THROUGH_PATH`, default `/events`), and the server maps that route only when `HONUA_CONTROL_PLANE_LAMBDA_HANDLER` is set. The route runs the handler in-process and answers only loopback callers, so it needs no token. On these functions host validation also accepts a loopback Host header on a connection that is loopback at both ends, because the adapter's requests never carry the public hosts in `HostValidation__AllowedHosts`. The API function sets no selector, so it keeps strict host validation and has no `/events` route. An unknown selector returns `400` with `control_plane_lambda_handler_unknown`. On a cell without Redis, `batch-event`, `backstop`, and the `WorkflowSchedule`, `JobReconciliation`, and `GeoprocessingOutputSweep` ticks answer `503` with a capability-unavailable problem that names `missingDependency: redis` (logged once per cold start at Warning), the other ticks run as usual, and any unexpected failure answers a problem+json `500` that names the exception type.
+The three control-plane event functions run with `ControlPlane__TriggerMode=Event`, and `HONUA_CONTROL_PLANE_LAMBDA_HANDLER` picks the handler: `batch-event` (alias `reconcile`) reconciles the execution job named by an EventBridge "Batch Job State Change" event's `detail.jobId`, `backstop` runs one execution-job sweep and one workflow-operation sweep, and `scheduled-tick` runs the tick named by the schedule's `{"kind": "<ScheduledTickKind>"}` input. Schedule `{"kind": "JobStoreRetention"}` every 10 minutes: it deletes jobs, job logs, result packages and leases past their retention, which no Lambda function does on its own. By default they run the `*-lambda-aot` image. Its Lambda Web Adapter posts every non-HTTP invocation as raw JSON to `POST /events` on `127.0.0.1:8080` (the adapter's `AWS_LWA_PASS_THROUGH_PATH`, default `/events`), and the server maps that route only when `HONUA_CONTROL_PLANE_LAMBDA_HANDLER` is set. The route runs the handler in-process and answers only loopback callers, so it needs no token. On these functions host validation also accepts a loopback Host header on a connection that is loopback at both ends, because the adapter's requests never carry the public hosts in `HostValidation__AllowedHosts`. The API function sets no selector, so it keeps strict host validation and has no `/events` route. An unknown selector returns `400` with `control_plane_lambda_handler_unknown`. On a cell without the system database, `batch-event`, `backstop`, and the `WorkflowSchedule`, `JobReconciliation`, and `GeoprocessingOutputSweep` ticks answer `503` with a capability-unavailable problem that names `missingDependency: system-database` (logged once per cold start at Warning), the other ticks run as usual, and any unexpected failure answers a problem+json `500` that names the exception type.
 
 ### MCP sessions on Lambda
 
@@ -265,13 +265,13 @@ A Lambda API function runs as many execution environments, and an MCP client's r
 
 ### Background file imports run on AWS Batch
 
-A Lambda instance is frozen as soon as it returns a response, so the API function never runs a background file import itself. With Redis on and the GP Batch workload configured (`ControlPlane__ExecutionWorkloads__0__*`, `Backend=honua-aws-batch` and `TargetKind=AwsBatch`; `TargetKind` defaults to `KubernetesJob` on every workload, and the server refuses to start when the two disagree), the API stages the upload in file storage and submits a `FileImport` execution job to that same Batch queue and job definition. The job definition runs the generic server image. The batch backend starts it with `HONUA_OPERATION_ID` and `HONUA_JOB_KIND=FileImport`, so it runs in the execution-worker profile: it downloads the staged file, imports it, and exits. `GET /api/v1/admin/import/jobs/{jobId}` reports `runner: batch` and the Batch job id as `instanceId`. A dedicated `Kind=FileImport` workload takes precedence over the GP workload when one is configured. Imports larger than about 6 GiB ask for a larger job-definition tier through `batch.ephemeral_gib`.
+A Lambda instance is frozen as soon as it returns a response, so the API function never runs a background file import itself. With the system database and the GP Batch workload configured (`ControlPlane__ExecutionWorkloads__0__*`, `Backend=honua-aws-batch` and `TargetKind=AwsBatch`; `TargetKind` defaults to `KubernetesJob` on every workload, and the server refuses to start when the two disagree), the API stages the upload in file storage and submits a `FileImport` execution job to that same Batch queue and job definition. The job definition runs the generic server image. The batch backend starts it with `HONUA_OPERATION_ID` and `HONUA_JOB_KIND=FileImport`, so it runs in the execution-worker profile: it downloads the staged file, imports it, and exits. `GET /api/v1/admin/import/jobs/{jobId}` reports `runner: batch` and the Batch job id as `instanceId`. A dedicated `Kind=FileImport` workload takes precedence over the GP workload when one is configured. Imports larger than about 6 GiB ask for a larger job-definition tier through `batch.ephemeral_gib`.
 
 A batch worker cannot read the API instance's local disk, so this path needs shared file storage on both the API function and the Batch job definition:
 
 - `FileStorage__Provider=AwsS3`, `FileStorage__AwsS3__BucketName` and `FileStorage__AwsS3__Region` (optionally `FileStorage__AwsS3__KeyPrefix`) on the API function and in the GP job definition's environment;
 - `s3:PutObject`, `s3:GetObject` and `s3:DeleteObject` on that bucket for the API function's role, and the same for the Batch job role (`gp_batch_data_bucket_enabled` and `gp_batch_data_bucket_arn` in the `aws-serverless` module);
-- Redis (`ConnectionStrings__redis`) on both, as GP jobs already require.
+- The system database (`ConnectionStrings__DefaultConnection`) on both, as GP jobs already require.
 
 Without a Batch workload, or with host-local file storage, the API function refuses background imports with `503 Background import service not available` before it stages anything. The `import.background` capability reports `runner: unavailable` with `reasonCode` `durable-runner-required` or `shared-file-storage-required`. Imports below the background threshold still run synchronously.
 
@@ -331,7 +331,7 @@ See [Connection poolers and proxies](../../reference/configuration/data-sources/
 
 **ECS uses PostgreSQL for durable control-plane state.** Configure `ConnectionStrings__DefaultConnection` for every serving task. Durable execution jobs, queued imports, leases, deploy workflows and operation proposals share the system database. Use the same `Database__Schema` when overriding the default system schema. Back up and restore this database together with the operation key-ring material described above. Database availability and its backup/failover policy determine the durability of this state.
 
-**Share the operation key ring across tasks and workers.** Outside Development and Test, a configured system database requires `Operations__SecretChannel__KeyRingCertificatePath` (with the PKCS#12 file mounted), `Operations__SecretChannel__KeyRingCertificatePkcs12`, or `Operations__SecretChannel__KeyRingSecret`. Use the same configured material on the serving tasks and Batch workers, and retain it for the lifetime of the database. See the production key-ring guidance above before changing or restoring it. Shared job state does not make host-local files accessible to another task: use shared file storage for staged uploads and job outputs.
+**Share the operation key ring across tasks and workers.** Outside Development and Test, a configured system database requires `Operations__SecretChannel__KeyRingCertificatePath` (with the PKCS#12 file mounted), `Operations__SecretChannel__KeyRingCertificatePkcs12`, or `Operations__SecretChannel__KeyRingSecret`. Use the same configured material on the serving tasks and Batch workers, and retain it for the lifetime of the database. The scoped capability handed to a custom-code job is stored in the job record protected with this ring, so database readers and backups do not hold it; a task that cannot read the ring never sees a usable capability, so such a job fails closed until a task holding the ring handles it. The AWS Batch job itself receives only a single-use redemption code that the worker exchanges for the capability when it starts, so `batch:DescribeJobs` does not reveal a live capability; deploy the custom-code worker images from the same release as the server, because an older worker image expects the capability in its environment and refuses to start. See the production key-ring guidance above before changing or restoring it. Shared job state does not make host-local files accessible to another task: use shared file storage for staged uploads and job outputs.
 
 **The local batch-compute backends are single-host only.** The in-process `local` backend and the child-process `honua-local-process` pool track launched jobs in an in-process registry that cannot survive a host restart or be observed from another node. They are the zero-dependency executors for single-host / air-gapped deployments; they **cannot** work on:
 

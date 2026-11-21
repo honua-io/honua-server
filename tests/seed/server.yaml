@@ -221,6 +221,8 @@ sql:
           layer         VARCHAR(256) NOT NULL,
           attribute     VARCHAR(256) NOT NULL,
           claim_type    VARCHAR(256) NOT NULL,
+          filter_expression TEXT,
+          area_geometry TEXT,
           comparison    SMALLINT     NOT NULL DEFAULT 0,
           description   TEXT,
           created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
@@ -652,6 +654,15 @@ sql:
           CONSTRAINT uq_cloud_raster_object UNIQUE (layer_id, provider, bucket, object_key)
       );
   - "CREATE INDEX IF NOT EXISTS idx_cloud_raster_layer ON honua.cloud_raster_catalog(layer_id);"
+  # Migration 223: the COG scan's decode fields and GDAL NoData.
+  - |
+      ALTER TABLE honua.cloud_raster_catalog
+          ADD COLUMN IF NOT EXISTS bits_per_sample INTEGER,
+          ADD COLUMN IF NOT EXISTS predictor INTEGER,
+          ADD COLUMN IF NOT EXISTS is_little_endian BOOLEAN,
+          ADD COLUMN IF NOT EXISTS photometric_interpretation INTEGER,
+          ADD COLUMN IF NOT EXISTS planar_configuration INTEGER,
+          ADD COLUMN IF NOT EXISTS nodata TEXT;
   - |
       CREATE OR REPLACE FUNCTION honua.update_cloud_raster_catalog_updated_at()
       RETURNS TRIGGER AS $$

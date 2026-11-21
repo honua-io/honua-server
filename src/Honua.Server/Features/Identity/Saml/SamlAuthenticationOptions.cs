@@ -20,6 +20,12 @@ public sealed class SamlAuthenticationOptions
 
     public string? IdpSingleLogoutServiceUrl { get; set; }
 
+    // Absolute https URL of the IdP single sign-on endpoint; setting it enables GET /saml/login.
+    public string? IdpSingleSignOnServiceUrl { get; set; }
+
+    // Null keeps the default: responses without InResponseTo are accepted only while no IdP sign-on URL is configured.
+    public bool? AllowUnsolicitedResponses { get; set; }
+
     // Signatures are verified against this certificate, and unsigned assertions are rejected.
     public string? IdpSigningCertificate { get; set; }
 

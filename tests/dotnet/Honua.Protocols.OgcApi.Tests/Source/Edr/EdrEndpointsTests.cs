@@ -7,6 +7,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Protocols.Ogc.Common;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -87,7 +88,7 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
         range.GetProperty("values").EnumerateArray().First().GetDouble()
             .Should().BeApproximately(ExpectedBandValue(1, -122.4, 37.8), 1e-6);
 
-        // Sub-second precision decides intersection (#4151): the whole second and an interval
+        // Sub-second precision decides intersection: the whole second and an interval
         // ending 300 ms before the acquisition instant both select no data.
         foreach (var disjoint in new[] { "2026-06-20T00:00:00Z", "../2026-06-20T00:00:00.100Z" })
         {
@@ -166,10 +167,10 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
         AssertCubeValuesDerivedFromDomain(doc.RootElement, band: 3, "band_3");
     }
 
-    // #3184: an unknown parameter-name previously fell back to band_1, returning a different
-    // physical quantity than the client asked for. OGC API - EDR /req/edr/parameter-name-response
-    // requires the value to come from the collection's enumerated parameter list and that only
-    // the listed parameters be returned, so an unknown name is an invalid query-parameter value.
+    // An unknown parameter-name must not fall back to band_1, which is a different physical
+    // quantity than the client asked for. OGC API - EDR /req/edr/parameter-name-response requires
+    // the value to come from the collection's enumerated parameter list and that only the listed
+    // parameters be returned, so an unknown name is an invalid query-parameter value.
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /edr/collections/{collectionId}/position")]
@@ -261,10 +262,8 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
     [Endpoint("GET /edr/collections/{collectionId}/position")]
     public async Task Edr_WebMercatorRaster_AdvertisesCrs84ExtentAndGatesPositionInCrs84()
     {
-        // #4149: RasterInfo.Extent is in the storage SRID. A San Francisco raster stored in EPSG:3857
-        // previously advertised its metre bbox labelled CRS84 and rejected every lon/lat position.
-        // The expected CRS84 bbox uses the spherical inverse Mercator closed form, independent of
-        // the server's transform code.
+        // RasterInfo.Extent uses the storage SRID. For an EPSG:3857 raster, derive the
+        // expected CRS84 bbox independently using the spherical inverse Mercator formula.
         const double minX = -13637750;
         const double minY = 4539250;
         const double maxX = -13614250;
@@ -276,8 +275,11 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
             Extent = new RasterExtent { XMin = minX, YMin = minY, XMax = maxX, YMax = maxY, Srid = 3857 }
         });
 
+        // The advertised box is the reprojected extent grown outward by the extent margin.
+        var margin = OgcExtentTransformer.ReprojectedExtentMarginDegrees;
         var (minLon, minLat) = InverseWebMercator(minX, minY);
         var (maxLon, maxLat) = InverseWebMercator(maxX, maxY);
+        (minLon, minLat, maxLon, maxLat) = (minLon - margin, minLat - margin, maxLon + margin, maxLat + margin);
 
         using (var collectionDoc = await GetJsonAsync($"/edr/collections/{WebAppFixture.TestLayerId}"))
         {
@@ -318,7 +320,7 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
     [Endpoint("GET /edr/collections/{collectionId}/position")]
     public async Task Edr_UtmRaster_AdvertisesCrs84ExtentAndAcceptsLonLatPosition()
     {
-        // #4149 for a CRS the in-memory transformer does not cover: a UTM zone 10N (EPSG:32610)
+        // A CRS the in-memory transformer does not cover: a UTM zone 10N (EPSG:32610)
         // raster around San Francisco reprojects through the coordinate transform service.
         UsePrimaryRaster(CreateRasterInfo() with
         {
@@ -355,7 +357,7 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
     [Endpoint("GET /edr/collections/{collectionId}/cube")]
     public async Task Edr_PositionAndCube_FormatOutsideOutputFormats_Returns400()
     {
-        // #4153: the collection advertises output_formats=[CoverageJSON]. OGC API - Common Part 1
+        // The collection advertises output_formats=[CoverageJSON]. OGC API - Common Part 1
         // (8.1.3) maps any other `f` value to 400 instead of a CoverageJSON 200.
         var position = $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords=POINT(-122.4 37.8)";
         var cube = $"/edr/collections/{WebAppFixture.TestLayerId}/cube?bbox=-122.5,37.7,-122.3,37.9&resolution-x=1";
@@ -389,7 +391,7 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
     [Endpoint("GET /edr/collections/{collectionId}/cube")]
     public async Task Edr_PositionAndCube_CrsOutsideCollectionCrs_Returns400WithoutSampling()
     {
-        // #4153: the collection advertises crs=[CRS84]. EPSG:3857 metres were previously read as
+        // The collection advertises crs=[CRS84]. EPSG:3857 metres must not be read as
         // CRS84 degrees; they must be rejected before any pixel is sampled.
         var position = await _fixture.Client.GetAsync(
             $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords=POINT(-13625000 4550000)&crs=EPSG:3857");
@@ -424,7 +426,7 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
     [Endpoint("GET /edr/collections/{collectionId}/position")]
     public async Task Edr_Position_MultiPoint_ReturnsCoverageCollectionSampledAtEachPosition()
     {
-        // #4153: EDR 1.1 position examples use coords=MULTIPOINT(...). The store stub derives each
+        // EDR 1.1 position examples use coords=MULTIPOINT(...). The store stub derives each
         // band value from the sampled coordinate (band_1 = lon + 200, band_2 = lat), so the expected
         // values below are computed from the request coordinates, not captured from the handler.
         _rasterStore.IdentifyAsync(
@@ -583,7 +585,7 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
         rasterStore.GetExtentAsync(WebAppFixture.TestLayerId, TestRasterId, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<RasterExtent?>(raster.Extent));
 
-        // #4424: the sample is a function of the requested coordinate, not a constant.
+        // The sample is a function of the requested coordinate, not a constant.
         // A constant made every value assertion a tautology — the suite passed for
         // POINT(0 0), for transposed lat/lon and for a handler that ignored `coords`
         // entirely. ExpectedBandValue weights x and y differently, so a transposition,
@@ -674,7 +676,7 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
             NoDataValue = -9999,
             GeoTransform = [-122.5, 0.003125, 0, 37.9, 0, -0.003125],
             Extent = new RasterExtent { XMin = -122.5, YMin = 37.7, XMax = -122.3, YMax = 37.9, Srid = 4326 },
-            // The position query's datetime selects this acquisition instant (#4151): it carries
+            // The position query's datetime selects this acquisition instant: it carries
             // sub-second precision, which the t-axis must echo exactly, and differs from CreatedAt
             // so a handler reading the creation date selects nothing.
             AcquisitionDate = new DateTimeOffset(2026, 6, 20, 0, 0, 0, 400, TimeSpan.Zero),

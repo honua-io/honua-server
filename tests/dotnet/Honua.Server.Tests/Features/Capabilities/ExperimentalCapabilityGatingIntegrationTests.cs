@@ -15,7 +15,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Capabilities;
 
-[Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.Metadata)]
 public sealed class ExperimentalCapabilityGatingIntegrationTests(
@@ -29,16 +28,15 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests(
         "scene.catalog",
         "scene.bim-ingest",
         "scene.pointcloud-ingest",
-        // temporal.* promoted to GA (Implemented) in #2429 — no longer experimental-gated.
-        // sync.offline promoted to GA (Implemented) in #2430 — no longer experimental-gated.
+        // temporal.* is GA (Implemented), so it is not experimental-gated.
+        // sync.offline is not experimental-gated either.
         // alerts.geofence is Preview in 2026.1 and is asserted separately below.
         // Realtime feature streams are Experimental: they deliver from the PostgreSQL event log.
         "realtime.feature-streams",
-        // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
+        // versioning.branch (VMS REST surface) is gated Preview.
         "versioning.branch",
-        // security.mtls was promoted to GA in #2431, then DEMOTED back to experimental in
-        // #2958 (release-safety follow-up to #2946/#2431): the always-on client-certificate
-        // scheme/RBAC layer interposed on admin requests regardless of bearer-token validity.
+        // security.mtls is experimental: the always-on client-certificate scheme/RBAC layer
+        // interposes on admin requests regardless of bearer-token validity.
         "security.mtls",
     ];
 
@@ -118,8 +116,8 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests(
         // Opt a single experimental capability in (global switch still OFF). It must
         // reappear in the served manifest while its experimental siblings stay omitted —
         // proving the gate is a real, per-capability lever, not an always-off constant.
-        // (sync.offline is no longer a valid experimental control after its #2430 GA
-        // promotion, so this uses versioning.branch, which remains built-experimental.)
+        // (sync.offline is not a valid experimental control, so this uses
+        // versioning.branch, which remains built-experimental.)
         var fixture = CreateFixture(
             experimentalGlobalEnabled: false,
             perCapabilityEnabled: "versioning.branch");
@@ -223,11 +221,11 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests(
     [Endpoint("GET /api/v1/temporal/services/{serviceId}/layers/{layerId}/capabilities")]
     public async Task TemporalEndpoint_AfterGaPromotion_IsNotExperimentalGated()
     {
-        // #2429 promoted temporal.* Experimental -> Implemented (GA). The temporal route
+        // temporal.* is Implemented (GA). The temporal route
         // group must no longer short-circuit as experimental-disabled even with the global
         // experimental switch OFF — the request reaches the handler (which then returns a
         // normal not-found for the deliberately unseeded service/layer, a DIFFERENT 404
-        // than the experimental-disabled gate produced before the promotion).
+        // than the experimental-disabled gate).
         var fixture = disabledPosture.Share();
         await fixture.InitializeAsync();
 
@@ -249,8 +247,8 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests(
     [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer")]
     public async Task VmsEndpoint_WhenExperimentalDisabled_Returns404ExperimentalDisabled()
     {
-        // The VMS REST surface (versioning.branch) is gated Preview in the BH6-001/BH6-002 fix
-        // batch. With experimental OFF the capability-gate filter must short-circuit with
+        // The VMS REST surface (versioning.branch) is gated Preview. With experimental
+        // OFF the capability-gate filter must short-circuit with
         // 404 honua:capability-experimental-disabled before any handler runs — proving the GA
         // surface no longer exposes the VMS endpoints by default.
         var fixture = disabledPosture.Share();
@@ -317,9 +315,8 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests(
     [Endpoint("GET /api/v1/admin/security/client-certificates/profiles")]
     public async Task ClientCertificatesEndpoint_WhenExperimentalDisabled_Returns404ExperimentalDisabled()
     {
-        // #2958: security.mtls was promoted to GA in #2431, then DEMOTED back to experimental
-        // (release-safety follow-up to #2946/#2431). The client-certificate trust-profile admin
-        // group is gated Preview again: with experimental OFF the capability-gate filter must
+        // The security.mtls capability is experimental, so the client-certificate trust-profile
+        // admin group is gated Preview: with experimental OFF the capability-gate filter must
         // short-circuit with 404 honua:capability-experimental-disabled before any handler runs.
         var fixture = disabledPosture.Share();
         await fixture.InitializeAsync();
@@ -366,13 +363,12 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests(
     [Endpoint("GET /api/v1/admin/auth/config")]
     public async Task AdminAuthConfigEndpoint_WhenExperimentalDisabled_Returns200()
     {
-        // #2958 regression guard: HandleGetAuthConfig resolves IClientCertificateTrustStore
-        // via [FromServices] to report trust-profile bootstrap hints. That store must stay
+        // HandleGetAuthConfig resolves IClientCertificateTrustStore via
+        // [FromServices] to report trust-profile bootstrap hints. That store must stay
         // registered even while security.mtls is gated off, or this anonymous admin auth
         // bootstrap endpoint fails DI activation (500) instead of serving a clean 200 for
         // every OIDC/bearer-only deployment that has never opted into the experimental
-        // capability (the production default) — the exact class of regression this PR
-        // exists to prevent, just against a different endpoint than #2945's.
+        // capability (the production default).
         var fixture = disabledPosture.Share();
         await fixture.InitializeAsync();
 
@@ -393,11 +389,10 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests(
     [Endpoint("GET /api/v1/streaming/features/capabilities")]
     public async Task StreamingEndpoint_WhenPreviewDisabled_Returns404ExperimentalDisabled()
     {
-        // #2428 promoted realtime.feature-streams Experimental -> Implemented (GA). The
+        // realtime.feature-streams is Implemented (GA). The
         // streaming operations admin group must no longer short-circuit as
         // experimental-disabled even with the global experimental switch OFF — the request
-        // reaches the handler (subject to admin auth) instead of the 404 the T10 flip
-        // previously produced.
+        // reaches the handler (subject to admin auth).
         var fixture = disabledPosture.Share();
         await fixture.InitializeAsync();
 
@@ -418,11 +413,10 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests(
     [Endpoint("GET /api/v1/admin/services/{serviceId}/replicas")]
     public async Task ReplicasEndpoint_WhenPreviewDisabled_IsNotMapped()
     {
-        // #2430 promoted sync.offline Experimental -> Implemented (GA). The disconnected-sync
+        // sync.offline is Implemented (GA). The disconnected-sync
         // replica/conflict-review admin group must no longer short-circuit as
         // experimental-disabled even with the global experimental switch OFF — the request
-        // reaches the handler (subject to admin auth / edition) instead of the 404 the T10 flip
-        // previously produced.
+        // reaches the handler (subject to admin auth / edition).
         var fixture = disabledPosture.Share();
         await fixture.InitializeAsync();
 

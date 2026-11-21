@@ -6,6 +6,8 @@ using Microsoft.Extensions.Options;
 namespace Honua.Server.Features.Identity.Saml;
 
 // Startup fails when SAML is enabled without the issuer, audience, and consumer URL, so a half-configured bridge cannot accept assertions.
+// A configured IdP sign-on URL must be absolute https, because the browser is redirected there with the sign-in request.
+// Refusing unsolicited responses requires SP-initiated sign-in, or no sign-in could ever succeed.
 internal sealed class SamlAuthenticationOptionsValidator : IValidateOptions<SamlAuthenticationOptions>
 {
     public ValidateOptionsResult Validate(string? name, SamlAuthenticationOptions options)
@@ -32,9 +34,24 @@ internal sealed class SamlAuthenticationOptionsValidator : IValidateOptions<Saml
             missing.Add(nameof(options.AssertionConsumerServiceUrl));
         }
 
-        return missing.Count == 0
-            ? ValidateOptionsResult.Success
-            : ValidateOptionsResult.Fail(
-                "SAML is enabled but missing: " + string.Join(", ", missing) + ".");
+        if (missing.Count > 0)
+        {
+            return ValidateOptionsResult.Fail("SAML is enabled but missing: " + string.Join(", ", missing) + ".");
+        }
+
+        if (!IsAbsoluteHttpsUrlOrUnset(options.IdpSingleSignOnServiceUrl))
+        {
+            return ValidateOptionsResult.Fail(nameof(options.IdpSingleSignOnServiceUrl) + " must be an absolute https URL.");
+        }
+
+        return options.AllowUnsolicitedResponses == false && string.IsNullOrWhiteSpace(options.IdpSingleSignOnServiceUrl)
+            ? ValidateOptionsResult.Fail(
+                nameof(options.AllowUnsolicitedResponses) + " is false but no " + nameof(options.IdpSingleSignOnServiceUrl)
+                + " is set, so no sign-in could succeed.")
+            : ValidateOptionsResult.Success;
     }
+
+    private static bool IsAbsoluteHttpsUrlOrUnset(string? value)
+        => string.IsNullOrWhiteSpace(value)
+            || (Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps);
 }

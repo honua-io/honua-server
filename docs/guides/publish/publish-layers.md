@@ -14,7 +14,9 @@ Register a database connection and publish its spatial tables through Honua's su
 
 ## Create a secure connection
 
-Prefer a server-side secret reference in production. The plaintext password below is only for the local development stack.
+Prefer a server-side secret reference in production. Replace the connection settings below with values reachable from the Honua server. In a container, `localhost` refers to that container; use the database service hostname for a separate database container. The plaintext password below is only for local development.
+
+`ssl_mode="Require"` needs a PostgreSQL server configured for TLS. For a local development database without TLS, use `ssl_mode="Disable"`; keep TLS enabled for production connections.
 
 ```python
 from honua_admin import CreateSecureConnectionRequest, HonuaAdminClient
@@ -37,12 +39,21 @@ Use `admin.list_connections()` and `admin.get_connection(id)` to inspect existin
 ## Inspect and validate tables
 
 `admin.discover_tables(connection.connection_id)` lists the connection's spatial tables with the
-schema, geometry column and SRID that `publish_layer` needs. Pre-publish validation
+schema, geometry column and SRID that `publish_layer` needs. Discovery includes the default
+operational schema (`honua_data` unless `Database:DefaultOperationalSchema` is set), `public`,
+schemas listed in `Database:OperationalSchemas`, and the active request's schema context.
+Reserved metadata schemas are excluded. The connection user must be able to read the source tables.
+
+Pre-publish validation
 (`POST /api/v1/admin/connections/{id}/tables/validate`) does not yet have a high-level SDK
 method; call it through the admin client's HTTP transport or a client generated from
 [`admin-api.json`](../../developer/api-specs/admin-api.json). Validation reports missing primary keys, unsupported geometry, and other publish-blocking problems before catalog mutation.
 
 ## Publish a layer
+
+Use this SDK example for a small table that completes synchronously. For tables
+above the asynchronous publication threshold, use the generated admin client as
+described under [Large-table publication](#large-table-publication).
 
 ```python
 from honua_admin import HonuaAdminClient, PublishLayerRequest
@@ -59,7 +70,9 @@ with HonuaAdminClient("http://localhost:8080", api_key="your-admin-api-key") as 
     print(layer)
 ```
 
-The result includes the numeric layer ID and owning service name. Optional request fields include a description, geometry type, primary key, attribute allowlist, service name, enabled state, and source governance.
+The result exposes the numeric layer ID as `layer.storage_layer_id` and the owning service as `layer.service_name`. Optional SDK request fields include a description, geometry type, primary key, attribute allowlist, service name, and enabled state. Repeating this publication for the same source table returns a conflict; inspect the existing layer before retrying.
+
+The JSON API also accepts source governance fields. The published `honua-admin` 0.3.2 `PublishLayerRequest` does not expose these fields; use a client generated from [`admin-api.json`](../../developer/api-specs/admin-api.json) to submit the following payload.
 
 For public data, submit only rights and provenance supplied by the data owner. Honua does not infer a license, attribution, publisher, or documentation URL:
 
@@ -86,9 +99,14 @@ Manage published layers through `list_layers`, `set_layer_enabled`, and `set_ser
 
 ```python
 with HonuaAdminClient("http://localhost:8080", api_key="your-admin-api-key") as admin:
-    for layer in admin.list_layers("primary-db"):
-        print(layer)
-    admin.set_layer_enabled("primary-db", layer_id=0, enabled=True)
+    for published_layer in admin.list_layers("primary-db", service_name=layer.service_name):
+        print(published_layer)
+    admin.set_layer_enabled(
+        "primary-db",
+        layer_id=layer.storage_layer_id,
+        service_name=layer.service_name,
+        enabled=True,
+    )
 ```
 
 Extent refresh and several bulk catalog operations do not yet have SDK wrappers; use the generated admin client for those endpoints.
@@ -112,14 +130,22 @@ Use the actual service and layer ID from the publish result. The same catalog en
 
 ## Large-table publication
 
+The published `honua-admin` 0.3.2 `publish_layer()` method expects a completed
+layer and cannot decode a background job handle. Use a client generated from
+[`admin-api.json`](../../developer/api-specs/admin-api.json) that preserves the
+HTTP 202 response for these publications and subsequent polling.
+
 Tables above `LayerPublishing:AsyncPublishRowThreshold` (10,000 rows by default)
 return HTTP 202 with a job handle instead of holding the request open for the
-snapshot copy. The response's `data` contains `jobId`, `statusUrl`, `rowsTotal`,
+snapshot copy. A table that already has a published layer is refused with `409` before
+any job is accepted, as on the synchronous path. The response's `data` contains `jobId`, `statusUrl`, `rowsTotal`,
 and `status`. Follow that same-origin relative status URL with the accepting
 tenant's admin credentials. Each poll returns `jobId`, `status`,
-`rowsMaterialized`, `rowsTotal`, `layerId`, and `errorMessage` in `data`.
+`rowsMaterialized`, `rowsTotal`, `storageLayerId`, and `errorMessage` in `data`.
 `Queued` and `Processing` are pending states; `Completed`, `Failed`, and
-`Cancelled` are terminal. Use the completed `layerId` for subsequent queries.
+`Cancelled` are terminal. Use the completed `storageLayerId` for subsequent queries;
+a `Failed` job has no `storageLayerId`. Two concurrent publications of the same table
+can both be accepted; one completes and the other ends `Failed` with the conflict.
 Do not treat acceptance as publication completion.
 
 Accepted work uses its own publication budget and survives a disconnected
@@ -151,7 +177,8 @@ its actual source count and 330,000-row publish journey.
 
 - **401 or 403** — verify the admin key and required connection/layer permissions.
 - **Connection test fails** — check host reachability, TLS mode, database name, and credential secret configuration.
-- **Table is absent from discovery** — verify the connection user can read the schema and geometry metadata.
+- **Table is absent from discovery** — check the operational-schema settings above and verify the connection user can read the schema and geometry metadata.
+- **Publish returns 409** — check whether the source table already has a published layer; changing only the requested layer name does not create another publication.
 - **Publish validation fails** — add a stable primary key and use a supported geometry/SRID before retrying.
 - **The layer publishes but queries fail** — confirm it is enabled and the service access policy permits the caller.
 

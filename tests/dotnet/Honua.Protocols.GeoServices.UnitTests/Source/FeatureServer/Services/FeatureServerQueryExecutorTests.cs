@@ -734,7 +734,7 @@ public sealed partial class FeatureServerQueryExecutorTests
         var properties = feature.GetProperty("properties");
         properties.GetProperty("objectid").GetInt64().Should().Be(42);
         // GeoJSON properties mirror the f=json attributes (lowercase objectid only);
-        // the synthetic uppercase OBJECTID alias is intentionally suppressed (#1518).
+        // the synthetic uppercase OBJECTID alias is intentionally suppressed.
         properties.TryGetProperty("OBJECTID", out _).Should().BeFalse();
         properties.GetProperty("name").GetString().Should().Be("alpha");
     }
@@ -853,7 +853,7 @@ public sealed partial class FeatureServerQueryExecutorTests
     [Operation(Operations.Query)]
     public async Task StreamIdsAsync_FederatedGeoServicesLayer_RequestsIdsOnlyAndStopsAtCeiling()
     {
-        // #6113: an anonymous returnIdsOnly query on a federated ArcGIS layer must ask the
+        // An anonymous returnIdsOnly query on a federated ArcGIS layer must ask the
         // upstream for ids only (never features or geometry) and stop at a hard ceiling,
         // reporting exceededTransferLimit, instead of materialising the whole upstream layer.
         var upstreamTotal = FeatureServerQueryExecutor.MaxNonStreamingObjectIds + 5_000;
@@ -949,7 +949,10 @@ public sealed partial class FeatureServerQueryExecutorTests
             // services.example.com. An address literal is vetted without contacting a resolver.
             ConnectionString = "https://93.184.216.34/arcgis/rest/services/roads/FeatureServer"
         };
-        var store = new GeoServicesRestFeatureStore(upstream, NullLogger<GeoServicesRestFeatureStore>.Instance);
+        var store = new GeoServicesRestFeatureStore(
+            upstream,
+            NullLogger<GeoServicesRestFeatureStore>.Instance,
+            new LayerReadSecurityResolver(null, null, null, null));
         var reader = ((IBindableFeatureDataProvider)store).CreateReaderForBinding(new FeatureProviderBinding(
             service,
             resource,

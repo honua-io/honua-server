@@ -234,8 +234,8 @@ public sealed class FeatureServerServiceQueryTests : IClassFixture<WebAppFixture
         return ids;
     }
 
-    // honua-server#1825: Esri services accept BOTH GET and POST for the service-level
-    // query op; clients POST large layerDefs/layers arrays. Previously POST returned 405.
+    // Accept GET and POST for service-level query; clients POST large
+    // layerDefs and layers arrays.
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/query")]
@@ -262,7 +262,7 @@ public sealed class FeatureServerServiceQueryTests : IClassFixture<WebAppFixture
             .Contain(WebAppFixture.TestLayerId);
     }
 
-    // honua-server#1825: POST layerDefs (which can exceed URL limits) must apply per-layer.
+    // POST layerDefs (which can exceed URL limits) must apply per-layer.
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/query")]
@@ -290,7 +290,7 @@ public sealed class FeatureServerServiceQueryTests : IClassFixture<WebAppFixture
         targetLayer.GetProperty("features").GetArrayLength().Should().Be(0);
     }
 
-    // honua-server#1825: service-level queryDomains must accept POST (FeatureServer).
+    // Service-level queryDomains must accept POST (FeatureServer).
     [IntegrationTest]
     [Operation(Operations.QueryDomains)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/queryDomains")]
@@ -312,13 +312,9 @@ public sealed class FeatureServerServiceQueryTests : IClassFixture<WebAppFixture
         domains.ValueKind.Should().Be(JsonValueKind.Array);
     }
 
-    // BH2-011 regression: the service-level query endpoint (/FeatureServer/query, not
-    // /FeatureServer/{layerId}/query) always returns a ServiceQueryResponse (JSON). Formats
-    // like f=geojson are not supported at the service level. Before the fix, the outer
-    // format validation allowed FeatureServerQueryFormats (including geojson), which let the
-    // request pass the service-level check and then fail inside the per-layer loop with a
-    // confusing HTTP 400. After the fix, the outer guard uses JsonOnlyFormats and the
-    // rejection is immediate and correctly attributed.
+    // The service-level /FeatureServer/query endpoint returns JSON
+    // ServiceQueryResponse only. Reject f=geojson at its outer format guard
+    // before entering the per-layer loop.
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/query")]

@@ -121,6 +121,8 @@ Key coverage parameters: `f` (`geotiff`/`tiff`/`png` and MIME forms), `bbox`, `b
 
 Native-resolution coverage exports, including `bbox` and `subset` windows, are limited to 8192 pixels on either axis before the provider exports the image. Select a smaller window or supply a bounded scaling control for larger rasters.
 
+Zarr-backed (multidimensional) collections serve CoverageJSON by default, where `subset` takes grid indices per dimension. With `f=geotiff` (or `Accept: image/tiff; application=geotiff`) they return one 2D slice as a single-band GeoTIFF in the source data type: spatial `subset` trims use storage-CRS coordinates on the `domainset` axis labels (`Lon`/`Lat` for EPSG:4326 stores, otherwise `x`/`y`), `scale-size` or `scaleSize` names both spatial axes, `datetime` selects the time step (the first step by default), and at most one other axis takes a single-position `subset`. Without a scaling control the trim is clipped to the coverage and served at the native cell size. These collections advertise a GeoTIFF coverage link, `domainset` and a `rangetype` for the default variable, which is what GDAL's OGC API driver needs to open them; the link is omitted for lat/long-ordered CRSs other than EPSG:4326 and for data types GeoTIFF output cannot carry, and the `rangetype` widens 8-bit signed and 64-bit integers to types GDAL maps. GeoTIFF output is limited to 8192 pixels per axis and 16 MiB, and one request reads at most 64 MiB of native cells.
+
 > Open `https://server.example.com/ogc/coverages/collections/0/coverage?bbox=-122.5,37.7,-122.3,37.9&properties=band_1` in a browser.
 
 ## OGC API Processes
@@ -133,7 +135,7 @@ Native-resolution coverage exports, including `bbox` and `subset` windows, are l
 | GET | `/ogc/processes/jobs`, `.../jobs/{jobId}`, `.../jobs/{jobId}/results` | Job list (active only, `limit`), status, results. |
 | DELETE | `/ogc/processes/jobs/{jobId}` | Dismiss (cancel) a job. |
 
-The process list includes the canonical `honua-geoprocessing` plan runner and individually projected job-callable catalog processes. Omit `Prefer` for bounded synchronous execution when a process advertises `sync-execute`; send `Prefer: respond-async` for a durable asynchronous job. Async-only processes remain asynchronous when the header is omitted. Catalog inputs accept bare values, qualified values such as `{ "value": 100 }`, and `href` references (public HTTPS URLs or bounded data URIs). Layer, raster and enrichment-dataset references are resolved as bounded identifier lookups (at most 4 KiB each) after process authorization. Resource authorization precedes other HTTPS input downloads; authorized resource bindings are retained through submission. When a reference and its HTTP response omit a media type, the catalog parameter type supplies the interpretation; specify a media type for binary inputs. Catalog outputs advertise value transmission: document responses inline each output (with media-type and base64 qualifiers where needed), while `response: "raw"` returns the native representation from either a synchronous execution or the asynchronous job results endpoint. The canonical `honua-geoprocessing` plan runner requires document mode and retains its artifact document. All current execution modes and job endpoints require Redis-backed durable storage (503 otherwise).
+The process list includes the canonical `honua-geoprocessing` plan runner and individually projected job-callable catalog processes. Omit `Prefer` for bounded synchronous execution when a process advertises `sync-execute`; send `Prefer: respond-async` for a durable asynchronous job. Async-only processes remain asynchronous when the header is omitted. Catalog inputs accept bare values, qualified values such as `{ "value": 100 }`, and `href` references (public HTTPS URLs or bounded data URIs). Layer, raster and enrichment-dataset references are resolved as bounded identifier lookups (at most 4 KiB each) after process authorization. Resource authorization precedes other HTTPS input downloads; authorized resource bindings are retained through submission. When a reference and its HTTP response omit a media type, the catalog parameter type supplies the interpretation; specify a media type for binary inputs. Catalog outputs advertise value transmission: document responses inline each output (with media-type and base64 qualifiers where needed), while `response: "raw"` returns the native representation from either a synchronous execution or the asynchronous job results endpoint. The canonical `honua-geoprocessing` plan runner requires document mode and retains its artifact document. All current execution modes and job endpoints require PostgreSQL-backed durable storage (503 otherwise).
 
 In the [API explorer](../openapi-and-explorer.md), run `POST /ogc/processes/processes/geometry.buffer/execution` with `Prefer: respond-async` and this body:
 
@@ -163,6 +165,16 @@ Read-only catalog discovery over published services and layers (record ids `laye
 | GET | `/ogc/records/collections/{collectionId}/items`, `.../items/{recordId}` | GeoJSON records. |
 
 `/items` parameters: `limit` (cap 1000), `offset`, `ids`, `type` (`service`/`dataset`), `externalIds`, `q`, `bbox`, `datetime`. Record create/update/delete, harvesting, facets, and CQL filtering are not implemented.
+
+A single record (`.../items/{recordId}`) is also served in standard metadata encodings, written from the record's resolved descriptive metadata. Ask for one with `f=` or the matching `Accept` type. The GeoJSON record links each encoding as `alternate`.
+
+| `f=` | Media type | Records |
+| --- | --- | --- |
+| `iso19139` | `application/vnd.iso.19139+xml` | Datasets (`layer:`) |
+| `iso19115-3` | `application/vnd.iso.19115-3+xml` | Datasets (`layer:`) |
+| `dcat` | `application/ld+json` (DCAT-AP 3) | Datasets and services |
+
+Without `f=`, the highest-quality `Accept` type the record can be served as wins. `application/geo+json`, `application/json`, `application/*` and `*/*` select GeoJSON, and a service record skips the ISO types. An `Accept` header with nothing available returns `406`, as does `f=iso19139` or `f=iso19115-3` for a service record. An unknown `f=` returns `400`. Characters XML cannot carry are replaced with U+FFFD in the ISO encodings.
 
 ## OGC API - Environmental Data Retrieval (EDR) — Preview
 

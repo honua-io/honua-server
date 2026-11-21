@@ -50,7 +50,7 @@ public sealed class OgcTilesCrsTests : IAsyncLifetime
     [Endpoint("GET /ogc/tiles/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
     public async Task GetTile_WorldCRS84Quad_ReturnsTile()
     {
-        // The dataset tileset defaults to PNG without f/Accept (#5446); ask for MVT explicitly.
+        // The dataset tileset defaults to PNG without f/Accept; ask for MVT explicitly.
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             "/ogc/tiles/tiles/WorldCRS84Quad/0/0/0?collections=0");

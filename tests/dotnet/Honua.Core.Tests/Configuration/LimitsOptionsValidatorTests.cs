@@ -69,6 +69,41 @@ public class LimitsOptionsValidatorTests
     }
 
     [UnitTest]
+    public void Validate_GeoParquetArtifactBounds_RejectsOutOfRangeValues()
+    {
+        foreach (var rowsPerRowGroup in new int?[] { 0, GeoParquetLimits.SpecMaxRowsPerRowGroup + 1 })
+        {
+            var options = new LimitsOptions
+            {
+                GeoParquet = new GeoParquetLimits { RowsPerRowGroup = rowsPerRowGroup }
+            };
+            var result = _validator.Validate(null, options);
+            Assert.False(result.Succeeded);
+        }
+
+        var overSize = new LimitsOptions
+        {
+            GeoParquet = new GeoParquetLimits { MaxArtifactBytes = (long)Array.MaxLength + 1 }
+        };
+        Assert.False(_validator.Validate(null, overSize).Succeeded);
+    }
+
+    [UnitTest]
+    public void ForArtifact_ClampsAnUnsetCapToWhatAByteArrayCanHold()
+    {
+        var artifact = GeoParquetLimits.ForArtifact(new GeoParquetLimits { MaxResponseBytes = int.MaxValue });
+        Assert.Equal(Array.MaxLength, artifact.MaxArtifactBytes);
+        Assert.Equal(int.MaxValue, artifact.MaxResponseBytes);
+
+        var explicitCap = GeoParquetLimits.ForArtifact(new GeoParquetLimits
+        {
+            MaxResponseBytes = int.MaxValue,
+            MaxArtifactBytes = 1024,
+        });
+        Assert.Equal(1024, explicitCap.MaxArtifactBytes);
+    }
+
+    [UnitTest]
     public void Validate_ReplicaMaxChangesPerLayerOutOfRange_ReturnsFail()
     {
         // The Replica section carries [Range(100, 1000000)]; it must be validated like every other section.
@@ -417,7 +452,7 @@ public class LimitsOptionsValidatorTests
     [UnitTest]
     public void Validate_AnalyticsMaxInputBytesBelowRange_ReturnsFail()
     {
-        // MaxInputBytes must be >= 1 per the trim-safe Range attribute on AnalyticsLimits (#4629).
+        // MaxInputBytes must be >= 1 per the trim-safe Range attribute on AnalyticsLimits.
         var options = new LimitsOptions
         {
             Analytics = new AnalyticsLimits
@@ -450,5 +485,37 @@ public class LimitsOptionsValidatorTests
         var result = _validator.Validate(null, options);
 
         Assert.True(result.Succeeded, string.Join("; ", result.Failures ?? Array.Empty<string>()));
+    }
+
+    [UnitTest]
+    public void Validate_MaxOverlayCandidatePairsBelowRange_ReturnsFail()
+    {
+        var options = new LimitsOptions
+        {
+            Geometry = new GeometryLimits { MaxOverlayCandidatePairs = 999 }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Failures ?? Array.Empty<string>(),
+            f => f.Contains("MaxOverlayCandidatePairs", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public void Validate_MaxOverlayCandidatePairsAboveInt32Max_ReturnsFailWithoutThrowing()
+    {
+        var options = new LimitsOptions
+        {
+            Geometry = new GeometryLimits { MaxOverlayCandidatePairs = long.MaxValue }
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(
+            result.Failures ?? Array.Empty<string>(),
+            f => f.Contains("MaxOverlayCandidatePairs", StringComparison.Ordinal));
     }
 }

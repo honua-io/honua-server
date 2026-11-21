@@ -14,6 +14,10 @@ public sealed class CreateAdminApiKeyRequest
     // A key whose grants are only layer-scoped writes, with no admin or star grant, authenticates as a non-admin and may write only those layers; write grants reject wildcards.
     public IReadOnlyList<string> Permissions { get; init; } = [];
 
+    // "standard" or "agent"; an agent key always carries the agent grant. Omitted, the kind follows
+    // the grants, and a key issued to an agent caller is always an agent key.
+    public string? Kind { get; init; }
+
     public DateTimeOffset? ExpiresAt { get; init; }
 
     public IReadOnlyList<string>? AllowedReferrers { get; init; }
@@ -36,6 +40,8 @@ public sealed class AdminApiKeyResponse
     public required string Name { get; init; }
 
     public required string KeyPrefix { get; init; }
+
+    public string Kind { get; init; } = "standard";
 
     public IReadOnlyList<string> Permissions { get; init; } = [];
 
@@ -74,6 +80,8 @@ public sealed class AdminApiKeyEffectivePermissionsResponse
     public required string Name { get; init; }
 
     public required string Status { get; init; }
+
+    public string Kind { get; init; } = "standard";
 
     public IReadOnlyList<string> Permissions { get; init; } = [];
 

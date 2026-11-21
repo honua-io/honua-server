@@ -52,7 +52,7 @@ The release also ships a hardened Compose file (named `production`; not certifie
 environment template, [`.env.production.example`](../../../.env.production.example).
 Use them instead of the quickstart project when you want the hardened
 single-host shape from the start: Production environment, Gate migration policy,
-a trusted proxy and hostname, and PostgreSQL, Redis and file storage on volumes.
+a trusted proxy and hostname, and PostgreSQL and file storage on volumes.
 Run these blocks on the Linux Docker host from the root of the release source
 archive. Keep `docker/compose/docker-compose.production.yml` in that subdirectory,
 with `.env.production` and `secrets/` at the archive root. `scripts/docker/smoke-production.py` runs the
@@ -130,7 +130,7 @@ and gRPC-Web, and `127.0.0.1:18081` for native HTTP/2 gRPC (or your selected por
 For a public deployment, put an existing TLS-terminating reverse proxy on the
 same host in front of those loopback ports, arrange DNS and certificates for your
 hostname, and permit access to the proxy through the host firewall. Do not expose
-PostgreSQL, Redis or the unauthenticated health probe on a separate public port.
+PostgreSQL or the unauthenticated health probe on a separate public port.
 Configure the Docker daemon to start on boot so the stack comes back after a host restart.
 
 The Development container profile enables database startup recovery by default.
@@ -210,14 +210,14 @@ query through its public hostname before admitting traffic. The HTTP readback
 above verifies the REST route only; TLS/gRPC qualification must use the actual
 proxy and deployment host.
 
-## Redis is optional; PostGIS is not
+## Durable administration requires the system database
 
 PostGIS owns the catalog, layer metadata and feature data and is required. Its
 system database (`ConnectionStrings__DefaultConnection`) also holds the governed
 control plane and durable jobs: operation proposals and approvals, operation
 records, geoprocessing jobs and their queue, imports, and tile and export jobs.
 
-Redis is optional. Workflow definitions, runs, schedule claims and trigger
+Workflow definitions, runs, schedule claims and trigger
 cursors live in the system database, so publishing a workflow package to a
 Schedule target needs the PostGIS data source (`DataSource__Provider=postgis`,
 the default) with `ConnectionStrings__DefaultConnection`. Without it, the
@@ -225,8 +225,12 @@ publication is refused with a typed `dependency-unavailable` receipt naming
 `workflow-definition-store`, and no publication record is written. Publish to
 another target, or configure the system database.
 
-A host started without a system database still serves every protocol, and the
-admin REST API and Console still connect sources, publish layers, configure
+A host whose primary data source is DuckDB or MySQL has no system database and,
+in any environment other than Development or Test, refuses to start, because the service and layer catalog is stored
+only in the PostgreSQL/PostGIS system database.
+
+A Development or Test host started without a system database still serves every
+protocol, and the admin REST API and Console still connect sources, publish layers, configure
 services, style and render. It refuses the following with a typed
 `dependency-unavailable` receipt naming `system-database`:
 
@@ -269,17 +273,12 @@ same catalog everywhere. The capability manifest (`GET /api/v1/capabilities/mani
 tells it in advance which ones will refuse: `operations.proposals` and
 `jobs.runner` report `available: false` with `reasonCode: "dependency-unavailable"`.
 
-To omit Redis, remove `ConnectionStrings__Redis`, the `honua.depends_on.redis`
-entry, the `redis` service and the `redis` volume declaration from `compose.yaml`.
-Restore those four entries before publishing workflows to a Schedule target. A
-persisted Redis volume must be retained if it already contains workflow definitions.
-
 ## Backup and recovery
 
 A restart or container recreation preserves volumes but is not a backup. Before
 an upgrade, stop Honua so it cannot write while database and file-storage snapshots
-are taken. This small-install procedure pauses service for the backup. It keeps
-Redis out of the backup: deployments using governed proposals or workflows must also follow
+are taken. This small-install procedure pauses service for the backup. Deployments using
+governed proposals or workflows must also follow
 the coordinated [backup and restore policy](backup-and-restore.md) before using
 this recipe with live customer data.
 
@@ -340,7 +339,7 @@ credentials. They drop and recreate only the `honua` database in this project
 to restore partitioned tables without inherited-constraint conflicts; they do not
 delete volumes or touch other projects. For a fresh
 host, restore the saved installation files first, install the recorded clients,
-then start only PostgreSQL and Redis before continuing. File storage
+then start only PostgreSQL before continuing. File storage
 is cleared inside this project's mounted `/var/lib/honua/storage` directory before
 extraction, including hidden files and nested paths. Keep Honua stopped if any
 restore command fails; do not resume with a partial database or storage restore.
@@ -430,7 +429,7 @@ the new server finds the journal current and applies nothing, so
 
 ```bash
 dc ps
-dc logs --no-color --tail 150 honua postgres redis
+dc logs --no-color --tail 150 honua postgres
 docker image inspect "$(grep '^HONUA_IMAGE=' .env | cut -d= -f2-)" --format '{{json .RepoDigests}}'
 pip freeze
 ```

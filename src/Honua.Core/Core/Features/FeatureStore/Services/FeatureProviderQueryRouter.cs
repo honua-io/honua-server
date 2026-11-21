@@ -12,8 +12,6 @@ namespace Honua.Core.Features.FeatureStore.Services;
 
 public sealed class FeatureProviderQueryRouter
 {
-    // PA-019: every query goes through this resolution hot path, and it previously emitted no
-    // telemetry at all (no span, no metrics, no logging).
     private static readonly ActivitySource _activitySource = new("Honua.Core.FeatureStore");
 
     private readonly ISecureConnectionRegistry _connectionRegistry;

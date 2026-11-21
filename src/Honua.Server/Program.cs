@@ -51,7 +51,6 @@ using Honua.Core.Features.Infrastructure.Health;
 using Honua.Server.Features.Identity;
 using Honua.Server.Features.Identity.Saml;
 using Honua.Server.Features.Identity.Scim;
-using Honua.Import;
 using Honua.Migration;
 using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
@@ -143,7 +142,17 @@ if (Honua.Server.Hosting.ComposeExecutor.ComposeExecutorMode.Resolve(builder.Con
     return;
 }
 
-DataStoreBuildPolicy.Validate(builder.Configuration);
+if (Honua.Server.Startup.PrimaryCatalogStore.ProductionRefusal(builder.Configuration, builder.Environment) is { } catalogRefusal)
+{
+    Honua.Server.Hosting.StartupRefusal.Exit(catalogRefusal);
+    return;
+}
+
+if (!Honua.Server.Hosting.StartupRefusal.Passes(() => DataStoreBuildPolicy.Validate(builder.Configuration)))
+{
+    return;
+}
+
 Honua.Infrastructure.Hosting.ProtocolProfile.ValidateRuntime(builder.Configuration);
 
 // Typed composition switch (resolved once, never consulted by services): a process a batch compute
@@ -158,6 +167,12 @@ StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, buil
 var useTestSchemaHeaders = builder.Configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
 var forwardedHeadersEnabled = StartupConfigurationHelpers.ConfigureForwardedHeaders(builder.Services, builder.Configuration);
 StartupConfigurationHelpers.ResolveEnvironmentSecretReferences(builder.Configuration);
+if (Honua.Server.Startup.LicensingRegistration.DevGrantRefusal(builder.Configuration, builder.Environment) is { } devGrantRefusal)
+{
+    Honua.Server.Hosting.StartupRefusal.Exit(devGrantRefusal);
+    return;
+}
+
 // Validate the declared paid deployment before registering or starting any data workers.
 await StartupConfigurationHelpers.LoadBootstrapLicenseSnapshotAsync(builder.Configuration, builder.Environment);
 // Start the license hosted service before any workload execution or reconciliation service.
@@ -232,12 +247,18 @@ if (clientCertificateMode != ClientCertificateAuthenticationMode.Disabled)
 // envelope was created on another node fails closed instead of being replayed with plaintext.
 builder.Services.AddDataProtection()
     .SetApplicationName("Honua.Server");
+// Job capabilities in stored execution records are protected with the same key ring.
+builder.Services.TryAddSingleton<Honua.ControlPlane.IExecutionJobSecretProtector>(static services =>
+    new Honua.Server.Features.Infrastructure.SecurityState.DataProtectionExecutionJobSecrets(services));
+// Stored submitter snapshots on approval proposals and workflow records are sealed with it too.
+builder.Services.TryAddSingleton<Honua.Core.Features.Authorization.Abstractions.IJobSecurityContextSealer,
+    Honua.Server.Features.Infrastructure.SecurityState.DataProtectionJobSecurityContextSealer>();
 builder.Services.AddSingleton<Honua.ControlPlane.OperationHumanApprovalAuthority>();
 builder.Services.AddSingleton<Honua.ControlPlane.OperationInitiationResolver>();
 builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationHumanApprovalVerifier>(
     services => services.GetRequiredService<Honua.ControlPlane.OperationHumanApprovalAuthority>());
 
-var systemDatabaseConfigured = !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection"));
+var systemDatabaseConfigured = Honua.Server.Startup.SystemDatabaseComposition.IsConfigured(builder.Configuration);
 var requireDurableJobStore = builder.Configuration
     .GetSection(JobDurabilityOptions.SectionName)
     .GetValue<bool>(nameof(JobDurabilityOptions.RequireDurableStore));
@@ -256,10 +277,11 @@ if (tracingSection.Exists() || tracingEnabled)
     builder.AddTelemetryDefaults();
 }
 
-if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
-        builder.Environment.IsDevelopment(),
-        isTestEnvironment,
-        keyRingIsShared: !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection"))))
+var durableKeyRing = OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
+    builder.Environment.IsDevelopment(),
+    isTestEnvironment,
+    keyRingIsShared: systemDatabaseConfigured);
+if (durableKeyRing)
 {
     // The key ring lives in the system database so that every node unprotects what any node
     // protected: an operation secret consumed on another node is deleted before it is
@@ -319,9 +341,12 @@ if (OperationSecretKeyRingProtection.RequiresDurableChannelCertificate(
 
 // Jobs:RequireDurableStore=true is satisfied by the system database, which holds the job store.
 // Only a host with no system database can still be stopped here.
-DurableJobSubstrateStartupGate.EnsureSatisfied(
+if (!Honua.Server.Hosting.StartupRefusal.Passes(() => DurableJobSubstrateStartupGate.EnsureSatisfied(
     new DurableJobSubstrateOptions { SystemDatabaseConfigured = systemDatabaseConfigured },
-    requireDurableJobStore);
+    requireDurableJobStore)))
+{
+    return;
+}
 
 // Configure Serilog for structured logging with AOT compatibility
 builder.Host.UseSerilog((context, services, config) =>
@@ -664,6 +689,8 @@ if (Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingL
 builder.Services.AddCloudFileStorage(builder.Configuration);
 builder.Services.Configure<Honua.Core.Features.Import.ObjectStore.ImportObjectStoreOptions>(
     builder.Configuration.GetSection(Honua.Core.Features.Import.ObjectStore.ImportObjectStoreOptions.SectionName));
+Honua.Core.Features.ObjectStorage.ObjectStorageServiceCollectionExtensions.AddObjectStorageConnections(
+    builder.Services, builder.Configuration);
 #if !HONUA_EXCLUDE_AWS
 builder.Services.AddAwsImportObjectStore();
 Honua.Cloud.Aws.Features.Cdn.CloudFrontCdnServiceCollectionExtensions.AddCloudFrontCdnInvalidation(
@@ -854,7 +881,7 @@ builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleActi
     Honua.Server.Features.Console.Services.ConsoleActionEvaluator>();
 builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleDependencyClosureValidator,
     Honua.Server.Features.Console.Services.ConsoleDependencyClosureValidator>();
-// Discovery is a scoped projection: an explicit workspace mapping never replaces caller authorization.
+// Discovery is a scoped projection: an explicit environment mapping never replaces caller authorization.
 builder.Services.AddOptions<Honua.Server.Features.Console.Services.CatalogDiscoveryOptions>()
     .BindConfiguration(Honua.Server.Features.Console.Services.CatalogDiscoveryOptions.SectionName)
     .ValidateOnStart();
@@ -1066,6 +1093,8 @@ builder.Services.AddEnterpriseIdentity(builder.Configuration);
 builder.Services.AddSecurityHeaders(builder.Configuration);
 // Configure security audit log sink
 builder.Services.AddHonuaAuditLog();
+// Operator switches that widen the audit trail (AuditLog:Policy); both off by default.
+builder.Services.AddHonuaAuditPolicy(builder.Configuration);
 // SIEM export connectors (Splunk HEC / Microsoft Sentinel / S3 / syslog) + audit retention and
 // data-residency controls. Off by default (AuditLog:Export:Enabled=false); registers
 // the dispatcher (retry/backoff + dead-letter), residency guard, retention pruner, and any enabled
@@ -1262,7 +1291,16 @@ if (configurationErrors.Count > 0)
 {
     var errorDetails = string.Join(Environment.NewLine, configurationErrors);
     ConfigurationLog.ConfigurationValidationFailed(app.Logger, configurationErrors.Count, errorDetails);
-    throw new InvalidOperationException("Configuration validation failed. See logs for details.");
+    const string configurationRefusal = "Configuration validation failed. See logs for details.";
+    if (Honua.Server.Hosting.GatedBootShutdown.IsInProcessTestServer(app))
+    {
+        throw new InvalidOperationException(configurationRefusal);
+    }
+
+    // Thrown from here, the refusal leaves Main unhandled and the AOT image aborts with exit 139.
+    await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(
+        app, configurationRefusal + Environment.NewLine + errorDetails);
+    return;
 }
 
 ConfigurationLog.ConfigurationValidationSucceeded(app.Logger);
@@ -1552,6 +1590,13 @@ app.UseAuthentication();
 app.UsePortalTokenAuthentication();
 app.UseBrowserSessionSecurity();
 
+// Canonical governed-lineage headers are accepted only when accompanied by a
+// one-use, process-local attestation issued by an operation loopback executor.
+// Public callers cannot attach mutations or audit evidence to unrelated operations.
+// It runs before agent marking and authorization so a loopback hop made for an agent
+// is an agent to the authorization handlers too.
+app.UseOperationLineageAttestation();
+
 // Mark MCP callers and agent-grant API keys before authorization, so approval gates and the
 // operation policy treat them as agents on every path.
 Honua.Infrastructure.Authentication.AgentPrincipal.UseAgentPrincipalMarking(app);
@@ -1572,11 +1617,6 @@ app.UseAnonymousImportPayloadClamp();
 // Required-authentication routes must see every validated credential type. Running
 // this before the portal bridge rejects valid SensorThings subscription tokens.
 app.UseAuthorization();
-
-// Canonical governed-lineage headers are accepted only when accompanied by a
-// one-use, process-local attestation issued by an operation loopback executor.
-// Public callers cannot attach mutations or audit evidence to unrelated operations.
-app.UseOperationLineageAttestation();
 
 // MCP bearer credentials must be fully validated before tenant context, schema
 // routing, or tenant status observes the request. The endpoint filter remains
@@ -1731,6 +1771,24 @@ catch (Honua.Core.Features.FeatureStore.Domain.DataStoreProviderUnavailableExcep
 }
 #endif
 
+// The key-ring checks (every key protected, every wrapped key readable with the configured secret)
+// run when KeyManagementOptions is first built. Left to the data-protection hosted service, a
+// refusal escapes app.Run unhandled and the AOT image aborts with exit 139, so build it here.
+if (durableKeyRing)
+{
+    try
+    {
+        _ = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<
+            Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>>().Value;
+    }
+    catch (InvalidOperationException ex)
+        when (!Honua.Server.Hosting.GatedBootShutdown.IsInProcessTestServer(app))
+    {
+        await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(app, ex.Message);
+        return;
+    }
+}
+
 // Configure health endpoints
 app.MapHealthEndpoints();
 app.MapPrometheusEndpoint(endpoint =>
@@ -1770,6 +1828,7 @@ app.MapDeployControlEndpoints();
 app.MapGpProcessReleaseEndpoints();
 app.MapGpProcessReleaseJobEndpoints();
 Honua.Server.Features.Geoprocessing.CustomCode.CustomCodeArtifactEndpoints.MapCustomCodeArtifactEndpoints(app);
+Honua.Server.Features.Geoprocessing.CustomCode.CustomCodeCapabilityRedemptionEndpoints.MapCustomCodeCapabilityRedemptionEndpoints(app);
 
 // Cloud event-driven control-plane surface (TriggerMode=Event only): the EventBridge-invoked
 // reconcile Lambda + EventBridge Scheduler backstop post here. No-op under poll (on-prem).
@@ -1851,6 +1910,7 @@ app.MapComplianceAdminEndpoints();
 
 // Configure secure connection management endpoints
 app.MapSecureConnectionEndpoints();
+app.MapObjectStorageConnectionEndpoints();
 // Experimental gate (PA-001): only map federation endpoints when the feature is enabled.
 if (app.Configuration.GetValue<bool>("Experimental:Features:FederatedQuery", false))
 {
@@ -1917,6 +1977,7 @@ app.MapServerFeatureEndpoints();
 #if !HONUA_EXCLUDE_GRPC
 // Configure gRPC feature service endpoint (gRPC-Web enabled via middleware)
 app.MapGrpcService<Honua.Server.Features.Protocols.Grpc.HonuaFeatureService>();
+Honua.Server.Features.Protocols.Grpc.AttachmentDownloadEndpoints.MapAttachmentDownloadEndpoints(app);
 app.MapGrpcService<Honua.Geoprocessing.HonuaProcessService>();
 app.MapGrpcService<Honua.Server.Features.Spec.HonuaSpecService>()
     .RequireAdminAuthorization()
@@ -1974,11 +2035,6 @@ app.MapOgcTileCacheExportEndpoints();
 
 // Configure Esri tile/vector-tile cache package import + serving endpoints
 app.MapTileCachePackageEndpoints();
-
-if (isTestEnvironment)
-{
-    app.MapCrossServerConsumeProbeEndpoints();
-}
 
 // Configure temporary file serving endpoints
 app.MapTemporaryFileEndpoints();

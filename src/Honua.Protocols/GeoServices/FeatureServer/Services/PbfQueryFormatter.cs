@@ -418,6 +418,8 @@ internal sealed partial class PbfQueryFormatter
                 {
                     "esriFieldTypeDate" => (MetadataV2FieldType?)MetadataV2FieldType.DateTime,
                     "esriFieldTypeDateOnly" => MetadataV2FieldType.Date,
+                    // An exact Decimal field reads as canonical text; the PBF value is a double.
+                    "esriFieldTypeDouble" when value is string => MetadataV2FieldType.Decimal,
                     _ => null
                 };
                 if (temporalType.HasValue

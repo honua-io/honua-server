@@ -6,6 +6,7 @@ using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Internal;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Features.Shared.Models;
 using Microsoft.Data.Sqlite;
@@ -383,6 +384,8 @@ internal static class GeoPackageExportWriter
         return fieldType switch
         {
             ExportFieldType.Boolean when value is bool b => b ? 1 : 0,
+            // An exact decimal arrives as canonical text; REAL columns store the double.
+            ExportFieldType.Double when value is string text && ExactAttributeValues.ToFiniteDouble(text) is { } number => number,
             ExportFieldType.DateTime => FormatDateTime(value),
             ExportFieldType.Date => FormatDate(value),
             ExportFieldType.Time when value is TimeSpan ts => ts.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture),

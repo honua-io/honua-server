@@ -6,7 +6,7 @@ and pure support dependencies once through a temporary solution filter, then
 running each selected project with `dotnet test --no-build --no-restore`. It does not build
 Architecture.Tests or integration consumers. It does not
 validate a PR and does not replace normal fast/full checks, shard execution,
-image, AOT or provider gates. Shared build/CI changes select all isolated units. Unaccounted source, test,
+image, AOT or provider gates. Shared build files, anything under `.github/`, and executable `scripts/ci/` files select all isolated units. A markdown file under `scripts/ci/` does not. Unaccounted source, test,
 eng or build-input changes also select all eligible units with an explicit reason.
 
 ```bash
@@ -112,7 +112,7 @@ retain full-host integration coverage and existing fast/full policies.
 | TestKit.Abstractions | Shared attributes and fixture-independent contracts |
 | TestKit.Core | Pure Core/Geometry helpers; no host or provider fixtures |
 | TestKit.Hosting | Minimal component TestServer composition |
-| TestKit.Postgres / TestKit.Redis | Explicit bounded service fixtures |
+| TestKit.Postgres | Explicit bounded service fixture |
 | TestKit.Postgres.Hosting | Minimal Postgres-backed component composition |
 | Legacy TestKit | Retained full-host integration suites |
 

@@ -14,7 +14,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Identity;
 
-[Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.IdentityManagement)]
 public class ScimProvisioningEndpointsTests : IAsyncLifetime
@@ -38,7 +37,7 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
             {
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
-                // #2978: SCIM provisioning is an Enterprise entitlement; grant it so these
+                // SCIM provisioning is an Enterprise entitlement; grant it so these
                 // tests keep exercising the SCIM machinery itself (the gate has its own tests
                 // in IdentityEntitlementGateTests).
                 builder.UseSetting("Licensing:DevGrantEdition", "Enterprise");
@@ -100,7 +99,7 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
     [Endpoint("POST /scim/v2/Users")]
     public async Task CreateUser_WithExternalId_RoundTripsAndResolvesByStableSubject()
     {
-        // #3141: the IdP-owned externalId (conventionally the OIDC subject) must persist,
+        // The IdP-owned externalId (conventionally the OIDC subject) must persist,
         // round-trip on the SCIM resource, and resolve the SAME managed record as the
         // userName — deferred security snapshots capture the OIDC subject, not the SCIM
         // userName.
@@ -164,7 +163,7 @@ public class ScimProvisioningEndpointsTests : IAsyncLifetime
     [Endpoint("GET /scim/v2/Users")]
     public async Task ListUsers_ValidBearer_DoesNotPermitStorage()
     {
-        // #4609 review: SCIM validates its static bearer entirely inside Authenticate()
+        // SCIM validates its static bearer entirely inside Authenticate()
         // without attaching a principal to HttpContext.User, so a successful response must
         // not read as anonymous to the shared authentication cache policy.
         var response = await _client.GetAsync("/scim/v2/Users");

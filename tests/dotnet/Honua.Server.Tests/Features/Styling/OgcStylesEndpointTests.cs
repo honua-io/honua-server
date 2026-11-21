@@ -28,7 +28,7 @@ namespace Honua.Server.Tests.Features.Styling;
 
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiStyles)]
-public sealed class OgcStylesEndpointTests : IAsyncLifetime
+public sealed partial class OgcStylesEndpointTests : IAsyncLifetime
 {
     private const string MapboxStyleMediaType = "application/vnd.mapbox.style+json";
     private const string Sld10MediaType = "application/vnd.ogc.sld+xml;version=1.0";
@@ -122,6 +122,8 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
             .EnumerateArray()
             .Select(parameter => parameter.GetProperty("$ref").GetString())
             .Should().Contain(["#/components/parameters/validate", "#/components/parameters/prefer"]);
+        updateOperation.GetProperty("responses").TryGetProperty("412", out _).Should().BeTrue();
+        paths.TryGetProperty("/ogc/styles/{styleId}/impact", out _).Should().BeTrue();
     }
 
     [IntegrationTest]
@@ -943,10 +945,9 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
     [Endpoint("GET /ogc/styles/{styleId}")]
     public async Task GetStylesheet_EveryAdvertisedCollectionStylesheet_ResolvesAndIsListed()
     {
-        // #4993: every OGC API Features collection advertises rel=stylesheet at
-        // /ogc/styles/{resource name}. A collection that has never been styled renders with its
-        // layer default, and that default is what the link must return — before the fix it was
-        // 404 and /ogc/styles listed nothing, so MapLibre and QGIS could not style the layer.
+        // A collection advertises rel=stylesheet at /ogc/styles/{resource name}. Before any
+        // explicit style is stored, that link must return its layer default and styles
+        // discovery must include it for MapLibre and QGIS clients.
         var client = _fixture.CreateClient();
 
         using var collectionsResponse = await client.GetAsync("/ogc/features/collections");
@@ -1034,7 +1035,7 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
     [Endpoint("GET /ogc/styles/{styleId}")]
     public async Task GetStylesheet_ProtectedCollectionDefaultStyle_RefusesAnonymousAndServesEntitledCaller()
     {
-        // #4993: the stylesheet a protected collection advertises answers anonymous callers with
+        // The stylesheet a protected collection advertises answers anonymous callers with
         // 401 and serves an entitled caller the style, even when no style has been stored.
         const string entitledRole = "styles-reader";
         const string referer = "https://ogcapi-styles-proof.example/";
@@ -1098,7 +1099,7 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
     {
         await SeedTestLayerStyleAsync(adminClient);
 
-        // Every feature collection now publishes a style (#4993), so the list is not just the
+        // Every feature collection now publishes a style, so the list is not just the
         // seeded one: resolve the seeded layer's own style id and prove it is listed.
         var styleId = _fixture.GetCurrentV2GraphSnapshot()
             .Index.ResourcesByStorageLayerId[WebAppFixture.TestLayerId].Metadata.Name;

@@ -121,6 +121,11 @@ internal static partial class MapServerEndpoints
                 "Cloud file storage is not configured. exportTiles requires storage-backed artifacts.");
         }
 
+        if (context.RequestServices.GetService<ExportTilesArtifactBudget>()?.TryTake(context.User) is { } retryAfter)
+        {
+            return StandardErrorHelpers.CreateTooManyRequests(context, ExportTilesArtifactBudget.RefusedMessage, retryAfter);
+        }
+
         var loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
         var logger = loggerFactory.CreateLogger("Honua.Server.MapServerEndpoints");
         MapServerLog.ExportTilesRequested(logger, plan!.ServiceId, plan.Tiles.Length);

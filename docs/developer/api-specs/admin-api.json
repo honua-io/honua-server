@@ -160,7 +160,7 @@
     },
     {
       "name": "Forms",
-      "description": "Server-owned form package authoring lifecycle: draft, validate, publish, reopen, and AI-assisted generation."
+      "description": "Form authoring lifecycle: Draft, validate, go live with a Released Version, reopen, and AI-assisted generation."
     },
     {
       "name": "Field Workflows",
@@ -351,6 +351,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -2832,7 +2835,7 @@
           "Import"
         ],
         "summary": "Import a Geospatial File from Object Storage",
-        "description": "Imports one supported object from an allow-listed s3:// bucket using the host identity. The request carries no credentials. Large objects return a background job without an in-request download.",
+        "description": "Imports one supported object through an object storage connection. The key must lie under the connection prefix; raw s3:// sources are refused. Large objects return a background job without an in-request download.",
         "operationId": "uploadImportFileFromObjectStore",
         "requestBody": {
           "required": true,
@@ -5767,6 +5770,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Deploy control is temporarily unavailable."
           }
         }
       },
@@ -5909,6 +5915,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Deploy control is temporarily unavailable."
           }
         }
       }
@@ -5967,6 +5976,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Deploy control is temporarily unavailable."
           }
         }
       }
@@ -6011,6 +6023,9 @@
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
@@ -6023,8 +6038,17 @@
           "409": {
             "$ref": "#/components/responses/Conflict"
           },
+          "412": {
+            "description": "The request body declares a recovery grant whose notAfter has passed (problem code recovery_fence_expired). An expired grant preauthorizes nothing; the operation is left unchanged."
+          },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "502": {
+            "description": "The rollback operation failed in the deployment backend."
+          },
+          "503": {
+            "description": "Deploy control is temporarily unavailable or the rollback outcome is indeterminate."
           }
         }
       }
@@ -10557,6 +10581,15 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "502": {
+            "description": "The rollback operation failed in the deployment backend."
+          },
+          "503": {
+            "description": "The rollback outcome is indeterminate."
           }
         }
       }
@@ -11306,6 +11339,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Durable proposal storage or the required control plane is unavailable (problem type `capability-unavailable`, code `dependency-unavailable`)."
           }
         }
       }
@@ -11345,6 +11381,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Durable proposal storage or the required control plane is unavailable (problem type `capability-unavailable`, code `dependency-unavailable`)."
           }
         }
       }
@@ -11454,6 +11493,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "description": "Durable proposal storage or the required control plane is unavailable (problem type `capability-unavailable`, code `dependency-unavailable`)."
           }
         }
       }
@@ -13623,6 +13665,17 @@
             "in": "query",
             "required": false,
             "description": "Layer index within the named service.",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "layerId",
+            "in": "query",
+            "required": false,
+            "deprecated": true,
+            "description": "Deprecated alias of serviceLayerIndex, accepted from published clients. When both are sent they must agree.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -16144,17 +16197,17 @@
         }
       }
     },
-    "/forms/packages": {
+    "/forms": {
       "get": {
         "tags": [
           "Forms"
         ],
-        "summary": "List Form Packages",
-        "description": "Lists every server-owned form package family with its current draft and current published version numbers. Responses are marked `no-store`.",
-        "operationId": "listFormPackages",
+        "summary": "List Forms",
+        "description": "Lists every server-owned Form with its current Draft and Released version numbers. Responses are marked `no-store`.",
+        "operationId": "listForms",
         "responses": {
           "200": {
-            "description": "Form package summaries.",
+            "description": "Form summaries.",
             "content": {
               "application/json": {
                 "schema": {
@@ -16181,9 +16234,9 @@
         "tags": [
           "Forms"
         ],
-        "summary": "Create Form Package Draft",
-        "description": "Creates a new draft form package version from the supplied package document. The server assigns `formId` when the document omits it and returns the persisted version with an `ETag` for subsequent optimistic-concurrency updates. The action is audited as `forms.package.save_draft`.",
-        "operationId": "createFormPackageDraft",
+        "summary": "Create Form Draft",
+        "description": "Creates a new Form Draft from the supplied Form document. The server assigns `formId` when the document omits it and returns the persisted version with an `ETag` for subsequent optimistic-concurrency updates. The action is audited as `forms.package.save_draft`.",
+        "operationId": "createFormDraft",
         "requestBody": {
           "required": true,
           "content": {
@@ -16196,7 +16249,7 @@
         },
         "responses": {
           "201": {
-            "description": "Draft package version created.",
+            "description": "Form Draft created.",
             "headers": {
               "ETag": {
                 "description": "Concurrency token for the created draft version.",
@@ -16228,14 +16281,14 @@
         }
       }
     },
-    "/forms/packages/import": {
+    "/forms/import": {
       "post": {
         "tags": [
           "Forms"
         ],
-        "summary": "Import Form Package From XLSForm",
-        "description": "Imports an XLSForm workbook (`survey`, `choices` and `settings` sheets) as a new draft form package version bound to the target service layer. Questions bind to the layer attribute of the same name; numeric questions become `integer` or `number` by that attribute type. Import never publishes. A workbook with an unsupported question type, structure or cell returns `400` with one diagnostic per blocking cell and creates no draft. The action is audited as `forms.package.import_xlsform`.",
-        "operationId": "importFormPackageXlsForm",
+        "summary": "Import Form From XLSForm",
+        "description": "Imports an XLSForm workbook (`survey`, `choices` and `settings` sheets) as a new Form Draft bound to the target service layer. Questions bind to the layer attribute of the same name; numeric questions become `integer` or `number` by that attribute type. Import never publishes. A workbook with an unsupported question type, structure or cell returns `400` with one diagnostic per blocking cell and creates no Draft. The action is audited as `forms.package.import_xlsform`.",
+        "operationId": "importFormXlsForm",
         "parameters": [
           {
             "name": "serviceId",
@@ -16279,10 +16332,10 @@
         },
         "responses": {
           "201": {
-            "description": "Draft package version created from the workbook.",
+            "description": "Form Draft created from the workbook.",
             "headers": {
               "ETag": {
-                "description": "Concurrency token for the created draft version.",
+                "description": "Concurrency token for the created Draft.",
                 "schema": {
                   "type": "string"
                 }
@@ -16297,7 +16350,7 @@
             }
           },
           "400": {
-            "description": "Missing target, unreadable upload, or workbook diagnostics. Workbook problems carry a `diagnostics` array; no draft is created.",
+            "description": "Missing target, unreadable upload, or workbook diagnostics. Workbook problems carry a `diagnostics` array; no Draft is created.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -16328,20 +16381,20 @@
         }
       }
     },
-    "/forms/packages/{formId}": {
+    "/forms/{formId}": {
       "get": {
         "tags": [
           "Forms"
         ],
-        "summary": "Get Current Form Package",
-        "description": "Returns the current draft version of a form package, falling back to the current published version when no draft exists. Returns `404` when neither exists.",
-        "operationId": "getCurrentFormPackage",
+        "summary": "Get Current Form",
+        "description": "Returns the current Form Draft, falling back to the Released version when no Draft exists. Returns `404` when neither exists.",
+        "operationId": "getCurrentForm",
         "parameters": [
           {
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
@@ -16349,7 +16402,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The current draft or published package version.",
+            "description": "The current Form Draft or Released version.",
             "headers": {
               "ETag": {
                 "description": "Concurrency token for the returned version.",
@@ -16381,20 +16434,20 @@
         }
       }
     },
-    "/forms/packages/{formId}/export": {
+    "/forms/{formId}/export": {
       "get": {
         "tags": [
           "Forms"
         ],
-        "summary": "Export Form Package As XLSForm",
-        "description": "Exports the current published version of a form package as an XLSForm workbook. Drafts are not exported. Submit, attachment, privacy and offline policies are server configuration and are not part of the workbook. A package whose fields carry behavior XLSForm cannot represent returns `422` with diagnostics instead of a workbook that omits it.",
-        "operationId": "exportFormPackageXlsForm",
+        "summary": "Export Form As XLSForm",
+        "description": "Exports the current Released Form Version as an XLSForm workbook. Drafts are not exported. Submit, attachment, privacy and offline policies are server configuration and are not part of the workbook. A Form whose fields carry behavior XLSForm cannot represent returns `422` with diagnostics instead of a workbook that omits it.",
+        "operationId": "exportFormXlsForm",
         "parameters": [
           {
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
@@ -16402,7 +16455,7 @@
         ],
         "responses": {
           "200": {
-            "description": "XLSForm workbook for the current published version.",
+            "description": "XLSForm workbook for the current Released Version.",
             "content": {
               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
                 "schema": {
@@ -16425,7 +16478,7 @@
             "$ref": "#/components/responses/NotFound"
           },
           "422": {
-            "description": "The published package uses behavior XLSForm cannot represent; `diagnostics` names the survey row of each field.",
+            "description": "The Released Version uses behavior XLSForm cannot represent; `diagnostics` names the survey row of each field.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -16437,20 +16490,20 @@
         }
       }
     },
-    "/forms/packages/{formId}/versions": {
+    "/forms/{formId}/versions": {
       "get": {
         "tags": [
           "Forms"
         ],
-        "summary": "List Form Package Versions",
-        "description": "Lists every persisted version of a form package family. Returns an empty array for an unknown `formId`.",
-        "operationId": "listFormPackageVersions",
+        "summary": "List Form Versions",
+        "description": "Lists every persisted Form Version. Returns an empty array for an unknown `formId`.",
+        "operationId": "listFormVersions",
         "parameters": [
           {
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
@@ -16458,7 +16511,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Package versions.",
+            "description": "Form Versions.",
             "content": {
               "application/json": {
                 "schema": {
@@ -16482,29 +16535,29 @@
         }
       }
     },
-    "/forms/packages/{formId}/versions/{packageVersion}": {
+    "/forms/{formId}/versions/{formVersion}": {
       "get": {
         "tags": [
           "Forms"
         ],
-        "summary": "Get Form Package Version",
-        "description": "Returns a single form package version (draft, published, or archived) by version number.",
-        "operationId": "getFormPackageVersion",
+        "summary": "Get Form Version",
+        "description": "Returns a single Form Version (Draft, Released, or archived) by version number.",
+        "operationId": "getFormVersion",
         "parameters": [
           {
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "packageVersion",
+            "name": "formVersion",
             "in": "path",
             "required": true,
-            "description": "Monotonic package version number.",
+            "description": "Monotonic Form Version number.",
             "schema": {
               "type": "integer"
             }
@@ -16512,7 +16565,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The requested package version.",
+            "description": "The requested Form Version.",
             "headers": {
               "ETag": {
                 "description": "Concurrency token for the returned version.",
@@ -16547,21 +16600,21 @@
         "tags": [
           "Forms"
         ],
-        "summary": "Update Form Package Draft",
-        "description": "Replaces the package document of an existing draft version. An `If-Match` header carrying the draft's current ETag is required; omitting it returns `428 Precondition Required`. A missing draft, a non-editable version, or a stale ETag all return `409 Conflict`. The action is audited as `forms.package.update_draft`.",
-        "operationId": "updateFormPackageDraft",
+        "summary": "Update Form Draft",
+        "description": "Replaces the Form document of an existing Draft. An `If-Match` header carrying the draft's current ETag is required; omitting it returns `428 Precondition Required`. A missing draft, a non-editable version, or a stale ETag all return `409 Conflict`. The action is audited as `forms.package.update_draft`.",
+        "operationId": "updateFormDraft",
         "parameters": [
           {
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "packageVersion",
+            "name": "formVersion",
             "in": "path",
             "required": true,
             "description": "Draft version number to update.",
@@ -16636,29 +16689,29 @@
         }
       }
     },
-    "/forms/packages/{formId}/versions/{packageVersion}/validate": {
+    "/forms/{formId}/versions/{formVersion}/validate": {
       "post": {
         "tags": [
           "Forms"
         ],
-        "summary": "Validate Form Package Version",
-        "description": "Validates a package version against the target layer schema and package policy, returning the validation result. When the version is a draft, the result is also stored on the draft. This route always returns `200` with the validation result, even when the package is invalid.",
-        "operationId": "validateFormPackageVersion",
+        "summary": "Validate Form Draft",
+        "description": "Validates a Form Version against the target Layer schema and Form policy, returning the validation result. When the version is a draft, the result is also stored on the draft. This route always returns `200` with the validation result, even when the Form is invalid.",
+        "operationId": "validateFormDraft",
         "parameters": [
           {
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "packageVersion",
+            "name": "formVersion",
             "in": "path",
             "required": true,
-            "description": "Package version number to validate.",
+            "description": "Form Version number to validate.",
             "schema": {
               "type": "integer"
             }
@@ -16666,7 +16719,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Validation result for the package version.",
+            "description": "Validation result for the Form Version.",
             "content": {
               "application/json": {
                 "schema": {
@@ -16690,26 +16743,26 @@
         }
       }
     },
-    "/forms/packages/{formId}/versions/{packageVersion}/publish": {
+    "/forms/{formId}/versions/{formVersion}/publish": {
       "post": {
         "tags": [
           "Forms"
         ],
-        "summary": "Publish Form Package Version",
-        "description": "Validates and publishes a draft package version as an immutable published version. When validation fails, the stored validation result is returned with `400` and the failure is audited. Publishing a version that is not a draft returns `409 Conflict`. The action is audited as `forms.package.publish`.",
-        "operationId": "publishFormPackageVersion",
+        "summary": "Publish Form Draft",
+        "description": "Validates a Form Draft and makes it the immutable Released version. When validation fails, the stored validation result is returned with `400` and the failure is audited. Publishing a version that is not a draft returns `409 Conflict`. The action is audited as `forms.package.publish`.",
+        "operationId": "goLiveFormDraft",
         "parameters": [
           {
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "packageVersion",
+            "name": "formVersion",
             "in": "path",
             "required": true,
             "description": "Draft version number to publish.",
@@ -16720,7 +16773,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The published package version.",
+            "description": "The Released Form Version.",
             "headers": {
               "ETag": {
                 "description": "Concurrency token for the published version.",
@@ -16738,7 +16791,7 @@
             }
           },
           "400": {
-            "description": "The package failed publish validation. The body is the validation result that blocked publishing.",
+            "description": "The Form failed publish validation. The body is the validation result that blocked publishing.",
             "content": {
               "application/json": {
                 "schema": {
@@ -16765,29 +16818,29 @@
         }
       }
     },
-    "/forms/packages/{formId}/versions/{packageVersion}/reopen": {
+    "/forms/{formId}/versions/{formVersion}/reopen": {
       "post": {
         "tags": [
           "Forms"
         ],
-        "summary": "Reopen Form Package Version",
-        "description": "Creates a new editable draft version from an existing published package version. The new draft records the version it was reopened from. Returns `404` when the published version does not exist. The action is audited as `forms.package.reopen`.",
-        "operationId": "reopenFormPackageVersion",
+        "summary": "Reopen Form Version",
+        "description": "Creates a new editable Form Draft from an existing Released version. The new draft records the version it was reopened from. Returns `404` when the Released version does not exist. The action is audited as `forms.package.reopen`.",
+        "operationId": "reopenFormVersion",
         "parameters": [
           {
             "name": "formId",
             "in": "path",
             "required": true,
-            "description": "Stable form package identifier.",
+            "description": "Stable Form identifier.",
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "packageVersion",
+            "name": "formVersion",
             "in": "path",
             "required": true,
-            "description": "Published version number to reopen.",
+            "description": "Released Version number to reopen.",
             "schema": {
               "type": "integer"
             }
@@ -24467,6 +24520,138 @@
           }
         }
       }
+    },
+    "/connections/object-storage/setup": {
+      "post": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "Start an Object Storage Connection",
+        "description": "Mints a single-use external id, bound to the caller, for the customer role that will grant Honua read-only access to one bucket prefix, with an optional CloudFormation quick-create link.",
+        "operationId": "createObjectStorageConnectionSetup",
+        "parameters": [
+          {
+            "name": "bucket",
+            "in": "query",
+            "required": true,
+            "description": "S3 bucket name",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "prefix",
+            "in": "query",
+            "required": false,
+            "description": "Key prefix",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Setup values",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseObjectStorageSetupResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "No object storage connection store on this host.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/connections/{id}/objects": {
+      "get": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "Browse Connection Objects",
+        "description": "Lists one folder level (delimiter '/') under an object storage connection, up to 200 entries, with each object's kind detected from its first bytes.",
+        "operationId": "listConnectionObjects",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Connection UUID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "prefix",
+            "in": "query",
+            "required": false,
+            "description": "Folder under the connection prefix; defaults to the connection prefix.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One folder level",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseObjectStorageBrowseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "description": "Object storage is not available on this host.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -24993,17 +25178,28 @@
       "ImportFileFromObjectStoreRequest": {
         "type": "object",
         "required": [
-          "sourceUri",
           "tableName"
         ],
         "properties": {
+          "connectionId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Object storage connection to read from."
+          },
+          "key": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "Object key; must lie under the connection prefix."
+          },
           "sourceUri": {
             "type": "string",
-            "description": "s3://bucket/key object to import. Credentials, queries, and fragments are rejected."
+            "deprecated": true,
+            "description": "Not accepted. Import through a connection with connectionId and key."
           },
           "assumeRoleArn": {
             "type": "string",
-            "description": "Optional allow-listed role ARN. The host assumes it with the configured external id. Omit to use the host identity."
+            "deprecated": true,
+            "description": "Not accepted. The connection carries its role."
           },
           "tableName": {
             "type": "string",
@@ -26047,6 +26243,30 @@
           "createdBy": {
             "type": "string",
             "description": "Creator identity"
+          },
+          "kind": {
+            "type": "string",
+            "description": "object-storage for S3 connections; omitted for database connections."
+          },
+          "bucket": {
+            "type": "string",
+            "description": "Object storage: bucket name."
+          },
+          "prefix": {
+            "type": "string",
+            "description": "Object storage: key prefix the connection is limited to."
+          },
+          "region": {
+            "type": "string",
+            "description": "Object storage: AWS region."
+          },
+          "roleArn": {
+            "type": "string",
+            "description": "Object storage: customer role assumed for reads; omitted for built-in connections."
+          },
+          "builtIn": {
+            "type": "boolean",
+            "description": "Object storage: true for the installation's own read-only data and public prefixes."
           }
         }
       },
@@ -26746,6 +26966,37 @@
             ],
             "default": "Require",
             "description": "SSL mode"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "database",
+              "object-storage"
+            ],
+            "description": "object-storage creates an S3 connection from bucket, prefix, region, roleArn and externalId; other fields are ignored."
+          },
+          "bucket": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 63,
+            "description": "Object storage: S3 bucket name."
+          },
+          "prefix": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "Object storage: key prefix the connection is limited to."
+          },
+          "region": {
+            "type": "string",
+            "description": "Object storage: AWS region of the bucket."
+          },
+          "roleArn": {
+            "type": "string",
+            "description": "Object storage: arn:aws:iam::<account>:role/honua-connection-*."
+          },
+          "externalId": {
+            "type": "string",
+            "description": "Object storage: the external id returned by the setup endpoint. Single use; it cannot be changed later."
           }
         }
       },
@@ -26819,6 +27070,12 @@
             "type": "integer",
             "format": "int32",
             "description": "Layer ID"
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
           },
           "layerName": {
             "type": "string",
@@ -27091,6 +27348,11 @@
             "type": "boolean",
             "default": false,
             "description": "Declares attachment support for the published resource. Does not enable editing."
+          },
+          "exactTypes": {
+            "type": "boolean",
+            "default": false,
+            "description": "Opt in to exact decimal and offset-timestamp field types. The primary key and temporal column stay on the default mapping."
           },
           "folderId": {
             "type": "string",
@@ -28305,6 +28567,20 @@
           "isActive": {
             "type": "boolean",
             "description": "Whether connection is active"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Object storage: new display name."
+          },
+          "region": {
+            "type": "string",
+            "description": "Object storage: AWS region of the bucket."
+          },
+          "roleArn": {
+            "type": "string",
+            "description": "Object storage: arn:aws:iam::<account>:role/honua-connection-*."
           }
         }
       },
@@ -28795,6 +29071,14 @@
             },
             "default": []
           },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "agent"
+            ],
+            "description": "Key type, lowercase. An `agent` key always carries the `agent` grant, which is added when missing. Omitted, the type follows the grants. An API key issued to an agent caller, or from a proposal an agent made, is always an agent key, and `standard` is refused for it."
+          },
           "expiresAt": {
             "type": "string",
             "format": "date-time",
@@ -28875,6 +29159,14 @@
           "keyPrefix": {
             "type": "string",
             "description": "Non-secret prefix used to recognize the key."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "agent"
+            ],
+            "description": "`agent` when the key carries the `agent` grant, otherwise `standard`."
           },
           "permissions": {
             "type": "array",
@@ -28979,6 +29271,14 @@
               "expired",
               "revoked"
             ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "agent"
+            ],
+            "description": "`agent` when the key carries the `agent` grant, otherwise `standard`."
           },
           "permissions": {
             "type": "array",
@@ -29359,6 +29659,12 @@
           "serviceLayerIndex": {
             "type": "integer",
             "format": "int32"
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of serviceLayerIndex. Published clients still read this name.",
+            "deprecated": true
           },
           "layerName": {
             "type": "string"
@@ -39938,6 +40244,12 @@
             "format": "int32",
             "description": "Layer identifier."
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "document": {
             "allOf": [
               {
@@ -39999,6 +40311,12 @@
             "format": "int32",
             "description": "Global storage-layer id of the related resource, distinct from its service-local publication index. Returns -1 if no storage-layer handle exists."
           },
+          "relatedLayerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of relatedStorageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "role": {
             "type": "string",
             "description": "Relationship role, typically origin or destination."
@@ -40042,6 +40360,12 @@
             "format": "int32",
             "description": "Layer identifier."
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "relationships": {
             "type": "array",
             "description": "Persisted relationships.",
@@ -40077,7 +40401,6 @@
         "required": [
           "id",
           "name",
-          "relatedStorageLayerId",
           "originField",
           "destinationField"
         ],
@@ -40098,7 +40421,13 @@
           "relatedStorageLayerId": {
             "type": "integer",
             "format": "int32",
-            "description": "Global storage-layer id of the related resource, distinct from its service-local publication index."
+            "description": "Global storage-layer id of the related resource, distinct from its service-local publication index. Required, under this name or its deprecated alias relatedLayerId."
+          },
+          "relatedLayerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated input alias of relatedStorageLayerId, accepted from published clients. Send relatedStorageLayerId; when both are sent they must agree.",
+            "deprecated": true
           },
           "role": {
             "type": "string",
@@ -40246,6 +40575,12 @@
             "format": "int32",
             "description": "Layer identifier."
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "fields": {
             "type": "array",
             "description": "Field configurations in resource schema-field order.",
@@ -40355,6 +40690,12 @@
             "format": "int32",
             "description": "Layer identifier."
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "permanentFilter": {
             "allOf": [
               {
@@ -40446,6 +40787,12 @@
             "type": "integer",
             "format": "int32",
             "description": "Layer identifier."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
           },
           "layerName": {
             "type": "string",
@@ -43536,7 +43883,6 @@
         "description": "Create/replace payload for a scheduled Share export definition.",
         "required": [
           "serviceName",
-          "serviceLayerIndex",
           "destinationType",
           "format",
           "schedule"
@@ -43555,7 +43901,13 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0,
-            "description": "Service-local layer id. Must be zero or greater."
+            "description": "Service-local layer id. Must be zero or greater. Required, under this name or its deprecated alias layerId."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated input alias of serviceLayerIndex, accepted from published clients. Send serviceLayerIndex; when both are sent they must agree.",
+            "deprecated": true
           },
           "displayName": {
             "type": "string",
@@ -43615,6 +43967,12 @@
           "serviceLayerIndex": {
             "type": "integer",
             "format": "int32"
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of serviceLayerIndex. Published clients still read this name.",
+            "deprecated": true
           },
           "displayName": {
             "type": "string",
@@ -43787,6 +44145,12 @@
           "serviceLayerIndex": {
             "type": "integer",
             "format": "int32"
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of serviceLayerIndex. Published clients still read this name.",
+            "deprecated": true
           }
         }
       },
@@ -50524,7 +50888,7 @@
           },
           "DescriptorKey": {
             "type": "string",
-            "description": "Storage key of the version's publication descriptor (publication-descriptor v1)."
+            "description": "Storage key of the version's STAC collection document (collection.json)."
           },
           "PointerKey": {
             "type": "string",
@@ -50655,6 +51019,11 @@
               "type": "string"
             },
             "description": "Attribute fields to publish. Empty means all discovered columns."
+          },
+          "exactTypes": {
+            "type": "boolean",
+            "default": false,
+            "description": "Preview the exact decimal and offset-timestamp field types."
           }
         }
       },
@@ -50851,9 +51220,16 @@
       "LayerExtentRefreshLayerSummary": {
         "type": "object",
         "properties": {
+          "storageLayerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Layer ID"
+          },
           "layerId": {
             "type": "integer",
-            "format": "int32"
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
           },
           "layerName": {
             "type": "string"
@@ -50890,9 +51266,16 @@
       "MaterializedFeatureRefreshSummary": {
         "type": "object",
         "properties": {
+          "storageLayerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Layer ID"
+          },
           "layerId": {
             "type": "integer",
-            "format": "int32"
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
           },
           "layerName": {
             "type": "string"
@@ -51081,6 +51464,20 @@
             ],
             "description": "Normalized comparison applied between the attribute and the claim value(s)."
           },
+          "filterExpression": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Additional CQL2 text predicate combined with the claim constraint."
+          },
+          "areaGeometry": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 65536,
+            "description": "WGS84 GeoJSON polygon or multipolygon text constraining readable geometry."
+          },
           "description": {
             "type": "string",
             "nullable": true
@@ -51138,6 +51535,20 @@
             "nullable": true,
             "maxLength": 16,
             "description": "Accepts `in` (default when omitted or blank), `equals`, `eq`, or `=`. Any other value returns 400."
+          },
+          "filterExpression": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Additional CQL2 text predicate combined with the claim constraint."
+          },
+          "areaGeometry": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 65536,
+            "description": "WGS84 GeoJSON polygon or multipolygon text constraining readable geometry."
           },
           "description": {
             "type": "string",
@@ -51925,6 +52336,7 @@
       "MetadataV2EditingPatch": {
         "type": "object",
         "nullable": true,
+        "additionalProperties": false,
         "properties": {
           "globalIdField": {
             "type": "string",
@@ -51950,6 +52362,26 @@
             "type": "boolean",
             "nullable": true,
             "description": "Delete policy for the selected publication; null preserves it."
+          },
+          "creatorField": {
+            "type": "string",
+            "nullable": true,
+            "description": "String field that records the creating user; null preserves it and an empty string clears it."
+          },
+          "createdAtField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Date, DateTime, String, BigInteger or Double field that records the creation time; null preserves it and an empty string clears it."
+          },
+          "editorField": {
+            "type": "string",
+            "nullable": true,
+            "description": "String field that records the last editing user; null preserves it and an empty string clears it."
+          },
+          "updatedAtField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Date, DateTime, String, BigInteger or Double field that records the last edit time; null preserves it and an empty string clears it."
           }
         }
       },
@@ -52041,14 +52473,18 @@
       },
       "LayerRelationshipBatchUpdateItem": {
         "type": "object",
-        "required": [
-          "storageLayerId"
-        ],
         "description": "Complete desired relationship set for one global storage-layer id.",
         "properties": {
           "storageLayerId": {
             "type": "integer",
-            "format": "int32"
+            "format": "int32",
+            "description": "Required, under this name or its deprecated alias layerId."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated input alias of storageLayerId, accepted from published clients. Send storageLayerId; when both are sent they must agree.",
+            "deprecated": true
           },
           "relationships": {
             "type": "array",
@@ -52173,7 +52609,14 @@
             "type": "integer",
             "format": "int32",
             "nullable": true,
-            "description": "Published layer identifier after the transaction commits."
+            "description": "Published layer identifier after the transaction commits. Null on a Failed job."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
           },
           "errorMessage": {
             "type": "string",
@@ -54225,6 +54668,132 @@
             "items": {
               "$ref": "#/components/schemas/FormsXlsFormDiagnostic"
             }
+          }
+        }
+      },
+      "ObjectStorageSetupResponse": {
+        "type": "object",
+        "required": [
+          "externalId",
+          "roleNamePrefix"
+        ],
+        "properties": {
+          "externalId": {
+            "type": "string",
+            "description": "Single-use external id for the customer role trust policy. Expires after 24 hours unless used by create."
+          },
+          "quickCreateUrl": {
+            "type": "string",
+            "nullable": true,
+            "description": "CloudFormation quick-create link for the read-only role, when a template URL is configured."
+          },
+          "roleNamePrefix": {
+            "type": "string",
+            "description": "Required name prefix of the customer role.",
+            "example": "honua-connection-"
+          }
+        }
+      },
+      "ApiResponseObjectStorageSetupResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ObjectStorageSetupResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ObjectStorageObject": {
+        "type": "object",
+        "required": [
+          "key",
+          "kind"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cog",
+              "geotiff",
+              "pmtiles",
+              "geoparquet",
+              "other"
+            ],
+            "description": "Detected from the first bytes of the object."
+          },
+          "lastModified": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "ObjectStorageBrowseResponse": {
+        "type": "object",
+        "required": [
+          "bucket",
+          "prefix",
+          "folders",
+          "objects",
+          "truncated"
+        ],
+        "properties": {
+          "bucket": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "folders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "objects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ObjectStorageObject"
+            }
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the folder holds more than one page (200 entries)."
+          }
+        }
+      },
+      "ApiResponseObjectStorageBrowseResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ObjectStorageBrowseResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }

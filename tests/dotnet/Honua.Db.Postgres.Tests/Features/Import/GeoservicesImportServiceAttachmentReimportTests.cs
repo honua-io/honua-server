@@ -464,6 +464,9 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests
 
     private async Task<PostgresAttachmentStore> CreatePersistentStoreAsync(string schema, ImportStorage storage)
     {
+        // The store refuses an attachments table in both the configured schema and honua. Classes that
+        // apply tests/seed/base-schema.sql leave honua.attachments behind and recreate it themselves.
+        await fixture.ApplyGlobalSeedSqlAsync("DROP TABLE IF EXISTS honua.attachments;");
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
         await using var create = new NpgsqlCommand($"""
             CREATE TABLE {schema}.attachments (

@@ -127,10 +127,10 @@ public sealed class ComponentContractVersionsTests
     }
 
     [UnitTest]
-    public void DeclaredPublicationDescriptorVersion_MatchesTheDescriptorTheServerWrites()
+    public void DeclaredExportCollectionVersion_MatchesTheHonuaExtensionTheServerWrites()
     {
-        ComponentVersionsDeclaration.Embedded.SchemaVersions["publication-descriptor"]
-            .Should().Be(Honua.Core.Features.Publishing.Descriptors.PublicationDescriptor.CurrentVersion);
+        ComponentVersionsDeclaration.Embedded.SchemaVersions["export-collection"]
+            .Should().Be(Honua.Core.Features.Publishing.Descriptors.ExportCollectionDocument.HonuaExtensionVersion);
     }
 
     [UnitTest]

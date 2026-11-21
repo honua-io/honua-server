@@ -45,7 +45,7 @@ internal sealed class PairedPublicationStore
     {
         var operationKey = $"{_publicationKey}/operations/{Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(operationId)))}.json";
         var pointer = new PublicationPointer(run.PublicationId, run.Version,
-            $"{run.Version}/{PairedPublicationDescriptorFactory.DescriptorFileName}", DateTimeOffset.UtcNow);
+            $"{run.Version}/{ExportCollectionDocument.FileName}", DateTimeOffset.UtcNow);
         using var content = new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(pointer, PublicationDescriptorJsonContext.Default.PublicationPointer));
         UploadResult result;
         try
@@ -93,12 +93,19 @@ internal sealed class PairedPublicationStore
     public async Task<PublicationPointer?> ReadPointerAsync(CancellationToken cancellationToken)
         => await ReadJsonAsync(PointerKey, PublicationDescriptorJsonContext.Default.PublicationPointer, cancellationToken).ConfigureAwait(false);
 
-    public async Task<PublicationDescriptor?> ReadDescriptorAsync(PublicationPointer pointer, CancellationToken cancellationToken)
-        => await ReadJsonAsync($"{_publicationKey}/{pointer.Descriptor}", PublicationDescriptorJsonContext.Default.PublicationDescriptor, cancellationToken)
-            .ConfigureAwait(false);
+    public Task<PublicationDescriptor?> ReadCollectionAsync(PublicationPointer pointer, CancellationToken cancellationToken)
+        => PairedPublicationReader.IsVersion(pointer.Version)
+            ? ReadCollectionAtAsync(VersionKey(pointer.Version, ExportCollectionDocument.FileName), cancellationToken)
+            : Task.FromResult<PublicationDescriptor?>(null);
 
     public Task<PublicationDescriptor?> ReadVersionAsync(string version, CancellationToken cancellationToken)
-        => ReadJsonAsync(VersionKey(version, "descriptor.json"), PublicationDescriptorJsonContext.Default.PublicationDescriptor, cancellationToken);
+        => ReadCollectionAtAsync(VersionKey(version, ExportCollectionDocument.FileName), cancellationToken);
+
+    private async Task<PublicationDescriptor?> ReadCollectionAtAsync(string key, CancellationToken cancellationToken)
+    {
+        var collection = await ReadJsonAsync(key, PublicationDescriptorJsonContext.Default.JsonObject, cancellationToken).ConfigureAwait(false);
+        return collection is null ? null : ExportCollectionDocument.Read(collection);
+    }
 
     public async Task<PointerState> PointerStateAsync(string version)
     {

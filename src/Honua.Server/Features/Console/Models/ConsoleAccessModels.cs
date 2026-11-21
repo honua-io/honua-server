@@ -52,9 +52,9 @@ public sealed record ConsoleRbacRole
 
 public sealed record ConsoleRbacOverview
 {
-    public required string WorkspaceId { get; init; }
+    public required string EnvironmentId { get; init; }
 
-    public string? WorkspaceName { get; init; }
+    public string? EnvironmentName { get; init; }
 
     public IReadOnlyList<ConsoleAccessScope> Scopes { get; init; } = [];
 
@@ -111,9 +111,9 @@ public sealed record ConsoleTeamInvitation
 
 public sealed record ConsoleTeamMembership
 {
-    public required string WorkspaceId { get; init; }
+    public required string EnvironmentId { get; init; }
 
-    public string? WorkspaceName { get; init; }
+    public string? EnvironmentName { get; init; }
 
     public IReadOnlyList<ConsoleTeamMember> Members { get; init; } = [];
 

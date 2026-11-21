@@ -110,6 +110,12 @@ public class GeometryLimits
     [Range(1, 15)]
     public int MaxCoordinatePrecision { get; set; } = 8;
 
+    // Segment pairs that may cross, counted before a Geometry Service operation nodes geometries
+    // (overlay, union, cut, trim, generalization, repair, relation, offset); a quarter of it for
+    // callers that are not signed in.
+    [Range(1000d, 50000000d)]
+    public long MaxOverlayCandidatePairs { get; set; } = 2000000;
+
     public double? SimplifyTolerance { get; set; }
 }
 

@@ -9,11 +9,11 @@ public sealed class CatalogDiscoveryOptions
 {
     public const string SectionName = "Console:CatalogDiscovery";
 
-    public List<CatalogDiscoveryWorkspaceOptions> Workspaces { get; set; } = [];
+    public List<CatalogDiscoveryEnvironmentOptions> Environments { get; set; } = [];
 }
 
-// Tenant and metadata namespace are explicit and never inferred from the workspace identifier.
-public sealed class CatalogDiscoveryWorkspaceOptions
+// Tenant and metadata namespace are explicit and never inferred from the environment identifier.
+public sealed class CatalogDiscoveryEnvironmentOptions
 {
     public string Id { get; set; } = string.Empty;
 
@@ -30,19 +30,19 @@ internal sealed class CatalogDiscoveryOptionsValidator : IValidateOptions<Catalo
 {
     public ValidateOptionsResult Validate(string? name, CatalogDiscoveryOptions options)
     {
-        if (options.Workspaces is null)
+        if (options.Environments is null)
         {
-            return ValidateOptionsResult.Fail("Catalog discovery workspaces must be a list.");
+            return ValidateOptionsResult.Fail("Catalog discovery environments must be a list.");
         }
 
         var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var workspace in options.Workspaces)
+        foreach (var environment in options.Environments)
         {
-            if (workspace is null || !IsIdentifier(workspace.Id) || !IsIdentifier(workspace.TenantId) ||
-                !IsIdentifier(workspace.Namespace) || !ids.Add(workspace.Id) || workspace.DisplayName?.Length > 200)
+            if (environment is null || !IsIdentifier(environment.Id) || !IsIdentifier(environment.TenantId) ||
+                !IsIdentifier(environment.Namespace) || !ids.Add(environment.Id) || environment.DisplayName?.Length > 200)
             {
                 return ValidateOptionsResult.Fail(
-                    "Catalog discovery workspaces require unique IDs and explicit tenant/namespace identifiers (1-128 letters, digits, '.', '_' or '-'); display names must not exceed 200 characters.");
+                    "Catalog discovery environments require unique IDs and explicit tenant/namespace identifiers (1-128 letters, digits, '.', '_' or '-'); display names must not exceed 200 characters.");
             }
         }
 

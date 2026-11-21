@@ -122,7 +122,7 @@ internal sealed class CapabilityManifestService(
             : BuildCapabilities(policyContext, operationCapabilities);
         capabilities = StampRollbackTargets(capabilities, operationCapabilities, policyContext);
         capabilities = [.. capabilities, BuildBackgroundImportCapability(policyContext)];
-        capabilities = [.. capabilities, BuildObjectStoreImportCapability(policyContext)];
+        capabilities = [.. capabilities, await BuildObjectStoreImportCapabilityAsync(policyContext, cancellationToken).ConfigureAwait(false)];
         capabilities = [.. capabilities, .. BuildFileFormatCapabilities(policyContext, request.Principal)];
         capabilities = ApplyCompiledProtocolProfile(capabilities);
         var packages = options.ManifestFromRegistry
@@ -538,6 +538,13 @@ internal sealed class CapabilityManifestService(
                     ? null
                     : CapabilityReasonCodes.DependencyUnavailable,
                 requiresAuthentication: true),
+            // Console catalog, share and open-data state survives a restart only in the system database.
+            // Anonymous: public share pages read it before anyone signs in.
+            Capability("console.content.persistent", "console", context,
+                configured: runtimeInventory.HasDurableConsoleContent,
+                unavailableReasonOverride: runtimeInventory.HasDurableConsoleContent
+                    ? null
+                    : CapabilityReasonCodes.DependencyUnavailable),
             Capability("edit.geoservices-version-tokens", "edit", context,
                 maturity: CapabilityMaturity.Planned,
                 supported: false),
@@ -724,6 +731,11 @@ internal sealed class CapabilityManifestService(
                 Configured = runtimeInventory.HasSharedFeatureLockStore && runtimeInventory.FeatureLockAuthorizerConfigured,
                 UnavailableReason = runtimeInventory.HasSharedFeatureLockStore ? null : CapabilityReasonCodes.DependencyUnavailable,
                 RequiresAuthentication = true,
+            },
+            ["console.content.persistent"] = new()
+            {
+                Configured = runtimeInventory.HasDurableConsoleContent,
+                UnavailableReason = runtimeInventory.HasDurableConsoleContent ? null : CapabilityReasonCodes.DependencyUnavailable,
             },
             ["versioning.branch"] = new() { EntitlementKey = FeatureCatalog.BranchVersioningKey },
             ["operate.status"] = new() { RequiresAuthentication = true },
@@ -1366,13 +1378,17 @@ internal sealed class CapabilityManifestService(
         };
     }
 
-    private CapabilityManifestCapability BuildObjectStoreImportCapability(CapabilityPolicyContext context)
+    private async Task<CapabilityManifestCapability> BuildObjectStoreImportCapabilityAsync(
+        CapabilityPolicyContext context,
+        CancellationToken cancellationToken)
     {
+        var configured = options.ObjectStoreImport is { } availability
+            && await availability.IsConfiguredAsync(cancellationToken).ConfigureAwait(false);
         var capability = Capability(
             ObjectStoreImportCapabilityId,
             "import",
             context,
-            configured: options.ObjectStoreConfigured,
+            configured: configured,
             entitlementKey: "import.file",
             policyCapability: "metadata.write");
         return capability with { Schemes = ["s3"] };
@@ -1643,7 +1659,7 @@ internal static class CapabilityReasonCodes
     public const string EnvironmentUnavailable = "environment-unavailable";
     public const string WorkspaceScopeRequired = "workspace-scope-required";
 
-    // A missing optional Redis reads as degraded, not as an available capability whose operations return 503.
+    // A missing required dependency reads as degraded, not as an available capability whose operations return 503.
     public const string DependencyUnavailable = Core.Features.Capabilities.CapabilityUnavailableCodes.ErrorCode;
 }
 

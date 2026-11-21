@@ -126,7 +126,7 @@ internal static partial class ServiceCollectionExtensions
         services.TryAddSingleton<Honua.Core.Features.Infrastructure.Abstractions.IRuntimeTunableAdmissionGate>(
             sp => sp.GetRequiredService<QueryConcurrencyGate>());
 
-        // Singleton cache that resolves the connection string / secret exactly once (PA-077).
+        // Singleton cache that resolves the connection string / secret exactly once.
         // Scoped factories must await ResolvedConnectionStringTask instead of calling the
         // blocking ResolveConnectionString helper so that thread-pool threads are never
         // blocked on a cloud secret call (AWS Secrets Manager / Azure Key Vault).
@@ -141,13 +141,11 @@ internal static partial class ServiceCollectionExtensions
             return new PostgresConnectionStringCache(rawConnectionString, resolver);
         });
 
-        // Register NpgsqlDataSource as specified in Issue #3
         services.TryAddSingleton<NpgsqlDataSource>(serviceProvider =>
         {
             // The NpgsqlDataSource singleton is created at startup (before requests).
             // Block here is acceptable: this is a one-time startup cost on the
-            // dedicated startup thread, not the request thread pool. The singleton
-            // path is noted as lower-priority in PA-077.
+            // dedicated startup thread, not the request thread pool.
             var connectionString = serviceProvider.GetRequiredService<PostgresConnectionStringCache>()
                 .ResolvedConnectionStringTask
                 .GetAwaiter()
@@ -239,12 +237,14 @@ internal static partial class ServiceCollectionExtensions
             serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
             new LayerReadCommittedSnapshotPolicy(LayerReadSecurityResolver.FromServices(serviceProvider)),
             serviceProvider.GetRequiredService<IChangeTracker>()));
-        // One scoped store serves admission and the monthly notice outbox.
+        // One scoped store serves admission and the spend notice outboxes.
         services.AddScoped(provider => new Features.Security.Admission.PostgresAiExecutionAdmissionStore(
             provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), configuration["Database:Schema"]));
         services.AddScoped<Honua.Core.Features.Security.Admission.IAiExecutionAdmissionStore>(static provider =>
             provider.GetRequiredService<Features.Security.Admission.PostgresAiExecutionAdmissionStore>());
         services.AddScoped<Honua.Core.Features.Security.Admission.IAiMonthlyActorNoticeStore>(static provider =>
+            provider.GetRequiredService<Features.Security.Admission.PostgresAiExecutionAdmissionStore>());
+        services.AddScoped<Honua.Core.Features.Security.Admission.IAiIncidentNoticeStore>(static provider =>
             provider.GetRequiredService<Features.Security.Admission.PostgresAiExecutionAdmissionStore>());
 
         services.AddScoped<IAlertRuleRepository, PostgresAlertRuleRepository>();
@@ -441,6 +441,10 @@ internal static partial class ServiceCollectionExtensions
             new PostgresStudioPackageStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
+        services.AddScoped<Honua.Core.Features.Styling.Abstractions.ISharedStyleConsumerIndex>(serviceProvider =>
+            new Features.Studio.PostgresSharedStyleConsumerIndex(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
         // Durable Studio map collaboration store. Overrides the in-memory
         // default registered by AddStudioMapCollaboration when Postgres is active.
         services.AddScoped<Honua.Core.Features.Console.Collaboration.Abstractions.IStudioMapCollaborationStore>(serviceProvider =>
@@ -448,10 +452,10 @@ internal static partial class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 serviceProvider.GetService<TimeProvider>(),
                 configuration["Database:Schema"]));
+        // The analysis content tables are created in honua whatever Database:Schema names.
         services.AddScoped<IAnalysisContentStore>(serviceProvider =>
             new PostgresAnalysisContentStore(
-                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
-                configuration["Database:Schema"]));
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>()));
 
         // Durable workflow package drafts, versions, and publications.
         // Replaces the in-memory store when PostGIS is composed, including the test host
@@ -478,6 +482,11 @@ internal static partial class ServiceCollectionExtensions
                 configuration["Database:Schema"]));
         services.AddSingleton<IDeploymentStore>(serviceProvider =>
             new Features.Publishing.PostgresDeploymentStore(
+                serviceProvider.GetRequiredService<NpgsqlDataSource>(),
+                configuration["Database:Schema"]));
+
+        services.AddSingleton<Honua.Core.Features.ObjectStorage.IObjectStorageConnectionStore>(serviceProvider =>
+            new Features.Security.PostgresObjectStorageConnectionStore(
                 serviceProvider.GetRequiredService<NpgsqlDataSource>(),
                 configuration["Database:Schema"]));
 
@@ -541,6 +550,12 @@ internal static partial class ServiceCollectionExtensions
             new PostgresStyleCatalog(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
+
+        services.AddScoped<IStyleSaveLock>(serviceProvider =>
+            new PostgresStyleSaveLock(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                configuration["Database:Schema"],
+                StyleSaveLockWaitMilliseconds(serviceProvider.GetRequiredService<IConfiguration>())));
 
         // Reconciles Type=Style graph resources + StyleResourceIds with the style catalog
         services.AddScoped<IMetadataV2StyleGraphSync, Features.Metadata.PostgresMetadataV2StyleGraphSync>();
@@ -1171,4 +1186,9 @@ internal static partial class ServiceCollectionExtensions
             : defaultValue;
     }
 
+    // An unset, non-numeric or non-positive value keeps the two-second default instead of failing every save.
+    private static int StyleSaveLockWaitMilliseconds(IConfiguration configuration) =>
+        int.TryParse(configuration["Styles:SaveLockWaitMilliseconds"], NumberStyles.None, CultureInfo.InvariantCulture, out var value) && value > 0
+            ? value
+            : 2000;
 }

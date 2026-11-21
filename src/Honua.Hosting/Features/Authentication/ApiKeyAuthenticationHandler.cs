@@ -24,6 +24,7 @@ internal sealed class ApiKeyAuthenticationHandler(
     private const string ApiKeyHeader = "X-API-Key";
     private const string AuthorizationHeader = "Authorization";
     private const string BasicSchemePrefix = "Basic ";
+    private const string ApiKeySchemePrefix = "ApiKey ";
     private const string AdminPasswordEnvVar = "HONUA_ADMIN_PASSWORD";
     private const string AuthFailureMessageKey = "AuthFailureMessage";
     private const string AuthRealm = "Honua Admin";
@@ -71,10 +72,10 @@ internal sealed class ApiKeyAuthenticationHandler(
         return ToAuthenticateResult(validation);
     }
 
-    // The explicit header wins; Basic auth compatibility supplies the key otherwise.
+    // The explicit header wins, then "Authorization: ApiKey"; Basic auth compatibility supplies the key otherwise.
     private (string? ApiKey, AuthenticateResult? Failure) ReadPresentedApiKey()
     {
-        var providedApiKey = GetApiKeyFromHeader();
+        var providedApiKey = GetApiKeyFromHeader() ?? GetApiKeyFromAuthorizationScheme();
         if (!string.IsNullOrEmpty(providedApiKey))
         {
             return (providedApiKey, null);
@@ -280,6 +281,28 @@ internal sealed class ApiKeyAuthenticationHandler(
         if (string.IsNullOrWhiteSpace(providedApiKey))
         {
             AuthenticationLog.EmptyApiKeyProvided(Logger, ApiKeyHeader);
+            return null;
+        }
+
+        return providedApiKey;
+    }
+
+    // Clients that can set only the Authorization header (a Prometheus Operator ServiceMonitor)
+    // send the key under the ApiKey scheme named in the challenge. It follows the same transport
+    // rules as X-API-Key. A Bearer value is never read as a key.
+    private string? GetApiKeyFromAuthorizationScheme()
+    {
+        var authorization = Request.Headers[AuthorizationHeader].FirstOrDefault();
+        if (authorization is null ||
+            !authorization.StartsWith(ApiKeySchemePrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var providedApiKey = authorization[ApiKeySchemePrefix.Length..].Trim();
+        if (providedApiKey.Length == 0)
+        {
+            AuthenticationLog.EmptyApiKeyProvided(Logger, AuthorizationHeader);
             return null;
         }
 

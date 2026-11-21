@@ -11,9 +11,15 @@ Read the install's `AGENTS.md`. Open Studio in Console for interactive editing,
 or discover the Studio MCP tools for the same draft lifecycle. Discover the
 catalog layers with `honua_list_layers` and `honua_describe_layer` first.
 
+Any mutation below, including draft creation and edits, can require approval.
+Follow the [approval and readback procedure](references/save-share.md#approval-and-readback)
+before continuing to the next step. Approval alone does not return a completed
+draft or saved version.
+
 1. Create a map draft with `honua_studio_create_draft`, or reopen a selected saved
-   version with `honua_studio_reopen_version`. Retain the returned draft id and
-   generation. Read the draft with `honua_studio_get_draft` before editing.
+   version with `honua_studio_reopen_version`. After successful completion,
+   retain the resulting draft id. Read it with `honua_studio_get_draft` for its
+   current generation before editing.
 2. Add the intended layers with `honua_studio_add_layer`. Copy `studioSourceId`
    from catalog discovery into `sourceId`; a composition layer's `id` is a
    different identity. Set a useful map extent with `honua_studio_set_view`.
@@ -25,9 +31,8 @@ catalog layers with `honua_list_layers` and `honua_describe_layer` first.
    re-read the draft and reconcile the intended edit; do not overwrite concurrent
    edits with a stale generation. Validate with `honua_studio_validate_draft`
    and preview with `honua_studio_preview_draft`.
-5. Save with `honua_studio_save_version`. Retain the returned `itemId`,
-   `versionId` and `contentHash`. If approval is required, wait for completion;
-   there is no saved version until the operation succeeds. Verify with
+5. Save with `honua_studio_save_version`. After successful completion, retain
+   the resulting `itemId`, `versionId` and `contentHash`. Verify with
    `honua_studio_get_version` and render the saved map in Console.
 6. Share only the saved version and requested audience. Use
    `honua_studio_propose_publication` with the exact item, version, hash, route

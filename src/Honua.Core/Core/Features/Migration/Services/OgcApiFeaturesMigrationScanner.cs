@@ -118,9 +118,9 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
         var landingLinks = ReadLinks(landing).ToArray();
         var baseUrl = MigrationSourceUrls.ToSafeSourceUrl(serviceUri);
         var collectionsUri = FindLinkUri(landingLinks, serviceUri, static link => IsRel(link, "data") || LinkLooksLikeCollections(link))
-            ?? AppendPath(serviceUri, "collections");
+            ?? MigrationSourceUrls.AppendPath(serviceUri, "collections");
         var conformanceUri = FindLinkUri(landingLinks, serviceUri, static link => IsRel(link, "conformance"))
-            ?? AppendPath(serviceUri, "conformance");
+            ?? MigrationSourceUrls.AppendPath(serviceUri, "conformance");
         var sourceCrs = ReadCrsDeclarations(landing, "source").ToArray();
 
         var conformanceClasses = await TryReadConformanceClassesAsync(conformanceUri, cancellationToken).ConfigureAwait(false);
@@ -258,7 +258,7 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
                                   IsRel(link, "describedby") ||
                                   IsRel(link, "schema") ||
                                   IsRel(link, "http://www.opengis.net/def/rel/ogc/1.0/schema"))
-            .Select(link => ResolveUri(link.Href, baseUri))
+            .Select(link => MigrationSourceUrls.ResolveUri(link.Href, baseUri))
             .Where(static uri => uri != null)
             .Select(static uri => uri!)
             .DistinctBy(static uri => uri.ToString(), StringComparer.Ordinal)
@@ -297,7 +297,7 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
         CancellationToken cancellationToken)
     {
         var itemsUri = FindLinkUri(links, baseUri, static link => IsRel(link, "items") || LinkLooksLikeItems(link))
-            ?? AppendPath(baseUri, $"collections/{Uri.EscapeDataString(collectionId)}/items");
+            ?? MigrationSourceUrls.AppendPath(baseUri, $"collections/{Uri.EscapeDataString(collectionId)}/items");
         itemsUri = AddMissingQueryParameter(itemsUri, "limit", Math.Max(request.ItemsProbeLimit, 1).ToString(CultureInfo.InvariantCulture));
 
         try
@@ -583,7 +583,7 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
         Uri baseUri,
         Func<OgcApiFeaturesLink, bool> predicate)
         => links.Where(predicate)
-            .Select(link => ResolveUri(link.Href, baseUri))
+            .Select(link => MigrationSourceUrls.ResolveUri(link.Href, baseUri))
             .FirstOrDefault(static uri => uri != null);
 
     private static bool IsRel(OgcApiFeaturesLink link, string rel)
@@ -594,26 +594,6 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
 
     private static bool LinkLooksLikeItems(OgcApiFeaturesLink link)
         => link.Href.Contains("/items", StringComparison.OrdinalIgnoreCase);
-
-    private static Uri? ResolveUri(string href, Uri baseUri)
-    {
-        if (string.IsNullOrWhiteSpace(href))
-        {
-            return null;
-        }
-
-        return Uri.TryCreate(href, UriKind.Absolute, out var absolute)
-            ? absolute
-            : Uri.TryCreate(MigrationSourceUrls.EnsureDirectoryBase(baseUri), href, out var relative)
-                ? relative
-                : null;
-    }
-
-    private static Uri AppendPath(Uri baseUri, string relativePath)
-    {
-        var root = MigrationSourceUrls.EnsureDirectoryBase(baseUri);
-        return new Uri(root, relativePath.TrimStart('/'));
-    }
 
     private static Uri AddMissingQueryParameter(Uri uri, string name, string value)
     {

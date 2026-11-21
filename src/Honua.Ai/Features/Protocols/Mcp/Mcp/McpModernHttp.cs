@@ -7,6 +7,7 @@ using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Net.Http.Headers;
 
 namespace Honua.Ai.Protocols.Mcp;
 
@@ -107,7 +108,7 @@ internal static class McpModernHttp
         return app.Use(async (context, next) =>
         {
             if (McpBearerAuthenticationEndpointExtensions.IsMcpTransportPath(context.Request.Path)
-                && await TryRejectDeclaredOriginAsync(context).ConfigureAwait(false))
+                && await TryRejectOriginAsync(context).ConfigureAwait(false))
             {
                 return;
             }
@@ -116,11 +117,11 @@ internal static class McpModernHttp
         });
     }
 
-    internal static async ValueTask<object?> ValidateModernOriginAsync(
+    internal static async ValueTask<object?> ValidateOriginAsync(
         EndpointFilterInvocationContext invocation,
         EndpointFilterDelegate next)
     {
-        if (await TryRejectDeclaredOriginAsync(invocation.HttpContext).ConfigureAwait(false))
+        if (await TryRejectOriginAsync(invocation.HttpContext).ConfigureAwait(false))
         {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
@@ -128,11 +129,40 @@ internal static class McpModernHttp
         return await next(invocation).ConfigureAwait(false);
     }
 
-    internal static Task<bool> TryRejectDeclaredOriginAsync(HttpContext context) =>
-        McpModernProtocol.HasModernHeader(context.Request)
-            ? TryRejectOriginAsync(context) : Task.FromResult(false);
+    // POST preconditions checked before the body is read: a browser-borne request from a
+    // disallowed origin, then a body that is not declared as JSON (form and text bodies are
+    // the media types a browser may send cross-origin without a preflight).
+    internal static async Task<bool> TryRejectPostPreconditionsAsync(HttpContext context, CancellationToken cancellationToken)
+    {
+        if (await TryRejectOriginAsync(context).ConfigureAwait(false))
+        {
+            return true;
+        }
 
-    private static async Task<bool> TryRejectOriginAsync(HttpContext context)
+        if (IsJsonMediaType(context.Request.ContentType))
+        {
+            return false;
+        }
+
+        var response = new McpJsonRpcResponse
+        {
+            Id = McpEndpointExtensions.JsonNullId,
+            Error = McpErrorMapper.InvalidRequest("MCP requests must be sent with Content-Type: application/json.")
+        };
+        await McpEndpointExtensions.WriteSingleAsync(
+            context, response, cancellationToken, StatusCodes.Status415UnsupportedMediaType).ConfigureAwait(false);
+        return true;
+    }
+
+    internal static bool IsJsonMediaType(string? contentType) =>
+        MediaTypeHeaderValue.TryParse(contentType, out var mediaType)
+        && (mediaType.MediaType.Equals("application/json", StringComparison.OrdinalIgnoreCase)
+            || (mediaType.Type.Equals("application", StringComparison.OrdinalIgnoreCase)
+                && mediaType.Suffix.Equals("json", StringComparison.OrdinalIgnoreCase)));
+
+    // Every protocol version is checked: the transport specification asks servers to
+    // validate Origin on each request, and requests without Origin are not browser-borne.
+    internal static async Task<bool> TryRejectOriginAsync(HttpContext context)
     {
         if (await AllowsOriginAsync(context).ConfigureAwait(false))
         {

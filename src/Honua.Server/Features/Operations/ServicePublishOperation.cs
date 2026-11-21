@@ -40,6 +40,7 @@ internal static class ServicePublishOperation
             Optional("folderId", "Folder id; omitted preserves membership, null selects root for a new service; use service.move to change existing membership", WorkflowSchemaValueType.Text),
             Optional("publicName", "Immutable public service name", WorkflowSchemaValueType.Text),
             Optional("namespace", "Publication namespace; omitted is unscoped", WorkflowSchemaValueType.Text),
+            Optional("exactTypes", "Exact decimal and offset types.", WorkflowSchemaValueType.Flag),
             Optional("description", "Description", WorkflowSchemaValueType.Text)
         ],
         OutputSchema =

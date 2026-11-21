@@ -129,7 +129,7 @@ public sealed class PrintingToolsEndpointTests : IClassFixture<WebAppFixture>, I
 
         // PDF may be blocked by entitlement gating (Community edition in tests).
         // Accept either a PDF document or a Payment Required GeoServices error from
-        // license gating. Post-#2418 a GeoServices error is signalled with HTTP 200 +
+        // license gating. A GeoServices error is signalled with HTTP 200 +
         // an {"error":{"code":402}} body, so branch on the produced content type (a
         // real PDF) rather than the HTTP status.
         if (response.Content.Headers.ContentType?.MediaType == "application/pdf")
@@ -643,7 +643,7 @@ public sealed class PrintingToolsEndpointTests : IClassFixture<WebAppFixture>, I
             $"/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/jobs/{jobId}/results/Output_File");
 
         // The job is either complete (single GP parameter object) or still processing
-        // (a GeoServices 400 error). Post-#2418 an incomplete-job error is signalled
+        // (a GeoServices 400 error). An incomplete-job error is signalled
         // with HTTP 200 + an {"error":{"code":400}} body, so branch on the presence of
         // an "error" member rather than the HTTP status.
         var resultJson = await resultResponse.Content.ReadAsStringAsync();

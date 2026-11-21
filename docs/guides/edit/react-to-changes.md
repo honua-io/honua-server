@@ -25,7 +25,7 @@ FeatureChangeEvents__Webhook__Secret=$WEBHOOK_HMAC_SECRET
 FeatureChangeEvents__Webhook__MaxAttempts=5
 ```
 
-The URL must be HTTPS, carry no embedded credentials, and resolve to a public address. Startup validation rejects malformed URLs, embedded credentials, localhost names and private or reserved IP literals. Delivery resolves hostnames and rejects private, loopback or unresolvable destinations. Retries use exponential backoff (`InitialBackoffMs`/`MaxBackoffMs`/`RequestTimeoutSeconds` tune it).
+The URL must be HTTPS, carry no embedded credentials, and resolve to a public address. Startup validation rejects malformed URLs, embedded credentials, localhost names and private or reserved IP literals. Delivery resolves hostnames and rejects private, loopback or unresolvable destinations. Retries use exponential backoff (`InitialBackoffMs`/`MaxBackoffMs`/`RequestTimeoutSeconds` tune it). Events go out in order. If an event still fails after the last attempt with a server error, `408`, `429`, a redirect (redirects are never followed) or a connection error, the server keeps it and tries again, waiting twice as long after each failed round, up to 5 minutes. If your endpoint answers with any other `4xx`, the server logs the event id (warning `9109`) and moves on to the next event. Re-read skipped events from `GET /api/v1/admin/feature-events/replay`.
 
 ### 2. Verify webhook signatures in your receiver
 
@@ -49,7 +49,7 @@ Connect a WebSocket to `GET /api/v1/streaming/features`, then send JSON control 
 {"type":"subscribe","subscriptionId":"alpha","layerId":0,"bbox":[-158,21,-157,22],"filter":"status = 'active'","cursor":"features:1234"}
 ```
 
-One socket carries many subscriptions; the server answers with `status`, `heartbeat`, `error`, and `feature-change` frames, and `cursor` triggers replay of missed events before live delivery. Change frames include a numeric `cursor` for ordering and a namespaced `resumeCursor` such as `features:1234`; send `resumeCursor` back in a query or control frame to resume. Bare numeric inputs trigger the legacy cursor-epoch reset. Unfiltered all-layer streams require admin access; everyone else subscribes to explicit service or layer scopes.
+One socket carries many subscriptions; the server answers with `status`, `heartbeat`, `error`, and `feature-change` frames, and `cursor` triggers replay of missed events before live delivery. Change frames include a numeric `cursor` for ordering and a namespaced `resumeCursor` such as `features:1234`; send `resumeCursor` back in a query or control frame to resume. Bare numeric inputs trigger the legacy cursor-epoch reset. Unfiltered all-layer streams require admin access; everyone else subscribes to explicit service or layer scopes. On WebSocket a non-admin connection without query scopes still opens, but it starts with no subscription, and a `subscribe` frame that names no `serviceId`, `layerId` or `layers` is refused with `{"type":"error","code":"invalid-subscription","message":"Unfiltered all-layer feature streams require admin access."}` on the open socket rather than an HTTP status.
 
 ### 5. Start from a baseline (snapshot-then-delta)
 
@@ -174,7 +174,8 @@ Then insert a feature in another terminal ([Edit features](edit-features.md)) an
 | Symptom | Fix |
 |---|---|
 | `403` before the stream connects | Community edition fails closed; streaming needs Pro or Enterprise. Capabilities reports `enabled=false`. |
-| `401` on an unfiltered stream | All-layer streams require admin. Subscribe with explicit `layers=` / `serviceId=` scopes instead. |
+| `401` or `403` on an unfiltered stream | All-layer streams require admin: anonymous callers get `401`, signed-in non-admins `403`. Subscribe with explicit `layers=` / `serviceId=` scopes instead. |
+| `invalid-subscription` error frame on a WebSocket | A non-admin WebSocket opens without query scopes, but an unscoped `subscribe` frame is refused on the socket (no HTTP `401`/`403`). Add `serviceId`, `layerId` or `layers` to the frame. |
 | `503` on connect | The tenant or principal has exhausted `FeatureStreaming__MaxConcurrentSessions`; free sessions in that partition or raise the configured cap applied to every partition. Other tenants and principals retain their own admission capacity. |
 | Webhook never fires | The URL must be HTTPS and publicly resolvable — private, loopback, or unresolvable addresses are rejected. Check startup validation and delivery logs, DNS resolution and your receiver's signature validation. |
 | Duplicate events | Expected: delivery is at-least-once (and once per matching subscription). Dedupe on `eventId` (or `(subscriptionId, eventId)` for multi-subscription sockets). |

@@ -158,9 +158,16 @@ public sealed partial class DeployWorkflowServiceTests
             .Returns(new DeployObservation { Status = WorkflowOperationStatus.RollbackRequested });
         var operation = CreateOperationRecord(WorkflowOperationStatus.Reconciling);
         await store.TryCreateAsync(operation);
-        var service = CreateService(store, backend);
+        using var host = new OperationHumanApprovalTestHost();
+        var human = await host.CreateHumanAsync();
+        operation = (await store.GetAsync(operation.OperationId))!;
+        host.DeployReviewRequest(human, operation, "promote");
+        var review = await host.Authority.OpenDeployReviewAsync(operation, "promote", host.Context);
+        host.DeployApproveRequest(human, operation, "promote", review);
+        var service = CreateService(store, backend, humanApprovalAuthority: host.Authority);
 
-        var refused = await service.PromoteAsync(operation.OperationId, "alice", "promote");
+        var refused = await service.PromoteAsync(operation.OperationId,
+            OperationHumanApprovalTestHost.Approval(human).ApprovedBy, "promote");
 
         refused.Outcome.Should().Be(DeployWorkflowService.DeployPromotionOutcome.PreconditionFailed);
         (await store.GetAsync(operation.OperationId))!.Status.Should().Be(WorkflowOperationStatus.Reconciling);

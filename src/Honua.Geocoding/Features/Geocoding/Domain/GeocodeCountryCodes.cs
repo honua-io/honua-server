@@ -1,8 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
-
 namespace Honua.Geocoding.Features.Geocoding.Domain;
 
 public static class GeocodeCountryCodes
@@ -74,33 +72,20 @@ public static class GeocodeCountryCodes
         => value is not null && StoredRepresentations(codes)
             .Contains(value.Trim().ToUpperInvariant(), StringComparer.Ordinal);
 
+    // The table is generated from ICU region data (ISO alpha-2, alpha-3, English
+    // and native names). The postgis AOT image runs with invariant globalization,
+    // where culture enumeration yields only the invariant culture and RegionInfo
+    // cannot be built, so the aliases ship with the assembly instead.
+    private const string AliasResource = "Honua.Geocoding.country-aliases.tsv";
+
     private static CountryAliases CreateAliases()
     {
         var byAlias = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var culture in CultureInfo.GetCultures(CultureTypes.SpecificCultures))
+        foreach (var (code, names) in ReadAliasTable())
         {
-            var region = new RegionInfo(culture.Name);
-            var code = region.TwoLetterISORegionName;
-            if (code.Length != 2 || !char.IsAsciiLetter(code[0]) || !char.IsAsciiLetter(code[1]))
+            foreach (var alias in names.Prepend(code))
             {
-                continue;
-            }
-
-            foreach (var value in new[] { code, region.ThreeLetterISORegionName, region.EnglishName, region.NativeName })
-            {
-                if (string.IsNullOrWhiteSpace(value))
-                {
-                    continue;
-                }
-
-                var alias = value.Trim().ToUpperInvariant();
-                if (!byAlias.TryGetValue(alias, out var mapped))
-                {
-                    mapped = new HashSet<string>(StringComparer.Ordinal);
-                    byAlias.Add(alias, mapped);
-                }
-
-                mapped.Add(code);
+                AddAlias(byAlias, alias, code);
             }
         }
 
@@ -112,6 +97,35 @@ public static class GeocodeCountryCodes
                 static group => group.Select(static pair => pair.Key).ToArray(),
                 StringComparer.Ordinal);
         return new CountryAliases(unique, byCode);
+    }
+
+    private static void AddAlias(Dictionary<string, HashSet<string>> byAlias, string alias, string code)
+    {
+        if (!byAlias.TryGetValue(alias, out var mapped))
+        {
+            mapped = new HashSet<string>(StringComparer.Ordinal);
+            byAlias.Add(alias, mapped);
+        }
+
+        mapped.Add(code);
+    }
+
+    private static List<(string Code, string[] Names)> ReadAliasTable()
+    {
+        using var stream = typeof(GeocodeCountryCodes).Assembly.GetManifestResourceStream(AliasResource)
+            ?? throw new InvalidOperationException($"Embedded resource '{AliasResource}' is missing.");
+        using var reader = new StreamReader(stream, System.Text.Encoding.UTF8);
+        var rows = new List<(string Code, string[] Names)>();
+        while (reader.ReadLine() is { } line)
+        {
+            var fields = line.Split('\t', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            if (fields.Length > 0 && fields[0].Length == 2)
+            {
+                rows.Add((fields[0], fields[1..]));
+            }
+        }
+
+        return rows;
     }
 
     private sealed record CountryAliases(

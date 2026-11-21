@@ -43,24 +43,14 @@ public sealed partial class GeoservicesCatalogEndpointTests
         _soapRaster = soapRaster;
     }
 
-    // Cases that read the default SOAP raster without asserting raster-store calls share one host.
-    public sealed class SoapRasterHost : IAsyncLifetime
+    // Cases that read the default SOAP raster without asserting raster-store calls share one host;
+    // cases that only bring their own raster store substitute borrow the same host.
+    public sealed class SoapRasterHost : SwitchedServiceHost<IRasterStore>
     {
-        private readonly WebAppFixture _application =
-            new WebAppFixture().ConfigureServices(services => services.AddSingleton(CreateSoapRasterStore()));
-        private readonly Lazy<Task> _startup;
-
-        public SoapRasterHost() => _startup = new Lazy<Task>(_application.InitializeAsync);
-
-        public Task InitializeAsync() => Task.CompletedTask;
-
-        public async Task<WebAppFixture> GetApplicationAsync()
+        public SoapRasterHost()
+            : base(CreateSoapRasterStore())
         {
-            await _startup.Value;
-            return _application;
         }
-
-        public Task DisposeAsync() => _application.DisposeAsync();
     }
 
     [IntegrationTheory]
@@ -142,7 +132,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
 
         var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         // ArcGIS Pro 3.7's native ImageServer reader requires this REST compatibility
-        // selector before it will execute any image operation (honua-server#3375).
+        // selector before it will execute any image operation.
         payload.RootElement.GetProperty("currentVersion").GetDouble().Should().Be(10.8);
         payload.RootElement.TryGetProperty("fullVersion", out _).Should().BeFalse();
         payload.RootElement.GetProperty("soapUrl").GetString().Should().Be("http://localhost/arcgis/services");
@@ -157,7 +147,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
     [Endpoint("POST /rest/services")]
     public async Task PostServicesDirectory_WithFormBody_ReturnsCatalogPayload()
     {
-        // honua-server#5012: Esri clients POST to the catalog roots during connection and token
+        // Esri clients POST to the catalog roots during connection and token
         // negotiation, and the GeoServices REST contract is that a resource answers either verb.
         using var form = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]);
         var response = await _fixture.Client.PostAsync("/rest/services", form);
@@ -192,7 +182,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
     [Endpoint("POST /rest/info")]
     public async Task PostRestInfo_WithFormBody_ReturnsRootInfo()
     {
-        // honua-server#5012: see PostServicesDirectory_WithFormBody_ReturnsCatalogPayload.
+        // See PostServicesDirectory_WithFormBody_ReturnsCatalogPayload.
         using var form = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]);
         var response = await _fixture.Client.PostAsync("/rest/info", form);
 
@@ -326,10 +316,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
                 CreatedAt = DateTimeOffset.UtcNow
             });
 
-        var fixture = new WebAppFixture()
-            .ConfigureServices(services => services.AddSingleton(rasterStore));
-
-        await fixture.InitializeAsync();
+        var fixture = await _soapRaster.BorrowAsync(rasterStore);
         try
         {
             var response = await fixture.Client.GetAsync("/rest/services?f=json");
@@ -366,7 +353,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
     [Endpoint("POST /services/{serviceName}/ImageServer")]
     public async Task PostSoapCatalog_GetServiceDescriptions_AdvertisesImageServer()
     {
-        var fixture = await _soapRaster.GetApplicationAsync();
+        var fixture = _soapRaster.Application;
 
         const string soapRequest = """
             <?xml version="1.0" encoding="utf-8"?>
@@ -432,8 +419,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
         var rasterStore = Substitute.For<IRasterStore>();
         rasterStore.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<RasterInfo?>(new InvalidOperationException("raster store unavailable")));
-        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
-        await fixture.InitializeAsync();
+        var fixture = await _soapRaster.BorrowAsync(rasterStore);
         try
         {
             using var response = await PostSoapAsync(fixture.Client, "/services", "GetServiceDescriptions");
@@ -458,8 +444,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
         var rasterStore = Substitute.For<IRasterStore>();
         rasterStore.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<RasterInfo?>(new InvalidOperationException("raster store unavailable")));
-        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
-        await fixture.InitializeAsync();
+        var fixture = await _soapRaster.BorrowAsync(rasterStore);
         try
         {
             rasterStore.ClearReceivedCalls();
@@ -554,7 +539,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_GeoServicesPro37LegacyNamespace_EchoesNegotiatedNamespace()
     {
-        var fixture = await _soapRaster.GetApplicationAsync();
+        var fixture = _soapRaster.Application;
 
         const string operation =
             "<GetVersion xmlns=\"http://www.esri.com/schemas/ArcGIS/9.0\" />";
@@ -798,8 +783,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
             {
                 new RasterInfo { Id = 1, LayerId = 0, Name = "raster", Width = 1, Height = 1, BandCount = 1, PixelType = "8BUI", Srid = 4326 }
             }));
-        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
-        await fixture.InitializeAsync();
+        var fixture = await _soapRaster.BorrowAsync(rasterStore);
         try
         {
             const string request = """
@@ -830,8 +814,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
         var rasterStore = Substitute.For<IRasterStore>();
         rasterStore.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<RasterInfo?>(new InvalidOperationException("probe failed")));
-        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
-        await fixture.InitializeAsync();
+        var fixture = await _soapRaster.BorrowAsync(rasterStore);
         try
         {
             using var response = await PostSoapAsync(
@@ -1183,7 +1166,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_MetadataFieldsAndVersion_AreGeoServicesShaped()
     {
-        var fixture = await _soapRaster.GetApplicationAsync();
+        var fixture = _soapRaster.Application;
 
         using var metadata = await PostSoapAsync(
             fixture.Client,
@@ -1292,7 +1275,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_GetServiceInfo_EmitsResolvedOperationTelemetry()
     {
-        var fixture = await _soapRaster.GetApplicationAsync();
+        var fixture = _soapRaster.Application;
 
         Activity? observedActivity = null;
         using var listener = new ActivityListener
@@ -1410,8 +1393,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
                  })
         {
             var rasterStore = CreateSoapRasterStore(pixelType: postgisPixelType);
-            var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
-            await fixture.InitializeAsync();
+            var fixture = await _soapRaster.BorrowAsync(rasterStore);
             try
             {
                 using var response = await PostSoapAsync(
@@ -1439,8 +1421,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
     public async Task PostSoapImageServer_GetServiceInfo_ClassifiesNad83AsGeographic()
     {
         var rasterStore = CreateSoapRasterStore(srid: 4269);
-        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
-        await fixture.InitializeAsync();
+        var fixture = await _soapRaster.BorrowAsync(rasterStore);
         try
         {
             using var response = await PostSoapAsync(
@@ -1469,8 +1450,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
     public async Task PostSoapImageServer_GetServiceInfo_DefaultsMissingSridToWgs84()
     {
         var rasterStore = CreateSoapRasterStore(srid: null);
-        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
-        await fixture.InitializeAsync();
+        var fixture = await _soapRaster.BorrowAsync(rasterStore);
         try
         {
             using var response = await PostSoapAsync(
@@ -1564,8 +1544,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
     public async Task PostSoapImageServer_ExportImage_DelegatesToCanonicalRasterExport()
     {
         var rasterStore = CreateSoapRasterStore();
-        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
-        await fixture.InitializeAsync();
+        var fixture = await _soapRaster.BorrowAsync(rasterStore);
         try
         {
             const string operation = """
@@ -1656,8 +1635,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
                 PixelType = "32BF",
                 Srid = 4326
             });
-        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
-        await fixture.InitializeAsync();
+        var fixture = await _soapRaster.BorrowAsync(rasterStore);
         try
         {
             var operation = $$"""
@@ -1711,7 +1689,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
         finally { await fixture.DisposeAsync(); }
     }
 
-    // #4063: SOAP GetServiceInfo advertises the same AllowedMosaicMethods as REST, so every advertised
+    // SOAP GetServiceInfo advertises the same AllowedMosaicMethods as REST, so every advertised
     // method must be accepted by SOAP ExportImage; Center is not advertised and stays a fault.
     [IntegrationTest]
     [Operation(Operations.Export)]
@@ -1719,7 +1697,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_ExportImage_AcceptsEveryAdvertisedMosaicMethod()
     {
-        var fixture = await _soapRaster.GetApplicationAsync();
+        var fixture = _soapRaster.Application;
 
         static string Operation(string mosaicRule) => $"""
             <ExportImage xmlns="http://www.esri.com/schemas/ArcGIS/10.8"
@@ -1784,8 +1762,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
     public async Task PostSoapImageServer_NoDataOverride_ReturnsUnsupportedFaultAndErrorTelemetry()
     {
         var rasterStore = CreateSoapRasterStore();
-        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
-        await fixture.InitializeAsync();
+        var fixture = await _soapRaster.BorrowAsync(rasterStore);
         Activity? exportActivity = null;
         Activity? getActivity = null;
         using var listener = new ActivityListener
@@ -1867,8 +1844,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
     public async Task PostSoapImageServer_GetImage_ReturnsBipPixelsFollowedByPackedNoDataMask()
     {
         var rasterStore = CreateSoapRasterStore();
-        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
-        await fixture.InitializeAsync();
+        var fixture = await _soapRaster.BorrowAsync(rasterStore);
         try
         {
             const string operation = """
@@ -1913,8 +1889,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
     public async Task PostSoapImageServer_GetImage_RejectsMultispectralPngProjection()
     {
         var rasterStore = CreateSoapRasterStore(bandCount: 4);
-        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
-        await fixture.InitializeAsync();
+        var fixture = await _soapRaster.BorrowAsync(rasterStore);
         try
         {
             const string operation = """
@@ -1982,7 +1957,7 @@ public sealed partial class GeoservicesCatalogEndpointTests
     [Endpoint("POST /services/{serviceId}/ImageServer")]
     public async Task PostSoapImageServer_Soap12_ReturnsSoap12Response()
     {
-        var fixture = await _soapRaster.GetApplicationAsync();
+        var fixture = _soapRaster.Application;
 
         const string request = """
             <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">

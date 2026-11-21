@@ -217,7 +217,7 @@ public sealed class Fes20ParserTests
     [UnitTest]
     public void ParseFilter_EnvelopeWithoutSrsName_DefaultsToProvidedLayerSrid()
     {
-        // #2737: geometry without an srsName must default to the queried feature type's CRS
+        // Geometry without an srsName must default to the queried feature type's CRS
         // (passed by the WFS handler), not an unconditional EPSG:4326 assumption.
         const string filterXml = """
             <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
@@ -261,7 +261,7 @@ public sealed class Fes20ParserTests
     [UnitTest]
     public void ParseFilter_EnvelopeWithVersionedEpsgUrn_ParsesTrailingCode()
     {
-        // #2737: the versioned OGC URN form (urn:ogc:def:crs:EPSG:<version>:<code>) must resolve
+        // The versioned OGC URN form (urn:ogc:def:crs:EPSG:<version>:<code>) must resolve
         // to the trailing EPSG code rather than silently falling back to 4326.
         const string filterXml = """
             <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
@@ -284,7 +284,7 @@ public sealed class Fes20ParserTests
     [UnitTest]
     public void ParseFilter_EnvelopeWithUnparseableSrsName_ThrowsParseException()
     {
-        // #2737: a present but unrecognized srsName is an error, not a silent 4326 fallback.
+        // A present but unrecognized srsName is an error, not a silent 4326 fallback.
         const string filterXml = """
             <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
               <fes:BBOX>
@@ -665,7 +665,7 @@ public sealed class Fes20ParserTests
     [UnitTest]
     public void ParseFilter_DistanceWithUom_FlagsTheNormalisedMetres()
     {
-        // honua-server#5462: 20 m must reach a projected-foot layer as metres, not as a bare
+        // 20 m must reach a projected-foot layer as metres, not as a bare
         // number that a planar translator reads as 20 native feet.
         const string filterXml = """
             <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
@@ -705,7 +705,7 @@ public sealed class Fes20ParserTests
     [UnitTest]
     public void ParseFilter_ThreeDimensionalPosList_HonoursTheStrideAndKeepsXy()
     {
-        // honua-server#5463: srsDimension=3 lat/lon/h triples (0 0 5) and (0 10 5) describe the
+        // With srsDimension 3, the lat/lon/h triples (0 0 5) and (0 10 5) describe the
         // equator from lon 0 to lon 10. Reading them as pairs yields (0,0) (0,5) (5,10), a line
         // that misses the point (5, 0).
         var posList = ParseLine("""

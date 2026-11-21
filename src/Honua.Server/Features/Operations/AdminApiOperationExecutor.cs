@@ -39,23 +39,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
     public string OperationId => _definition.OperationId;
 
     public Task<OperationValidation> ValidateAsync(OperationRequest request, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        var descriptor = AdminApiOperationCatalog.Descriptors.Single(item => item.OperationId == OperationId);
-        var missing = GetRouteParameterErrors(request).ToList();
-        foreach (var parameter in descriptor.InputSchema.Where(static parameter => parameter.Required))
-        {
-            var present = parameter.Name switch
-            {
-                "connectionId" => !string.IsNullOrWhiteSpace(request.ConnectionId),
-                "serviceName" when RouteNames().Contains("serviceName") => !string.IsNullOrWhiteSpace(request.ServiceName),
-                "body" or "folderId" => request.Parameters.ContainsKey(parameter.Name),
-                _ => request.Parameters.TryGetValue(parameter.Name, out var value) && !string.IsNullOrWhiteSpace(value)
-            };
-            if (!present) missing.Add($"Required parameter '{parameter.Name}' is missing.");
-        }
-        return Task.FromResult(new OperationValidation { IsValid = missing.Count == 0, Status = missing.Count == 0 ? "valid" : "invalid", Messages = missing.ToArray() });
-    }
+        => Task.FromResult(AdminOperationRequestValidator.Validate(_definition, request));
 
     public async Task<OperationHandle> SubmitAsync(OperationRequest request, OperationPolicyContext context, CancellationToken cancellationToken = default)
     {
@@ -86,7 +70,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
         AdminOperationLoopbackTls.PinServedCertificate(message, current);
         if (request.Parameters.TryGetValue("If-Match", out var expectedEtag))
             message.Headers.TryAddWithoutValidation("If-Match", expectedEtag);
-        OperationLineageHeaders.Apply(message, context, _lineageAttestationStore);
+        OperationLineageHeaders.Apply(message, new OperationLoopbackHop(context, current), _lineageAttestationStore);
         AdminApiKeyRecord? executionCredential = null;
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
         {
@@ -111,7 +95,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
 
         if (_definition.Method != HttpMethod.Get)
         {
-            if (_definition.OpenApiOperationId == "importLayerSldStyle")
+            if (_definition.ContentType == "application/xml")
             {
                 message.Content = new StringContent(request.Parameters.GetValueOrDefault("body") ?? string.Empty, Encoding.UTF8, "application/xml");
             }
@@ -203,27 +187,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
 
     public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(handle);
-        return Task.FromResult(new OperationStatus
-        {
-            OperationInstanceId = handle.OperationInstanceId,
-            OperationId = OperationId,
-            CorrelationId = handle.CorrelationId,
-            AuditId = handle.AuditId,
-            ProposalId = handle.ProposalId,
-            CreatedAt = handle.CreatedAt,
-            UpdatedAt = handle.UpdatedAt,
-            AuthorizationOutcome = handle.AuthorizationOutcome,
-            PolicyDecision = handle.PolicyDecision,
-            Status = handle.Status,
-            Result = handle.Result,
-            JobId = handle.JobId,
-            MetadataRevision = handle.MetadataRevision,
-            ApprovalLane = handle.ApprovalLane,
-            Reason = handle.Reason,
-            ResourceIds = handle.ResourceIds,
-            EvidenceRefs = handle.EvidenceRefs,
-        });
+        return Task.FromResult(OperationStatusProjection.FromHandle(handle));
     }
 
     private Dictionary<string, string> BuildPublishedResourceIds(
@@ -281,8 +245,8 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
         var path = definition.Path;
         foreach (var name in RouteNames(path))
         {
-            var value = GetRouteParameterValue(request, name);
-            var error = GetRouteParameterError(name, value);
+            var value = AdminOperationRequestValidator.RouteValue(request, name);
+            var error = AdminOperationRequestValidator.RouteError(name, value);
             if (error is not null)
                 throw new ArgumentException(error, nameof(request));
             path = path.Replace($"{{{name}}}", Uri.EscapeDataString(value!), StringComparison.Ordinal);
@@ -290,30 +254,6 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
         return path;
     }
 
-    private IEnumerable<string> GetRouteParameterErrors(OperationRequest request)
-    {
-        foreach (var name in RouteNames())
-        {
-            var error = GetRouteParameterError(name, GetRouteParameterValue(request, name));
-            if (error is not null)
-                yield return error;
-        }
-    }
-
-    private static string? GetRouteParameterValue(OperationRequest request, string name) => name switch
-    {
-        "connectionId" => request.ConnectionId,
-        "serviceName" => request.ServiceName,
-        _ => request.Parameters.GetValueOrDefault(name)
-    };
-
-    private static string? GetRouteParameterError(string name, string? value) => value switch
-    {
-        null => $"Required route parameter '{name}' is missing.",
-        _ when string.IsNullOrWhiteSpace(value) => $"Required route parameter '{name}' is missing.",
-        "." or ".." => $"Route parameter '{name}' must not be a dot segment.",
-        _ => null
-    };
     private HashSet<string> RouteNames() => RouteNames(_definition.Path);
     private static HashSet<string> RouteNames(string path) => path.Split('/').Where(static segment => segment.StartsWith('{') && segment.EndsWith('}')).Select(static segment => segment[1..^1]).ToHashSet(StringComparer.Ordinal);
     private static void CopyHeader(HttpContext current, HttpRequestMessage message, string name)

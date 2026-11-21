@@ -5,7 +5,6 @@ Comprehensive test infrastructure for Honua Server integration and unit tests.
 ## Features
 
 - **PostgreSQL/PostGIS Integration**: Testcontainers-based database fixtures with schema-based isolation
-- **Redis Integration**: Testcontainers-based Redis fixture for caching and import coordination tests
 - **Parallel Test Execution**: Aggressive parallel execution with schema isolation for maximum throughput
 - **Custom Test Attributes**: Protocol, Operation, and Endpoint tracking for 100% API surface coverage
 - **Fluent Test Data Builders**: Build complex spatial data scenarios with ease
@@ -138,18 +137,6 @@ A reusable local PostGIS instance is available via `docker compose -f docker/doc
 export HONUA_TEST_DB_URL="Host=localhost;Database=honua_test;Username=test;Password=test"
 ```
 
-### RedisFixture
-
-Shared Redis container for integration tests that need distributed caching or job coordination.
-
-#### External Redis (opt-in)
-
-Set `HONUA_TEST_REDIS_URL` to use an existing Redis instance instead of Testcontainers.
-
-```bash
-export HONUA_TEST_REDIS_URL="localhost:6379"
-```
-
 #### External Service Tests (opt-in)
 
 Enable Geoportal-backed Esri import integration tests:
@@ -178,11 +165,13 @@ dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
 ```
 
 The probe endpoint (`GET /__test/cross-server-consume/proxy?url=<sourceUrl>`)
-is mounted only when `ASPNETCORE_ENVIRONMENT=Test`. It accepts loopback
-`http`/`https` URLs without embedded credentials, forwards the request,
-and maps upstream failures to `502 Bad Gateway`; requests exceeding the
-two-minute timeout return `504 Gateway Timeout`. Invalid URLs return
-`400 Bad Request`.
+is not part of the server: the consume fixtures add it to their test host
+through `CrossServerConsumeProbe` in
+`tests/dotnet/Honua.Server.Tests/Features/CrossServerConsume/`. It accepts
+loopback `http`/`https` URLs without embedded credentials and returns the
+upstream status, content type and body. An unreachable reference server returns
+`502 Bad Gateway`, a request past the two-minute timeout `504 Gateway Timeout`,
+and any other URL `400 Bad Request`.
 
 The nightly `cross-server-consume-nightly.yml` workflow runs the same
 suite, generates the gap report from the TRX and uploads both as workflow
@@ -450,8 +439,8 @@ The `[ScaleTest]` tier runs against a multi-node stack behind nginx.
    `HONUA_SCALE_TEST_ADMIN_API_KEY="$HONUA_ADMIN_PASSWORD"`.
 4. **For replica-state scale tests** (create, extract, sync, unregister), also set
    `HONUA_SCALE_TEST_SERVICE_ID=<service-name>`.
-5. **If the default ports are busy**, override them with `HONUA_SCALE_TEST_HTTP_PORT=18080`,
-   `HONUA_SCALE_TEST_REDIS_PORT=6380` and `HONUA_SCALE_TEST_POSTGRES_PORT=55434`.
+5. **If the default ports are busy**, override them with `HONUA_SCALE_TEST_HTTP_PORT=18080`
+   and `HONUA_SCALE_TEST_POSTGRES_PORT=55434`.
 6. **Run only the scale tests**:
    `dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --filter Category=Scale`.
 
@@ -513,7 +502,7 @@ run. If the loader cannot locate a scenario under either root it also raises
 not yet wired (execution engine, publish surface, package composition, deploy
 promotion) report `Skipped` with a reason rather than failing — only `Failed`
 stages break the gate today. `SubmitJob` also degrades to
-`Skipped(redis-unavailable)` when the durable Redis-backed job store is absent,
+`Skipped(job-store-unavailable)` when the durable PostgreSQL job store is absent,
 which keeps local/dev runs honest instead of treating infrastructure gaps as
 contract failures.
 
@@ -585,7 +574,7 @@ pinned to `reportSchemaVersion = "1"` (`EvalReportSchema.Version`) and
 includes:
 
 - `environment` — `corpusSource`, `corpusVersion`, `corpusPath`,
-  `redisAvailable` (derived from observed successful `SubmitJob` stages)
+  `jobStoreAvailable` (derived from observed successful `SubmitJob` stages)
 - `scenarios[]` — id, mode, overall `status`
   (`Passed` / `Failed` / `PassedWithSkips`), per-stage outcomes, protocol parity
   probes, elapsed ms

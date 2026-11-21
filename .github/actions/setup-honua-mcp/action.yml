@@ -100,6 +100,9 @@ runs:
       if: steps.check-scripts.outputs.cert == 'true' || steps.check-scripts.outputs.smoke == 'true'
       shell: bash
       working-directory: honua-sdk-js
+      env:
+        # SDK source compilation needs more than the default ~2 GiB V8 heap.
+        NODE_OPTIONS: --max-old-space-size=4096
       run: |
         echo "HONUA_SUITE_GIT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
         npm ci

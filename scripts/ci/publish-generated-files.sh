@@ -50,12 +50,6 @@ if [[ "$source_sha" != "$remote_trunk" ]]; then
   fi
   echo "Validated source $source_sha; trunk is now $remote_trunk. Publishing on the validated source; PR Gate checks the merge."
 fi
-# A clean source can still miss drift introduced by newer trunk commits; the
-# next nightly run picks that up.
-if git diff --quiet HEAD -- "${GENERATED_FILES[@]}"; then
-  echo 'Generated files are up to date; nothing to publish.'
-  exit 0
-fi
 # A completed newer publisher may predate this run's lease observation.
 # Fetch the captured head, then compare sources; the lease still guards changes
 # after that observation. Checkout's shallow history cannot prove ancestry.
@@ -74,6 +68,34 @@ if [[ -n "$remote_branch" ]]; then
     echo "Preserving publication from newer or unrelated source $published_source; candidate source is $source_sha."
     exit 0
   fi
+fi
+# A clean, current, validated source makes an older proposal obsolete. Keep
+# its branch for evidence, but do not leave its PR red until the next drift.
+# The ancestry check above applies to cleanup as well as branch replacement.
+if git diff --quiet HEAD -- "${GENERATED_FILES[@]}"; then
+  echo 'Generated files are up to date; nothing to publish.'
+  if [[ -n "$remote_branch" ]]; then
+    : "${GH_TOKEN:?MERGE_TRAIN_TOKEN is required to reconcile a generated-files PR}"
+    repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required to address the REST pulls API}"
+    existing="$(gh api "repos/${repo}/pulls?state=open&base=trunk&head=${repo%%/*}:${branch}" \
+      --jq '.[0].number // empty')"
+    if [[ -n "$existing" ]]; then
+      pr_head="$(gh api "repos/${repo}/pulls/${existing}" --jq '.head.sha')"
+      current_trunk="$(git ls-remote --exit-code origin refs/heads/trunk)"
+      current_trunk="${current_trunk%%[[:space:]]*}"
+      current_branch="$(git ls-remote --exit-code origin "refs/heads/${branch}")"
+      current_branch="${current_branch%%[[:space:]]*}"
+      # The workflow concurrency group serializes publishers; observations
+      # also reject a changed PR head or trunk before closing anything.
+      if [[ "$pr_head" == "$remote_branch" && "$current_branch" == "$remote_branch" && "$current_trunk" == "$source_sha" ]]; then
+        gh api --method PATCH "repos/${repo}/pulls/${existing}" -f state=closed --silent
+        echo "Closed obsolete generated-files PR #${existing}; validated trunk has no generated drift."
+      else
+        echo 'Publication or trunk changed during reconciliation; preserving generated-files PR.'
+      fi
+    fi
+  fi
+  exit 0
 fi
 : "${GH_TOKEN:?MERGE_TRAIN_TOKEN is required to publish a PR and trigger its admission checks}"
 git diff --stat HEAD -- "${GENERATED_FILES[@]}"
@@ -115,15 +137,30 @@ fi
 # (#4732) pushed this branch, then failed `gh pr list` with "GraphQL: API
 # rate limit already exceeded" while REST quota was still available.
 repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required to address the REST pulls API}"
+body='Automated regeneration of the tracked projections listed in scripts/ci/generated-files.sh (see docs/internal/ci/generated-files-on-trunk.md). Lands through the normal PR Gate + Review Gate + per-PR lander path; this workflow never writes trunk directly. Refs #3213.'
+# The automation PAT is a user account, so Repository hygiene's bundle rule
+# applies: no closing references, and usually under 300 lines. Until this PR
+# lands, trunk's projections are stale against their sources and every lane's
+# local pre-pr refuses on them, so it carries the documented exception. The
+# label goes on first; the body edit after it raises the `edited` event that
+# re-runs hygiene with both (the `opened` run saw neither; its result is
+# superseded or cancelled).
+exception='Bundle-exception: blocking red — trunk projections are stale against their authored sources until this lands, and local pre-pr refuses on that drift.'
 existing="$(gh api "repos/${repo}/pulls?state=open&base=trunk&head=${repo%%/*}:${branch}" \
   --jq '.[0].number // empty')"
 if [[ -n "${existing}" ]]; then
   echo "Updated existing generated-files PR #${existing}."
-  exit 0
+else
+  existing="$(gh api --method POST "repos/${repo}/pulls" \
+    -f base=trunk \
+    -f head="${branch}" \
+    -f title="${title}" \
+    -f body="${body}" \
+    --jq '.number')"
+  echo "Opened generated-files PR #${existing}."
 fi
-gh api --method POST "repos/${repo}/pulls" \
-  -f base=trunk \
-  -f head="${branch}" \
-  -f title="${title}" \
-  -f body='Automated regeneration of the tracked projections listed in scripts/ci/generated-files.sh (see docs/internal/ci/generated-files-on-trunk.md). Lands through the normal PR Gate + Review Gate + per-PR lander path; this workflow never writes trunk directly. Refs #3213.' \
-  --jq '.html_url'
+gh api --method POST "repos/${repo}/issues/${existing}/labels" -f 'labels[]=bundle-exception' --silent
+labelled_body="${body}
+
+${exception}"
+gh api --method PATCH "repos/${repo}/pulls/${existing}" -f body="${labelled_body}" --silent

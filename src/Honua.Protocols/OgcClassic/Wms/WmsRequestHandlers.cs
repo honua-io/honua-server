@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -127,16 +128,7 @@ internal static partial class WmsRequestHandlers
                     svcDef);
             if (accessError != null)
             {
-                var isAuthenticated = context.User?.Identity?.IsAuthenticated == true;
-                return CreateWmsServiceException(
-                    context,
-                    "AccessDenied",
-                    isAuthenticated
-                        ? AccessPolicyHelpers.AccessForbiddenMessage
-                        : AccessPolicyHelpers.AuthRequiredMessage,
-                    isAuthenticated
-                        ? StatusCodes.Status403Forbidden
-                        : StatusCodes.Status401Unauthorized);
+                return CreateWmsAccessDenied(context);
             }
 
             if (wmsLayers.Length == 0 && !string.IsNullOrWhiteSpace(requestType) &&
@@ -148,6 +140,12 @@ internal static partial class WmsRequestHandlers
             var accessibleLayers = wmsLayers
                 .Where(l => AccessPolicyHelpers.IsResourceAccessible(context, l.Resource, svcDef))
                 .ToArray();
+            var challengeLayers = ResolveWmsChallengeLayers(svcDef, wmsLayers, accessibleLayers);
+            var challengeError = ChallengeRequestedProtectedLayers(context, svcDef, challengeLayers);
+            if (challengeError != null)
+            {
+                return challengeError;
+            }
 
             if (string.IsNullOrWhiteSpace(requestType) ||
                 string.Equals(requestType, "GetCapabilities", StringComparison.OrdinalIgnoreCase))
@@ -169,7 +167,7 @@ internal static partial class WmsRequestHandlers
 
                 OgcClassicLog.WmsRequested(logger, serviceId, "GetCapabilities");
                 var metadataService = svcDef with { Metadata = PublishedMetadataProjection.ForCapabilities(snapshot.Graph, svcDef) };
-                var xml = await BuildWmsCapabilities(context, metadataService, accessibleLayers, capabilitiesVersion).ConfigureAwait(false);
+                var xml = await BuildWmsCapabilities(context, metadataService, new(accessibleLayers, challengeLayers), capabilitiesVersion).ConfigureAwait(false);
                 return Results.Content(xml, GetWmsCapabilitiesMimeType(capabilitiesVersion), Encoding.UTF8, StatusCodes.Status200OK);
             }
 
@@ -223,9 +221,16 @@ internal static partial class WmsRequestHandlers
             // Intentional catch-all: outermost WMS request-dispatch boundary. Already
             // logged (with exception) and mapped to a WMS ServiceExceptionReport.
             OgcClassicLog.WmsFailed(logger, serviceId, ex.Message, ex);
-            return CreateWmsServiceException(context, "NoApplicableCode", "WMS request failed.", StatusCodes.Status500InternalServerError);
+            return CreateWmsFailure(context, ex);
         }
     }
+
+    // A FILTER naming a field the caller's read policy withholds is a request error; any other
+    // failure at the dispatch boundary is a server fault.
+    private static IResult CreateWmsFailure(HttpContext context, Exception exception)
+        => exception is MaskedFieldReferenceException
+            ? CreateWmsServiceException(context, "InvalidParameterValue", "WMS request includes an invalid FILTER.", StatusCodes.Status400BadRequest)
+            : CreateWmsServiceException(context, "NoApplicableCode", "WMS request failed.", StatusCodes.Status500InternalServerError);
 
     private static WmsLayer[] ResolveWmsLayers(MetadataV2GraphSnapshot snapshot, MetadataV2Service service, HttpContext context)
     {

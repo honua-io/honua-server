@@ -17,22 +17,20 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
-public sealed class McpEndpointIntegrationTests : IAsyncLifetime
+// One default host serves every case: each case opens its own MCP sessions (the per-principal
+// cap evicts least-recently-used sessions, never the one a case just opened), stores only uniquely
+// named temporary artifacts, and changes no host configuration, tool, prompt or resource registration.
+public sealed class McpEndpointIntegrationTests : IClassFixture<WebAppFixture>
 {
     private const string JsonMediaType = "application/json";
 
-    private readonly WebAppFixture _fixture = new();
-    private HttpClient _client = null!;
+    private readonly WebAppFixture _fixture;
+    private readonly HttpClient _client;
 
-    public async Task InitializeAsync()
+    public McpEndpointIntegrationTests(WebAppFixture fixture)
     {
-        await _fixture.InitializeAsync();
-        _client = _fixture.Client;
-    }
-
-    public async Task DisposeAsync()
-    {
-        await _fixture.DisposeAsync();
+        _fixture = fixture;
+        _client = fixture.Client;
     }
 
     [IntegrationTest]
@@ -73,7 +71,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Mcp, "initialize")]
     public async Task Initialize_With2025_06_18_NegotiatesThatRevision()
     {
-        // honua-server#1954: the server negotiates the 2025-06-18 revision (which
+        // The server negotiates the requested revision (which
         // adds the native tool outputSchema field this server publishes).
         var response = await PostRpcAsync("""
             {"jsonrpc":"2.0","id":1,"method":"initialize","params":{
@@ -108,7 +106,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
 
         // Spec requires the server to advertise a version it actually supports
         // when the client asks for one it does not implement: the latest
-        // supported revision (2025-06-18, honua-server#1954).
+        // supported revision.
         root.GetProperty("result").GetProperty("protocolVersion").GetString().Should().Be("2025-06-18");
     }
 
@@ -1076,9 +1074,8 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     {
         // An id no instance holds must be refused with the Streamable-HTTP 404 so
         // the client re-initializes, never served session-less with the default
-        // view (honua-release#531, journey stage 1.5). Serving it statelessly is
-        // the opt-in Mcp:StatelessSessionFallback development convenience (on by
-        // default only in Development), covered by
+        // view. Serving it statelessly is the opt-in Mcp:StatelessSessionFallback
+        // development convenience (on by default only in Development), covered by
         // McpStatelessSessionFallbackEnabledTests.
         var response = await PostRpcAsync(
             """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
@@ -1093,7 +1090,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [Endpoint("POST /mcp")]
     public async Task Request_WithMalformedSessionId_Returns404()
     {
-        // The stateless fallback (#3027) only applies to well-formed ids —
+        // The stateless fallback only applies to well-formed ids —
         // visible ASCII per the Streamable-HTTP spec. An id containing a space
         // could never have been minted by a spec-compliant server, so it keeps
         // the strict 404.
@@ -1109,7 +1106,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [Endpoint("POST /mcp")]
     public async Task Request_WithOverlongSessionId_Returns404()
     {
-        // The stateless fallback (#3027) bounds the id length (server-minted ids
+        // The stateless fallback bounds the id length (server-minted ids
         // are 64 hex chars, stateless tokens at most 172); an overlong id keeps the strict 404.
         var response = await PostRpcAsync(
             """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
@@ -1189,12 +1186,12 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [Endpoint("GET /mcp")]
     public async Task Get_ByDefault_Returns405WithAllowHeader()
     {
-        // #2537: server-initiated streaming is off by default, so the optional
+        // Server-initiated streaming is off by default, so the optional
         // GET /mcp stream MUST answer 405 + Allow per the Streamable-HTTP spec.
         // A spec-compliant SDK client tolerates this and skips the stream —
         // instead of hanging it at a non-streaming ingress and treating its
         // teardown as session loss. The default-off posture makes the temporary
-        // CloudFront edge shim (honua-io/honua-iac#114) removable.
+        // CloudFront edge shim removable.
         var sessionId = await InitializeAndGetSessionIdAsync();
 
         using var request = new HttpRequestMessage(HttpMethod.Get, "/mcp");
@@ -1215,7 +1212,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
     public async Task Request_WithSessionBoundToDifferentPrincipal_ReturnsStructuredAuthError()
     {
-        // A3 binding (#2537): a session is bound at initialize to the principal
+        // A3 binding: a session is bound at initialize to the principal
         // that established it; a different identity presenting the id must get a
         // structured, re-auth-signalling error rather than riding the session.
         // The test fixture's dev-auth bypass authenticates every HTTP request as

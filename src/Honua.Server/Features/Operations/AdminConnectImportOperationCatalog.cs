@@ -16,7 +16,14 @@ internal static class AdminConnectImportOperationCatalog
 {
     internal sealed record Definition(string OperationId, string Title, HttpMethod Method, string Path,
         string OpenApiOperationId, OperationSideEffectClass SideEffect, string? ContentType = null,
-        bool SupportsDryRun = false, string? DryRunPath = null);
+        bool SupportsDryRun = false, string? DryRunPath = null) : IAdminHttpOperationDefinition
+    {
+        public OperationBlastRadiusClass BlastRadius => OperationBlastRadiusClass.ResourceScope;
+        public OperationApprovalModel? ApprovalModel => OperatorJourneyApproval.ForMutation(
+            OperationId, SideEffect != OperationSideEffectClass.ReadOnly);
+        public HttpMethod? DryRunMethod => null;
+        public OperationClass OperationClass => OperationClass.AdminConfigChange;
+    }
 
     public static IReadOnlyList<Definition> Definitions { get; } =
     [
@@ -27,6 +34,7 @@ internal static class AdminConnectImportOperationCatalog
         Write("admin.connections.delete", "Delete connection", HttpMethod.Delete, "/connections/{id}", "deleteConnection", OperationSideEffectClass.DestroysState),
         Read("admin.connections.layers.list", "List connection layers", "/connections/{id}/layers", "getPublishedLayers"),
         Read("admin.connections.tables.discover", "Discover connection tables", "/connections/{id}/tables", "getConnectionTables"),
+        Read("admin.connections.objects.list", "Browse connection objects", "/connections/{id}/objects", "listConnectionObjects"),
         new("admin.connections.test-draft", "Test draft connection", HttpMethod.Post, "/connections/test", "testDraftConnection", OperationSideEffectClass.ReadOnly, SupportsDryRun: true, DryRunPath: "/connections/test"),
         new("admin.connections.test", "Test connection", HttpMethod.Post, "/connections/{id}/test", "testConnection", OperationSideEffectClass.ReadOnly, SupportsDryRun: true, DryRunPath: "/connections/{id}/test"),
         new("admin.connections.tables.validate", "Validate connection table", HttpMethod.Post, "/connections/{id}/tables/validate", "validateConnectionTableForPublish", OperationSideEffectClass.ReadOnly, SupportsDryRun: true, DryRunPath: "/connections/{id}/tables/validate"),
@@ -72,12 +80,10 @@ internal static class AdminConnectImportOperationCatalog
             Description = operation.TryGetProperty("description", out var description) ? description.GetString()! : definition.Title,
             Category = "admin",
             ExecutionKind = OperationExecutionKind.Synchronous,
-            ApprovalModel = OperatorJourneyApproval.ForMutation(
-                definition.OperationId,
-                definition.SideEffect != OperationSideEffectClass.ReadOnly),
+            ApprovalModel = definition.ApprovalModel!.Value,
             Policy = new OperationPolicyMetadata
             {
-                BlastRadiusClass = OperationBlastRadiusClass.ResourceScope,
+                BlastRadiusClass = definition.BlastRadius,
                 SideEffectClass = definition.SideEffect,
                 Determinism = OperationDeterminism.RuntimeDynamic,
                 SupportsDryRun = definition.SupportsDryRun
@@ -198,18 +204,8 @@ internal sealed class AdminConnectImportApprovalRequestMapper(
         var payload = AdminConnectImportApprovalPayload.From(request, context);
         var serialized = JsonSerializer.Serialize(payload,
             AdminConnectImportApprovalJsonContext.Default.AdminConnectImportApprovalPayload);
-        return new OperationGatewayRequest
-        {
-            OperationInstanceId = context.OperationInstanceId,
-            OperationId = OperationId,
-            Kind = OperationClass.AdminConfigChange,
-            RequestedBy = context.PrincipalId,
-            Reason = decision.Reason,
-            CorrelationId = context.CorrelationId,
-            ExecutionPayload = serialized,
-            Plan = AdminOperationReview.Create(descriptor, request, context, definition.Method.Method,
-                definition.Path, definition.SideEffect == OperationSideEffectClass.DestroysState ? ProposalRiskLevel.High : ProposalRiskLevel.Medium, serialized)
-        };
+        return AdminOperationApprovalRequest.Create(definition,
+            new(descriptor, request, context) { Decision = decision }, serialized);
     }
 
     public OperationApprovalReplayMapping MapReplay(OperationGatewayRequest request)

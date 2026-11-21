@@ -22,113 +22,113 @@ internal static class FormPackageEndpoints
             return endpoints;
         }
 
-        var admin = endpoints.MapGroup("/api/v{version:apiVersion}/admin/forms/packages")
+        var admin = endpoints.MapGroup("/api/v{version:apiVersion}/admin/forms")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Forms")
             .RequireAdminAuthorization();
 
-        admin.MapGet("", HandleListPackages)
-            .WithName("ListFormPackages")
-            .WithSummary("List server-owned form packages.")
+        admin.MapGet("", HandleListForms)
+            .WithName("ListForms")
+            .WithSummary("List Forms.")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
             .Produces<FormPackageSummary[]>();
 
         admin.MapPost("", HandleCreateDraft)
-            .WithName("CreateFormPackageDraft")
-            .WithSummary("Create a new draft form package version.")
+            .WithName("CreateFormDraft")
+            .WithSummary("Create a new Form Draft.")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]))
             .Produces<FormPackageVersion>(StatusCodes.Status201Created);
 
         admin.MapFormXlsFormEndpoints();
 
         admin.MapGet("/{formId}", HandleGetAdminCurrent)
-            .WithName("GetCurrentFormPackage")
-            .WithSummary("Get the current draft package, falling back to the current published version.")
+            .WithName("GetCurrentForm")
+            .WithSummary("Get the current Form Draft, falling back to the Released Version.")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
             .Produces<FormPackageVersion>()
             .ProducesProblem(StatusCodes.Status404NotFound);
 
         admin.MapGet("/{formId}/versions", HandleListVersions)
-            .WithName("ListFormPackageVersions")
-            .WithSummary("List package versions.")
+            .WithName("ListFormVersions")
+            .WithSummary("List Form Versions.")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
             .Produces<FormPackageVersion[]>();
 
-        admin.MapGet("/{formId}/versions/{packageVersion:int}", HandleGetVersion)
-            .WithName("GetFormPackageVersion")
-            .WithSummary("Get a package version.")
+        admin.MapGet("/{formId}/versions/{formVersion:int}", HandleGetVersion)
+            .WithName("GetFormVersion")
+            .WithSummary("Get a Form Version.")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
             .Produces<FormPackageVersion>()
             .ProducesProblem(StatusCodes.Status404NotFound);
 
-        admin.MapPut("/{formId}/versions/{packageVersion:int}", HandleUpdateDraft)
-            .WithName("UpdateFormPackageDraft")
-            .WithSummary("Update a draft package version using If-Match optimistic concurrency.")
+        admin.MapPut("/{formId}/versions/{formVersion:int}", HandleUpdateDraft)
+            .WithName("UpdateFormDraft")
+            .WithSummary("Update a Form Draft using If-Match optimistic concurrency.")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Put]))
             .Produces<FormPackageVersion>()
             .ProducesProblem(StatusCodes.Status409Conflict);
 
-        admin.MapPost("/{formId}/versions/{packageVersion:int}/validate", HandleValidate)
-            .WithName("ValidateFormPackageDraft")
-            .WithSummary("Validate a package version against target schema and policy.")
+        admin.MapPost("/{formId}/versions/{formVersion:int}/validate", HandleValidate)
+            .WithName("ValidateFormDraft")
+            .WithSummary("Validate a Form Version against target schema and policy.")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]))
             .Produces<FormPackageValidationResult>();
 
-        admin.MapPost("/{formId}/versions/{packageVersion:int}/publish", HandlePublish)
+        admin.MapPost("/{formId}/versions/{formVersion:int}/publish", HandlePublish)
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
-            .WithName("PublishFormPackageDraft")
-            .WithSummary("Validate and publish an immutable package version.")
+            .WithName("GoLiveFormDraft")
+            .WithSummary("Validate a Form Draft and go live with an immutable Released Version.")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]))
             .Produces<FormPackageVersion>();
 
-        admin.MapPost("/{formId}/versions/{packageVersion:int}/reopen", HandleReopen)
-            .WithName("ReopenFormPackageVersion")
-            .WithSummary("Create a new draft from a published package version.")
+        admin.MapPost("/{formId}/versions/{formVersion:int}/reopen", HandleReopen)
+            .WithName("ReopenFormVersion")
+            .WithSummary("Create a new Form Draft from a Released Version.")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]))
             .Produces<FormPackageVersion>();
 
-        var runtime = endpoints.MapGroup("/api/v{version:apiVersion}/forms/packages")
+        var runtime = endpoints.MapGroup("/api/v{version:apiVersion}/forms")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Forms")
             .RequireAdminAuthorization();
 
         runtime.MapGet("/{formId}", HandleGetRuntimeCurrent)
-            .WithName("GetPublishedFormPackage")
-            .WithSummary("Get the current published form package.")
+            .WithName("GetReleasedForm")
+            .WithSummary("Get the current Released Form Version.")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
             .Produces<FormPackageVersion>();
 
-        runtime.MapGet("/{formId}/versions/{packageVersion:int}", HandleGetRuntimeVersion)
-            .WithName("GetPublishedFormPackageVersion")
-            .WithSummary("Get a published form package version.")
+        runtime.MapGet("/{formId}/versions/{formVersion:int}", HandleGetRuntimeVersion)
+            .WithName("GetReleasedFormVersion")
+            .WithSummary("Get a Released Form Version.")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
             .Produces<FormPackageVersion>();
 
         runtime.MapGet("/{formId}/offline-policy", HandleGetOfflinePolicy)
             .WithName("GetFormOfflinePolicy")
-            .WithSummary("Discover offline sync policy and existing sync endpoint links for a published package.")
+            .WithSummary("Discover offline sync policy and sync endpoint links for a Released Form Version.")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
             .Produces<FormOfflinePolicyResponse>();
 
         runtime.MapGet("/{formId}/compatibility", HandleGetCompatibility)
-            .WithName("GetFormPackageCompatibility")
-            .WithSummary("Get the offline compatibility and migration manifest for a published package version.")
+            .WithName("GetFormCompatibility")
+            .WithSummary("Get the offline compatibility and migration manifest for a Released Form Version.")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
             .Produces<FormCompatibilityManifest>()
             .ProducesProblem(StatusCodes.Status404NotFound);
 
         runtime.MapPost("/{formId}/submissions", HandleSubmit)
-            .WithName("SubmitFormPackage")
-            .WithSummary("Submit field data and optional attachments for a published package.")
+            .WithName("SubmitForm")
+            .WithSummary("Submit field data and optional attachments for a Released Form Version.")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]))
             .Produces<FormSubmissionResponse>();
 
         return endpoints;
     }
 
-    private static Task<IResult> HandleListPackages(
+    private static Task<IResult> HandleListForms(
         HttpContext context,
         [FromServices] FormPackageLifecycleService service)
         => service.ListAsync(context);
@@ -154,36 +154,36 @@ internal static class FormPackageEndpoints
         HttpContext context,
         [FromServices] FormPackageLifecycleService service,
         string formId,
-        int packageVersion)
-        => service.GetVersionAsync(context, formId, packageVersion);
+        int formVersion)
+        => service.GetVersionAsync(context, formId, formVersion);
 
     private static Task<IResult> HandleUpdateDraft(
         HttpContext context,
         [FromServices] FormPackageLifecycleService service,
         string formId,
-        int packageVersion)
-        => service.UpdateDraftAsync(context, formId, packageVersion);
+        int formVersion)
+        => service.UpdateDraftAsync(context, formId, formVersion);
 
     private static Task<IResult> HandleValidate(
         HttpContext context,
         [FromServices] FormPackageLifecycleService service,
         string formId,
-        int packageVersion)
-        => service.ValidateAsync(context, formId, packageVersion);
+        int formVersion)
+        => service.ValidateAsync(context, formId, formVersion);
 
     private static Task<IResult> HandlePublish(
         HttpContext context,
         [FromServices] FormPackageLifecycleService service,
         string formId,
-        int packageVersion)
-        => service.PublishAsync(context, formId, packageVersion);
+        int formVersion)
+        => service.PublishAsync(context, formId, formVersion);
 
     private static Task<IResult> HandleReopen(
         HttpContext context,
         [FromServices] FormPackageLifecycleService service,
         string formId,
-        int packageVersion)
-        => service.ReopenAsync(context, formId, packageVersion);
+        int formVersion)
+        => service.ReopenAsync(context, formId, formVersion);
 
     private static Task<IResult> HandleGetRuntimeCurrent(
         HttpContext context,
@@ -195,8 +195,8 @@ internal static class FormPackageEndpoints
         HttpContext context,
         [FromServices] FormPackageLifecycleService service,
         string formId,
-        int packageVersion)
-        => service.GetRuntimeVersionAsync(context, formId, packageVersion);
+        int formVersion)
+        => service.GetRuntimeVersionAsync(context, formId, formVersion);
 
     private static Task<IResult> HandleGetCompatibility(
         HttpContext context,

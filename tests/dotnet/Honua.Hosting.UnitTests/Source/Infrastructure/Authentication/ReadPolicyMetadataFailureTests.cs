@@ -46,6 +46,22 @@ public sealed class ReadPolicyMetadataFailureTests
         Assert.Equal("Graph unavailable", error.Message);
     }
 
+    [UnitTest]
+    public void IsCallerRead_InsideARequest_IsTrue()
+    {
+        var context = new HttpContextAccessor { HttpContext = new DefaultHttpContext { User = Principal() } };
+
+        Assert.True(new PolicyFixture(new ScopeGraphProvider(), context).Rows.IsCallerRead);
+    }
+
+    [UnitTest]
+    public void IsCallerRead_OutsideARequest_IsFalse()
+    {
+        var context = new HttpContextAccessor { HttpContext = null };
+
+        Assert.False(new PolicyFixture(new ScopeGraphProvider(), context).Rows.IsCallerRead);
+    }
+
     [UnitTheory]
     [InlineData("row")]
     [InlineData("mask")]

@@ -13,7 +13,7 @@ public sealed class RasterImportRequestOverviewTests
     public void DefaultRequest_DoesNotAskForOverviewPyramids()
     {
         // Production import paths (HTTP, geoprocessing, OGC coverage) omit OverviewFactors.
-        // The default must stay empty: tile reads do not consume persisted overviews (#5856).
+        // The default must stay empty: tile reads do not consume persisted overviews.
         var request = new RasterImportRequest
         {
             LayerId = 1,

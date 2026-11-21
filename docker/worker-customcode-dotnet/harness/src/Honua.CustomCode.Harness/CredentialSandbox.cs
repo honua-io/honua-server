@@ -18,6 +18,7 @@ public static class CredentialSandbox
     public static readonly IReadOnlySet<string> StrippedEnvVars = new HashSet<string>(StringComparer.Ordinal)
     {
         "HONUA_JOB_TOKEN",
+        "HONUA_JOB_REDEMPTION_CODE",
         "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
         "AWS_CONTAINER_CREDENTIALS_FULL_URI",
         "AWS_CONTAINER_AUTHORIZATION_TOKEN",

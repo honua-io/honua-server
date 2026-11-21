@@ -48,7 +48,7 @@ public sealed class PostgresSessionLockConnectionsTests
     [Operation(Operations.TestInfrastructure)]
     public void RequiresUnpooled_LambdaAlreadyUnpooled_ReturnsFalse()
     {
-        // Lambda named and bound pools are already unpooled (honua-server#6760).
+        // Lambda named and bound pools are already unpooled.
         var locks = new PostgresSessionLockConnections(releaseSessionOnClose: true);
 
         locks.RequiresUnpooled("Host=localhost;Database=honua;Pooling=false").Should().BeFalse();

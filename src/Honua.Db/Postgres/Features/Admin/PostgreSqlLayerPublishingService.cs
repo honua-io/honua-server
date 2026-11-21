@@ -297,12 +297,15 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 {
                     AllowEmptyTable = request.AllowEmptyTable,
                     ManagedStore = isManagedStore,
+                    ExactTypes = request.ExactTypes,
+                    TemporalColumn = request.TemporalColumn,
                     Schema = schema,
                     Table = table,
                     LayerName = request.LayerName,
                     ServiceName = serviceName,
                     TargetSrid = request.Srid,
                     GeometryColumn = request.GeometryColumn,
+                    GeometryType = request.GeometryType,
                     PrimaryKey = request.PrimaryKey,
                     Fields = request.Fields,
                     ConnectionEndpointFingerprint = request.ConnectionEndpointFingerprint,
@@ -414,9 +417,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             }
         }
 
-        var fields = isManagedStore && !request.CreateEditableCopy
-            ? BuildManagedLayerFields(selectedColumns, primaryKeyColumn, geometryColumn, request.FieldDomains)
-            : BuildLayerFields(selectedColumns, primaryKeyColumn!, geometryColumn, request.FieldDomains);
+        var fields = WithExactFieldTypes(
+            isManagedStore && !request.CreateEditableCopy
+                ? BuildManagedLayerFields(selectedColumns, primaryKeyColumn, geometryColumn, request.FieldDomains)
+                : BuildLayerFields(selectedColumns, primaryKeyColumn!, geometryColumn, request.FieldDomains),
+            selectedColumns,
+            PublishFieldTypePolicy.ForPublish(request, primaryKeyColumn?.Name));
         var attributeColumns = isManagedStore && !request.CreateEditableCopy
             ? SelectManagedAttributeColumns(selectedColumns, primaryKeyColumn, geometryColumn)
             : selectedColumns;
@@ -454,6 +460,14 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             .CaptureTransactionIdAsync(connection, transaction, cancellationToken)
             .ConfigureAwait(false);
 
+        // One type from a mixed table publishes through its own view, so each type is its own layer.
+        var sourceTable = table;
+        if (!isManagedStore && GeometryFamilyViewFor(validation, request.GeometryType) is { } familyView)
+        {
+            (table, geometryType) = await PrepareGeometryFamilyViewAsync(transaction, familyView, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         var serviceCreated = await EnsureServiceAsync(connection, transaction, serviceName, srid, request.ConnectionId, cancellationToken);
         await AcquireLayerPublishLockAsync(connection, transaction, schema, table, cancellationToken);
 
@@ -482,7 +496,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                     .Select(column => column.Name).ToArray());
 
         var storageCoordinateEpoch = await ResolveImportedStorageEpochAsync(
-            connection, transaction, request, schema, table, geometryColumn, storageSrid,
+            connection, transaction, request, schema, sourceTable, geometryColumn, storageSrid,
             storage.StorageSrid, cancellationToken);
 
         if (storage.IsManagedStore)
@@ -522,6 +536,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         await InsertFieldsAsync(connection, transaction, layerId, fields, cancellationToken);
 
+        var globalIdIndex = ManagedGlobalIdIndexFor(storage, layerId, ResolveEditingForPublish(request, fields)?.GlobalIdField);
+        await SerializeGlobalIdPublishAsync(transaction, globalIdIndex, cancellationToken).ConfigureAwait(false);
         var materializedCount = await MaterializeLayerFeaturesAsync(
             connection,
             transaction,
@@ -540,6 +556,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             await PrepareManagedCopyAsync(connection, transaction, layerId, managedSchema, primaryKeyColumn!.Name,
                 srid, cancellationToken).ConfigureAwait(false);
         }
+
+        await BuildManagedGlobalIdIndexAsync(transaction, globalIdIndex, cancellationToken).ConfigureAwait(false);
 
         var refreshedExtent = await RefreshLayerExtentAsync(connection, transaction, layerId, cancellationToken);
 
@@ -851,6 +869,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                     transaction)
                 .ConfigureAwait(false);
             AddGeometryHealthChecks(geometryHealth, checks, request.AllowEmptyTable);
+            SelectGeometryFamily(geometryHealth, checks, request.ManagedStore ? null : MixedGeometryFamily(request.GeometryType));
         }
         else if (string.IsNullOrWhiteSpace(geometryColumn))
         {
@@ -866,7 +885,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         // layer over the same table is not a conflict.
         if (!request.ManagedStore)
         {
-            await AddExistingLayerCheckAsync(connection, schema, table, checks, cancellationToken, transaction)
+            // A layer published from one geometry type of a mixed table is keyed by its view.
+            var publishedFamily = checks.Any(check => check.Code == "mixed-geometry" && check.Severity == SeverityWarning)
+                ? MixedGeometryFamily(request.GeometryType)
+                : null;
+            var layerTable = publishedFamily is null ? table : GeometryFamilyViews.ViewName(table, publishedFamily);
+            await AddExistingLayerCheckAsync(connection, schema, layerTable, checks, cancellationToken, transaction)
                 .ConfigureAwait(false);
         }
 
@@ -1209,7 +1233,32 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         long InvalidGeometryCount,
         int DistinctGeometryTypeCount,
         int? MinSrid,
-        int? MaxSrid);
+        int? MaxSrid)
+    {
+        // Point, LineString and Polygon row counts, single and multi parts together.
+        public long[] FamilyRowCounts { get; init; } = [0L, 0L, 0L];
+
+        public long RowsOfFamily(string family) => family switch
+        {
+            "Point" => FamilyRowCounts[0],
+            "LineString" => FamilyRowCounts[1],
+            "Polygon" => FamilyRowCounts[2],
+            _ => 0
+        };
+    }
+
+    private sealed record GeometryFamilyView
+    {
+        public required string Schema { get; init; }
+
+        public required string SourceTable { get; init; }
+
+        public required string GeometryColumn { get; init; }
+
+        public required string Family { get; init; }
+
+        public string ViewName => GeometryFamilyViews.ViewName(SourceTable, Family);
+    }
 
     private readonly record struct ResolvedPublishValidation(
         string? GeometryColumn,

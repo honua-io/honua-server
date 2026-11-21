@@ -18,9 +18,9 @@ public sealed partial class FormPackageEndpointsTests
 {
     [IntegrationTest]
     [Operation(Operations.Configuration)]
-    [Endpoint("POST /api/v1/admin/forms/packages/import")]
-    [Endpoint("POST /api/v1/forms/packages/{formId}/submissions")]
-    [Endpoint("GET /api/v1/admin/forms/packages/{formId}/export")]
+    [Endpoint("POST /api/v1/admin/forms/import")]
+    [Endpoint("POST /api/v1/forms/{formId}/submissions")]
+    [Endpoint("GET /api/v1/admin/forms/{formId}/export")]
     public async Task XlsFormImport_PublishSubmitAndExport_PreservesSupportedSurvey()
     {
         using var file = XlsFormUpload("text");
@@ -30,16 +30,16 @@ public sealed partial class FormPackageEndpointsTests
         draft.Package.Target.LayerId.Should().Be(WebAppFixture.TestLayerId);
         draft.Package.Fields.Should().ContainSingle(field => field.FieldId == "name" && field.Required);
 
-        var validation = await PostJsonAsync($"/api/v1/admin/forms/packages/{draft.FormId}/versions/1/validate",
+        var validation = await PostJsonAsync($"/api/v1/admin/forms/{draft.FormId}/versions/1/validate",
             FormPackageJsonContext.Default.FormPackageValidationResult);
         validation.IsValid.Should().BeTrue();
-        var published = await PostJsonAsync($"/api/v1/admin/forms/packages/{draft.FormId}/versions/1/publish",
+        var published = await PostJsonAsync($"/api/v1/admin/forms/{draft.FormId}/versions/1/publish",
             FormPackageJsonContext.Default.FormPackageVersion);
         published.Status.Should().Be(FormPackageStatus.Published);
 
         using var submissionContent = JsonContent(CreateSubmission($"xlsform-{Guid.NewGuid():N}", "Imported field feature"));
         using var submitted = await _fixture.Client.PostAsync(
-            $"/api/v1/forms/packages/{draft.FormId}/submissions",
+            $"/api/v1/forms/{draft.FormId}/submissions",
             submissionContent);
         submitted.StatusCode.Should().Be(HttpStatusCode.OK);
         var submission = await ReadJsonAsync(submitted, FormPackageJsonContext.Default.FormSubmissionResponse);
@@ -57,7 +57,7 @@ public sealed partial class FormPackageEndpointsTests
 
     [IntegrationTest]
     [Operation(Operations.Configuration)]
-    [Endpoint("POST /api/v1/admin/forms/packages/import")]
+    [Endpoint("POST /api/v1/admin/forms/import")]
     public async Task XlsFormImport_UnsupportedSurveyType_ReportsCellAndCreatesNoDraft()
     {
         using var file = XlsFormUpload("unsupported_widget");
@@ -67,13 +67,13 @@ public sealed partial class FormPackageEndpointsTests
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("survey").And.Contain("type").And.Contain("diagnostics");
-        var packages = await GetJsonAsync("/api/v1/admin/forms/packages", FormPackageJsonContext.Default.FormPackageSummaryArray);
+        var packages = await GetJsonAsync("/api/v1/admin/forms", FormPackageJsonContext.Default.FormPackageSummaryArray);
         packages.Should().NotContain(package => package.FormId == _xlsFormId);
     }
 
     [IntegrationTest]
     [Operation(Operations.Configuration)]
-    [Endpoint("POST /api/v1/admin/forms/packages/import")]
+    [Endpoint("POST /api/v1/admin/forms/import")]
     public async Task XlsFormImport_InvalidArchive_ReturnsBadRequest()
     {
         using var content = new MultipartFormDataContent();
@@ -96,7 +96,7 @@ public sealed partial class FormPackageEndpointsTests
 
     private async Task<byte[]> ExportXlsFormAsync(string formId)
     {
-        using var exported = await _fixture.Client.GetAsync($"/api/v1/admin/forms/packages/{formId}/export");
+        using var exported = await _fixture.Client.GetAsync($"/api/v1/admin/forms/{formId}/export");
         exported.StatusCode.Should().Be(HttpStatusCode.OK);
         exported.Content.Headers.ContentType!.MediaType.Should().Be("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         var workbook = await exported.Content.ReadAsByteArrayAsync();
@@ -106,7 +106,7 @@ public sealed partial class FormPackageEndpointsTests
     }
 
     private static string XlsFormImportUrl()
-        => $"/api/v1/admin/forms/packages/import?serviceId={Uri.EscapeDataString(WebAppFixture.TestServiceId)}&layerId={WebAppFixture.TestLayerId}";
+        => $"/api/v1/admin/forms/import?serviceId={Uri.EscapeDataString(WebAppFixture.TestServiceId)}&layerId={WebAppFixture.TestLayerId}";
 
     private ByteArrayContent XlsFormUpload(string fieldType)
     {

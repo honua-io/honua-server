@@ -13,7 +13,7 @@
   -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>preview</LangVersion>
@@ -25,6 +25,10 @@
     <!-- The harness loads user assemblies dynamically; AOT/trimming do not apply. -->
     <PublishAot>false</PublishAot>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.CustomCode.Harness.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Honua.Sdk" />

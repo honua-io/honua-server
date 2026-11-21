@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -108,6 +109,6 @@ public sealed partial class LayerReadSecurityResolverTests
             .ReturnsAsync(new ReadSecurityResolution(null, ["secret"]));
         var resolver = new LayerReadSecurityResolver(null, null, rows.Object, masks.Object);
         var query = new FeatureQuery { GroupByFields = ["secret"] };
-        await Assert.ThrowsAsync<ArgumentException>(() => resolver.ApplyAsync(resource, query, CancellationToken.None));
+        await Assert.ThrowsAsync<MaskedFieldReferenceException>(() => resolver.ApplyAsync(resource, query, CancellationToken.None));
     }
 }

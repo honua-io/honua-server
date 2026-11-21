@@ -686,8 +686,9 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                     // cannot abort the Web Mercator tile statement. The catalog
                     // selection is the grid whose area contains this tile.
                     var selection = TileDatumSelection(query, layerSrid, targetTileSrid, tileBounds);
-                    geometryForTile = DatumTransformSql.BuildTransformExpression(
-                        geometryOperand, targetTileSrid, selection, layerSrid);
+                    geometryForTile = selection is null
+                        ? DatumTransformSql.CachedTransformExpression(geometryOperand, layerSrid, targetTileSrid)
+                        : DatumTransformSql.BuildTransformExpression(geometryOperand, targetTileSrid, selection, layerSrid);
                     tileEnvelopeForFilter = selection is null
                         ? $"ST_Transform({tileEnvelopeWithBuffer}, {layerSrid})"
                         : DatumTransformSql.BuildTransformExpression(
@@ -700,7 +701,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             else
             {
                 // Layer SRID unknown: clamp geographic rows by their runtime SRID.
-                geometryForTile = DatumTransformSql.BuildTransformExpressionForRuntimeSrid(geometryOperand, targetTileSrid);
+                geometryForTile = DatumTransformSql.CachedTransformExpressionForRuntimeSrid(geometryOperand, targetTileSrid);
                 filterGeometryOperand = geometryForTile;
             }
 
@@ -835,9 +836,10 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             // The catalog selection matches feature query output.
             var selection = TileDatumSelection(query, query?.SpatialReferenceSrid, targetTileSrid, tileBounds);
             var geometryForTile = query?.SpatialReferenceSrid is { } storageSrid
-                ? DatumTransformSql.BuildTransformExpression(
-                    geometryOperand, targetTileSrid, selection, storageSrid)
-                : DatumTransformSql.BuildTransformExpressionForRuntimeSrid(geometryOperand, targetTileSrid);
+                ? selection is null
+                    ? DatumTransformSql.CachedTransformExpression(geometryOperand, storageSrid, targetTileSrid)
+                    : DatumTransformSql.BuildTransformExpression(geometryOperand, targetTileSrid, selection, storageSrid)
+                : DatumTransformSql.CachedTransformExpressionForRuntimeSrid(geometryOperand, targetTileSrid);
             string filterGeometryOperand;
             string tileEnvelopeForFilter;
             if (query.HasValue && query.Value.SpatialReferenceSrid is { } layerSrid && layerSrid != targetTileSrid)

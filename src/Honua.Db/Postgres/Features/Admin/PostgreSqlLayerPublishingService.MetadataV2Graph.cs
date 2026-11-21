@@ -1762,9 +1762,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Name = RestoreMutationValue(current.Name, previousValue.Name, persistedValue.Name),
             Email = RestoreMutationValue(current.Email, previousValue.Email, persistedValue.Email),
             Url = RestoreMutationValue(current.Url, previousValue.Url, persistedValue.Url),
+            Phone = RestoreMutationValue(current.Phone, previousValue.Phone, persistedValue.Phone),
         };
 
-        return previous is null && restored.AdditionalProperties is not { Count: > 0 } && restored.Name is null && restored.Email is null && restored.Url is null
+        return previous is null && restored.AdditionalProperties is not { Count: > 0 } && restored.Name is null && restored.Email is null && restored.Url is null && restored.Phone is null
             ? null
             : restored;
     }
@@ -2833,6 +2834,27 @@ internal sealed partial class PostgreSqlLayerPublishingService
             JsonSerializer.SerializeToElement(left, typeInfo),
             JsonSerializer.SerializeToElement(right, typeInfo));
 
+    // A link reuses an existing resource, so it is primary only when nothing else is. The
+    // resource's first primary publication stays its canonical service, and writes through
+    // the linked publication must also satisfy that service's data-editor grant.
+    private static bool HasPrimaryPublication(MetadataV2Graph graph, string resourceId)
+        => PrimaryPublications(graph, resourceId).Any();
+
+    // Deterministic survivor when a legacy graph holds several primaries for one resource:
+    // the oldest by creation time (undated last), then by publication id.
+    private static bool IsEarliestPrimaryPublication(MetadataV2Graph graph, MetadataV2Layer publication)
+        => PrimaryPublications(graph, publication.ResourceId)
+            .OrderBy(candidate => candidate.Metadata.CreatedAt ?? DateTimeOffset.MaxValue)
+            .ThenBy(candidate => candidate.Metadata.Id, StringComparer.Ordinal)
+            .Select(candidate => candidate.Metadata.Id)
+            .FirstOrDefault() is { } earliestId
+           && string.Equals(earliestId, publication.Metadata.Id, StringComparison.Ordinal);
+
+    private static IEnumerable<MetadataV2Layer> PrimaryPublications(MetadataV2Graph graph, string resourceId)
+        => graph.Publications.Where(publication =>
+            publication.IsPrimary &&
+            string.Equals(publication.ResourceId, resourceId, StringComparison.Ordinal));
+
     internal static MetadataV2Graph BuildLinkedLayerMetadataV2Graph(
         MetadataV2Graph graph,
         string serviceName,
@@ -2905,7 +2927,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             featurePublication = existingFeaturePublication with
             {
-                Status = WithReadyStatus(existingFeaturePublication.Status, readyStatus)
+                Status = WithReadyStatus(existingFeaturePublication.Status, readyStatus),
+                // Re-linking repairs a graph written before links became secondary: only the
+                // resource's earliest primary publication keeps the canonical role.
+                IsPrimary = existingFeaturePublication.IsPrimary &&
+                            IsEarliestPrimaryPublication(graph, existingFeaturePublication)
             };
         }
         else
@@ -2933,7 +2959,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 BuildLayerGraphId("layer", layerId, storageScope?.ManagedLayerIds?.Contains(layerId) == true ? null : storageScope?.ConnectionId),
                 layerName,
                 MetadataV2LayerType.EsriFeatureLayer,
-                isPrimary: true,
+                isPrimary: !HasPrimaryPublication(graph, resource.Metadata.Id),
                 idPrefix: "pub",
                 enabled,
                 now);
@@ -3761,9 +3787,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
             MetadataV2FieldType.Integer => MetadataV2FieldType.Integer,
             MetadataV2FieldType.BigInteger => MetadataV2FieldType.BigInteger,
             MetadataV2FieldType.Double => MetadataV2FieldType.Double,
+            MetadataV2FieldType.Decimal => MetadataV2FieldType.Decimal,
             MetadataV2FieldType.Float => MetadataV2FieldType.Float,
             MetadataV2FieldType.Boolean => MetadataV2FieldType.Boolean,
             MetadataV2FieldType.DateTime => MetadataV2FieldType.DateTime,
+            MetadataV2FieldType.TimestampOffset => MetadataV2FieldType.TimestampOffset,
             MetadataV2FieldType.Date => MetadataV2FieldType.Date,
             MetadataV2FieldType.Time => MetadataV2FieldType.Time,
             MetadataV2FieldType.Geometry => MetadataV2FieldType.Geometry,

@@ -3,7 +3,7 @@ type: concept
 title: "Persistent storage"
 description: "The durability and ownership of data, catalog state, jobs, and output artifacts."
 tags: [gis, domain-language]
-aliases: ["save","disk","volume","database","Redis","bucket","output store"]
+aliases: ["save","disk","volume","database","PostgreSQL","bucket","output store"]
 sources:
   - id: contract
     resource: "/guides/gp-output-store-attestation.md"

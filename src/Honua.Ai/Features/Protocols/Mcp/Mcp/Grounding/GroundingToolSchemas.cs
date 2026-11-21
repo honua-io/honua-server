@@ -36,6 +36,7 @@ internal static class GroundingToolSchemas
             $$"""
             {
               "type": "object",
+              "additionalProperties": false,
               "required": {{required}},
               "properties": {
                 "goal": {

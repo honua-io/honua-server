@@ -693,6 +693,16 @@ internal static partial class PrintingToolsEndpoints
         return owner is not null && string.Equals(progress.RequestedBy, owner, StringComparison.Ordinal);
     }
 
+    // Cancelling is a write: reading a job is not enough. An anonymous job carries no submitter
+    // identity to match, so only an administrator may cancel it.
+    private static bool CanCancelJob(PrintProgress progress, HttpContext context)
+    {
+        if (context.User.Identity?.IsAuthenticated == true && context.User.IsInRole("admin"))
+            return true;
+        var owner = progress.AnonymousSubmission == false ? ResolveOwner(context.User) : null;
+        return owner is not null && string.Equals(progress.RequestedBy, owner, StringComparison.Ordinal);
+    }
+
     private static string MapOperationStatusToEsriJobStatus(OperationStatus status) => status switch
     {
         OperationStatus.Queued => "esriJobSubmitted",

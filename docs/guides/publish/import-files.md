@@ -169,9 +169,16 @@ and their Multi forms) and target SRID in PostGIS constraints. Table discovery a
 publication use those facts for FeatureServer geometry metadata, OGC Features
 collection `geometryType` and `storageCrs`, and MCP layer catalog/description metadata.
 Null geometries do not change the inferred family. Mixed imports remain generic
-`GEOMETRY`; the publication validator rejects mixed geometry rather than advertising
-a single type. Existing typed attribute columns and the complete properties document
-remain available. Older imports gain these constraints when reimported; republish
+`GEOMETRY`. Publishing a mixed table without a `geometryType` fails validation with
+`mixed-geometry` rather than advertising a single type. Name one type (`Point`,
+`LineString` or `Polygon`; the Multi form selects the same family) and that family's
+rows publish as their own layer through a `<table>__honua_pt`, `__honua_ln` or
+`__honua_pg` view in the source schema. Validation then reports `mixed-geometry` as a
+warning with the row count that will publish, and the layer declares the Multi form
+when any of its rows is multi-part. Publish once per type to expose every family. A
+replace import of the table keeps these views and recreates them over the new rows;
+the views need permission to create a view in the source schema. Existing typed
+attribute columns and the complete properties document remain available. Older imports gain these constraints when reimported; republish
 existing layers to refresh their catalog geometry metadata.
 
 ### GeoParquet input contract

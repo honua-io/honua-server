@@ -683,7 +683,7 @@ internal sealed partial class OperationGateway : IOperationGateway, IOpsRemediat
             var context = authorizationScope.ServiceProvider.GetService<IHttpContextAccessor>()?.HttpContext;
             try
             {
-                plan = await FolderApprovalAuthorization.PrepareAsync(request, plan, context, cancellationToken).ConfigureAwait(false);
+                plan = await FolderApprovalAuthorization.PrepareAsync(new(request, plan, context), cancellationToken).ConfigureAwait(false);
             }
             catch (FolderProposalRefusal refusal)
             {
@@ -835,7 +835,13 @@ internal sealed partial class OperationGateway : IOperationGateway, IOpsRemediat
 
         for (var renewal = 0; ; renewal++)
         {
-            if (await _proposalStore.TryCreateAsync(proposal, cancellationToken: cancellationToken).ConfigureAwait(false))
+            var creation = await TryCreateProposalAsync(proposal, cancellationToken).ConfigureAwait(false);
+            if (creation == ProposalCreation.EvidenceAlreadyUsed)
+            {
+                return EvidenceAlreadyUsedResult(decision);
+            }
+
+            if (creation == ProposalCreation.Created)
             {
                 break;
             }

@@ -81,6 +81,7 @@ internal sealed class OidcClaimsTransformation(
         var authType = identity.FindFirst("auth_type")?.Value;
         if (authType is "admin" or "dev-bypass" or LayerScopedWriteKey.AuthType or ScopedJobTokenIssuer.AuthTypeClaimValue)
         {
+            serviceProvider.GetService<OwnerIdentityScope>()?.StampOwner(principal, mappingSource);
             return principal;
         }
 
@@ -258,6 +259,9 @@ internal sealed class OidcClaimsTransformation(
             identity.AddClaims(transformedClaims);
             OidcAuthenticationLog.ClaimsTransformed(logger, transformedClaims.Count);
         }
+
+        // The owner value is derived after the user id claim is normalized and from the issuer's own claims, never from a custom mapping.
+        serviceProvider.GetService<OwnerIdentityScope>()?.StampOwner(principal, mappingSource);
 
         // All mapped and synthesized roles use ClaimTypes.Role. Make role checks
         // read those normalized claims, including when the handler uses the default

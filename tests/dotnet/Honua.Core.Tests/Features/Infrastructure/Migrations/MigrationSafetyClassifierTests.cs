@@ -479,7 +479,7 @@ public sealed class MigrationSafetyClassifierTests
     [InlineData("-- honua:compatibility-review (no reason)", false)]
     [InlineData("-- some other comment", false)]
     // An empty (or whitespace-only) reason is self-service theater: the marker must bind to a non-empty
-    // reviewer/ticket identity, so these do NOT count as annotated (honua-server#2812).
+    // reviewer/ticket identity, so these do NOT count as annotated.
     [InlineData("-- honua:compatibility-review reason=", false)]
     [InlineData("-- honua:compatibility-review reason=   ", false)]
     [InlineData("-- honua:compatibility-review reason= ticket-123", true)]

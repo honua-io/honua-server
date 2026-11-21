@@ -14,6 +14,7 @@ internal static class DiscoveryToolSchemas
     private const string ResolveEntityArgumentSchemaJson = """
         {
           "type": "object",
+          "additionalProperties": false,
           "required": ["text"],
           "properties": {
             "text": {
@@ -41,6 +42,7 @@ internal static class DiscoveryToolSchemas
     private const string ListCapabilitiesArgumentSchemaJson = """
         {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "includeResources": {
               "type": "boolean",

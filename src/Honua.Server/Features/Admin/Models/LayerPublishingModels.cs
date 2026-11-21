@@ -83,6 +83,10 @@ public sealed class PublishLayerRequest
 
     public bool SupportsAttachments { get; init; }
 
+    // Opt-in exact field types: numeric/decimal columns publish as Decimal and timestamptz
+    // columns as TimestampOffset. The primary key and the temporal column keep their default types.
+    public bool ExactTypes { get; init; }
+
     public IReadOnlyList<string> Fields { get; init; } = Array.Empty<string>();
 
     public IReadOnlyDictionary<string, MetadataV2FieldDomain>? FieldDomains { get; init; }
@@ -128,6 +132,9 @@ public sealed class LayerPublishJobStatusResponse
 
     public int? StorageLayerId { get; init; }
 
+    // Deprecated wire alias of StorageLayerId; published clients still read layerId.
+    public int? LayerId => StorageLayerId;
+
     public string? ErrorMessage { get; init; }
 }
 
@@ -153,8 +160,14 @@ public sealed class ValidateTablePublishRequest
     [StringLength(64)]
     public string? GeometryColumn { get; init; }
 
+    [StringLength(32)]
+    public string? GeometryType { get; init; }
+
     [StringLength(64)]
     public string? PrimaryKey { get; init; }
+
+    // Previews the field types a publish with ExactTypes would use.
+    public bool ExactTypes { get; init; }
 
     public IReadOnlyList<string> Fields { get; init; } = Array.Empty<string>();
 }

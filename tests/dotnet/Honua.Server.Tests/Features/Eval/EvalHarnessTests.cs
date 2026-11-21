@@ -154,7 +154,7 @@ public sealed class EvalHarnessTests : IClassFixture<EvalHarnessFixture>
             await timeoutFixture.InitializeAsync();
             // The test job service stalls only protocol HTTP submissions, making the
             // timeout path deterministic even when the real runtime would immediately
-            // return an environmental skip such as Redis unavailable.
+            // return an environmental skip such as an unavailable job store.
             timeoutFixture.Client.Timeout = TimeSpan.FromMilliseconds(25);
 
             var runner = new EvalRunner(timeoutFixture, new LocalSeedFixtureSource());

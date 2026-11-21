@@ -22,7 +22,8 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 [Operation(Operations.Security)]
-public sealed partial class McpBearerAuthenticationTests : IAsyncLifetime
+public sealed partial class McpBearerAuthenticationTests(McpBearerAuthenticationTests.BearerHost host)
+    : IClassFixture<McpBearerAuthenticationTests.BearerHost>
 {
     private const string JsonMediaType = "application/json";
     private const string PublicBaseUrl = "https://mcp.example.com";
@@ -34,47 +35,48 @@ public sealed partial class McpBearerAuthenticationTests : IAsyncLifetime
     private const string OperatorAudience = "honua-admin-api";
     private const string OperatorSigningKey = "mcp-operator-bearer-test-signing-key-at-least-32-bytes";
 
-    private readonly WebAppFixture _fixture = new WebAppFixture()
-        .UseSeed("tests/seed/server.yaml")
-        .ConfigureWebHost(builder =>
-        {
-            builder.UseEnvironment("Test");
-            // Disable the dev-auth bypass so a request is only authenticated by the
-            // credential it actually presents — the whole point of this suite.
-            builder.UseSetting("HONUA_DEV_AUTH", "false");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-admin-key");
-            builder.UseSetting("Public:BaseUrl", PublicBaseUrl);
-            builder.UseSetting("MultiTenancy:Enabled", "true");
+    private readonly WebAppFixture _fixture = host.Fixture;
+    private readonly HttpClient _client = host.Fixture.Client;
 
-            // Reuse the multi-authority OIDC stack (#2849) — a single generic
-            // provider validated against a static symmetric key so tokens can be
-            // minted in-process. Issuer/audience/lifetime validation stay at their
-            // secure defaults (true).
-            builder.UseSetting("Oidc:Enabled", "true");
-            builder.UseSetting("Oidc:RequireHttps", "true");
-            builder.UseSetting("Oidc:TokenValidation:SymmetricSigningKey", SigningKey);
-            builder.UseSetting("Oidc:TokenValidation:EnableTokenReplayProtection", "false");
-            builder.UseSetting("Oidc:TokenValidation:ValidIssuers:0", SecondIssuer);
-            builder.UseSetting("Oidc:Generic:Enabled", "true");
-            builder.UseSetting("Oidc:Generic:Authority", Issuer);
-            builder.UseSetting("Oidc:Generic:ClientId", Audience);
-            builder.UseSetting("Oidc:Generic:DisplayName", "Test IdP");
-            builder.UseSetting("Authentication:OperatorBearer:Enabled", "true");
-            builder.UseSetting("Authentication:OperatorBearer:SigningKey", OperatorSigningKey);
-            builder.UseSetting("Mcp:ServerInitiatedStreamEnabled", "true");
-        });
-
-    private HttpClient _client = null!;
-
-    public async Task InitializeAsync()
+    // One host serves every case that uses the default configuration. Each case mints its own tokens and opens
+    // its own sessions (at most a few per subject, under the per-principal session cap) and the in-process
+    // client has no remote address, so no failed-attempt limit carries from one case to another. The API-key
+    // case issues and revokes a key of its own. Cases that need another configuration still own their host.
+    public sealed class BearerHost : IAsyncLifetime
     {
-        await _fixture.InitializeAsync();
-        _client = _fixture.Client;
-    }
+        internal WebAppFixture Fixture { get; } = new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                // Disable the dev-auth bypass so a request is only authenticated by the
+                // credential it actually presents — the whole point of this suite.
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-admin-key");
+                builder.UseSetting("Public:BaseUrl", PublicBaseUrl);
+                builder.UseSetting("MultiTenancy:Enabled", "true");
 
-    public async Task DisposeAsync()
-    {
-        await _fixture.DisposeAsync();
+                // Reuse the multi-authority OIDC stack — a single generic
+                // provider validated against a static symmetric key so tokens can be
+                // minted in-process. Issuer/audience/lifetime validation stay at their
+                // secure defaults (true).
+                builder.UseSetting("Oidc:Enabled", "true");
+                builder.UseSetting("Oidc:RequireHttps", "true");
+                builder.UseSetting("Oidc:TokenValidation:SymmetricSigningKey", SigningKey);
+                builder.UseSetting("Oidc:TokenValidation:EnableTokenReplayProtection", "false");
+                builder.UseSetting("Oidc:TokenValidation:ValidIssuers:0", SecondIssuer);
+                builder.UseSetting("Oidc:Generic:Enabled", "true");
+                builder.UseSetting("Oidc:Generic:Authority", Issuer);
+                builder.UseSetting("Oidc:Generic:ClientId", Audience);
+                builder.UseSetting("Oidc:Generic:DisplayName", "Test IdP");
+                builder.UseSetting("Authentication:OperatorBearer:Enabled", "true");
+                builder.UseSetting("Authentication:OperatorBearer:SigningKey", OperatorSigningKey);
+                builder.UseSetting("Mcp:ServerInitiatedStreamEnabled", "true");
+            });
+
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
     }
 
     [IntegrationTest]
@@ -572,7 +574,7 @@ public sealed partial class McpBearerAuthenticationTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task Session_ReplayProtectionEnabled_BearerContinuesItsSessionAcrossRequestsAndRefresh()
     {
-        // honua-server#4909: under the default token replay protection a stateful bearer
+        // Under the default token replay protection a stateful bearer
         // client must run initialize -> tools/list -> tools/call on one session and keep
         // that session when it refreshes its access token, while a reused token stays a
         // replay everywhere else and other principals, tenants and scopes stay refused.
@@ -675,7 +677,7 @@ public sealed partial class McpBearerAuthenticationTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
     public async Task ReplayProtectionEnabled_BearerReusedOnHttpApi_IsAdmittedWithinLifetimeAndReplaysAcrossSurfaces()
     {
-        // honua-server#4899: under the default token replay protection an ordinary REST
+        // Under the default token replay protection an ordinary REST
         // client reuses its access token for the token's lifetime, while a token admitted
         // on one surface is still a replay on the other: an HTTP API token cannot open an
         // MCP session and an MCP session's token cannot be replayed against the HTTP API.
@@ -851,7 +853,7 @@ public sealed partial class McpBearerAuthenticationTests : IAsyncLifetime
         // all, but a well-formed X-Honua-Tenant header that tenant resolution would
         // otherwise honour, must still be denied at the tool boundary — authentication
         // is decided before tenant selection, and an anonymous principal can never be
-        // widened by a client-supplied tenant (#3430).
+        // widened by a client-supplied tenant.
         using var request = BuildRpc(
             """{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"honua_list_capabilities","arguments":{}}}""",
             sessionId: null,
@@ -972,7 +974,7 @@ public sealed partial class McpBearerAuthenticationTests : IAsyncLifetime
         errorData.GetProperty("requiresReauthentication").GetBoolean().Should().BeTrue();
     }
 
-    // ---- Session matrix: GET/SSE and DELETE cells (#3430) -----------------------
+    // ---- Session matrix: GET/SSE and DELETE cells -----------------------
     // The issue requires POST, GET/SSE and DELETE to each cover anonymous, valid,
     // unknown/expired, cross-scheme, cross-issuer and cross-tenant callers. POST
     // covered every case and GET/DELETE covered only the cross-issuer/cross-tenant
@@ -1019,7 +1021,7 @@ public sealed partial class McpBearerAuthenticationTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Mcp, "initialize")]
     public async Task Session_ApiKeyCaller_CannotStreamOrDeleteBearerOwnedSession()
     {
-        // Cross-scheme (#2852): an API-key principal is a different canonical actor
+        // Cross-scheme: an API-key principal is a different canonical actor
         // than a bearer principal even when the underlying display/subject value
         // matches, and it must not silently rebind onto a bearer-owned session. POST
         // proved this; GET/SSE and DELETE did not.

@@ -14,34 +14,37 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 public sealed class FeatureQueryBuilderStatisticsTests
 {
     [Theory]
-    [InlineData(MetadataV2FieldType.Decimal)]
-    [InlineData(MetadataV2FieldType.TimestampOffset)]
-    public void BuildStatisticsQuery_ExactFields_RejectsLossyAggregatesButAllowsCount(MetadataV2FieldType fieldType)
+    [InlineData(StatisticType.Sum, "SUM((attributes->>'exact_value')::numeric))::double precision")]
+    [InlineData(StatisticType.Max, "MAX((attributes->>'exact_value')::numeric))::double precision")]
+    [InlineData(StatisticType.Count, "COUNT(attributes->>'exact_value')")]
+    public void BuildStatisticsQuery_ExactDecimal_AggregatesAsDouble(StatisticType statisticType, string expected)
     {
-        var queryBuilder = CreateQueryBuilder();
-        foreach (var statisticType in Enum.GetValues<StatisticType>())
-        {
-            var query = new FeatureQuery
-            {
-                OutStatistics = ImmutableArray.Create(new StatisticDefinition
-                {
-                    StatisticType = statisticType,
-                    OnStatisticField = "exact_value",
-                    OutStatisticFieldName = "result",
-                    FieldType = fieldType
-                })
-            };
-            if (statisticType == StatisticType.Count)
-            {
-                queryBuilder.BuildStatisticsQuery(1, query).Sql.Should().Contain("COUNT(attributes->>'exact_value')");
-            }
-            else
-            {
-                Action build = () => queryBuilder.BuildStatisticsQuery(1, query);
-                build.Should().Throw<NotSupportedException>().WithMessage("*lossless result contract*");
-            }
-        }
+        var sql = CreateQueryBuilder().BuildStatisticsQuery(1, ExactQuery(statisticType, MetadataV2FieldType.Decimal)).Sql;
+
+        sql.Should().Contain(expected);
     }
+
+    [Fact]
+    public void BuildStatisticsQuery_ExactTimestampOffset_OrdersAsTimestamp()
+    {
+        var sql = CreateQueryBuilder()
+            .BuildStatisticsQuery(1, ExactQuery(StatisticType.Min, MetadataV2FieldType.TimestampOffset)).Sql;
+
+        sql.Should().Contain("MIN(CASE WHEN");
+        sql.Should().Contain("::timestamptz END)");
+        sql.Should().NotContain("double precision)");
+    }
+
+    private static FeatureQuery ExactQuery(StatisticType statisticType, MetadataV2FieldType fieldType) => new()
+    {
+        OutStatistics = ImmutableArray.Create(new StatisticDefinition
+        {
+            StatisticType = statisticType,
+            OnStatisticField = "exact_value",
+            OutStatisticFieldName = "result",
+            FieldType = fieldType
+        })
+    };
 
     [Fact]
     public void BuildStatisticsQuery_CastsNumericAndTemporalAggregatesToTypedExpressions()
@@ -116,7 +119,7 @@ public sealed class FeatureQueryBuilderStatisticsTests
         result.Sql.Should().Contain("MAX((attributes->>'bucket')::numeric) AS \"max_bucket\"");
     }
 
-    // #3372: an aggregate result set's columns are the statistic aliases and the group-by
+    // An aggregate result set's columns are the statistic aliases and the group-by
     // fields, so ORDER BY must be able to name them. The emitted SQL is rebuilt from the
     // matched declaration (the aggregate expression / the group-by field expression), never
     // from the order-by clause's own text.
