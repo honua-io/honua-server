@@ -72,6 +72,9 @@ internal sealed class OperatorBearerAuthenticationHandler(
                 identity.AddClaim(new Claim("iss", _tokenService.ValidatedIssuer));
             }
 
+            var expiry = new Microsoft.IdentityModel.JsonWebTokens.JsonWebTokenHandler().ReadJsonWebToken(token).ValidTo;
+            Context.Features.Set(new LiveStreamCredentialFeature(
+                new("OperatorBearer", LiveStreamInvalidation.Hash(token)), new DateTimeOffset(expiry)));
             return AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name));
         }
         catch (ArgumentException)

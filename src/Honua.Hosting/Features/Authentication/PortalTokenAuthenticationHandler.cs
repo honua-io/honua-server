@@ -49,6 +49,9 @@ internal sealed class PortalTokenAuthenticationHandler(
         if (validation is not null)
         {
             MarkQueryCredential(fromQuery);
+            Context.Features.Set(new LiveStreamCredentialFeature(
+                new("PortalToken", LiveStreamInvalidation.Hash(token)), validation.ExpiresAt,
+                validation.SourceApiKeyId is { } keyId ? new("AdminApiKey", keyId.ToString("D")) : null));
             return AuthenticateResult.Success(new AuthenticationTicket(validation.Principal, Scheme.Name));
         }
 
@@ -75,7 +78,7 @@ internal sealed class PortalTokenAuthenticationHandler(
             }
 
             MarkQueryCredential(fromQuery);
-            return AuthenticateResult.Success(new AuthenticationTicket(apiKeyPrincipal, Scheme.Name));
+            return AuthenticateResult.Success(new AuthenticationTicket(apiKeyPrincipal, apiKey.Success!.Properties!, Scheme.Name));
         }
 
         return AuthenticateResult.Fail(InvalidTokenMessage);

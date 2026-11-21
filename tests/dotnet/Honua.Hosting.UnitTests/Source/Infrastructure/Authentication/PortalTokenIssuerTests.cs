@@ -878,6 +878,44 @@ public sealed class PortalTokenIssuerTests
         await revoke.Should().ThrowAsync<ServiceUnavailableException>();
     }
 
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SecurityRefresh_RevokedManagedKeyDoesNotReuseWarmSourceCache(bool recovery)
+    {
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var store = new InMemoryAdminApiKeyStore();
+        using var services = new ServiceCollection()
+            .AddSingleton<IMemoryCache>(cache)
+            .AddSingleton<IAdminApiKeyStore>(store)
+            .AddSingleton(Options.Create(new PortalTokenAuthenticationOptions { SourceRevalidationSeconds = 600 }))
+            .AddSingleton<IPortalTokenSourceValidator>(sp => new PortalTokenSourceValidator(
+                cache, sp.GetRequiredService<IOptions<PortalTokenAuthenticationOptions>>(), sp))
+            .AddSingleton<LiveStreamSecurityRegistry>()
+            .BuildServiceProvider();
+        var issuer = new PortalTokenIssuer(new InMemorySecurityTokenStore(),
+            NullLogger<PortalTokenIssuer>.Instance, serviceProvider: services);
+        var key = await store.CreateAsync("stream", ["admin:*"], DateTimeOffset.UtcNow.AddHours(2),
+            "test", CancellationToken.None);
+        var issued = await issuer.IssueAsync(new PortalTokenIssueRequest(
+            "alice", null, null, ["admin"], PortalTokenClientType.Ip, "192.0.2.50",
+            DateTimeOffset.UtcNow.AddMinutes(30), Source: new PortalCredentialSource(
+                PortalCredentialSourceKind.ManagedApiKey, Reference: key.Record.Id.ToString("D"),
+                Version: PortalCredentialSourceVersion.ForManagedKey(key.Record))), CancellationToken.None);
+        var binding = new PortalTokenBinding(null, "192.0.2.50");
+        var validation = await issuer.ValidateAsync(issued.Token, binding, CancellationToken.None);
+        Assert.NotNull(validation);
+        Assert.Equal(key.Record.Id, validation.SourceApiKeyId);
+        await store.RevokeAsync(key.Record.Id, CancellationToken.None);
+        Assert.NotNull(await issuer.ValidateAsync(issued.Token, binding, CancellationToken.None));
+
+        await services.GetRequiredService<LiveStreamSecurityRegistry>().RefreshAsync(
+            recovery ? null : new("credential-revoked", key.Record.Id.ToString("D"), "AdminApiKey"),
+            CancellationToken.None);
+
+        Assert.Null(await issuer.ValidateAsync(issued.Token, binding, CancellationToken.None));
+    }
+
     private static PortalTokenIssueRequest SampleIssue()
         => new(
             PrincipalId: "alice",

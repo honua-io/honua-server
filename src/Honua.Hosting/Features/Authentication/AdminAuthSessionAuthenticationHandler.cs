@@ -44,6 +44,8 @@ internal sealed class AdminAuthSessionAuthenticationHandler(
         {
             var principal = AdminAuthClaimsProjector.CreatePrincipal(session.Claims, Scheme.Name,
                 session.Origin == AdminAuthSessionOrigin.Builtin ? "admin" : "oidc");
+            Context.Features.Set(new LiveStreamCredentialFeature(
+                new("AdminSession", LiveStreamInvalidation.Hash(sessionId)), session.ExpiresAt));
             return AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name));
         }
         catch (ArgumentException ex)

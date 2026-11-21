@@ -3,10 +3,13 @@
 
 using System.Net;
 using System.Security.Claims;
+using System.Text.Encodings.Web;
+using Microsoft.AspNetCore.Authentication;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using FluentAssertions;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
@@ -21,6 +24,63 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 
 public sealed class ClientCertificateEnforcementMiddlewareTests
 {
+    [UnitTest]
+    public async Task Authenticate_CertificateExpiryBoundsTheAuthenticationTicket()
+    {
+        using var certificate = CreateCertificate();
+        var context = CreateContext(certificate);
+        var validator = new StubValidator(ClientCertificateValidationResult.Success(
+            CreatePrincipal("certificate-user"), "profile", "mapping", "prod", "fingerprint", "issuer", 30, "certificate-user"));
+        var options = new TestOptionsMonitor<ClientCertificateAuthenticationOptions>(new()
+        {
+            Mode = ClientCertificateAuthenticationMode.Optional,
+            EnvironmentId = "prod"
+        });
+        var handler = new ClientCertificateAuthenticationHandler(
+            new TestOptionsMonitor<AuthenticationSchemeOptions>(new()),
+            NullLoggerFactory.Instance,
+            UrlEncoder.Default,
+            new ClientCertificateAuthenticationDependencies(new ClientCertificateExtractor(options), validator, options));
+        await handler.InitializeAsync(new AuthenticationScheme(
+            ClientCertificateAuthenticationDefaults.AuthenticationScheme, null, typeof(ClientCertificateAuthenticationHandler)), context);
+
+        var result = await handler.AuthenticateAsync();
+
+        result.Succeeded.Should().BeTrue();
+        result.Properties!.ExpiresUtc.Should().Be(new DateTimeOffset(certificate.NotAfter.ToUniversalTime()));
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_MiddlewareAdmittedStreamRetainsCertificateExpiry()
+    {
+        using var certificate = CreateCertificate(DateTimeOffset.UtcNow.AddSeconds(-1));
+        var registrations = new ServiceCollection();
+        registrations.AddLogging();
+        registrations.AddSingleton<LiveStreamSecurityRegistry>();
+        registrations.AddAuthentication().AddScheme<AuthenticationSchemeOptions, ClientCertificateAuthenticationHandler>(
+            ClientCertificateAuthenticationDefaults.AuthenticationScheme, _ => { });
+        await using var services = registrations.BuildServiceProvider();
+        var context = CreateContext(certificate);
+        context.RequestServices = services;
+        var validator = new StubValidator(ClientCertificateValidationResult.Success(
+            CreatePrincipal("certificate-user"), "profile", "mapping", "prod", "fingerprint", "issuer", 0, "certificate-user"));
+        var middleware = CreateMiddleware(validator, new ClientCertificateAuthenticationOptions
+        {
+            Mode = ClientCertificateAuthenticationMode.Optional,
+            EnvironmentId = "prod"
+        }, async current =>
+        {
+            var result = await new LiveStreamAuthorizationFilter().InvokeAsync(EndpointFilterInvocationContext.Create(current), async _ =>
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, current.RequestAborted);
+                return Results.Empty;
+            });
+            result.Should().BeAssignableTo<IStatusCodeHttpResult>().Which.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        });
+
+        await middleware.InvokeAsync(context).WaitAsync(TimeSpan.FromSeconds(4));
+    }
+
     [Fact]
     public async Task InvokeAsync_OnSuccessfulValidation_ProjectsPrincipalToContextUser()
     {
@@ -714,7 +774,7 @@ public sealed class ClientCertificateEnforcementMiddlewareTests
         return new ClaimsPrincipal(identity);
     }
 
-    private static X509Certificate2 CreateCertificate()
+    private static X509Certificate2 CreateCertificate(DateTimeOffset? expiresAt = null)
     {
         using var key = RSA.Create(2048);
         var request = new CertificateRequest(
@@ -725,7 +785,7 @@ public sealed class ClientCertificateEnforcementMiddlewareTests
         request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
             new OidCollection { new Oid("1.3.6.1.5.5.7.3.2") },
             critical: false));
-        return request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(90));
+        return request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), expiresAt ?? DateTimeOffset.UtcNow.AddDays(90));
     }
 
     private sealed class StubValidator(ClientCertificateValidationResult? result) : IClientCertificateValidator

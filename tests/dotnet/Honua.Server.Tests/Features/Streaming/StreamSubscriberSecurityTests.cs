@@ -534,6 +534,201 @@ public sealed class StreamSubscriberSecurityTests
     private static UnaryExpression IsNotNull(string field)
         => new(UnaryOperator.IsNotNull, new PropertyReference(field));
 
+    [UnitTest]
+    public async Task SessionRefresh_RevalidatesEveryActiveEventDrivenSubscription()
+    {
+        using var manager = CreateManager();
+        var first = CreateUnrestrictedSecurity();
+        var second = CreateUnrestrictedSecurity();
+        first.EnableEventDrivenRefresh();
+        second.EnableEventDrivenRefresh();
+        var firstRefreshes = 0;
+        var secondRefreshes = 0;
+        first.EnableRefresh(_ =>
+        {
+            firstRefreshes++;
+            return Task.FromResult(CreateSecurity());
+        });
+        second.EnableRefresh(_ =>
+        {
+            secondRefreshes++;
+            return Task.FromResult(CreateUnrestrictedSecurity());
+        });
+        using var session = manager.CreateSession("WebSocket", null, new StreamSubscriptionFilter(subscriberSecurity: first));
+        manager.TryAddSubscription(session.SessionId, "second", new StreamSubscriptionFilter(subscriberSecurity: second))
+            .Result.Should().Be(AddSubscriptionResult.Added);
+
+        (await manager.RefreshSessionSecurityAsync(session.SessionId, CancellationToken.None)).Should().BeTrue();
+
+        firstRefreshes.Should().Be(1);
+        secondRefreshes.Should().Be(1);
+        first.Allows(CreateEnvelope("east")).Should().BeFalse("the first subscription must retain its policy refresh after adding another");
+        second.Allows(CreateEnvelope("east")).Should().BeTrue();
+
+        first.EnableRefresh(_ => Task.FromResult(new StreamSubscriberSecurity(
+            new HashSet<string>(["svc"], StringComparer.Ordinal),
+            new Dictionary<(string, int), StreamLayerReadPolicy>(),
+            new Dictionary<(string, int), StreamLayerReadPolicy>(),
+            new HashSet<(string, int)> { ("svc", 0) })));
+        (await manager.RefreshSessionSecurityAsync(session.SessionId, CancellationToken.None)).Should().BeFalse(
+            "revoking the earlier subscription must end authorization even when a later subscription remains allowed");
+    }
+
+    [UnitTest]
+    public async Task SessionRefresh_RemovedSubscriptionDoesNotRevokeRemainingSubscriptions()
+    {
+        using var manager = CreateManager();
+        using var session = manager.TryCreateSession("WebSocket", null, addDefaultSubscription: false)!;
+        var removed = CreateUnrestrictedSecurity();
+        removed.EnableEventDrivenRefresh();
+        var refreshed = false;
+        removed.EnableRefresh(_ =>
+        {
+            refreshed = true;
+            throw new InvalidOperationException("removed policy must not participate");
+        });
+        manager.TryAddSubscription(session.SessionId, "removed", new StreamSubscriptionFilter(subscriberSecurity: removed));
+        manager.TryAddSubscription(session.SessionId, "active", new StreamSubscriptionFilter(subscriberSecurity: CreateUnrestrictedSecurity()));
+        manager.TryRemoveSubscription(session.SessionId, "removed");
+
+        (await manager.RefreshSessionSecurityAsync(session.SessionId, CancellationToken.None)).Should().BeTrue();
+
+        refreshed.Should().BeFalse();
+    }
+
+    [UnitTheory]
+    [InlineData(false, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, true)]
+    [InlineData(false, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(true, true, false)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, true)]
+    public async Task Refresh_SubscriptionRemovedDuringRefresh_DoesNotRevokeRemainingSession(
+        bool eventDriven, bool failure, bool replace)
+    {
+        using var manager = CreateManager();
+        using var session = manager.TryCreateSession("WebSocket", null, addDefaultSubscription: false)!;
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var removed = CreateUnrestrictedSecurity();
+        removed.EnableRefresh(async cancellationToken =>
+        {
+            started.TrySetResult();
+            await resume.Task.WaitAsync(cancellationToken);
+            if (failure)
+            {
+                throw new InvalidOperationException("policy store unavailable");
+            }
+            return new StreamSubscriberSecurity(new HashSet<string>(["svc"], StringComparer.Ordinal),
+                new Dictionary<(string, int), StreamLayerReadPolicy>(),
+                new Dictionary<(string, int), StreamLayerReadPolicy>());
+        });
+        manager.TryAddSubscription(session.SessionId, "removed", new StreamSubscriptionFilter(subscriberSecurity: removed));
+        manager.TryAddSubscription(session.SessionId, "active", new StreamSubscriptionFilter(subscriberSecurity: CreateUnrestrictedSecurity()));
+        var refresh = eventDriven
+            ? manager.RefreshSessionSecurityAsync(session.SessionId, CancellationToken.None)
+            : RefreshPeriodicAsync();
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        manager.TryRemoveSubscription(session.SessionId, "removed").Should().BeTrue();
+        if (replace)
+        {
+            manager.TryAddSubscription(session.SessionId, "removed", new StreamSubscriptionFilter(subscriberSecurity: CreateUnrestrictedSecurity()));
+        }
+        resume.TrySetResult();
+
+        (await refresh).Should().BeTrue();
+        session.DisconnectToken.IsCancellationRequested.Should().BeFalse();
+        manager.SessionCount.Should().Be(1);
+
+        async Task<bool> RefreshPeriodicAsync()
+        {
+            await manager.RefreshSubscriberSecurityAsync();
+            return true;
+        }
+    }
+
+    [UnitTest]
+    public async Task SessionRefresh_RemovedBlockedSubscriptionDoesNotConsumeRemainingDeadline()
+    {
+        using var manager = CreateManager();
+        using var session = manager.TryCreateSession("WebSocket", null, addDefaultSubscription: false)!;
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var removed = CreateUnrestrictedSecurity();
+        removed.EnableRefresh(async token =>
+        {
+            started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            return CreateUnrestrictedSecurity();
+        });
+        var activeRefreshed = false;
+        var active = CreateUnrestrictedSecurity();
+        active.EnableRefresh(_ =>
+        {
+            activeRefreshed = true;
+            return Task.FromResult(CreateUnrestrictedSecurity());
+        });
+        manager.TryAddSubscription(session.SessionId, "removed", new StreamSubscriptionFilter(subscriberSecurity: removed));
+        manager.TryAddSubscription(session.SessionId, "active", new StreamSubscriptionFilter(subscriberSecurity: active));
+        var refresh = manager.RefreshSessionSecurityAsync(session.SessionId, deadline.Token);
+        await started.Task.WaitAsync(deadline.Token);
+        manager.TryRemoveSubscription(session.SessionId, "removed").Should().BeTrue();
+
+        (await refresh.WaitAsync(TimeSpan.FromSeconds(2))).Should().BeTrue();
+        activeRefreshed.Should().BeTrue();
+        session.DisconnectToken.IsCancellationRequested.Should().BeFalse();
+    }
+
+    [UnitTheory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task Replay_RemovedPolicyRefreshCannotRevokeRemainingSubscription(bool failure, bool replace)
+    {
+        using var manager = CreateManager();
+        using var session = manager.TryCreateSession("WebSocket", null, addDefaultSubscription: false)!;
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var removed = CreateUnrestrictedSecurity();
+        removed.EnableRefresh(async _ =>
+        {
+            started.TrySetResult();
+            await resume.Task;
+            if (failure)
+            {
+                throw new InvalidOperationException("policy store unavailable");
+            }
+            return new StreamSubscriberSecurity(new HashSet<string>(["svc"], StringComparer.Ordinal),
+                new Dictionary<(string, int), StreamLayerReadPolicy>(),
+                new Dictionary<(string, int), StreamLayerReadPolicy>(),
+                new HashSet<(string, int)> { ("svc", 0) });
+        });
+        manager.TryAddSubscription(session.SessionId, "removed", new StreamSubscriptionFilter(subscriberSecurity: removed));
+        manager.TryAddSubscription(session.SessionId, "active", new StreamSubscriptionFilter(subscriberSecurity: CreateUnrestrictedSecurity()));
+        var replay = removed.RefreshForReplayAsync(CancellationToken.None);
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            manager.TryRemoveSubscription(session.SessionId, "removed").Should().BeTrue();
+            if (replace)
+            {
+                manager.TryAddSubscription(session.SessionId, "removed", new StreamSubscriptionFilter(subscriberSecurity: CreateUnrestrictedSecurity()));
+            }
+            resume.TrySetResult();
+            await replay.WaitAsync(TimeSpan.FromSeconds(2));
+            session.DisconnectToken.IsCancellationRequested.Should().BeFalse();
+            manager.SessionCount.Should().Be(1);
+        }
+        finally
+        {
+            resume.TrySetResult();
+        }
+    }
+
+
     private static FeatureStreamSessionManager CreateManager()
         => new(
             Options.Create(new FeatureStreamOptions()),

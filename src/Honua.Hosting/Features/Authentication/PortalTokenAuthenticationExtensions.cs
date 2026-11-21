@@ -236,6 +236,7 @@ internal sealed class PortalTokenAuthenticationMiddleware(
             if (result.Succeeded && result.Principal is not null)
             {
                 context.User = result.Principal;
+                context.Features.Set(new LiveStreamAdmissionFeature(PortalTokenAuthenticationExtensions.PortalTokenScheme, result.Properties?.ExpiresUtc));
                 if (context.Items.ContainsKey(PortalTokenAuthenticationExtensions.QueryCredentialKey))
                 {
                     // RFC 6750 §2.3: a response to a request whose credential was in the URI

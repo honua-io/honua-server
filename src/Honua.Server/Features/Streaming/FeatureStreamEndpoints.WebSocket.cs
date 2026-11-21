@@ -846,7 +846,8 @@ internal static partial class FeatureStreamEndpoints
         // Pause the subscription before replay so the live channel writer cannot
         // queue events that the per-subscription replay path is about to deliver
         // directly. The unpause after replay restores normal live fan-out.
-        var addOutcome = deps.SessionManager.TryAddSubscription(session.SessionId, subscriptionId, filter, paused: pauseForReplay);
+        var livePolicy = context.Features.Get<LiveStreamPolicyRefreshFeature>();
+        var addOutcome = deps.SessionManager.TryAddSubscription(session.SessionId, subscriptionId, filter, paused: pauseForReplay || livePolicy is not null);
         switch (addOutcome.Result)
         {
             case AddSubscriptionResult.Added:
@@ -884,11 +885,22 @@ internal static partial class FeatureStreamEndpoints
                 preAddCursor);
         }
 
+        if (livePolicy?.RevalidateAsync is { } revalidate)
+        {
+            await revalidate(static _ => Task.FromResult(true), cancellationToken).ConfigureAwait(false);
+            context.RequestAborted.ThrowIfCancellationRequested();
+        }
+
         if (requested.Kind == FeatureStreamCursorKind.Epoch)
         {
             await SendWebSocketResetAsync(
                 new(webSocket, session.WriteLock, RealtimeResetReasons.CursorEpoch, preAddCursor),
                 cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!pauseForReplay && livePolicy is not null)
+        {
+            deps.SessionManager.TryUnpauseSubscription(session.SessionId, subscriptionId);
         }
 
         // Emit the baseline while paused, then resume delta delivery from the baseline

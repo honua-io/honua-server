@@ -6,6 +6,7 @@ using System.Security.Claims;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Security;
+using Honua.Infrastructure.Authentication.ClientCertificates;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -30,22 +31,26 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
     {
         var context = invocation.HttpContext;
-        if (context.User.Identity?.IsAuthenticated != true)
+        var anonymous = context.User.Identity?.IsAuthenticated != true;
+        if (anonymous && context.GetEndpoint()?.Metadata.GetMetadata<AllowAnonymousLiveStreamMetadata>() is null)
         {
             return Results.Unauthorized();
         }
 
         // Authorization can synthesize a ticket named "context.User" for a
-        // principal hydrated by credential middleware. The framework-owned actor
-        // stamp retains the actual handler name in that case.
+        // principal hydrated by credential middleware. Preserve its admission
+        // handler separately from the canonical actor scheme.
         var stampedScheme = CanonicalSecurityActor.FindStampedValue(context.User, CanonicalSecurityActor.AuthenticationSchemeClaim);
-        var admittedScheme = stampedScheme
-            ?? context.Features.Get<IAuthenticateResultFeature>()?.AuthenticateResult?.Ticket?.AuthenticationScheme
-            ?? context.User.Identity.AuthenticationType;
+        var ticketScheme = context.Features.Get<IAuthenticateResultFeature>()?.AuthenticateResult?.Ticket?.AuthenticationScheme;
         var schemes = context.RequestServices.GetRequiredService<IAuthenticationSchemeProvider>();
         // Canonical actor bindings normalize names, whereas the handler registry is
         // case-sensitive. Resolve the registered name and reject ambiguous matches.
         var registered = (await schemes.GetAllSchemesAsync().ConfigureAwait(false)).ToArray();
+        // A portal ticket may contain an API-key actor. Replay the transport handler
+        // that admitted it; the actor stamp is only a fallback for synthetic tickets.
+        var admittedScheme = context.Features.Get<LiveStreamAdmissionFeature>()?.AuthenticationScheme
+            ?? (registered.Any(candidate => string.Equals(candidate.Name, ticketScheme, StringComparison.OrdinalIgnoreCase))
+            ? ticketScheme : stampedScheme ?? context.User.Identity?.AuthenticationType);
         var matches = registered
             .Where(candidate => string.Equals(candidate.Name, admittedScheme, StringComparison.OrdinalIgnoreCase)).ToArray();
         if (matches.Length == 0 && stampedScheme is null)
@@ -53,13 +58,13 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
             // Tenantless principals may not receive a request-binding stamp. The
             // identity's handler type remains available behind a synthetic ticket.
             matches = registered.Where(candidate => string.Equals(candidate.Name,
-                context.User.Identity.AuthenticationType, StringComparison.OrdinalIgnoreCase)).ToArray();
+                context.User.Identity?.AuthenticationType, StringComparison.OrdinalIgnoreCase)).ToArray();
         }
-        if (matches.Length != 1)
+        if (!anonymous && matches.Length != 1)
         {
             return Results.Unauthorized();
         }
-        var scheme = matches[0].Name;
+        var scheme = anonymous ? null : matches[0].Name;
 
         var originalAbort = context.RequestAborted;
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(originalAbort);
@@ -73,9 +78,55 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
 
         context.RequestAborted = lifetime.Token;
         var outcome = StreamRunning;
+        // A resource check reads storage, so it extends the deadline; stopping the stream still cancels it.
+        var checkBudget = context.GetEndpoint()?.Metadata.GetMetadata<ILiveStreamResourceAuthorization>() is null
+            ? RevalidationInterval
+            : RevalidationInterval + ResourceRevalidationBudget;
+        var previousPolicies = context.Features.Get<LiveStreamPolicyRefreshFeature>();
+        using var admissionGate = new SemaphoreSlim(1, 1);
+        var policies = new LiveStreamPolicyRefreshFeature();
+        policies.RevalidateAsync = RefreshAdmissionAsync;
+        context.Features.Set(policies);
+        var registry = context.RequestServices.GetService<LiveStreamSecurityRegistry>();
+        var credential = context.Features.Get<LiveStreamCredentialFeature>();
+        var principal = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? context.User.FindFirst("sub")?.Value;
+        var keyId = context.User.FindFirst("api_key_id")?.Value;
+        var identity = new LiveStreamIdentity(principal, keyId is null
+            ? credential?.Credential : new LiveStreamCredential("AdminApiKey", keyId), credential?.BackingCredential);
+        var expiresAt = credential?.ExpiresAt
+            ?? context.Features.Get<LiveStreamAdmissionFeature>()?.ExpiresAt
+            ?? context.Features.Get<IAuthenticateResultFeature>()?.AuthenticateResult?.Properties?.ExpiresUtc;
+        if (!anonymous && scheme == ClientCertificateAuthenticationDefaults.AuthenticationScheme
+            && context.Items[ClientCertificateHttpContextItems.ExtractionResult] is ClientCertificateExtractionResult
+            { Certificate: { } certificate })
+        {
+            var certificateExpiry = new DateTimeOffset(certificate.NotAfter.ToUniversalTime());
+            expiresAt = expiresAt is null || certificateExpiry < expiresAt ? certificateExpiry : expiresAt;
+        }
+        if (expiresAt is null && long.TryParse(context.User.FindFirst("exp")?.Value,
+            System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var seconds)
+            && seconds is >= -62135596800 and <= 253402300799)
+        {
+            expiresAt = DateTimeOffset.FromUnixTimeSeconds(seconds);
+        }
+        await using var registration = registry?.Register(identity, RefreshAuthorizationAsync, _ => EndAuthorizationAsync());
         var monitor = MonitorAsync();
         try
         {
+            if (expiresAt <= DateTimeOffset.UtcNow)
+            {
+                await EndAuthorizationAsync().ConfigureAwait(false);
+            }
+            else if (registration is not null)
+            {
+                // Registration must precede the fresh check: an invalidation already
+                // consumed before registration cannot notify this stream.
+                await registration.RefreshAsync(false, monitorStop.Token).ConfigureAwait(false);
+            }
+            if (Volatile.Read(ref outcome) == StreamEnded)
+            {
+                return Results.Unauthorized();
+            }
             var completed = await next(invocation).ConfigureAwait(false);
             // Record completion before stopping the monitor, so a late failed
             // check cannot change an endpoint outcome that already completed.
@@ -102,6 +153,11 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
         {
             await monitorStop.CancelAsync().ConfigureAwait(false);
             await monitor.ConfigureAwait(false);
+            if (registration is not null)
+            {
+                await registration.DisposeAsync().ConfigureAwait(false);
+            }
+            context.Features.Set(previousPolicies);
             context.RequestAborted = originalAbort;
             context.Features.Set(socketFeature);
             // An unstarted response still belongs to the endpoint's typed result.
@@ -129,49 +185,78 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
             guardedFeature?.Socket?.Release();
         }
 
+        Task RefreshAuthorizationAsync(CancellationToken cancellationToken) =>
+            RefreshAdmissionAsync(static _ => Task.FromResult(true), cancellationToken);
+
+        async Task RefreshAdmissionAsync(Func<CancellationToken, Task<bool>> pendingPolicy, CancellationToken cancellationToken)
+        {
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, monitorStop.Token);
+            deadline.CancelAfter(checkBudget);
+            var authorized = false;
+            var entered = false;
+            try
+            {
+                await admissionGate.WaitAsync(deadline.Token).ConfigureAwait(false);
+                entered = true;
+                authorized = anonymous || await RevalidateAsync(context, scheme!, deadline.Token).ConfigureAwait(false);
+                if (authorized)
+                {
+                    await PortalAudienceSnapshot.RefreshAsync(context, deadline.Token).WaitAsync(deadline.Token).ConfigureAwait(false);
+                }
+                authorized = authorized && await policies.RefreshAsync(deadline.Token).WaitAsync(deadline.Token).ConfigureAwait(false)
+                    && await pendingPolicy(deadline.Token).WaitAsync(deadline.Token).ConfigureAwait(false);
+            }
+            catch (Exception error) when (error is not OutOfMemoryException)
+            {
+                authorized = false;
+            }
+            finally
+            {
+                if (entered)
+                {
+                    admissionGate.Release();
+                }
+            }
+            if (!monitorStop.IsCancellationRequested && !authorized)
+            {
+                await EndAuthorizationAsync().ConfigureAwait(false);
+            }
+        }
+
+        async Task EndAuthorizationAsync()
+        {
+            if (Interlocked.CompareExchange(ref outcome, StreamEnded, StreamRunning) != StreamRunning)
+            {
+                return;
+            }
+            if (guardedFeature?.Socket is { } socket)
+            {
+                await socket.EndAuthorizationAsync().ConfigureAwait(false);
+                // Cancelling a receive that is still pending aborts the managed socket, and
+                // Kestrel's teardown can then drop the close frame before it leaves: the
+                // client saw 1006 instead of 1008. Let the endpoint
+                // observe the client's close reply first, bounded by one interval.
+                await socket.WaitForCloseReplyAsync(monitorStop.Token).ConfigureAwait(false);
+            }
+            await lifetime.CancelAsync().ConfigureAwait(false);
+        }
+
         async Task MonitorAsync()
         {
             try
             {
-                // A resource check reads storage, so it extends the deadline; stopping the stream still cancels it.
-                var checkBudget = context.GetEndpoint()?.Metadata.GetMetadata<ILiveStreamResourceAuthorization>() is null
-                    ? RevalidationInterval
-                    : RevalidationInterval + ResourceRevalidationBudget;
                 using var timer = new PeriodicTimer(RevalidationInterval);
                 while (await timer.WaitForNextTickAsync(monitorStop.Token).ConfigureAwait(false))
                 {
-                    using var deadline = CancellationTokenSource.CreateLinkedTokenSource(monitorStop.Token);
-                    deadline.CancelAfter(checkBudget);
-                    var authorized = await RevalidateAsync(context, scheme, deadline.Token).ConfigureAwait(false);
-                    // Endpoint completion cancels an in-flight check too. That is
-                    // normal shutdown, not a reason to append an SSE frame to a
-                    // pending typed HTTP denial before its IResult executes.
-                    monitorStop.Token.ThrowIfCancellationRequested();
-                    if (authorized)
+                    if (expiresAt <= DateTimeOffset.UtcNow)
                     {
-                        continue;
-                    }
-
-                    if (Interlocked.CompareExchange(ref outcome, StreamEnded, StreamRunning) != StreamRunning)
-                    {
-                        // The endpoint completed while this check was in flight. A
-                        // revalidation deadline that expires in that window fails
-                        // closed, which must not retract a result already produced.
+                        await EndAuthorizationAsync().ConfigureAwait(false);
                         return;
                     }
-
-                    if (guardedFeature?.Socket is { } socket)
+                    if (registry is null)
                     {
-                        await socket.EndAuthorizationAsync().ConfigureAwait(false);
-                        // Cancelling a receive that is still pending aborts the managed socket, and
-                        // Kestrel's teardown can then drop the close frame before it leaves: the
-                        // client saw 1006 instead of 1008. Let the endpoint
-                        // observe the client's close reply first, bounded by one interval.
-                        await socket.WaitForCloseReplyAsync(monitorStop.Token).ConfigureAwait(false);
+                        await RefreshAuthorizationAsync(monitorStop.Token).ConfigureAwait(false);
                     }
-
-                    await lifetime.CancelAsync().ConfigureAwait(false);
-                    return;
                 }
             }
             catch (OperationCanceledException) when (monitorStop.IsCancellationRequested)

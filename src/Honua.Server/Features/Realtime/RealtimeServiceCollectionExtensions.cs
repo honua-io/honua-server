@@ -3,6 +3,7 @@
 
 using Honua.ControlPlane;
 using Honua.Core.Features.Infrastructure.Coordination;
+using Honua.Infrastructure.Authentication;
 using Honua.Core.Features.Realtime;
 using Honua.Infrastructure.Abstractions;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -54,6 +55,10 @@ internal static class RealtimeServiceCollectionExtensions
         services.AddRealtimeEventLog(configuration);
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<IRealtimeStreamLifecycle, RealtimeStreamLifecycle>();
+        services.AddOptions<LiveStreamSecurityOptions>().Bind(configuration.GetSection(RealtimeOptions.SectionName))
+            .Validate(value => value.SecurityBackstopInterval > TimeSpan.Zero && value.SecurityBackstopInterval <= TimeSpan.FromSeconds(30),
+                "Realtime:SecurityBackstopInterval must be greater than zero and at most 30 seconds.").ValidateOnStart();
+        services.TryAddSingleton<LiveStreamSecurityRegistry>();
         services.TryAddSingleton<RealtimeDispatcher>();
         services.TryAddSingleton<IRealtimeTransactionWriter, RealtimeTransactionWriter>();
         services.TryAddSingleton<IRealtimeWakeSignal>(provider => provider.GetRequiredService<RealtimeDispatcher>());
@@ -81,6 +86,8 @@ internal static class RealtimeServiceCollectionExtensions
 
         if (hostsDatabasePollingLoops)
         {
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, LiveStreamSecurityRegistry>(
+                provider => provider.GetRequiredService<LiveStreamSecurityRegistry>()));
             AddTailService(services, configuration);
             AddStreamLifecycleServices(services);
         }

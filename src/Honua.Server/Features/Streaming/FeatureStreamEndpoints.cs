@@ -35,6 +35,7 @@ internal static partial class FeatureStreamEndpoints
 
         streamGroup.MapGet("/features", HandleFeatureStream)
             .AddEndpointFilter<LiveStreamAuthorizationFilter>()
+            .WithMetadata(new AllowAnonymousLiveStreamMetadata())
             .WithDisplayName("Stream Feature Changes")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
             .WithMetadata(LongLivedStreamEndpointMetadata.Instance)
@@ -130,6 +131,16 @@ internal static partial class FeatureStreamEndpoints
         }
 
         using var sessionLease = session;
+        if (context.Features.Get<LiveStreamPolicyRefreshFeature>() is { } livePolicy)
+        {
+            livePolicy.SetRefresh(ct => deps.SessionManager.RefreshSessionSecurityAsync(session.SessionId, ct));
+            if (livePolicy.RevalidateAsync is { } revalidate)
+            {
+                await revalidate(static _ => Task.FromResult(true), context.RequestAborted).ConfigureAwait(false);
+                context.RequestAborted.ThrowIfCancellationRequested();
+            }
+        }
+
 
         // Snapshot servability is decided here, ahead of the transport handshake: it is the last
         // point at which an unservable baseline can still be reported as a typed problem document

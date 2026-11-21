@@ -37,6 +37,12 @@ internal static partial class FeatureStreamEndpoints
                 new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), webSocket, writeLock), cursor, cancellationToken)
                 .ConfigureAwait(false);
 
+            // Authorize the fetched batch after its read so later commits cannot enter under an older policy.
+            if (subscriptionFilter is StreamSubscriptionFilter { SubscriberSecurity: { } security })
+            {
+                await security.RefreshForReplayAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             FeatureStreamLog.ReplayStarted(logger, events.Count, cursor, sessionId);
 
             foreach (var evt in events)
@@ -170,6 +176,12 @@ internal static partial class FeatureStreamEndpoints
             var events = await eventStore.QueryAsync(new FeatureChangeEventQuery(cursor, null, null, batchSize), cancellationToken).ConfigureAwait(false);
             await EnsureReplayableAfterAsync(new FeatureStreamReplayContext(eventStore, logger, sessionId, subscriptionId), cursor, cancellationToken)
                 .ConfigureAwait(false);
+
+            // Authorize the fetched batch after its read so later commits cannot enter under an older policy.
+            if (subscriptionFilter is StreamSubscriptionFilter { SubscriberSecurity: { } security })
+            {
+                await security.RefreshForReplayAsync(cancellationToken).ConfigureAwait(false);
+            }
 
             FeatureStreamLog.ReplayStarted(logger, events.Count, cursor, sessionId);
 

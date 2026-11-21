@@ -134,15 +134,58 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
     }
 
+    internal async Task<bool> RefreshSessionSecurityAsync(Guid sessionId, CancellationToken cancellationToken)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var entry))
+        {
+            return true;
+        }
+
+        foreach (var subscription in entry.GetRefreshableSubscriberSecurities(includeEventDriven: true))
+        {
+            try
+            {
+                if (subscription.Retired.IsCompleted)
+                {
+                    continue;
+                }
+                using var refreshStop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                var refresh = subscription.Security.RefreshAsync(refreshStop.Token);
+                var completed = await Task.WhenAny(refresh, subscription.Retired).WaitAsync(cancellationToken).ConfigureAwait(false);
+                if (completed == subscription.Retired)
+                {
+                    await refreshStop.CancelAsync().ConfigureAwait(false);
+                    // A store may ignore cancellation. Observe its eventual failure without
+                    // making a retired generation consume the remaining session deadline.
+                    _ = refresh.ContinueWith(static task => { _ = task.Exception; }, CancellationToken.None,
+                        TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                    continue;
+                }
+                var outcome = await refresh.ConfigureAwait(false);
+                if (outcome == StreamSubscriberSecurityRefreshOutcome.Revoked && entry.IsCurrentSubscription(subscription))
+                {
+                    return false;
+                }
+            }
+            catch (Exception error) when (error is not OutOfMemoryException
+                && !entry.IsCurrentSubscription(subscription))
+            {
+                // A removed generation no longer participates in the session's authorization.
+            }
+        }
+
+        return true;
+    }
+
     // A layer the refresh denies, or that cannot be re-resolved, ends the session, and policy is read once per tick.
     public async Task RefreshSubscriberSecurityAsync(CancellationToken cancellationToken = default)
     {
-        var work = new List<(Guid SessionId, StreamSubscriberSecurity Security)>();
+        var work = new List<(Guid SessionId, SessionEntry Entry, SessionEntry.SubscriberSecuritySnapshot Subscription)>();
         foreach (var (sessionId, entry) in _sessions)
         {
             foreach (var security in entry.GetRefreshableSubscriberSecurities())
             {
-                work.Add((sessionId, security));
+                work.Add((sessionId, entry, security));
             }
         }
 
@@ -161,7 +204,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             },
             async (item, token) =>
             {
-                if (!_sessions.ContainsKey(item.SessionId))
+                if (!_sessions.ContainsKey(item.SessionId) || !item.Entry.IsCurrentSubscription(item.Subscription))
                 {
                     return;
                 }
@@ -171,7 +214,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 deadline.CancelAfter(timeout);
                 try
                 {
-                    outcome = await item.Security.RefreshAsync(deadline.Token).ConfigureAwait(false);
+                    outcome = await item.Subscription.Security.RefreshAsync(deadline.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
                 {
@@ -180,7 +223,8 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
                     // Fail closed: the filter already denies every route, and the session ends.
-                    if (TryRemoveSession(item.SessionId, FeatureStreamDisconnectReason.PolicyRevoked))
+                    if (item.Entry.IsCurrentSubscription(item.Subscription)
+                        && TryRemoveSession(item.SessionId, FeatureStreamDisconnectReason.PolicyRevoked))
                     {
                         FeatureStreamLog.SubscriberPolicyRefreshFailed(_logger, item.SessionId, ex);
                     }
@@ -189,6 +233,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 }
 
                 if (outcome == StreamSubscriberSecurityRefreshOutcome.Revoked &&
+                    item.Entry.IsCurrentSubscription(item.Subscription) &&
                     TryRemoveSession(item.SessionId, FeatureStreamDisconnectReason.PolicyRevoked))
                 {
                     FeatureStreamLog.SubscriberAccessRevoked(_logger, item.SessionId);
@@ -803,7 +848,20 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             bool Paused,
             long Generation,
             long LastPolledCursor,
-            long NextSequence = 0);
+            long NextSequence = 0)
+        {
+            public TaskCompletionSource Retired { get; } = CreateRetirement(Filter);
+
+            private static TaskCompletionSource CreateRetirement(IStreamSubscriptionFilter? filter)
+            {
+                var retired = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                if (filter is StreamSubscriptionFilter { SubscriberSecurity: { } security })
+                {
+                    security.BindLifetime(retired.Task);
+                }
+                return retired;
+            }
+        }
 
         public long DefaultSubscriptionGeneration { get; }
 
@@ -862,16 +920,27 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             }
         }
 
-        public StreamSubscriberSecurity[] GetRefreshableSubscriberSecurities()
+        public readonly record struct SubscriberSecuritySnapshot(string SubscriptionId, long Generation, StreamSubscriberSecurity Security, Task Retired);
+
+        public SubscriberSecuritySnapshot[] GetRefreshableSubscriberSecurities(bool includeEventDriven = false)
         {
             lock (_subscriptionLock)
             {
-                return _subscriptions.Values
-                    .Select(state => (state.Filter as StreamSubscriptionFilter)?.SubscriberSecurity)
-                    .OfType<StreamSubscriberSecurity>()
-                    .Where(static security => security.IsRefreshable)
-                    .Distinct()
+                return _subscriptions
+                    .Where(pair => (pair.Value.Filter as StreamSubscriptionFilter)?.SubscriberSecurity is { } security
+                        && (includeEventDriven || security.IsRefreshable))
+                    .Select(pair => new SubscriberSecuritySnapshot(pair.Key, pair.Value.Generation,
+                        ((StreamSubscriptionFilter)pair.Value.Filter!).SubscriberSecurity!, pair.Value.Retired.Task))
                     .ToArray();
+            }
+        }
+
+        public bool IsCurrentSubscription(SubscriberSecuritySnapshot subscription)
+        {
+            lock (_subscriptionLock)
+            {
+                return _subscriptions.TryGetValue(subscription.SubscriptionId, out var state)
+                    && state.Generation == subscription.Generation;
             }
         }
 
@@ -983,6 +1052,10 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                     return false;
                 }
 
+                if (_subscriptions.TryGetValue(subscriptionId, out var previous))
+                {
+                    previous.Retired.TrySetResult();
+                }
                 generation = ++_subscriptionGenerationCounter;
                 _subscriptions[subscriptionId] = new SubscriptionState(filter, paused, generation, LastPolledCursor: 0);
                 return true;
@@ -1007,7 +1080,12 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         {
             lock (_subscriptionLock)
             {
-                return _subscriptions.Remove(subscriptionId);
+                if (!_subscriptions.Remove(subscriptionId, out var removed))
+                {
+                    return false;
+                }
+                removed.Retired.TrySetResult();
+                return true;
             }
         }
 
