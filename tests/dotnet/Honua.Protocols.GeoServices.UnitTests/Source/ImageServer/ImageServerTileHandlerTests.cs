@@ -490,6 +490,7 @@ public class ImageServerTileHandlerTests
         var fileResult = result.Should().BeOfType<FileContentHttpResult>().Subject;
         fileResult.FileContents.ToArray().Should().Equal(cachedTile);
         fileResult.ContentType.Should().Be("image/png");
+        fileResult.EnableRangeProcessing.Should().BeTrue();
         await storage.Received(1).DownloadBytesAsync(
             Arg.Is<string>(key => key.Contains("imageserver/tiles", StringComparison.Ordinal)),
             Arg.Any<CancellationToken>());
