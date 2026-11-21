@@ -65,7 +65,10 @@ COPY src/Honua.Worker.Gdal/packages.lock.json src/Honua.Worker.Gdal/
 COPY eng/ eng/
 
 # Restore the worker project and keep the NuGet cache mounted for publish.
-# The worker is framework-dependent and NOT AOT, so no RuntimeIdentifier is set.
+# The worker is framework-dependent and NOT AOT. It is still published for the
+# image's own runtime identifier: without one, NuGet copies every package's
+# runtimes/<rid>/native tree (win, osx, s390x, ...), about 200 MB no container
+# can load. The project's RuntimeIdentifiers keep the locked restore valid.
 RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
     --mount=type=secret,id=github_actor \
     --mount=type=secret,id=github_token \
@@ -79,20 +82,29 @@ RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
 COPY . .
 
 ARG CONFIGURATION=Release
+ARG TARGETARCH
 RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
     --mount=type=secret,id=github_actor \
     --mount=type=secret,id=github_token \
     sh scripts/docker/restore-dotnet-with-github-packages.sh \
       src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj --locked-mode \
+ && case "${TARGETARCH:-amd64}" in \
+      amd64) rid=linux-x64 ;; \
+      arm64) rid=linux-arm64 ;; \
+      *) echo "unsupported TARGETARCH '${TARGETARCH}'" >&2; exit 1 ;; \
+    esac \
  && dotnet publish src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj \
       --configuration "${CONFIGURATION}" \
       --no-restore \
+      --runtime "${rid}" \
       --self-contained false \
       -p:PublishAot=false \
       -p:DebugType=None \
       -p:DebugSymbols=false \
       --output /app \
- && find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
+ && find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete \
+ && foreign="$(find /app/runtimes -mindepth 1 -maxdepth 1 ! -name "${rid}" ! -name linux ! -name unix 2>/dev/null || true)" \
+ && if [ -n "${foreign}" ]; then echo "worker publish shipped other platforms' runtimes: ${foreign}" >&2; exit 1; fi
 
 # ---------------------------------------------------------------------------
 # PDAL build stage: compile the pinned upstream source against the exact GDAL

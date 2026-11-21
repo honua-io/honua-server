@@ -1435,6 +1435,78 @@
           "Microsoft.IdentityModel.Tokens": "8.19.2"
         }
       }
+    },
+    "net11.0/linux-arm64": {
+      "librdkafka.redist": {
+        "type": "Transitive",
+        "resolved": "2.14.2",
+        "contentHash": "8GRCTOKqCfwAyMSWmJ8c/wJc4PYm1lXAnRUWKQhaUtkz+JJUnDygxwtWPDqBMgS2YMxcrkaubFPTkhddt3RPOQ=="
+      },
+      "SkiaSharp.NativeAssets.macOS": {
+        "type": "Transitive",
+        "resolved": "3.119.2",
+        "contentHash": "I2jMGQ/26KOnc6iAoR+Mxh9vSJJ2vioJyj9aJ9OL5yEZyXothXJxf4vBMqnSaiXMqiiU1scG7KqtT0CLkmMmWA=="
+      },
+      "SkiaSharp.NativeAssets.Win32": {
+        "type": "Transitive",
+        "resolved": "3.119.2",
+        "contentHash": "uYe+da6+GXVgPKkCopzvIZ83DmC8SXXKeUAPrNcztJNsg0SjPQAxfKMOPZqmVjbzznrq/QUIjLUlJSZV/e0IPA=="
+      },
+      "System.Diagnostics.EventLog": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "lKore9DXE1q8o6ss6/M7++xBpn2FMS0axaAypBspYLqY5OT1ZRPLzFGwF18l61aXfXTPpwkx5tYh4zMUHoAv/g=="
+      },
+      "System.Security.Cryptography.ProtectedData": {
+        "type": "Transitive",
+        "resolved": "4.5.0",
+        "contentHash": "wLBKzFnDCxP12VL9ANydSYhk59fC4cvOr9ypYQLPnAj48NQIhqnjdD2yhP8yEKyBJEjERWS9DisKL7rX5eU25Q=="
+      },
+      "ParquetSharp": {
+        "type": "CentralTransitive",
+        "requested": "[23.0.0.1, )",
+        "resolved": "23.0.0.1",
+        "contentHash": "3EeIrHrhePqIhlYYdH9skkxDlKtu4dDR73dqh+9mx4XIRvm+xxFpR6XgvjLSecJ3J7TbfEqrx7SKOdeqf++3dQ==",
+        "dependencies": {
+          "Apache.Arrow": "18.0.0"
+        }
+      }
+    },
+    "net11.0/linux-x64": {
+      "librdkafka.redist": {
+        "type": "Transitive",
+        "resolved": "2.14.2",
+        "contentHash": "8GRCTOKqCfwAyMSWmJ8c/wJc4PYm1lXAnRUWKQhaUtkz+JJUnDygxwtWPDqBMgS2YMxcrkaubFPTkhddt3RPOQ=="
+      },
+      "SkiaSharp.NativeAssets.macOS": {
+        "type": "Transitive",
+        "resolved": "3.119.2",
+        "contentHash": "I2jMGQ/26KOnc6iAoR+Mxh9vSJJ2vioJyj9aJ9OL5yEZyXothXJxf4vBMqnSaiXMqiiU1scG7KqtT0CLkmMmWA=="
+      },
+      "SkiaSharp.NativeAssets.Win32": {
+        "type": "Transitive",
+        "resolved": "3.119.2",
+        "contentHash": "uYe+da6+GXVgPKkCopzvIZ83DmC8SXXKeUAPrNcztJNsg0SjPQAxfKMOPZqmVjbzznrq/QUIjLUlJSZV/e0IPA=="
+      },
+      "System.Diagnostics.EventLog": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "lKore9DXE1q8o6ss6/M7++xBpn2FMS0axaAypBspYLqY5OT1ZRPLzFGwF18l61aXfXTPpwkx5tYh4zMUHoAv/g=="
+      },
+      "System.Security.Cryptography.ProtectedData": {
+        "type": "Transitive",
+        "resolved": "4.5.0",
+        "contentHash": "wLBKzFnDCxP12VL9ANydSYhk59fC4cvOr9ypYQLPnAj48NQIhqnjdD2yhP8yEKyBJEjERWS9DisKL7rX5eU25Q=="
+      },
+      "ParquetSharp": {
+        "type": "CentralTransitive",
+        "requested": "[23.0.0.1, )",
+        "resolved": "23.0.0.1",
+        "contentHash": "3EeIrHrhePqIhlYYdH9skkxDlKtu4dDR73dqh+9mx4XIRvm+xxFpR6XgvjLSecJ3J7TbfEqrx7SKOdeqf++3dQ==",
+        "dependencies": {
+          "Apache.Arrow": "18.0.0"
+        }
+      }
     }
   }
 }

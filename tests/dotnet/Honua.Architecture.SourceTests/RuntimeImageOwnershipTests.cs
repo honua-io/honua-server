@@ -48,6 +48,23 @@ public sealed partial class RuntimeImageOwnershipTests
     }
 
     [ArchitectureTest]
+    public void GdalWorkerImage_PublishesOnlyItsOwnRuntimeIdentifier()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var dockerfile = File.ReadAllText(Path.Join(repositoryRoot, "docker/worker-gdal/Dockerfile"));
+        var project = File.ReadAllText(Path.Join(repositoryRoot, "src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj"));
+
+        dockerfile.Should().Contain(
+            "--runtime \"${rid}\"",
+            "a publish without a runtime identifier ships every platform's native libraries");
+        dockerfile.Should().Contain("amd64) rid=linux-x64 ;;");
+        dockerfile.Should().Contain("worker publish shipped other platforms' runtimes");
+        project.Should().Contain(
+            "<RuntimeIdentifiers>linux-x64;linux-arm64</RuntimeIdentifiers>",
+            "the locked restore needs the published runtime identifiers' package graphs");
+    }
+
+    [ArchitectureTest]
     public void TrivyIgnoreEntries_CarryAnExpiry()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
