@@ -23,7 +23,7 @@ All admin endpoints require authentication except the sign-in endpoints under `/
 | Form packages and submissions | `/api/v1/admin/forms`, `/api/v1/forms` | [Forms](forms.md) |
 | Deploy operations and rollback | `/api/v1/admin/deploy` | [Upgrade and rollback](../../guides/deploy/upgrade-and-rollback.md) |
 | Operations, observability, customer alerts (Preview) | `/api/v1/admin/observability`, `/api/v1/admin/alerts` | [Monitoring](../../guides/deploy/monitoring.md), [Operating Honua](../../guides/operate/README.md) |
-| 3D scene registry and generation | `/api/v1/admin/scenes` | [Publish 3D scenes](../../guides/publish/publish-3d-scenes.md) |
+| 3D scene registry and generation (Experimental; opt-in via `serve.i3s-scene`, returns `404` when disabled) | `/api/v1/admin/scenes` | [Publish 3D scenes](../../guides/publish/publish-3d-scenes.md) |
 | Runtime configuration reference | `/api/v1/admin/config` | [Environment variables](../configuration/environment-variables.md) |
 
 Console control-plane surfaces (`/api/v1/console/*`, including workflow packages) use the same admin authorization posture.
@@ -46,7 +46,7 @@ Each capability record reports:
 | `available` | Usable for this request after the deployment profile, configuration, environment, authentication, license, and policy checks. A configured profile makes a capability that maps to a route unavailable when that route's key is not enabled. A capability with no mapped route is unchanged. |
 | `reasonCode` | Present only when unavailable; stable values include `unsupported`, `experimental-disabled`, `disabled-by-configuration`, `deployment-profile-excluded`, `protocol-profile-excluded`, `dependency-unavailable`, `durable-runner-required`, `license-required`, `entitlement-inactive`, `insufficient-policy`, `environment-unavailable`, and `workspace-scope-required`. Preview surfaces are opt-in through `Capabilities:Experimental:<capability-id>:Enabled=true`. |
 | `lifecycle` | Product lifecycle classification. Customer alerting (`alerts.geofence`) and SensorThings report `preview`, and realtime feature streams report `experimental`, for 2026.1; alerting qualification evidence does not promote it to GA. |
-| `optInRequired` | Whether the capability must be explicitly enabled. Preview and Experimental realtime capabilities remain declared but unavailable until opted in (reporting `disabled-by-configuration` on the default manifest path, or `experimental-disabled` when `Capabilities:ManifestFromRegistry=true`). |
+| `optInRequired` | Whether the capability must be explicitly enabled. Preview and Experimental realtime capabilities remain declared but unavailable until opted in (reporting `experimental-disabled` with the shipped `Capabilities:ManifestFromRegistry=true` default, or `disabled-by-configuration` when `Capabilities:ManifestFromRegistry=false`). |
 
 The document also carries `transports` (REST, GeoServices, OGC, OData, STAC, tiles, gRPC, MCP, QGIS, mTLS), `limits` (query, analysis, upload, and job limits), and `policies` (license and entitlement state). The manifest is informational only — operation endpoints remain the source of truth for authorization and resource checks. Do not persist it as an authorization cache.
 
