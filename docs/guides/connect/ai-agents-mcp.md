@@ -99,8 +99,9 @@ public Service leaf name, independent of the logical name and display title.
 The `configure` view exposes the administrative connection, import, publishing, access-policy and styling
 tools; Studio authoring and publication use the `setup` view (see [workflow views](#workflow-views-bounded-discovery)). A stock client needs no JSON-RPC `_meta`: keep `?view=configure`
 on the URL, or send `X-Honua-Workflow-View: configure` on each request. Use your
-deployment's port; the packaged quickstart exposes management MCP at
-`http://localhost:18082/mcp?view=configure`. View selection changes discovery only;
+deployment's port; in the packaged quickstart, admin work goes to the serving instance at
+`http://localhost:18080/mcp?view=configure`. The management endpoint on port 18082 is a separate
+instance for release status, upgrades and rollback; use it with `?view=operate`. View selection changes discovery only;
 every tool call still requires its usual authorization.
 
 **Agent API key.** In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `POST /api/v1/admin/api-keys` with this body:
