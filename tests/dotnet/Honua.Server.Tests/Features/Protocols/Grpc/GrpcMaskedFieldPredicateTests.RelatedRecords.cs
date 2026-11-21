@@ -28,7 +28,8 @@ public sealed partial class GrpcMaskedFieldPredicateTests
         var store = (IRelationshipStore)_featureReader;
         store.QueryRelatedPageAsync(0, Arg.Any<RelatedPageQuery>(), Arg.Any<CancellationToken>())
             .Returns(new RelatedFeaturePage([new(1, Feature.Create(41, null,
-                ImmutableDictionary<string, object?>.Empty.Add("name", "parent").Add("secret", "hidden")))]) { HasMore = true },
+                ImmutableDictionary<string, object?>.Empty.Add("name", "parent").Add("secret", "hidden")))])
+            { HasMore = true },
                 new RelatedFeaturePage([new(1, Feature.Create(42, null))]) { HasMore = true },
                 new RelatedFeaturePage([new(2, null)]));
         var request = RelatedRequest();
@@ -169,7 +170,10 @@ public sealed partial class GrpcMaskedFieldPredicateTests
     {
         var request = new Proto.QueryRelatedRecordsRequest
         {
-            ServiceId = "test", LayerId = 0, RelationshipId = 7, PageSize = 1
+            ServiceId = "test",
+            LayerId = 0,
+            RelationshipId = 7,
+            PageSize = 1
         };
         request.ObjectIds.AddRange([1L, 2L]);
         return request;

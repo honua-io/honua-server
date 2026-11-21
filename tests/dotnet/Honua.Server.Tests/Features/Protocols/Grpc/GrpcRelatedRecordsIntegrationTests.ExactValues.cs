@@ -34,8 +34,12 @@ public sealed partial class GrpcRelatedRecordsIntegrationTests
 
         var response = await _client.QueryRelatedRecordsAsync(new Proto.QueryRelatedRecordsRequest
         {
-            ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId,
-            RelationshipId = 77, ObjectIds = { added.ObjectId }, OutFields = { "EXACT_VALUE" }, ReturnGeometry = false
+            ServiceId = WebAppFixture.TestServiceId,
+            LayerId = WebAppFixture.TestLayerId,
+            RelationshipId = 77,
+            ObjectIds = { added.ObjectId },
+            OutFields = { "EXACT_VALUE" },
+            ReturnGeometry = false
         }, _headers);
 
         var child = response.Groups.Should().ContainSingle().Subject.Features.Should().ContainSingle().Subject;

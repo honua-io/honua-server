@@ -68,8 +68,10 @@ public sealed partial class GrpcRelatedRecordsIntegrationTests : IAsyncLifetime
     {
         var request = new Proto.QueryRelatedRecordsRequest
         {
-            ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId,
-            RelationshipId = 77, PageSize = pageSize
+            ServiceId = WebAppFixture.TestServiceId,
+            LayerId = WebAppFixture.TestLayerId,
+            RelationshipId = 77,
+            PageSize = pageSize
         };
         request.ObjectIds.AddRange(Enumerable.Range(1, originCount).Select(id => (long)id));
 
@@ -86,8 +88,11 @@ public sealed partial class GrpcRelatedRecordsIntegrationTests : IAsyncLifetime
     {
         var query = new Proto.QueryFeaturesRequest
         {
-            ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId,
-            OutFields = { "category" }, ReturnGeometry = true, OutSr = new Proto.SpatialReference { Wkid = 3857 }
+            ServiceId = WebAppFixture.TestServiceId,
+            LayerId = WebAppFixture.TestLayerId,
+            OutFields = { "category" },
+            ReturnGeometry = true,
+            OutSr = new Proto.SpatialReference { Wkid = 3857 }
         };
         var seeded = (await _client!.QueryFeaturesAsync(query, _headers)).Features;
         seeded.Should().HaveCountGreaterThan(1);
@@ -97,8 +102,12 @@ public sealed partial class GrpcRelatedRecordsIntegrationTests : IAsyncLifetime
         expected.Length.Should().BeGreaterThan(seeded.Count);
         var request = new Proto.QueryRelatedRecordsRequest
         {
-            ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId,
-            RelationshipId = 77, PageSize = 1, ReturnGeometry = true, OutFields = { "category" },
+            ServiceId = WebAppFixture.TestServiceId,
+            LayerId = WebAppFixture.TestLayerId,
+            RelationshipId = 77,
+            PageSize = 1,
+            ReturnGeometry = true,
+            OutFields = { "category" },
             OutSr = new Proto.SpatialReference { Wkid = 3857 }
         };
         request.ObjectIds.AddRange(seeded.Select(feature => feature.Id));
@@ -131,7 +140,8 @@ public sealed partial class GrpcRelatedRecordsIntegrationTests : IAsyncLifetime
         await ConfigureGlobalIdAsync();
         var add = new Proto.ApplyEditsRequest
         {
-            ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId,
+            ServiceId = WebAppFixture.TestServiceId,
+            LayerId = WebAppFixture.TestLayerId,
             Adds = { new Proto.Feature
             {
                 Attributes =
@@ -147,8 +157,12 @@ public sealed partial class GrpcRelatedRecordsIntegrationTests : IAsyncLifetime
         Guid.TryParseExact(added.GlobalId, "D", out _).Should().BeTrue();
         var request = new Proto.QueryRelatedRecordsRequest
         {
-            ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId,
-            RelationshipId = 77, ObjectIds = { added.ObjectId }, OutFields = { "NAME" }, ReturnGeometry = false
+            ServiceId = WebAppFixture.TestServiceId,
+            LayerId = WebAppFixture.TestLayerId,
+            RelationshipId = 77,
+            ObjectIds = { added.ObjectId },
+            OutFields = { "NAME" },
+            ReturnGeometry = false
         };
 
         var response = await _client.QueryRelatedRecordsAsync(request, _headers);
@@ -166,8 +180,12 @@ public sealed partial class GrpcRelatedRecordsIntegrationTests : IAsyncLifetime
     {
         var request = new Proto.QueryRelatedRecordsRequest
         {
-            ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId,
-            RelationshipId = 77, PageSize = 10, Where = "name = 'absent-related-row'", ReturnGeometry = false
+            ServiceId = WebAppFixture.TestServiceId,
+            LayerId = WebAppFixture.TestLayerId,
+            RelationshipId = 77,
+            PageSize = 10,
+            Where = "name = 'absent-related-row'",
+            ReturnGeometry = false
         };
         request.ObjectIds.AddRange([1L, 2L]);
 

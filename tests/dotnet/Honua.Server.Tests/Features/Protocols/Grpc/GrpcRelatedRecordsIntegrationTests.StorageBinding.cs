@@ -40,8 +40,11 @@ public sealed partial class GrpcRelatedRecordsIntegrationTests
 
             Func<Task> query = async () => await _client!.QueryRelatedRecordsAsync(new Proto.QueryRelatedRecordsRequest
             {
-                ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId,
-                RelationshipId = 77, ObjectIds = { 1L }, ReturnGeometry = false
+                ServiceId = WebAppFixture.TestServiceId,
+                LayerId = WebAppFixture.TestLayerId,
+                RelationshipId = 77,
+                ObjectIds = { 1L },
+                ReturnGeometry = false
             }, _headers);
 
             var failure = await query.Should().ThrowAsync<RpcException>();

@@ -34,7 +34,8 @@ public sealed partial class GrpcServiceEditsIntegrationTests
         var edit = new Proto.ApplyServiceEditsRequest { ServiceId = WebAppFixture.TestServiceId, RollbackOnFailure = true };
         edit.Edits.Add(new Proto.ServiceLayerEdits
         {
-            LayerId = 0, UseGlobalIds = true,
+            LayerId = 0,
+            UseGlobalIds = true,
             Updates = { new Proto.Feature { GlobalId = add.Edits[0].Adds[0].GlobalId.ToUpperInvariant(),
                 Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "global ID update" } } } }
         });
