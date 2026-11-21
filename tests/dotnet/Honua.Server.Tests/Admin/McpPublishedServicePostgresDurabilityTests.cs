@@ -24,6 +24,7 @@ using Honua.Infrastructure.MultiTenancy;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Operations;
 using Honua.Server.Startup;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -224,7 +225,7 @@ public sealed partial class McpPublishedServicePostgresDurabilityTests : IAsyncL
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task PublishTwice_QueuedCompletionAndHostRestart_ReadPersistedGraphAtExactUri()
     {
-        using var errors = new McpPublicationErrorCapture();
+        using var errors = new ErrorLogCapture();
         _fixture.Services.GetRequiredService<ILoggerFactory>().AddProvider(errors);
         (await CountSourceRowsAsync(_firstTable)).Should().Be(1);
         (await CountSourceRowsAsync(_secondTable)).Should().Be(2);
