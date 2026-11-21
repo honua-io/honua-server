@@ -29,6 +29,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Task = System.Threading.Tasks.Task;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
