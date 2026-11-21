@@ -101,10 +101,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def _send(self, status: int, headers: list[tuple[str, str]], body: bytes) -> None:
         self.send_response_only(status)
+        upstream_length = next((value for name, value in headers if name.lower() == "content-length"), None)
         for name, value in headers:
             if name.lower() not in HOP_BY_HOP and name.lower() != "content-length":
                 self.send_header(name, value)
-        self.send_header("Content-Length", str(len(body)))
+        content_length = upstream_length if self.command == "HEAD" and upstream_length is not None else str(len(body))
+        self.send_header("Content-Length", content_length)
         self.send_header("Connection", "close")
         self.end_headers()
         if self.command != "HEAD":
