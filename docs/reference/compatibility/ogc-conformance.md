@@ -25,10 +25,11 @@ the canonical passed/total counts and pass rate per suite, including the WFS
   the seeded fixture. Any spec-compliant OAPIF client (QGIS, GDAL/OGR, OpenLayers)
   can discover collections, page items, filter with CQL2, and request alternate CRSs.
 - **OGC API Tiles** — vector and raster tile delivery against the seeded tile matrix
-  sets; 7 conformance classes.
+  sets. `GET /ogc/tiles/conformance` declares 13 conformance classes: 8 from
+  OGC API - Tiles Part 1 and 5 from OGC API - Common.
 - **OGC API - EDR** — Preview surface in release 2026.1. Its remaining CRS,
   temporal-selection, output-format, and MULTIPOINT coordinate behavior is deferred
-  to release 2026.2 and is not a GA conformance claim.
+  to release 2027.1 and is not a GA conformance claim.
 - **WFS 1.0 / 1.1 / 2.0** — the `basic` profile: capabilities, DescribeFeatureType,
   GetFeature, spatial/temporal filters, paging, and managed stored queries. The
   separate WFS 2.0 Transactional leg covers Transaction. LockFeature is not
@@ -65,9 +66,13 @@ Each OGC API surface declares its implemented conformance classes at runtime:
 | OGC API Styles | `GET /ogc/styles/conformance` |
 | STAC API | `GET /stac/conformance` |
 
-The runtime OpenAPI documents carry the same CITE totals in an
-`x-honua-cite-compliance` vendor extension on the `info` object, and a build gate keeps
-them in step with the CITE status page.
+Five runtime OpenAPI documents carry the CITE totals in an
+`x-honua-cite-compliance` vendor extension on the `info` object: `/openapi.json` and
+`/ogc/{tiles,maps,processes,coverages}/openapi.json`. The Records, Styles and STAC
+OpenAPI documents do not carry it. A build gate keeps the suite totals in those five
+documents in step with the [CITE status page](../../cite-status.md). The gate does not
+check the extension's `lastEvidenceRun` date or evidence run links, so read the date
+and run of the current evidence from the CITE status page.
 
 ## API versioning in one paragraph
 

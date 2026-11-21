@@ -25,6 +25,11 @@ canonical seed service is open). Clients hydrate service metadata with `GET` or 
 
 All routes resolve the service by name and return **404** for an unknown service.
 
+Error statuses in this table (400, 404, 422) are GeoServices error codes. The server sends them
+as HTTP 200 with a JSON `error` object whose `code` carries the status, as on the other
+GeoServices REST endpoints, including the tile and resource routes. Read `error.code`, not the
+HTTP status. An empty tile is the exception: it is a plain HTTP 204.
+
 ## Design decisions
 
 These decisions were ratified under epic **#1776** (VectorTileServer) and its child tickets:

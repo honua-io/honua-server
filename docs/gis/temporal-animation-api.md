@@ -69,6 +69,10 @@ interval rules, subject to the WMTS unknown-parameter exception above.
 
 ## Endpoints
 
+The GeoServices REST endpoints below report errors (400, 402, 404) as HTTP 200
+with a JSON `error` object whose `code` carries the status; read `error.code`,
+not the HTTP status. OGC API Features (`datetime=`) returns the status itself.
+
 All paths below are relative to a published GeoServices FeatureServer layer
 (`/rest/services/{serviceId}/FeatureServer/{layerId}`):
 
