@@ -73,7 +73,8 @@ internal static partial class ImportEndpoints
             .WithTags("Import")
             .RequireAdminAuthorization();
 
-        MapImportPreviewAndUploadRoutes(v1Group, definitions);
+        MapImportPreviewRoutes(v1Group, definitions);
+        MapImportUploadRoutes(v1Group, definitions);
         MapImportJobAndStatusRoutes(v1Group, definitions);
         MapCoordinateSystemRoutes(app);
 
@@ -85,7 +86,7 @@ internal static partial class ImportEndpoints
         string operationId) =>
         AdminHttpOperationBinding.ForDefinition(definitions[operationId], "/import");
 
-    private static void MapImportPreviewAndUploadRoutes(
+    private static void MapImportPreviewRoutes(
         IEndpointRouteBuilder group,
         Dictionary<string, IAdminHttpOperationDefinition> definitions)
     {
@@ -113,7 +114,12 @@ internal static partial class ImportEndpoints
         _ = group.MapMethods(previewUrl.RoutePattern, NonPostMethods, HandlePostMethodNotAllowed)
             .WithName("PreviewFileFromUrlV1MethodNotAllowed")
             .WithSummary("Preview geospatial file contents from a public object URL method not allowed");
+    }
 
+    private static void MapImportUploadRoutes(
+        IEndpointRouteBuilder group,
+        Dictionary<string, IAdminHttpOperationDefinition> definitions)
+    {
         var upload = BindImportOperation(definitions, "admin.import.upload");
         _ = AdminHttpOperationBinding.ApplyOperationMetadata(
             group.MapMethods(upload.RoutePattern, upload.Methods, HandleImportFile), upload.Definition)
