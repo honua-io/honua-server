@@ -87,13 +87,13 @@ public sealed class OpsAutonomySettingsWriterTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    public async Task SetAsync_AuditCancelledAfterRestoreCommit_ReassertsDurableStop()
+    public async Task SetAsync_AuditCancelledDuringRestore_KeepsDurableStop()
     {
         using var request = new CancellationTokenSource();
         var audit = Substitute.For<IAuditLog>();
+        CancelRequestWhenAuditRecords(audit, request, "\"current\":{\"killSwitchEnabled\":false}");
         var store = new PostgresOpsAutonomyPolicyStore(new TestDatabaseConnectionProvider(_postgres.DataSource), audit);
         await store.SetSettingsAsync(new OpsAutonomySettings { KillSwitchEnabled = true }, "operator");
-        CancelRequestWhenAuditRecords(audit, request, "false");
         var watchdog = new RecordingWatchdog();
         var writer = new OpsAutonomySettingsWriter(_postgres.DataSource, store, watchdog);
 
@@ -104,18 +104,20 @@ public sealed class OpsAutonomySettingsWriterTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    public async Task SetAsync_AuditCancelledAfterStopCommit_StillSuspendsWatchdog()
+    public async Task SetAsync_AuditCancelledDuringStop_RollsBackAndStillSuspendsWatchdog()
     {
         using var request = new CancellationTokenSource();
         var audit = Substitute.For<IAuditLog>();
         var store = new PostgresOpsAutonomyPolicyStore(new TestDatabaseConnectionProvider(_postgres.DataSource), audit);
-        CancelRequestWhenAuditRecords(audit, request, "true");
+        CancelRequestWhenAuditRecords(audit, request, "\"current\":{\"killSwitchEnabled\":true}");
         var watchdog = new RecordingWatchdog();
         var writer = new OpsAutonomySettingsWriter(_postgres.DataSource, store, watchdog);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => writer.SetAsync(StopChange(), request.Token));
 
-        Assert.True((await store.GetSettingsAsync()).KillSwitchEnabled);
+        // The audit is written inside the settings transaction: without it the stop is not committed,
+        // and the watchdog is still stopped in this process.
+        Assert.False((await store.GetSettingsAsync()).KillSwitchEnabled);
         Assert.Equal(1, watchdog.SuspendCalls);
     }
 
