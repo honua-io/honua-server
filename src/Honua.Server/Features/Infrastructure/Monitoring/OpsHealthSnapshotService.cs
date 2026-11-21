@@ -59,7 +59,9 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
     public async Task<OpsHealthSnapshotResponse> GetAsync(CancellationToken cancellationToken = default)
     {
         var healthReport = await _healthCheckService.CheckHealthAsync(cancellationToken).ConfigureAwait(false);
-        var deploySnapshot = await _deployProbe.ProbeAsync(cancellationToken).ConfigureAwait(false);
+        var deploySnapshot = await _deployProbe
+            .ProbeAsync(DeployPreflightProbe.BackgroundMigrationPlanMaxAge, cancellationToken)
+            .ConfigureAwait(false);
         var gpQueue = await BuildGpQueueViewAsync(cancellationToken).ConfigureAwait(false);
         var healthMetrics = _metricsCollector.GetHealthMetrics();
         var servingLatencyResult = await BuildServingLatencyViewAsync(cancellationToken).ConfigureAwait(false);

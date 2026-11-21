@@ -10,6 +10,7 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.HealthCheck;
 using Honua.Core.Features.Infrastructure.Health;
 using Honua.Infrastructure.Monitoring;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -117,6 +118,62 @@ public sealed class DeployPreflightProbeTests
         snapshot.Message.Should().Contain("contract-phase");
     }
 
+    [UnitTest]
+    public async Task ProbeAsync_BackgroundCallers_ReuseAFreshPlanUntilItAgesOrMigrationsRun()
+    {
+        var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider();
+        var migrationRunner = new CapturingMigrationRunner();
+        var migrationState = new MigrationState();
+        migrationState.MarkSucceeded();
+        var cache = new DeployPreflightMigrationPlanCache(clock);
+        var maxAge = DeployPreflightProbe.BackgroundMigrationPlanMaxAge;
+
+        await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync(maxAge);
+        await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync(maxAge);
+        migrationRunner.PlanCount.Should().Be(1, "a second scope within the max age reuses the plan");
+
+        clock.Advance(maxAge + TimeSpan.FromSeconds(1));
+        await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync(maxAge);
+        migrationRunner.PlanCount.Should().Be(2, "an aged plan is read again");
+
+        migrationState.MarkRunning();
+        await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync(maxAge);
+        migrationRunner.PlanCount.Should().Be(3, "a migration run by this process invalidates the plan");
+    }
+
+    [UnitTest]
+    public async Task ProbeAsync_DeployDecisions_AlwaysReadAFreshPlan()
+    {
+        var migrationRunner = new CapturingMigrationRunner();
+        var migrationState = new MigrationState();
+        migrationState.MarkSucceeded();
+        var cache = new DeployPreflightMigrationPlanCache(new Microsoft.Extensions.Time.Testing.FakeTimeProvider());
+
+        await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync(DeployPreflightProbe.BackgroundMigrationPlanMaxAge);
+        await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync();
+        await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync();
+
+        migrationRunner.PlanCount.Should().Be(3);
+    }
+
+    private static DeployPreflightProbe CachingProbe(
+        IDatabaseMigrationRunner migrationRunner,
+        MigrationState migrationState,
+        DeployPreflightMigrationPlanCache cache)
+        => new(
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:DefaultConnection"] = "Host=db;Database=honua;Username=test;Password=secret"
+                })
+                .Build(),
+            new StubReadinessCheckService(),
+            migrationRunner,
+            migrationState,
+            new DatabaseCompatibilityState(),
+            NullLogger<DeployPreflightProbe>.Instance,
+            migrationPlanCache: cache);
+
     private sealed class StubReadinessCheckService : IReadinessCheckService
     {
         public Task<ReadinessResult> CheckReadinessAsync(CancellationToken cancellationToken = default)
@@ -136,9 +193,12 @@ public sealed class DeployPreflightProbeTests
     {
         public string? LastConnectionString { get; private set; }
 
+        public int PlanCount { get; private set; }
+
         public Task<DatabaseMigrationPlan> PlanMigrationsAsync(string connectionString, Assembly migrationsAssembly, CancellationToken cancellationToken = default)
         {
             LastConnectionString = connectionString;
+            PlanCount++;
             return Task.FromResult(DatabaseMigrationPlan.Succeeded());
         }
 

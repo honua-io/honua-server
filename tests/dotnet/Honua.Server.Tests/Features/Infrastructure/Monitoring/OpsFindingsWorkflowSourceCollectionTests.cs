@@ -276,14 +276,16 @@ internal static class WorkflowSourceFixture
         IOperationGateway? gateway = null)
     {
         var probe = Substitute.For<IDeployPreflightProbe>();
-        probe.ProbeAsync(Arg.Any<CancellationToken>()).Returns(new DeployPreflightSnapshot
+        var ready = new DeployPreflightSnapshot
         {
             Status = "ready",
             ReadyForCoordinatedDeploy = true,
             Message = "ready",
             Readiness = new DeployPreflightReadinessSnapshot { IsReady = true, StatusCode = 200, Message = "ok" },
             Migration = new DeployPreflightMigrationSnapshot { LifecycleStatus = "succeeded", PlanAvailable = true },
-        });
+        };
+        probe.ProbeAsync(Arg.Any<CancellationToken>()).Returns(ready);
+        probe.ProbeAsync(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(ready);
         return new OpsFindingsService(
             new StaticOptionsMonitor<OpsFindingsOptions>(new OpsFindingsOptions()),
             new StaticOptionsMonitor<ControlPlaneOptions>(controlPlane),
