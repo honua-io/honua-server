@@ -183,7 +183,11 @@ provider or correct its configuration, then allow the five-minute cache to expir
 Release checks compare the running assembly version with the public latest
 stable release, including numeric `rc.N` ordering. A missing release produces no
 notice; a failed release-feed read produces a sanitized `self-check-unavailable`
-warning until the next daily attempt. Review release notes before approving an
+warning and is retried after five minutes, then 10, 20 and 40 minutes and hourly
+after that; a successful retry clears it. Each
+failed scheduled check writes a warning log, event ID 9499, naming the check and
+the failure class (for example `HTTP 503` or a DNS or connection error) without
+the exception message. Review release notes before approving an
 upgrade. None of these findings includes an executable recommended action.
 They do not by themselves prove inbox or email delivery: that requires deployment
 notification wiring and live validation.
