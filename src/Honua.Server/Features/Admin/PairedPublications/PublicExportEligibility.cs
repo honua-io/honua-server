@@ -17,6 +17,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.PairedPublications;
 
+internal sealed record PublicExportLayerTarget(string ServiceId, string ResourceId);
+
 internal sealed record PublicExportEligibilityResult
 {
     public bool IsEligible { get; init; }
@@ -47,21 +49,21 @@ internal sealed class PublicExportEligibility(
 
     public Task<PublicExportEligibilityResult> EvaluateSnapshotAsync(
         MetadataV2GraphSnapshot snapshot,
-        string serviceId,
-        string resourceId,
+        PublicExportLayerTarget target,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        if (!snapshot.Index.ServicesById.TryGetValue(serviceId, out var service) ||
-            !snapshot.Index.ResourcesById.TryGetValue(resourceId, out var resource))
+        ArgumentNullException.ThrowIfNull(target);
+        if (!snapshot.Index.ServicesById.TryGetValue(target.ServiceId, out var service) ||
+            !snapshot.Index.ResourcesById.TryGetValue(target.ResourceId, out var resource))
         {
             return Task.FromResult(PublicExportEligibilityResult.Ineligible(ReasonNotPubliclyPublished));
         }
 
         var publication = snapshot.Graph.Publications.FirstOrDefault(candidate =>
             snapshot.IsRoutable(candidate) &&
-            string.Equals(candidate.ServiceId, serviceId, StringComparison.Ordinal) &&
-            string.Equals(candidate.ResourceId, resourceId, StringComparison.Ordinal));
+            string.Equals(candidate.ServiceId, target.ServiceId, StringComparison.Ordinal) &&
+            string.Equals(candidate.ResourceId, target.ResourceId, StringComparison.Ordinal));
         if (publication is null ||
             !MetadataV2TenantVisibility.IsVisibleToTenant(publication, resource, service, requestTenant: null))
         {

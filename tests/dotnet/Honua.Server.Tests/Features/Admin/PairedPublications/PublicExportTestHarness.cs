@@ -41,106 +41,6 @@ internal sealed record PromotionScenario
     public MetadataV2GraphSnapshot[]? CurrentSnapshots { get; init; }
 }
 
-internal sealed class FakePublicStorage
-{
-    private bool _failedOnce;
-    private readonly string? _failOnKeyOnce;
-
-    public FakePublicStorage(string? failOnKeyOnce = null)
-    {
-        _failOnKeyOnce = failOnKeyOnce;
-        Storage = BuildMock();
-    }
-
-    public Mock<ICloudFileStorage> Storage { get; }
-    public List<(string Key, StoredObjectCachePolicy CachePolicy)> Writes { get; } = [];
-    public Dictionary<string, byte[]> Objects { get; } = new(StringComparer.Ordinal);
-    public Dictionary<string, ImmutableDictionary<string, string>> Metadata { get; } = new(StringComparer.Ordinal);
-
-    private Mock<ICloudFileStorage> BuildMock()
-    {
-        var mock = new Mock<ICloudFileStorage>();
-        mock.Setup(s => s.GetMetadataAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string key, CancellationToken _) => CreateCloudFileOrNull(key));
-        mock.Setup(s => s.ListFilesAsync(It.IsAny<string?>(), It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string? prefix, int _, bool _, CancellationToken _) => ListByPrefix(prefix));
-        mock.Setup(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string key, CancellationToken _) => Objects.Remove(key));
-        mock.Setup(s => s.ExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string key, CancellationToken _) => Objects.ContainsKey(key));
-        mock.Setup(s => s.UploadAsync(It.IsAny<FileUploadRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((FileUploadRequest request, CancellationToken _) => HandleUpload(request));
-        return mock;
-    }
-
-    private CloudFile? CreateCloudFileOrNull(string key)
-        => Objects.TryGetValue(key, out var bytes)
-            ? new CloudFile
-            {
-                FileId = key, FileName = Path.GetFileName(key), StoragePath = key,
-                ContentType = "application/octet-stream", SizeBytes = bytes.Length,
-                UploadedAt = DateTimeOffset.UtcNow, Provider = CloudStorageProvider.AwsS3,
-                Metadata = Metadata.TryGetValue(key, out var meta) ? meta : ImmutableDictionary<string, string>.Empty
-            }
-            : null;
-
-    private CloudFile[] ListByPrefix(string? prefix)
-        => [.. Objects.Keys
-            .Where(k => prefix is null || k.StartsWith(prefix, StringComparison.Ordinal))
-            .Select(k => CreateCloudFileOrNull(k)!)];
-
-    private UploadResult HandleUpload(FileUploadRequest request)
-    {
-        var key = request.ObjectKeyOverride!;
-        if (key == _failOnKeyOnce && !_failedOnce)
-        {
-            _failedOnce = true;
-            return UploadResult.CreateFailure("Simulated crash before pointer.");
-        }
-
-        using var copy = new MemoryStream();
-        request.Content.CopyTo(copy);
-        Objects[key] = copy.ToArray();
-        Metadata[key] = request.Metadata;
-        Writes.Add((key, request.CachePolicy));
-        return UploadResult.CreateSuccess(CreateCloudFileOrNull(key)!, TimeSpan.Zero);
-    }
-}
-
-internal sealed class InMemoryPublicExportStateStore : IPublicExportStateStore
-{
-    public Dictionary<string, PromotedExportRecord> Promoted { get; } = new(StringComparer.Ordinal);
-    public Dictionary<string, PublicExportRevocationRecord> Revocations { get; } = new(StringComparer.Ordinal);
-
-    public Task SavePromotedAsync(PromotedExportRecord record, CancellationToken cancellationToken)
-    {
-        Promoted[record.PublicationId] = record;
-        return Task.CompletedTask;
-    }
-
-    public Task<PromotedExportRecord?> GetPromotedAsync(string publicationId, CancellationToken cancellationToken)
-        => Task.FromResult(Promoted.GetValueOrDefault(publicationId));
-
-    public Task DeletePromotedAsync(string publicationId, CancellationToken cancellationToken)
-    {
-        Promoted.Remove(publicationId);
-        return Task.CompletedTask;
-    }
-
-    public Task<IReadOnlyList<PromotedExportRecord>> ListPromotedAsync(CancellationToken cancellationToken)
-        => Task.FromResult<IReadOnlyList<PromotedExportRecord>>([.. Promoted.Values]);
-
-    public Task SaveRevocationAsync(PublicExportRevocationRecord record, CancellationToken cancellationToken)
-    {
-        Revocations[record.RevocationId] = record;
-        return Task.CompletedTask;
-    }
-
-    public Task<IReadOnlyList<PublicExportRevocationRecord>> ListPendingRevocationsAsync(CancellationToken cancellationToken)
-        => Task.FromResult<IReadOnlyList<PublicExportRevocationRecord>>(
-            [.. Revocations.Values.Where(r => r.State != PublicExportRevocationState.Completed)]);
-}
-
 internal sealed class PromotionHarness
 {
     public required PublicExportPromoter Promoter { get; init; }
@@ -157,15 +57,7 @@ internal sealed class PromotionHarness
         var (privateStorage, descriptor) = CreatePrivateFixture();
         var publicStorage = new FakePublicStorage(opts.FailOnPublicKeyOnce);
         var stateStore = new InMemoryPublicExportStateStore();
-        var canaryNotices = new List<PublicExportCanaryFailure>();
-
-        var canary = new Mock<IPublicExportCanary>();
-        canary.Setup(c => c.CheckAsync(It.IsAny<Uri>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(opts.CanaryResult ?? PublicExportCanaryResult.Readable);
-        var notifier = new Mock<IPublicExportOpsNotifier>();
-        notifier.Setup(n => n.NotifyCanaryFailedAsync(It.IsAny<PublicExportCanaryFailure>(), It.IsAny<CancellationToken>()))
-            .Callback<PublicExportCanaryFailure, CancellationToken>((failure, _) => canaryNotices.Add(failure))
-            .Returns(Task.CompletedTask);
+        var (canary, notifier, canaryNotices) = CreateCanaryAndNotifier(opts);
 
         IPublicPublicationDestination? destination = opts.DestinationConfigured
             ? new PublicPublicationDestination(publicStorage.Storage.Object, new Uri("https://cdn.example.test/"))
@@ -173,7 +65,7 @@ internal sealed class PromotionHarness
         var input = BuildInput(opts, privateStorage.Object, descriptor);
         var eligibility = CreateEligibility(opts);
         var graphProvider = CreateGraphProvider(input, opts.CurrentSnapshots);
-        var (revocation, invalidationRequests) = CreateRevocationService(stateStore, eligibility, graphProvider, destination, notifier.Object);
+        var (revocation, invalidationRequests) = CreateRevocationService(stateStore, eligibility, graphProvider, destination, notifier);
         var deps = new PublicExportPromoterDependencies
         {
             PrivateStorage = privateStorage.Object,
@@ -181,8 +73,8 @@ internal sealed class PromotionHarness
             GraphProvider = graphProvider,
             Revocation = revocation,
             StateStore = stateStore,
-            Canary = canary.Object,
-            OpsNotifier = notifier.Object
+            Canary = canary,
+            OpsNotifier = notifier
         };
 
         return new PromotionHarness
@@ -195,6 +87,20 @@ internal sealed class PromotionHarness
             CanaryNotices = canaryNotices,
             InvalidationRequests = invalidationRequests
         };
+    }
+
+    private static (IPublicExportCanary Canary, IPublicExportOpsNotifier Notifier, List<PublicExportCanaryFailure> Notices)
+        CreateCanaryAndNotifier(PromotionScenario opts)
+    {
+        var notices = new List<PublicExportCanaryFailure>();
+        var canary = new Mock<IPublicExportCanary>();
+        canary.Setup(c => c.CheckAsync(It.IsAny<Uri>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(opts.CanaryResult ?? PublicExportCanaryResult.Readable);
+        var notifier = new Mock<IPublicExportOpsNotifier>();
+        notifier.Setup(n => n.NotifyCanaryFailedAsync(It.IsAny<PublicExportCanaryFailure>(), It.IsAny<CancellationToken>()))
+            .Callback<PublicExportCanaryFailure, CancellationToken>((failure, _) => notices.Add(failure))
+            .Returns(Task.CompletedTask);
+        return (canary.Object, notifier.Object, notices);
     }
 
     public static MetadataV2GraphSnapshot CreateSnapshot(MetadataV2Object resource, MetadataV2Service service)
@@ -309,9 +215,13 @@ internal sealed class PromotionHarness
             .ReturnsAsync((string key, CancellationToken _) => files.TryGetValue(key, out var bytes)
                 ? new CloudFile
                 {
-                    FileId = key, FileName = Path.GetFileName(key), StoragePath = key,
-                    ContentType = "application/octet-stream", SizeBytes = bytes.Length,
-                    UploadedAt = DateTimeOffset.UtcNow, Provider = CloudStorageProvider.AwsS3
+                    FileId = key,
+                    FileName = Path.GetFileName(key),
+                    StoragePath = key,
+                    ContentType = "application/octet-stream",
+                    SizeBytes = bytes.Length,
+                    UploadedAt = DateTimeOffset.UtcNow,
+                    Provider = CloudStorageProvider.AwsS3
                 }
                 : null);
         storage.Setup(s => s.DownloadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -338,15 +248,22 @@ internal sealed class PromotionHarness
         Artifacts = new PublicationArtifacts(
             new PmtilesPublicationArtifact
             {
-                Href = "parcels.pmtiles", Bytes = pmtilesBytes.Length,
+                Href = "parcels.pmtiles",
+                Bytes = pmtilesBytes.Length,
                 Sha256 = Convert.ToHexStringLower(SHA256.HashData(pmtilesBytes)),
-                CaptureId = "cap-1", Fields = ["objectid"], VectorLayer = "layer", Minzoom = 0, Maxzoom = 10
+                CaptureId = "cap-1",
+                Fields = ["objectid"],
+                VectorLayer = "layer",
+                Minzoom = 0,
+                Maxzoom = 10
             },
             new GeoparquetPublicationArtifact
             {
-                Href = "parcels.parquet", Bytes = parquetBytes.Length,
+                Href = "parcels.parquet",
+                Bytes = parquetBytes.Length,
                 Sha256 = Convert.ToHexStringLower(SHA256.HashData(parquetBytes)),
-                CaptureId = "cap-1", Fields = ["objectid"]
+                CaptureId = "cap-1",
+                Fields = ["objectid"]
             }),
         Validation = new PublicationValidation(PublicationValidation.Passed, DateTimeOffset.UtcNow, [])
     };

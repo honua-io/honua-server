@@ -106,19 +106,29 @@ internal sealed class RevocationHarness
         var store = new InMemoryPublicExportStateStore();
         store.Promoted["parcels"] = new PromotedExportRecord
         {
-            PublicationId = "parcels", Version = "v1", ServiceId = "svc-parcels", ResourceId = "res-parcels",
-            StorageLayerId = 7, Title = "Parcels",
+            PublicationId = "parcels",
+            Version = "v1",
+            ServiceId = "svc-parcels",
+            ResourceId = "res-parcels",
+            StorageLayerId = 7,
+            Title = "Parcels",
             CollectionUrl = "https://cdn.example.test/data/publications/parcels/v1/collection.json",
             CatalogUrl = "https://cdn.example.test/data/catalog.json",
-            PromotedAt = DateTimeOffset.UtcNow, CanaryState = PublicExportCanaryState.Readable
+            PromotedAt = DateTimeOffset.UtcNow,
+            CanaryState = PublicExportCanaryState.Readable
         };
         store.Promoted["roads"] = new PromotedExportRecord
         {
-            PublicationId = "roads", Version = "v1", ServiceId = "svc-roads", ResourceId = "res-roads",
-            StorageLayerId = 8, Title = "Roads",
+            PublicationId = "roads",
+            Version = "v1",
+            ServiceId = "svc-roads",
+            ResourceId = "res-roads",
+            StorageLayerId = 8,
+            Title = "Roads",
             CollectionUrl = "https://cdn.example.test/data/publications/roads/v1/collection.json",
             CatalogUrl = "https://cdn.example.test/data/catalog.json",
-            PromotedAt = DateTimeOffset.UtcNow, CanaryState = PublicExportCanaryState.Readable
+            PromotedAt = DateTimeOffset.UtcNow,
+            CanaryState = PublicExportCanaryState.Readable
         };
         return store;
     }
@@ -166,6 +176,25 @@ internal sealed class RevocationHarness
 
     private static Mock<IMetadataV2GraphProvider> CreateGraphProvider(RevocationScenario opts)
     {
+        var provider = new Mock<IMetadataV2GraphProvider>();
+        var snapshot = new MetadataV2GraphSnapshot(BuildGraph(opts), "etag-2", DateTimeOffset.UtcNow);
+        var remainingFailures = opts.GraphFailuresBeforeSuccess;
+        provider.Setup(g => g.GetCurrentAsync(It.IsAny<CancellationToken>()))
+            .Returns(() =>
+            {
+                if (remainingFailures > 0)
+                {
+                    remainingFailures--;
+                    return ValueTask.FromException<MetadataV2GraphSnapshot>(new InvalidOperationException("Transient metadata error."));
+                }
+
+                return ValueTask.FromResult(snapshot);
+            });
+        return provider;
+    }
+
+    private static MetadataV2Graph BuildGraph(RevocationScenario opts)
+    {
         var publications = new List<MetadataV2Layer>
         {
             new() { Metadata = new MetadataV2ObjectMetadata { Id = "pub-roads", Name = "roads" }, ServiceId = "svc-roads", ResourceId = "res-roads", LayerIndex = 1 }
@@ -175,7 +204,7 @@ internal sealed class RevocationHarness
             publications.Add(new MetadataV2Layer { Metadata = new MetadataV2ObjectMetadata { Id = "pub-parcels", Name = "parcels" }, ServiceId = "svc-parcels", ResourceId = "res-parcels", LayerIndex = 0 });
         }
 
-        var graph = new MetadataV2Graph
+        return new MetadataV2Graph
         {
             Revision = 2,
             Services =
@@ -190,21 +219,6 @@ internal sealed class RevocationHarness
             ],
             Publications = publications
         };
-        var provider = new Mock<IMetadataV2GraphProvider>();
-        var snapshot = new MetadataV2GraphSnapshot(graph, "etag-2", DateTimeOffset.UtcNow);
-        var remainingFailures = opts.GraphFailuresBeforeSuccess;
-        provider.Setup(g => g.GetCurrentAsync(It.IsAny<CancellationToken>()))
-            .Returns(() =>
-            {
-                if (remainingFailures > 0)
-                {
-                    remainingFailures--;
-                    return ValueTask.FromException<MetadataV2GraphSnapshot>(new InvalidOperationException("Transient metadata error."));
-                }
-
-                return ValueTask.FromResult(snapshot);
-            });
-        return provider;
     }
 
     private static CdnInvalidationService CreateCdnService(

@@ -341,8 +341,9 @@ internal sealed partial class PublicExportRevocationService(
         MetadataV2GraphSnapshot snapshot,
         CancellationToken cancellationToken)
     {
+        var target = new PublicExportLayerTarget(export.ServiceId, export.ResourceId);
         var result = await deps.Eligibility.EvaluateSnapshotAsync(
-            snapshot, export.ServiceId, export.ResourceId, cancellationToken).ConfigureAwait(false);
+            snapshot, target, cancellationToken).ConfigureAwait(false);
         return result.IsEligible;
     }
 

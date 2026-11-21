@@ -75,16 +75,9 @@ internal sealed class PublicExportPromoter(
             return new PublicExportDeliveryStatus(PublicExportDeliveryStatus.NotConfigured) { Reason = NotConfiguredMessage };
         }
 
-        var capturedCheck = await deps.Eligibility.EvaluateAsync(input.Resource, input.Service, cancellationToken).ConfigureAwait(false);
-        if (!capturedCheck.IsEligible)
+        if (await CheckPreCopyEligibilityAsync(input, cancellationToken).ConfigureAwait(false) is { } ineligible)
         {
-            return StaysSignedIn(capturedCheck.Reason);
-        }
-
-        var currentCheck = await EvaluateCurrentSnapshotAsync(input, cancellationToken).ConfigureAwait(false);
-        if (!currentCheck.IsEligible)
-        {
-            return StaysSignedIn(currentCheck.Reason);
+            return ineligible;
         }
 
         var provenance = new PublicPublicationProvenance(
@@ -105,6 +98,20 @@ internal sealed class PublicExportPromoter(
         }
 
         return await VerifyCanaryAsync(record, collectionUrl, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<PublicExportDeliveryStatus?> CheckPreCopyEligibilityAsync(
+        PublicExportPromotionInput input,
+        CancellationToken cancellationToken)
+    {
+        var capturedCheck = await deps!.Eligibility.EvaluateAsync(input.Resource, input.Service, cancellationToken).ConfigureAwait(false);
+        if (!capturedCheck.IsEligible)
+        {
+            return StaysSignedIn(capturedCheck.Reason);
+        }
+
+        var currentCheck = await EvaluateCurrentSnapshotAsync(input, cancellationToken).ConfigureAwait(false);
+        return currentCheck.IsEligible ? null : StaysSignedIn(currentCheck.Reason);
     }
 
     private static PublicExportDeliveryStatus StaysSignedIn(string? reason)
@@ -143,8 +150,8 @@ internal sealed class PublicExportPromoter(
         CancellationToken cancellationToken)
     {
         var snapshot = await deps!.GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        return await deps.Eligibility.EvaluateSnapshotAsync(
-            snapshot, input.Service.Metadata.Id, input.Resource.Metadata.Id, cancellationToken).ConfigureAwait(false);
+        var target = new PublicExportLayerTarget(input.Service.Metadata.Id, input.Resource.Metadata.Id);
+        return await deps.Eligibility.EvaluateSnapshotAsync(snapshot, target, cancellationToken).ConfigureAwait(false);
     }
 
     private PromotedExportRecord BuildPromotedRecord(PublicExportPromotionInput input, Uri collectionUrl)

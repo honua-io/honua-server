@@ -28,9 +28,13 @@ public sealed class PublicPublicationDestinationTests
             .Callback<FileUploadRequest, CancellationToken>((request, _) => uploaded = request)
             .ReturnsAsync(UploadResult.CreateSuccess(new CloudFile
             {
-                FileId = "data/publications/roads/v1/roads.pmtiles", FileName = "roads.pmtiles",
-                StoragePath = "data/publications/roads/v1/roads.pmtiles", ContentType = "application/vnd.pmtiles",
-                SizeBytes = 3, UploadedAt = DateTimeOffset.UtcNow, Provider = CloudStorageProvider.AwsS3
+                FileId = "data/publications/roads/v1/roads.pmtiles",
+                FileName = "roads.pmtiles",
+                StoragePath = "data/publications/roads/v1/roads.pmtiles",
+                ContentType = "application/vnd.pmtiles",
+                SizeBytes = 3,
+                UploadedAt = DateTimeOffset.UtcNow,
+                Provider = CloudStorageProvider.AwsS3
             }, TimeSpan.Zero));
         using var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
         using var content = new MemoryStream([1, 2, 3]);
@@ -57,8 +61,12 @@ public sealed class PublicPublicationDestinationTests
             .Callback<FileUploadRequest, CancellationToken>((request, _) => uploaded = request)
             .ReturnsAsync(UploadResult.CreateSuccess(new CloudFile
             {
-                FileId = "public-artifact", FileName = Key.FileName, StoragePath = "public-artifact",
-                ContentType = "application/vnd.pmtiles", SizeBytes = 1, UploadedAt = DateTimeOffset.UtcNow,
+                FileId = "public-artifact",
+                FileName = Key.FileName,
+                StoragePath = "public-artifact",
+                ContentType = "application/vnd.pmtiles",
+                SizeBytes = 1,
+                UploadedAt = DateTimeOffset.UtcNow,
                 Provider = CloudStorageProvider.AwsS3
             }, TimeSpan.Zero));
         using var destination = new PublicPublicationDestination(storage.Object, new Uri("https://cdn.example.test/"));
