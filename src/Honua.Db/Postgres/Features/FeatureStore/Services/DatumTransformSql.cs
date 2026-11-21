@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Globalization;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Shared.Models;
 
@@ -59,16 +60,45 @@ internal static class DatumTransformSql
         return $"ST_Transform({transformedOperand}, {toSrid})";
     }
 
-    // Tile statements rebuild the same clamped transform for every tile. Without a catalog
-    // selection the text depends only on the operand and both SRIDs, a set bounded by the
-    // layers' geometry columns and SRIDs, so each is built once.
+    // Tile and feature statements rebuild the same transform for every request. Without a catalog
+    // selection the text depends only on the operand and both SRIDs, so each is built once. Target
+    // SRIDs come from requests (outSR, crs), so the cache stops growing at a fixed size and builds
+    // past it rather than relying on every protocol validating the SRID first.
+    internal const int MaxCachedTransforms = 4096;
+
     private static readonly ConcurrentDictionary<(string Operand, int FromSrid, int ToSrid), string> KnownSridTransforms = new();
     private static readonly ConcurrentDictionary<(string Operand, int ToSrid), string> RuntimeSridTransforms = new();
 
     public static string CachedTransformExpression(string operand, int fromSrid, int toSrid)
-        => KnownSridTransforms.GetOrAdd(
-            (operand, fromSrid, toSrid),
+        => GetOrAddBounded(
+            KnownSridTransforms,
+            (Operand: operand, FromSrid: fromSrid, ToSrid: toSrid),
             static key => BuildTransformExpression(key.Operand, key.ToSrid, selection: null, key.FromSrid));
+
+    // The cached value while the cache holds fewer than MaxCachedTransforms; past that, a freshly built one.
+    internal static string GetOrAddBounded<TKey>(ConcurrentDictionary<TKey, string> cache, TKey key, Func<TKey, string> build)
+        where TKey : notnull
+    {
+        if (cache.TryGetValue(key, out var cached))
+        {
+            return cached;
+        }
+
+        var built = build(key);
+        return cache.Count < MaxCachedTransforms ? cache.GetOrAdd(key, built) : built;
+    }
+
+    // Same text as BuildTransformExpression(operand, query.OutputSrid, query.OutputDatumTransformation,
+    // query.SpatialReferenceSrid). Pass only column operands (GeometryProcessor.GetGeometryOperand): a plain
+    // SRID-pair reprojection then comes from the bounded cache instead of being rebuilt per query; a datum
+    // selection or an unknown source SRID still builds.
+    public static string TransformToOutputSrid(string operand, FeatureQuery query)
+    {
+        var toSrid = query.OutputSrid ?? throw new ArgumentException("The query has no output SRID.", nameof(query));
+        return query.OutputDatumTransformation is null && query.SpatialReferenceSrid is int sourceSrid
+            ? CachedTransformExpression(operand, sourceSrid, toSrid)
+            : BuildTransformExpression(operand, toSrid, query.OutputDatumTransformation, query.SpatialReferenceSrid);
+    }
 
     public static string CachedTransformExpressionForRuntimeSrid(string operand, int toSrid)
         => RuntimeSridTransforms.GetOrAdd(
