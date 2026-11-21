@@ -1212,9 +1212,9 @@ minutes, including setup allowance. These initialized the dispatch ranks.
 
 Measured ranks (21 Nov 2026): each recorded `dispatch_rank` is the exact median
 passing job duration (whole-second job timestamps), rounded half-to-even to
-0.1 minute, across the 31 full trunk runs completed after the previous record
-(newest run 44013566836) that supplied at least one matching sample, from
-44131638572 to 44921455496. A sample counts only when the shard's filter and
+0.1 minute, across the 26 "CI full" trunk runs completed after the previous
+record (newest run 44013566836) that supplied at least one matching sample, from
+44131638572 to 44921455496. Post-merge "CI affected" runs are not samples. A sample counts only when the shard's filter and
 project selection at the run's head match the current definition. A run supplies
 at most one sample per child (its latest passing attempt). Passing children count
 even when their full workflow fails or is cancelled; failed, skipped and cancelled
@@ -1222,11 +1222,9 @@ children do not supply timing samples. Runs before the previous record are not
 reused: shared-host test fixtures have since cut many children's duration, and
 older samples no longer predict them.
 
-The latest scheduled run, [44819335862](https://github.com/honua-io/honua-server/actions/runs/44819335862),
+The latest passing scheduled run, [44819335862](https://github.com/honua-io/honua-server/actions/runs/44819335862),
 passed all 225 current server children on trunk `a997a37`. Every current
-definition has 20 to 27 matching passing samples (median 22). Two runs' job
-lists (44250783964 and 44401872530) returned a server error on one page each
-and supply only the pages that were read. Failed duration is not a successful
+definition has 20 to 26 matching passing samples (median 22). Failed duration is not a successful
 completion estimate, and failures remain gating.
 
 `scripts/ci/fixtures/measured-dispatch-ranks.json` records the ranks and runs;
@@ -1242,7 +1240,7 @@ counts tie. It changes ranking only: candidate admission, the six-job cap and
 time budgets still apply. Unmarked overrides retain their previous ranking.
 The schema accepts only boolean override priorities; malformed values fail validation.
 
-Ranks sum to 878.0 runner-minutes, previously 1,522.3;
+Ranks sum to 877.5 runner-minutes, previously 1,522.3;
 all 225 children fit the unchanged 10-minute PR shard budget, previously 203.
 These are scheduling estimates, not measured runtime savings. The separate tiny-shard
 consolidation measurement remains 75.38 to 12.11 runner-minutes (63.27 saved).
