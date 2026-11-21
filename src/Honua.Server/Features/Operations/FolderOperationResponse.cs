@@ -42,6 +42,9 @@ internal sealed record FolderOperationResponse(int Status, string Payload, strin
             {
                 MoveEvidence = mutation.MovedServiceName is null ? null : new ServiceMoveEvidenceRecord(
                     mutation.MovedServiceName, saved.Etag, mutation.PriorAssignments)
+                {
+                    Namespace = execution.Namespace
+                }
             };
         }
         var folder = saved.Graph.Folders.Single(item => item.Metadata.Id == mutation.Folder!.Metadata.Id);

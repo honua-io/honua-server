@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -132,6 +133,111 @@ public sealed class ServiceMoveRecoveryTests
 
         result.Should().BeOfType<NotFound>();
         context.Response.Headers.CacheControl.ToString().Should().Be("no-store");
+    }
+
+    [UnitTest]
+    public async Task PostAsync_AgentCaller_IsRefusedBeforeReadingHandle()
+    {
+        var authorization = Substitute.For<IAuthorizationService>();
+        authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object?>(), AuthenticationExtensions.AdminPolicy)
+            .Returns(AuthorizationResult.Success());
+        var instanceStore = Substitute.For<IOperationInstanceStore>();
+        await using var services = new ServiceCollection()
+            .AddSingleton(authorization)
+            .AddSingleton(instanceStore)
+            .AddSingleton(Substitute.For<IMetadataV2GraphStore>())
+            .BuildServiceProvider();
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services,
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.NameIdentifier, "agent-1"), new Claim(ClaimTypes.Role, "Agent")], "test"))
+        };
+
+        var result = await ServiceMoveCompensation.PostAsync(context, "opinst-any");
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        await instanceStore.DidNotReceive().GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task PostAsync_AlreadyRestored_EnforcesOperatorAuthorizationBeforeRecording()
+    {
+        var graph = Graph();
+        var details = new Dictionary<string, string>(StringComparer.Ordinal);
+        ServiceMoveEvidence.Write(details, new ServiceMoveEvidenceRecord("survey", "after", [new ServiceFolderAssignment("service", "maps")]));
+        var instanceStore = Substitute.For<IOperationInstanceStore>();
+        instanceStore.GetAsync("opinst-restored", Arg.Any<CancellationToken>()).Returns(new OperationHandle
+        {
+            OperationInstanceId = "opinst-restored",
+            OperationId = "service.move",
+            Status = OperationHandleStatus.Completed,
+            CorrelationId = "corr-1",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Result = new OperationResultSummary { Summary = "Move service completed.", Details = details }
+        });
+        var authorization = Substitute.For<IAuthorizationService>();
+        authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object?>(), AuthenticationExtensions.AdminPolicy)
+            .Returns(AuthorizationResult.Success());
+        var operatorAuth = Substitute.For<IOperatorAuthorizationEvaluator>();
+        operatorAuth.EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(AccessDecision.Denied("denied")));
+        var approvals = Substitute.For<IOperatorApprovalEvaluator>();
+        var catalog = Substitute.For<IMetadataV2GraphStore>();
+        catalog.GetCurrentAsync(Arg.Any<CancellationToken>())
+            .Returns(new MetadataV2GraphSnapshot(graph, "published", DateTimeOffset.UtcNow));
+        await using var services = new ServiceCollection()
+            .AddSingleton(authorization)
+            .AddSingleton(instanceStore)
+            .AddSingleton(catalog)
+            .AddSingleton(new OperatorApprovalGate(operatorAuth, approvals, NullLogger<OperatorApprovalGate>.Instance))
+            .BuildServiceProvider();
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services,
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.NameIdentifier, "operator"), new Claim(ClaimTypes.Role, "Admin")], "test"))
+        };
+
+        var result = await ServiceMoveCompensation.PostAsync(context, "opinst-restored");
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        await instanceStore.DidNotReceive().TryCreateAsync(Arg.Any<OperationHandle>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public void Read_PreservesNamespace_AndRejectsNonObjectAssignmentEntries()
+    {
+        var details = new Dictionary<string, string>(StringComparer.Ordinal);
+        ServiceMoveEvidence.Write(details, new ServiceMoveEvidenceRecord("survey", "after", [new ServiceFolderAssignment("service", "maps")])
+        {
+            Namespace = "field-ops"
+        });
+        var read = ServiceMoveEvidence.Read(details);
+        read.Should().NotBeNull();
+        read!.Namespace.Should().Be("field-ops");
+
+        details[ServiceMoveEvidence.AssignmentsKey] = "[123]";
+        ServiceMoveEvidence.Read(details).Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task PersistHttpMoveAsync_WhenInstanceStoreUnavailable_DoesNotFailCommittedMove()
+    {
+        var store = Substitute.For<IOperationInstanceStore>();
+        store.TryCreateAsync(Arg.Any<OperationHandle>(), Arg.Any<CancellationToken>())
+            .Returns<Task<bool>>(_ => throw new CapabilityUnavailableException("operation-instances", "system-database"));
+        await using var services = new ServiceCollection().AddSingleton(store).BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services };
+        var graph = Graph();
+        var moved = new FolderMutationCommand.Move("survey", new MetadataV2FolderSelection("archive")).Apply(graph, null);
+        var execution = new FolderExecutionResult(new MetadataV2GraphSnapshot(moved.Graph, "after", DateTimeOffset.UtcNow), moved, null);
+
+        var act = () => ServiceMoveEvidence.PersistHttpMoveAsync(context, new FolderMutationCommand.Move("survey", new MetadataV2FolderSelection("archive")), execution);
+
+        await act.Should().NotThrowAsync();
+        context.Response.Headers.ContainsKey("X-Honua-Operation-Instance-Id").Should().BeFalse();
     }
 
     private static MetadataV2Graph Graph() => new()

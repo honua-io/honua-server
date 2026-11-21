@@ -3,6 +3,7 @@
 
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
@@ -16,6 +17,7 @@ internal sealed record ServiceMoveEvidenceRecord(
     string PostconditionEtag,
     IReadOnlyList<ServiceFolderAssignment> Assignments)
 {
+    internal string? Namespace { get; init; }
     internal string? CompensationInstanceId { get; init; }
 }
 
@@ -35,6 +37,7 @@ internal static class ServiceMoveEvidence
     internal const string AssignmentsKey = "serviceMove.priorAssignments";
     internal const string EtagKey = "serviceMove.postconditionEtag";
     internal const string ServiceNameKey = "serviceMove.serviceName";
+    internal const string NamespaceKey = "serviceMove.namespace";
     internal const string CompensationKey = "serviceMove.compensationInstanceId";
 
     internal static void Write(IDictionary<string, string> details, ServiceMoveEvidenceRecord evidence)
@@ -42,6 +45,8 @@ internal static class ServiceMoveEvidence
         details[ServiceNameKey] = evidence.ServiceName;
         details[EtagKey] = evidence.PostconditionEtag;
         details[AssignmentsKey] = WriteAssignments(evidence.Assignments);
+        if (!string.IsNullOrWhiteSpace(evidence.Namespace))
+            details[NamespaceKey] = evidence.Namespace;
     }
 
     internal static ServiceMoveEvidenceRecord? Read(IReadOnlyDictionary<string, string> details)
@@ -52,9 +57,11 @@ internal static class ServiceMoveEvidence
             return null;
         var assignments = ReadAssignments(assignmentsJson);
         if (assignments is null) return null;
+        details.TryGetValue(NamespaceKey, out var ns);
         details.TryGetValue(CompensationKey, out var compensationId);
         return new(serviceName, etag, assignments)
         {
+            Namespace = string.IsNullOrWhiteSpace(ns) ? null : ns,
             CompensationInstanceId = string.IsNullOrWhiteSpace(compensationId) ? null : compensationId
         };
     }
@@ -79,7 +86,10 @@ internal static class ServiceMoveEvidence
         var now = context.RequestServices.GetService<TimeProvider>()?.GetUtcNow() ?? TimeProvider.System.GetUtcNow();
         var correlation = context.Request.Headers["X-Correlation-ID"].ToString();
         var details = new Dictionary<string, string>(StringComparer.Ordinal);
-        Write(details, new ServiceMoveEvidenceRecord(changed.MovedServiceName, saved.Etag, changed.PriorAssignments));
+        Write(details, new ServiceMoveEvidenceRecord(changed.MovedServiceName, saved.Etag, changed.PriorAssignments)
+        {
+            Namespace = execution.Namespace
+        });
         var handle = new OperationHandle
         {
             OperationInstanceId = $"opinst-{Guid.NewGuid():N}",
@@ -95,11 +105,18 @@ internal static class ServiceMoveEvidence
                 Details = details
             }
         };
-        if (await store.TryCreateAsync(handle, cancellationToken).ConfigureAwait(false))
-            context.Response.Headers["X-Honua-Operation-Instance-Id"] = handle.OperationInstanceId;
+        try
+        {
+            if (await store.TryCreateAsync(handle, cancellationToken).ConfigureAwait(false))
+                context.Response.Headers["X-Honua-Operation-Instance-Id"] = handle.OperationInstanceId;
+        }
+        catch (CapabilityUnavailableException)
+        {
+            // The catalog move already committed; omit the compensation handle header when durable instance storage is unavailable.
+        }
     }
 
-    internal static OperationHandle WithCompensation(OperationHandle handle, string compensationInstanceId)
+    internal static OperationHandle WithCompensation(OperationHandle handle, string compensationInstanceId, DateTimeOffset updatedAt)
     {
         var details = new Dictionary<string, string>(handle.Result?.Details ?? new Dictionary<string, string>(), StringComparer.Ordinal)
         {
@@ -107,7 +124,7 @@ internal static class ServiceMoveEvidence
         };
         return handle with
         {
-            UpdatedAt = TimeProvider.System.GetUtcNow(),
+            UpdatedAt = updatedAt,
             Result = new OperationResultSummary
             {
                 Summary = handle.Result?.Summary ?? "Move service completed.",
@@ -172,6 +189,7 @@ internal static class ServiceMoveEvidence
 
     private static ServiceFolderAssignment? ReadAssignment(JsonElement item)
     {
+        if (item.ValueKind != JsonValueKind.Object) return null;
         if (!item.TryGetProperty("serviceId", out var serviceId) || serviceId.ValueKind != JsonValueKind.String)
             return null;
         if (!item.TryGetProperty("priorFolderId", out var folder)) return null;

@@ -1,9 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Policy;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.MultiTenancy;
@@ -22,6 +24,8 @@ internal static class ServiceMoveCompensation
         if (!await OperationAdminAuthorization.IsAuthorizedAsync(
                 context, context.User, OperationSideEffectClass.MutatesMetadata, context.RequestAborted).ConfigureAwait(false))
             return Results.Forbid();
+        if (AgentApprovalRule.IsAgent(AgentPrincipal.EffectiveRoles(context.User)))
+            return OperatorApprovalGate.AgentApprovalRequired(context, AgentApprovalFilter.OperationRef, AgentApprovalFilter.ConsoleGuidance);
         var store = context.RequestServices.GetService<IOperationInstanceStore>();
         var catalog = context.RequestServices.GetService<IMetadataV2GraphStore>();
         if (store is null || catalog is null) return Unavailable();
@@ -40,23 +44,50 @@ internal static class ServiceMoveCompensation
             return Results.Problem(statusCode: StatusCodes.Status412PreconditionFailed, detail: CatalogChangedDetail);
         if (decision == ServiceMoveRecoveryKind.NotRestorable)
             return Results.Problem(statusCode: StatusCodes.Status409Conflict, detail: "The recorded service move cannot be restored.");
-        if (decision != ServiceMoveRecoveryKind.AlreadyRestored)
+        if (decision == ServiceMoveRecoveryKind.AlreadyRestored)
         {
-            var execution = await ExecuteRestoreAsync(context, loaded.Evidence).ConfigureAwait(false);
-            if (execution.Failure is not null) return MapFailure(execution.Failure);
+            var denied = await FolderMutationService.AuthorizeObservationAsync(
+                RestoreExecution(context, loaded.Evidence), snapshot.Graph, context.RequestAborted).ConfigureAwait(false);
+            if (denied is not null) return MapFailure(context, denied);
+        }
+        else
+        {
+            var execution = await FolderMutationService.ExecuteAsync(
+                RestoreExecution(context, loaded.Evidence), context.RequestAborted).ConfigureAwait(false);
+            if (execution.Failure is not null)
+                return await HandleExecutionFailureAsync(context, loaded, execution.Failure).ConfigureAwait(false);
         }
         return await RecordObservationAsync(context, loaded.Handle, loaded.Evidence).ConfigureAwait(false);
     }
 
-    private static Task<FolderExecutionResult> ExecuteRestoreAsync(HttpContext context, ServiceMoveEvidenceRecord evidence)
-        => FolderMutationService.ExecuteAsync(new FolderMutationExecution
+    private static async Task<IResult> HandleExecutionFailureAsync(
+        HttpContext context, LoadedMove loaded, FolderExecutionFailure failure)
+    {
+        if (failure is FolderExecutionFailure.Mutation { Refusal: var refusal } && refusal == FolderMutationFailure.SnapshotChanged)
         {
-            Services = context.RequestServices,
-            Principal = context.User,
-            Command = new FolderMutationCommand.Restore(evidence.ServiceName, evidence.Assignments),
-            ExpectedEtag = evidence.PostconditionEtag,
-            RequestCache = context.Items
-        }, context.RequestAborted);
+            var store = context.RequestServices.GetRequiredService<IOperationInstanceStore>();
+            var current = await store.GetAsync(loaded.Handle.OperationInstanceId, context.RequestAborted).ConfigureAwait(false);
+            var latest = current is null ? null : ServiceMoveEvidence.Read(current.Result?.Details ?? EmptyDetails);
+            var existing = await RecordedCompensationAsync(store, latest, context.RequestAborted).ConfigureAwait(false);
+            if (existing is not null) return Status(existing);
+            var catalog = context.RequestServices.GetRequiredService<IMetadataV2GraphStore>();
+            var fresh = await catalog.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+            if (ServiceMoveEvidence.Decide(fresh.Graph, fresh.Etag, loaded.Evidence) == ServiceMoveRecoveryKind.AlreadyRestored)
+                return await RecordObservationAsync(context, loaded.Handle, loaded.Evidence).ConfigureAwait(false);
+            return Results.Problem(statusCode: StatusCodes.Status412PreconditionFailed, detail: CatalogChangedDetail);
+        }
+        return MapFailure(context, failure);
+    }
+
+    private static FolderMutationExecution RestoreExecution(HttpContext context, ServiceMoveEvidenceRecord evidence) => new()
+    {
+        Services = context.RequestServices,
+        Principal = context.User,
+        Command = new FolderMutationCommand.Restore(evidence.ServiceName, evidence.Assignments),
+        ExpectedEtag = evidence.PostconditionEtag,
+        Namespace = evidence.Namespace,
+        RequestCache = context.Items
+    };
 
     private static async Task<IResult> RecordObservationAsync(HttpContext context, OperationHandle handle, ServiceMoveEvidenceRecord evidence)
     {
@@ -66,18 +97,19 @@ internal static class ServiceMoveCompensation
         var latest = ServiceMoveEvidence.Read(current.Result?.Details ?? EmptyDetails);
         var existing = await RecordedCompensationAsync(store, latest, cancellationToken).ConfigureAwait(false);
         if (existing is not null) return Status(existing);
-        var compensation = CompensationHandle(current, evidence);
+        var compensation = CompensationHandle(current, evidence, UtcNow(context));
         if (!await store.TryCreateAsync(compensation, cancellationToken).ConfigureAwait(false))
             return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable, detail: "The restore result could not be recorded.");
-        var winner = await StampOriginalAsync(context, current, compensation.OperationInstanceId).ConfigureAwait(false);
+        var winner = await StampOriginalAsync(context, current, compensation).ConfigureAwait(false);
         return Status(winner ?? compensation);
     }
 
-    private static async Task<OperationHandle?> StampOriginalAsync(HttpContext context, OperationHandle current, string compensationId)
+    private static async Task<OperationHandle?> StampOriginalAsync(
+        HttpContext context, OperationHandle current, OperationHandle compensation)
     {
         var store = context.RequestServices.GetRequiredService<IOperationInstanceStore>();
         var cancellationToken = context.RequestAborted;
-        var stamped = ServiceMoveEvidence.WithCompensation(current, compensationId);
+        var stamped = ServiceMoveEvidence.WithCompensation(current, compensation.OperationInstanceId, compensation.UpdatedAt);
         if (await store.TrySetAsync(stamped, current.Version, cancellationToken).ConfigureAwait(false)) return null;
         var winner = await store.GetAsync(current.OperationInstanceId, cancellationToken).ConfigureAwait(false);
         var evidence = winner is null ? null : ServiceMoveEvidence.Read(winner.Result?.Details ?? EmptyDetails);
@@ -106,9 +138,11 @@ internal static class ServiceMoveCompensation
         return await store.GetAsync(existingId, cancellationToken).ConfigureAwait(false);
     }
 
-    private static OperationHandle CompensationHandle(OperationHandle current, ServiceMoveEvidenceRecord evidence)
+    private static DateTimeOffset UtcNow(HttpContext context)
+        => context.RequestServices.GetService<TimeProvider>()?.GetUtcNow() ?? TimeProvider.System.GetUtcNow();
+
+    private static OperationHandle CompensationHandle(OperationHandle current, ServiceMoveEvidenceRecord evidence, DateTimeOffset now)
     {
-        var now = TimeProvider.System.GetUtcNow();
         return new OperationHandle
         {
             OperationInstanceId = $"opinst-{Guid.NewGuid():N}",
@@ -144,11 +178,16 @@ internal static class ServiceMoveCompensation
         => Results.Json(ApiResponse<OperationStatus>.CreateSuccess(OperationStatusProjection.FromHandle(handle)),
             OperationsJsonContext.Default.ApiResponseOperationStatus);
 
-    private static IResult MapFailure(FolderExecutionFailure failure) => failure switch
+    private static IResult MapFailure(HttpContext context, FolderExecutionFailure failure) => failure switch
     {
         FolderExecutionFailure.Mutation mutation => mutation.Refusal.ToResult(),
-        FolderExecutionFailure.Authorization => Results.Forbid(),
-        FolderExecutionFailure.Approval approval => Results.Problem(statusCode: StatusCodes.Status403Forbidden, detail: approval.Requirement.PolicyRef),
+        FolderExecutionFailure.Authorization authorization => OperatorApprovalGate.CreateAuthorizationDeniedResult(context, authorization.Decision)!,
+        FolderExecutionFailure.Approval approval => context.RequestServices.GetRequiredService<OperatorApprovalGate>()
+            .CreateApprovalDeniedResult(context, new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Catalog,
+                Operation = OperatorOperation.Publish
+            }, approval.Requirement)!,
         FolderExecutionFailure.Replay => Results.Problem(statusCode: StatusCodes.Status403Forbidden, detail: FolderApprovalAuthorization.FreshProposalRequired),
         FolderExecutionFailure.AffectedServices => Results.Problem(statusCode: StatusCodes.Status403Forbidden, detail: "The requester cannot change the affected services."),
         _ => Results.Problem(statusCode: StatusCodes.Status409Conflict, detail: "The recorded service move cannot be restored.")
