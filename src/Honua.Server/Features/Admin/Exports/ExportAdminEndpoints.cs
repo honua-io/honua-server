@@ -8,6 +8,7 @@ using Honua.Infrastructure.Models;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Infrastructure.Security;
 using Honua.Server.Features.Admin.TileOperations;
+using Honua.Server.Features.Operations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
@@ -24,10 +25,18 @@ internal static class ExportAdminEndpoints
             .WithTags("Admin", "Exports")
             .RequireAdminAuthorization();
 
-        _ = group.MapGet("", ListAsync).WithName("ListExports").WithSummary("List Exports");
-        _ = group.MapGet("/{exportId}", GetAsync).WithName("GetExport").WithSummary("Get an Export with its Versions and URLs");
-        _ = group.MapPost("", CreateAsync).WithName("CreateExport").WithSummary("Export a Layer as files");
-        _ = group.MapDelete("/{exportId}", DeleteAsync).WithName("DeleteExport").WithSummary("Unpublish an Export");
+        MapOperation(group, "admin.exports.list", ListAsync, "List Exports");
+        MapOperation(group, "admin.exports.get", GetAsync, "Get an Export with its Versions and URLs");
+        MapOperation(group, "admin.exports.create", CreateAsync, "Export a Layer as files");
+        MapOperation(group, "admin.exports.delete", DeleteAsync, "Unpublish an Export");
+    }
+
+    private static void MapOperation(RouteGroupBuilder group, string operationId, Delegate handler, string summary)
+    {
+        var binding = AdminHttpOperationRouteBinding.ForOperate(operationId, "/exports");
+        _ = group.MapMethods(binding.RoutePattern, binding.Methods, handler)
+            .WithAdminOperation(binding.Definition)
+            .WithSummary(summary);
     }
 
     private static async Task<IResult> ListAsync(HttpContext context, CancellationToken cancellationToken)
