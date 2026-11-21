@@ -116,14 +116,14 @@ workflow:
         -
           name: "layer"
           concept: "/concepts/domain/layer.md"
-          description: "Created or reconciled Layer."
+          description: "Created or reconciled Layer; over MCP, a pending proposal until a person approves it."
       effect: "create"
       effectTarget: "catalog_configuration"
       preconditions:
         - "The publication contract and selected storage mode are supported."
       authorization:
         - "Caller may publish this source into the named scope."
-        - "Every MCP caller is an agent, administrators included, so either publish tool files a proposal (RequiresApproval) that a person approves in Console; no Layer exists until then."
+        - "Every MCP caller is an agent, administrators included, so a non-dry-run call to either publish tool files a proposal (RequiresApproval) that a person approves in Console; no Layer exists until then."
       idempotency: "Inspect existing publication and returned operation identity before retrying."
       checks:
         - "Published binding matches the selected source or managed copy."
@@ -199,13 +199,13 @@ Validate fields, geometry, CRS, source rights, and the intended read policy. Pub
 
 The publish action lists alternative interfaces. `honua_admin_layer_publish` and `honua_publish_service` both publish from connection/schema/table context; they are not a two-call chain. In particular, `honua_publish_service` does not accept an existing layer identifier to attach it to a service. The separate protocol-update binding uses the Admin OpenAPI server base `/api/v1/admin` plus its relative path and changes the existing service's enabled protocols.
 
-Over MCP, `honua_admin_layer_publish` and `honua_publish_service` do not create a live Layer. Every MCP caller is an agent, administrators included, so the call returns `RequiresApproval` with a pending proposal, and the Layer exists only after a person approves it in Console; see [Approve agent changes](../secure/approve-agent-changes.md). Verify the result after approval, not after the tool call.
+Over MCP, `honua_admin_layer_publish` and `honua_publish_service` do not create a live Layer. Every MCP caller is an agent, administrators included, so a call without `dryRun: true` returns `RequiresApproval` with a pending proposal, and the Layer exists only after a person approves it in Console (Studio publication reports the same pending state as `AwaitingApproval`); see [Approve agent changes](../secure/approve-agent-changes.md). Verify the result after approval, not after the tool call.
 
 `honua_admin_connections_test` and `honua_admin_layer_publish` are listed only in the `configure` workflow view (or the `full` catalog), so connect with `/mcp?view=configure`; the `setup` view lists `honua_publish_service` but not these two. See [workflow views](../connect/ai-agents-mcp.md#workflow-views-bounded-discovery).
 
-Verify the returned identifiers and query the intended endpoint as an intended reader. If the caller asks to “undo,” distinguish unpublishing a newly created layer from deleting data. Preserve shared resources and source tables.
+Verify the returned identifiers (over MCP, the proposal and operation identifiers until approval) and query the intended endpoint as an intended reader. If the caller asks to “undo,” distinguish unpublishing a newly created layer from deleting data. Preserve shared resources and source tables.
 
-The service/result publication tools document non-idempotent behavior: replay can create another layer. Persist returned identifiers and reconcile catalog and operation state after a timeout. A familiar request body is not an idempotency key.
+The service/result publication tools document non-idempotent behavior: replay can create another layer, or over MCP file another proposal. Persist returned identifiers and reconcile catalog and operation state after a timeout. A familiar request body is not an idempotency key.
 
 See the [workflow language contract](../../concepts/domain/workflow-language.md) for the meaning and limits of the structured fields. This guide describes an intended workflow; it does not certify a deployment or grant authority.
 

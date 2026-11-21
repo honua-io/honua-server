@@ -44,5 +44,6 @@ The two planes have different roots. Studio AI chat is under
 `/api/v1/studio/ai/*`, so the session's `baseUrl` ends in `/api`. MCP is at the
 server root (`/mcp`), not under `/api`. Without its own `mcpClient`, the session
 sends MCP calls to `${baseUrl}/mcp`, which is `/api/mcp` here and answers 404.
-Pass an `McpClient` whose `baseUrl` is the server root, as above. Its
-`workflowView: "setup"` lists the Studio tools.
+Pass an `McpClient` whose `baseUrl` is the server root, as above. Set
+`workflowView: "setup"` on it: an `McpClient` without a view gets the server's
+default view, which lists no Studio tools.
