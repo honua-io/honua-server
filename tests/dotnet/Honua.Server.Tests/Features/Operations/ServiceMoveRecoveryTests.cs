@@ -15,6 +15,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.DependencyInjection;
@@ -109,9 +110,13 @@ public sealed class ServiceMoveRecoveryTests
             UpdatedAt = DateTimeOffset.UtcNow,
             Result = new OperationResultSummary { Summary = "Move service completed." }
         });
+        var authorization = Substitute.For<IAuthorizationService>();
+        authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object?>(), AuthenticationExtensions.AdminPolicy)
+            .Returns(AuthorizationResult.Success());
         var tenant = Substitute.For<ITenantContext>();
         tenant.TenantId.Returns("tenant-b");
         await using var services = new ServiceCollection()
+            .AddSingleton(authorization)
             .AddSingleton(instanceStore)
             .AddSingleton(Substitute.For<IMetadataV2GraphStore>())
             .AddSingleton(tenant)
