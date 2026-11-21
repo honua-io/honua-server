@@ -59,8 +59,13 @@ public sealed class PostgresRasterDiscoveryTests
         {
             var act = () => service.ImportAsync(new RasterImportRequest
             {
-                LayerId = 2110, Name = "dem", FilePath = filePath, FileName = "dem.tif",
-                Format = SupportedRasterFormat.GeoTiff, TileZoomLevels = [], OverviewFactors = [],
+                LayerId = 2110,
+                Name = "dem",
+                FilePath = filePath,
+                FileName = "dem.tif",
+                Format = SupportedRasterFormat.GeoTiff,
+                TileZoomLevels = [],
+                OverviewFactors = [],
             });
 
             await act.Should().ThrowAsync<RasterStorageUnavailableException>();
