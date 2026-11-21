@@ -17,6 +17,7 @@ DELETE /api/v{version:apiVersion}/admin/cloud-rasters/{id:long}
 DELETE /api/v{version:apiVersion}/admin/config
 DELETE /api/v{version:apiVersion}/admin/connections/{id:guid}
 DELETE /api/v{version:apiVersion}/admin/connections/{id}/tables
+DELETE /api/v{version:apiVersion}/admin/exports/{exportId}
 DELETE /api/v{version:apiVersion}/admin/field-mask-policies/{id:guid}
 DELETE /api/v{version:apiVersion}/admin/folders/{id}
 DELETE /api/v{version:apiVersion}/admin/import/formats
@@ -144,6 +145,7 @@ POST /api/v{version:apiVersion}/admin/deploy/plan
 POST /api/v{version:apiVersion}/admin/embed/keys/
 POST /api/v{version:apiVersion}/admin/embed/keys/{id:guid}/revoke
 POST /api/v{version:apiVersion}/admin/embed/keys/{id:guid}/rotate
+POST /api/v{version:apiVersion}/admin/exports/
 POST /api/v{version:apiVersion}/admin/external-services/discover
 POST /api/v{version:apiVersion}/admin/field-mask-policies/
 POST /api/v{version:apiVersion}/admin/field-workflows/exports/

@@ -423,7 +423,7 @@
       "capability": "serve.vector-tiles"
     },
     {
-      "family": "Paired Publication HTTP",
+      "family": "Export HTTP",
       "capability": "serve.vector-tiles"
     },
     {

@@ -3779,14 +3779,14 @@
       ]
     },
     {
-      "surfaceId": "paired-publication-read",
-      "displayName": "Paired publication read (PMTiles + GeoParquet)",
+      "surfaceId": "export-read",
+      "displayName": "Export read (PMTiles + GeoParquet)",
       "surfaceKind": "http-route",
-      "protocol": "Paired Publication HTTP",
-      "canonicalIdentifier": "/api/v1/publications/{publicationId}/**",
+      "protocol": "Export HTTP",
+      "canonicalIdentifier": "/api/v1/exports/{exportId}/**",
       "parentSurfaceId": null,
       "endpointPrefixes": [
-        "/api/v1/publications/"
+        "/api/v1/exports/"
       ],
       "endpointExactMatches": [],
       "endpointContains": [],
@@ -3794,11 +3794,11 @@
       "proofs": [
         {
           "proofClass": "route-coverage",
-          "proofMechanism": "EndpointRegistry coverage and PairedPublishReadEndpointTests integration tests assert authentication, resource export access, read-policy refusal, current.json redirect, pinned-version allow-list and byte-range reads.",
+          "proofMechanism": "EndpointRegistry coverage and ExportReadEndpointTests integration tests assert authentication, resource export access, read-policy refusal, current.json redirect, pinned-version allow-list and byte-range reads.",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
-            "src/Honua.Server/Features/Admin/PairedPublications/PairedPublicationReadEndpoints.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Admin/PairedPublishReadEndpointTests.cs"
+            "src/Honua.Server/Features/Admin/Exports/ExportReadEndpoints.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/ExportReadEndpointTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
