@@ -100,7 +100,7 @@ public sealed class Cql2Parser
 
     private FilterExpression ParseBooleanPrimary(bool allowBareScalar)
     {
-        if (Check(Cql2TokenType.LeftParen) && !IsParenthesizedScalarAhead())
+        if (Check(Cql2TokenType.LeftParen) && !Cql2ScalarLookahead.IsParenthesizedScalarAhead(_tokens, _position))
         {
             Advance();
             var expr = ParseBooleanExpression(allowBareScalar);
@@ -1031,56 +1031,7 @@ public sealed class Cql2Parser
         return false;
     }
 
-    private bool IsParenthesizedScalarAhead()
-    {
-        var closeIndex = FindMatchingRightParen(_position);
-        if (closeIndex < 0 || closeIndex + 1 >= _tokens.Count)
-        {
-            return false;
-        }
-
-        var next = _tokens[closeIndex + 1].Type;
-        if (IsArithmeticOperator(next) || IsComparisonOperator(next) ||
-            next is Cql2TokenType.IsNull or Cql2TokenType.Like or Cql2TokenType.Between or Cql2TokenType.In)
-        {
-            return true;
-        }
-
-        if (next == Cql2TokenType.Not && closeIndex + 2 < _tokens.Count)
-        {
-            return _tokens[closeIndex + 2].Type is Cql2TokenType.Like or Cql2TokenType.Between or Cql2TokenType.In;
-        }
-
-        return false;
-    }
-
-    private int FindMatchingRightParen(int startIndex)
-    {
-        var depth = 0;
-        for (var i = startIndex; i < _tokens.Count; i++)
-        {
-            if (_tokens[i].Type == Cql2TokenType.LeftParen)
-            {
-                depth++;
-            }
-            else if (_tokens[i].Type == Cql2TokenType.RightParen && --depth == 0)
-            {
-                return i;
-            }
-        }
-
-        return -1;
-    }
-
-    private static bool IsArithmeticOperator(Cql2TokenType type)
-    {
-        return type is Cql2TokenType.Plus or Cql2TokenType.Minus or
-               Cql2TokenType.Star or Cql2TokenType.Slash or
-               Cql2TokenType.Percent or Cql2TokenType.Div or
-               Cql2TokenType.Caret;
-    }
-
-    private static bool IsComparisonOperator(Cql2TokenType type)
+    internal static bool IsComparisonOperator(Cql2TokenType type)
     {
         return type is Cql2TokenType.Equal or Cql2TokenType.NotEqual or
                Cql2TokenType.LessThan or Cql2TokenType.LessThanOrEqual or
