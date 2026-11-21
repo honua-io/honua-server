@@ -73,12 +73,10 @@ internal static class DatumTransformSql
         => GetOrAddBounded(
             KnownSridTransforms,
             (operand, fromSrid, toSrid),
-            static key => BuildTransformExpression(key.Operand, key.ToSrid, selection: null, key.FromSrid),
-            MaxCachedTransforms);
+            static key => BuildTransformExpression(key.Operand, key.ToSrid, selection: null, key.FromSrid));
 
-    // The cached value while the cache holds fewer than maxEntries; past that, a freshly built one.
-    internal static string GetOrAddBounded<TKey>(
-        ConcurrentDictionary<TKey, string> cache, TKey key, Func<TKey, string> build, int maxEntries)
+    // The cached value while the cache holds fewer than MaxCachedTransforms; past that, a freshly built one.
+    internal static string GetOrAddBounded<TKey>(ConcurrentDictionary<TKey, string> cache, TKey key, Func<TKey, string> build)
         where TKey : notnull
     {
         if (cache.TryGetValue(key, out var cached))
@@ -87,7 +85,7 @@ internal static class DatumTransformSql
         }
 
         var built = build(key);
-        return cache.Count < maxEntries ? cache.GetOrAdd(key, built) : built;
+        return cache.Count < MaxCachedTransforms ? cache.GetOrAdd(key, built) : built;
     }
 
     // Same text as BuildTransformExpression(operand, query.OutputSrid, query.OutputDatumTransformation,

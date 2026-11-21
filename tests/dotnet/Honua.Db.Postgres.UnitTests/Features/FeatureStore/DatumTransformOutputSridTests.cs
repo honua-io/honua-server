@@ -31,15 +31,19 @@ public sealed class DatumTransformOutputSridTests
     public void GetOrAddBounded_PastTheCap_BuildsWithoutGrowingTheCache()
     {
         var cache = new System.Collections.Concurrent.ConcurrentDictionary<int, string>();
+        for (var key = 0; key < DatumTransformSql.MaxCachedTransforms; key++)
+        {
+            DatumTransformSql.GetOrAddBounded(cache, key, Build);
+        }
 
-        var first = DatumTransformSql.GetOrAddBounded(cache, 1, static key => $"expr {key}", maxEntries: 2);
-        DatumTransformSql.GetOrAddBounded(cache, 2, static key => $"expr {key}", maxEntries: 2);
-        var third = DatumTransformSql.GetOrAddBounded(cache, 3, static key => $"expr {key}", maxEntries: 2);
+        var past = DatumTransformSql.GetOrAddBounded(cache, -1, Build);
 
-        third.Should().Be("expr 3");
-        cache.Keys.Should().BeEquivalentTo([1, 2]);
-        DatumTransformSql.GetOrAddBounded(cache, 1, static key => $"expr {key}", maxEntries: 2).Should().BeSameAs(first);
+        past.Should().Be("expr -1");
+        cache.Should().HaveCount(DatumTransformSql.MaxCachedTransforms).And.NotContainKey(-1);
+        DatumTransformSql.GetOrAddBounded(cache, 0, Build).Should().BeSameAs(cache[0]);
     }
+
+    private static string Build(int key) => $"expr {key}";
 
     [UnitTest]
     public void TransformToOutputSrid_UnknownSourceSrid_MatchesTheBuiltExpression()
