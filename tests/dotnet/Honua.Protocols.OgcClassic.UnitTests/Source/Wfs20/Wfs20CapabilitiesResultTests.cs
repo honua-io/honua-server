@@ -53,7 +53,7 @@ public sealed class Wfs20CapabilitiesResultTests
     {
         UpdateSequence = "2026-11-21T00:00:00Z",
         ServiceIdentification = new ServiceIdentification { Title = "Höhe — 東京 & <tag> 😀" },
-        ServiceProvider = new ServiceProvider { ProviderName = "Honua" },
+        ServiceProvider = new Honua.Protocols.Ogc.Classic.Wfs20.Models.ServiceProvider { ProviderName = "Honua" },
         FeatureTypeList = new FeatureTypeList
         {
             FeatureTypes = Enumerable.Range(0, 200)
