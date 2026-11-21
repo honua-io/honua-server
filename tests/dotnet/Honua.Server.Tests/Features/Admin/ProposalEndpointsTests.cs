@@ -219,7 +219,7 @@ public sealed partial class ProposalEndpointsTests : IClassFixture<ProposalEndpo
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/proposals/{id}")]
-    public async Task GetProposal_FindingMetadata_ReturnsStableLinkWithoutExecutionPayload()
+    public async Task GetProposal_FindingMetadata_ReturnsStableLinkAndRedactedExecutionPayload()
     {
         var proposal = await SeedProposalAsync(
             autonomyMetadata: new OperationProposalAutonomyMetadata
@@ -239,7 +239,9 @@ public sealed partial class ProposalEndpointsTests : IClassFixture<ProposalEndpo
         document.RootElement.GetProperty("findingId").GetString().Should().Be("finding-1");
         document.RootElement.GetProperty("autonomyRule").GetString().Should().Be("alert-dispatch-backlog");
         document.RootElement.GetProperty("actionDiscriminator").GetString().Should().Be("alerts.redrive_dead_letters");
-        json.Contains("executionPayload", StringComparison.OrdinalIgnoreCase).Should().BeFalse();
+        // Approvers review the payload they approve, with secrets redacted.
+        using var payload = JsonDocument.Parse(document.RootElement.GetProperty("executionPayload").GetString()!);
+        payload.RootElement.GetProperty("password").GetString().Should().Be("[REDACTED]");
         json.Contains("must-not-leak", StringComparison.Ordinal).Should().BeFalse();
     }
 

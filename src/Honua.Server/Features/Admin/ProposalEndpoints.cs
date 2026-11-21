@@ -515,7 +515,8 @@ internal static class ProposalEndpoints
         }
         catch (JsonException)
         {
-            return executionPayload;
+            // A payload that cannot be parsed cannot be redacted, so it is withheld.
+            return null;
         }
     }
 
