@@ -147,7 +147,8 @@ a database, every node consumes the realtime `security` and `catalog` events: a
 permission, sharing, principal or credential change made on any node refreshes the
 affected subscriptions on every node, and a revoked credential ends its streams
 immediately. Each node also re-evaluates every subscription as a backstop at
-`Realtime:SecurityBackstopInterval` (default and maximum 30 seconds). Without a
+`Realtime:SecurityBackstopInterval` (default and maximum 30 seconds); rotating the
+administrator password reaches open streams through this backstop. Without a
 database, subscriptions revalidate their credential every second instead. Each
 check runs in a fresh authentication scope. Expiry, revocation, changed
 identity/tenant/role claims, or validation failure ends the subscription. SSE sends `event: status` with
