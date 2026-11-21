@@ -32,6 +32,19 @@ public sealed class AdminApiRouteBindingTests : IDisposable
     }
 
     [UnitTest]
+    public void AdminConnectImportCatalog_AllDefinitions_AreBoundToMatchingHttpEndpoints()
+    {
+        using var _ = _factory.CreateClient();
+        var endpoints = _factory.Services.GetServices<EndpointDataSource>()
+            .SelectMany(static source => source.Endpoints)
+            .ToArray();
+
+        var violations = AdminHttpOperationRouteBinding.Validate(endpoints, AdminConnectImportOperationCatalog.Definitions);
+        violations.Should().BeEmpty(
+            "every AdminConnectImportOperationCatalog definition must bind its live HTTP route, method, and OpenAPI operation name");
+    }
+
+    [UnitTest]
     public void Validate_MissingBinding_ReportsMissingEndpoint()
     {
         var definition = AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == "admin.services.list");
