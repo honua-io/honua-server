@@ -27,6 +27,8 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
+using Honua.Core.Features.Operations.Abstractions;
+using Honua.Infrastructure.Hosting;
 using Honua.Import;
 using Honua.Migration;
 using Honua.Import.FileImport;
@@ -57,8 +59,13 @@ internal static partial class ImportEndpoints
     ];
     internal sealed class ImportEndpointsLog;
 
-    public static void MapImportEndpoints(this WebApplication app)
+    public static void MapImportEndpoints(
+        this WebApplication app,
+        IReadOnlyList<IAdminHttpOperationDefinition> operationDefinitions)
     {
+        ArgumentNullException.ThrowIfNull(operationDefinitions);
+        var definitions = operationDefinitions.ToDictionary(static item => item.OperationId, StringComparer.Ordinal);
+
         // Primary v1 routes at /api/v1/admin/import with formal versioning
         var v1Group = app.MapGroup("/api/v{version:apiVersion}/admin/import")
             .WithApiVersionSet()
@@ -66,131 +73,132 @@ internal static partial class ImportEndpoints
             .WithTags("Import")
             .RequireAdminAuthorization();
 
-        MapImportRoutes(v1Group, isV1: true);
+        MapImportPreviewAndUploadRoutes(v1Group, definitions);
+        MapImportJobAndStatusRoutes(v1Group, definitions);
         MapCoordinateSystemRoutes(app);
 
         MapCompatibilityImportRoutes(app);
     }
 
-    private static void MapImportRoutes(IEndpointRouteBuilder group, bool isV1)
-    {
-        var nameSuffix = isV1 ? "V1" : "";
+    private static AdminOperationRouteBinding BindImportOperation(
+        Dictionary<string, IAdminHttpOperationDefinition> definitions,
+        string operationId) =>
+        AdminHttpOperationBinding.ForDefinition(definitions[operationId], "/import");
 
-        // Get supported file formats
-        _ = group.MapMethods("/formats", [HttpMethods.Get], HandleGetSupportedFormats)
-            .WithName($"GetSupportedFileFormats{nameSuffix}")
-            .WithSummary("Get supported geospatial file formats")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
-        _ = group.MapMethods("/formats", NonGetMethods, HandleGetMethodNotAllowed)
-            .WithName($"GetSupportedFileFormats{nameSuffix}MethodNotAllowed")
+    private static void MapImportPreviewAndUploadRoutes(
+        IEndpointRouteBuilder group,
+        Dictionary<string, IAdminHttpOperationDefinition> definitions)
+    {
+        var formats = BindImportOperation(definitions, "admin.import.formats");
+        _ = AdminHttpOperationBinding.ApplyOperationMetadata(
+            group.MapMethods(formats.RoutePattern, formats.Methods, HandleGetSupportedFormats), formats.Definition)
+            .WithSummary("Get supported geospatial file formats");
+        _ = group.MapMethods(formats.RoutePattern, NonGetMethods, HandleGetMethodNotAllowed)
+            .WithName("GetSupportedFileFormatsV1MethodNotAllowed")
             .WithSummary("Get supported geospatial file formats method not allowed");
 
-        // Preview file before import
-        _ = group.MapMethods("/preview", [HttpMethods.Post], HandlePreviewFile)
-            .WithName($"PreviewFile{nameSuffix}")
+        var preview = BindImportOperation(definitions, "admin.import.preview");
+        _ = AdminHttpOperationBinding.ApplyOperationMetadata(
+            group.MapMethods(preview.RoutePattern, preview.Methods, HandlePreviewFile), preview.Definition)
             .WithSummary("Preview geospatial file contents")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .DisableAntiforgery(); // For file uploads
-        _ = group.MapMethods("/preview", NonPostMethods, HandlePostMethodNotAllowed)
-            .WithName($"PreviewFile{nameSuffix}MethodNotAllowed")
+            .DisableAntiforgery();
+        _ = group.MapMethods(preview.RoutePattern, NonPostMethods, HandlePostMethodNotAllowed)
+            .WithName("PreviewFileV1MethodNotAllowed")
             .WithSummary("Preview geospatial file contents method not allowed");
 
-        _ = group.MapMethods("/preview-url", [HttpMethods.Post], HandlePreviewFileFromUrl)
-            .WithName($"PreviewFileFromUrl{nameSuffix}")
-            .WithSummary("Preview geospatial file contents from a public object URL")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
-        _ = group.MapMethods("/preview-url", NonPostMethods, HandlePostMethodNotAllowed)
-            .WithName($"PreviewFileFromUrl{nameSuffix}MethodNotAllowed")
+        var previewUrl = BindImportOperation(definitions, "admin.import.preview-url");
+        _ = AdminHttpOperationBinding.ApplyOperationMetadata(
+            group.MapMethods(previewUrl.RoutePattern, previewUrl.Methods, HandlePreviewFileFromUrl), previewUrl.Definition)
+            .WithSummary("Preview geospatial file contents from a public object URL");
+        _ = group.MapMethods(previewUrl.RoutePattern, NonPostMethods, HandlePostMethodNotAllowed)
+            .WithName("PreviewFileFromUrlV1MethodNotAllowed")
             .WithSummary("Preview geospatial file contents from a public object URL method not allowed");
 
-        // Import geospatial file
-        _ = group.MapMethods("/upload", [HttpMethods.Post], HandleImportFile)
-            .WithName($"ImportFile{nameSuffix}")
+        var upload = BindImportOperation(definitions, "admin.import.upload");
+        _ = AdminHttpOperationBinding.ApplyOperationMetadata(
+            group.MapMethods(upload.RoutePattern, upload.Methods, HandleImportFile), upload.Definition)
             .WithSummary("Import geospatial file to PostgreSQL using streamed multipart ingest")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .DisableAntiforgery(); // For file uploads
-        _ = group.MapMethods("/upload", NonPostMethods, HandlePostMethodNotAllowed)
-            .WithName($"ImportFile{nameSuffix}MethodNotAllowed")
+            .DisableAntiforgery();
+        _ = group.MapMethods(upload.RoutePattern, NonPostMethods, HandlePostMethodNotAllowed)
+            .WithName("ImportFileV1MethodNotAllowed")
             .WithSummary("Import geospatial file to PostgreSQL using streamed multipart ingest method not allowed");
 
-        _ = group.MapMethods("/upload-url", [HttpMethods.Post], HandleImportFileFromUrl)
-            .WithName($"ImportFileFromUrl{nameSuffix}")
+        var uploadUrl = BindImportOperation(definitions, "admin.import.upload-url");
+        _ = AdminHttpOperationBinding.ApplyOperationMetadata(
+            group.MapMethods(uploadUrl.RoutePattern, uploadUrl.Methods, HandleImportFileFromUrl), uploadUrl.Definition)
             .WithMetadata(new UrlImportOperationMetadata())
-            .WithSummary("Import geospatial data from a public object URL")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
-        _ = group.MapMethods("/upload-url", NonPostMethods, HandlePostMethodNotAllowed)
-            .WithName($"ImportFileFromUrl{nameSuffix}MethodNotAllowed")
+            .WithSummary("Import geospatial data from a public object URL");
+        _ = group.MapMethods(uploadUrl.RoutePattern, NonPostMethods, HandlePostMethodNotAllowed)
+            .WithName("ImportFileFromUrlV1MethodNotAllowed")
             .WithSummary("Import geospatial data from a public object URL method not allowed");
 
-        _ = group.MapMethods("/upload-object", [HttpMethods.Post], HandleImportFileFromObjectStore)
-            .WithName($"ImportFileFromObjectStore{nameSuffix}")
-            .WithSummary("Import geospatial data from an allow-listed s3 object using the host identity")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
-        _ = group.MapMethods("/upload-object", NonPostMethods, HandlePostMethodNotAllowed)
-            .WithName($"ImportFileFromObjectStore{nameSuffix}MethodNotAllowed")
+        var uploadObject = BindImportOperation(definitions, "admin.import.upload-object");
+        _ = AdminHttpOperationBinding.ApplyOperationMetadata(
+            group.MapMethods(uploadObject.RoutePattern, uploadObject.Methods, HandleImportFileFromObjectStore), uploadObject.Definition)
+            .WithSummary("Import geospatial data from an allow-listed s3 object using the host identity");
+        _ = group.MapMethods(uploadObject.RoutePattern, NonPostMethods, HandlePostMethodNotAllowed)
+            .WithName("ImportFileFromObjectStoreV1MethodNotAllowed")
             .WithSummary("Import geospatial data from an allow-listed s3 object method not allowed");
+    }
 
-        // Get upload progress
-        _ = group.MapMethods("/uploads/{uploadId}/progress", [HttpMethods.Get], HandleGetUploadProgress)
-            .WithName($"GetUploadProgress{nameSuffix}")
-            .WithSummary("Get the progress of a file upload operation")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
-        _ = group.MapMethods("/uploads/{uploadId}/progress", NonGetMethods, HandleGetMethodNotAllowed)
-            .WithName($"GetUploadProgress{nameSuffix}MethodNotAllowed")
+    private static void MapImportJobAndStatusRoutes(
+        IEndpointRouteBuilder group,
+        Dictionary<string, IAdminHttpOperationDefinition> definitions)
+    {
+        var uploadProgress = BindImportOperation(definitions, "admin.import.uploads.progress");
+        _ = AdminHttpOperationBinding.ApplyOperationMetadata(
+            group.MapMethods(uploadProgress.RoutePattern, uploadProgress.Methods, HandleGetUploadProgress), uploadProgress.Definition)
+            .WithSummary("Get the progress of a file upload operation");
+        _ = group.MapMethods(uploadProgress.RoutePattern, NonGetMethods, HandleGetMethodNotAllowed)
+            .WithName("GetUploadProgressV1MethodNotAllowed")
             .WithSummary("Get the progress of a file upload operation method not allowed");
 
-        // Cancel upload
         _ = group.MapMethods("/uploads/{uploadId}/cancel", [HttpMethods.Post], HandleCancelUpload)
-            .WithName($"CancelUpload{nameSuffix}")
+            .WithName("CancelUploadV1")
             .WithSummary("Cancel a running file upload operation")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
         _ = group.MapMethods("/uploads/{uploadId}/cancel", NonPostMethods, HandlePostMethodNotAllowed)
-            .WithName($"CancelUpload{nameSuffix}MethodNotAllowed")
+            .WithName("CancelUploadV1MethodNotAllowed")
             .WithSummary("Cancel a running file upload operation method not allowed");
 
-        // Get all active uploads
         _ = group.MapMethods("/uploads", [HttpMethods.Get], HandleGetActiveUploads)
-            .WithName($"GetActiveUploads{nameSuffix}")
+            .WithName("GetActiveUploadsV1")
             .WithSummary("Get all active file upload operations")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
         _ = group.MapMethods("/uploads", NonGetMethods, HandleGetMethodNotAllowed)
-            .WithName($"GetActiveUploads{nameSuffix}MethodNotAllowed")
+            .WithName("GetActiveUploadsV1MethodNotAllowed")
             .WithSummary("Get all active file upload operations method not allowed");
 
-        // Get active import jobs
-        _ = group.MapMethods("/jobs", [HttpMethods.Get], HandleGetActiveJobs)
-            .WithName($"GetActiveImportJobs{nameSuffix}")
-            .WithSummary("Get all active import jobs")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
-        _ = group.MapMethods("/jobs", NonGetMethods, HandleGetMethodNotAllowed)
-            .WithName($"GetActiveImportJobs{nameSuffix}MethodNotAllowed")
+        var listJobs = BindImportOperation(definitions, "admin.import.jobs.list");
+        _ = AdminHttpOperationBinding.ApplyOperationMetadata(
+            group.MapMethods(listJobs.RoutePattern, listJobs.Methods, HandleGetActiveJobs), listJobs.Definition)
+            .WithSummary("Get all active import jobs");
+        _ = group.MapMethods(listJobs.RoutePattern, NonGetMethods, HandleGetMethodNotAllowed)
+            .WithName("GetActiveImportJobsV1MethodNotAllowed")
             .WithSummary("Get all active import jobs method not allowed");
 
-        // Get import job status
-        _ = group.MapMethods("/jobs/{jobId}", [HttpMethods.Get], HandleGetImportJobStatus)
-            .WithName($"GetImportJobStatus{nameSuffix}")
-            .WithSummary("Get the status of an import job")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
-        _ = group.MapMethods("/jobs/{jobId}", NonGetMethods, HandleGetMethodNotAllowed)
-            .WithName($"GetImportJobStatus{nameSuffix}MethodNotAllowed")
+        var getJob = BindImportOperation(definitions, "admin.import.jobs.get");
+        _ = AdminHttpOperationBinding.ApplyOperationMetadata(
+            group.MapMethods(getJob.RoutePattern, getJob.Methods, HandleGetImportJobStatus), getJob.Definition)
+            .WithSummary("Get the status of an import job");
+        _ = group.MapMethods(getJob.RoutePattern, NonGetMethods, HandleGetMethodNotAllowed)
+            .WithName("GetImportJobStatusV1MethodNotAllowed")
             .WithSummary("Get the status of an import job method not allowed");
 
-        // Cancel import job
-        _ = group.MapMethods("/jobs/{jobId}/cancel", [HttpMethods.Post], HandleCancelImportJob)
-            .WithName($"CancelImportJob{nameSuffix}")
-            .WithSummary("Cancel a running import job")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
-        _ = group.MapMethods("/jobs/{jobId}/cancel", NonPostMethods, HandlePostMethodNotAllowed)
-            .WithName($"CancelImportJob{nameSuffix}MethodNotAllowed")
+        var cancelJob = BindImportOperation(definitions, "admin.import.jobs.cancel");
+        _ = AdminHttpOperationBinding.ApplyOperationMetadata(
+            group.MapMethods(cancelJob.RoutePattern, cancelJob.Methods, HandleCancelImportJob), cancelJob.Definition)
+            .WithSummary("Cancel a running import job");
+        _ = group.MapMethods(cancelJob.RoutePattern, NonPostMethods, HandlePostMethodNotAllowed)
+            .WithName("CancelImportJobV1MethodNotAllowed")
             .WithSummary("Cancel a running import job method not allowed");
 
-        // Get import limits configuration
-        _ = group.MapMethods("/limits", [HttpMethods.Get], HandleGetLimits)
-            .WithName($"GetImportLimits{nameSuffix}")
-            .WithSummary("Get current import configuration limits")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
-        _ = group.MapMethods("/limits", NonGetMethods, HandleGetMethodNotAllowed)
-            .WithName($"GetImportLimits{nameSuffix}MethodNotAllowed")
+        var limits = BindImportOperation(definitions, "admin.import.limits");
+        _ = AdminHttpOperationBinding.ApplyOperationMetadata(
+            group.MapMethods(limits.RoutePattern, limits.Methods, HandleGetLimits), limits.Definition)
+            .WithSummary("Get current import configuration limits");
+        _ = group.MapMethods(limits.RoutePattern, NonGetMethods, HandleGetMethodNotAllowed)
+            .WithName("GetImportLimitsV1MethodNotAllowed")
             .WithSummary("Get current import configuration limits method not allowed");
     }
 

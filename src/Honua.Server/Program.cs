@@ -2004,7 +2004,7 @@ if (app.Environment.IsDevelopment())
 #endif
 
 // Configure file import endpoints
-app.MapImportEndpoints();
+app.MapImportEndpoints(AdminConnectImportOperationCatalog.Definitions);
 app.MapMigrationScannerEndpoints();
 app.MapGeoServicesMigrationEvidenceEndpoints();
 app.MapToolboxTranslationEndpoints();

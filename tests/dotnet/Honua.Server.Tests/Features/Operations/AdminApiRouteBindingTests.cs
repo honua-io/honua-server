@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Operations.Abstractions;
 using Honua.Server.Features.Operations;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -105,6 +106,14 @@ public sealed class AdminApiRouteBindingTests : IDisposable
         var act = () => AdminHttpOperationRouteBinding.ForApi("admin.services.settings.get", "/services", "/{serviceName}/wrong");
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*admin.services.settings.get*");
+    }
+
+    [UnitTest]
+    public void ForConnectImport_DriftedRelativeTemplate_ThrowsAtRegistration()
+    {
+        var act = () => AdminHttpOperationRouteBinding.ForConnectImport("admin.connections.test", "/connections", "/{id:guid}/wrong");
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*admin.connections.test*");
     }
 
     private readonly record struct TestEndpointSpec(string Pattern, string Method, string EndpointName);
