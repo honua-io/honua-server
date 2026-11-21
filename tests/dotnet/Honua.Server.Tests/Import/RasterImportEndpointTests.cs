@@ -396,11 +396,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/raster")]
     public async Task ImportRaster_WhenImportServiceThrows_ReturnsSanitizedError()
     {
-        var rasterImportService = Substitute.For<IRasterImportService>();
-        rasterImportService.DetectFormat("test.tif").Returns(SupportedRasterFormat.GeoTiff);
-        rasterImportService.GetSupportedExtensions().Returns([".tif"]);
-        rasterImportService.ImportAsync(Arg.Any<RasterImportRequest>(), Arg.Any<IProgress<RasterImportProgress>?>(), Arg.Any<CancellationToken>())
-            .Returns<Task<RasterImportResult>>(_ => throw new InvalidDataException("sensitive raster parser detail"));
+        var rasterImportService = CreateGeoTiffImportServiceThrowing(new InvalidDataException("sensitive raster parser detail"));
 
         var fixture = new WebAppFixture()
             .ConfigureServices(services =>

@@ -257,7 +257,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         }
     }
 
-    // A feature-only install has no raster tables: refuse with the operator action (503) before
+    // A feature-only install has no raster tables: refuse with the operator action before
     // the schema floor, which would otherwise report them as missing schema.
     private async Task EnsureRasterStorageAsync(DbConnection connection, CancellationToken cancellationToken)
     {
