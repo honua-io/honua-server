@@ -135,6 +135,42 @@ public sealed class AiExecutionAdmissionCoordinatorTests
         entry.Values.Select(value => value.Value?.ToString()).Should().NotContain("apikey:api-key:actor", "only the actor digest is logged");
     }
 
+    [UnitTheory]
+    [InlineData("financial_incident_required")]
+    [InlineData("financial_incident_invalid")]
+    [InlineData("financial_incident_exceeded")]
+    public async Task AcquireAsync_IncidentDenial_LogsBudgetCode(string code)
+    {
+        var store = new Store { Code = code, IncludeReservation = false };
+        using var services = Services(store);
+        var logger = EnabledLogger();
+
+        await FluentActions.Awaiting(() => Coordinator(services, logger, TimeProvider.System).AcquireAsync(Context, default))
+            .Should().ThrowAsync<AiAdmissionException>().Where(exception => exception.Code == code);
+
+        var entry = Entries(logger).Should().ContainSingle().Subject;
+        entry.EventId.Should().Be(9542);
+        entry.Values.Should().Contain(new KeyValuePair<string, object?>("AdmissionCode", code));
+    }
+
+    [UnitTest]
+    public async Task AuthorizeSendAsync_IncidentAuthorityLostBeforeSend_ThrowsAndLogsIncidentCode()
+    {
+        var store = new Store { SendDenial = "financial_incident_invalid" };
+        using var services = Services(store);
+        var logger = EnabledLogger();
+        var request = new AiFinancialRequest("fixture", "https://fixture.invalid/v1", "fixture-model", 5, "{}"u8);
+        await using var permit = await Coordinator(services, logger, TimeProvider.System).AcquireAsync(Context, request, default);
+        await permit.BeginInvocationAsync(default);
+
+        await FluentActions.Awaiting(() => permit.AuthorizeSendAsync(default))
+            .Should().ThrowAsync<AiAdmissionException>().Where(exception => exception.Code == "financial_incident_invalid");
+
+        var entry = Entries(logger).Should().ContainSingle().Subject;
+        entry.EventId.Should().Be(9543);
+        entry.Values.Should().Contain(new KeyValuePair<string, object?>("AdmissionCode", "financial_incident_invalid"));
+    }
+
     [UnitTest]
     public async Task AcquireAsync_NonBudgetDenial_IsNotLoggedAsBudget()
     {
@@ -196,9 +232,16 @@ public sealed class AiExecutionAdmissionCoordinatorTests
             return Task.FromResult(new AiAdmissionDecision(Code, IncludeReservation
                 ? new(context.DeploymentId, attemptId, Guid.NewGuid(), 1, deadline, deadline.AddSeconds(30)) : null));
         }
-        public Task<AiAdmissionDecision> TryAcquireAsync(AiExecutionContext context, Guid attemptId, AiFinancialRequest request, CancellationToken cancellationToken)
-            => TryAcquireAsync(context, attemptId, cancellationToken);
+        public string? SendDenial;
+        public async Task<AiAdmissionDecision> TryAcquireAsync(AiExecutionContext context, Guid attemptId, AiFinancialRequest request, CancellationToken cancellationToken)
+        {
+            var decision = await TryAcquireAsync(context, attemptId, cancellationToken);
+            return decision.Reservation is { } reservation
+                ? decision with { Reservation = reservation with { Financial = new(request.RequestDigest, new string('a', 64)) } }
+                : decision;
+        }
         public Task<bool> CommitFinancialSendAsync(AiAdmissionReservation reservation, CancellationToken cancellationToken) => Task.FromResult(false);
+        public Task<string?> CommitFinancialSendOrDenyAsync(AiAdmissionReservation reservation, CancellationToken cancellationToken) => Task.FromResult(SendDenial);
         public Task<string> SettleFinancialAsync(AiAdmissionReservation reservation, AiFinancialUsage usage, CancellationToken cancellationToken) => Task.FromResult("unavailable");
         public Task<bool> IsCurrentAsync(AiAdmissionReservation reservation, CancellationToken cancellationToken)
         {

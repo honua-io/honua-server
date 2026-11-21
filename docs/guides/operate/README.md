@@ -183,12 +183,14 @@ provider or correct its configuration, then allow the five-minute cache to expir
 Release checks compare the running assembly version with the public latest
 stable release, including numeric `rc.N` ordering. A missing release produces no
 notice; a failed release-feed read produces a sanitized `self-check-unavailable`
-warning, and Honua retries the read after five minutes, doubling up to hourly,
-until one succeeds. A successful read clears the warning and returns to the
-daily schedule. A failed self-check or findings store read (workflow
-operations, external events) logs one warning (event 7463) naming the source,
-the read and its failure class, never the error text; an unchanged failure is
-logged at most every five minutes. Review release notes before approving an
+warning and is retried after five minutes, then 10, 20 and 40 minutes and hourly
+after that; a successful retry clears it. Each
+failed scheduled check writes a warning log, event ID 9499, naming the check and
+the failure class (for example `HTTP 503` or a DNS or connection error) without
+the exception message. A failed findings store read (workflow operations,
+external events) logs one warning (event 7463) naming the source, the read and
+its failure class, never the error text; an unchanged failure is logged at most
+every five minutes. Review release notes before approving an
 upgrade. None of these findings includes an executable recommended action.
 They do not by themselves prove inbox or email delivery: that requires deployment
 notification wiring and live validation.

@@ -24,7 +24,8 @@
 # Pinned .NET SDK (do NOT use a floating tag).
 ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:11.0.100-resolute@sha256:65f3c7c6a25a239ab3e6719f2896147e7b68242ff2d8818dd70498bde6ef8bea
 # Declared before the first FROM so the runtime stage FROM can use it.
-ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.12.4@sha256:5828162cffed3af330034ae0c3ada30deb1cfdaecf37585f96ed0924f1d1dfb7
+# Matches the Ubuntu 26.04 (Resolute) OS generation of DOTNET_SDK_IMAGE and worker-gdal.
+ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.13.1@sha256:aff1d5515aa0e9b50be34ab11d6c0c2cfabc23cdcb7a2e0bc5748101eedb3e4a
 # The shipped SDK is copied from this untouched stage, so it is exactly the digest-pinned image's.
 FROM ${DOTNET_SDK_IMAGE} AS sdk
 
@@ -155,7 +156,8 @@ COPY docker/worker-customcode-dotnet/harness/Directory.Build.props \
      docker/worker-customcode-dotnet/harness/NuGet.config /tmp/warm/
 COPY docker/worker-customcode-dotnet/harness/warm/ /tmp/warm/warm/
 RUN dotnet restore /tmp/warm/warm/Honua.CustomCode.Warm.csproj -p:RestoreLockedMode=true \
- && rm -rf /tmp/warm
+ && rm -rf /tmp/warm \
+ && printf '<?xml version="1.0" encoding="utf-8"?>\n<configuration>\n  <packageSources>\n    <clear />\n    <add key="warm" value="/opt/nuget/packages" />\n  </packageSources>\n  <packageSourceMapping>\n    <clear />\n  </packageSourceMapping>\n</configuration>\n' > /opt/nuget/NuGet.config
 
 # Non-root user (uid 1001, matching docker/worker-gdal + the python image). The per-job
 # scratch tree is owned by the worker so clone + build + output writes succeed.
@@ -166,7 +168,9 @@ RUN groupadd --gid 1001 --system honua \
 
 WORKDIR /work
 
-ENV HONUA_CUSTOMCODE_SDK_ASSEMBLY=/opt/harness/Honua.CustomCode.Sdk.dll \
+ENV HOME=/work \
+    DOTNET_CLI_HOME=/work \
+    HONUA_CUSTOMCODE_SDK_ASSEMBLY=/opt/harness/Honua.CustomCode.Sdk.dll \
     HONUA_CUSTOMCODE_SOURCE_ROOT=/work/src \
     HONUA_CUSTOMCODE_BUILD_OUTPUT=/work/build \
     HONUA_CUSTOMCODE_WORKDIR=/work/out \

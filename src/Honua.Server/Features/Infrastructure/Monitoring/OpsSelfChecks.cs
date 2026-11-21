@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Observability.Domain;
-using Microsoft.Extensions.Logging;
 
 namespace Honua.Infrastructure.Monitoring;
 
@@ -23,8 +22,7 @@ internal sealed record OpsPublishedRelease(string Version, Uri ReleaseNotes);
 
 internal sealed record OpsSelfCheckEvaluation(IReadOnlyList<OpsFinding> Findings, IReadOnlyList<EvidenceSourceEnvelope> Sources);
 
-internal sealed class OpsSelfChecks(
-    TimeProvider clock, IOpsSelfCheckSource source, ILogger<OpsSelfChecks>? logger = null) : IDisposable
+internal sealed partial class OpsSelfChecks(TimeProvider clock, IOpsSelfCheckSource source, ILogger<OpsSelfChecks>? logger = null) : IDisposable
 {
     internal const string CertificateRule = "key-ring-certificate-expiry";
     internal const string IdentityProviderRule = "idp-unreachable";
@@ -34,15 +32,17 @@ internal sealed class OpsSelfChecks(
     private readonly SemaphoreSlim _gate = new(1, 1);
     // ADR-0086 exception: these sampled health observations never authorize requests.
     // Persisted providers refresh before every five-minute probe; the configuration-independent
-    // public release feed is sampled daily; a failed release read retries on a backoff that starts at
-    // five minutes and doubles up to one hour. Certificate lifetime is immutable and evaluated fresh.
-    private static readonly TimeSpan ReleaseInterval = TimeSpan.FromDays(1);
-    private static readonly TimeSpan ReleaseFirstRetry = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan ReleaseLongestRetry = TimeSpan.FromHours(1);
+    // public release feed is sampled daily. Certificate lifetime is immutable and evaluated fresh.
     private DateTimeOffset? _providersReadAt;
-    private DateTimeOffset? _releaseDueAt;
-    private TimeSpan _releaseRetry = ReleaseFirstRetry;
-    private readonly OpsFindingsCollectionLedger _ledger = new(logger);
+    private DateTimeOffset? _releaseReadAt;
+    // A failed feed read retries after five minutes, doubling to hourly, instead of leaving its warning up for a day;
+    // the cap keeps several replicas inside the feed's unauthenticated hourly quota.
+    private TimeSpan _releaseInterval = ReleaseInterval;
+    private static readonly TimeSpan ReleaseInterval = TimeSpan.FromDays(1);
+    private static readonly TimeSpan FailedReleaseRetry = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan MaximumReleaseRetry = TimeSpan.FromHours(1);
+    private readonly ILogger _logger = logger ?? (ILogger)Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
+    private readonly OpsFindingsCollectionLedger _ledger = new();
     private OpsSelfCheckEvaluation _providerSample = new([], []);
     private OpsSelfCheckEvaluation _releaseSample = new([], []);
 
@@ -60,11 +60,11 @@ internal sealed class OpsSelfChecks(
                 (_providerSample, _) = await CollectAsync(new(ReadProvidersAsync, "sign-in-providers", TimeSpan.FromMinutes(5)), now, cancellationToken).ConfigureAwait(false);
                 _providersReadAt = now;
             }
-            if (_releaseDueAt is null || now >= _releaseDueAt)
+            if (_releaseReadAt is null || now - _releaseReadAt >= _releaseInterval)
             {
                 (_releaseSample, var succeeded) = await CollectAsync(new(ReadReleaseAsync, "public-release-feed", ReleaseInterval), now, cancellationToken).ConfigureAwait(false);
-                _releaseDueAt = now + (succeeded ? ReleaseInterval : _releaseRetry);
-                _releaseRetry = succeeded ? ReleaseFirstRetry : LongerRetry(_releaseRetry);
+                _releaseReadAt = now;
+                _releaseInterval = succeeded ? ReleaseInterval : NextReleaseRetry(_releaseInterval);
             }
             var findings = new List<OpsFinding>(_providerSample.Findings.Concat(_releaseSample.Findings));
             AddCertificateFinding(now, findings);
@@ -78,22 +78,47 @@ internal sealed class OpsSelfChecks(
 
     public void Dispose() => _gate.Dispose();
 
-    private static TimeSpan LongerRetry(TimeSpan retry)
-        => TimeSpan.FromTicks(Math.Min(retry.Ticks * 2, ReleaseLongestRetry.Ticks));
-
-    private async Task<(OpsSelfCheckEvaluation Sample, bool Succeeded)> CollectAsync(
-        CollectionRequest request, DateTimeOffset now, CancellationToken cancellationToken)
+    private async Task<(OpsSelfCheckEvaluation Sample, bool Succeeded)> CollectAsync(CollectionRequest request, DateTimeOffset now, CancellationToken cancellationToken)
     {
         var collection = new OpsFindingsStoreCollection("honua_ops_findings.self-check." + request.Component,
             EvidencePostureVocabulary.BackendKinds.InProcess, request.Component, clock);
         var result = await collection.ReadAsync(request.Component,
-            token => request.Read(now, token), cancellationToken).ConfigureAwait(false);
+            token => ReadLoggingFailureAsync(request, now, token), cancellationToken).ConfigureAwait(false);
         IReadOnlyList<OpsFinding> findings = result.Succeeded ? result.Value!
             : [CreateFinding(new(CollectionRule, new() { WorkloadId = request.Component }, now),
                 new(OpsFindingSeverity.Warning, "A scheduled health check could not finish",
                 "Check the configuration store and server's outbound connectivity. This check will retry on its next scheduled run."))];
         return (new(findings, [collection.Publish(_ledger, request.MaximumAge)]), result.Succeeded);
     }
+
+    // The finding stays generic; the log names the failure class without the exception message, which may carry an address or secret.
+    private async Task<IReadOnlyList<OpsFinding>> ReadLoggingFailureAsync(CollectionRequest request, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await request.Read(now, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            SelfCheckFailed(_logger, request.Component, DescribeFailure(ex));
+            throw;
+        }
+    }
+
+    private static TimeSpan NextReleaseRetry(TimeSpan previous) => previous >= ReleaseInterval
+        ? FailedReleaseRetry
+        : TimeSpan.FromTicks(Math.Min(previous.Ticks * 2, MaximumReleaseRetry.Ticks));
+
+    internal static string DescribeFailure(Exception exception) => exception switch
+    {
+        HttpRequestException { InnerException: TimeoutException } => "timeout",
+        HttpRequestException { StatusCode: { } status } => $"HTTP {(int)status}",
+        HttpRequestException http => $"{nameof(HttpRequestException)}:{http.HttpRequestError}",
+        _ => exception.GetType().Name,
+    };
+
+    [LoggerMessage(9499, LogLevel.Warning, "Scheduled health check {Component} could not finish ({FailureClass})")]
+    private static partial void SelfCheckFailed(ILogger logger, string component, string failureClass);
 
     private void AddCertificateFinding(DateTimeOffset now, List<OpsFinding> findings)
     {

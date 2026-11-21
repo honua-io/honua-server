@@ -90,7 +90,7 @@ public sealed class Harness
         _ => "setupFailed",
     };
 
-    private bool TryRedeemCapability(JobSpec spec, Func<string, string?> readEnvironment, IGpLogger log)
+    private bool TryRedeemCapability(JobSpec spec, Func<string, string?> readEnvironment, EventJournal log)
     {
         if (spec.RedemptionCode is not { } code)
         {
@@ -143,7 +143,7 @@ public sealed class Harness
         IReadOnlyDictionary<string, string?>? env,
         CancellationToken cancellationToken)
     {
-        IGpLogger log = journal;
+        EventJournal log = journal;
 
         // --- 1. Inputs ------------------------------------------------------
         journal.Phase("inputs");
