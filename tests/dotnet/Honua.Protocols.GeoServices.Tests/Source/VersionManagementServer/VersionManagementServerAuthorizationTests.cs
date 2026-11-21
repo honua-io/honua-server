@@ -601,6 +601,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         var hidden = await JobAnswerAsync(_nonOwnerToken, guid, jobId);
         var unknown = await JobAnswerAsync(_nonOwnerToken, guid, unknownJob);
         hidden.Code.Should().Be(404, "another owner's private version must not expose its jobs: {0}", hidden.Body);
+        hidden.Code.Should().Be(unknown.Code);
         hidden.Body.Should().NotContain("\"kind\"").And.NotContain("\"conflictCount\"");
         hidden.Message.Replace(jobId, "<job>", StringComparison.OrdinalIgnoreCase).Should().Be(
             unknown.Message.Replace(unknownJob, "<job>", StringComparison.OrdinalIgnoreCase),
@@ -622,6 +623,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
             return (0, string.Empty, body);
         }
 
+        // details[0] carries the explanation; later entries are per-response correlation data.
         var detail = error.GetProperty("details")[0].GetString()!;
         return (error.GetProperty("code").GetInt32(), $"{error.GetProperty("message").GetString()} {detail}", body);
     }
