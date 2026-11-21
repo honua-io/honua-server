@@ -86,31 +86,13 @@ public sealed partial class GrpcRelatedRecordsIntegrationTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/QueryRelatedRecords")]
     public async Task RelatedRecords_GrpcWebPages_ReturnEveryMatchingPairOnce()
     {
-        var query = new Proto.QueryFeaturesRequest
-        {
-            ServiceId = WebAppFixture.TestServiceId,
-            LayerId = WebAppFixture.TestLayerId,
-            OutFields = { "category" },
-            ReturnGeometry = true,
-            OutSr = new Proto.SpatialReference { Wkid = 3857 }
-        };
-        var seeded = (await _client!.QueryFeaturesAsync(query, _headers)).Features;
+        var seeded = (await _client!.QueryFeaturesAsync(CreateCategoryQuery(), _headers)).Features;
         seeded.Should().HaveCountGreaterThan(1);
         var expected = seeded.SelectMany(origin => seeded
             .Where(child => child.Attributes["category"].StringValue == origin.Attributes["category"].StringValue)
             .Select(child => (origin.Id, child.Id))).ToArray();
         expected.Length.Should().BeGreaterThan(seeded.Count);
-        var request = new Proto.QueryRelatedRecordsRequest
-        {
-            ServiceId = WebAppFixture.TestServiceId,
-            LayerId = WebAppFixture.TestLayerId,
-            RelationshipId = 77,
-            PageSize = 1,
-            ReturnGeometry = true,
-            OutFields = { "category" },
-            OutSr = new Proto.SpatialReference { Wkid = 3857 }
-        };
-        request.ObjectIds.AddRange(seeded.Select(feature => feature.Id));
+        var request = CreatePagedRelatedRequest(seeded.Select(feature => feature.Id));
         var actual = new List<(long Origin, long Child)>();
         var pages = 0;
         do
@@ -130,6 +112,31 @@ public sealed partial class GrpcRelatedRecordsIntegrationTests : IAsyncLifetime
         } while (request.PageToken.Length > 0);
 
         actual.Should().OnlyHaveUniqueItems().And.BeEquivalentTo(expected);
+    }
+
+    private static Proto.QueryFeaturesRequest CreateCategoryQuery() => new()
+    {
+        ServiceId = WebAppFixture.TestServiceId,
+        LayerId = WebAppFixture.TestLayerId,
+        OutFields = { "category" },
+        ReturnGeometry = true,
+        OutSr = new Proto.SpatialReference { Wkid = 3857 }
+    };
+
+    private static Proto.QueryRelatedRecordsRequest CreatePagedRelatedRequest(IEnumerable<long> originIds)
+    {
+        var request = new Proto.QueryRelatedRecordsRequest
+        {
+            ServiceId = WebAppFixture.TestServiceId,
+            LayerId = WebAppFixture.TestLayerId,
+            RelationshipId = 77,
+            PageSize = 1,
+            ReturnGeometry = true,
+            OutFields = { "category" },
+            OutSr = new Proto.SpatialReference { Wkid = 3857 }
+        };
+        request.ObjectIds.AddRange(originIds);
+        return request;
     }
 
     [IntegrationTest]
