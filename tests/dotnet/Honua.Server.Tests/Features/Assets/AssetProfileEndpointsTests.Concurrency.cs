@@ -39,7 +39,9 @@ public sealed partial class AssetProfileEndpointsTests
         var responses = await Task.WhenAll(Enumerable.Range(0, 8).Select(index =>
             _fixture.Client.PutAsJsonAsync($"{ProfilesPath}/{profileId}", new AssetProfileWriteRequest
             {
-                CommandId = Guid.NewGuid(), ExpectedVersion = 1, Name = $"Edit {index}",
+                CommandId = Guid.NewGuid(),
+                ExpectedVersion = 1,
+                Name = $"Edit {index}",
             }, AssetsJsonContext.Default.AssetProfileWriteRequest)));
 
         responses.Count(response => response.StatusCode == HttpStatusCode.OK).Should().Be(1);
@@ -66,7 +68,9 @@ public sealed partial class AssetProfileEndpointsTests
         var list = await _fixture.Client.GetFromJsonAsync($"{ProfilesPath}?serviceId={WebAppFixture.TestServiceId}", AssetsJsonContext.Default.AssetProfileListResult);
         var update = await _fixture.Client.PutAsJsonAsync($"{ProfilesPath}/{profileId}", new AssetProfileWriteRequest
         {
-            CommandId = Guid.NewGuid(), ExpectedVersion = 1, Name = "Denied edit",
+            CommandId = Guid.NewGuid(),
+            ExpectedVersion = 1,
+            Name = "Denied edit",
         }, AssetsJsonContext.Default.AssetProfileWriteRequest);
         var create = await _fixture.Client.PostAsJsonAsync(ProfilesPath, ProfileRequest(Guid.NewGuid()), AssetsJsonContext.Default.AssetProfileWriteRequest);
 

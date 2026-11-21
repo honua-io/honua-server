@@ -155,8 +155,11 @@ internal sealed class PostgresAssetProfileStore : IAssetProfileStore
             transaction,
             new AssetCommandReceipt
             {
-                Command = command, SubjectKind = AssetCommandSubject.AssetProfile, SubjectId = profile.ProfileId,
-                StatusCode = statusCode, ResponseJson = response,
+                Command = command,
+                SubjectKind = AssetCommandSubject.AssetProfile,
+                SubjectId = profile.ProfileId,
+                StatusCode = statusCode,
+                ResponseJson = response,
             },
             cancellationToken).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);

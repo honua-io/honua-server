@@ -41,8 +41,11 @@ internal static class AssetCommandHttp
         var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
         return new AssetCommand
         {
-            CommandId = subject.CommandId, ServiceId = subject.ServiceId, Action = subject.Action,
-            Actor = actor, RequestSha256 = hash,
+            CommandId = subject.CommandId,
+            ServiceId = subject.ServiceId,
+            Action = subject.Action,
+            Actor = actor,
+            RequestSha256 = hash,
         };
     }
 
