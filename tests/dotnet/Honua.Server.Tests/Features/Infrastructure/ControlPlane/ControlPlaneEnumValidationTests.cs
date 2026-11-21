@@ -40,6 +40,23 @@ public sealed class ControlPlaneEnumValidationTests
         AssertSingleEnumFailure(result.Failures, "ControlPlane:DeployTargets:0:TargetKind", nameof(DeployTargetKind.LocalCompose));
     }
 
+    [UnitTheory]
+    [InlineData("TargetKind", "9", nameof(BatchComputeTargetKind.AwsBatch))]
+    [InlineData("Kind", "999", nameof(ExecutionJobKind.Geoprocessing))]
+    public void Validate_WorkloadWithUndefinedNumericEnum_FailsStartup(string property, string value, string allowedName)
+    {
+        var options = Bind(new()
+        {
+            ["ControlPlane:ExecutionWorkloads:0:WorkloadId"] = "custom-workload",
+            ["ControlPlane:ExecutionWorkloads:0:Backend"] = "custom-backend",
+            [$"ControlPlane:ExecutionWorkloads:0:{property}"] = value,
+        });
+
+        var result = _validator.Validate(null, options);
+
+        AssertSingleEnumFailure(result.Failures, $"ControlPlane:ExecutionWorkloads:0:{property}", allowedName);
+    }
+
     private static void AssertSingleEnumFailure(IEnumerable<string>? failures, string property, string allowedName)
     {
         var failure = Assert.Single(failures ?? []);

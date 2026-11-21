@@ -15,6 +15,13 @@ internal static class ControlPlaneEnumValidation
         {
             RequireDefined(options.DeployTargets[i].TargetKind, $"DeployTargets:{i}:TargetKind", failures);
         }
+
+        for (var i = 0; i < options.ExecutionWorkloads.Count; i++)
+        {
+            var workload = options.ExecutionWorkloads[i];
+            RequireDefined(workload.TargetKind, $"ExecutionWorkloads:{i}:TargetKind", failures);
+            RequireDefined(workload.Kind, $"ExecutionWorkloads:{i}:Kind", failures);
+        }
     }
 
     private static void RequireDefined<TEnum>(TEnum value, string property, List<string> failures)
