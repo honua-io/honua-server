@@ -16,10 +16,14 @@ Honua hosts registered 3D scene datasets as OGC 3D Tiles (`tileset.json` + asset
 
 ## Enable the 3D surfaces
 
-Every scene surface on this page is off by default. On a default install its
-routes are not mapped and return `404` (gRPC returns `UNIMPLEMENTED`). Turn on
-each experimental capability you need with its environment variable, then
-restart the server:
+Every scene surface on this page is off by default. On a default install,
+`/api/v1/capabilities/manifest` reports `reasonCode: experimental-disabled`,
+all 3D scene HTTP routes (`/api/scenes*`, `/scenes/{sceneId}/*`,
+`/api/v1/admin/scenes*`, `/api/v1/admin/scenes/ingest/{citygml,pointcloud}`)
+are not mapped and return HTTP `404` (gRPC returns `UNIMPLEMENTED`), and
+`/rest/services/{sceneId}/SceneServer` falls through to a GeoServices HTTP
+`200` `error.code=404` envelope. Turn on each experimental capability you need
+with its environment variable, then restart the server:
 
 | Capability key | Environment variable | Maps |
 | --- | --- | --- |
@@ -68,9 +72,12 @@ family and the `/scenes` alias. Each advertised mesh resource belongs to the
 same validated source revision. Malformed assets or unsupported mesh encodings
 make that revision unavailable; the descriptor does not advertise resources
 that cannot be decoded. This remains Experimental, and source implementation
-does not establish stock GeoServices REST certification. All shipped I3S routes require
-the Enterprise `serve.i3s-scene` entitlement and return HTTP `402` when it is
-unavailable.
+does not establish stock GeoServices REST certification. Once opted in via
+`Capabilities:Experimental`, all shipped I3S routes require the Enterprise
+`serve.i3s-scene` entitlement and return HTTP `402` when it is unavailable
+(without the experimental switch, `/scenes/{sceneId}/SceneServer` returns HTTP
+`404` and `/rest/services/{sceneId}/SceneServer` falls through to a GeoServices
+HTTP `200` `error.code=404` envelope).
 
 The serving LOD conversion uses a 16-pixel screen-space error target and the
 enclosing sphere of each actual mesh subtree: `lodThreshold = pi * (radius *
@@ -105,7 +112,7 @@ In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/
 
 ## Scene ingest (admin, Enterprise)
 
-Ingest endpoints convert a source document into a deterministic 3D Tiles tileset, register it in the scene dataset registry, and return the servable tileset URL. All routes require admin authorization, are gated by an Enterprise entitlement (a `402` upgrade response otherwise), and accept `multipart/form-data` with a `file` field. Geographic, uncompressed LAS and CityGML conversion is managed in-process; compressed or projected point clouds use the configured out-of-process `pcloud.translate` worker. The tileset is materialised inline and promoted atomically to its asset root.
+Ingest endpoints convert a source document into a deterministic 3D Tiles tileset, register it in the scene dataset registry, and return the servable tileset URL. Once opted in via `Capabilities:Experimental` (`scene.bim-ingest` / `scene.pointcloud-ingest`; HTTP `404` otherwise), all routes require admin authorization, are gated by an Enterprise entitlement (a `402` upgrade response otherwise), and accept `multipart/form-data` with a `file` field. Geographic, uncompressed LAS and CityGML conversion is managed in-process; compressed or projected point clouds use the configured out-of-process `pcloud.translate` worker. The tileset is materialised inline and promoted atomically to its asset root.
 
 | Method | Path | Source → output | Entitlement |
 | --- | --- | --- | --- |

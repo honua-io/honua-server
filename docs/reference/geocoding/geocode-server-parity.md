@@ -69,7 +69,9 @@ or suppress authentication and authorization errors on their named service folde
 - Advertised `MaxBatchSize` is **enforced** for `geocodeAddresses`. An optional licensing/edition cap
   (`Geocoding:MaxBatchSizeLimit`) further bounds the effective batch cap across all providers; the
   effective cap is `min(provider.MaxBatchSize, MaxBatchSizeLimit)`. Over-cap batches are rejected
-  with HTTP `400` carrying the advertised cap so clients can chunk to a compliant size.
+  with HTTP `200` and a GeoServices JSON error envelope
+  (`{"error":{"code":400,"message":"Bad Request","details":[...]}}`) carrying the advertised cap
+  so clients can chunk to a compliant size.
 
 ## Caveats
 
