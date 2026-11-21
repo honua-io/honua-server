@@ -85,6 +85,13 @@ def validate_app_token_scope(document: dict) -> None:
         raise AssertionError("normalization App token scope must be exactly the repository and approved permissions")
 
 
+def validate_release_app_environment(document: dict) -> None:
+    """The release App key lives only in the trunk-only bot-app environment."""
+    for name, job in document["jobs"].items():
+        if "HONUA_RELEASE_APP" in yaml.safe_dump(job) and job.get("environment") != "bot-app":
+            raise AssertionError(f"job {name} reads the release App key outside the trunk-only bot-app environment")
+
+
 def validate(
     producer: str,
     consumer: str,
@@ -327,6 +334,7 @@ def validate(
             "the minted token must request Pull requests: write for the review re-request")
 
     validate_app_token_scope(consumer_document)
+    validate_release_app_environment(consumer_document)
 
     token_uses = re.findall(r"github-token: (.+)", consumer)
     if token_uses != ["${{ steps.app-token.outputs.token }}"]:
