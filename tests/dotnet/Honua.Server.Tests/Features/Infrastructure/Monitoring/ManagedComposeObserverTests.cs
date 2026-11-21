@@ -283,7 +283,7 @@ public sealed partial class ManagedComposeObserverTests
     {
         var monitor = Substitute.For<IOptionsMonitor<ControlPlaneOptions>>();
         monitor.CurrentValue.Returns(options);
-        return new(client, Options.Create(new ComposeExecutorOptions()), monitor, clock ?? TimeProvider.System);
+        return new(new(client, new ComposeExecutorOptions()), monitor, clock ?? TimeProvider.System);
     }
 
     private static ControlPlaneOptions Configuration() => new()

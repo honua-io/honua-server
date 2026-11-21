@@ -28,7 +28,10 @@ internal sealed partial class TileOperationExecutionCore
         PairedPublicationSource Source,
         PairedPublicationFields Fields,
         PairedPublicationStore Store,
-        string? PointerETag);
+        string? PointerETag)
+    {
+        public PublicExportPromoter? PublicPromoter { get; init; }
+    }
 
     private sealed record PairedArtifacts(Stream Archive, string ArchiveSha256, byte[] Parquet, string ParquetSha256);
 
@@ -144,7 +147,10 @@ internal sealed partial class TileOperationExecutionCore
         var captureId = $"capture-{Guid.NewGuid():N}";
         var run = new PairedPublicationRun(
             request.PublicationId!, PairedPublicationDescriptorFactory.NewVersion(capturedAt, captureId), captureId, capturedAt);
-        return new PairedPublishContext(run, source, fields, store, pointerETag);
+        return new PairedPublishContext(run, source, fields, store, pointerETag)
+        {
+            PublicPromoter = services.GetService<PublicExportPromoter>()
+        };
     }
 
     // A publication id names one dataset; another layer must not silently replace it for its readers.
@@ -348,16 +354,43 @@ internal sealed partial class TileOperationExecutionCore
             PublicationDescriptorJsonContext.Default.JsonObject, cancellationToken).ConfigureAwait(false);
 
         await SwitchPointerAsync(context.Store, context.Run, context.PointerETag).ConfigureAwait(false);
+        var publicDelivery = await TryPromotePublicAsync(context, companions.Descriptor, cancellationToken).ConfigureAwait(false);
         TileOperationLog.PairedPublishActivated(_logger, current.JobId, run.PublicationId, run.Version);
         return current with
         {
             ArchiveSizeBytes = build.ArchiveSize,
-            PublishedPublication = new PublishedPublication(run.PublicationId, run.Version, run.CaptureId, collectionKey, context.Store.PointerKey),
+            PublishedPublication = new PublishedPublication(run.PublicationId, run.Version, run.CaptureId, collectionKey, context.Store.PointerKey)
+            {
+                Public = publicDelivery
+            },
             Status = OperationStatus.Completed,
             CompletedAt = DateTimeOffset.UtcNow,
             ErrorMessage = null,
             CurrentPhase = "Paired publish completed"
         };
+    }
+
+    private static async Task<PublicExportDeliveryStatus?> TryPromotePublicAsync(
+        PairedPublishContext context,
+        PublicationDescriptor descriptor,
+        CancellationToken cancellationToken)
+    {
+        if (context.PublicPromoter is null)
+        {
+            return null;
+        }
+
+        var input = new PublicExportPromotionInput
+        {
+            Descriptor = descriptor,
+            PrivateStore = context.Store,
+            Resource = context.Source.Resource,
+            Service = context.Source.Published.Service,
+            StorageLayerId = context.Source.StorageLayerId,
+            LayerIndex = context.Source.Published.Publication.LayerIndex ?? context.Source.StorageLayerId,
+            MetadataRevision = context.Source.MetadataRevision
+        };
+        return await context.PublicPromoter.PromoteAsync(input, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task PutCompanionFilesAsync(

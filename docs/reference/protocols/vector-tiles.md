@@ -13,7 +13,7 @@ Honua serves Mapbox Vector Tiles (MVT) per layer with TileJSON metadata and a ge
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | Vector tile for a layer (XYZ scheme, WebMercator). |
-| GET | `/tiles/{layerId}/h3/{z}/{x}/{y}.mvt` | H3 hexagon-aggregated vector tile. |
+| GET | `/tiles/{layerId}/h3/{z}/{x}/{y}.mvt` | H3 hexagon-aggregated vector tile (returns `501` when the configured feature provider does not support H3). |
 | GET | `/tiles/{layerId}/tile.json` | TileJSON 3.0 metadata for the layer. |
 | GET | `/api/styles/{publicationId}.json` | Generated MapLibre style document for the layer. |
 | GET, HEAD | `/api/v1/tiles/pmtiles/{*artifactId}` | Range-proxied access to a published PMTiles artifact. |
@@ -29,7 +29,7 @@ OGC API Tiles offers the standards-based equivalent of the XYZ routes — see [O
 | `h3/{z}/{x}/{y}.mvt` | `where` | Attribute filter. |
 | `h3/{z}/{x}/{y}.mvt` | `resolution` | H3 resolution for hexagon aggregation. |
 
-Unknown query parameters are rejected with 400. Zoom is validated against the configured `Limits:Tiles` range; out-of-range `x`/`y` return 400. Tiles require the FeatureServer protocol to be enabled on the layer and respect layer access policies.
+Unknown query parameters, zoom levels outside the configured `Limits:Tiles` range, and out-of-range `x`/`y` coordinates are rejected with a GeoServices JSON error envelope (`{"error":{"code":400,...}}` in an HTTP `200` response). Missing or unauthorized layers return standard HTTP status codes (`401`/`403`/`404` `application/problem+json`). Tiles require the FeatureServer protocol to be enabled on the layer and respect layer access policies.
 
 Cache lifecycle: tile responses carry a `Cache-Control: max-age=N` header. The TTL is resolved per tileset — a per-tileset override from the `TileOptions:TilesetLifecycle` configuration (keyed `serviceId/layerId/tileMatrixSetId`) takes precedence, otherwise the global `TileOptions:CacheMaxAge` applies.
 

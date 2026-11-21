@@ -108,7 +108,42 @@ internal static class FolderMutationService
             return new(null, mutation, new FolderExecutionFailure.AffectedServices(authorization));
         var saved = await store.SaveAsync(mutation.Graph, snapshot.Etag, cancellationToken).ConfigureAwait(false);
         AuditMutation(execution, saved);
-        return new(saved, mutation, null) { Authorization = authorization };
+        return new(saved, mutation, null) { Authorization = authorization, Namespace = execution.Namespace };
+    }
+
+    internal static async Task<FolderExecutionFailure?> AuthorizeObservationAsync(
+        FolderMutationExecution execution, MetadataV2Graph graph, CancellationToken cancellationToken = default)
+    {
+        var services = execution.Services;
+        var tenant = services.GetService<ITenantContext>()?.TenantId;
+        var folderTenant = execution.Namespace is null ? null : MetadataV2ServicePaths.NormalizeTenant(tenant);
+        if (!LayerPublicationNamespace.IsValid(execution.Namespace) || (execution.Namespace is not null && folderTenant is null))
+            return new FolderExecutionFailure.Mutation(new(400, "Invalid namespace or unresolved tenant."));
+        var operatorFailure = await AuthorizeOperatorAsync(execution.Principal, services, cancellationToken).ConfigureAwait(false);
+        if (operatorFailure is not null) return operatorFailure;
+        FolderMutation mutation;
+        try { mutation = execution.Command.Apply(graph, folderTenant); }
+        catch (Exception exception) when (FolderMutationFailure.Handles(exception))
+        {
+            return new FolderExecutionFailure.Mutation(FolderMutationFailure.From(exception));
+        }
+        var authorization = await FolderServiceAuthorization.EvaluateAsync(new FolderAuthorizationContext
+        {
+            Original = graph,
+            Mutation = mutation,
+            Services = services,
+            OperatorPrincipal = execution.Principal,
+            FolderTenant = folderTenant,
+            RequesterAccess = new ServiceAccessContext
+            {
+                Services = services,
+                Principal = execution.Principal,
+                TenantId = tenant,
+                Operation = AuthorizationOperation.Admin,
+                RequestCache = execution.RequestCache
+            }
+        }, cancellationToken).ConfigureAwait(false);
+        return authorization.Failure is null ? null : new FolderExecutionFailure.AffectedServices(authorization);
     }
 
     private static async Task<FolderRequesterCheck> ResolveRequesterAsync(
@@ -171,6 +206,7 @@ internal sealed record FolderExecutionResult(MetadataV2GraphSnapshot? Saved, Fol
     FolderExecutionFailure? Failure)
 {
     internal FolderAuthorizationResult? Authorization { get; init; }
+    internal string? Namespace { get; init; }
 }
 
 internal abstract record FolderExecutionFailure

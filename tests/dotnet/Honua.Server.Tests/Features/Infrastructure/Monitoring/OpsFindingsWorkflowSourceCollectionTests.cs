@@ -17,6 +17,7 @@ using Honua.Infrastructure.Monitoring;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -174,6 +175,62 @@ public sealed class OpsFindingsWorkflowSourceStoreTests
             EvidencePostureVocabulary.Completeness.Complete,
             WorkflowSourceFixture.WorkflowSource(resolved).Completeness);
         Assert.DoesNotContain(resolved.Findings, f => f.Rule == OpsFindingsService.RuleDeployManualIntervention);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_WorkflowStoreReadFails_LogsSourceAndFailureClassWithoutExceptionText()
+    {
+        var logger = Substitute.For<ILogger<OpsFindingsCollectionLedger>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var store = Substitute.For<IWorkflowOperationStore>();
+        store.ListActiveAsync(Arg.Any<WorkflowOperationKind?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<IReadOnlyList<WorkflowOperationRecord>>(new InvalidOperationException("private-store-detail")));
+
+        await WorkflowSourceFixture.CreateService(store, new ControlPlaneOptions(), new OpsFindingsCollectionLedger(logger),
+            new SettableClock(WorkflowSourceFixture.T0)).EvaluateWithEvidenceAsync();
+
+        var message = Assert.Single(logger.ReceivedCalls(), call => call.GetMethodInfo().Name == nameof(ILogger.Log))
+            .GetArguments()[2]?.ToString() ?? string.Empty;
+        Assert.StartsWith($"Ops findings source {EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations} could not read ",
+            message, StringComparison.Ordinal);
+        Assert.EndsWith(": InvalidOperationException.", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("private-store-detail", message, StringComparison.Ordinal);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task RepeatedReadFailure_LogsOncePerFiveMinutesAndAgainAfterRecovery()
+    {
+        var logger = Substitute.For<ILogger<OpsFindingsCollectionLedger>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var ledger = new OpsFindingsCollectionLedger(logger);
+        var clock = new SettableClock(WorkflowSourceFixture.T0);
+        var logged = new List<int>();
+        foreach (var (minute, fails) in new[] { (0, true), (1, true), (4, true), (5, true), (6, false), (7, true) })
+        {
+            clock.Now = WorkflowSourceFixture.T0.AddMinutes(minute);
+            var collection = new OpsFindingsStoreCollection("test.source", "test", "test-backend", clock);
+            await collection.ReadAsync("component",
+                _ => fails ? Task.FromException<int>(new InvalidOperationException()) : Task.FromResult(1), default);
+            collection.Publish(ledger, TimeSpan.FromMinutes(5));
+            logged.Add(logger.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(ILogger.Log)));
+        }
+        Assert.Equal([1, 1, 1, 2, 2, 3], logged);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void ReadFailure_NamesTransportCause()
+    {
+        var refused = new HttpRequestException(HttpRequestError.ConnectionError, "connect",
+            new HttpRequestException("pinned", new SocketException((int)SocketError.ConnectionRefused)));
+        Assert.Equal("HttpRequestException ConnectionError (SocketException ConnectionRefused)",
+            OpsFindingsReadFailure.DescribeFailure(refused));
+        var timedOut = new HttpRequestException("timed out", new TaskCanceledException());
+        Assert.Equal("HttpRequestException Unknown (TaskCanceledException)", OpsFindingsReadFailure.DescribeFailure(timedOut));
+        Assert.Equal("HttpRequestException status 503",
+            OpsFindingsReadFailure.DescribeFailure(new HttpRequestException("busy", null, HttpStatusCode.ServiceUnavailable)));
     }
 }
 

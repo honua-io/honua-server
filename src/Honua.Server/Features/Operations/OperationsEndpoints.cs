@@ -78,6 +78,14 @@ internal static class OperationsEndpoints
             .Produces<ApiResponse<OperationSecretValueResponse>>()
             .Produces(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status404NotFound);
+        group.MapPost("/handles/{handleId}/compensate", ServiceMoveCompensation.PostAsync)
+            .WithName("CompensateServiceMove")
+            .WithSummary("Restore a completed service move to its recorded prior folder")
+            .Produces<ApiResponse<OperationStatus>>()
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status409Conflict)
+            .Produces(StatusCodes.Status412PreconditionFailed);
     }
 
     private static async Task<IResult> HandleListOperations(

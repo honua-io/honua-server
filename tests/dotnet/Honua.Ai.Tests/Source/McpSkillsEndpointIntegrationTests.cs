@@ -34,7 +34,7 @@ public sealed class McpSkillsEndpointIntegrationTests : IAsyncLifetime
         Assert.Equal("private", listing.GetProperty("cacheScope").GetString());
         Assert.Equal(0, listing.GetProperty("ttlMs").GetInt32());
         var entries = listing.GetProperty("skills").EnumerateArray().ToArray();
-        Assert.Equal(5, entries.Length);
+        Assert.Equal(6, entries.Length);
         foreach (var entry in entries)
         {
             var uri = entry.GetProperty("uri").GetString()!;

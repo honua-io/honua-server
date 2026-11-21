@@ -19,7 +19,7 @@ Process discovery is open. Omit `Prefer` for bounded synchronous execution when 
 
 ## Steps
 
-1. List the available processes. The list contains the canonical `honua-geoprocessing` plan runner plus individually-projected catalog processes such as `geometry.buffer`, `geometry.clip`, `geometry.dissolve`, `analytics.spatial-join`, and `analytics.density`:
+1. List the available processes. The list contains the canonical `honua-geoprocessing` plan runner plus individually-projected catalog processes such as `geometry.buffer`, `geometry.clip`, `geometry.dissolve`, `analytics.spatial-join`, and `analytics.density-managed`:
 
    Open `http://localhost:8080/ogc/processes/processes` in a browser.
 
@@ -53,7 +53,7 @@ Process discovery is open. Omit `Prefer` for bounded synchronous execution when 
 
    Run `GET /ogc/processes/jobs/{jobId}/results` in the explorer.
 
-   Catalog processes return inline qualified values in document mode, or native/multipart content when raw mode was requested; `GET /ogc/processes/jobs` lists your recent jobs.
+   Catalog processes return inline qualified values in document mode, or native/multipart content when raw mode was requested; `GET /ogc/processes/jobs` lists durable geoprocessing jobs visible to your caller and tenant.
 
 To cancel an accepted or running job, use `DELETE /ogc/processes/jobs/{jobId}` when its backend supports dismissal, then poll its status to confirm the outcome. Dismissal cancels active work; it does not delete completed job records. A job that has already succeeded or failed returns `409 Conflict` when dismissal is requested.
 
@@ -74,8 +74,7 @@ because the canonical GeoJSON collection format cannot preserve M ordinates.
 Single-geometry tasks still require one geometry and do not flatten multiple
 features into a single geometry.
 
-GP result `value` follows the
-the GeoServices REST data-type contract.
+GP result `value` follows the GeoServices REST data-type contract.
 Inline vector outputs return a FeatureSet object with `fields`, `features`,
 `geometryType`, `spatialReference`, and dimensional flags. Table outputs return
 records with attributes. Stored feature, raster, and file outputs return an object
