@@ -623,7 +623,7 @@ public sealed partial class QueryRelatedRecordsEndpointTests : IClassFixture<Que
         errorElement.GetProperty("message").GetString().Should().Be("Bad Request");
         errorElement.GetProperty("details").EnumerateArray()
             .Select(detail => detail.GetString() ?? string.Empty)
-            .Should().Contain(detail => detail.Contains("objectIds parameter is required"));
+            .Should().Contain(detail => detail.Contains("objectIds or globalIds parameter is required"));
     }
 
     [IntegrationTest]
