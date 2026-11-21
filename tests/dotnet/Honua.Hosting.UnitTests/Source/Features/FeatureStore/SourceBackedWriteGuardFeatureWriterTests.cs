@@ -134,8 +134,7 @@ public sealed class SourceBackedWriteGuardFeatureWriterTests
         {
             Scope = "scope",
             ExpiresAt = DateTimeOffset.UnixEpoch,
-            Payload = static _ => ReadOnlyMemory<byte>.Empty,
-            Result = default
+            Payload = static _ => ReadOnlyMemory<byte>.Empty
         };
 
     private static (SourceBackedWriteGuardFeatureWriter Writer, CountingWriter Inner) CreateWriter()
@@ -159,14 +158,14 @@ public sealed class SourceBackedWriteGuardFeatureWriterTests
             => ValueTask.FromResult(snapshot);
     }
 
-    private sealed class CountingWriter : IFeatureWriter, IFeatureWriterTransaction
+    private sealed class CountingWriter : IFeatureWriter
     {
         public int Calls { get; private set; }
 
         public Task<IFeatureWriterTransaction> BeginTransactionAsync(
             IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
             CancellationToken cancellationToken = default)
-            => Task.FromResult<IFeatureWriterTransaction>(this);
+            => Task.FromResult<IFeatureWriterTransaction>(new CountingTransaction(this));
 
         public Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
             => Count(feature);
@@ -183,17 +182,26 @@ public sealed class SourceBackedWriteGuardFeatureWriterTests
             CancellationToken cancellationToken = default)
             => Count(default(FeatureEditResult));
 
-        public Task<FeatureWriterTransactionCommitOutcome> CommitAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(default(FeatureWriterTransactionCommitOutcome)!);
-
-        public Task RollbackAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-
-        private Task<T> Count<T>(T value)
+        internal Task<T> Count<T>(T value)
         {
             Calls++;
             return Task.FromResult(value);
         }
+    }
+
+    private sealed class CountingTransaction(CountingWriter writer) : IFeatureWriterTransaction
+    {
+        public Task<FeatureEditResult> ApplyEditsAsync(
+            int layerId,
+            FeatureEditBatch editBatch,
+            CancellationToken cancellationToken = default)
+            => writer.Count(default(FeatureEditResult));
+
+        public Task<FeatureWriterTransactionCommitOutcome> CommitAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(default(FeatureWriterTransactionCommitOutcome));
+
+        public Task RollbackAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }
