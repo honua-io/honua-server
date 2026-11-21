@@ -158,10 +158,10 @@ Current rung by concern:
 Read `honua_ops_findings` or the MCP resource `honua://ops/findings` to see
 these findings. Long-running hosts sample once a minute, with sign-in discovery
 cached for five minutes and the public GitHub latest-release feed cached for
-24 hours. API Lambda hosts also register the sampler while their execution
-environment is running. Event-handler-only Lambda profiles evaluate checks on a
-findings read. Lambda caches last only for the lifetime of the execution
-environment. Each replica keeps its own cache. Before each sign-in probe, it
+24 hours (a failed release-feed read retries sooner). API Lambda hosts also
+register the sampler while their execution environment is running.
+Event-handler-only Lambda profiles evaluate checks on a findings read. Lambda
+caches last only for the lifetime of the execution environment. Each replica keeps its own cache. Before each sign-in probe, it
 refreshes persisted provider configuration even when it serves no admin requests.
 Provider configuration changes therefore appear in these sampled health findings
 within the five-minute interval; request authentication refreshes independently.
@@ -187,7 +187,10 @@ warning and is retried after five minutes, then 10, 20 and 40 minutes and hourly
 after that; a successful retry clears it. Each
 failed scheduled check writes a warning log, event ID 9499, naming the check and
 the failure class (for example `HTTP 503` or a DNS or connection error) without
-the exception message. Review release notes before approving an
+the exception message. A failed findings store read (workflow operations,
+external events) logs one warning (event 7463) naming the source, the read and
+its failure class, never the error text; an unchanged failure is logged at most
+every five minutes. Review release notes before approving an
 upgrade. None of these findings includes an executable recommended action.
 They do not by themselves prove inbox or email delivery: that requires deployment
 notification wiring and live validation.
