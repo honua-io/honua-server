@@ -411,12 +411,16 @@ internal static partial class FeatureStreamEndpoints
 
             while (!linkedCts.Token.IsCancellationRequested)
             {
-                using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(linkedCts.Token);
+                using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(linkedCts.Token, session.ServiceRestartToken);
                 var waitToReadTask = session.Reader.WaitToReadAsync(waitCts.Token).AsTask();
                 var diff = nextPollAt - DateTimeOffset.UtcNow;
                 var remainingDelay = diff > TimeSpan.Zero ? diff : TimeSpan.Zero;
                 var waitForPollTask = Task.Delay(remainingDelay, waitCts.Token);
                 var completed = await Task.WhenAny(waitToReadTask, waitForPollTask).ConfigureAwait(false);
+                if (session.ServiceRestart)
+                {
+                    break; // Between frames: the endpoint writes the retry frame.
+                }
 
                 if (completed == waitForPollTask)
                 {
