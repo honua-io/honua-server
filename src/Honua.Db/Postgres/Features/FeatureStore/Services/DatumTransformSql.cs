@@ -72,7 +72,7 @@ internal static class DatumTransformSql
     public static string CachedTransformExpression(string operand, int fromSrid, int toSrid)
         => GetOrAddBounded(
             KnownSridTransforms,
-            (operand, fromSrid, toSrid),
+            (Operand: operand, FromSrid: fromSrid, ToSrid: toSrid),
             static key => BuildTransformExpression(key.Operand, key.ToSrid, selection: null, key.FromSrid));
 
     // The cached value while the cache holds fewer than MaxCachedTransforms; past that, a freshly built one.
