@@ -36,7 +36,8 @@ internal sealed partial class HonuaFeatureService
             edits[index] = await PrepareGrpcTargetsAsync(edits[index], stamp).ConfigureAwait(false);
         }
         return await ExecuteServiceEditsAsync(new ServiceEditExecution(
-            new ServiceEditCall(request, context, receipts), edits, keyed) { Fingerprint = fingerprint }).ConfigureAwait(false);
+            new ServiceEditCall(request, context, receipts), edits, keyed)
+            { Fingerprint = fingerprint }).ConfigureAwait(false);
     }
 
     private async Task<PreparedGrpcEdit[]> PrepareServiceEditsAsync(

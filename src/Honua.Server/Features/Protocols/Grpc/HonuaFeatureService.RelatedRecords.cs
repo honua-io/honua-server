@@ -77,7 +77,9 @@ internal sealed partial class HonuaFeatureService
         }
         var queryRequest = new Proto.QueryFeaturesRequest
         {
-            Where = request.Where, ReturnGeometry = request.ReturnGeometry, OutSr = request.OutSr
+            Where = request.Where,
+            ReturnGeometry = request.ReturnGeometry,
+            OutSr = request.OutSr
         };
         queryRequest.OutFields.AddRange(fields.Where(field => request.OutFields.Count == 0 ||
             request.OutFields.Contains("*") || request.OutFields.Contains(field.Name, StringComparer.OrdinalIgnoreCase))
@@ -86,7 +88,12 @@ internal sealed partial class HonuaFeatureService
             context.GetHttpContext().RequestServices, context.CancellationToken).ConfigureAwait(false);
         return new RelatedReadPlan
         {
-            Request = request, Origin = origin, Related = related, Relationship = descriptor, Query = query, Fields = fields,
+            Request = request,
+            Origin = origin,
+            Related = related,
+            Relationship = descriptor,
+            Query = query,
+            Fields = fields,
             Now = (context.GetHttpContext().RequestServices.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow()
         };
     }

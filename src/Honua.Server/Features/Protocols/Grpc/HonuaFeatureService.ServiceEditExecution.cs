@@ -232,7 +232,9 @@ internal sealed partial class HonuaFeatureService
         {
             response.Error = new Proto.ErrorDetail
             {
-                Code = 1000, Message = "Service edits rolled back.", Category = Proto.ErrorCategory.Execution
+                Code = 1000,
+                Message = "Service edits rolled back.",
+                Category = Proto.ErrorCategory.Execution
             };
         }
         return response;
