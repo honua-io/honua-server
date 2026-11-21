@@ -120,8 +120,8 @@ internal sealed class CloudStoragePublicExportStateStore(
     public Task SavePromotedAsync(PromotedExportRecord record, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(record);
-        return PutJsonAsync(PromotedKey(record.PublicationId), record,
-            PublicExportStateJsonContext.Default.PromotedExportRecord, cancellationToken);
+        var payload = JsonSerializer.SerializeToUtf8Bytes(record, PublicExportStateJsonContext.Default.PromotedExportRecord);
+        return PutJsonBytesAsync(PromotedKey(record.PublicationId), payload, cancellationToken);
     }
 
     public Task<PromotedExportRecord?> GetPromotedAsync(string publicationId, CancellationToken cancellationToken)
@@ -165,8 +165,8 @@ internal sealed class CloudStoragePublicExportStateStore(
     public Task SaveRevocationAsync(PublicExportRevocationRecord record, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(record);
-        return PutJsonAsync(RevocationKey(record.RevocationId), record,
-            PublicExportStateJsonContext.Default.PublicExportRevocationRecord, cancellationToken);
+        var payload = JsonSerializer.SerializeToUtf8Bytes(record, PublicExportStateJsonContext.Default.PublicExportRevocationRecord);
+        return PutJsonBytesAsync(RevocationKey(record.RevocationId), payload, cancellationToken);
     }
 
     public async Task<IReadOnlyList<PublicExportRevocationRecord>> ListPendingRevocationsAsync(CancellationToken cancellationToken)
@@ -193,13 +193,12 @@ internal sealed class CloudStoragePublicExportStateStore(
         return records;
     }
 
-    private async Task PutJsonAsync<T>(
+    private async Task PutJsonBytesAsync(
         string key,
-        T value,
-        System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> typeInfo,
+        byte[] payload,
         CancellationToken cancellationToken)
     {
-        using var body = new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(value, typeInfo));
+        using var body = new MemoryStream(payload, writable: false);
         var result = await storage.UploadAsync(new FileUploadRequest
         {
             Content = body,

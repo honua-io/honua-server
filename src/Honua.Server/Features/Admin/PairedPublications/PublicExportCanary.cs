@@ -7,12 +7,18 @@ using Honua.Core.Features.Alerts.Domain;
 
 namespace Honua.Server.Features.Admin.PairedPublications;
 
-internal sealed record PublicExportCanaryResult(bool IsReadable, string? Detail = null)
+internal sealed record PublicExportCanaryResult
 {
-    public static PublicExportCanaryResult Readable { get; } = new(true);
+    public bool IsReadable { get; init; }
 
-    public static PublicExportCanaryResult Unreadable(string detail) => new(false, detail);
+    public string? Detail { get; init; }
+
+    public static PublicExportCanaryResult Readable { get; } = new() { IsReadable = true };
+
+    public static PublicExportCanaryResult Unreadable(string detail) => new() { IsReadable = false, Detail = detail };
 }
+
+internal sealed record PublicExportCanaryFailure(string PublicationId, string Version, Uri PublicUrl, string Detail);
 
 internal interface IPublicExportCanary
 {
@@ -45,7 +51,7 @@ internal sealed class HttpPublicExportCanary(IHttpClientFactory httpClientFactor
 
 internal interface IPublicExportOpsNotifier
 {
-    Task NotifyCanaryFailedAsync(string publicationId, string version, Uri publicUrl, string detail, CancellationToken cancellationToken);
+    Task NotifyCanaryFailedAsync(PublicExportCanaryFailure failure, CancellationToken cancellationToken);
 
     Task NotifyRevocationFailedAsync(PublicExportRevocationRecord record, string detail, CancellationToken cancellationToken);
 }
@@ -58,20 +64,19 @@ internal sealed partial class OpsNotificationPublicExportNotifier(
     internal const string RevocationSource = "public-export-revocation";
     internal const string CanaryFindingTitle = "Public data unreadable through the CDN";
 
-    public Task NotifyCanaryFailedAsync(
-        string publicationId, string version, Uri publicUrl, string detail, CancellationToken cancellationToken)
+    public Task NotifyCanaryFailedAsync(PublicExportCanaryFailure failure, CancellationToken cancellationToken)
         => NotifyAsync(new OpsNotification
         {
             Source = CanarySource,
-            DedupeIdentifier = $"{publicationId}:{version}",
+            DedupeIdentifier = $"{failure.PublicationId}:{failure.Version}",
             Severity = AlertSeverity.Warning,
             Title = CanaryFindingTitle,
-            Body = $"Export '{publicationId}' version '{version}' was written to public storage, but an anonymous fetch of {publicUrl} failed ({detail}). Check the public bucket policy, encryption key permissions, and CDN origin access.",
+            Body = $"Export '{failure.PublicationId}' version '{failure.Version}' was written to public storage, but an anonymous fetch of {failure.PublicUrl} failed ({failure.Detail}). Check the public bucket policy, encryption key permissions, and CDN origin access.",
             Attributes = ImmutableDictionary<string, string>.Empty
-                .Add("publicationId", publicationId)
-                .Add("version", version)
-                .Add("publicUrl", publicUrl.AbsoluteUri)
-                .Add("detail", detail)
+                .Add("publicationId", failure.PublicationId)
+                .Add("version", failure.Version)
+                .Add("publicUrl", failure.PublicUrl.AbsoluteUri)
+                .Add("detail", failure.Detail)
         }, cancellationToken);
 
     public Task NotifyRevocationFailedAsync(

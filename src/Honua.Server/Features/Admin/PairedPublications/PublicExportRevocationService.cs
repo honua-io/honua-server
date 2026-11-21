@@ -9,20 +9,35 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Features.Admin.PairedPublications;
 
+internal sealed record PublicExportRevocationRequest(string PublicationId, string Reason, string ChangeId);
+
+internal sealed record PublicExportRevocationDependencies
+{
+    public required IPublicExportStateStore StateStore { get; init; }
+
+    public required PublicExportEligibility Eligibility { get; init; }
+
+    public required IMetadataV2GraphProvider GraphProvider { get; init; }
+
+    public required CdnInvalidationService CdnInvalidation { get; init; }
+
+    public required IPublicExportOpsNotifier OpsNotifier { get; init; }
+
+    public required IConfiguration Configuration { get; init; }
+
+    public IPublicPublicationDestination? Destination { get; init; }
+
+    public ICdnInvalidationStatusReader? StatusReader { get; init; }
+
+    public IHttpContextAccessor? HttpContextAccessor { get; init; }
+}
+
 // Durable revocation state machine for public Exports:
 // Requested -> ObjectsDeleted -> CatalogRewritten -> InvalidationCreated(id) -> Completed.
 // Persisted before every step so a crash between any two steps resumes cleanly on restart.
 internal sealed partial class PublicExportRevocationService(
-    IPublicExportStateStore stateStore,
-    PublicExportEligibility eligibility,
-    IMetadataV2GraphProvider graphProvider,
-    CdnInvalidationService cdnInvalidation,
-    IPublicExportOpsNotifier opsNotifier,
-    IConfiguration configuration,
+    PublicExportRevocationDependencies deps,
     ILogger<PublicExportRevocationService> logger,
-    IPublicPublicationDestination? destination = null,
-    ICdnInvalidationStatusReader? statusReader = null,
-    IHttpContextAccessor? httpContextAccessor = null,
     TimeProvider? timeProvider = null) : IPublicExportAccessChangeListener
 {
     internal const string ReasonAccessRestricted = "access-restricted";
@@ -46,34 +61,31 @@ internal sealed partial class PublicExportRevocationService(
         IReadOnlyCollection<int>? layerIds,
         CancellationToken cancellationToken = default)
     {
-        if (destination is null)
+        if (deps.Destination is null)
         {
             return;
         }
 
-        var promoted = await stateStore.ListPromotedAsync(cancellationToken).ConfigureAwait(false);
+        var promoted = await deps.StateStore.ListPromotedAsync(cancellationToken).ConfigureAwait(false);
         if (promoted.Count == 0)
         {
             return;
         }
 
-        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var snapshot = await deps.GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var changeId = ResolveCurrentChangeId();
 
         foreach (var export in promoted)
         {
-            if (!MatchesScope(export, serviceId, layerIds))
+            if (!MatchesScope(export, serviceId, layerIds) ||
+                await StillEligibleAsync(export, snapshot, cancellationToken).ConfigureAwait(false))
             {
                 continue;
             }
 
-            if (await StillEligibleAsync(export, snapshot, cancellationToken).ConfigureAwait(false))
-            {
-                continue;
-            }
-
-            await RequestRevocationAsync(export.PublicationId, ReasonAccessRestricted, changeId, cancellationToken)
-                .ConfigureAwait(false);
+            await RequestRevocationAsync(
+                new PublicExportRevocationRequest(export.PublicationId, ReasonAccessRestricted, changeId),
+                cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -82,23 +94,23 @@ internal sealed partial class PublicExportRevocationService(
         string? changeId,
         CancellationToken cancellationToken)
         => RequestRevocationAsync(
-            publicationId,
-            ReasonUnpublished,
-            string.IsNullOrWhiteSpace(changeId) ? ResolveCurrentChangeId() : changeId,
+            new PublicExportRevocationRequest(
+                publicationId,
+                ReasonUnpublished,
+                string.IsNullOrWhiteSpace(changeId) ? ResolveCurrentChangeId() : changeId),
             cancellationToken);
 
     public async Task<PublicExportRevocationRecord> RequestRevocationAsync(
-        string publicationId,
-        string reason,
-        string changeId,
+        PublicExportRevocationRequest request,
         CancellationToken cancellationToken)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.PublicationId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Reason);
 
-        var pending = await stateStore.ListPendingRevocationsAsync(cancellationToken).ConfigureAwait(false);
+        var pending = await deps.StateStore.ListPendingRevocationsAsync(cancellationToken).ConfigureAwait(false);
         var existing = pending.FirstOrDefault(item =>
-            string.Equals(item.PublicationId, publicationId, StringComparison.Ordinal));
+            string.Equals(item.PublicationId, request.PublicationId, StringComparison.Ordinal));
         if (existing is not null)
         {
             return await AdvanceAsync(existing, cancellationToken).ConfigureAwait(false);
@@ -108,25 +120,25 @@ internal sealed partial class PublicExportRevocationService(
         var record = new PublicExportRevocationRecord
         {
             RevocationId = $"rev-{Guid.NewGuid():N}",
-            PublicationId = publicationId,
-            Reason = reason,
-            ChangeId = string.IsNullOrWhiteSpace(changeId) ? CdnPurgeCause.NoRequest : changeId,
+            PublicationId = request.PublicationId,
+            Reason = request.Reason,
+            ChangeId = string.IsNullOrWhiteSpace(request.ChangeId) ? CdnPurgeCause.NoRequest : request.ChangeId,
             State = PublicExportRevocationState.Requested,
             CreatedAt = now,
             UpdatedAt = now
         };
-        await stateStore.SaveRevocationAsync(record, cancellationToken).ConfigureAwait(false);
+        await deps.StateStore.SaveRevocationAsync(record, cancellationToken).ConfigureAwait(false);
         return await AdvanceAsync(record, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task ResumePendingAsync(CancellationToken cancellationToken)
     {
-        if (destination is null)
+        if (deps.Destination is null)
         {
             return;
         }
 
-        var pending = await stateStore.ListPendingRevocationsAsync(cancellationToken).ConfigureAwait(false);
+        var pending = await deps.StateStore.ListPendingRevocationsAsync(cancellationToken).ConfigureAwait(false);
         var now = _timeProvider.GetUtcNow();
         foreach (var record in pending)
         {
@@ -144,7 +156,7 @@ internal sealed partial class PublicExportRevocationService(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(record);
-        if (destination is null || record.State == PublicExportRevocationState.Completed)
+        if (deps.Destination is null || record.State == PublicExportRevocationState.Completed)
         {
             return record;
         }
@@ -152,27 +164,7 @@ internal sealed partial class PublicExportRevocationService(
         var current = record;
         try
         {
-            if (current.State == PublicExportRevocationState.Requested)
-            {
-                current = await DeleteObjectsAsync(current, cancellationToken).ConfigureAwait(false);
-            }
-
-            if (current.State == PublicExportRevocationState.ObjectsDeleted)
-            {
-                current = await RewriteCatalogAsync(current, cancellationToken).ConfigureAwait(false);
-            }
-
-            if (current.State == PublicExportRevocationState.CatalogRewritten)
-            {
-                current = await CreateInvalidationAsync(current, cancellationToken).ConfigureAwait(false);
-            }
-
-            if (current.State == PublicExportRevocationState.InvalidationCreated)
-            {
-                current = await PollInvalidationAsync(current, cancellationToken).ConfigureAwait(false);
-            }
-
-            return current;
+            return await ExecuteRemainingStepsAsync(current, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -181,12 +173,39 @@ internal sealed partial class PublicExportRevocationService(
         }
     }
 
+    private async Task<PublicExportRevocationRecord> ExecuteRemainingStepsAsync(
+        PublicExportRevocationRecord current,
+        CancellationToken cancellationToken)
+    {
+        if (current.State == PublicExportRevocationState.Requested)
+        {
+            current = await DeleteObjectsAsync(current, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (current.State == PublicExportRevocationState.ObjectsDeleted)
+        {
+            current = await RewriteCatalogAsync(current, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (current.State == PublicExportRevocationState.CatalogRewritten)
+        {
+            current = await CreateInvalidationAsync(current, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (current.State == PublicExportRevocationState.InvalidationCreated)
+        {
+            current = await PollInvalidationAsync(current, cancellationToken).ConfigureAwait(false);
+        }
+
+        return current;
+    }
+
     private async Task<PublicExportRevocationRecord> DeleteObjectsAsync(
         PublicExportRevocationRecord record,
         CancellationToken cancellationToken)
     {
-        await destination!.DeletePublicationAsync(record.PublicationId, cancellationToken).ConfigureAwait(false);
-        await stateStore.DeletePromotedAsync(record.PublicationId, cancellationToken).ConfigureAwait(false);
+        await deps.Destination!.DeletePublicationAsync(record.PublicationId, cancellationToken).ConfigureAwait(false);
+        await deps.StateStore.DeletePromotedAsync(record.PublicationId, cancellationToken).ConfigureAwait(false);
 
         var updated = record with
         {
@@ -195,7 +214,7 @@ internal sealed partial class PublicExportRevocationService(
             NextAttemptAt = null,
             LastError = null
         };
-        await stateStore.SaveRevocationAsync(updated, cancellationToken).ConfigureAwait(false);
+        await deps.StateStore.SaveRevocationAsync(updated, cancellationToken).ConfigureAwait(false);
         return updated;
     }
 
@@ -203,12 +222,12 @@ internal sealed partial class PublicExportRevocationService(
         PublicExportRevocationRecord record,
         CancellationToken cancellationToken)
     {
-        var remaining = (await stateStore.ListPromotedAsync(cancellationToken).ConfigureAwait(false))
+        var remaining = (await deps.StateStore.ListPromotedAsync(cancellationToken).ConfigureAwait(false))
             .Where(item => !string.Equals(item.PublicationId, record.PublicationId, StringComparison.Ordinal))
             .ToArray();
         var bytes = PublicExportCatalogDocument.Serialize(remaining);
         using var stream = new MemoryStream(bytes, writable: false);
-        await destination!.PutRootCatalogAsync(stream, cancellationToken).ConfigureAwait(false);
+        await deps.Destination!.PutRootCatalogAsync(stream, cancellationToken).ConfigureAwait(false);
 
         var updated = record with
         {
@@ -217,7 +236,7 @@ internal sealed partial class PublicExportRevocationService(
             NextAttemptAt = null,
             LastError = null
         };
-        await stateStore.SaveRevocationAsync(updated, cancellationToken).ConfigureAwait(false);
+        await deps.StateStore.SaveRevocationAsync(updated, cancellationToken).ConfigureAwait(false);
         return updated;
     }
 
@@ -230,7 +249,7 @@ internal sealed partial class PublicExportRevocationService(
             $"/{PublicPublicationDestination.PublicationPrefix(record.PublicationId)}*",
             $"/{PublicPublicationDestination.RootCatalogKey}"
         ];
-        var result = await cdnInvalidation.InvalidateNowAsync(
+        var result = await deps.CdnInvalidation.InvalidateNowAsync(
             paths,
             cancellationToken,
             CdnPurgeCause.Admin(record.ChangeId)).ConfigureAwait(false);
@@ -247,7 +266,7 @@ internal sealed partial class PublicExportRevocationService(
             return await RecordFailureAsync(record, detail, cancellationToken).ConfigureAwait(false);
         }
 
-        var distributionId = configuration[DistributionIdSetting]?.Trim();
+        var distributionId = deps.Configuration[DistributionIdSetting]?.Trim();
         var updated = record with
         {
             State = PublicExportRevocationState.InvalidationCreated,
@@ -257,7 +276,7 @@ internal sealed partial class PublicExportRevocationService(
             NextAttemptAt = null,
             LastError = null
         };
-        await stateStore.SaveRevocationAsync(updated, cancellationToken).ConfigureAwait(false);
+        await deps.StateStore.SaveRevocationAsync(updated, cancellationToken).ConfigureAwait(false);
         return updated;
     }
 
@@ -265,12 +284,12 @@ internal sealed partial class PublicExportRevocationService(
         PublicExportRevocationRecord record,
         CancellationToken cancellationToken)
     {
-        if (statusReader is null || string.IsNullOrWhiteSpace(record.InvalidationId) || string.IsNullOrWhiteSpace(record.DistributionId))
+        if (deps.StatusReader is null || string.IsNullOrWhiteSpace(record.InvalidationId) || string.IsNullOrWhiteSpace(record.DistributionId))
         {
             return await MarkCompletedAsync(record, cancellationToken).ConfigureAwait(false);
         }
 
-        var status = await statusReader.ReadAsync(
+        var status = await deps.StatusReader.ReadAsync(
             new CdnInvalidationReceipt(record.DistributionId, record.InvalidationId),
             cancellationToken).ConfigureAwait(false);
 
@@ -281,27 +300,34 @@ internal sealed partial class PublicExportRevocationService(
 
         if (status.Status == CdnInvalidationStatus.Pending)
         {
-            var now = _timeProvider.GetUtcNow();
-            if (now - record.CreatedAt >= PollTimeout)
-            {
-                return await RecordFailureAsync(record, "CDN invalidation did not complete within the expected window.", cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            var deferred = record with
-            {
-                AttemptCount = record.AttemptCount + 1,
-                UpdatedAt = now,
-                NextAttemptAt = now + NextBackoff(record.AttemptCount)
-            };
-            await stateStore.SaveRevocationAsync(deferred, cancellationToken).ConfigureAwait(false);
-            return deferred;
+            return await HandlePendingPollAsync(record, cancellationToken).ConfigureAwait(false);
         }
 
         var detail = string.IsNullOrWhiteSpace(status.Detail)
             ? "CDN invalidation status check failed."
             : $"CDN invalidation status check failed ({status.Detail}).";
         return await RecordFailureAsync(record, detail, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<PublicExportRevocationRecord> HandlePendingPollAsync(
+        PublicExportRevocationRecord record,
+        CancellationToken cancellationToken)
+    {
+        var now = _timeProvider.GetUtcNow();
+        if (now - record.CreatedAt >= PollTimeout)
+        {
+            return await RecordFailureAsync(record, "CDN invalidation did not complete within the expected window.", cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        var deferred = record with
+        {
+            AttemptCount = record.AttemptCount + 1,
+            UpdatedAt = now,
+            NextAttemptAt = now + NextBackoff(record.AttemptCount)
+        };
+        await deps.StateStore.SaveRevocationAsync(deferred, cancellationToken).ConfigureAwait(false);
+        return deferred;
     }
 
     private async Task<PublicExportRevocationRecord> MarkCompletedAsync(
@@ -315,7 +341,7 @@ internal sealed partial class PublicExportRevocationService(
             NextAttemptAt = null,
             LastError = null
         };
-        await stateStore.SaveRevocationAsync(completed, cancellationToken).ConfigureAwait(false);
+        await deps.StateStore.SaveRevocationAsync(completed, cancellationToken).ConfigureAwait(false);
         return completed;
     }
 
@@ -332,8 +358,8 @@ internal sealed partial class PublicExportRevocationService(
             NextAttemptAt = now + NextBackoff(record.AttemptCount),
             LastError = detail
         };
-        await stateStore.SaveRevocationAsync(failed, cancellationToken).ConfigureAwait(false);
-        await opsNotifier.NotifyRevocationFailedAsync(failed, detail, cancellationToken).ConfigureAwait(false);
+        await deps.StateStore.SaveRevocationAsync(failed, cancellationToken).ConfigureAwait(false);
+        await deps.OpsNotifier.NotifyRevocationFailedAsync(failed, detail, cancellationToken).ConfigureAwait(false);
         return failed;
     }
 
@@ -348,7 +374,7 @@ internal sealed partial class PublicExportRevocationService(
             return false;
         }
 
-        var result = await eligibility.EvaluateAsync(resource, service, cancellationToken).ConfigureAwait(false);
+        var result = await deps.Eligibility.EvaluateAsync(resource, service, cancellationToken).ConfigureAwait(false);
         return result.IsEligible;
     }
 
@@ -372,7 +398,7 @@ internal sealed partial class PublicExportRevocationService(
     }
 
     private string ResolveCurrentChangeId()
-        => httpContextAccessor?.HttpContext is { } context
+        => deps.HttpContextAccessor?.HttpContext is { } context
             ? AuditContextResolver.ResolveCorrelationId(context)
             : CdnPurgeCause.NoRequest;
 

@@ -20,34 +20,13 @@ internal static class PublicExportCatalogDocument
         ArgumentNullException.ThrowIfNull(exports);
         var links = new JsonArray
         {
-            new JsonObject
-            {
-                ["rel"] = "self",
-                ["href"] = "./catalog.json",
-                ["type"] = ExportCollectionDocument.MediaType
-            },
-            new JsonObject
-            {
-                ["rel"] = "root",
-                ["href"] = "./catalog.json",
-                ["type"] = ExportCollectionDocument.MediaType
-            }
+            CreateSelfLink("self"),
+            CreateSelfLink("root")
         };
 
         foreach (var export in exports.OrderBy(item => item.PublicationId, StringComparer.Ordinal))
         {
-            var child = new JsonObject
-            {
-                ["rel"] = "child",
-                ["href"] = $"./publications/{export.PublicationId}/{export.Version}/{ExportCollectionDocument.FileName}",
-                ["type"] = ExportCollectionDocument.MediaType
-            };
-            if (!string.IsNullOrWhiteSpace(export.Title))
-            {
-                child["title"] = export.Title;
-            }
-
-            links.Add(child);
+            links.Add(CreateChildLink(export));
         }
 
         return new JsonObject
@@ -63,4 +42,27 @@ internal static class PublicExportCatalogDocument
 
     public static byte[] Serialize(IEnumerable<PromotedExportRecord> exports)
         => JsonSerializer.SerializeToUtf8Bytes(Write(exports), PublicationDescriptorJsonContext.Default.JsonObject);
+
+    private static JsonObject CreateSelfLink(string rel) => new()
+    {
+        ["rel"] = rel,
+        ["href"] = "./catalog.json",
+        ["type"] = ExportCollectionDocument.MediaType
+    };
+
+    private static JsonObject CreateChildLink(PromotedExportRecord export)
+    {
+        var child = new JsonObject
+        {
+            ["rel"] = "child",
+            ["href"] = $"./publications/{export.PublicationId}/{export.Version}/{ExportCollectionDocument.FileName}",
+            ["type"] = ExportCollectionDocument.MediaType
+        };
+        if (!string.IsNullOrWhiteSpace(export.Title))
+        {
+            child["title"] = export.Title;
+        }
+
+        return child;
+    }
 }

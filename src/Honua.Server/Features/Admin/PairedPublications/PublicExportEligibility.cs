@@ -17,11 +17,15 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.PairedPublications;
 
-internal sealed record PublicExportEligibilityResult(bool IsEligible, string? Reason)
+internal sealed record PublicExportEligibilityResult
 {
-    public static PublicExportEligibilityResult Eligible { get; } = new(true, null);
+    public bool IsEligible { get; init; }
 
-    public static PublicExportEligibilityResult Ineligible(string reason) => new(false, reason);
+    public string? Reason { get; init; }
+
+    public static PublicExportEligibilityResult Eligible { get; } = new() { IsEligible = true };
+
+    public static PublicExportEligibilityResult Ineligible(string reason) => new() { IsEligible = false, Reason = reason };
 }
 
 // A public Export is served directly from object storage / CDN with no server in the request path.
@@ -48,15 +52,9 @@ internal sealed class PublicExportEligibility(
         ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(service);
 
-        if (IsMultiTenancyEnabled())
+        if (EvaluateStaticRestrictions(resource, service) is { } staticFailure)
         {
-            return PublicExportEligibilityResult.Ineligible(ReasonMultiTenancyEnabled);
-        }
-
-        if (!MetadataV2TenantVisibility.IsVisibleToTenant(resource, requestTenant: null) ||
-            !MetadataV2TenantVisibility.IsVisibleToTenant(service, requestTenant: null))
-        {
-            return PublicExportEligibilityResult.Ineligible(ReasonTenantScoped);
+            return staticFailure;
         }
 
         var accessDecision = await AccessPolicyHelpers.EvaluateResourceAccessCoreAsync(
@@ -73,21 +71,33 @@ internal sealed class PublicExportEligibility(
             return PublicExportEligibilityResult.Ineligible(ReasonAnonymousDenied);
         }
 
+        return await EvaluateAnonymousPoliciesAsync(resource, cancellationToken).ConfigureAwait(false);
+    }
+
+    private PublicExportEligibilityResult? EvaluateStaticRestrictions(
+        MetadataV2Object resource,
+        MetadataV2Service service)
+    {
+        if (tenantIsolation?.Value.Enabled == true || tenantContext?.Value.Enabled == true)
+        {
+            return PublicExportEligibilityResult.Ineligible(ReasonMultiTenancyEnabled);
+        }
+
+        if (!MetadataV2TenantVisibility.IsVisibleToTenant(resource, requestTenant: null) ||
+            !MetadataV2TenantVisibility.IsVisibleToTenant(service, requestTenant: null))
+        {
+            return PublicExportEligibilityResult.Ineligible(ReasonTenantScoped);
+        }
+
         if (!string.IsNullOrWhiteSpace(resource.PermanentFilter?.Expression))
         {
             return PublicExportEligibilityResult.Ineligible(ReasonRowFilter);
         }
 
-        if (resource.SchemaFields.Any(field => field.Hidden))
-        {
-            return PublicExportEligibilityResult.Ineligible(ReasonHiddenField);
-        }
-
-        return await EvaluateAnonymousPoliciesAsync(resource, cancellationToken).ConfigureAwait(false);
+        return resource.SchemaFields.Any(field => field.Hidden)
+            ? PublicExportEligibilityResult.Ineligible(ReasonHiddenField)
+            : null;
     }
-
-    private bool IsMultiTenancyEnabled()
-        => tenantIsolation?.Value.Enabled == true || tenantContext?.Value.Enabled == true;
 
     private async Task<PublicExportEligibilityResult> EvaluateAnonymousPoliciesAsync(
         MetadataV2Object resource,
@@ -102,12 +112,9 @@ internal sealed class PublicExportEligibility(
                 return PublicExportEligibilityResult.Ineligible(ReasonRowFilter);
             }
 
-            if (query.EnforcedMaskedFields is { IsDefaultOrEmpty: false })
-            {
-                return PublicExportEligibilityResult.Ineligible(ReasonHiddenField);
-            }
-
-            return PublicExportEligibilityResult.Eligible;
+            return query.EnforcedMaskedFields is { IsDefaultOrEmpty: false }
+                ? PublicExportEligibilityResult.Ineligible(ReasonHiddenField)
+                : PublicExportEligibilityResult.Eligible;
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -129,24 +136,15 @@ internal sealed class PublicExportEligibility(
         IRowLevelSecurityFilterSource? rlsSource = services.GetService<IRlsPolicyStore>() is { } rlsStore &&
             graphProvider is not null && filterExpressionService is not null
             ? new RowLevelSecurityFilterSource(
-                anonymousAccessor,
-                rlsStore,
-                graphProvider,
-                filterExpressionService,
-                rbacOptions,
-                services.GetRequiredService<ILogger<RowLevelSecurityFilterSource>>(),
-                services)
+                anonymousAccessor, rlsStore, graphProvider, filterExpressionService, rbacOptions,
+                services.GetRequiredService<ILogger<RowLevelSecurityFilterSource>>(), services)
             : services.GetService<IRowLevelSecurityFilterSource>();
 
         IFieldMaskSource? fieldMaskSource = services.GetService<IFieldMaskPolicyStore>() is { } maskStore &&
             graphProvider is not null
             ? new FieldMaskSource(
-                anonymousAccessor,
-                maskStore,
-                graphProvider,
-                rbacOptions,
-                services.GetRequiredService<ILogger<FieldMaskSource>>(),
-                services)
+                anonymousAccessor, maskStore, graphProvider, rbacOptions,
+                services.GetRequiredService<ILogger<FieldMaskSource>>(), services)
             : services.GetService<IFieldMaskSource>();
 
         return new LayerReadSecurityResolver(graphProvider, filterExpressionService, rlsSource, fieldMaskSource);
