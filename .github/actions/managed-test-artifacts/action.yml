@@ -19,6 +19,9 @@ inputs:
   build-properties:
     description: Exact producer and consumer build property identity
     default: 'TreatWarningsAsErrors=true;RunAnalyzers=true;UseSharedCompilation=false'
+  local-only-projects-file:
+    description: Optional JSON array of project paths whose consumers run on the same build host
+    default: ''
 outputs:
   restored-projects-file:
     description: JSON array of successfully restored project paths
@@ -50,6 +53,7 @@ runs:
         HONUA_MANAGED_ATTEMPT: ${{ inputs.producer-attempt }}
         HONUA_MANAGED_CONFIGURATION: ${{ inputs.configuration }}
         HONUA_MANAGED_PROPERTIES: ${{ inputs.build-properties }}
+        HONUA_MANAGED_LOCAL_ONLY_PROJECTS: ${{ inputs.local-only-projects-file }}
       with:
         script: |
           const {pathToFileURL} = await import('node:url');
@@ -57,7 +61,8 @@ runs:
           const result = await execute({mode: process.env.HONUA_MANAGED_MODE,
             projectsFile: process.env.HONUA_MANAGED_PROJECTS, enabled: process.env.HONUA_MANAGED_ENABLED,
             producerAttempt: process.env.HONUA_MANAGED_ATTEMPT, configuration: process.env.HONUA_MANAGED_CONFIGURATION,
-            buildProperties: process.env.HONUA_MANAGED_PROPERTIES});
+            buildProperties: process.env.HONUA_MANAGED_PROPERTIES,
+            localOnlyProjectsFile: process.env.HONUA_MANAGED_LOCAL_ONLY_PROJECTS});
           core.setOutput('restored-projects-file', result.restoredProjectsFile);
           core.setOutput('receipt-file', result.receiptFile);
           core.setOutput('producer-attempt', result.producerAttempt);
@@ -67,6 +72,6 @@ runs:
             .addRaw(`Run ${receipt.workflowRunId}, producer attempt ${receipt.producerAttempt}; checkout ${receipt.sourceSha || 'transport disabled'}.\n`)
             .addTable([
               [{data: 'Project', header: true}, {data: 'Status', header: true},
-               {data: 'Artifact ID', header: true}, {data: 'Reason', header: true}],
-              ...receipt.projects.map(p => [p.project, p.status, String(p.artifactId || ''), p.reason || ''])
+               {data: 'Transport', header: true}, {data: 'Artifact ID', header: true}, {data: 'Reason', header: true}],
+              ...receipt.projects.map(p => [p.project, p.status, p.transport || '', String(p.artifactId || ''), p.reason || ''])
             ]).write();

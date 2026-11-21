@@ -278,6 +278,11 @@ class PrManagedBuildTests(unittest.TestCase):
         self.assertIn('needs.pr-gate.outputs.producer-attempt', held)
         self.assertIn('needs.server-test-producer.outputs.producer-attempt', held)
 
+    def test_local_only_projects_wired_in_pr_gate(self):
+        producer = job('pr-gate')
+        self.assertIn('partition-managed-producer.py local-only-projects', producer)
+        self.assertIn('local-only-projects-file: artifacts/pr-gate/local-only-projects.json', producer)
+
 
 if __name__ == '__main__':
     unittest.main()

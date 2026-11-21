@@ -93,6 +93,33 @@ class ProducerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 partition.exclude_server(partition.BuildFilterRequest(root, 'full', None, root / 'output.slnf'))
 
+    def test_local_only_projects_respects_even_odd_held_shard_routing(self):
+        proj_a = 'tests/dotnet/Honua.A.Tests/Honua.A.Tests.csproj'
+        proj_b = 'tests/dotnet/Honua.B.Tests/Honua.B.Tests.csproj'
+        proj_c = 'tests/dotnet/Honua.C.Tests/Honua.C.Tests.csproj'
+        proj_shared = 'tests/dotnet/Honua.Shared.Tests/Honua.Shared.Tests.csproj'
+        config = {'shards': [
+            {'name': 'Server Shard', 'csproj': SERVER, 'dispatch_rank': 9.0},
+            {'name': 'Held 0', 'csprojs': [proj_a, proj_shared], 'dispatch_rank': 5.0},
+            {'name': 'Held 1', 'csprojs': [proj_b, proj_shared], 'dispatch_rank': 4.0},
+            {'name': 'Held 2', 'csproj': proj_c, 'dispatch_rank': 3.0},
+        ]}
+        matrix_result = {'skip': False, 'shards': ['Server Shard', 'Held 0', 'Held 1', 'Held 2']}
+        projects = [proj_a, proj_b, proj_c, proj_shared]
+        req = partition.LocalOnlyRequest
+        # Held order by -dispatch_rank: Held 0 (idx 0, even), Held 1 (idx 1, odd), Held 2 (idx 2, even).
+        self.assertEqual([proj_a, proj_c], partition.local_only_projects(req(
+            projects=projects, matrix_result=matrix_result, config=config,
+            heavy_ready=True, heavy_runner_configured=True, same_repo_pr=True)))
+        for heavy_ready, heavy_runner_configured, same_repo_pr in (
+                (False, True, True), (True, False, True), (True, True, False)):
+            self.assertEqual([], partition.local_only_projects(req(
+                projects=projects, matrix_result=matrix_result, config=config,
+                heavy_ready=heavy_ready, heavy_runner_configured=heavy_runner_configured, same_repo_pr=same_repo_pr)))
+        self.assertEqual([], partition.local_only_projects(req(
+            projects=projects, matrix_result={'skip': True, 'shards': ['Held 0']}, config=config,
+            heavy_ready=True, heavy_runner_configured=True, same_repo_pr=True)))
+
 
 if __name__ == '__main__':
     unittest.main()

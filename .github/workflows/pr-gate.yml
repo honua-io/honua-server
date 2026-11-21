@@ -758,11 +758,15 @@ jobs:
           CAP: ${{ env.AFFECTED_SHARDS_CAP }}
           BASE_REF: ${{ github.event.pull_request.base.sha || 'origin/trunk' }}
           HEAD_REF: ${{ github.event.pull_request.head.sha || 'HEAD' }}
+          HEAVY_READY: ${{ needs.runner-select.outputs.heavy_ready }}
+          HEAVY_RUNNER_CONFIGURED: ${{ vars.HONUA_HEAVY_RUNNER != '' && 'true' || 'false' }}
+          SAME_REPO_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && 'true' || 'false' }}
         run: |
           mkdir -p artifacts/pr-gate
           python3 scripts/ci/compute-affected-shards.py --cap "${CAP}" --time-budget --annotate-resources --json "artifacts/pr-gate/producer-shards.json"
           python3 scripts/ci/managed-test-build.py projects --lane pr-shards --matrix-file "artifacts/pr-gate/producer-shards.json" --output "artifacts/pr-gate/managed-projects.json"
           python3 scripts/ci/partition-managed-producer.py main-projects --projects-file "artifacts/pr-gate/managed-projects.json" --output "artifacts/pr-gate/managed-projects.json"
+          python3 scripts/ci/partition-managed-producer.py local-only-projects --projects-file "artifacts/pr-gate/managed-projects.json" --matrix-file "artifacts/pr-gate/producer-shards.json" --heavy-ready "${HEAVY_READY}" --heavy-runner-configured "${HEAVY_RUNNER_CONFIGURED}" --same-repo-pr "${SAME_REPO_PR}" --output "artifacts/pr-gate/local-only-projects.json"
 
       - name: Lean gate (managed build producer)
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
@@ -793,6 +797,7 @@ jobs:
         with:
           mode: publish
           projects-file: artifacts/pr-gate/managed-projects.json
+          local-only-projects-file: artifacts/pr-gate/local-only-projects.json
           enabled: ${{ vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' && 'true' || 'false' }}
 
       # The standalone host needs its canonical bin directory. Verify it here

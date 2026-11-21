@@ -3247,3 +3247,17 @@ Measured on the build host (Release, 3 interleaved base/head rounds of the
 Shard filters are unchanged, so every case runs in the same shards on selected PR runs
 and twice-daily full trunk runs. No workflow, shard definition, required check name or
 aggregate `needs` changed.
+
+### Host-local managed test artifact handoff (#8701)
+
+Build-host producers and consumers can hand off verified managed test artifacts
+through a shared host-local store when `HONUA_MANAGED_ARTIFACT_LOCAL_STORE` is
+exported by the build host. Archives are stored content-addressed by
+`archiveSha256` alongside a same-run manifest index, and consumers still run
+`scripts/ci/restore-server-test-binaries.sh` with the exact same v2 identity and
+SHA-256 checks. `PR Gate / Build and tests` skips remote Actions upload for
+projects whose `affected-shard-held` consumers all land on the build host
+(even-index shards when `heavy_ready` is true on same-repo PRs); any missing or
+unwritable local store falls back to remote upload and download automatically.
+No workflow job structure, shard definition, required check name or aggregate
+`needs` changed.

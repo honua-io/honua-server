@@ -63,9 +63,33 @@ on the producer after pristine artifact publication, using its existing host
 output. Consumer tests retain their complete test runtime and static-asset
 verification within the same artifact size limits.
 
-Each project emits a concise console receipt with status, reason, source and
-archive hash. Packaging-limit failures include the measured bound, without
-logging payload contents.
+Each project emits a concise console receipt with status, transport (`local`,
+`local-and-remote`, or `remote`), reason, source and archive hash. Packaging-limit
+failures include the measured bound, without logging payload contents.
+
+## Host-local handoff on the build host (#8701)
+
+When build-host runners export `HONUA_MANAGED_ARTIFACT_LOCAL_STORE` pointing to a
+shared host directory, producers atomically stage each verified archive under
+`<store>/blobs/<archiveSha256>.tar.gz` and its same-run manifest under
+`<store>/runs/<workflow_run_id>/<attempt>/<artifact_name>.manifest.json`.
+Consumers on the same host materialize the manifest and hardlink (or copy) the
+archive into their isolated temporary directory and run the unchanged
+`restore-server-test-binaries.sh` verification contract; on a local miss or
+corruption they fall back transparently to GitHub Actions Artifact download,
+while identity-contract mismatches remain fatal.
+
+In `PR Gate / Build and tests`, `scripts/ci/partition-managed-producer.py
+local-only-projects` computes which main-producer projects are consumed solely
+by even-index `affected-shard-held` jobs routed to the build host (requiring
+`heavy_ready == 'true'`, `HONUA_HEAVY_RUNNER` configured, and a same-repo pull
+request). Those projects skip remote artifact upload once host-local staging
+succeeds; any local staging failure or unavailable store falls back to remote
+upload automatically. `PR Gate / Server test producer` and `ci.yml` continue to
+upload remotely because they serve hosted consumers (`server-governance`, odd
+shards, and hosted full-CI shards), while build-host consumers still restore
+from the host-local store. PR Gate job structure, shard definitions, and
+required check names are unchanged.
 
 Missing, expired, corrupt, oversized, or unavailable artifacts leave a project
 unrestored. The consumer restores/builds the union of missing projects once,

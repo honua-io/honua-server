@@ -213,3 +213,117 @@ test('per-project console receipt exposes bounded budget reason without payload 
  assert.equal(logs[0].status,'unrestored');assert.equal(logs[0].observed,900000000);assert.equal(logs[0].limit,805306368);
  assert.equal(logs[0].sourceSha,sha);assert.ok(!JSON.stringify(logs).includes('SECRET_PAYLOAD'));
 });
+
+test('publish stages into host-local store and skips remote upload for local-only projects',async t=>{
+ const f=await fixture(t);
+ const store=path.join(f.root,'local-store');await mkdir(store);
+ const localOnlyFile=path.join(f.root,'local-only.json');await writeFile(localOnlyFile,JSON.stringify([project]));
+ const uploads=[];
+ f.artifact.uploadArtifact=async name=>{uploads.push(name);return {id:42};};
+ f.deps.env={...f.deps.env,HONUA_MANAGED_ARTIFACT_LOCAL_STORE:store};
+ const logs=[];f.deps.log=line=>logs.push(JSON.parse(line));
+ const r=await run({...f.opts,mode:'publish',localOnlyProjectsFile:localOnlyFile},f.deps);
+ assert.deepEqual(uploads,[]);
+ const row=(await receipt(r)).projects[0];
+ assert.equal(row.status,'published');assert.equal(row.transport,'local');assert.equal(row.artifactId,null);
+ assert.equal(logs[0].transport,'local');assert.equal(logs[0].localStoreFallback,null);
+ assert.equal(await readFile(path.join(store,'blobs',`${'b'.repeat(64)}.tar.gz`),'utf8'),'payload');
+ const stagedManifest=JSON.parse(await readFile(path.join(store,'runs','123','2','managed-tests-2-fixture.manifest.json'),'utf8'));
+ assert.equal(stagedManifest.archive_sha256,'b'.repeat(64));
+ await cleaned(f.root);
+});
+
+test('publish stages locally and uploads remotely when project has hosted consumers',async t=>{
+ const f=await fixture(t);
+ const store=path.join(f.root,'local-store');await mkdir(store);
+ const localOnlyFile=path.join(f.root,'local-only.json');await writeFile(localOnlyFile,'[]');
+ const uploads=[];
+ f.artifact.uploadArtifact=async name=>{uploads.push(name);return {id:99};};
+ f.deps.env={...f.deps.env,HONUA_MANAGED_ARTIFACT_LOCAL_STORE:store};
+ const r=await run({...f.opts,mode:'publish',localOnlyProjectsFile:localOnlyFile},f.deps);
+ assert.deepEqual(uploads,['managed-tests-2-fixture']);
+ const row=(await receipt(r)).projects[0];
+ assert.equal(row.status,'published');assert.equal(row.transport,'local-and-remote');assert.equal(row.artifactId,99);
+ assert.equal(await readFile(path.join(store,'blobs',`${'b'.repeat(64)}.tar.gz`),'utf8'),'payload');
+ await cleaned(f.root);
+});
+
+test('publish falls back to remote upload when configured local store is unavailable',async t=>{
+ const f=await fixture(t);
+ const localOnlyFile=path.join(f.root,'local-only.json');await writeFile(localOnlyFile,JSON.stringify([project]));
+ const uploads=[];
+ f.artifact.uploadArtifact=async name=>{uploads.push(name);return {id:77};};
+ f.deps.env={...f.deps.env,HONUA_MANAGED_ARTIFACT_LOCAL_STORE:path.join(f.root,'missing-store')};
+ const r=await run({...f.opts,mode:'publish',localOnlyProjectsFile:localOnlyFile},f.deps);
+ assert.deepEqual(uploads,['managed-tests-2-fixture']);
+ const row=(await receipt(r)).projects[0];
+ assert.equal(row.status,'published');assert.equal(row.transport,'remote');
+ assert.equal(row.localStoreFallback,'store-unavailable');assert.equal(row.artifactId,77);
+ await cleaned(f.root);
+});
+
+test('consume restores directly from host-local store without remote API calls',async t=>{
+ const f=await fixture(t);
+ const store=path.join(f.root,'local-store');await mkdir(store);
+ const localOnlyFile=path.join(f.root,'local-only.json');await writeFile(localOnlyFile,JSON.stringify([project]));
+ f.deps.env={...f.deps.env,HONUA_MANAGED_ARTIFACT_LOCAL_STORE:store};
+ await run({...f.opts,mode:'publish',localOnlyProjectsFile:localOnlyFile},f.deps);
+ let remoteCalls=0;
+ f.artifact.getArtifact=async()=>{remoteCalls++;throw Error('unexpected remote call');};
+ f.artifact.downloadArtifact=async()=>{remoteCalls++;throw Error('unexpected remote call');};
+ const r=await run(f.opts,f.deps);
+ assert.equal(remoteCalls,0);
+ assert.deepEqual(JSON.parse(await readFile(r.restoredProjectsFile,'utf8')),[project]);
+ const row=(await receipt(r)).projects[0];
+ assert.equal(row.status,'restored');assert.equal(row.transport,'local');assert.equal(row.artifactId,null);
+ assert.equal(row.archiveSha256,'b'.repeat(64));assert.equal(row.sourceSha,sha);
+ await cleaned(f.root);
+});
+
+test('publish falls back to remote upload when staging into local store fails',async t=>{
+ const f=await fixture(t);
+ const store=path.join(f.root,'local-store');await mkdir(store);
+ await writeFile(path.join(store,'blobs'),'not-a-directory');
+ const localOnlyFile=path.join(f.root,'local-only.json');await writeFile(localOnlyFile,JSON.stringify([project]));
+ const uploads=[];
+ f.artifact.uploadArtifact=async name=>{uploads.push(name);return {id:88};};
+ f.deps.env={...f.deps.env,HONUA_MANAGED_ARTIFACT_LOCAL_STORE:store};
+ const r=await run({...f.opts,mode:'publish',localOnlyProjectsFile:localOnlyFile},f.deps);
+ assert.deepEqual(uploads,['managed-tests-2-fixture']);
+ const row=(await receipt(r)).projects[0];
+ assert.equal(row.status,'published');assert.equal(row.transport,'remote');
+ assert.equal(row.localStoreFallback,'stage-failed');assert.equal(row.artifactId,88);
+ await cleaned(f.root);
+});
+
+test('consume falls back to remote download on local store miss or corrupt manifest',async t=>{
+ const f=await fixture(t);
+ const store=path.join(f.root,'local-store');await mkdir(store);
+ f.deps.env={...f.deps.env,HONUA_MANAGED_ARTIFACT_LOCAL_STORE:store};
+ const r=await run(f.opts,f.deps);
+ assert.deepEqual(JSON.parse(await readFile(r.restoredProjectsFile,'utf8')),[project]);
+ const row=(await receipt(r)).projects[0];
+ assert.equal(row.status,'restored');assert.equal(row.transport,'remote');
+ assert.equal(row.localStoreFallback,'miss-or-invalid');assert.equal(row.artifactId,42);
+ const runDir=path.join(store,'runs','123','2');await mkdir(runDir,{recursive:true});
+ await writeFile(path.join(runDir,'managed-tests-2-fixture.manifest.json'),'{corrupt');
+ const r2=await run(f.opts,f.deps);
+ const row2=(await receipt(r2)).projects[0];
+ assert.equal(row2.status,'restored');assert.equal(row2.transport,'remote');
+ assert.equal(row2.localStoreFallback,'miss-or-invalid');assert.equal(row2.artifactId,42);
+ await cleaned(f.root);
+});
+
+test('consume keeps identity mismatch fatal on host-local restore',async t=>{
+ const f=await fixture(t);
+ const store=path.join(f.root,'local-store');await mkdir(store);
+ const localOnlyFile=path.join(f.root,'local-only.json');await writeFile(localOnlyFile,JSON.stringify([project]));
+ f.deps.env={...f.deps.env,HONUA_MANAGED_ARTIFACT_LOCAL_STORE:store};
+ await run({...f.opts,mode:'publish',localOnlyProjectsFile:localOnlyFile},f.deps);
+ f.deps.runner=async(file,...args)=>{
+   if(file==='git')return f.runner(file,...args);
+   throw Object.assign(Error('identity'),{stderr:'Artifact manifest does not match the exact source/project/toolchain contract.'});
+ };
+ await assert.rejects(run(f.opts,f.deps),/identity/);
+ await cleaned(f.root);
+});
