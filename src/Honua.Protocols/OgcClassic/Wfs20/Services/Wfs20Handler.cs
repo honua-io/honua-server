@@ -1464,11 +1464,9 @@ internal sealed partial class Wfs20Handler
         GeoJsonFeatureBuildOptions buildOptions)
     {
         var geometry = _geometryServices.ConvertGeoJsonToSimpleGeometry(feature.GeometryGeoJson, axisOrder);
-        return GeoJsonFeatureBaseBuilder.Create(
-                feature,
-                resource,
-                buildOptions)
-            .ToOgcGeoJsonFeature(geometry);
+        return OgcGeoJsonFeatureBuilder.CreateFromBuiltBase(
+            GeoJsonFeatureBaseBuilder.Create(feature, resource, buildOptions),
+            geometry);
     }
 
     private GeoJsonFeature CreateGeoJsonFeature(
@@ -1478,11 +1476,9 @@ internal sealed partial class Wfs20Handler
         GeoJsonFeatureBuildOptions buildOptions)
     {
         var geometry = _geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, axisOrder);
-        return GeoJsonFeatureBaseBuilder.Create(
-                feature,
-                resource,
-                buildOptions)
-            .ToOgcGeoJsonFeature(geometry);
+        return OgcGeoJsonFeatureBuilder.CreateFromBuiltBase(
+            GeoJsonFeatureBaseBuilder.Create(feature, resource, buildOptions),
+            geometry);
     }
 
     private static bool ShouldIncludePublicIdentifierProperty(MetadataV2Object resource)

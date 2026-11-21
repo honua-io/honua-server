@@ -95,4 +95,21 @@ public sealed class OgcGeoJsonPageOwnershipTests
             copied.Features[0].Should().BeSameAs(original);
         }
     }
+
+    [Theory]
+    [InlineData(7)]
+    [InlineData("roads.7")]
+    public void CreateFromBuiltBase_TransfersBuiltDictionaryWithPublicConversionShape(object id)
+    {
+        var properties = new Dictionary<string, object?>(StringComparer.Ordinal) { ["name"] = "park" };
+        var featureBase = GeoJsonFeatureBase.Create(id, properties, false);
+
+        var owned = OgcGeoJsonFeatureBuilder.CreateFromBuiltBase(featureBase, geometry: null);
+        var copied = featureBase.ToOgcGeoJsonFeature();
+
+        owned.Properties.Should().BeSameAs(properties);
+        owned.Properties.Should().Equal(copied.Properties);
+        owned.Id.Should().Be(copied.Id);
+        owned.Links.Should().BeNull();
+    }
 }
