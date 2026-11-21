@@ -225,6 +225,19 @@ class ConsoleEdgeTests(QuickstartFixture, unittest.TestCase):
 
                 self.assertEqual(saved, (env_file.read_bytes(), (path / 'console.config.json').read_bytes()))
 
+    def test_console_port_shared_with_another_listener_fails_before_changing_install(self):
+        for case in ('HONUA_MANAGER_CONSOLE_PORT=18083\n', 'HONUA_CONSOLE_PORT=18082\n'):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                path = self.prepare_console(Path(directory))
+                env_file = path / '.env'
+                env_file.write_text(env_file.read_text() + case)
+                saved = env_file.read_bytes()
+
+                with self.assertRaisesRegex(ValueError, 'distinct ports'):
+                    initialize(path)
+
+                self.assertEqual(saved, env_file.read_bytes())
+
     def test_console_compose_file_edit_survives_restart(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'install'

@@ -231,6 +231,16 @@ def console_certificate_current(certificate):
     return result.returncode == 0 and 'CA:FALSE' in result.stdout
 
 
+LISTENER_PORTS = ('HONUA_HTTP_PORT', 'HONUA_GRPC_PORT', 'HONUA_MANAGER_PORT',
+                  'HONUA_CONSOLE_PORT', 'HONUA_MANAGER_CONSOLE_PORT')
+
+
+def require_distinct_ports(values):
+    ports = [values[name] for name in LISTENER_PORTS if values.get(name)]
+    if len(ports) != len(set(ports)):
+        raise ValueError(f'{", ".join(LISTENER_PORTS)} must be distinct ports')
+
+
 def console_changes(directory, profiles, values):
     """The .env additions and removals for Console. Reads and validates only; writes nothing."""
     enabled = 'console' in profiles or 'console' in values.get('COMPOSE_PROFILES', '').split(',')
@@ -243,6 +253,7 @@ def console_changes(directory, profiles, values):
         # A saved profile keeps the customer's file order; only the package's pins change.
         additions = console_image_settings(directory, lock, values)
     console_configuration({**values, **additions})
+    require_distinct_ports({**values, **additions})
     require_openssl_3()
     # HONUA_CONSOLE_IMAGE pinned the retired server-hosted Console; the overlay reads the web image.
     retired = ('HONUA_CONSOLE_IMAGE',) if 'HONUA_CONSOLE_IMAGE' in values else ()
