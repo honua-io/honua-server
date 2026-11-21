@@ -149,10 +149,7 @@ internal sealed partial class TileOperationExecutionCore
             throw new ExportException("Only TileMatrixSetId 'WebMercatorQuad' is currently supported.");
         }
 
-        var storage = services.GetService<ICloudFileStorage>()
-            ?? throw new ExportException("Cloud storage is not configured. Export requires cloud storage.");
-        var options = services.GetRequiredService<IOptions<CloudStorageOptions>>().Value;
-        var store = ExportStore.Create(storage, options, request.ExportId!);
+        var store = OpenExportStore(services, request.ExportId!);
         var pointerETag = await store.ReadPointerETagAsync(cancellationToken).ConfigureAwait(false);
         var unpublishedETag = await store.ReadUnpublishedETagAsync(cancellationToken).ConfigureAwait(false);
         await ExportUnpublishGuard.RequireNotUnpublishedAsync(
@@ -164,22 +161,32 @@ internal sealed partial class TileOperationExecutionCore
             new ExportSourceCheck { Store = store, Source = source, PointerETag = pointerETag, UnpublishedETag = unpublishedETag },
             cancellationToken).ConfigureAwait(false);
 
-        var fields = ExportFields.Resolve(source.Resource, request.IdentityField!);
-        var capturedAt = DateTimeOffset.UtcNow;
-        var captureId = $"capture-{Guid.NewGuid():N}";
-        var run = new ExportVersionRun(
-            request.ExportId!, ExportVersionFactory.NewVersion(capturedAt, captureId), captureId, capturedAt);
         return new ExportPublishContext
         {
-            Run = run,
+            Run = NewExportRun(request.ExportId!),
             Source = source,
-            Fields = fields,
+            Fields = ExportFields.Resolve(source.Resource, request.IdentityField!),
             Store = store,
             PointerETag = pointerETag,
             UnpublishedETag = unpublishedETag,
             PublicPromoter = services.GetService<PublicExportPromoter>(),
             PublicRevocation = services.GetService<PublicExportRevocationService>()
         };
+    }
+
+    private static ExportStore OpenExportStore(IServiceProvider services, string exportId)
+    {
+        var storage = services.GetService<ICloudFileStorage>()
+            ?? throw new ExportException("Cloud storage is not configured. Export requires cloud storage.");
+        var options = services.GetRequiredService<IOptions<CloudStorageOptions>>().Value;
+        return ExportStore.Create(storage, options, exportId);
+    }
+
+    private static ExportVersionRun NewExportRun(string exportId)
+    {
+        var capturedAt = DateTimeOffset.UtcNow;
+        var captureId = $"capture-{Guid.NewGuid():N}";
+        return new ExportVersionRun(exportId, ExportVersionFactory.NewVersion(capturedAt, captureId), captureId, capturedAt);
     }
 
     // An Export id names one Dataset; another Layer must not replace it, even after unpublish.
@@ -450,21 +457,7 @@ internal sealed partial class TileOperationExecutionCore
         try
         {
             var result = await context.PublicPromoter.PromoteAsync(input, cancellationToken).ConfigureAwait(false);
-            if (result.Status == PublicExportDeliveryStatus.Promoted
-                && await context.Store.ReadUnpublishedETagAsync(cancellationToken).ConfigureAwait(false) is not null)
-            {
-                if (context.PublicRevocation is not null)
-                {
-                    await context.PublicRevocation.RevokeUnpublishedAsync(context.Run.ExportId, changeId: null, cancellationToken).ConfigureAwait(false);
-                }
-
-                return new PublicExportDeliveryStatus(PublicExportDeliveryStatus.StaysSignedIn)
-                {
-                    Reason = "Export was unpublished during public promotion; public copy revoked."
-                };
-            }
-
-            return result;
+            return await FencePromotedAsync(context, result, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
         {
@@ -474,6 +467,34 @@ internal sealed partial class TileOperationExecutionCore
                 Reason = "Public promotion failed; Export remains on signed-in routes."
             };
         }
+    }
+
+    private static async Task<PublicExportDeliveryStatus> FencePromotedAsync(
+        ExportPublishContext context,
+        PublicExportDeliveryStatus result,
+        CancellationToken cancellationToken)
+    {
+        if (result.Status != PublicExportDeliveryStatus.Promoted)
+        {
+            return result;
+        }
+
+        var currentETag = await context.Store.ReadUnpublishedETagAsync(cancellationToken).ConfigureAwait(false);
+        if (currentETag is null || string.Equals(currentETag, context.UnpublishedETag, StringComparison.Ordinal))
+        {
+            return result;
+        }
+
+        if (context.PublicRevocation is not null)
+        {
+            await context.PublicRevocation.RevokeUnpublishedAsync(
+                context.Run.ExportId, changeId: null, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        return new PublicExportDeliveryStatus(PublicExportDeliveryStatus.StaysSignedIn)
+        {
+            Reason = "Export was unpublished during public promotion; public copy revoked."
+        };
     }
 
     private static async Task PutCompanionFilesAsync(
