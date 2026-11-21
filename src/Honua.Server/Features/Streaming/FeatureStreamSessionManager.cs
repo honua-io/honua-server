@@ -809,10 +809,10 @@ internal sealed partial class FeatureStreamSessionManager : IDisposable
         {
             public TaskCompletionSource Retired { get; } = CreateRetirement(Filter);
 
-            private static TaskCompletionSource CreateRetirement(IStreamSubscriptionFilter? filter)
+            private static TaskCompletionSource CreateRetirement(StreamSubscriptionFilter? filter)
             {
                 var retired = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                if (filter is StreamSubscriptionFilter { SubscriberSecurity: { } security })
+                if (filter is { SubscriberSecurity: { } security })
                 {
                     security.BindLifetime(retired.Task);
                 }
