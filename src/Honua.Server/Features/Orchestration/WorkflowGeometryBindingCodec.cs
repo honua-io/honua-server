@@ -23,7 +23,8 @@ internal readonly record struct WkbExtractionResult(string? Value, string? Error
 internal static class WorkflowGeometryBindingCodec
 {
     private const string DataUriPrefix = "data:";
-    private const int MaxDecodedPayloadBytes = 16 * 1024 * 1024;
+    // Same ceiling as the largest allowed Geoprocessing:Executors:MaxArtifactBytes; the producer enforces its configured cap.
+    private const int MaxDecodedPayloadBytes = 1024 * 1024 * 1024;
     private const int MaxBase64PayloadChars = ((MaxDecodedPayloadBytes + 2) / 3) * 4;
 
     public static bool IsDataUri(string? uri)
