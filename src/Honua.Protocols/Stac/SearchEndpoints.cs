@@ -415,6 +415,7 @@ internal static class SearchEndpoints
             targets.Length);
 
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        StacV2Lookups.ResolvedStacPublication? readingTarget = null;
         try
         {
             var allItems = ImmutableArray.CreateBuilder<StacItem>();
@@ -466,6 +467,7 @@ internal static class SearchEndpoints
                 : null;
             foreach (var target in targets)
             {
+                readingTarget = target;
                 if (hasEmptyIdFilter)
                 {
                     break;
@@ -752,6 +754,7 @@ internal static class SearchEndpoints
                     totalMatched += await targetReader.CountAsync(storageLayerId, query, cancellationToken);
                 }
             }
+            readingTarget = null;
 
             // No collection declared any property the filter references: that is an
             // invalid filter for this catalog, not an empty result set.
@@ -861,6 +864,12 @@ internal static class SearchEndpoints
         {
             StacTelemetry.RecordException(activity, ex);
             throw;
+        }
+        catch (Exception ex) when (readingTarget is { } missing && StacSearchTargetSkip.IsMissingStorage(ex) && StacSearchTargetSkip.TryClaim(context, request, targets))
+        {
+            return await ExecuteSearchAcrossPublicationsAsync(request, offset, context, baseUrl, featureReader, geometryService,
+                filterProcessor, defaultFilterLangIsText, logger, StacSearchTargetSkip.Without(logger, targets, new(missing, ex)),
+                requestedItemIds, effectiveLimit, isPostSearch, cogArtifactLocator).ConfigureAwait(false);
         }
         // Not an endpoint boundary: this rethrows after tagging the shared search activity,
         // so the outer HandleSearch catch (which logs and maps to a 500) still applies.
