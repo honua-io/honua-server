@@ -199,7 +199,7 @@ relationships are not translated.
 - **Metadata-v2 binding.** A layer whose connection provider is `databricks` (aliases
   `databrickssql`, `dbsql`) resolves catalog, schema, table, geometry, and object-id
   columns from the Metadata v2 feature storage binding. `Databricks:Layers` remains a
-  fallback, not the only configuration, and `POST /admin/connections/{id}/test` probes
+  fallback, not the only configuration, and `POST /api/v1/admin/connections/{id}/test` probes
   the warehouse with `SELECT 1`. Top-features, date/value bins, and H3 aggregation remain unsupported.
 
 Provider selection variables are listed in the
