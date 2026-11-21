@@ -279,7 +279,7 @@ internal static partial class RasterImportEndpoints
         {
             // The service has logged it; the message names the operator action, not internals.
             await AdminResponseWriter.WriteErrorAsync(
-                context, RasterStorageUnavailableException.CapabilityMessage, StatusCodes.Status409Conflict);
+                context, RasterStorageUnavailableException.CapabilityMessage, StatusCodes.Status503ServiceUnavailable);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidDataException or NotSupportedException or FileNotFoundException)
         {

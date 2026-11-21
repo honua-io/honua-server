@@ -10,6 +10,8 @@ using Honua.Db.Postgres.Features.Raster;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
@@ -57,6 +59,18 @@ public sealed class PostgresRasterStoreCrudTests(PostgresFixture fixture)
                 () => store.QueryRastersAsync(LayerId, new RasterSelectionQuery { TimeStart = DateTimeOffset.UnixEpoch }),
                 () => store.QueryCatalogAsync(LayerId, new RasterCatalogQuery()),
                 () => store.GetRasterLayerIdAsync(1),
+                () => store.ExportEmptyExtentAsync(LayerId, new RasterQuery
+                {
+                    OutputFormat = RasterFormat.PNG,
+                    OutputWidth = 1,
+                    OutputHeight = 1,
+                    CoverClipExtent = true,
+                    ClipRegion = new RasterClipRegion
+                    {
+                        Geometry = new WKBWriter().Write(new GeometryFactory().ToGeometry(new Envelope(0, 1, 0, 1))),
+                        Srid = 3857,
+                    },
+                }),
             ];
             foreach (var act in lookups)
             {

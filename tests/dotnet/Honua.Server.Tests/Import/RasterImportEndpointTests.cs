@@ -439,7 +439,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/raster")]
-    public async Task ImportRaster_WithoutRasterStorage_Returns409WithOperatorAction()
+    public async Task ImportRaster_WithoutRasterStorage_Returns503WithOperatorAction()
     {
         var rasterImportService = Substitute.For<IRasterImportService>();
         rasterImportService.DetectFormat("test.tif").Returns(SupportedRasterFormat.GeoTiff);
@@ -472,7 +472,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
 
             using var response = await fixture.Client.PostAsync("/api/v1/admin/import/raster", content);
 
-            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
             (await response.Content.ReadAsStringAsync()).Should().Contain("postgis_raster");
         }
         finally

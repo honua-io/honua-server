@@ -32,8 +32,7 @@ public sealed class PostgresRasterDiscoveryTests
     [IntegrationTest]
     public async Task RasterLookups_WithoutOptionalRasterExtension_ReportNoRasters()
     {
-        // ImageServer service info, legend, tile and exportImage read these; on a
-        // feature-only install they answered 500 (relation raster_data does not exist).
+        // These lookups back ImageServer service info, legend, tile and exportImage.
         await using var database = new PostgreSqlBuilder("postgres:16-alpine").Build();
         await using var dataSource = await StartDatabaseAsync(database);
         var store = CreateStore(dataSource);
