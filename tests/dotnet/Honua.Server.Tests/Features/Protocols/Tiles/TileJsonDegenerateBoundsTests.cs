@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
@@ -29,14 +30,15 @@ public sealed class TileJsonDegenerateBoundsTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTheory]
-    [InlineData(-122.4194, 37.78, -122.4194, 37.78)]
-    [InlineData(-122.4194, 37.70, -122.4194, 37.80)]
-    [InlineData(-122.50, 37.78, -122.30, 37.78)]
+    [InlineData("-122.4194 37.78 -122.4194 37.78")]
+    [InlineData("-122.4194 37.70 -122.4194 37.80")]
+    [InlineData("-122.50 37.78 -122.30 37.78")]
     [Operation(Operations.GetTileMetadata)]
     [Endpoint("GET /tiles/{layerId}/tile.json")]
-    public async Task GetTileJson_PointOrAxisLine_AdvertisesOneTileWideBounds(
-        double west, double south, double east, double north)
+    public async Task GetTileJson_PointOrAxisLine_AdvertisesOneTileWideBounds(string sourceExtent)
     {
+        var source = sourceExtent.Split(' ').Select(value => double.Parse(value, CultureInfo.InvariantCulture)).ToArray();
+        var (west, south, east, north) = (source[0], source[1], source[2], source[3]);
         _reader.GetExtentAsync(Arg.Any<int>(), Arg.Any<FeatureQuery?>(), Arg.Any<CancellationToken>())
             .Returns(FeatureExtent.Create(west, south, east, north, SpatialReference.WGS84.Wkid));
 
