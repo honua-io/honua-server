@@ -1,0 +1,5 @@
+# Take PostGIS and pgRouting from Debian (and its security archive), not the PostgreSQL project's
+# repository: Debian carries the versions existing databases were created with.
+Package: postgresql-17-postgis-3 postgresql-17-postgis-3-scripts postgresql-17-pgrouting postgresql-17-pgrouting-scripts
+Pin: release o=Debian
+Pin-Priority: 990
