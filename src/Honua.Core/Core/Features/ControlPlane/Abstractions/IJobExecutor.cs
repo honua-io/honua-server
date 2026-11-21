@@ -44,10 +44,8 @@ public sealed record JobExecutionResult
             Warnings = warnings ?? []
         };
 
-    /// <summary>
-    /// A deterministic caller-input rejection: the same inputs fail the same way on every
-    /// attempt, so the job fails at once instead of spending its retry budget.
-    /// </summary>
+    // A deterministic caller-input rejection fails the same way on every attempt,
+    // so the job fails at once instead of spending its retry budget.
     public static JobExecutionResult InvalidInput(string errorMessage, IReadOnlyList<string>? warnings = null)
         => Failed(errorMessage, warnings) with { IsRetryable = false };
 }

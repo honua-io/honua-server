@@ -8,12 +8,9 @@ using Honua.Db.Postgres.Features.FeatureStore.Services;
 
 namespace Honua.Db.Postgres.Features.Geoprocessing;
 
-/// <summary>
-/// Geoprocessing reads reject an unparseable legacy <c>where</c> as a bare
-/// <see cref="ArgumentException"/> whose text may quote the clause. Executors surface
-/// <see cref="DagSourceSelectionException"/> verbatim as a non-retryable refusal, so this
-/// translates that one caller error into fixed guidance the caller can act on.
-/// </summary>
+// Stores reject an unparseable legacy where as a bare ArgumentException whose text may
+// quote the clause. Executors surface DagSourceSelectionException verbatim as a
+// non-retryable refusal, so translate that one caller error into fixed guidance.
 internal static class UnsupportedWhereSelection
 {
     internal const string Message =

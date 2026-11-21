@@ -57,37 +57,15 @@ internal sealed partial class QuarantineSinkExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(10, "Parsing quarantine inputs", cancellationToken).ConfigureAwait(false);
 
-        var inputs = new StepInputReader(job.Spec.Parameters);
-        if (!inputs.TryGetRequired("input", out var inputUri, out var inputError))
+        var sinkRead = new FileSinkInputReader(HandledProcessId, _options.CurrentValue).Read(job, context);
+        if (sinkRead.Rejection is { } inputRejection)
         {
-            return JobExecutionResult.InvalidInput($"Invalid {HandledProcessId} inputs: {inputError}");
+            return inputRejection;
         }
 
-        if (!inputs.TryGetRequired("path", out var path, out var pathError))
-        {
-            return JobExecutionResult.InvalidInput($"Invalid {HandledProcessId} inputs: {pathError}");
-        }
-
-        var outputRoot = _options.CurrentValue.OutputRootDirectory;
-        if (!SinkPathResolver.TryResolveOutputPath(
-            outputRoot,
-            path,
-            job,
-            out var resolvedPath,
-            out var pathResolutionError))
-        {
-            return JobExecutionResult.InvalidInput($"Invalid {HandledProcessId} inputs: {pathResolutionError}");
-        }
-
-        // Stream the input so a large dead-letter set writes incrementally without
-        // buffering the whole collection. Spilled NDJSON streams are unbounded.
-        // Pass OutputRootDirectory so path-traversal injections in the reference are rejected.
-        if (!FeatureStreamArtifact.TryOpenRead(
-                inputUri, out var parseError, out var source, _options.CurrentValue.MaxArtifactBytes,
-                _options.CurrentValue.OutputRootDirectory, context))
-        {
-            return JobExecutionResult.InvalidInput($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
-        }
+        var read = sinkRead.Inputs!;
+        var (path, outputRoot, resolvedPath, source) = (read.RequestedPath, read.OutputRoot, read.ResolvedPath, read.Source);
+        var inputs = read.Inputs;
 
         var reasonField = inputs.GetOrDefault("reasonField", DefaultReasonField);
         var batchId = inputs.GetOrDefault("batchId", job.OperationId);
