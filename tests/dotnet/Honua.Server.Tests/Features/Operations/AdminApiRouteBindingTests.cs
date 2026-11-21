@@ -18,7 +18,7 @@ public sealed class AdminApiRouteBindingTests : IDisposable
 
     public void Dispose() => _factory.Dispose();
 
-    [UnitFact]
+    [UnitTest]
     public void AdminApiCatalog_AllDefinitions_AreBoundToMatchingHttpEndpoints()
     {
         using var _ = _factory.CreateClient();
@@ -31,7 +31,7 @@ public sealed class AdminApiRouteBindingTests : IDisposable
             "every AdminApiOperationCatalog definition must bind its live HTTP route, method, and OpenAPI operation name");
     }
 
-    [UnitFact]
+    [UnitTest]
     public void Validate_MissingBinding_ReportsMissingEndpoint()
     {
         var definition = AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == "admin.services.list");
@@ -41,7 +41,7 @@ public sealed class AdminApiRouteBindingTests : IDisposable
         violations.Should().ContainSingle(item => item.OperationId == definition.OperationId && item.Kind == "MissingEndpoint");
     }
 
-    [UnitFact]
+    [UnitTest]
     public void Validate_DuplicateBinding_ReportsDuplicateEndpoint()
     {
         var definition = AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == "admin.services.list");
@@ -53,7 +53,7 @@ public sealed class AdminApiRouteBindingTests : IDisposable
         violations.Should().ContainSingle(item => item.OperationId == definition.OperationId && item.Kind == "DuplicateEndpoint");
     }
 
-    [UnitFact]
+    [UnitTest]
     public void Validate_MethodDrift_ReportsMethodMismatch()
     {
         var definition = AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == "admin.services.protocols.set");
@@ -64,7 +64,7 @@ public sealed class AdminApiRouteBindingTests : IDisposable
         violations.Should().ContainSingle(item => item.OperationId == definition.OperationId && item.Kind == "MethodMismatch");
     }
 
-    [UnitFact]
+    [UnitTest]
     public void Validate_PathDrift_ReportsPathMismatch()
     {
         var definition = AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == "admin.services.settings.get");
@@ -75,7 +75,7 @@ public sealed class AdminApiRouteBindingTests : IDisposable
         violations.Should().ContainSingle(item => item.OperationId == definition.OperationId && item.Kind == "PathMismatch");
     }
 
-    [UnitFact]
+    [UnitTest]
     public void Validate_EndpointNameDrift_ReportsEndpointNameMismatch()
     {
         var definition = AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == "admin.layer.display.get");
@@ -86,7 +86,7 @@ public sealed class AdminApiRouteBindingTests : IDisposable
         violations.Should().ContainSingle(item => item.OperationId == definition.OperationId && item.Kind == "EndpointNameMismatch");
     }
 
-    [UnitFact]
+    [UnitTest]
     public void ForApi_DriftedRelativeTemplate_ThrowsAtRegistration()
     {
         var act = () => AdminHttpOperationRouteBinding.ForApi("admin.services.settings.get", "/services", "/{serviceName}/wrong");
