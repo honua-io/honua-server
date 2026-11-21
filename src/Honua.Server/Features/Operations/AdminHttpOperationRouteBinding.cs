@@ -9,7 +9,11 @@ namespace Honua.Server.Features.Operations;
 internal readonly record struct AdminOperationRouteBinding(
     IAdminHttpOperationDefinition Definition,
     string GroupPrefix,
-    string? RelativeTemplate = null);
+    string? RelativeTemplate = null)
+{
+    public string RoutePattern => AdminHttpOperationRouteBinding.ResolveValidatedRelativeTemplate(this);
+    public string[] Methods => [Definition.Method.Method];
+}
 
 internal sealed record AdminHttpOperationBindingViolation(
     string OperationId,
@@ -27,21 +31,19 @@ internal static partial class AdminHttpOperationRouteBinding
     public static AdminOperationRouteBinding ForApi(
         string operationId,
         string groupPrefix,
-        string? relativeTemplate = null) =>
-        new(
+        string? relativeTemplate = null)
+    {
+        var binding = new AdminOperationRouteBinding(
             AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == operationId),
             groupPrefix,
             relativeTemplate);
+        _ = ResolveValidatedRelativeTemplate(binding);
+        return binding;
+    }
 
-    public static RouteHandlerBuilder MapAdminOperation(
-        this RouteGroupBuilder group,
-        AdminOperationRouteBinding binding,
-        Delegate handler)
+    public static string ResolveValidatedRelativeTemplate(AdminOperationRouteBinding binding)
     {
-        ArgumentNullException.ThrowIfNull(group);
         ArgumentNullException.ThrowIfNull(binding.Definition);
-        ArgumentNullException.ThrowIfNull(handler);
-
         var relative = ResolveRelativeTemplate(binding);
         var normalized = NormalizeRoutePath(CombinePrefixAndRelative(binding.GroupPrefix, relative));
         if (!string.Equals(normalized, binding.Definition.Path, StringComparison.Ordinal))
@@ -50,8 +52,7 @@ internal static partial class AdminHttpOperationRouteBinding
                 $"Admin operation '{binding.Definition.OperationId}' route '{normalized}' does not match catalog path '{binding.Definition.Path}'.");
         }
 
-        return group.MapMethods(relative, [binding.Definition.Method.Method], handler)
-            .WithAdminOperation(binding.Definition);
+        return relative;
     }
 
     public static string NormalizeRoutePath(string rawRouteTemplate)

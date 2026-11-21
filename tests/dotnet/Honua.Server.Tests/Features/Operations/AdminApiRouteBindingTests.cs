@@ -5,7 +5,6 @@ using FluentAssertions;
 using Honua.Server.Features.Operations;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Routing.Patterns;
@@ -88,16 +87,9 @@ public sealed class AdminApiRouteBindingTests : IDisposable
     }
 
     [UnitFact]
-    public void MapAdminOperation_DriftedRelativeTemplate_ThrowsAtRegistration()
+    public void ForApi_DriftedRelativeTemplate_ThrowsAtRegistration()
     {
-        var builder = WebApplication.CreateSlimBuilder();
-        using var app = builder.Build();
-        var group = app.MapGroup("/api/v{version:apiVersion}/admin/services");
-        var definition = AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == "admin.services.settings.get");
-
-        var act = () => group.MapAdminOperation(
-            new AdminOperationRouteBinding(definition, "/services", "/{serviceName}/wrong"),
-            static () => Results.Ok());
+        var act = () => AdminHttpOperationRouteBinding.ForApi("admin.services.settings.get", "/services", "/{serviceName}/wrong");
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*admin.services.settings.get*");
     }
