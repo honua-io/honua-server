@@ -106,10 +106,10 @@ public sealed partial class AssetProfileEndpointsTests : IAsyncLifetime
     {
         var profileId = await CreateProfileAsync();
 
-        var get = await _fixture.Client.GetFromJsonAsync($"{ProfilesPath}/{profileId}", AssetsJsonContext.Default.AssetProfile);
-        var list = await _fixture.Client.GetFromJsonAsync($"{ProfilesPath}?serviceId={WebAppFixture.TestServiceId}", AssetsJsonContext.Default.AssetProfileListResult);
-        var missing = await _fixture.Client.GetAsync($"{ProfilesPath}/{Guid.NewGuid()}");
-        var unscoped = await _fixture.Client.GetAsync(ProfilesPath);
+        var get = await _fixture.Client.GetFromJsonAsync($"/api/v1/assets/profiles/{profileId}", AssetsJsonContext.Default.AssetProfile);
+        var list = await _fixture.Client.GetFromJsonAsync($"/api/v1/assets/profiles?serviceId={WebAppFixture.TestServiceId}", AssetsJsonContext.Default.AssetProfileListResult);
+        var missing = await _fixture.Client.GetAsync($"/api/v1/assets/profiles/{Guid.NewGuid()}");
+        var unscoped = await _fixture.Client.GetAsync("/api/v1/assets/profiles");
 
         get!.ConditionLabels.Should().Equal(Labels);
         list!.Items.Should().ContainSingle(item => item.ProfileId == profileId);
