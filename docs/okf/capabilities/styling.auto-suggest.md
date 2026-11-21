@@ -16,6 +16,7 @@ Style suggestions based on field analysis and classification.
 | Capability key | `styling.auto-suggest` |
 | Category | Styling |
 | Edition | Pro |
+| Status | ga |
 | Surface maturity | 2 implemented |
 | Registry entries | 2 |
 | Proving tests | 9 |

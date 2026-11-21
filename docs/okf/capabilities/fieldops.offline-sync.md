@@ -16,6 +16,7 @@ Use disconnected field sync, form offline policy discovery, GeoServices replica 
 | Capability key | `fieldops.offline-sync` |
 | Category | FieldOps |
 | Edition | Pro |
+| Status | preview |
 | Surface maturity | 18 preview |
 | Registry entries | 18 |
 | Proving tests | 201 |
@@ -25,3 +26,7 @@ The facts above come from the server's capability registry and capability matrix
 ## Documented in
 
 - [Forms](../../reference/admin-api/forms.md)
+
+## Availability
+
+Status is **preview**, so this capability can be off on a default install. Read `fieldops.offline-sync` in `GET /api/v1/capabilities/manifest` before calling its routes: `available: false` with `reasonCode: experimental-disabled` means the routes return 404 until `Capabilities:Experimental:fieldops.offline-sync:Enabled` is `true` (environment variable `Capabilities__Experimental__fieldops.offline-sync__Enabled`). Edition licensing still applies once it is enabled.

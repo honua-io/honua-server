@@ -16,6 +16,7 @@ Query and read features through the Esri GeoServices FeatureServer surface (quer
 | Capability key | `serve.geoservices-featureserver` |
 | Category | Serve |
 | Edition | Community |
+| Status | ga |
 | Surface maturity | 49 implemented |
 | Registry entries | 49 |
 | Proving tests | 624 |

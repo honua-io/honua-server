@@ -16,6 +16,7 @@ Import geospatial data from file uploads (GeoJSON, Shapefile, GeoPackage).
 | Capability key | `import.file` |
 | Category | Import |
 | Edition | Community |
+| Status | ga |
 | Surface maturity | 79 implemented |
 | Registry entries | 79 |
 | Proving tests | 293 |

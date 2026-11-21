@@ -16,6 +16,7 @@ Submit and poll processes through OGC WPS 2.0 (GetCapabilities, DescribeProcess,
 | Capability key | `serve.wps` |
 | Category | Serve |
 | Edition | Community |
+| Status | preview |
 | Surface maturity | 3 preview |
 | Registry entries | 3 |
 | Proving tests | 31 |
@@ -25,3 +26,7 @@ The facts above come from the server's capability registry and capability matrix
 ## Documented in
 
 - [Protocols](../../concepts/protocols.md)
+
+## Availability
+
+Status is **preview**, so this capability can be off on a default install. Read `serve.wps` in `GET /api/v1/capabilities/manifest` before calling its routes: `available: false` with `reasonCode: experimental-disabled` means the routes return 404 until `Capabilities:Experimental:serve.wps:Enabled` is `true` (environment variable `Capabilities__Experimental__serve.wps__Enabled`). Edition licensing still applies once it is enabled.

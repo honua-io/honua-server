@@ -16,6 +16,7 @@ Search and retrieve catalog records through OGC API - Records.
 | Capability key | `serve.ogc-api-records` |
 | Category | Serve |
 | Edition | Community |
+| Status | ga |
 | Surface maturity | 7 implemented |
 | Registry entries | 7 |
 | Proving tests | 67 |

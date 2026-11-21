@@ -16,6 +16,7 @@ Non-sellable demo/showcase endpoints used for product demonstrations.
 | Capability key | `demo.showcase` |
 | Category | Demo |
 | Edition | Community |
+| Status | experimental |
 | Surface maturity | 2 experimental |
 | Registry entries | 2 |
 | Proving tests | 3 |

@@ -16,6 +16,7 @@ Core branch versioning (Pro): named gdb versions, isolated edits, reconcile/post
 | Capability key | `editing.branch-versioning` |
 | Category | Editing |
 | Edition | Pro |
+| Status | experimental |
 | Surface maturity | 20 experimental |
 | Registry entries | 20 |
 | Proving tests | 96 |
@@ -25,3 +26,7 @@ The facts above come from the server's capability registry and capability matrix
 ## Documented in
 
 - [GeoServices REST](../../reference/protocols/geoservices-rest.md)
+
+## Availability
+
+Status is **experimental**, so this capability can be off on a default install. Read `editing.branch-versioning` in `GET /api/v1/capabilities/manifest` before calling its routes: `available: false` with `reasonCode: experimental-disabled` means the routes return 404 until `Capabilities:Experimental:editing.branch-versioning:Enabled` is `true` (environment variable `Capabilities__Experimental__editing.branch-versioning__Enabled`). Edition licensing still applies once it is enabled.

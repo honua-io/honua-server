@@ -16,6 +16,7 @@ Background worker for evaluating geofence rules against feature changes.
 | Capability key | `alerts.evaluation` |
 | Category | Alerts |
 | Edition | Pro |
+| Status | preview |
 | Surface maturity | 18 preview |
 | Registry entries | 18 |
 | Proving tests | 110 |

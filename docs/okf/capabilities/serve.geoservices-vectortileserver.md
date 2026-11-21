@@ -16,6 +16,7 @@ Serve Esri vector tile services through the GeoServices VectorTileServer surface
 | Capability key | `serve.geoservices-vectortileserver` |
 | Category | Serve |
 | Edition | Community |
+| Status | ga |
 | Surface maturity | 9 implemented |
 | Registry entries | 9 |
 | Proving tests | 46 |

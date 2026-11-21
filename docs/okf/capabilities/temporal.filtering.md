@@ -16,6 +16,7 @@ Filter feature queries by a bounded or open-ended time range.
 | Capability key | `temporal.filtering` |
 | Category | Temporal |
 | Edition | Community |
+| Status | ga |
 | Surface maturity | 6 implemented |
 | Registry entries | 6 |
 | Proving tests | 24 |

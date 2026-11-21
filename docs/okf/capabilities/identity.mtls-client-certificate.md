@@ -16,6 +16,7 @@ Native client-certificate (mTLS) authentication: trust profiles, issuer/chain va
 | Capability key | `identity.mtls-client-certificate` |
 | Category | Identity |
 | Edition | Enterprise |
+| Status | experimental |
 | Surface maturity | 13 experimental |
 | Registry entries | 13 |
 | Proving tests | 35 |
@@ -25,3 +26,7 @@ The facts above come from the server's capability registry and capability matrix
 ## Documented in
 
 - [Terminate TLS and require client certificates](../../guides/secure/tls-and-mtls.md)
+
+## Availability
+
+Status is **experimental**, so this capability can be off on a default install. Read `identity.mtls-client-certificate` in `GET /api/v1/capabilities/manifest` before calling its routes: `available: false` with `reasonCode: experimental-disabled` means the routes return 404 until `Capabilities:Experimental:identity.mtls-client-certificate:Enabled` is `true` (environment variable `Capabilities__Experimental__identity.mtls-client-certificate__Enabled`). Edition licensing still applies once it is enabled.

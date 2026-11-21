@@ -16,6 +16,7 @@ Read and submit online Forms. Disconnected/offline sync is Pro-gated separately 
 | Capability key | `fieldops.forms` |
 | Category | FieldOps |
 | Edition | Community |
+| Status | ga |
 | Surface maturity | 21 implemented |
 | Registry entries | 21 |
 | Proving tests | 37 |

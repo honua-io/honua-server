@@ -56,13 +56,13 @@ each page. Some entitlement keys are deliberately not published here at all.
 | [Microsoft Teams Delivery](channels.teams.md) | Channels | Enterprise | **preview** |
 | [Webhook Delivery](channels.webhook.md) | Channels | Pro | **preview** |
 | [Map Collaboration Sessions](collaboration.map-sessions.md) | Collaboration | Community | **experimental** |
-| [Demo Showcase Surfaces](demo.showcase.md) | Demo | Community | ga |
+| [Demo Showcase Surfaces](demo.showcase.md) | Demo | Community | **experimental** |
 | [Capability Manifest](discovery.capability-manifest.md) | Discovery | Community | ga |
 | [Backup Automation](dr.backup-automation.md) | DisasterRecovery | Enterprise | ga |
 | [Cache State Backup](dr.cache-backup.md) | DisasterRecovery | Enterprise | ga |
 | [Failover Playbooks](dr.failover.md) | DisasterRecovery | Enterprise | ga |
 | [RTO/RPO Reporting](dr.rto-rpo-reporting.md) | DisasterRecovery | Enterprise | ga |
-| [Branch Versioning](editing.branch-versioning.md) | Editing | Pro | ga |
+| [Branch Versioning](editing.branch-versioning.md) | Editing | Pro | **experimental** |
 | [FeatureServer Editing](editing.featureserver-edits.md) | Editing | Pro | ga |
 | [Data Enrichment Datasets](enrichment.datasets.md) | Enrichment | Pro | ga |
 | [Field Collection Forms](fieldops.forms.md) | FieldOps | Community | ga |
@@ -73,7 +73,7 @@ each page. Some entitlement keys are deliberately not published here at all.
 | [Forward Geocoding](geocoding.forward.md) | Geocoding | Community | ga |
 | [Reverse Geocoding](geocoding.reverse.md) | Geocoding | Community | ga |
 | [Claims Mapping](identity.claims-mapping.md) | Identity | Enterprise | ga |
-| [mTLS Client-Certificate Authentication](identity.mtls-client-certificate.md) | Identity | Enterprise | ga |
+| [mTLS Client-Certificate Authentication](identity.mtls-client-certificate.md) | Identity | Enterprise | **experimental** |
 | [OIDC Authentication](identity.oidc.md) | Identity | Pro | ga |
 | [OIDC Multi-Provider SSO](identity.oidc-multi-provider.md) | Identity | Enterprise | ga |
 | [ArcGIS Portal Sharing Read Surface](identity.portal-sharing.md) | Identity | Community | ga |
@@ -101,10 +101,10 @@ each page. Some entitlement keys are deliberately not published here at all.
 | [Temporal Raster Mosaic](raster.temporal-mosaic.md) | Raster | Pro | ga |
 | [Terrain-RGB Tiles](raster.terrain-rgb.md) | Raster | Community | ga |
 | [Network Routing](routing.solve.md) | Routing | Pro | ga |
-| [CityGML/BIM Scene Ingest](scene.bim-ingest.md) | Scene | Enterprise | ga |
-| [Scene Catalog](scene.catalog.md) | Scene | Community | ga |
-| [Point Cloud Scene Ingest](scene.pointcloud-ingest.md) | Scene | Enterprise | ga |
-| [3D Tiles Scene Serving](serve.3d-tiles-scene.md) | Serve | Community | ga |
+| [CityGML/BIM Scene Ingest](scene.bim-ingest.md) | Scene | Enterprise | **experimental** |
+| [Scene Catalog](scene.catalog.md) | Scene | Community | **deferred** |
+| [Point Cloud Scene Ingest](scene.pointcloud-ingest.md) | Scene | Enterprise | **experimental** |
+| [3D Tiles Scene Serving](serve.3d-tiles-scene.md) | Serve | Community | **experimental** |
 | [Elevation Query](serve.elevation.md) | Serve | Community | ga |
 | [FeatureServer Query](serve.geoservices-featureserver.md) | Serve | Community | ga |
 | [GeocodeServer Discovery](serve.geoservices-geocodeserver.md) | Serve | Community | ga |
@@ -122,7 +122,7 @@ each page. Some entitlement keys are deliberately not published here at all.
 | [OGC API Maps](serve.ogc-api-maps.md) | Serve | Community | ga |
 | [OGC API Records](serve.ogc-api-records.md) | Serve | Community | ga |
 | [OGC API Tiles](serve.ogc-api-tiles.md) | Serve | Community | ga |
-| [OGC SensorThings API](serve.sensorthings.md) | Serve | Community | ga |
+| [OGC SensorThings API](serve.sensorthings.md) | Serve | Community | **preview** |
 | [STAC API](serve.stac.md) | Serve | Community | ga |
 | [Vector Tiles (MVT/TileJSON/PMTiles)](serve.vector-tiles.md) | Serve | Community | ga |
 | [WCS 2.0.1](serve.wcs.md) | Serve | Community | ga |

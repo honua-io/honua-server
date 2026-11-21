@@ -16,6 +16,7 @@ Discover published 3D scene layers through the scene catalog surface.
 | Capability key | `scene.catalog` |
 | Category | Scene |
 | Edition | Community |
+| Status | deferred |
 | Surface maturity | 3 deferred |
 | Registry entries | 3 |
 | Proving tests | 15 |
@@ -25,3 +26,7 @@ The facts above come from the server's capability registry and capability matrix
 ## Documented in
 
 - [Publish 3D scenes](../../guides/publish/publish-3d-scenes.md)
+
+## Availability
+
+Status is **deferred**, so this capability can be off on a default install. Read `scene.catalog` in `GET /api/v1/capabilities/manifest` before calling its routes: `available: false` with `reasonCode: experimental-disabled` means the routes return 404 until `Capabilities:Experimental:scene.catalog:Enabled` is `true` (environment variable `Capabilities__Experimental__scene.catalog__Enabled`). Edition licensing still applies once it is enabled.

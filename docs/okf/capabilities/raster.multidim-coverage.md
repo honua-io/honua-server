@@ -16,6 +16,7 @@ Register and serve cloud-hosted NetCDF4/HDF5/Zarr datacubes as multidimensional 
 | Capability key | `raster.multidim-coverage` |
 | Category | Raster |
 | Edition | Pro |
+| Status | ga |
 | Surface maturity | 12 implemented |
 | Registry entries | 12 |
 | Proving tests | 27 |

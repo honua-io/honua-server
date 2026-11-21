@@ -16,6 +16,7 @@ Geocode multiple addresses in a single request.
 | Capability key | `geocoding.batch` |
 | Category | Geocoding |
 | Edition | Enterprise |
+| Status | ga |
 | Surface maturity | 3 implemented |
 | Registry entries | 3 |
 | Proving tests | 21 |

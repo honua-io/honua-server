@@ -16,6 +16,7 @@ Serve COG files directly from S3/Azure via HTTP range requests.
 | Capability key | `raster.cloud-cog-serving` |
 | Category | Raster |
 | Edition | Pro |
+| Status | ga |
 | Surface maturity | 8 implemented |
 | Registry entries | 8 |
 | Proving tests | 35 |

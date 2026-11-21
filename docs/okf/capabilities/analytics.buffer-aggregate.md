@@ -16,6 +16,7 @@ Buffer features by a fixed distance and dissolve or aggregate per group.
 | Capability key | `analytics.buffer-aggregate` |
 | Category | Analytics |
 | Edition | Pro |
+| Status | ga |
 | Surface maturity | 1 implemented |
 | Registry entries | 1 |
 | Proving tests | 11 |

@@ -16,6 +16,7 @@ Convert coordinates to a nearest-address match using configured providers.
 | Capability key | `geocoding.reverse` |
 | Category | Geocoding |
 | Edition | Community |
+| Status | ga |
 | Surface maturity | 3 implemented |
 | Registry entries | 3 |
 | Proving tests | 13 |

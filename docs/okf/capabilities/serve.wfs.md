@@ -16,6 +16,7 @@ Query and read features through WFS 2.0.
 | Capability key | `serve.wfs` |
 | Category | Serve |
 | Edition | Community |
+| Status | ga |
 | Surface maturity | 2 implemented |
 | Registry entries | 2 |
 | Proving tests | 165 |

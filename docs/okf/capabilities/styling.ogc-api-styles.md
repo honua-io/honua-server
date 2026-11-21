@@ -16,6 +16,7 @@ Read and manage styles through OGC API - Styles (Part 1).
 | Capability key | `styling.ogc-api-styles` |
 | Category | Styling |
 | Edition | Community |
+| Status | ga |
 | Surface maturity | 8 implemented |
 | Registry entries | 8 |
 | Proving tests | 76 |
