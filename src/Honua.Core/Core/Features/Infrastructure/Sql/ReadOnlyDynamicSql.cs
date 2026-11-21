@@ -42,19 +42,19 @@ internal static class ReadOnlyDynamicSql
         }
 
         var tokens = new SqlTokenizer(sql);
-        while (tokens.MoveNext(out var kind, out var word))
+        for (var token = tokens.Next(); token.Kind != SqlTokenKind.End; token = tokens.Next())
         {
-            if (kind == SqlTokenKind.StatementSeparator)
+            if (token.Kind == SqlTokenKind.StatementSeparator)
             {
                 throw new ArgumentException("SQL command text must contain exactly one statement.", nameof(sql));
             }
 
-            if (kind == SqlTokenKind.Comment)
+            if (token.Kind == SqlTokenKind.Comment)
             {
                 throw new ArgumentException("SQL comments are not allowed in dynamic command text.", nameof(sql));
             }
 
-            if (kind == SqlTokenKind.Word && MutatingTokenLookup.Contains(sql.AsSpan(word.Start, word.Length)))
+            if (token.Kind == SqlTokenKind.Word && MutatingTokenLookup.Contains(sql.AsSpan(token.Start, token.Length)))
             {
                 throw new ArgumentException("Mutating SQL statements are not allowed in dynamic read command text.", nameof(sql));
             }
@@ -65,11 +65,11 @@ internal static class ReadOnlyDynamicSql
     private static ReadOnlySpan<char> GetFirstToken(string sql)
     {
         var tokens = new SqlTokenizer(sql);
-        while (tokens.MoveNext(out var kind, out var word))
+        for (var token = tokens.Next(); token.Kind != SqlTokenKind.End; token = tokens.Next())
         {
-            if (kind == SqlTokenKind.Word)
+            if (token.Kind == SqlTokenKind.Word)
             {
-                return sql.AsSpan(word.Start, word.Length);
+                return sql.AsSpan(token.Start, token.Length);
             }
         }
 
@@ -81,68 +81,64 @@ internal static class ReadOnlyDynamicSql
     {
         private int _index;
 
-        public bool MoveNext(out SqlTokenKind kind, out (int Start, int Length) word)
+        public SqlToken Next()
         {
-            word = default;
             while (_index < sql.Length)
             {
                 var current = sql[_index];
                 if (current == '\'')
                 {
                     _index = SkipSingleQuotedLiteral(sql, _index + 1);
-                    continue;
                 }
-
-                if (current == '"')
+                else if (current == '"')
                 {
                     _index = SkipDoubleQuotedIdentifier(sql, _index + 1);
-                    continue;
                 }
-
-                if (TryReadPunctuation(current, out kind))
+                else if (ReadPunctuation(current) is { } punctuation)
                 {
-                    return true;
+                    return punctuation;
                 }
-
-                if (char.IsLetter(current) || current == '_')
+                else if (char.IsLetter(current) || current == '_')
                 {
-                    var start = _index++;
-                    while (_index < sql.Length && (char.IsLetterOrDigit(sql[_index]) || sql[_index] == '_'))
-                    {
-                        _index++;
-                    }
-
-                    kind = SqlTokenKind.Word;
-                    word = (start, _index - start);
-                    return true;
+                    return ReadWord();
                 }
-
-                _index++;
+                else
+                {
+                    _index++;
+                }
             }
 
-            kind = default;
-            return false;
+            return new SqlToken(SqlTokenKind.End, _index, 0);
         }
 
-        private bool TryReadPunctuation(char current, out SqlTokenKind kind)
+        private SqlToken? ReadPunctuation(char current)
         {
+            var start = _index;
             var next = _index + 1 < sql.Length ? sql[_index + 1] : '\0';
             if (current == ';')
             {
-                kind = SqlTokenKind.StatementSeparator;
                 _index++;
-                return true;
+                return new SqlToken(SqlTokenKind.StatementSeparator, start, 1);
             }
 
             if ((current == '-' && next == '-') || (current == '/' && next == '*'))
             {
-                kind = SqlTokenKind.Comment;
                 _index += 2;
-                return true;
+                return new SqlToken(SqlTokenKind.Comment, start, 2);
             }
 
-            kind = default;
-            return false;
+            return null;
+        }
+
+        private SqlToken ReadWord()
+        {
+            var start = _index++;
+            while (_index < sql.Length && (char.IsLetterOrDigit(sql[_index]) || sql[_index] == '_'))
+            {
+                _index++;
+            }
+
+            return new SqlToken(SqlTokenKind.Word, start, _index - start);
         }
     }
 
@@ -190,8 +186,11 @@ internal static class ReadOnlyDynamicSql
 
     private enum SqlTokenKind
     {
+        End,
         Word,
         StatementSeparator,
         Comment
     }
+
+    private readonly record struct SqlToken(SqlTokenKind Kind, int Start, int Length);
 }

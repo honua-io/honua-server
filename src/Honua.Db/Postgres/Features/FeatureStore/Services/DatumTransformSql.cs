@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Globalization;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Shared.Models;
 
@@ -70,13 +71,17 @@ internal static class DatumTransformSql
             (operand, fromSrid, toSrid),
             static key => BuildTransformExpression(key.Operand, key.ToSrid, selection: null, key.FromSrid));
 
-    // Same text as BuildTransformExpression(operand, toSrid, selection, fromSrid). Pass only column operands
-    // (GeometryProcessor.GetGeometryOperand): a plain SRID-pair reprojection then comes from the bounded cache
-    // instead of being rebuilt per query; a datum selection or an unknown source SRID still builds.
-    public static string TransformColumnExpression(string operand, int toSrid, DatumTransformationSelection? selection, int? fromSrid)
-        => selection is null && fromSrid is int sourceSrid
+    // Same text as BuildTransformExpression(operand, query.OutputSrid, query.OutputDatumTransformation,
+    // query.SpatialReferenceSrid). Pass only column operands (GeometryProcessor.GetGeometryOperand): a plain
+    // SRID-pair reprojection then comes from the bounded cache instead of being rebuilt per query; a datum
+    // selection or an unknown source SRID still builds.
+    public static string TransformToOutputSrid(string operand, FeatureQuery query)
+    {
+        var toSrid = query.OutputSrid ?? throw new ArgumentException("The query has no output SRID.", nameof(query));
+        return query.OutputDatumTransformation is null && query.SpatialReferenceSrid is int sourceSrid
             ? CachedTransformExpression(operand, sourceSrid, toSrid)
-            : BuildTransformExpression(operand, toSrid, selection, fromSrid);
+            : BuildTransformExpression(operand, toSrid, query.OutputDatumTransformation, query.SpatialReferenceSrid);
+    }
 
     public static string CachedTransformExpressionForRuntimeSrid(string operand, int toSrid)
         => RuntimeSridTransforms.GetOrAdd(
