@@ -72,7 +72,4 @@ public static class EcefCoordinateTransform
 
     public static (double Nx, double Ny, double Nz) ToGltfYUpNormal(double nxEcef, double nyEcef, double nzEcef)
         => (nxEcef, nzEcef, -nyEcef);
-
-    public static (double X, double Y, double Z) FromGltfYUp(double xGltf, double yGltf, double zGltf)
-        => (xGltf, -zGltf, yGltf);
 }

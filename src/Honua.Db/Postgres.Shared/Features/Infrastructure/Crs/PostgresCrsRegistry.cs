@@ -451,77 +451,13 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
         var maxBaseEnd = -1;
         foreach (var keyword in _baseGeographicCrsKeywords)
         {
-            if (TryFindBlockEnd(wkt, keyword, out var blockEnd) && blockEnd > maxBaseEnd)
+            if (CrsLinearUnitFactor.TryLocateWktNode(wkt, keyword, out var blockSpan) && blockSpan.End > maxBaseEnd)
             {
-                maxBaseEnd = blockEnd;
+                maxBaseEnd = blockSpan.End;
             }
         }
 
         return maxBaseEnd >= 0 ? maxBaseEnd + 1 : 0;
-    }
-
-    private static bool TryFindBlockEnd(string wkt, string keyword, out int end)
-    {
-        end = -1;
-        var idx = wkt.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
-        while (idx >= 0)
-        {
-            var isWordStart = idx == 0 || (!char.IsLetterOrDigit(wkt[idx - 1]) && wkt[idx - 1] != '_');
-            var i = idx + keyword.Length;
-            while (i < wkt.Length && char.IsWhiteSpace(wkt[i]))
-            {
-                i++;
-            }
-
-            if (isWordStart && i < wkt.Length && wkt[i] == '[')
-            {
-                var close = FindMatchingBracket(wkt, i);
-                if (close > i)
-                {
-                    end = close;
-                    return true;
-                }
-            }
-
-            idx = wkt.IndexOf(keyword, idx + keyword.Length, StringComparison.OrdinalIgnoreCase);
-        }
-
-        return false;
-    }
-
-    private static int FindMatchingBracket(string s, int openIndex)
-    {
-        var depth = 0;
-        var inQuote = false;
-        for (var i = openIndex; i < s.Length; i++)
-        {
-            var c = s[i];
-            if (c == '"')
-            {
-                inQuote = !inQuote;
-                continue;
-            }
-
-            if (inQuote)
-            {
-                continue;
-            }
-
-            if (c == '[')
-            {
-                depth++;
-            }
-            else if (c == ']')
-            {
-                depth--;
-                if (depth == 0)
-                {
-                    return i;
-                }
-            }
-        }
-
-        return -1;
     }
 
     private static bool IsEastWest(string direction)

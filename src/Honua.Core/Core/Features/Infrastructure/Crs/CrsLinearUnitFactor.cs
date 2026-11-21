@@ -230,10 +230,10 @@ public static partial class CrsLinearUnitFactor
             string? bestMember = null;
             foreach (var keyword in _horizontalCrsKeywords)
             {
-                if (TryFindMember(current, keyword, out var start, out var end) && start < bestStart)
+                if (TryLocateWktNode(current, keyword, out var range) && range.Start < bestStart)
                 {
-                    bestStart = start;
-                    bestMember = current.Substring(start, end - start + 1);
+                    bestStart = range.Start;
+                    bestMember = current.Substring(range.Start, range.End - range.Start + 1);
                 }
             }
 
@@ -283,9 +283,9 @@ public static partial class CrsLinearUnitFactor
         var maxEnd = -1;
         foreach (var keyword in _baseGeographicKeywords)
         {
-            if (TryFindMember(wkt, keyword, out _, out var end) && end > maxEnd)
+            if (TryLocateWktNode(wkt, keyword, out var range) && range.End > maxEnd)
             {
-                maxEnd = end;
+                maxEnd = range.End;
             }
         }
 
@@ -323,9 +323,9 @@ public static partial class CrsLinearUnitFactor
 
     private static bool TryExtractMember(string wkt, string keyword, out string member)
     {
-        if (TryFindMember(wkt, keyword, out var start, out var end))
+        if (TryLocateWktNode(wkt, keyword, out var range))
         {
-            member = wkt.Substring(start, end - start + 1);
+            member = wkt.Substring(range.Start, range.End - range.Start + 1);
             return true;
         }
 
@@ -333,71 +333,51 @@ public static partial class CrsLinearUnitFactor
         return false;
     }
 
-    private static bool TryFindMember(string wkt, string keyword, out int start, out int end)
+    public static bool TryLocateWktNode(string wkt, string keyword, out (int Start, int End) span)
     {
-        start = -1;
-        end = -1;
-
-        var idx = wkt.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
-        while (idx >= 0)
+        span = (-1, -1);
+        for (var idx = wkt.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
+             idx >= 0;
+             idx = wkt.IndexOf(keyword, idx + keyword.Length, StringComparison.OrdinalIgnoreCase))
         {
-            var isWordStart = idx == 0 || (!char.IsLetterOrDigit(wkt[idx - 1]) && wkt[idx - 1] != '_');
-            var i = idx + keyword.Length;
-            while (i < wkt.Length && char.IsWhiteSpace(wkt[i]))
+            if (idx > 0 && (char.IsLetterOrDigit(wkt[idx - 1]) || wkt[idx - 1] == '_'))
             {
-                i++;
+                continue;
             }
 
-            if (isWordStart && i < wkt.Length && wkt[i] == '[')
+            var cursor = idx + keyword.Length;
+            while (cursor < wkt.Length && char.IsWhiteSpace(wkt[cursor]))
             {
-                var close = FindMatchingBracket(wkt, i);
-                if (close > i)
+                cursor++;
+            }
+
+            if (cursor >= wkt.Length || wkt[cursor] != '[')
+            {
+                continue;
+            }
+
+            var bracketDepth = 0;
+            var insideQuotes = false;
+            for (var pos = cursor; pos < wkt.Length; pos++)
+            {
+                var ch = wkt[pos];
+                if (ch == '"')
                 {
-                    start = idx;
-                    end = close;
+                    insideQuotes = !insideQuotes;
+                }
+                else if (!insideQuotes && ch == '[')
+                {
+                    bracketDepth++;
+                }
+                else if (!insideQuotes && ch == ']' && --bracketDepth == 0)
+                {
+                    span = (idx, pos);
                     return true;
                 }
             }
-
-            idx = wkt.IndexOf(keyword, idx + keyword.Length, StringComparison.OrdinalIgnoreCase);
         }
 
         return false;
-    }
-
-    private static int FindMatchingBracket(string s, int openIndex)
-    {
-        var depth = 0;
-        var inQuote = false;
-        for (var i = openIndex; i < s.Length; i++)
-        {
-            var c = s[i];
-            if (c == '"')
-            {
-                inQuote = !inQuote;
-                continue;
-            }
-
-            if (inQuote)
-            {
-                continue;
-            }
-
-            if (c == '[')
-            {
-                depth++;
-            }
-            else if (c == ']')
-            {
-                depth--;
-                if (depth == 0)
-                {
-                    return i;
-                }
-            }
-        }
-
-        return -1;
     }
 
     private static double? ParseUnitFactor(Match? match) =>

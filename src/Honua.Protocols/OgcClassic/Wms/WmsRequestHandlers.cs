@@ -1171,35 +1171,6 @@ internal static partial class WmsRequestHandlers
         return true;
     }
 
-    private static bool TryParseWmsFeatureInfoPixel(
-        IQueryCollection query,
-        string version,
-        int imageWidth,
-        int imageHeight,
-        out int pixelX,
-        out int pixelY)
-    {
-        pixelX = 0;
-        pixelY = 0;
-
-        var isWms111 = IsWms111Version(version);
-        var xValue = GetQueryValue(query, isWms111 ? "X" : "I");
-        var yValue = GetQueryValue(query, isWms111 ? "Y" : "J");
-        if (string.IsNullOrWhiteSpace(xValue) || string.IsNullOrWhiteSpace(yValue))
-        {
-            return false;
-        }
-
-        if (!int.TryParse(xValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out pixelX) ||
-            !int.TryParse(yValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out pixelY))
-        {
-            return false;
-        }
-
-        return pixelX >= 0 && pixelX < imageWidth &&
-               pixelY >= 0 && pixelY < imageHeight;
-    }
-
     private static string[] SplitWmsFilterTokens(string filterParam)
     {
         var tokens = new List<string>();

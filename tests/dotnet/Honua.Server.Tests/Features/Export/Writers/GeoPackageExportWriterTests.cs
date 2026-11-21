@@ -98,7 +98,7 @@ public sealed class GeoPackageExportWriterTests
         }
     }
 
-    [Fact]
+    [UnitTest]
     public async Task WriteAsync_WithEmbeddedEwkbSrid_StripsEwkbSridFromInnerWkbPayload()
     {
         var tempPath = CreateTempGeoPackagePath();

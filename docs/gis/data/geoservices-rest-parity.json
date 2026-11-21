@@ -3408,6 +3408,20 @@
             "notes": "Job cancellation with route binding validation. Implemented in #723."
           },
           {
+            "name": "Job Messages (generic)",
+            "status": "implemented",
+            "geoServicesPaths": [
+              "/GPServer/{taskName}/jobs/{jobId}/messages"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/messages"
+            ],
+            "capabilityMaturity": [
+              "preview"
+            ],
+            "notes": "Returns the Esri GP job messages array for a submitted job with route binding validation."
+          },
+          {
             "name": "Job Results (generic)",
             "status": "implemented",
             "geoServicesPaths": [
