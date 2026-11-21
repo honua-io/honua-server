@@ -174,16 +174,8 @@ internal sealed class FeatureServerRelatedRecordsHandler(
                     [ex.Message]);
             }
 
-            var objectIds = await ResolveSourceObjectIdsAsync(
-                httpContext,
-                new SourceGlobalIdLookup
-                {
-                    Resource = resource,
-                    GlobalIdField = sourceGlobalIdField,
-                    StorageLayerId = sourceStorageLayerId.Value,
-                    QueryParams = queryParams
-                },
-                cancellationToken).ConfigureAwait(false);
+            var lookup = new SourceGlobalIdLookup { Resource = resource, GlobalIdField = sourceGlobalIdField, StorageLayerId = sourceStorageLayerId.Value, QueryParams = queryParams };
+            var objectIds = await ResolveSourceObjectIdsAsync(httpContext, lookup, cancellationToken).ConfigureAwait(false);
             var outputSrid = await _queryServices.ResolveSridAsync(validatedParams.OutSr, null, cancellationToken);
             if (!string.IsNullOrWhiteSpace(validatedParams.OutSr) && !outputSrid.HasValue)
             {

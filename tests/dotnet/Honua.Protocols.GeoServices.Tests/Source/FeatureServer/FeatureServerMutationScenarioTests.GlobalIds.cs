@@ -39,13 +39,13 @@ public sealed partial class FeatureServerMutationScenarioTests
             [{"id":0,"adds":[{"attributes":{"name":"svc-gid-add","GlobalID":"{{{suppliedGuid}}}"},"geometry":{"x":-122.41,"y":37.77}}]}]
             """;
         var objectId = await AssertServiceEditSuccessAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/applyEdits?useGlobalIds=true", addPayload, "addResults", suppliedGuid);
+            $"/rest/services/{TestServiceId}/FeatureServer/applyEdits?useGlobalIds=true", addPayload, ("addResults", suppliedGuid));
 
         var updatePayload = $$$"""
             [{"id":0,"useGlobalIds":true,"updates":[{"attributes":{"GlobalID":"{{{suppliedGuid}}}","name":"svc-gid-updated"}}]}]
             """;
         (await AssertServiceEditSuccessAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/applyEdits", updatePayload, "updateResults", suppliedGuid))
+            $"/rest/services/{TestServiceId}/FeatureServer/applyEdits", updatePayload, ("updateResults", suppliedGuid)))
             .Should().Be(objectId);
         await AssertFeatureNameAsync(objectId, "svc-gid-updated");
 
@@ -53,7 +53,7 @@ public sealed partial class FeatureServerMutationScenarioTests
             [{"id":0,"deletes":["{{{suppliedGuid}}}"]}]
             """;
         (await AssertServiceEditSuccessAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/applyEdits?useGlobalIds=true", deletePayload, "deleteResults", suppliedGuid))
+            $"/rest/services/{TestServiceId}/FeatureServer/applyEdits?useGlobalIds=true", deletePayload, ("deleteResults", suppliedGuid)))
             .Should().Be(objectId);
         (await ReadFeatureCountAsync(objectId)).Should().Be(0);
     }
@@ -152,14 +152,17 @@ public sealed partial class FeatureServerMutationScenarioTests
         (await ReadFeatureCountAsync(second.Oid)).Should().Be(0);
     }
 
-    private async Task<long> AssertServiceEditSuccessAsync(string path, string payload, string resultsKey, string expectedGuid)
+    private async Task<long> AssertServiceEditSuccessAsync(
+        string path,
+        string payload,
+        (string ResultsKey, string ExpectedGuid) expected)
     {
         var response = await PostJsonAsync(path, payload);
         response.Be200Ok();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var entry = doc.RootElement[0].GetProperty(resultsKey)[0];
+        var entry = doc.RootElement[0].GetProperty(expected.ResultsKey)[0];
         entry.GetProperty("success").GetBoolean().Should().BeTrue();
-        entry.GetProperty("globalId").GetString().Should().Be(expectedGuid);
+        entry.GetProperty("globalId").GetString().Should().Be(expected.ExpectedGuid);
         return entry.GetProperty("objectId").GetInt64();
     }
 

@@ -157,7 +157,14 @@ internal static class FeatureServerGlobalIds
         var chunkSize = isUuidColumn ? MaxInListValues : MaxInListValues / 4;
         foreach (var chunk in distinct.Chunk(chunkSize))
         {
-            await QueryChunkIntoAsync(lookup, chunk, resolved, cancellationToken).ConfigureAwait(false);
+            var result = await QueryChunkAsync(lookup, chunk, cancellationToken).ConfigureAwait(false);
+            foreach (var feature in result.Items)
+            {
+                if (ReadStoredGlobalId(feature.Attributes, lookup.Field.Name) is { } storedId)
+                {
+                    resolved[storedId] = feature;
+                }
+            }
         }
 
         return resolved;
@@ -178,10 +185,9 @@ internal static class FeatureServerGlobalIds
         return distinct;
     }
 
-    private static async Task QueryChunkIntoAsync(
+    private static async Task<QueryResult<Feature>> QueryChunkAsync(
         GlobalIdLookupContext lookup,
         string[] chunk,
-        Dictionary<string, Feature> resolved,
         CancellationToken cancellationToken)
     {
         var literals = lookup.Field.Type == MetadataV2FieldType.Uuid
@@ -198,7 +204,7 @@ internal static class FeatureServerGlobalIds
         }
 
         var activeVersion = lookup.VersionContext is { IsDefault: false } ? lookup.VersionContext : null;
-        var result = await lookup.Reader.QueryAsync(
+        return await lookup.Reader.QueryAsync(
             lookup.StorageLayerId,
             new FeatureQuery
             {
@@ -207,14 +213,6 @@ internal static class FeatureServerGlobalIds
                 VersionContext = activeVersion
             },
             cancellationToken).ConfigureAwait(false);
-
-        foreach (var feature in result.Items)
-        {
-            if (ReadStoredGlobalId(feature.Attributes, lookup.Field.Name) is { } storedId)
-            {
-                resolved[storedId] = feature;
-            }
-        }
     }
 
     private static Literal[] BuildUuidInLiterals(string[] chunk)

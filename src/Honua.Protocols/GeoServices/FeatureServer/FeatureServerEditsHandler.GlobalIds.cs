@@ -70,12 +70,8 @@ internal sealed partial class FeatureServerEditsHandler
             if (!hasObjectId || parsedObjectId <= 0)
             {
                 slotRequest.Context.HasValidationErrors = true;
-                slotRequest.Context.UpdateResults![i] = CreateFailureResult(
-                    code: GeoServicesEditErrorCodes.InvalidObjectId,
-                    description: hasObjectId
-                        ? "Invalid Object ID for update operation"
-                        : "ObjectId is required for update operations",
-                    objectId: hasObjectId ? parsedObjectId : null);
+                var description = hasObjectId ? "Invalid Object ID for update operation" : "ObjectId is required for update operations";
+                slotRequest.Context.UpdateResults![i] = CreateFailureResult(GeoServicesEditErrorCodes.InvalidObjectId, description, hasObjectId ? parsedObjectId : null);
                 continue;
             }
 
@@ -85,18 +81,11 @@ internal sealed partial class FeatureServerEditsHandler
         try
         {
             return await ResolveFeaturesByGeoServicesObjectIdsAsync(
-                slotRequest.Resource,
-                slotRequest.StorageLayerId,
-                slotRequest.SlotObjectIds,
-                slotRequest.VersionContext,
-                cancellationToken).ConfigureAwait(false);
+                slotRequest.Resource, slotRequest.StorageLayerId, slotRequest.SlotObjectIds, slotRequest.VersionContext, cancellationToken).ConfigureAwait(false);
         }
         catch (ArgumentException ex)
         {
-            FailObjectIdSlots(
-                slotRequest.SlotObjectIds,
-                slotRequest.Context,
-                SanitizeEditErrorMessage(ex.Message, InvalidFeatureDataMessage));
+            FailObjectIdSlots(slotRequest.SlotObjectIds, slotRequest.Context, SanitizeEditErrorMessage(ex.Message, InvalidFeatureDataMessage));
             return null;
         }
     }
