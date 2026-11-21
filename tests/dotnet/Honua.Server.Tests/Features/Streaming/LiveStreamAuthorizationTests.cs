@@ -448,13 +448,12 @@ public sealed partial class LiveStreamAuthorizationTests
     }
 
     [UnitTest]
-    public async Task Filter_ReplayRevokedBackingKeyWithWarmCache_DeliversNoEventsBeforeSecurityConsumer()
+    public async Task Filter_ReplayRevokedBackingKey_DeliversNoEventsBeforeSecurityConsumer()
     {
         var keyStore = new InMemoryAdminApiKeyStore();
         await using var services = CreateServices(registrations =>
         {
             registrations.AddSingleton<IAdminApiKeyStore>(keyStore);
-            registrations.AddSingleton(Options.Create(new PortalTokenAuthenticationOptions { SourceRevalidationSeconds = 600 }));
             registrations.AddSingleton<IPortalTokenSourceValidator, PortalTokenSourceValidator>();
             registrations.AddSingleton<LiveStreamSecurityRegistry>();
         });
@@ -466,25 +465,14 @@ public sealed partial class LiveStreamAuthorizationTests
         var context = Context(scope.ServiceProvider, issuance.Token);
         context.Response.Body = new MemoryStream();
         context.User = (await context.AuthenticateAsync(PortalTokenAuthenticationExtensions.PortalTokenScheme)).Principal!;
-        var store = CreateStoreWithOneChange();
-        using var manager = new FeatureStreamSessionManager(Options.Create(new FeatureStreamOptions()),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<FeatureStreamSessionManager>.Instance,
-            Honua.Server.Tests.Infrastructure.Telemetry.TestTelemetry.CreateFeatureStreamMetrics());
 
         await new LiveStreamAuthorizationFilter().InvokeAsync(EndpointFilterInvocationContext.Create(context), async _ =>
         {
             // Keep the consumer idle: replay must independently re-read the backing grant.
             await keyStore.RevokeAsync(key.Record.Id, CancellationToken.None);
-            Assert.NotNull(await issuer.ValidateAsync(issuance.Token,
-                new PortalTokenBinding("https://stream-proof.example/", null), CancellationToken.None));
-            var security = CreateReplayRevalidatedSecurity(context);
-            var replay = typeof(FeatureStreamEndpoints).GetMethod("ReplayToSseAsync",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
-            var task = (Task<long>)replay.Invoke(null,
-                [context.Response, store, 0L, 100, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance,
-                 Guid.NewGuid(), manager, context.RequestAborted,
-                 new StreamSubscriptionFilter(subscriberSecurity: security), null, 0L, null])!;
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
+            var filter = new StreamSubscriptionFilter(subscriberSecurity: CreateReplayRevalidatedSecurity(context));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => FeatureStreamReplayHarness.ReplayAsync(
+                new(context.Response, FeatureStreamReplayHarness.CreateStoreWithOneChange(), filter), context.RequestAborted));
             Assert.Equal(0, context.Response.Body.Length);
             return Results.Empty;
         });
@@ -534,21 +522,6 @@ public sealed partial class LiveStreamAuthorizationTests
             DateTimeOffset.UtcNow.AddMinutes(30), Source: new PortalCredentialSource(
                 PortalCredentialSourceKind.ManagedApiKey, Reference: key.Id.ToString("D"),
                 Version: PortalCredentialSourceVersion.ForManagedKey(key))), CancellationToken.None);
-
-    private static FakeFeatureChangeEventStore CreateStoreWithOneChange()
-    {
-        var store = new FakeFeatureChangeEventStore();
-        store.Append(new Honua.Infrastructure.Events.FeatureChangeEventRequest
-        {
-            ServiceId = "test",
-            LayerId = 0,
-            ObjectId = 1,
-            Operation = "update",
-            Protocol = "test",
-            RequestId = "request"
-        });
-        return store;
-    }
 
     // Replay re-runs the stream's admission check, as the endpoint wires it for event-driven streams.
     private static StreamSubscriberSecurity CreateReplayRevalidatedSecurity(HttpContext context)

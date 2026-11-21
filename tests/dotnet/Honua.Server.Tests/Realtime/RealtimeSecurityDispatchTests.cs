@@ -90,13 +90,8 @@ public sealed class RealtimeSecurityDispatchTests(DatabaseFixtureAdapter databas
         var dispatcher = harness.CreateDispatcher(security: registry);
         await dispatcher.InitializeAsync(CancellationToken.None);
         var channel = Channel.CreateBounded<RealtimeDelivery>(16);
-        await using var subscription = (RealtimeSubscription)dispatcher.Subscribe(
-            new RealtimeSubscriptionRequest(RealtimeFamily.Admin, [], null, channel.Writer));
+        await using var subscription = await SubscribeLiveAsync(dispatcher, RealtimeFamily.Admin, channel.Writer);
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        while (!subscription.IsLive)
-        {
-            await Task.Delay(10, deadline.Token);
-        }
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var stream = registry.Register(new("alice", null), async token =>
@@ -104,8 +99,7 @@ public sealed class RealtimeSecurityDispatchTests(DatabaseFixtureAdapter databas
             entered.TrySetResult();
             await release.Task.WaitAsync(token);
         });
-        await harness.Log.AppendAsync(RealtimeLogFamilies.Admin,
-            [new RealtimeLogRow("proposals", "changed", RealtimeLogHarness.Payload(new { }))], null, deadline.Token);
+        await AppendAdminChangeAsync(harness, deadline.Token);
         await harness.Log.AppendAsync(RealtimeLogFamilies.Security, [new RealtimeLogRow("*", "policy-changed",
             RealtimeLogHarness.Payload(new { kind = "policy-changed", subject = "*" }))], null, deadline.Token);
         var dispatch = dispatcher.DispatchOnceAsync(deadline.Token);
@@ -117,8 +111,7 @@ public sealed class RealtimeSecurityDispatchTests(DatabaseFixtureAdapter databas
         }
         finally
         {
-            await harness.Log.AppendAsync(RealtimeLogFamilies.Admin,
-                [new RealtimeLogRow("proposals", "changed", RealtimeLogHarness.Payload(new { }))], null, deadline.Token);
+            await AppendAdminChangeAsync(harness, deadline.Token);
             release.TrySetResult();
             await dispatch;
         }
@@ -147,16 +140,13 @@ public sealed class RealtimeSecurityDispatchTests(DatabaseFixtureAdapter databas
         await dispatcher.DispatchOnceAsync(CancellationToken.None);
         Assert.True(revoked);
     }
+
     [IntegrationTest]
     public async Task Dispatch_SourceHeadCommitsRevocation_RefreshesBeforeData()
     {
         await using var harness = await RealtimeLogHarness.CreateAsync(database);
         using var registry = new LiveStreamSecurityRegistry();
-        var source = Substitute.For<IRealtimeFamilySource>();
-        source.Family.Returns(RealtimeFamily.Features);
-        source.ReadHeadAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(0L));
-        source.ReadWindowAsync(Arg.Any<CancellationToken>()).Returns(
-            Task.FromResult(new RealtimeLogWindow(RealtimeFamily.Features, 0, 0)));
+        var source = CreateEmptyFeatureSource();
         var dispatcher = new RealtimeDispatcher(harness.Log, [source], Options.Create(new RealtimeOptions()),
             NullLogger<RealtimeDispatcher>.Instance) { Security = registry };
         await dispatcher.InitializeAsync(CancellationToken.None);
@@ -174,13 +164,8 @@ public sealed class RealtimeSecurityDispatchTests(DatabaseFixtureAdapter databas
         });
         // Keep a data subscription present so the dispatcher reads the source.
         var channel = Channel.CreateBounded<RealtimeDelivery>(16);
-        await using var subscription = (RealtimeSubscription)dispatcher.Subscribe(
-            new RealtimeSubscriptionRequest(RealtimeFamily.Features, [], null, channel.Writer));
+        await using var subscription = await SubscribeLiveAsync(dispatcher, RealtimeFamily.Features, channel.Writer);
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        while (!subscription.IsLive)
-        {
-            await Task.Delay(10, deadline.Token);
-        }
         source.ReadAfterAsync(Arg.Any<long>(), Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<int>(),
             Arg.Any<CancellationToken>()).Returns(_ =>
         {
@@ -196,4 +181,30 @@ public sealed class RealtimeSecurityDispatchTests(DatabaseFixtureAdapter databas
             Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
+    private static async Task<RealtimeSubscription> SubscribeLiveAsync(
+        RealtimeDispatcher dispatcher, RealtimeFamily family, ChannelWriter<RealtimeDelivery> writer)
+    {
+        var subscription = (RealtimeSubscription)dispatcher.Subscribe(new RealtimeSubscriptionRequest(family, [], null, writer));
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        while (!subscription.IsLive)
+        {
+            await Task.Delay(10, deadline.Token);
+        }
+
+        return subscription;
+    }
+
+    private static Task AppendAdminChangeAsync(RealtimeLogHarness harness, CancellationToken cancellationToken)
+        => harness.Log.AppendAsync(RealtimeLogFamilies.Admin,
+            [new RealtimeLogRow("proposals", "changed", RealtimeLogHarness.Payload(new { }))], null, cancellationToken);
+
+    private static IRealtimeFamilySource CreateEmptyFeatureSource()
+    {
+        var source = Substitute.For<IRealtimeFamilySource>();
+        source.Family.Returns(RealtimeFamily.Features);
+        source.ReadHeadAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(0L));
+        source.ReadWindowAsync(Arg.Any<CancellationToken>()).Returns(
+            Task.FromResult(new RealtimeLogWindow(RealtimeFamily.Features, 0, 0)));
+        return source;
+    }
 }
