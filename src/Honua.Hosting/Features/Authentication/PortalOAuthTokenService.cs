@@ -368,8 +368,8 @@ internal sealed class PortalOAuthTokenService(
             return null;
         }
 
-        var decision = await PortalOAuthClientBinding
-            .AuthorizeAsync(_clientStore, clientId, redirectUri: null, TimeProvider.System, cancellationToken)
+        var decision = await new PortalOAuthClientBinding(_clientStore, TimeProvider.System)
+            .CheckAsync(clientId, redirectUri: null, cancellationToken)
             .ConfigureAwait(false);
         return decision switch
         {

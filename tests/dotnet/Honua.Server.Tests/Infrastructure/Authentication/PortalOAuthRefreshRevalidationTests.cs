@@ -18,6 +18,7 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 public sealed class PortalOAuthRefreshRevalidationTests
 {
     private const string ClientId = "arcgis-client";
+    private const string PkceVerifier = "registered-client-pkce-verifier-0123456789-abcdefghij";
 
     [UnitTest]
     public async Task Rotation_DoesNotExtendTheOriginalRefreshLifetime()
@@ -120,7 +121,7 @@ public sealed class PortalOAuthRefreshRevalidationTests
         var clients = new InMemoryOAuthClientStore();
         var client = await PortalOAuthClientBindingTests.RegisterAsync(clients, grantTypes: ["authorization_code"]);
         var harness = CreateHarness(clients: clients);
-        var refresh = await SeedRefreshAsync(harness.Store, DateTimeOffset.UtcNow.AddDays(2), ["viewer"], clientId: client.ClientId);
+        var refresh = await SeedRefreshForClientAsync(harness.Store, client.ClientId);
 
         var allowed = await harness.Service.ExchangeAsync(Refresh(refresh, client.ClientId), "binding", CancellationToken.None);
         Assert.True(allowed.Succeeded, allowed.ErrorDescription);
@@ -138,19 +139,21 @@ public sealed class PortalOAuthRefreshRevalidationTests
     {
         var clients = new InMemoryOAuthClientStore();
         var client = await PortalOAuthClientBindingTests.RegisterAsync(clients, grantTypes: ["client_credentials"]);
-        var harness = CreateHarness(clients: clients, requirePkce: false);
+        var harness = CreateHarness(clients: clients);
         var code = await harness.Store.CreateAuthorizationCodeAsync(
             new PortalOAuthAuthorizationCode
             {
                 ClientId = client.ClientId,
                 RedirectUri = client.RedirectUris[0],
                 ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5),
+                CodeChallenge = PkceVerifier,
+                CodeChallengeMethod = "plain",
                 Principal = Principal(["viewer"], sourceExpiresAt: null),
             },
             CancellationToken.None);
 
         var result = await harness.Service.ExchangeAsync(
-            new PortalOAuthTokenRequest("authorization_code", code, null, client.RedirectUris[0], client.ClientId, null, false),
+            new PortalOAuthTokenRequest("authorization_code", code, PkceVerifier, client.RedirectUris[0], client.ClientId, null, false),
             "binding",
             CancellationToken.None);
 
@@ -172,13 +175,12 @@ public sealed class PortalOAuthRefreshRevalidationTests
         DateTimeOffset expiresAt,
         string[] roles,
         DateTimeOffset? sourceExpiresAt = null,
-        DateTimeOffset? issuedAt = null,
-        string clientId = ClientId)
+        DateTimeOffset? issuedAt = null)
     {
         return await store.CreateRefreshTokenAsync(
             new PortalOAuthRefreshToken
             {
-                ClientId = clientId,
+                ClientId = ClientId,
                 ClientType = PortalTokenClientType.Bearer,
                 BindingValue = string.Empty,
                 IssuedAt = issuedAt ?? DateTimeOffset.UtcNow,
@@ -187,6 +189,19 @@ public sealed class PortalOAuthRefreshRevalidationTests
             },
             CancellationToken.None);
     }
+
+    private static Task<string> SeedRefreshForClientAsync(PortalOAuthStore store, string clientId)
+        => store.CreateRefreshTokenAsync(
+            new PortalOAuthRefreshToken
+            {
+                ClientId = clientId,
+                ClientType = PortalTokenClientType.Bearer,
+                BindingValue = string.Empty,
+                IssuedAt = DateTimeOffset.UtcNow,
+                ExpiresAt = DateTimeOffset.UtcNow.AddDays(2),
+                Principal = Principal(["viewer"], sourceExpiresAt: null),
+            },
+            CancellationToken.None);
 
     private static PortalOAuthPrincipal Principal(string[] roles, DateTimeOffset? sourceExpiresAt) => new()
     {
@@ -203,13 +218,12 @@ public sealed class PortalOAuthRefreshRevalidationTests
 
     private static Harness CreateHarness(
         IPrincipalMembershipSource? membership = null,
-        IOAuthClientStore? clients = null,
-        bool requirePkce = true)
+        IOAuthClientStore? clients = null)
     {
         var store = new PortalOAuthStore(new InMemorySecurityTokenStore(), NullLogger<PortalOAuthStore>.Instance);
         var options = Options.Create(new PortalTokenAuthenticationOptions
         {
-            OAuth2 = new PortalOAuth2Options { RotateRefreshTokens = true, RequirePkce = requirePkce },
+            OAuth2 = new PortalOAuth2Options { RotateRefreshTokens = true },
             RequireHttps = false,
         });
         var services = new ServiceCollection();

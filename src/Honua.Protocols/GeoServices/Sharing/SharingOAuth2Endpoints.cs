@@ -11,6 +11,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
@@ -228,10 +229,37 @@ internal static class SharingOAuth2Endpoints
         return Results.Json(response, SharingRestJsonContext.Default.OAuth2IntrospectionResponse, contentType: JsonContentType);
     }
 
+    // A registered client is held to its own registration. An unknown, deleted,
+    // revoked or expired client, or a redirect_uri outside the client's own list,
+    // is refused directly and never redirected to (RFC 6749 section 4.1.2.1).
+    private static async Task<IResult?> RefuseUnboundClientAsync(HttpContext context, string clientId, string redirectUri)
+    {
+        var services = context.RequestServices;
+        var decision = await new PortalOAuthClientBinding(services.GetRequiredService<IOAuthClientStore>(), TimeProvider.System)
+            .CheckAsync(clientId, redirectUri, context.RequestAborted)
+            .ConfigureAwait(false);
+        if (decision is PortalOAuthClientDecision.Allowed)
+        {
+            return null;
+        }
+
+        if (decision is PortalOAuthClientDecision.GrantNotAllowed)
+        {
+            return RedirectError(context, redirectUri, ReadFirst(context.Request.Query["state"]),
+                "unauthorized_client", "This client is not authorized to use the authorization_code grant.");
+        }
+
+        SharingRestLog.OAuthRedirectUriRejected(services.GetRequiredService<ILogger<SharingRestLog>>());
+        return StandardErrorHelpers.CreateBadRequest(
+            context,
+            decision is PortalOAuthClientDecision.RedirectNotRegistered
+                ? "redirect_uri is not registered for this client."
+                : "client_id is not a registered, active client.");
+    }
+
     private static async Task<IResult> HandleAuthorizeAsync(
         HttpContext context,
         [FromServices] PortalOAuthBroker broker,
-        [FromServices] IOAuthClientStore clients,
         [FromServices] IOptions<PortalTokenAuthenticationOptions> tokenOptions,
         [FromServices] ILogger<SharingRestLog> logger)
     {
@@ -269,23 +297,9 @@ internal static class SharingOAuth2Endpoints
             return StandardErrorHelpers.CreateBadRequest(context, "redirect_uri is not registered for this deployment.");
         }
 
-        // A registered client is held to its own registration. An unknown, deleted,
-        // revoked or expired client, or a redirect_uri outside the client's own list,
-        // is refused directly and never redirected to (RFC 6749 section 4.1.2.1).
-        var clientDecision = await PortalOAuthClientBinding
-            .AuthorizeAsync(clients, clientId, redirectUri, TimeProvider.System, context.RequestAborted)
-            .ConfigureAwait(false);
-        switch (clientDecision)
+        if (await RefuseUnboundClientAsync(context, clientId, redirectUri).ConfigureAwait(false) is { } clientRefusal)
         {
-            case PortalOAuthClientDecision.UnknownClient or PortalOAuthClientDecision.InactiveClient:
-                SharingRestLog.OAuthRedirectUriRejected(logger);
-                return StandardErrorHelpers.CreateBadRequest(context, "client_id is not a registered, active client.");
-            case PortalOAuthClientDecision.RedirectNotRegistered:
-                SharingRestLog.OAuthRedirectUriRejected(logger);
-                return StandardErrorHelpers.CreateBadRequest(context, "redirect_uri is not registered for this client.");
-            case PortalOAuthClientDecision.GrantNotAllowed:
-                return RedirectError(context, redirectUri, ReadFirst(query["state"]),
-                    "unauthorized_client", "This client is not authorized to use the authorization_code grant.");
+            return clientRefusal;
         }
 
         // response_type is validated only after the redirect_uri allow-list check so

@@ -13,6 +13,8 @@ namespace Honua.Worker.Gdal.Tests;
 
 public sealed class GdalJobInputReaderTests
 {
+    private static readonly GdalWorkerOptions InlineLimit = new() { MaxArtifactBytes = 64 * 1024 };
+
     private static Dictionary<string, string> Param(string name, string value)
         => new(StringComparer.Ordinal)
         {
@@ -51,8 +53,7 @@ public sealed class GdalJobInputReaderTests
         var ok = GdalJobInputReader.TryGetRasterInput(
             parameters,
             "source",
-            maxInlineBytes: 64 * 1024,
-            localStorageRoot: null,
+            InlineLimit,
             out var input,
             out var error);
 
@@ -75,11 +76,11 @@ public sealed class GdalJobInputReaderTests
             [GdalWorkerParameterKeys.StepRasterSourcePrefix + "source"] = RasterSourceJson.Serialize(LocalCog()),
         };
 
-        GdalJobInputReader.TryGetRasterInput(parameters, "source", 64 * 1024, root, out var input, out var error)
+        GdalJobInputReader.TryGetRasterInput(parameters, "source", new GdalWorkerOptions { MaxArtifactBytes = 64 * 1024, LocalCoverageRoot = root }, out var input, out var error)
             .Should().BeTrue(error);
         input.ReferencedPath.Should().Be(Path.GetFullPath(Path.Join(root, "gp-inputs", "tenant", "dem.tif")));
 
-        GdalJobInputReader.TryGetRasterInput(parameters, "source", 64 * 1024, localStorageRoot: null, out _, out error)
+        GdalJobInputReader.TryGetRasterInput(parameters, "source", InlineLimit, out _, out error)
             .Should().BeFalse();
         error.Should().Contain("configured local storage root");
     }
@@ -134,8 +135,7 @@ public sealed class GdalJobInputReaderTests
         var ok = GdalJobInputReader.TryGetRasterInput(
             parameters,
             "source",
-            maxInlineBytes: 64 * 1024,
-            localStorageRoot: null,
+            InlineLimit,
             out _,
             out var error);
 
@@ -179,8 +179,7 @@ public sealed class GdalJobInputReaderTests
         var ok = GdalJobInputReader.TryGetRasterInput(
             parameters,
             "source",
-            maxInlineBytes: 64 * 1024,
-            localStorageRoot: null,
+            InlineLimit,
             out _,
             out var error);
 
@@ -224,8 +223,7 @@ public sealed class GdalJobInputReaderTests
         var parsed = GdalJobInputReader.TryGetRasterInput(
             parameters,
             "source",
-            maxInlineBytes: 64 * 1024,
-            localStorageRoot: null,
+            InlineLimit,
             out var input,
             out var parseError);
         var admitted = input.TryAdmit(options, out var admissionError);
@@ -265,8 +263,7 @@ public sealed class GdalJobInputReaderTests
         var ok = GdalJobInputReader.TryGetRasterInput(
             parameters,
             "source",
-            maxInlineBytes: 64 * 1024,
-            localStorageRoot: null,
+            InlineLimit,
             out _,
             out var error);
 
@@ -304,8 +301,7 @@ public sealed class GdalJobInputReaderTests
         var ok = GdalJobInputReader.TryGetRasterInput(
             parameters,
             "source",
-            maxInlineBytes: 64 * 1024,
-            localStorageRoot: null,
+            InlineLimit,
             out _,
             out var error);
 
@@ -344,8 +340,7 @@ public sealed class GdalJobInputReaderTests
         var parsed = GdalJobInputReader.TryGetRasterInput(
             parameters,
             "source",
-            maxInlineBytes: 64 * 1024,
-            localStorageRoot: null,
+            InlineLimit,
             out var input,
             out var parseError);
         var admitted = input.TryAdmit(new GdalWorkerOptions(), out var admissionError);

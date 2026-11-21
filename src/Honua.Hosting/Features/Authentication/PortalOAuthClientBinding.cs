@@ -16,20 +16,18 @@ internal enum PortalOAuthClientDecision
 // client's own redirect URIs, grant types, expiry and deletion. A client_id
 // with no registration is a client-chosen label (desktop and mobile apps send
 // their own app id) and keeps the deployment redirect allow-list alone.
-internal static class PortalOAuthClientBinding
+internal sealed class PortalOAuthClientBinding(IOAuthClientStore clients, TimeProvider timeProvider)
 {
     private const string AuthorizationCodeGrant = "authorization_code";
     private const string RefreshTokenGrant = "refresh_token";
 
-    public static async Task<PortalOAuthClientDecision> AuthorizeAsync(
-        IOAuthClientStore clients,
+    // redirectUri is null on code exchange and refresh: the code and the refresh
+    // token are already bound to the exact redirect checked at authorize.
+    public async Task<PortalOAuthClientDecision> CheckAsync(
         string clientId,
         string? redirectUri,
-        TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(clients);
-        ArgumentNullException.ThrowIfNull(timeProvider);
         if (string.IsNullOrWhiteSpace(clientId))
         {
             return PortalOAuthClientDecision.Allowed;
@@ -43,8 +41,12 @@ internal static class PortalOAuthClientBinding
                 : PortalOAuthClientDecision.Allowed;
         }
 
-        if (client.RevokedAt is not null
-            || (client.ExpiresAt.HasValue && client.ExpiresAt.Value <= timeProvider.GetUtcNow()))
+        return Decide(client, redirectUri, timeProvider.GetUtcNow());
+    }
+
+    private static PortalOAuthClientDecision Decide(OAuthClientRecord client, string? redirectUri, DateTimeOffset now)
+    {
+        if (client.RevokedAt is not null || (client.ExpiresAt.HasValue && client.ExpiresAt.Value <= now))
         {
             return PortalOAuthClientDecision.InactiveClient;
         }
@@ -54,14 +56,9 @@ internal static class PortalOAuthClientBinding
             return PortalOAuthClientDecision.GrantNotAllowed;
         }
 
-        // redirect_uri is null on code exchange and refresh: the code and the refresh
-        // token are already bound to the exact redirect checked at authorize.
-        if (redirectUri is not null && !client.RedirectUris.Contains(redirectUri, StringComparer.Ordinal))
-        {
-            return PortalOAuthClientDecision.RedirectNotRegistered;
-        }
-
-        return PortalOAuthClientDecision.Allowed;
+        return redirectUri is null || client.RedirectUris.Contains(redirectUri, StringComparer.Ordinal)
+            ? PortalOAuthClientDecision.Allowed
+            : PortalOAuthClientDecision.RedirectNotRegistered;
     }
 
     // No registered grant types means unrestricted (as for client_credentials).

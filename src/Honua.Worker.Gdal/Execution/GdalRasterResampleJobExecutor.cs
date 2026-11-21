@@ -90,7 +90,7 @@ internal sealed partial class GdalRasterResampleJobExecutor(
                 "(nearestneighbor, bilinear, cubic, lanczos).");
         }
 
-        if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, opts.LocalCoverageRoot, out var sourceInput, out var sourceError))
+        if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts, out var sourceInput, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
             return JobExecutionResult.Failed($"Invalid resample inputs: {sourceError}");

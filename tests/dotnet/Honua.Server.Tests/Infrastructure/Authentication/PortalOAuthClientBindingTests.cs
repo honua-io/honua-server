@@ -66,12 +66,8 @@ public sealed class PortalOAuthClientBindingTests
         var store = new InMemoryOAuthClientStore();
         var client = await RegisterAsync(store, grantTypes: [], expiresAt: DateTimeOffset.UtcNow.AddMinutes(5));
 
-        var decision = await PortalOAuthClientBinding.AuthorizeAsync(
-            store,
-            client.ClientId,
-            RegisteredRedirect,
-            new ShiftedTimeProvider(TimeSpan.FromHours(1)),
-            CancellationToken.None);
+        var decision = await new PortalOAuthClientBinding(store, new ShiftedTimeProvider(TimeSpan.FromHours(1)))
+            .CheckAsync(client.ClientId, RegisteredRedirect, CancellationToken.None);
 
         Assert.Equal(PortalOAuthClientDecision.InactiveClient, decision);
     }
@@ -104,7 +100,7 @@ public sealed class PortalOAuthClientBindingTests
     }
 
     private static Task<PortalOAuthClientDecision> AuthorizeAsync(IOAuthClientStore store, string clientId, string redirectUri)
-        => PortalOAuthClientBinding.AuthorizeAsync(store, clientId, redirectUri, TimeProvider.System, CancellationToken.None);
+        => new PortalOAuthClientBinding(store, TimeProvider.System).CheckAsync(clientId, redirectUri, CancellationToken.None);
 
     private sealed class ShiftedTimeProvider(TimeSpan offset) : TimeProvider
     {
