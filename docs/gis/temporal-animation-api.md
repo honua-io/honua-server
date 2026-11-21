@@ -30,7 +30,7 @@ resolving to a `Date` / `DateTime` schema field. Discovery and filtering never
 fall back to scanning for an arbitrary date column.
 
 Honua deliberately **rejects** a non-empty time filter against a layer that is
-not time-aware with **HTTP 400**, rather than silently ignoring it. This is an
+not time-aware with error **400**, rather than silently ignoring it. This is an
 intentional divergence from Esri's lenient "ignore time" behavior (issue #1444):
 clients learn the layer has no temporal dimension instead of receiving a full,
 unfiltered result they believe is time-scoped.
@@ -59,7 +59,7 @@ The GeoServices `time=` parameter accepts:
   values.
 
 An inverted interval (`start > end`) and any unparseable value are rejected with
-**HTTP 400**. Interval semantics are inclusive intersection: a feature matches
+error **400**. Interval semantics are inclusive intersection: a feature matches
 when its `[startTimeField, endTimeField]` (using `endTimeField`, else
 `startTimeField`) overlaps the requested window.
 
@@ -69,8 +69,10 @@ interval rules, subject to the WMTS unknown-parameter exception above.
 
 ## Endpoints
 
-All paths below are relative to a published GeoServices FeatureServer layer
-(`/rest/services/{serviceId}/FeatureServer/{layerId}`):
+The first three paths are relative to a published GeoServices FeatureServer layer
+(`/rest/services/{serviceId}/FeatureServer/{layerId}`). GeoServices routes report errors in the
+Esri error envelope: HTTP 200 with `{"error":{"code":400,...}}`, so "400" and "404" below are the
+`error.code` value.
 
 - `GET .../query?time=<start>,<end>` — time-filtered feature query
   (`temporal.filtering`, Community).
@@ -81,7 +83,8 @@ All paths below are relative to a published GeoServices FeatureServer layer
   — per-bucket counts (and optional statistics) using calendar (`date_trunc`) or
   fixed-interval bins, for animation frame planning (`temporal.histogram`, Pro;
   402 without the Pro entitlement).
-- `GET .../tiles/{layerId}/{z}/{x}/{y}.mvt?time=<start>,<end>` — time-filtered
+- `GET /tiles/{layerId}/{z}/{x}/{y}.mvt?time=<start>,<end>` (at the server root, not under
+  the FeatureServer layer) — time-filtered
   vector tiles (`temporal.time-series-tiles`, Pro).
 
 Temporal data-history (`/api/v1/temporal/*`: as-of / diff / timeline / rollback,
