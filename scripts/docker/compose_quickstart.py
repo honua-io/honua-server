@@ -121,7 +121,8 @@ def console_web_image(directory, lock):
 def console_image_settings(directory, lock, values):
     """The Console pins this package supplies; a restart after an upgrade picks them up."""
     settings = dict(HONUA_CONSOLE_WEB_IMAGE=console_web_image(directory, lock),
-                    HONUA_CONSOLE_PORT=values.get('HONUA_CONSOLE_PORT', '18083'))
+                    HONUA_CONSOLE_PORT=values.get('HONUA_CONSOLE_PORT', '18083'),
+                    HONUA_MANAGER_CONSOLE_PORT=values.get('HONUA_MANAGER_CONSOLE_PORT', '18084'))
     return {key: value for key, value in settings.items() if values.get(key) != value}
 
 
@@ -389,7 +390,7 @@ def main():
         if result == 0 and marker.exists():
             # Single-file mounts keep the replaced file's old inode; a new container sees the new one.
             result = subprocess.call(['docker', 'compose', 'up', '-d', '--wait', '--wait-timeout', '180',
-                                      '--force-recreate', '--no-deps', 'console'], cwd=args.directory, env=env)
+                                      '--force-recreate', '--no-deps', 'console', 'console-manager'], cwd=args.directory, env=env)
             if result == 0:
                 marker.unlink()
         return result

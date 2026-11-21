@@ -49,6 +49,54 @@ class ConsoleEdgeTests(QuickstartFixture, unittest.TestCase):
                 if name not in ('console', 'honua'):
                     self.assertNotIn('console-edge', service.get('networks', {}), name)
 
+    def test_manager_console_edge_serves_the_manager_on_its_own_host(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, rendered, _ = self.packaged_console_install(Path(directory))
+            services = rendered['services']
+            edge = services['console-manager']
+            self.assertEqual(CONSOLE_WEB_IMAGE, edge['image'])
+            port = edge['ports'][0]
+            self.assertEqual(('8444', '127.0.0.1', '18084'), (str(port['target']), port['host_ip'], str(port['published'])))
+            self.assertEqual({volume['target']: volume['source'] for volume in services['console']['volumes']},
+                             {volume['target']: volume['source'] for volume in edge['volumes']})
+            self.assertTrue(edge['read_only'])
+            self.assertEqual(['manager-edge'], list(edge['networks']))
+            self.assertIn('compose-manager', edge['depends_on'])
+            self.assertNotIn(read_secret(path, 'HONUA_MANAGER_ADMIN_PASSWORD'), json.dumps(rendered))
+
+    def test_manager_trusts_forwarded_headers_only_from_its_edge(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _, rendered, _ = self.packaged_console_install(Path(directory))
+            services = rendered['services']
+            edge = services['console-manager']['networks']['manager-edge']['ipv4_address']
+            manager = services['compose-manager']
+            self.assertEqual({'default', 'manager-edge'}, set(manager['networks']))
+            server_edge = manager['networks']['manager-edge']['ipv4_address']
+            self.assertNotEqual(edge, server_edge, 'The manager must never take the edge address')
+            subnet = ipaddress.ip_network(rendered['networks']['manager-edge']['ipam']['config'][0]['subnet'])
+            self.assertTrue({ipaddress.ip_address(edge), ipaddress.ip_address(server_edge)} <= set(subnet.hosts()))
+            console_subnet = ipaddress.ip_network(rendered['networks']['console-edge']['ipam']['config'][0]['subnet'])
+            self.assertFalse(subnet.overlaps(console_subnet))
+            env = manager['environment']
+            self.assertEqual('true', env['ForwardedHeaders__Enabled'])
+            self.assertEqual(edge, env['ForwardedHeaders__KnownProxies__0'])
+            self.assertEqual('https://127.0.0.1:18084', env['HONUA_ADMIN_UI_CORS_ORIGINS'])
+            self.assertEqual('https://127.0.0.1:18084/admin/auth/callback', env['Oidc__AdminAuthCallbackUri'])
+            self.assertEqual('https://127.0.0.1:18084/console/', env['Mcp__ApprovalConsoleUrl'])
+            for name, service in services.items():
+                if name not in ('console-manager', 'compose-manager'):
+                    self.assertNotIn('manager-edge', service.get('networks', {}), name)
+
+    def test_each_edge_canonicalizes_to_its_own_cookie_host(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, _, _ = self.packaged_console_install(Path(directory))
+            edge_config = (path / 'console.nginx.conf').read_text()
+            # Session cookies are per host, not per port: the two edges must never share one.
+            self.assertIn('"~^8443:127\\.0\\.0\\.1(?<serving_port>:[0-9]+)?$" "localhost$serving_port";', edge_config)
+            self.assertIn('"~^8444:localhost(?<manager_port>:[0-9]+)?$" "127.0.0.1$manager_port";', edge_config)
+            self.assertIn('8444 http://compose-manager:8080;', edge_config)
+            self.assertIn('default http://honua:8080;', edge_config)
+
     def test_console_advertises_the_https_edge_for_generated_map_urls(self):
         with tempfile.TemporaryDirectory() as directory:
             path, rendered, _ = self.packaged_console_install(Path(directory))

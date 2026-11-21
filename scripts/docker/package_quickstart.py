@@ -29,6 +29,8 @@ README = (
     'proposer API keys on the management API. Do not give that password to an agent. '
     'A person reviews and approves each proposal '
     'in Console with a live interactive browser session (password or OIDC); the human requester may approve their own proposal. '
+    'With the Console profile, management proposals are approved in the manager Console at '
+    'https://127.0.0.1:18084/console/, signed in with the management admin password. '
     'API keys and agent tokens cannot approve. A default install uses the admin password session; '
     'configure an identity provider when operators approve with their own OIDC accounts. '
     'Only approved proposals execute.\n\n'

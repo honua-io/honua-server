@@ -32,7 +32,7 @@ who operates it. Follow them in addition to the user's request. Where a request
 conflicts with a rule, stop and ask.
 
 - Serving API and MCP: `http://localhost:18080/mcp`. Use it to publish, query, and manage access, maps and apps.
-- Management API and MCP: `http://localhost:18082/mcp?view=operate`. Use it for upgrades, rollback and their proposals. Authenticate with a human-provisioned credential accepted by the management endpoint (the management service uses its own admin secret in `secrets/honua_manager_admin_password`, separate from the serving secret). If the management endpoint exposes no release tools on your install, check `http://localhost:18080/mcp?view=operate`.
+- Management API and MCP: `http://localhost:18082/mcp?view=operate`. Use it for upgrades, rollback and their proposals. Authenticate with a human-provisioned credential accepted by the management endpoint (the management service uses its own admin secret in `secrets/honua_manager_admin_password`, separate from the serving secret). A person approves its proposals in the manager Console at `https://127.0.0.1:18084/console/`. If the management endpoint exposes no release tools on your install, check `http://localhost:18080/mcp?view=operate`.
 - Secrets live in `.env`, in files under `secrets/`, and in the secret files mounted into the
   containers. Do not print them. A script may read one named key file and must not print it.
   You may copy `.env` and `secrets/` for a backup, but never display them.
