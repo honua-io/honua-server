@@ -183,10 +183,18 @@ internal sealed class PublicExportPromoter(
             },
             cancellationToken).ConfigureAwait(false);
 
+        await CopyCompanionsAsync(input, provenance, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task CopyCompanionsAsync(
+        PublicExportPromotionInput input,
+        PublicPublicationProvenance provenance,
+        CancellationToken cancellationToken)
+    {
         foreach (var companion in ExportCompanionFiles.FileNames)
         {
             var metadata = await deps.PrivateStorage.GetMetadataAsync(
-                input.PrivateStore.VersionKey(descriptor.Version, companion), cancellationToken).ConfigureAwait(false);
+                input.PrivateStore.VersionKey(input.Descriptor.Version, companion), cancellationToken).ConfigureAwait(false);
             if (metadata is null)
             {
                 continue;
