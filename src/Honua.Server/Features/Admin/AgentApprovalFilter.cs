@@ -13,9 +13,9 @@ using Honua.Server.Features.Console.Services;
 namespace Honua.Server.Features.Admin;
 
 // Changes to who can read, write or reach published content need a person when an agent asks.
-// Access-policy changes and layer publishes can be filed as proposals and replay here with a
-// server-minted credential, which is not an agent; the other changes are made in Console. The
-// refusal does not depend on OperatorApproval settings.
+// Access-policy changes, layer metadata changes and layer publishes can be filed as proposals and
+// replay here with a server-minted credential, which is not an agent; the other changes are made
+// in Console. The refusal does not depend on OperatorApproval settings.
 internal static class AgentApprovalFilter
 {
     internal const string AccessPolicyRef = "operator.agent.access-policy";
@@ -24,6 +24,7 @@ internal static class AgentApprovalFilter
     internal const string OperationRef = "operator.agent.operation";
     internal const string LayerStateRef = "operator.agent.layer-state";
     internal const string ContentVisibilityRef = "operator.agent.content-visibility";
+    internal const string LayerMetadataRef = "operator.agent.layer-metadata";
 
     private const string ProposalGuidance = OperatorApprovalGate.AgentApprovalGuidance;
 
@@ -99,10 +100,16 @@ internal static class AgentApprovalFilter
     public static ValueTask<object?> AccessGrants(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
         => Refuse(invocation, next, AccessGrantsRef, ConsoleGuidance);
 
-    public static ValueTask<object?> LayerMetadataAccessPolicy(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
-        => invocation.Arguments.OfType<UpdateLayerMetadataRequest>().Any(static request => request.AccessPolicy is not null || request.Editing is not null)
-            ? Refuse(invocation, next, AccessPolicyRef, ConsoleGuidance)
-            : next(invocation);
+    // Every field on this route changes a published layer, so an agent files it as a proposal
+    // (admin.services.layer-metadata.set); access and editing changes keep their own policy ref.
+    public static ValueTask<object?> LayerMetadata(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
+        => Refuse(
+            invocation,
+            next,
+            invocation.Arguments.OfType<UpdateLayerMetadataRequest>().Any(static request => request.AccessPolicy is not null || request.Editing is not null)
+                ? AccessPolicyRef
+                : LayerMetadataRef,
+            ProposalGuidance);
 
     private static ValueTask<object?> Refuse(
         EndpointFilterInvocationContext invocation,

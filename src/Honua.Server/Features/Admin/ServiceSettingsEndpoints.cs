@@ -78,7 +78,7 @@ internal static partial class ServiceSettingsEndpoints
             .ProducesProblem(500)
             .ProducesProblem(501)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
-            .AddAgentApprovalFilter(AgentApprovalFilter.LayerMetadataAccessPolicy);
+            .AddAgentApprovalFilter(AgentApprovalFilter.LayerMetadata);
     }
 
     private static async Task<Results<Ok<ApiResponse<ServiceListPage>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>

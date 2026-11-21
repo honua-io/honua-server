@@ -295,19 +295,55 @@ public sealed partial class ProposalEndpointsTests
         response.StatusCode.Should().Be(HttpStatusCode.NotFound, await response.Content.ReadAsStringAsync());
     }
 
+    [IntegrationTheory]
+    [InlineData("""{"accessPolicy":{"allowAnonymous":true}}""", AgentApprovalFilter.AccessPolicyRef)]
+    [InlineData("""{"editing":{"create":true}}""", AgentApprovalFilter.AccessPolicyRef)]
+    [InlineData("""{"attribution":"changed directly by an agent"}""", AgentApprovalFilter.LayerMetadataRef)]
+    [InlineData("""{"license":"CC-BY-4.0","timeInfo":{"startTimeField":"t"}}""", AgentApprovalFilter.LayerMetadataRef)]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_AgentKey_RequiresHumanApproval(string body, string policyRef)
+    {
+        using var agent = await CreateKeyClientAsync($"agent-layer-metadata-{Guid.NewGuid():N}", AgentKeyPermissions);
+        using var content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+
+        var response = await agent.PutAsync("/api/v1/admin/services/roads/layers/0/metadata", content);
+
+        await AssertAgentApprovalRefusalAsync(response, policyRef: policyRef);
+    }
+
     [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
-    public async Task UpdateLayerMetadata_AgentKeyChangingAccess_RequiresHumanApproval()
+    public async Task UpdateLayerMetadata_HumanAdministratorKey_IsNotGated()
     {
-        using var agent = await CreateKeyClientAsync("agent-layer-access", AgentKeyPermissions);
+        using var human = await CreateKeyClientAsync("human-layer-metadata", HumanKeyPermissions);
 
-        var changesAccess = await agent.PutAsJsonAsync(
-            "/api/v1/admin/services/roads/layers/0/metadata", new { accessPolicy = new { allowAnonymous = true } });
-        var leavesAccess = await agent.PutAsJsonAsync(
-            "/api/v1/admin/services/roads/layers/0/metadata", new { description = "Road centrelines" });
+        var response = await human.PutAsJsonAsync(
+            "/api/v1/admin/services/roads/layers/0/metadata", new { attribution = "changed by a person" });
 
-        await AssertAgentApprovalRefusalAsync(changesAccess, ConsoleGuidance, AgentApprovalFilter.AccessPolicyRef);
-        leavesAccess.StatusCode.Should().NotBe(HttpStatusCode.Forbidden, await leavesAccess.Content.ReadAsStringAsync());
+        // The service does not exist, so reaching the handler (past the agent filter) yields 404.
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound, await response.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/operations/{id}/submit")]
+    public async Task SubmitLayerMetadataOperation_AgentKey_FilesProposalForHumanApproval()
+    {
+        using var agent = await CreateKeyClientAsync("agent-layer-metadata-operation", AgentKeyPermissions);
+        var request = new OperationInvokeRequest
+        {
+            ServiceName = "roads",
+            Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["serviceName"] = "roads",
+                ["serviceLayerIndex"] = "0",
+                ["attribution"] = "changed by an agent",
+            },
+        };
+
+        var response = await agent.PostAsJsonAsync(
+            "/api/v1/operations/admin.services.layer-metadata.set/submit", request, JsonOptions);
+
+        await AssertAgentProposalFiledAsync(response);
     }
 
     [IntegrationTest]

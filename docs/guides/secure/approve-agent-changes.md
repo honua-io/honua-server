@@ -20,13 +20,14 @@ This guide does not certify an installed deployment.
 
 An agent is any caller on the MCP endpoint, or a request made with an API key
 that carries the `agent` grant. When an agent changes a service access policy
-or publishes (a layer, a service or Studio content), the server files a
+or a published layer's metadata (access, editing, attribution, licence or time
+settings), or publishes (a layer, a service or Studio content), the server files a
 proposal instead of making the change, and the agent receives `RequiresApproval` with the proposal
 reference. Holding an administrator key does not exempt an agent, and operator
 policy rules cannot remove this requirement. A direct admin API call from an
-agent for either change is refused with an approval-required error that says
+agent for any of these changes is refused with an approval-required error that says
 how to submit it for approval. Some changes are refused for agents outright:
-a layer's access settings, enabling or refreshing a layer, role permissions,
+enabling or refreshing a layer, role permissions,
 OAuth scopes and OAuth client registration, scene generation, ingestion, registration and access settings, form package publication,
 Console content publications and their sharing, row and field policies, and the
 owner of Console content. Make those changes yourself in Console.
@@ -68,8 +69,8 @@ public. See [publish and share a saved map](../workflows/publish-share-map.md).
 ## When the request starts in MCP
 
 Have the MCP agent submit the change and report the returned proposal identity
-and status. For access-policy and publish changes the tool files the proposal
-itself. Make the human decision in Console, then let the agent
+and status. For access-policy, layer metadata and publish changes the tool
+files the proposal itself. Make the human decision in Console, then let the agent
 observe that same proposal. Do not give it an approval API key or ask it to
 impersonate your Console session.
 
