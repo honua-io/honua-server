@@ -313,6 +313,9 @@ internal static partial class FeatureServerEndpoints
     internal static string BuildServiceCapabilitiesV2(MetadataV2Service service)
         => BuildServiceCapabilitiesV2(service, [], supportsAttachmentUploads: false, offlineSyncEnabled: true);
 
+    internal static string BuildServiceCapabilitiesV2(MetadataV2Service service, bool offlineSyncEnabled)
+        => BuildServiceCapabilitiesV2(service, [], supportsAttachmentUploads: false, offlineSyncEnabled);
+
     // A service as a directory listing sees it: the resources the caller may discover through it.
     internal sealed record ListedService(
         MetadataV2Service Service, MetadataV2GraphSnapshot Snapshot, IReadOnlyCollection<MetadataV2Object> VisibleResources);
