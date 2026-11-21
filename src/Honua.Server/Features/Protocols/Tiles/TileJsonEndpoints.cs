@@ -121,12 +121,13 @@ internal static class TileJsonEndpoints
         => publication.LayerIndex ?? routeLayerId;
 
     // A single point (or a line along one axis) would advertise zero-width bounds; widen it to
-    // one finest-zoom tile, as the OGC Tiles and WMTS discovery documents do.
+    // one finest-zoom tile, as the OGC Tiles and WMTS discovery documents do. TileJSON clients
+    // need west < east, so a dateline-crossing extent advertises the full longitude range.
     private static double[] ToTileBounds(FeatureExtent extent, int maxZoom)
     {
         var (west, south, east, north) = OgcTileExtent.ExpandDegenerateAxes(
             (extent.MinX, extent.MinY, extent.MaxX, extent.MaxY), maxZoom);
-        return [west, south, east, north];
+        return west > east ? [-180, south, 180, north] : [west, south, east, north];
     }
 
     private static async Task<FeatureExtent?> ResolveExtentAsync(

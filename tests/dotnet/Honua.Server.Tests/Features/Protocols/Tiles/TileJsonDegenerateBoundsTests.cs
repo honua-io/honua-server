@@ -55,4 +55,20 @@ public sealed class TileJsonDegenerateBoundsTests : IAsyncLifetime
         (bounds[2] - bounds[0]).Should().BeApproximately(east > west ? east - west : tileSpan, 1e-9);
         (bounds[3] - bounds[1]).Should().BeApproximately(north > south ? north - south : tileSpan, 1e-9);
     }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /tiles/{layerId}/tile.json")]
+    public async Task GetTileJson_DatelineCrossingExtent_AdvertisesFullLongitudeRange()
+    {
+        _reader.GetExtentAsync(Arg.Any<int>(), Arg.Any<FeatureQuery?>(), Arg.Any<CancellationToken>())
+            .Returns(FeatureExtent.Create(177.0, -19.0, -178.0, -16.0, SpatialReference.WGS84.Wkid));
+
+        using var response = await _fixture.Client.GetAsync($"/tiles/{WebAppFixture.TestLayerId}/tile.json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("bounds").EnumerateArray().Select(value => value.GetDouble())
+            .Should().Equal(-180.0, -19.0, 180.0, -16.0);
+    }
 }

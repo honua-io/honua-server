@@ -169,4 +169,24 @@ public sealed class OgcTileExtentTests
         var source = (MinLon: -156.45, MinLat: 20.88, MaxLon: -156.45, MaxLat: 20.88);
         OgcTileExtent.ExpandDegenerateAxes(source, input).Should().Be(OgcTileExtent.ExpandDegenerateAxes(source, supported));
     }
+
+    [UnitTest]
+    public void ExpandDegenerateAxes_DatelineCrossingBox_KeepsItsLongitudeEdges()
+    {
+        var extent = OgcTileExtent.ExpandDegenerateAxes((177.0, -19.0, -178.0, -16.0), 18);
+
+        extent.Should().Be((177.0, -19.0, -178.0, -16.0));
+    }
+
+    [UnitTest]
+    public void ExpandDegenerateAxes_SubTileLine_UsesOneFinestTileAroundItsMiddle()
+    {
+        // A line along a meridian whose stored float bbox is about 1.5e-5 degrees wide.
+        var extent = OgcTileExtent.ExpandDegenerateAxes((-122.41940689, 37.70, -122.41939163, 37.80), 18);
+
+        (extent.MaxLon - extent.MinLon).Should().BeApproximately(0.001373291015625, 1e-12);
+        ((extent.MinLon + extent.MaxLon) / 2).Should().BeApproximately(-122.41939926, 1e-9);
+        extent.MinLat.Should().Be(37.70);
+        extent.MaxLat.Should().Be(37.80);
+    }
 }
