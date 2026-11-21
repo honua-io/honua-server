@@ -75,7 +75,7 @@ Immediate publication returns `201 Created` with the layer in `data` and its per
 
 ## Verify
 
-Open `http://localhost:8080/ogc/features/collections` in a browser and confirm the collection is present:
+Newly published layers default to private and are omitted from anonymous collection listings. Authenticate the request (for example with `X-API-Key: $HONUA_API_KEY`) or enable public read access on the layer, then check `GET http://localhost:8080/ogc/features/collections` and confirm the collection is present:
 
 ```json
 {"collections": [{"id": "…", "title": "city-parcels", …}], …}
@@ -83,7 +83,7 @@ Open `http://localhost:8080/ogc/features/collections` in a browser and confirm t
 
 ## Troubleshoot
 
-- **Connection test fails** — verify host/port reachability from the server container and that `sslMode` matches the database TLS setup (`Disable`, `Allow`, `Prefer`, `Require`, `VerifyCA`, `VerifyFull`).
+- **Connection test fails** — verify host/port reachability from the server container and that `sslMode` matches the database TLS setup (`Disable`, `Allow`, `Prefer`, `Require`, `VerifyCA`, `VerifyFull`). Production rejects unencrypted modes with `400` and requires an encrypted `sslMode` (`Require`, `VerifyCA`, or `VerifyFull`).
 - **`Cannot specify both Password and SecretReference` (400)** — supply exactly one credential mechanism.
 - **`secretReference` rejected (400)** — the value is not a whole `provider:identifier` reference, or the operator has not permitted it under `Security__RequestSecretReferences__*`.
 - **Table missing from discovery** — discovery lists tables with a registered geometry column; confirm the table has a typed geometry column and the connection user has SELECT on it.
