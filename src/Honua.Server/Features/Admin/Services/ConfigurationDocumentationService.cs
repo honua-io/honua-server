@@ -408,6 +408,8 @@ public sealed class ConfigurationDocumentationService
                     "Maximum seconds to wait for a gate slot before returning HTTP 503 with Retry-After", code.ConnectionAcquisitionTimeoutSeconds, opts.ConnectionAcquisitionTimeoutSeconds, "Range: 1-60"),
                 BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyEnabled", "Limits__Connections__AdaptiveConcurrencyEnabled", "boolean",
                     "Enable adaptive query admission below the configured database pool ceiling", code.AdaptiveConcurrencyEnabled, opts.AdaptiveConcurrencyEnabled, "Allowed: true|false"),
+                BuildPropertyWithCurrent("Limits:Connections:AnonymousPressureAdmissionEnabled", "Limits__Connections__AnonymousPressureAdmissionEnabled", "boolean",
+                    "Refuse anonymous expensive reads with a retryable 503 while the query gate is under pressure; off queues them instead", code.AnonymousPressureAdmissionEnabled, opts.AnonymousPressureAdmissionEnabled, "Allowed: true|false"),
                 BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyMinQueries", "Limits__Connections__AdaptiveConcurrencyMinQueries", "integer",
                     "Minimum adaptive concurrent query limit", code.AdaptiveConcurrencyMinQueries, opts.AdaptiveConcurrencyMinQueries, "Range: 1-1000"),
                 BuildPropertyWithCurrent("Limits:Connections:AdaptiveConcurrencyInitialQueries", "Limits__Connections__AdaptiveConcurrencyInitialQueries", "integer",

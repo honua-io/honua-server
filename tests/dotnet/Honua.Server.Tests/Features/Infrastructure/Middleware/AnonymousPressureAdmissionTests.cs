@@ -162,6 +162,20 @@ public sealed class AnonymousPressureAdmissionTests
         response.Headers.Contains("X-Database-Reached").Should().BeTrue();
     }
 
+    [IntegrationTheory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [Operation(Operations.Infrastructure)]
+    public async Task InvokeAsync_OperatorSwitch_DecidesWhetherPressuredAnonymousWorkQueues(bool enabled, bool reached)
+    {
+        var limits = new Honua.Core.Configuration.LimitsOptions();
+        limits.Connections.AnonymousPressureAdmissionEnabled = enabled;
+        await using var app = await StartAsync(PressuredGate(), limits);
+        using var response = await app.GetTestClient().GetAsync("/rest/services/test/FeatureServer/0/query");
+
+        response.Headers.Contains("X-Database-Reached").Should().Be(reached);
+    }
+
     [IntegrationTest]
     [Operation(Operations.Infrastructure)]
     public async Task InvokeAsync_GateReportingNoLimit_AdmitsAnonymousWork()
@@ -198,12 +212,17 @@ public sealed class AnonymousPressureAdmissionTests
         return gate;
     }
 
-    private static async Task<WebApplication> StartAsync(IRuntimeTunableAdmissionGate gate)
+    private static async Task<WebApplication> StartAsync(
+        IRuntimeTunableAdmissionGate gate, Honua.Core.Configuration.LimitsOptions? limits = null)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
         builder.Logging.ClearProviders();
         builder.Services.AddSingleton(gate);
+        if (limits is not null)
+        {
+            builder.Services.AddSingleton(Microsoft.Extensions.Options.Options.Create(limits));
+        }
         var app = builder.Build();
         app.Use(async (context, next) =>
         {

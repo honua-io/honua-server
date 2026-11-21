@@ -1,9 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.RateLimiting;
 
@@ -19,6 +21,7 @@ internal sealed class AnonymousPressureAdmissionMiddleware(RequestDelegate next)
         if (context.User.Identities.Any(identity => identity.IsAuthenticated) ||
             HttpMethods.IsOptions(context.Request.Method) ||
             !IsExpensive(context) ||
+            !IsEnabled(context) ||
             context.RequestServices.GetService<IRuntimeTunableAdmissionGate>() is not { } gate)
         {
             return next(context);
@@ -30,6 +33,10 @@ internal sealed class AnonymousPressureAdmissionMiddleware(RequestDelegate next)
                 context, BackpressureKind.Saturated, Random.Shared.Next(MinRetryAfterSeconds, MaxRetryAfterSeconds + 1))
             : next(context);
     }
+
+    private static bool IsEnabled(HttpContext context)
+        => context.RequestServices.GetService<IOptions<LimitsOptions>>()?.Value.Connections
+            .AnonymousPressureAdmissionEnabled ?? true;
 
     private const double SaturatedUtilization = 0.8;
     private const double PainfulQueueWaitMs = 250;

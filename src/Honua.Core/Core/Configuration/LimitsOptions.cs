@@ -184,6 +184,13 @@ public class ConnectionLimits
 
     public bool AdaptiveConcurrencyEnabled { get; set; }
 
+    /// <summary>
+    /// Refuse anonymous expensive reads with a retryable 503 while the query gate is under
+    /// pressure. Turn off only where queueing is wanted instead, for example behind an edge that
+    /// already admits traffic, or in a fixed-admission benchmark.
+    /// </summary>
+    public bool AnonymousPressureAdmissionEnabled { get; set; } = true;
+
     [Range(1, 1000)]
     public int AdaptiveConcurrencyMinQueries { get; set; } = 1;
 
