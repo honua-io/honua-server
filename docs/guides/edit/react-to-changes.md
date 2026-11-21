@@ -173,7 +173,7 @@ Then insert a feature in another terminal ([Edit features](edit-features.md)) an
 
 | Symptom | Fix |
 |---|---|
-| `404` with `type: honua:capability-experimental-disabled` on `/api/v1/streaming/*` or, for admin callers, `/api/v1/admin/streaming/features/sessions` | The experimental capability is off (the default). Set `Capabilities:Experimental:realtime.feature-streams:Enabled=true` and restart. |
+| `404` with `type: honua:capability-experimental-disabled` on `/api/v1/streaming/features/*` or, for admin callers, `/api/v1/admin/streaming/features/sessions` | The experimental capability is off (the default). Set `Capabilities:Experimental:realtime.feature-streams:Enabled=true` and restart. (`POST /api/v1/streaming/conformance/runs` is gated separately by conformance configuration and returns `401` anonymous / `403` admin when unconfigured; see below.) |
 | `403` before the stream connects | Community edition fails closed; streaming needs Pro or Enterprise. Capabilities reports `enabled=false`. |
 | `401` or `403` on an unfiltered stream | All-layer streams require admin: anonymous callers get `401`, signed-in non-admins `403`. Subscribe with explicit `layers=` / `serviceId=` scopes instead. |
 | `invalid-subscription` error frame on a WebSocket | A non-admin WebSocket opens without query scopes, but an unscoped `subscribe` frame is refused on the socket (no HTTP `401`/`403`). Add `serviceId`, `layerId` or `layers` to the frame. |

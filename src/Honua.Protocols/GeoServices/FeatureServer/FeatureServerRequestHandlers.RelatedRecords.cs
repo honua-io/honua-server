@@ -120,8 +120,10 @@ internal static partial class FeatureServerEndpoints
         parameters = null!;
         errorMessage = null;
 
-        if (!TryParseRequiredLongArray(values, "objectIds", maxObjectIdCount, out var objectIds, out errorMessage))
+        var (objectIds, globalIds, selectorError) = ParseRelatedRecordSelectors(values, maxObjectIdCount);
+        if (selectorError is not null)
         {
+            errorMessage = selectorError;
             return false;
         }
 
@@ -238,6 +240,7 @@ internal static partial class FeatureServerEndpoints
         parameters = new QueryRelatedRecordsParameters
         {
             ObjectIds = objectIds,
+            GlobalIds = globalIds,
             RelationshipId = relationshipId,
             OutFields = NormalizeOutFields(outFields),
             Where = where,
@@ -265,5 +268,69 @@ internal static partial class FeatureServerEndpoints
     {
         var limits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
         return Math.Clamp(limits.Query.MaxRecordCount, 1, MaxRelatedRecordsObjectIdCountUpperBound);
+    }
+
+    private static (long[] ObjectIds, string[]? GlobalIds, string? Error) ParseRelatedRecordSelectors(
+        IReadOnlyDictionary<string, StringValues> values,
+        int maxCount)
+    {
+        var hasObjectIds = TryGetValue(values, "objectIds", out var rawObjectIds) && !StringValues.IsNullOrEmpty(rawObjectIds);
+        var hasGlobalIds = TryGetValue(values, "globalIds", out var rawGlobalIds) && !StringValues.IsNullOrEmpty(rawGlobalIds);
+        if (!hasObjectIds && !hasGlobalIds)
+        {
+            return ([], null, "objectIds or globalIds parameter is required");
+        }
+
+        long[] objectIds = [];
+        if (hasObjectIds && !TryParseRequiredLongArray(values, "objectIds", maxCount, out objectIds, out var objectIdError))
+        {
+            return ([], null, objectIdError);
+        }
+
+        if (!hasGlobalIds)
+        {
+            return (objectIds, null, null);
+        }
+
+        var (globalIds, globalIdError) = ParseGlobalIdArray(rawGlobalIds.ToString(), maxCount);
+        if (globalIdError is not null)
+        {
+            return ([], null, globalIdError);
+        }
+
+        if (objectIds.Length + globalIds.Length > maxCount)
+        {
+            return ([], null, $"objectIds and globalIds combined cannot exceed {maxCount} items");
+        }
+
+        return (objectIds, globalIds, null);
+    }
+
+    private static (string[] GlobalIds, string? Error) ParseGlobalIdArray(string raw, int maxCount)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return ([], "globalIds parameter cannot be empty");
+        }
+
+        var parts = raw.Split(',', StringSplitOptions.None);
+        if (parts.Length > maxCount)
+        {
+            return ([], $"globalIds parameter cannot exceed {maxCount} items");
+        }
+
+        var parsed = new string[parts.Length];
+        for (var i = 0; i < parts.Length; i++)
+        {
+            var normalized = FeatureServerGlobalIds.ParseGlobalId(parts[i].Trim());
+            if (normalized is null)
+            {
+                return ([], "globalIds must contain valid UUID values");
+            }
+
+            parsed[i] = normalized;
+        }
+
+        return (parsed, null);
     }
 }

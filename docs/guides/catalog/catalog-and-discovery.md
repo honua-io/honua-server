@@ -13,8 +13,8 @@ Publishing a layer does not create a separate catalog for each protocol. It writ
 Publish with the admin SDK as in [Publish layers](../publish/publish-layers.md). Confirm the result with the CLI:
 
 ```bash
-npx --yes -p @honua/sdk-js@0.2.10 honua services
-npx --yes -p @honua/sdk-js@0.2.10 honua layers "$HONUA_SERVICE"
+npx --yes -p @honua/sdk-js@0.4.0 honua services
+npx --yes -p @honua/sdk-js@0.4.0 honua layers "$HONUA_SERVICE"
 ```
 
 `honua services` and `honua layers` are the same commands as [your first dataset](../../get-started/first-dataset.md). An empty list there means this caller cannot see a routable publication, not that the protocol routes are down.

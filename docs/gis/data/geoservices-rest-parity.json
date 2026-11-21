@@ -1010,7 +1010,12 @@
             "notes": "returnEditMoment=true adds editMoment (epoch milliseconds, server clock when the edits were applied) to the response (#4105)."
           },
           {
-            "name": "useGlobalIds, gdbVersion",
+            "name": "useGlobalIds",
+            "status": "implemented",
+            "notes": "useGlobalIds=true resolves updates and deletes by the layer\u0027s configured globalIdField, preserves valid client-supplied GlobalID values on inserts, and returns both objectId and globalId in edit results; returns HTTP 400 when the target layer has no globalIdField."
+          },
+          {
+            "name": "gdbVersion",
             "status": "rejected"
           },
           {
@@ -1031,7 +1036,7 @@
         ],
         "queryRelatedRecords": [
           {
-            "name": "objectIds, relationshipId, outFields, definitionExpression, returnGeometry, resultRecordCount, resultOffset, orderByFields, returnCountOnly, outSR, returnZ, returnM, geometryPrecision, maxAllowableOffset",
+            "name": "objectIds, globalIds, relationshipId, outFields, definitionExpression, returnGeometry, resultRecordCount, resultOffset, orderByFields, returnCountOnly, outSR, returnZ, returnM, geometryPrecision, maxAllowableOffset",
             "status": "implemented"
           },
           {

@@ -51,7 +51,7 @@ internal static partial class AccessPolicyHelpers
     {
         if (AttemptedBearerCredential(context.Request))
         {
-            context.Response.Headers.Append("WWW-Authenticate", "Bearer");
+            AuthenticationChallenge.AppendUniqueChallenge(context, "Bearer");
             return;
         }
 

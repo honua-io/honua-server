@@ -126,6 +126,7 @@ internal sealed class FeatureQueryValidator
         var validatedParams = new QueryRelatedRecordsParameters
         {
             ObjectIds = queryParams.ObjectIds,
+            GlobalIds = queryParams.GlobalIds,
             RelationshipId = queryParams.RelationshipId,
             OutFields = queryParams.OutFields,
             ReturnGeometry = queryParams.ReturnGeometry,

@@ -1,13 +1,13 @@
 ---
 type: runbook
-title: "Deploy on AWS and Azure"
+title: "Cloud deployments"
 description: "You'll pick a 2026.1 deployment pattern for Honua — ECS Fargate is the only certified rc.2 production target, Compose is for local evaluation, Lambda and Kubernetes are Preview, Azure is not offered — and know which image, configuration, and rollout mechanism each one uses."
 ---
-# Deploy on AWS and Azure
+# Cloud deployments
 
 You'll pick a 2026.1 deployment pattern for Honua — ECS Fargate is the only certified rc.2 production target, Compose is for local evaluation, Lambda and Kubernetes are Preview, Azure is not offered — and know which image, configuration, and rollout mechanism each one uses.
 
-**Prerequisites:** A PostGIS database (RDS or Azure Database for PostgreSQL Flexible Server), the required env vars from [Configure Honua Server](configuration.md) (`ConnectionStrings__DefaultConnection`, `HONUA_ADMIN_PASSWORD`, `Security__ConnectionEncryption__MasterKey`, `Cors__AllowedOrigins__0`), and TLS terminated at the edge (ALB, API Gateway, Front Door) — Honua does not terminate TLS.
+**Prerequisites:** A PostGIS database (for example Amazon RDS for PostgreSQL), the required env vars from [Configure Honua Server](configuration.md) (`ConnectionStrings__DefaultConnection`, `HONUA_ADMIN_PASSWORD`, `Security__ConnectionEncryption__MasterKey`, `Cors__AllowedOrigins__0`), and TLS terminated at the edge (ALB or API Gateway) — Honua does not terminate TLS.
 
 **The infrastructure-as-code for every pattern below is [honua-iac](https://github.com/honua-io/honua-iac),
 and it is public.** Start with its
@@ -40,11 +40,11 @@ ref policy, and [deployment presets](https://github.com/honua-io/honua-iac/blob/
 | Docker Compose | Local evaluation | Dev/test on one host | generic web image | Recreate the container | — |
 | AWS ECS/Fargate + ALB | Certified rc.2 target | Steady production traffic | generic web image (multi-arch index; runs `x86_64`) | ALB weighted target groups (canary) | `aws-ecs` |
 | AWS Lambda | Preview | Spiky/low traffic, scale-to-zero | `*-lambda-aot` (single-arch `x86_64`/amd64) | Alias weighted versions (canary) | `aws-serverless` |
-| Kubernetes (EKS/AKS) with Helm | Preview | Existing cluster estate | generic web image (`x86_64`) | See [Deploy on Kubernetes](kubernetes.md) | `aws-eks`, `azure-aks` |
+| Kubernetes (EKS) with Helm | Preview | Existing cluster estate | generic web image (`x86_64`) | See [Deploy on Kubernetes](kubernetes.md) | `aws-eks` |
 
 2026.1 certifies `x86_64` only. arm64 images, including `*-lambda-aot-arm64`, are unsupported. Preview patterns stay available for evaluation and are outside GA operational, SLA, and scale commitments. A tier label does not remove routes or change authorization.
 
-The database and observability tiers are separate modules: `aws-data` / `azure-data`
+The database and observability tiers are separate modules: `aws-data`
 for the managed PostGIS, and `observability-stack`.
 
 Generic web images are published to Docker Hub (`honuaio/honua-server`) and GHCR (`ghcr.io/honua-io/honua-server`). The rc.2 default is the native-AOT image with PostGIS as its only database store; the 2026.1 release channel and unsuffixed nightly and trunk tags select it. The tag-triggered `latest` and `vX.Y.Z` tags from `deploy.yml` still select the chiseled JIT image, and every channel keeps an explicit `-jit` variant. Use the matching JIT `-full` variant for additional database stores. See [choose the serving image](choose-serving-image.md) for availability, store inventory, and upgrade checks.
@@ -108,7 +108,7 @@ The honua-iac AWS modules set `Public__BaseUrl` for you when you give them a cus
 domain to host validation), and `aws-eks` puts it in `chart_config_env` for the Helm chart's
 `config.env`. Each takes a `public_base_url` input that overrides it, for example when a CDN on your
 domain fronts the service, and a `Public__BaseUrl` you already pass in `additional_env` is kept.
-On Azure, Helm, Docker Compose, and other targets, set `Public__BaseUrl` yourself (the production
+On Helm, Docker Compose, and other targets, set `Public__BaseUrl` yourself (the production
 Compose file derives it from `HONUA_HOST`).
 
 ## AWS ECS/Fargate
@@ -335,12 +335,12 @@ See [Connection poolers and proxies](../../reference/configuration/data-sources/
 
 **The local batch-compute backends are single-host only.** The in-process `local` backend and the child-process `honua-local-process` pool track launched jobs in an in-process registry that cannot survive a host restart or be observed from another node. They are the zero-dependency executors for single-host / air-gapped deployments; they **cannot** work on:
 
-- a **serverless** substrate (Lambda, Functions, Cloud Run), whose process and filesystem are frozen or torn down between invocations, or
+- a **serverless** substrate (Lambda, Cloud Run), whose process and filesystem are frozen or torn down between invocations, or
 - a **multi-node** deployment without a shared work directory, where a job launched on one node is invisible to its siblings.
 
-On those substrates, route geoprocessing/import workloads to a remote batch backend (`honua-aws-batch`, Azure Batch, or a Kubernetes Job) instead. Declare the substrate so the server can fail closed rather than churn: set `ControlPlane:Substrate:Profile` to `MultiNode` or `Serverless` (serverless runtimes are also auto-detected from `AWS_LAMBDA_FUNCTION_NAME` / `FUNCTIONS_WORKER_RUNTIME` / `K_SERVICE`), and `ControlPlane:Substrate:SharedWorkDir=true` if a multi-node deployment provides shared storage. When a local backend is registered on an incompatible substrate, the server raises a persistent Critical ops finding (`local-backend-substrate-incompatible`, visible via `GET /monitoring/health/comprehensive` and the ops-findings feed) instead of silently re-queuing doomed jobs.
+On those substrates, route geoprocessing/import workloads to a remote batch backend (`honua-aws-batch` or a Kubernetes Job) instead. Declare the substrate so the server can fail closed rather than churn: set `ControlPlane:Substrate:Profile` to `MultiNode` or `Serverless` (serverless runtimes are also auto-detected from `AWS_LAMBDA_FUNCTION_NAME` / `K_SERVICE`), and `ControlPlane:Substrate:SharedWorkDir=true` if a multi-node deployment provides shared storage. When a local backend is registered on an incompatible substrate, the server raises a persistent Critical ops finding (`local-backend-substrate-incompatible`, visible via `GET /monitoring/health/comprehensive` and the ops-findings feed) instead of silently re-queuing doomed jobs.
 
-**The remote batch worker runs a worker-only profile.** Every remote backend (AWS Batch, Azure Batch, a Kubernetes Job, the local process pool) launches the same server image for one job and passes `HONUA_OPERATION_ID`, `HONUA_JOB_KIND`, `HONUA_WORKLOAD_NAME`, `HONUA_EXECUTION_ATTEMPT` and `HONUA_CONTRACT_VERSION`. Workload `env.*` parameters cannot override these. When `HONUA_OPERATION_ID` is set, the process starts as a single-job execution worker. It claims only the launched attempt in the shared PostgreSQL job store, runs its executor, records the result or the typed failure there, and exits. It serves no HTTP and runs no migrations. It never submits jobs to a batch backend, runs the control-plane reconcilers or scheduled background services, or starts the proposal gateway. Give the worker the same system database (`ConnectionStrings__DefaultConnection` and, if configured, `Database__Schema`) and operation key-ring material as the server. It refuses to start without a composed durable job store; configure the system database so it can claim the job and report its outcome. It does not need `batch:SubmitJob`. On a Kubernetes Job, give the worker those credentials through Secret references; see [Geoprocessing on Kubernetes Jobs](kubernetes.md#geoprocessing-on-kubernetes-jobs).
+**The remote batch worker runs a worker-only profile.** Every remote backend (AWS Batch, a Kubernetes Job, the local process pool) launches the same server image for one job and passes `HONUA_OPERATION_ID`, `HONUA_JOB_KIND`, `HONUA_WORKLOAD_NAME`, `HONUA_EXECUTION_ATTEMPT` and `HONUA_CONTRACT_VERSION`. Workload `env.*` parameters cannot override these. When `HONUA_OPERATION_ID` is set, the process starts as a single-job execution worker. It claims only the launched attempt in the shared PostgreSQL job store, runs its executor, records the result or the typed failure there, and exits. It serves no HTTP and runs no migrations. It never submits jobs to a batch backend, runs the control-plane reconcilers or scheduled background services, or starts the proposal gateway. Give the worker the same system database (`ConnectionStrings__DefaultConnection` and, if configured, `Database__Schema`) and operation key-ring material as the server. It refuses to start without a composed durable job store; configure the system database so it can claim the job and report its outcome. It does not need `batch:SubmitJob`. On a Kubernetes Job, give the worker those credentials through Secret references; see [Geoprocessing on Kubernetes Jobs](kubernetes.md#geoprocessing-on-kubernetes-jobs).
 
 ## Verify
 

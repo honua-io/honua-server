@@ -223,7 +223,7 @@ Current gaps, stated as fact. Protocol-level GeoServices REST parity detail live
   values may request raw mode. All execution modes currently submit through the durable
   job pipeline, so the durable job store in the system database is required for synchronous, asynchronous,
   and job routes.
-- **OGC API Maps does not claim the styled-map conformance class**, and temporal
+- **OGC API Maps claims the styled-map conformance class**, while temporal
   raster mosaics use newest-batch semantics — layers with mixed-date scenes can show
   coverage gaps under a `datetime` filter until per-pixel temporal mosaicking lands.
 - **WCS 2.0.1 is a thin slice over the primary raster.** Range subset/band
@@ -266,8 +266,11 @@ Current gaps, stated as fact. Protocol-level GeoServices REST parity detail live
   larger inputs and the server-side feature limit, rather than the obsolete
   single-tile/50,000-feature description.
 - **Terrain/elevation v1 limits**: one numeric elevation band and one usable CRS
-  per dataset; no quantized mesh, hydrology, or terrain analysis; elevation queries
-  are band-1, GET-only, with no vertical datum transformation.
+  per dataset; no quantized mesh or hydrology; point and profile queries
+  (`GET /elevation/{datasetId}/value`, `profile`) and Pro surface-analysis
+  endpoints (`POST /elevation/{datasetId}/{line-of-sight,viewshed,sun-shadow,slice}`)
+  operate on band 1 with no vertical datum transformation — see
+  [Terrain and elevation](../protocols/terrain-and-elevation.md).
 - **STAC API has no transaction extensions**; `bbox`/`intersects` remain CRS84.
 - **OpenUSD/Omniverse export is a preview manifest only** (Pro-gated): no USD
   geometry conversion, USDZ packaging, or Nucleus publishing.

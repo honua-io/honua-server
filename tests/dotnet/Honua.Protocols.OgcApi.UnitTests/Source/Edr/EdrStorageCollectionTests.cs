@@ -9,6 +9,8 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.SharedCaching;
 using Honua.Protocols.Ogc.Api.Edr;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
@@ -151,6 +153,166 @@ public sealed class EdrStorageCollectionTests
             Arg.Any<int?>(),
             Arg.Any<RasterIdentifyRendering?>(),
             Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task GetCollections_MixedPublicAndPrivate_ListsPublicOnlyWithoutChallengeAndSetsVerdict()
+    {
+        var rasterStore = CreateRasterStore(SharedStorageId);
+        var builder = new TestMetadataV2GraphBuilder()
+            .AddService("svc", "coverages", protocols: [ServiceProtocols.OgcApiCoverages]);
+        for (var i = 1; i <= 5; i++)
+        {
+            AddPrivateRasterPublication(builder, $"priv-{i}", 100 + i);
+        }
+        AddPublicRasterPublication(builder, "pub", SharedStorageId);
+        var (services, handler) = CreateHarness(builder, rasterStore);
+
+        var anonContext = Context(services, "/edr/collections", "");
+        await (await handler.GetCollectionsAsync(anonContext, CancellationToken.None)).ExecuteAsync(anonContext);
+        anonContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        anonContext.Response.Headers.WWWAuthenticate.Should().BeEmpty();
+        ResponseAccessVerdict.GrantedToAnonymous(anonContext).Should().BeTrue();
+        ResponseAccessVerdict.Restricted(anonContext).Should().BeFalse();
+
+        anonContext.Response.Body.Position = 0;
+        using var doc = await JsonDocument.ParseAsync(anonContext.Response.Body);
+        doc.RootElement.GetProperty("collections").EnumerateArray()
+            .Select(static c => c.GetProperty("id").GetString())
+            .Should().Equal("42");
+
+        var authContext = Context(services, "/edr/collections", "");
+        authContext.Request.Headers["X-API-Key"] = "test-key";
+        await (await handler.GetCollectionsAsync(authContext, CancellationToken.None)).ExecuteAsync(authContext);
+        authContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        authContext.Response.Headers.WWWAuthenticate.Should().BeEmpty();
+        ResponseAccessVerdict.Restricted(authContext).Should().BeTrue();
+        ResponseAccessVerdict.GrantedToAnonymous(authContext).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task GetCollection_AnonymousDenied_EmitsSingleWwwAuthenticateHeader()
+    {
+        var rasterStore = CreateRasterStore(SharedStorageId);
+        var builder = new TestMetadataV2GraphBuilder()
+            .AddService("svc", "coverages", protocols: [ServiceProtocols.OgcApiCoverages]);
+        AddPrivateRasterPublication(builder, "priv-a", 101);
+        AddPrivateRasterPublication(builder, "priv-b", 101);
+        var (services, handler) = CreateHarness(builder, rasterStore);
+
+        var deniedContext = Context(services, "/edr/collections/101", "");
+        await (await handler.GetCollectionAsync(deniedContext, "101", CancellationToken.None)).ExecuteAsync(deniedContext);
+        deniedContext.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        deniedContext.Response.Headers.WWWAuthenticate.Should().ContainSingle();
+    }
+
+    [UnitTest]
+    public async Task GetCollection_AnonymousWhenPrivateAndPublicPublicationsShareStorageLayer_Returns200WithoutChallenge()
+    {
+        var rasterStore = CreateRasterStore(SharedStorageId);
+        var builder = new TestMetadataV2GraphBuilder()
+            .AddService("svc", "coverages", protocols: [ServiceProtocols.OgcApiCoverages]);
+        AddPrivateRasterPublication(builder, "priv", SharedStorageId);
+        AddPublicRasterPublication(builder, "pub", SharedStorageId);
+        var (services, handler) = CreateHarness(builder, rasterStore);
+
+        var context = Context(services, "/edr/collections/42", "");
+        await (await handler.GetCollectionAsync(context, "42", CancellationToken.None)).ExecuteAsync(context);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.Response.Headers.WWWAuthenticate.Should().BeEmpty();
+        ResponseAccessVerdict.GrantedToAnonymous(context).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void AppendCredentialChallenges_CalledTwice_DeduplicatesApiKeyBasicAndBearerHeaders()
+    {
+        var httpsContext = new DefaultHttpContext();
+        httpsContext.Request.Scheme = "https";
+        var options = new ApiKeyAuthenticationOptions { EnableBasicAuthCompatibility = true };
+
+        AuthenticationChallenge.AppendCredentialChallenges(httpsContext, options);
+        AuthenticationChallenge.AppendCredentialChallenges(httpsContext, options);
+        httpsContext.Response.Headers.WWWAuthenticate.Should().Equal(
+            AuthenticationChallenge.ApiKeyChallenge,
+            AuthenticationChallenge.BasicChallenge);
+
+        var bearerContext = new DefaultHttpContext();
+        bearerContext.Request.Headers.Authorization = "Bearer token";
+        AccessPolicyHelpers.AppendAuthenticationChallenge(bearerContext);
+        AccessPolicyHelpers.AppendAuthenticationChallenge(bearerContext);
+        bearerContext.Response.Headers.WWWAuthenticate.Should().Equal("Bearer");
+    }
+
+    private static IRasterStore CreateRasterStore(int layerId)
+    {
+        var rasterStore = Substitute.For<IRasterStore>();
+        rasterStore.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(null));
+        rasterStore.GetPrimaryRasterInfoAsync(layerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(new RasterInfo
+            {
+                Id = RasterId,
+                LayerId = layerId,
+                Name = "shared",
+                Width = 8,
+                Height = 8,
+                BandCount = 1,
+                PixelType = "F32",
+            }));
+        return rasterStore;
+    }
+
+    private static void AddPrivateRasterPublication(
+        TestMetadataV2GraphBuilder builder,
+        string id,
+        int storageLayerId)
+    {
+        builder
+            .AddResource(id, $"{id}-dem", MetadataV2ObjectType.RasterDataset)
+            .AddStorageBinding($"{id}-binding", id, id, storageLayerId: storageLayerId)
+            .AddPublication(
+                $"pub-{id}",
+                "svc",
+                id,
+                storageBindingId: $"{id}-binding",
+                serviceLocalId: $"{id}-dem",
+                isPrimary: true,
+                publicationType: MetadataV2LayerType.OgcCollection);
+    }
+
+    private static void AddPublicRasterPublication(
+        TestMetadataV2GraphBuilder builder,
+        string id,
+        int storageLayerId)
+    {
+        builder
+            .AddResource(id, $"{id}-dem", MetadataV2ObjectType.RasterDataset, accessPolicy: Anonymous())
+            .AddStorageBinding($"{id}-binding", id, id, storageLayerId: storageLayerId)
+            .AddPublication(
+                $"pub-{id}",
+                "svc",
+                id,
+                storageBindingId: $"{id}-binding",
+                serviceLocalId: $"{id}-dem",
+                publicationType: MetadataV2LayerType.OgcCollection);
+    }
+
+    private static (ServiceProvider Services, EdrHandler Handler) CreateHarness(
+        TestMetadataV2GraphBuilder builder,
+        IRasterStore rasterStore)
+    {
+        var graph = builder.BuildProvider();
+        var services = new ServiceCollection()
+            .AddSingleton<IMetadataV2GraphProvider>(graph)
+            .AddSingleton<IConfiguration>(new ConfigurationBuilder().Build())
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
+            .AddLogging()
+            .BuildServiceProvider();
+        var handler = new EdrHandler(new EdrDependencies(
+            graph,
+            rasterStore,
+            Substitute.For<ICoordinateTransformService>()));
+        return (services, handler);
     }
 
     private static AccessPolicy Anonymous() => new() { AllowAnonymous = true };

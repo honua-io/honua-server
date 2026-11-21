@@ -117,7 +117,7 @@ public sealed class GeoServicesDocumentationTruthTests
             ["deletes"] = "implemented",
             ["rollbackOnFailure"] = "implemented",
             ["returnEditMoment"] = "implemented",
-            ["useGlobalIds"] = "rejected",
+            ["useGlobalIds"] = "implemented",
             ["gdbVersion"] = "rejected",
             ["sessionID"] = "ignored",
             ["trueCurveClient"] = "ignored",
