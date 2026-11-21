@@ -30,6 +30,7 @@ public sealed class ManagedImportConnectionTests
 
         var connection = Assert.Single(await registry.GetActiveConnectionsAsync());
         Assert.Equal(ManagedImportConnection.Id, connection.ConnectionId);
+        Assert.Equal(connection.ConnectionId, await ManagedImportConnection.ResolveOwnerAsync(services, CancellationToken.None));
         Assert.Equal(ManagedImportConnection.Name, connection.Name);
         Assert.Equal("db.internal", connection.Host);
         Assert.Equal(5432, connection.Port);
@@ -84,6 +85,7 @@ public sealed class ManagedImportConnectionTests
 
         await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
 
+        Assert.Equal(Guid.Parse("11111111-1111-4111-8111-111111111111"), await ManagedImportConnection.ResolveOwnerAsync(services, CancellationToken.None));
         Assert.Single(await registry.GetAllConnectionsAsync());
         Assert.Equal(0, encryption.EncryptCalls);
     }
@@ -119,6 +121,7 @@ public sealed class ManagedImportConnectionTests
 
         await ManagedImportConnection.EnsureAsync(services, CancellationToken.None);
 
+        Assert.Equal(Guid.Parse("33333333-3333-4333-8333-333333333333"), await ManagedImportConnection.ResolveOwnerAsync(services, CancellationToken.None));
         Assert.Single(await registry.GetAllConnectionsAsync());
         Assert.Equal(0, encryption.EncryptCalls);
     }

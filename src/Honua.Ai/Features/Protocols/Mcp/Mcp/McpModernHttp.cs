@@ -4,8 +4,10 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Cors.Infrastructure;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Net.Http.Headers;
 
@@ -188,6 +190,11 @@ internal static class McpModernHttp
             return false;
         }
 
+        if (IsConfiguredPublicOrigin(context, origin))
+        {
+            return true;
+        }
+
         var provider = context.RequestServices.GetService<ICorsPolicyProvider>();
         if (provider is null)
         {
@@ -198,5 +205,18 @@ internal static class McpModernHttp
         var policyName = environment?.IsDevelopment() == true ? HttpCorsPolicyNames.Development : HttpCorsPolicyNames.Production;
         var policy = await provider.GetPolicyAsync(context, policyName).ConfigureAwait(false);
         return policy?.IsOriginAllowed(origins[0]!) == true;
+    }
+
+    // Pages served from the deployment's own public origin (the Console and Studio on a
+    // Launch Stack or quickstart) are same-origin. The configured Public:BaseUrl decides,
+    // never the request's Host header, so a rebound hostname is still refused.
+    private static bool IsConfiguredPublicOrigin(HttpContext context, Uri origin)
+    {
+        var configuration = context.RequestServices.GetService<IConfiguration>();
+        return configuration is not null
+            && BaseUrlResolver.TryGetConfiguredBaseUrl(configuration, out var baseUrl)
+            && Uri.TryCreate(baseUrl, UriKind.Absolute, out var publicUri)
+            && Uri.Compare(publicUri, origin, UriComponents.SchemeAndServer, UriFormat.UriEscaped,
+                StringComparison.OrdinalIgnoreCase) == 0;
     }
 }

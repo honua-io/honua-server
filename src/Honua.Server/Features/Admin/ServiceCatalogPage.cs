@@ -54,6 +54,21 @@ internal static class ServiceCatalogPage
                 : services.Where(service => service.FolderId == query.FolderId);
         }
 
+        if (query.ConnectionId is { } connectionId && query.StorageLayerId is { } storageLayerId)
+        {
+            // Filter logical service names so protocol entries retain their union in the summary.
+            var scope = new LayerScope(connectionId, storageLayerId)
+            {
+                TenantId = tenantId,
+                ManagedConnectionId = query.ManagedConnectionId,
+            };
+            var names = services.Where(service => snapshot.Index.PublicationsByService[service.Metadata.Id]
+                .Any(publication => MatchesLayer(snapshot, publication, scope)))
+                .Select(service => service.Metadata.Name)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            services = services.Where(service => names.Contains(service.Metadata.Name));
+        }
+
         if (string.IsNullOrEmpty(query.NameQuery))
         {
             return services;
@@ -61,6 +76,31 @@ internal static class ServiceCatalogPage
 
         return services.Where(service =>
             service.Metadata.Name.Contains(query.NameQuery, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private sealed record LayerScope(Guid ConnectionId, int StorageLayerId)
+    {
+        public string? TenantId { get; init; }
+
+        public Guid? ManagedConnectionId { get; init; }
+    }
+
+    private static bool MatchesLayer(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Layer publication,
+        LayerScope scope)
+    {
+        var resource = snapshot.ResolveResource(publication);
+        var binding = snapshot.ResolveStorageBinding(publication);
+        return resource is not null && binding is not null
+            && binding.ResourceId == resource.Metadata.Id
+            && binding.StorageLayerId == scope.StorageLayerId
+            && (binding.ConnectionId is null
+                ? scope.ManagedConnectionId == scope.ConnectionId
+                : Guid.TryParse(binding.ConnectionId, out var boundConnection) && boundConnection == scope.ConnectionId)
+            && MetadataV2TenantVisibility.IsVisibleToTenant(publication.Metadata.Tenant, scope.TenantId)
+            && MetadataV2TenantVisibility.IsVisibleToTenant(resource.Metadata.Tenant, scope.TenantId)
+            && MetadataV2TenantVisibility.IsVisibleToTenant(binding.Metadata.Tenant, scope.TenantId);
     }
 
     // Protocol entries for one logical service share Metadata.Name.

@@ -146,11 +146,39 @@ public sealed class PostgresPagedProjectionIntegrationTests(PostgresFixture fixt
             OutputSrid = 3857,
             SpatialFilter = SpatialFilter.CreateKnnFilter(origin, count: 3, returnDistance: true, srid: 4326)
         });
-        page.Items.Select(feature => feature.Id).Should().Equal(2L, 3L, 4L);
+        // Offset 1 within the three nearest leaves two.
+        page.Items.Select(feature => feature.Id).Should().Equal(2L, 3L);
         page.HasMoreResults.Should().BeFalse();
         page.Items.Select(feature => Convert.ToDouble(feature.Attributes["distance"], System.Globalization.CultureInfo.InvariantCulture))
             .Should().BeInAscendingOrder().And.OnlyContain(distance => distance > 2000);
         new WKBReader().Read(page.Items[0].Geometry!).Coordinate.X.Should().BeApproximately(2226.3898, 0.01);
+    }
+
+    [IntegrationTest]
+    public async Task NearestPage_CountAbovePageLimit_StopsAtTheLimitAndReportsMore()
+    {
+        var origin = new WKBWriter().Write(new Point(0, 1));
+        var query = new FeatureQuery
+        {
+            Limit = 5,
+            SpatialFilter = SpatialFilter.CreateKnnFilter(origin, count: 10, srid: 4326)
+        };
+
+        var page = await CreateReader().QueryPageAsync(1, query);
+        page.Items.Select(feature => feature.Id).Should().Equal(1L, 2L, 3L, 4L, 5L);
+        page.HasMoreResults.Should().BeTrue();
+
+        var result = await CreateReader().QueryAsync(1, query);
+        result.Items.Select(feature => feature.Id).Should().Equal(1L, 2L, 3L, 4L, 5L);
+        result.HasMoreResults.Should().BeTrue();
+
+        var lastPage = await CreateReader().QueryPageAsync(1, query with { Offset = 5 });
+        lastPage.Items.Select(feature => feature.Id).Should().Equal(6L, 7L, 8L, 9L, 10L);
+        lastPage.HasMoreResults.Should().BeFalse();
+
+        var pastTheCount = await CreateReader().QueryAsync(1, query with { Offset = 10 });
+        pastTheCount.Items.Should().BeEmpty();
+        pastTheCount.HasMoreResults.Should().BeFalse();
     }
 
     [IntegrationTest]

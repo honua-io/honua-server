@@ -352,6 +352,37 @@ public sealed class AdvancedSpatialQueryTests : IClassFixture<WebAppFixture>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_NearestCountAboveRecordCount_PagesWithinTheCount()
+    {
+        var nearest = await QueryNearestAsync("&nearestCount=10");
+        var capped = await QueryNearestAsync("&nearestCount=10&resultRecordCount=2");
+
+        capped.Features!.Length.Should().Be(Math.Min(nearest.Features!.Length, 2));
+        capped.ExceededTransferLimit.Should().Be(nearest.Features!.Length > 2);
+
+        var nearestThree = await QueryNearestAsync("&nearestCount=3");
+        var lastPage = await QueryNearestAsync("&nearestCount=3&resultRecordCount=2&resultOffset=2");
+        lastPage.Features!.Length.Should().Be(Math.Max(0, nearestThree.Features!.Length - 2));
+        lastPage.ExceededTransferLimit.Should().BeFalse();
+    }
+
+    private async Task<QueryResponse> QueryNearestAsync(string parameters)
+    {
+        var pointGeometry = @"{""x"":-122.4194,""y"":37.7749}";
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
+            $"?geometry={Uri.EscapeDataString(pointGeometry)}{parameters}&f=json");
+        response.Be200Ok();
+
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            await response.Content.ReadAsStringAsync(), FeatureServerJsonContext.Default.QueryResponse);
+        queryResponse.Should().NotBeNull();
+        return queryResponse!;
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_NearestNeighborWithPagination_ReturnsPagedResults()
     {
         // Arrange
