@@ -709,7 +709,7 @@ public class ImportEndpointTests : IAsyncLifetime
             layerId = publishApi.Data.StorageLayerId;
 
             var queryResponse = await _client.GetAsync(
-                $"/rest/services/{serviceName}/FeatureServer/{layerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true&resultRecordCount=10");
+                $"/rest/services/{serviceName}/FeatureServer/{publishApi.Data.ServiceLayerIndex!.Value}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true&resultRecordCount=10");
             var queryPayload = await queryResponse.Content.ReadAsStringAsync();
             queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {queryPayload}");
 

@@ -122,7 +122,7 @@ public sealed partial class LayerPublishingIntegrationTests
             ServiceName = _serviceName,
             Enabled = true
         });
-        _layerId = published.StorageLayerId;
+        TrackPublishedLayer(published);
         using var rest = JsonDocument.Parse(await ReadFeatureServerAsync("id=1", "id ASC"));
         var attributes = rest.RootElement.GetProperty("features").EnumerateArray()
             .Should().ContainSingle().Subject.GetProperty("attributes");
@@ -190,6 +190,6 @@ public sealed partial class LayerPublishingIntegrationTests
             ServiceName = _serviceName,
             Enabled = true
         });
-        _layerId = published.StorageLayerId;
+        TrackPublishedLayer(published);
     }
 }

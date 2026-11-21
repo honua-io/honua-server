@@ -121,7 +121,7 @@ public sealed partial class LayerPublishingIntegrationTests
             JsonContent.Create(request));
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Created, body);
-        _layerId = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(body, _jsonOptions)!.Data!.StorageLayerId;
+        TrackPublishedLayer(JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(body, _jsonOptions)!.Data!);
 
         var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
         graph.Connections.Single(candidate => candidate.Metadata.Id == connectionMetadata.Id).Metadata
@@ -140,7 +140,7 @@ public sealed partial class LayerPublishingIntegrationTests
         }
 
         using var query = await _client.GetAsync(
-            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json&where=1%3D1&outFields=*");
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}/query?f=json&where=1%3D1&outFields=*");
         var queryBody = await query.Content.ReadAsStringAsync();
         query.StatusCode.Should().Be(HttpStatusCode.OK, queryBody);
         using var queryDocument = JsonDocument.Parse(queryBody);
@@ -157,10 +157,10 @@ public sealed partial class LayerPublishingIntegrationTests
             Services = graph.Services.Select(candidate => candidate.Metadata.Id == service.Metadata.Id
                 ? candidate with { Metadata = candidate.Metadata with { Tenant = "foreign" } } : candidate).ToArray()
         });
-        using var foreign = await _client.GetAsync($"/rest/services/{_serviceName}/FeatureServer/{_layerId}?f=json");
+        using var foreign = await _client.GetAsync($"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}?f=json");
         await AssertNamespaceGeoServicesForbiddenAsync(foreign);
         using var foreignQuery = await _client.GetAsync(
-            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json&where=1%3D1&outFields=*");
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}/query?f=json&where=1%3D1&outFields=*");
         await AssertNamespaceGeoServicesForbiddenAsync(foreignQuery);
         var graphBeforeDenials = _fixture.GetCurrentV2GraphSnapshot().Graph;
         var sqlBeforeDenials = await ReadNamespaceLayerStateAsync();

@@ -83,10 +83,10 @@ public sealed partial class LayerPublishingIntegrationTests
             Enabled = true,
             CreateEditableCopy = true
         }, _connectionName);
-        _layerId = published.StorageLayerId;
+        TrackPublishedLayer(published);
         await UploadAsync(mode);
         using (var sourceResponse = await GetGeometryJsonAsync(
-            $"/rest/services/{_serviceName}/FeatureServer/{sourceLayer.StorageLayerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true"))
+            $"/rest/services/{_serviceName}/FeatureServer/{sourceLayer.ServiceLayerIndex!.Value}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true"))
         {
             var sourceFeatures = sourceResponse.RootElement.GetProperty("features");
             sourceFeatures.GetArrayLength().Should().Be(mode == "Append" ? 2 : 1);
@@ -111,7 +111,7 @@ public sealed partial class LayerPublishingIntegrationTests
             ["f"] = "json",
             ["adds"] = """[{"attributes":{"name":"Edited","population":4},"geometry":{"x":2,"y":3}}]"""
         });
-        using var edited = await _client.PostAsync($"/rest/services/{_serviceName}/FeatureServer/{_layerId}/applyEdits", edit);
+        using var edited = await _client.PostAsync($"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}/applyEdits", edit);
         var payload = await edited.Content.ReadAsStringAsync();
         edited.StatusCode.Should().Be(HttpStatusCode.OK, payload);
         using var result = JsonDocument.Parse(payload);

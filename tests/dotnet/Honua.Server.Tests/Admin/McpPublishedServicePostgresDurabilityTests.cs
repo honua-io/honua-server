@@ -320,13 +320,13 @@ public sealed partial class McpPublishedServicePostgresDurabilityTests : IAsyncL
             snapshot.ResolveStorageBinding(publication)!.StorageLayerId == firstStorageId);
         var secondPublication = publications.Single(publication =>
             snapshot.ResolveStorageBinding(publication)!.StorageLayerId == secondStorageId);
-        // Query the IDs actually returned by publication/job completion. A
-        // different working graph ID must not conceal a broken public contract.
-        firstPublication.LayerIndex.Should().Be(firstStorageId);
-        secondPublication.LayerIndex.Should().Be(secondStorageId);
-        await AssertPublishedRowsAsync(firstStorageId,
+        // Publications resolve from the storage IDs returned by publication/job
+        // completion and take per-service indexes in publish order.
+        firstPublication.LayerIndex.Should().Be(0);
+        secondPublication.LayerIndex.Should().Be(1);
+        await AssertPublishedRowsAsync(firstPublication.LayerIndex!.Value,
             [(1, "first-authored-row", 1d, 2d)]);
-        await AssertPublishedRowsAsync(secondStorageId,
+        await AssertPublishedRowsAsync(secondPublication.LayerIndex!.Value,
             [(1, "second-authored-row-a", 3d, 4d), (2, "second-authored-row-b", 5d, 6d)]);
 
         var detail = await ReadResourceAsync(exactUri!);
@@ -436,11 +436,11 @@ public sealed partial class McpPublishedServicePostgresDurabilityTests : IAsyncL
     }
 
     private async Task AssertPublishedRowsAsync(
-        int publicLayerId,
+        int serviceLayerIndex,
         IReadOnlyList<(long Id, string Name, double X, double Y)> expected)
     {
         using var response = await _client.GetAsync(
-            $"/rest/services/{_serviceName}/FeatureServer/{publicLayerId}/query" +
+            $"/rest/services/{_serviceName}/FeatureServer/{serviceLayerIndex}/query" +
             "?f=json&where=1%3D1&outFields=*&returnGeometry=true&resultRecordCount=10");
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);

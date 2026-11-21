@@ -321,14 +321,14 @@ public sealed class GeoservicesImportFidelityIntegrationTests : IAsyncLifetime, 
             await ValidatePublishedLayerMetadataParityAsync(sourceSnapshot, publishedLayer);
             var seededRows = await SeedLayerFeaturesViaAppendAsync(
                 publishedLayer.ServiceName,
-                publishedLayer.LayerId,
+                publishedLayer.ServiceLayerIndex,
                 tableSchema,
                 tableName,
                 serviceCase.Name);
             seededRows.Should().Be(sourceSnapshot.TotalCount);
 
             var sourceQueryEndpoint = $"{serviceCase.ServiceUrl.TrimEnd('/')}/{serviceCase.LayerId}/query";
-            var honuaQueryEndpoint = $"/rest/services/{publishedLayer.ServiceName}/FeatureServer/{publishedLayer.LayerId}/query";
+            var honuaQueryEndpoint = $"/rest/services/{publishedLayer.ServiceName}/FeatureServer/{publishedLayer.ServiceLayerIndex}/query";
             var sanitizedCompareField = serviceCase.CompareField.SanitizeFieldName();
             var sanitizedNumericField = serviceCase.NumericField.SanitizeFieldName();
             var sanitizedDateField = serviceCase.DateField?.SanitizeFieldName();
@@ -373,7 +373,7 @@ public sealed class GeoservicesImportFidelityIntegrationTests : IAsyncLifetime, 
 
             await ValidateHonuaMapServerQueryParityAsync(
                 publishedLayer.ServiceName,
-                publishedLayer.LayerId,
+                publishedLayer.ServiceLayerIndex,
                 sanitizedCompareField,
                 sanitizedNumericField,
                 sanitizedDateField);
@@ -697,11 +697,11 @@ public sealed class GeoservicesImportFidelityIntegrationTests : IAsyncLifetime, 
         root.GetProperty("success").GetBoolean().Should().BeTrue("publish API should return success=true");
         var data = root.GetProperty("data");
 
-        var layerId = data.GetProperty("layerId").GetInt32();
+        var serviceLayerIndex = data.GetProperty("serviceLayerIndex").GetInt32();
         var publishedServiceName = ReadOptionalString(data, "serviceName");
         publishedServiceName.Should().NotBeNullOrWhiteSpace();
 
-        return new PublishedLayerHandle(layerId, publishedServiceName!);
+        return new PublishedLayerHandle(serviceLayerIndex, publishedServiceName!);
     }
 
     private async Task<int> SeedLayerFeaturesViaAppendAsync(
@@ -1721,7 +1721,7 @@ public sealed class GeoservicesImportFidelityIntegrationTests : IAsyncLifetime, 
     {
         var honuaLayerMetadata = await GetJsonElementAsync(
             _adminClient,
-            $"/rest/services/{publishedLayer.ServiceName}/FeatureServer/{publishedLayer.LayerId}?f=pjson");
+            $"/rest/services/{publishedLayer.ServiceName}/FeatureServer/{publishedLayer.ServiceLayerIndex}?f=pjson");
 
         if (!string.IsNullOrWhiteSpace(sourceSnapshot.GeometryType))
         {
@@ -4068,7 +4068,7 @@ public sealed class GeoservicesImportFidelityIntegrationTests : IAsyncLifetime, 
             SourceServiceUrl: serviceCase.ServiceUrl,
             SourceLayerId: serviceCase.LayerId,
             HonuaServiceName: publishedLayer.ServiceName,
-            HonuaLayerId: publishedLayer.LayerId,
+            HonuaLayerId: publishedLayer.ServiceLayerIndex,
             SourceFeatureCount: sourceSnapshot.TotalCount,
             GeneratedAtUtc: DateTimeOffset.UtcNow,
             Checks: checks,
@@ -4179,7 +4179,7 @@ public sealed class GeoservicesImportFidelityIntegrationTests : IAsyncLifetime, 
 
     private sealed record ExtentStats(double XMin, double YMin, double XMax, double YMax);
 
-    private sealed record PublishedLayerHandle(int LayerId, string ServiceName);
+    private sealed record PublishedLayerHandle(int ServiceLayerIndex, string ServiceName);
 
     private sealed record AppendFeatureRow(
         IReadOnlyDictionary<string, object?> Attributes,

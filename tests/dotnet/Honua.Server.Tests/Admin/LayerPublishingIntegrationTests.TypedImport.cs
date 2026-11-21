@@ -106,7 +106,7 @@ public sealed partial class LayerPublishingIntegrationTests
             ServiceName = _serviceName,
             Enabled = true
         });
-        _layerId = published.StorageLayerId;
+        TrackPublishedLayer(published);
         published.GeometryType.Should().Be("Point");
 
         var sortedPayload = await ReadOgcItemsAsync("sortby=-population");
@@ -273,7 +273,7 @@ public sealed partial class LayerPublishingIntegrationTests
     private async Task<string> ReadFeatureServerAsync(string where, string orderBy)
     {
         var response = await _client.GetAsync(
-            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json"
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}/query?f=json"
             + $"&where={Uri.EscapeDataString(where)}"
             + $"&orderByFields={Uri.EscapeDataString(orderBy)}"
             + "&outFields=*&returnGeometry=true");

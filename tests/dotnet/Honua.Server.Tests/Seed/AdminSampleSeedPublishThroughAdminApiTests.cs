@@ -104,9 +104,9 @@ public sealed class AdminSampleSeedPublishThroughAdminApiTests : IAsyncLifetime
             published.ServiceName.Should().Be(_serviceName);
             published.GeometryType.Should().Be(sample.GeometryType);
 
-            await AssertCountAsync(published.StorageLayerId, sample.ExpectedCount);
+            await AssertCountAsync(published.ServiceLayerIndex!.Value, sample.ExpectedCount);
             await AssertExtentAsync(
-                published.StorageLayerId,
+                published.ServiceLayerIndex!.Value,
                 sample.ExpectedXmin,
                 sample.ExpectedYmin,
                 sample.ExpectedXmax,
@@ -146,10 +146,10 @@ public sealed class AdminSampleSeedPublishThroughAdminApiTests : IAsyncLifetime
         return api.Data!;
     }
 
-    private async Task AssertCountAsync(int layerId, int expectedCount)
+    private async Task AssertCountAsync(int serviceLayerIndex, int expectedCount)
     {
         using var response = await _client.GetAsync(
-            $"/rest/services/{_serviceName}/FeatureServer/{layerId}/query?where=1%3D1&returnCountOnly=true&f=json");
+            $"/rest/services/{_serviceName}/FeatureServer/{serviceLayerIndex}/query?where=1%3D1&returnCountOnly=true&f=json");
         var payload = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {payload}");
@@ -158,14 +158,14 @@ public sealed class AdminSampleSeedPublishThroughAdminApiTests : IAsyncLifetime
     }
 
     private async Task AssertExtentAsync(
-        int layerId,
+        int serviceLayerIndex,
         double expectedXmin,
         double expectedYmin,
         double expectedXmax,
         double expectedYmax)
     {
         using var response = await _client.GetAsync(
-            $"/rest/services/{_serviceName}/FeatureServer/{layerId}/query?where=1%3D1&returnExtentOnly=true&outSR=4326&f=json");
+            $"/rest/services/{_serviceName}/FeatureServer/{serviceLayerIndex}/query?where=1%3D1&returnExtentOnly=true&outSR=4326&f=json");
         var payload = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {payload}");

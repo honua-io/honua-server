@@ -39,7 +39,7 @@ public sealed partial class LayerPublishingIntegrationTests
             JsonContent.Create(request, options: _jsonOptions));
         var payload = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Created, payload);
-        _layerId = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(payload, _jsonOptions)!.Data!.StorageLayerId;
+        TrackPublishedLayer(JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(payload, _jsonOptions)!.Data!);
 
         var serviceUrl = $"/rest/services/{_serviceName}/FeatureServer";
         using var serviceResponse = await _client.GetAsync(serviceUrl + "?f=json");
@@ -47,11 +47,11 @@ public sealed partial class LayerPublishingIntegrationTests
         using var service = JsonDocument.Parse(await serviceResponse.Content.ReadAsStringAsync());
         service.RootElement.GetProperty("layers").GetArrayLength().Should().Be(0);
         var table = service.RootElement.GetProperty("tables").EnumerateArray().Should().ContainSingle().Which;
-        table.GetProperty("id").GetInt32().Should().Be(_layerId);
+        table.GetProperty("id").GetInt32().Should().Be(_layerIndex);
         table.GetProperty("type").GetString().Should().Be("Table");
         table.TryGetProperty("geometryType", out _).Should().BeFalse();
 
-        using var metadataResponse = await _client.GetAsync($"{serviceUrl}/{_layerId}?f=json");
+        using var metadataResponse = await _client.GetAsync($"{serviceUrl}/{_layerIndex}?f=json");
         metadataResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         using var metadata = JsonDocument.Parse(await metadataResponse.Content.ReadAsStringAsync());
         metadata.RootElement.GetProperty("type").GetString().Should().Be("Table");
@@ -62,7 +62,7 @@ public sealed partial class LayerPublishingIntegrationTests
         advanced.GetProperty("supportsReturningQueryExtent").GetBoolean().Should().BeFalse();
         advanced.GetProperty("supportsQueryWithDistance").GetBoolean().Should().BeFalse();
 
-        using var queryResponse = await _client.GetAsync($"{serviceUrl}/{_layerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=false");
+        using var queryResponse = await _client.GetAsync($"{serviceUrl}/{_layerIndex}/query?f=json&where=1%3D1&outFields=*&returnGeometry=false");
         queryResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         using var query = JsonDocument.Parse(await queryResponse.Content.ReadAsStringAsync());
         query.RootElement.GetProperty("features").GetArrayLength().Should().BeGreaterThan(0);

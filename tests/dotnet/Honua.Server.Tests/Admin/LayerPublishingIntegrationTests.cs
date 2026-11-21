@@ -56,6 +56,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
     private string _serviceName = string.Empty;
     private string? _retainedSourceServiceName;
     private int? _layerId;
+    private int? _layerIndex;
     private string? _importedTableName;
     private string? _legacyImportedTableName;
     private string? _importedTableSchema;
@@ -299,10 +300,10 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             ServiceName = _serviceName,
             Enabled = true
         }, _connectionName);
-        _layerId = published.StorageLayerId;
+        TrackPublishedLayer(published);
 
         var queryResponse = await _client.GetAsync(
-            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true");
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true");
         var queryPayload = await queryResponse.Content.ReadAsStringAsync();
         queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {queryPayload}");
         using var queryDocument = JsonDocument.Parse(queryPayload);
@@ -473,8 +474,8 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         published.SourceUrl.Should().Be(sourceUrl);
 
         var layerId = published.StorageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        var featureServer = await _client.GetAsync($"/rest/services/{_serviceName}/FeatureServer/{layerId}?f=json");
-        var mapServer = await _client.GetAsync($"/rest/services/{_serviceName}/MapServer/{layerId}?f=json");
+        var featureServer = await _client.GetAsync($"/rest/services/{_serviceName}/FeatureServer/{published.ServiceLayerIndex!.Value}?f=json");
+        var mapServer = await _client.GetAsync($"/rest/services/{_serviceName}/MapServer/{published.ServiceLayerIndex!.Value}?f=json");
         var ogcCollection = await _client.GetAsync($"/ogc/features/collections/{layerId}?f=json");
         var stacCollection = await _client.GetAsync($"/stac/collections/{layerId}");
         featureServer.Be200Ok();
@@ -649,8 +650,8 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         persistedService.Metadata.Publisher.Should().Be(publisher);
 
         var layerId = published.StorageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        var featureServer = await _client.GetAsync($"/rest/services/{_serviceName}/FeatureServer/{layerId}?f=json");
-        var mapServer = await _client.GetAsync($"/rest/services/{_serviceName}/MapServer/{layerId}?f=json");
+        var featureServer = await _client.GetAsync($"/rest/services/{_serviceName}/FeatureServer/{published.ServiceLayerIndex!.Value}?f=json");
+        var mapServer = await _client.GetAsync($"/rest/services/{_serviceName}/MapServer/{published.ServiceLayerIndex!.Value}?f=json");
         var ogcCollection = await _client.GetAsync($"/ogc/features/collections/{layerId}?f=json");
         var stacCollection = await _client.GetAsync($"/stac/collections/{layerId}");
         featureServer.Be200Ok();
@@ -921,10 +922,10 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         var publishRequest = SourceTablePublishRequest("Layer publish FeatureServer query integration test");
 
         var publishedLayer = await PublishLayerAsync(publishRequest);
-        _layerId = publishedLayer.StorageLayerId;
+        TrackPublishedLayer(publishedLayer);
 
         var metadataResponse = await _client.GetAsync(
-            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}?f=json");
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}?f=json");
 
         metadataResponse.Be200Ok();
         using (var metadata = JsonDocument.Parse(await metadataResponse.Content.ReadAsStringAsync()))
@@ -937,7 +938,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         }
 
         var queryResponse = await _client.GetAsync(
-            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true&resultRecordCount=10");
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true&resultRecordCount=10");
 
         var queryPayload = await queryResponse.Content.ReadAsStringAsync();
         queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {queryPayload}");
@@ -1011,12 +1012,12 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         var publishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(publishPayload, _jsonOptions);
         publishApi.Should().NotBeNull();
         publishApi!.Data.Should().NotBeNull();
-        _layerId = publishApi.Data!.StorageLayerId;
+        TrackPublishedLayer(publishApi.Data!);
 
         await InsertPostGisFeatureAsync("Name Routed Feature", 200, 2d, 2d);
 
         var queryResponse = await _client.GetAsync(
-            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json&where=1%3D1&outFields=name,population&returnGeometry=false&resultRecordCount=10");
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}/query?f=json&where=1%3D1&outFields=name,population&returnGeometry=false&resultRecordCount=10");
 
         var queryPayload = await queryResponse.Content.ReadAsStringAsync();
         queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {queryPayload}");
@@ -1043,11 +1044,11 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         var publishRequest = SourceTablePublishRequest("Layer publish nearest-neighbor integration test");
 
         var publishedLayer = await PublishLayerAsync(publishRequest);
-        _layerId = publishedLayer.StorageLayerId;
+        TrackPublishedLayer(publishedLayer);
 
         var pointGeometry = Uri.EscapeDataString(@"{""x"":1,""y"":1}");
         var queryResponse = await _client.GetAsync(
-            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json&geometry={pointGeometry}&nearestCount=2&returnDistance=true&outFields=*&returnGeometry=false");
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}/query?f=json&geometry={pointGeometry}&nearestCount=2&returnDistance=true&outFields=*&returnGeometry=false");
 
         var queryPayload = await queryResponse.Content.ReadAsStringAsync();
         queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {queryPayload}");
@@ -1126,7 +1127,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         var publishRequest = SourceTablePublishRequest("Layer publish materialization integration test");
 
         var publishedLayer = await PublishLayerAsync(publishRequest);
-        _layerId = publishedLayer.StorageLayerId;
+        TrackPublishedLayer(publishedLayer);
 
         await using (var connection = await _fixture.Postgres.GetConnectionAsync())
         await using (var command = connection.CreateCommand())
@@ -1164,7 +1165,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         }
 
         var queryResponse = await _client.GetAsync(
-            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?where=1%3D1&f=json");
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}/query?where=1%3D1&f=json");
 
         queryResponse.Be200Ok();
         var queryPayload = await queryResponse.Content.ReadAsStringAsync();
@@ -1179,7 +1180,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         }
 
         var metadataResponse = await _client.GetAsync(
-            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}");
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}");
 
         metadataResponse.Be200Ok();
         var metadataPayload = await metadataResponse.Content.ReadAsStringAsync();
@@ -1489,7 +1490,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             StorageMode = "managed",
             Capabilities = ["query", "Create", "Update", "Delete"]
         });
-        _layerId = publishedLayer.StorageLayerId;
+        TrackPublishedLayer(publishedLayer);
 
         publishedLayer.StorageMode.Should().Be("managed");
         publishedLayer.Capabilities.Should().Equal("Query", "Create", "Update", "Delete");
@@ -1553,7 +1554,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
 
         // And through FeatureServer query, keyed by the managed object id.
         var queryResponse = await _client.GetAsync(
-            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=false&resultRecordCount=10");
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}/query?f=json&where=1%3D1&outFields=*&returnGeometry=false&resultRecordCount=10");
         var queryPayload = await queryResponse.Content.ReadAsStringAsync();
         queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {queryPayload}");
         using (var queryDocument = JsonDocument.Parse(queryPayload))
@@ -1597,7 +1598,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             StorageMode = "managed",
             Capabilities = ["Query", "Create", "Update", "Delete"]
         });
-        _layerId = publishedLayer.StorageLayerId;
+        TrackPublishedLayer(publishedLayer);
 
         await _publishingFixture.SimulateMissingCatalogSridAsync(publishedLayer.StorageLayerId);
         using (var scope = _fixture.Services.CreateScope())
@@ -1607,7 +1608,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             (await cache.GetLayerSridAsync(publishedLayer.StorageLayerId, CancellationToken.None)).Should().BeNull();
         }
 
-        var queryPath = $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true";
+        var queryPath = $"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true";
         using var beforeResponse = await _client.GetAsync(queryPath);
         beforeResponse.Be200Ok();
         using var before = JsonDocument.Parse(await beforeResponse.Content.ReadAsStringAsync());
@@ -1621,7 +1622,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             ["updates"] = $"[{{\"attributes\":{{\"objectid\":{objectId},\"population\":5407}}}}]"
         });
         using var updateResponse = await _client.PostAsync(
-            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/applyEdits", edits);
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}/applyEdits", edits);
         updateResponse.Be200Ok();
         var updatePayload = await updateResponse.Content.ReadAsStringAsync();
         using (var update = JsonDocument.Parse(updatePayload))
@@ -2020,7 +2021,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             };
 
             var publishedLayer = await PublishLayerAsync(publishRequest);
-            _layerId = publishedLayer.StorageLayerId;
+            TrackPublishedLayer(publishedLayer);
 
             // Route global honua.layers/honua.services UPDATEs through the schema-mutation
             // advisory lock (combined statement also seeds the per-test public table).
@@ -2732,6 +2733,13 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         return api.Data!;
     }
 
+    private void TrackPublishedLayer(PublishedLayerSummary layer)
+    {
+        _layerId = layer.StorageLayerId;
+        _layerIndex = layer.ServiceLayerIndex
+            ?? throw new InvalidOperationException($"Published layer {layer.StorageLayerId} has no service layer index.");
+    }
+
     private static void AssertGeoServicesGovernance(
         string payload,
         string license,
@@ -2887,7 +2895,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         double tolerance)
     {
         var response = await _client.GetAsync(
-            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}?f=json");
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}?f=json");
 
         response.Be200Ok();
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -2908,7 +2916,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         double tolerance)
     {
         var response = await _client.GetAsync(
-            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?where=1%3D1&returnExtentOnly=true&outSR=4326&f=json");
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}/query?where=1%3D1&returnExtentOnly=true&outSR=4326&f=json");
 
         response.Be200Ok();
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());

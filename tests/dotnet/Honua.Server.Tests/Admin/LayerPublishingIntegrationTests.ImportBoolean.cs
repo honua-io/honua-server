@@ -31,7 +31,7 @@ public sealed partial class LayerPublishingIntegrationTests
             ]}
             """;
         await ImportAndPublishAttributesAsync(source, ["id", "is_demo", "name", "properties"]);
-        using var metadata = await GetGeometryJsonAsync($"/rest/services/{_serviceName}/FeatureServer/{_layerId}?f=json");
+        using var metadata = await GetGeometryJsonAsync($"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}?f=json");
         metadata.RootElement.GetProperty("fields").EnumerateArray().Single(field =>
             field.GetProperty("name").GetString() == "is_demo").GetProperty("type").GetString().Should().Be("esriFieldTypeSmallInteger");
         var where = $"is_demo={value}";

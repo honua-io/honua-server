@@ -310,19 +310,19 @@ public sealed class CloudDeploymentValidationTests
         var serviceLayer = await WaitForPublishedServiceLayerAsync(
             client,
             publishedLayer.ServiceName,
-            publishedLayer.StorageLayerId,
+            publishedLayer.ServiceLayerIndex,
             timeout);
         var publicLayer = await WaitForPublishedLayerMetadataAsync(
             client,
             publishedLayer.ServiceName,
-            publishedLayer.StorageLayerId,
+            publishedLayer.ServiceLayerIndex,
             timeout);
 
         var expectedLayerName = $"Cloud Validation {tableName}";
-        serviceLayer.GetProperty("id").GetInt32().Should().Be(publishedLayer.StorageLayerId);
+        serviceLayer.GetProperty("id").GetInt32().Should().Be(publishedLayer.ServiceLayerIndex);
         serviceLayer.GetProperty("name").GetString().Should().Be(expectedLayerName);
 
-        publicLayer.GetProperty("id").GetInt32().Should().Be(publishedLayer.StorageLayerId);
+        publicLayer.GetProperty("id").GetInt32().Should().Be(publishedLayer.ServiceLayerIndex);
         publicLayer.GetProperty("name").GetString().Should().Be(expectedLayerName);
         publicLayer.GetProperty("type").GetString().Should().Be("Feature Layer");
         publicLayer.GetProperty("geometryType").GetString().Should().NotBeNullOrWhiteSpace();
@@ -763,22 +763,31 @@ public sealed class CloudDeploymentValidationTests
         response.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {payload}");
 
         using var document = JsonDocument.Parse(payload);
-        var data = document.RootElement.GetProperty("data");
+        return ReadPublishedLayerHandle(document.RootElement.GetProperty("data"), serviceName);
+    }
 
+    private static PublishedLayerHandle ReadPublishedLayerHandle(JsonElement data, string serviceName)
+    {
         // Older deployed releases name the storage handle "layerId".
         var storageLayerId = data.TryGetProperty("storageLayerId", out var storageLayerIdElement)
             ? storageLayerIdElement
             : data.GetProperty("layerId");
 
+        // Releases without "serviceLayerIndex" address the layer by its storage handle.
+        var serviceLayerIndex = data.TryGetProperty("serviceLayerIndex", out var indexElement)
+            && indexElement.ValueKind == JsonValueKind.Number
+                ? indexElement.GetInt32()
+                : storageLayerId.GetInt32();
+
         return new PublishedLayerHandle(
             data.GetProperty("serviceName").GetString() ?? serviceName,
-            storageLayerId.GetInt32());
+            serviceLayerIndex);
     }
 
     private static async Task<JsonElement> WaitForPublishedServiceLayerAsync(
         HttpClient client,
         string serviceName,
-        int layerId,
+        int serviceLayerIndex,
         TimeSpan timeout)
     {
         var deadline = DateTimeOffset.UtcNow.Add(timeout);
@@ -810,7 +819,7 @@ public sealed class CloudDeploymentValidationTests
                 .FirstOrDefault(candidate =>
                     candidate.TryGetProperty("id", out var idElement) &&
                     idElement.TryGetInt32(out var candidateLayerId) &&
-                    candidateLayerId == layerId);
+                    candidateLayerId == serviceLayerIndex);
 
             if (layer.ValueKind != JsonValueKind.Undefined)
             {
@@ -821,14 +830,14 @@ public sealed class CloudDeploymentValidationTests
         }
 
         throw new TimeoutException(
-            $"Published service layer '{serviceName}/{layerId}' was not visible within {timeout.TotalSeconds} seconds. " +
+            $"Published service layer '{serviceName}/{serviceLayerIndex}' was not visible within {timeout.TotalSeconds} seconds. " +
             $"Last status: {(int?)lastStatusCode} {lastStatusCode}; last response: {lastPayload}");
     }
 
     private static async Task<JsonElement> WaitForPublishedLayerMetadataAsync(
         HttpClient client,
         string serviceName,
-        int layerId,
+        int serviceLayerIndex,
         TimeSpan timeout)
     {
         var deadline = DateTimeOffset.UtcNow.Add(timeout);
@@ -839,7 +848,7 @@ public sealed class CloudDeploymentValidationTests
         {
             using var request = CreateOptionalApiKeyRequest(
                 HttpMethod.Get,
-                $"/rest/services/{serviceName}/FeatureServer/{layerId}?f=json");
+                $"/rest/services/{serviceName}/FeatureServer/{serviceLayerIndex}?f=json");
             using var response = await client.SendAsync(request);
             var payload = await response.Content.ReadAsStringAsync();
             lastPayload = payload;
@@ -865,7 +874,7 @@ public sealed class CloudDeploymentValidationTests
         }
 
         throw new TimeoutException(
-            $"Published layer metadata '{serviceName}/{layerId}' was not available within {timeout.TotalSeconds} seconds. " +
+            $"Published layer metadata '{serviceName}/{serviceLayerIndex}' was not available within {timeout.TotalSeconds} seconds. " +
             $"Last status: {(int?)lastStatusCode} {lastStatusCode}; last response: {lastPayload}");
     }
 
@@ -978,5 +987,5 @@ public sealed class CloudDeploymentValidationTests
         string PrimaryKey,
         IReadOnlyList<string> Fields);
 
-    private sealed record PublishedLayerHandle(string ServiceName, int StorageLayerId);
+    private sealed record PublishedLayerHandle(string ServiceName, int ServiceLayerIndex);
 }

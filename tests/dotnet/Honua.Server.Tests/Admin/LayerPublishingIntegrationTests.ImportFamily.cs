@@ -79,9 +79,9 @@ public sealed partial class LayerPublishingIntegrationTests
             Enabled = true,
             CreateEditableCopy = true
         }, _connectionName);
-        _layerId = published.StorageLayerId;
+        TrackPublishedLayer(published);
         published.GeometryType.Should().Be("MultiPolygon");
-        using var serverMetadata = await GetGeometryJsonAsync($"/rest/services/{_serviceName}/FeatureServer/{_layerId}?f=json");
+        using var serverMetadata = await GetGeometryJsonAsync($"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}?f=json");
         serverMetadata.RootElement.GetProperty("geometryType").GetString().Should().Be("esriGeometryPolygon");
         using var ogcMetadata = await GetGeometryJsonAsync($"/ogc/features/collections/{_layerId}?f=json");
         ogcMetadata.RootElement.GetProperty("geometryType").GetString().Should().Be("MultiPolygon");
@@ -112,7 +112,7 @@ public sealed partial class LayerPublishingIntegrationTests
                 ["f"] = "json",
                 ["adds"] = $$$"""[{"attributes":{"name":"FeatureServer edit","population":4},"geometry":{"rings":{{{rings}}}}}]"""
             });
-            using var edited = await _client.PostAsync($"/rest/services/{_serviceName}/FeatureServer/{_layerId}/applyEdits", edit);
+            using var edited = await _client.PostAsync($"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}/applyEdits", edit);
             var editPayload = await edited.Content.ReadAsStringAsync();
             edited.StatusCode.Should().Be(HttpStatusCode.OK, editPayload);
             using var editResult = JsonDocument.Parse(editPayload);

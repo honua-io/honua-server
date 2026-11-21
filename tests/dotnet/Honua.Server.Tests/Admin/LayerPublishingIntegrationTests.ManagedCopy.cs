@@ -100,7 +100,7 @@ public sealed partial class LayerPublishingIntegrationTests
             PrimaryKey = "id",
             Fields = ["id", "properties"]
         }, _connectionName);
-        var sourceQuery = $"/rest/services/{_retainedSourceServiceName}/FeatureServer/{sourcePublication.StorageLayerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true";
+        var sourceQuery = $"/rest/services/{_retainedSourceServiceName}/FeatureServer/{sourcePublication.ServiceLayerIndex!.Value}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true";
         using var sourceBefore = JsonDocument.Parse(await _client.GetStringAsync(sourceQuery));
         var originalSourceFeatures = sourceBefore.RootElement.GetProperty("features").GetRawText();
         var published = await PublishLayerAsync(new PublishLayerRequest
@@ -116,8 +116,8 @@ public sealed partial class LayerPublishingIntegrationTests
             Fields = ["id", "properties"],
             CreateEditableCopy = true
         }, _connectionName);
-        _layerId = published.StorageLayerId;
-        var featureServer = $"/rest/services/{_serviceName}/FeatureServer/{_layerId}";
+        TrackPublishedLayer(published);
+        var featureServer = $"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}";
         var collection = $"/ogc/features/collections/{_layerId}/items";
         using var initial = JsonDocument.Parse(await _client.GetStringAsync($"{featureServer}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true"));
         var initialFeatures = initial.RootElement.GetProperty("features");

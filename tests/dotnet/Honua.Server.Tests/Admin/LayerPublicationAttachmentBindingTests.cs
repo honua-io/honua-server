@@ -47,7 +47,7 @@ public sealed partial class LayerPublishingIntegrationTests
         }
 
         const long parentId = 900001;
-        var layerUrl = $"/rest/services/{_serviceName}/FeatureServer/{layerId}";
+        var layerUrl = $"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}";
         var parentUrl = $"{layerUrl}/{parentId}";
         using var query = await ReadAttachmentJsonAsync($"{layerUrl}/query?objectIds={parentId}&outFields=*&returnGeometry=false&f=json");
         query.RootElement.GetProperty("features").GetArrayLength().Should().Be(1);
@@ -129,7 +129,7 @@ public sealed partial class LayerPublishingIntegrationTests
         var store = _fixture.GetService<IAttachmentStore>();
         await using var content = new MemoryStream("private parent attachment"u8.ToArray());
         var attachment = await store.UploadAsync(layerId, parentId, "parent.txt", "text/plain", content);
-        var layerUrl = $"/rest/services/{_serviceName}/FeatureServer/{layerId}";
+        var layerUrl = $"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}";
         var parentUrl = $"{layerUrl}/{parentId}";
         try
         {
@@ -195,7 +195,7 @@ public sealed partial class LayerPublishingIntegrationTests
             SupportsAttachments = true,
             Enabled = true
         });
-        _layerId = published.StorageLayerId;
+        TrackPublishedLayer(published);
         // Source publications advertise Query and Extract. Attachment writes require the
         // declared Create/Update/Delete capabilities.
         _fixture.EnableV2ServiceEditingCapabilities(

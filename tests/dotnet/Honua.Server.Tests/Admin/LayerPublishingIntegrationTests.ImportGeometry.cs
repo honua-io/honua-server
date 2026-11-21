@@ -136,10 +136,10 @@ public sealed partial class LayerPublishingIntegrationTests
             return;
         }
         var published = await PublishLayerAsync(publishRequest);
-        _layerId = published.StorageLayerId;
+        TrackPublishedLayer(published);
         published.GeometryType.Should().Be(canonicalType);
 
-        using var featureMetadata = await GetGeometryJsonAsync($"/rest/services/{_serviceName}/FeatureServer/{_layerId}?f=json");
+        using var featureMetadata = await GetGeometryJsonAsync($"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}?f=json");
         featureMetadata.RootElement.GetProperty("geometryType").GetString().Should().Be(esriType);
         featureMetadata.RootElement.GetProperty("extent").GetProperty("spatialReference")
             .GetProperty("wkid").GetInt32().Should().Be(targetSrid);

@@ -34,7 +34,7 @@ public sealed partial class LayerPublishingIntegrationTests
             ServiceName = _serviceName,
             Enabled = true
         });
-        _layerId = published.StorageLayerId;
+        TrackPublishedLayer(published);
         var graph = _fixture.GetCurrentV2GraphSnapshot();
         var binding = graph.Graph.StorageBindings.Single(candidate => candidate.StorageLayerId == published.StorageLayerId);
         binding.Options["postgresSmallintColumn:population"].GetBoolean().Should().BeTrue();
@@ -59,7 +59,7 @@ public sealed partial class LayerPublishingIntegrationTests
     private async Task AssertSmallintPublishedQueryAsync(string filter, int expectedCount)
     {
         using var response = await _client.GetAsync(
-            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json&where={Uri.EscapeDataString(filter)}&outFields=id&returnGeometry=false");
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}/query?f=json&where={Uri.EscapeDataString(filter)}&outFields=id&returnGeometry=false");
         var payload = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {payload}");
         using var document = JsonDocument.Parse(payload);

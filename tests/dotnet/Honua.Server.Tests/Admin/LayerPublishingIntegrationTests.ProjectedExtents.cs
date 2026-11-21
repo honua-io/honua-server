@@ -47,7 +47,7 @@ public sealed partial class LayerPublishingIntegrationTests
                 Fields = _idNameFields,
                 Enabled = true
             });
-            _layerId = layer.StorageLayerId;
+            TrackPublishedLayer(layer);
 
             await AssertProjectedMetadataBoundsAsync(100, 200, 300, 400);
             // Catalog caches retain their existing WGS84 contract.
@@ -143,7 +143,7 @@ public sealed partial class LayerPublishingIntegrationTests
     private async Task AssertProjectedMetadataBoundsAsync(double xmin, double ymin, double xmax, double ymax)
     {
         using var response = await _client.GetAsync(
-            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}?f=json");
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerIndex}?f=json");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var extent = document.RootElement.GetProperty("extent");
