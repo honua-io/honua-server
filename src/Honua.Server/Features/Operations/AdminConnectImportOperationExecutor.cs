@@ -70,6 +70,8 @@ internal sealed class AdminConnectImportOperationExecutor(
         }.Uri;
         using var message = new HttpRequestMessage(definition.Method, uri);
         message.Headers.Host = current.Request.Host.Value;
+        // The replay reads the caller's isolated test schema; hosts honor the header only with HONUA_TEST_SCHEMA_HEADERS on.
+        CopyHeader(current, message, "X-Honua-Test-Schema");
         AdminOperationLoopbackTls.PinServedCertificate(message, current);
         var authorizedUrlImport = (OperationId is "admin.import.upload-url" or "admin.import.upload-object") &&
             current.User.Identity?.IsAuthenticated == true &&
