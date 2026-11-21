@@ -11,6 +11,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Styling;
 using Honua.Infrastructure.Validation;
+using Honua.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Honua.Infrastructure.SharedCaching;
@@ -73,9 +74,7 @@ internal static class TileJsonEndpoints
         var maxZoom = Math.Max(minZoom, tileLimits.MaxTileZoom);
 
         var extent = await ResolveExtentAsync(resource, extentLayerId, featureReader, cancellationToken);
-        var bounds = extent.HasValue
-            ? new[] { extent.Value.MinX, extent.Value.MinY, extent.Value.MaxX, extent.Value.MaxY }
-            : null;
+        var bounds = extent.HasValue ? ToTileBounds(extent.Value, maxZoom) : null;
 
         var center = bounds == null
             ? null
@@ -120,6 +119,15 @@ internal static class TileJsonEndpoints
 
     internal static int ResolvePublicTileLayerId(MetadataV2Layer publication, int routeLayerId)
         => publication.LayerIndex ?? routeLayerId;
+
+    // A single point (or a line along one axis) would advertise zero-width bounds; widen it to
+    // one finest-zoom tile, as the OGC Tiles and WMTS discovery documents do.
+    private static double[] ToTileBounds(FeatureExtent extent, int maxZoom)
+    {
+        var (west, south, east, north) = OgcTileExtent.ExpandDegenerateAxes(
+            (extent.MinX, extent.MinY, extent.MaxX, extent.MaxY), maxZoom);
+        return [west, south, east, north];
+    }
 
     private static async Task<FeatureExtent?> ResolveExtentAsync(
         MetadataV2Object resource,
