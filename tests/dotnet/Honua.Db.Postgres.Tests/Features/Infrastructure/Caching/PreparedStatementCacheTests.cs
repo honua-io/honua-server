@@ -13,13 +13,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Infrastructure.Caching;
 
-/// <summary>
-/// Integration tests for prepared statement caching functionality
-/// </summary>
-/// <remarks>
-/// Verifies that prepared statement caching integrates properly with existing
-/// parameterized query patterns without breaking security or functionality.
-/// </remarks>
 [Collection("Database")]
 public class PreparedStatementCacheTests : IDisposable
 {
@@ -147,7 +140,7 @@ public class PreparedStatementCacheTests : IDisposable
     [Fact]
     public async Task GetOrCreatePreparedCommandAsync_ConfigureParametersGatedOnCommandText_BindsThroughCache()
     {
-        // Regression (honua-server#1749): the cache gathers parameter values on a scratch
+        // The cache gathers parameter values on a scratch
         // command before applying them onto the cloned execution command. Parameter-binding
         // callbacks that gate on CommandText (e.g. WFS GetFeature only binds OFFSET when the
         // emitted SQL actually contains an OFFSET clause) silently skipped their parameter when
@@ -165,8 +158,8 @@ public class PreparedStatementCacheTests : IDisposable
             }
         };
 
-        // First call primes the cache (MinExecutionsForCaching=2); the second returns the
-        // cloned, parameter-applied execution command that previously dropped the value.
+        // The first call primes the cache (MinExecutionsForCaching=2); the second
+        // returns a cloned execution command with its parameters applied.
         await _cache.GetOrCreatePreparedCommandAsync((NpgsqlConnection)connection, sql, configureParams);
         await using var preparedCommand = await _cache.GetOrCreatePreparedCommandAsync(
             (NpgsqlConnection)connection,
@@ -263,9 +256,6 @@ public class PreparedStatementCacheTests : IDisposable
     }
 }
 
-/// <summary>
-/// Tests for caching-aware database connection provider
-/// </summary>
 [Collection("Database")]
 public class CachingDatabaseConnectionProviderTests : IDisposable
 {

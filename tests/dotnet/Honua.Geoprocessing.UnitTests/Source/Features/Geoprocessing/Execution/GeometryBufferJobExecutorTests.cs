@@ -11,17 +11,11 @@ using Honua.ControlPlane;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NetTopologySuite.Geometries;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Direct executor coverage that does not require the durable runtime. These
-/// tests pin the failure surfaces called out by issue #1031 (slice 1):
-/// unsupported process ids must fail cleanly with a process-classified error
-/// instead of falling through to <c>NoExecutorForKind</c>, and oversized
-/// artifacts must trip the configured guardrail before publication.
-/// </summary>
 public sealed class GeometryBufferJobExecutorTests
 {
     // POINT(0 0) — same WKB the durable-runtime tests use.
@@ -100,21 +94,29 @@ public sealed class GeometryBufferJobExecutorTests
     }
 
     [UnitTest]
-    public async Task ExecuteAsync_GeodesicRequested_RejectsAsManualReview()
+    public async Task ExecuteAsync_GeodesicRequested_SucceedsWithMetricBuffer()
     {
         var executor = CreateExecutor(out _);
         var context = Substitute.For<IJobExecutionContext>();
         context.OperationId.Returns("op-geo");
 
+        string? publishedUri = null;
+        context
+            .When(c => c.PublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
+            .Do(call => publishedUri = call.ArgAt<string>(0));
+
         var record = CreateJobRecord(
             processId: GeometryBufferJobExecutor.HandledProcessId,
             includeInputs: true,
-            geodesic: "true");
+            distance: "1000",
+            geodesic: "true",
+            srid: "4326");
 
         var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
 
-        result.Status.Should().Be(ExecutionJobStatus.Failed);
-        result.ErrorMessage.Should().Contain("Geodesic", "the first-slice executor only supports CRS-units buffering");
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+        publishedUri.Should().NotBeNull();
+        publishedUri!.Should().StartWith("data:application/geo+json;base64,");
     }
 
     [UnitTest]
@@ -260,6 +262,56 @@ public sealed class GeometryBufferJobExecutorTests
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
+    public void BufferCooperatively_LargeCollection_MatchesSingleBufferArea()
+    {
+        var factory = new GeometryFactory(new PrecisionModel(), 32610);
+        var points = Enumerable.Range(0, 5)
+            .Select(i => factory.CreatePoint(new Coordinate(i * 10d, 0d)))
+            .ToArray();
+        var multi = factory.CreateMultiPoint(points);
+
+        var direct = multi.Buffer(5d);
+        var chunked = GeometryBufferJobExecutor.BufferCooperatively(new GeometryBufferJobExecutor.BufferCooperativeRequest
+        {
+            Geometry = multi,
+            Distance = 5d,
+            CancellationToken = CancellationToken.None,
+            ChunkSize = 2,
+        });
+
+        chunked.IsEmpty.Should().BeFalse();
+        chunked.Area.Should().BeApproximately(direct.Area, 1e-6);
+    }
+
+    [UnitTest]
+    public void BufferCooperatively_StopsBetweenChunks_WhenCancelled()
+    {
+        var factory = new GeometryFactory(new PrecisionModel(), 32610);
+        var points = Enumerable.Range(0, 5)
+            .Select(i => factory.CreatePoint(new Coordinate(i * 10d, 0d)))
+            .ToArray();
+        var multi = factory.CreateMultiPoint(points);
+        using var cts = new CancellationTokenSource();
+        var chunks = 0;
+
+        var act = () => GeometryBufferJobExecutor.BufferCooperatively(new GeometryBufferJobExecutor.BufferCooperativeRequest
+        {
+            Geometry = multi,
+            Distance = 5d,
+            CancellationToken = cts.Token,
+            ChunkSize = 1,
+            AfterChunk = _ =>
+            {
+                chunks++;
+                cts.Cancel();
+            },
+        });
+
+        act.Should().Throw<OperationCanceledException>();
+        chunks.Should().Be(1);
     }
 
     // -------------------------------------------------------------------------

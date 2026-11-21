@@ -12,11 +12,6 @@ using Xunit;
 
 namespace Honua.Db.Postgres.Security.Tests;
 
-/// <summary>
-/// Tests for <see cref="SecureConnectionResolver"/> verifying that SSL/TLS
-/// enforcement rejects plaintext-fallback SSL modes and that secret-reference
-/// resolution rejects host/port mismatches against the registered connection.
-/// </summary>
 public sealed class SecureConnectionResolverSslModeTests
 {
     [Trait("Tier", "Fast")]
@@ -95,8 +90,8 @@ public sealed class SecureConnectionResolverSslModeTests
         // A secret-reference connection created without a declared host/port (see
         // SecureConnectionEndpoints.CreateConnection, which leaves them blank rather than
         // asserting a value the caller never supplied) makes no host/port assertion to
-        // tamper-check against. The resolved secret's host/port stand unchallenged
-        // (honua-server#2949) — unlike the mismatch cases above, where the connection
+        // tamper-check against. The resolved secret's host/port stand unchallenged —
+        // unlike the mismatch cases above, where the connection
         // explicitly declares "db.example.com:5432" and a disagreeing secret is tamper.
         var connection = DataConnection.CreateWithSecretReference(
             name: "production-analytics",
@@ -135,7 +130,7 @@ public sealed class SecureConnectionResolverSslModeTests
         // exact placeholder as "no host declared" the same way it recognizes string.Empty;
         // comparing it against the resolved secret's real host would reject the documented/common
         // case of every secret-reference connection created through the admin API without a
-        // declared host (honua-server#2949).
+        // declared host.
         var connection = DataConnection.CreateWithSecretReference(
             name: "production-analytics",
             host: DataConnection.SecretReferenceMetadataPlaceholder,
@@ -173,7 +168,7 @@ public sealed class SecureConnectionResolverSslModeTests
     [InlineData("Include Error Detail=true")]
     public async Task ResolveConnectionStringAsync_SecretWithKeywordOutsideAllowlist_ThrowsInvalidOperation(string keyword)
     {
-        // SEC-23: a resolved PostgreSQL connection string may carry only the endpoint, credential,
+        // a resolved PostgreSQL connection string may carry only the endpoint, credential,
         // TLS-mode and tuning keywords the server supports; anything else is refused.
         var connection = CreateSecretReferenceConnection(host: "db.example.com", port: 5432);
         var resolver = CreateResolver(
@@ -213,7 +208,7 @@ public sealed class SecureConnectionResolverSslModeTests
     [InlineData("Host=db.example.com,other.example.net;Port=5432;Database=analytics;Username=app;Password=secret;SslMode=Require")]
     public async Task ResolveConnectionStringAsync_ResolvedHostOutsideHostPolicy_ThrowsInvalidOperation(string resolvedConnectionString)
     {
-        // SEC-23: the host policy applies to every host the resolved string names, including a
+        // the host policy applies to every host the resolved string names, including a
         // secret-reference connection that declared no host of its own.
         var connection = CreateSecretReferenceConnection(host: DataConnection.SecretReferenceMetadataPlaceholder, port: 0);
         var resolver = CreateResolver(

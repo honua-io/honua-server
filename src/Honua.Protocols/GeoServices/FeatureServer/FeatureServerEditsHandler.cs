@@ -69,7 +69,7 @@ internal sealed class FeatureServerEditsHandler(
     {
         var httpContext = _httpContextAccessor.HttpContext!;
 
-        // FeatureServer editing is a Pro entitlement (#1591) scoped to the Esri GeoServices
+        // FeatureServer editing is a Pro entitlement scoped to the Esri GeoServices
         // surface only — open-protocol edits are Community. All FeatureServer write
         // entrypoints (applyEdits/add/update/delete and service-level applyEdits) funnel through
         // this shared handler, so the gate is enforced once here for the whole GeoServices surface.
@@ -80,7 +80,7 @@ internal sealed class FeatureServerEditsHandler(
             return editsGate;
         }
 
-        // Server-side at-most-once (#2250): validate the optional Idempotency-Key header up front so a
+        // Server-side at-most-once: validate the optional Idempotency-Key header up front so a
         // malformed header fails fast with a 400 before any edit work, rather than being silently ignored.
         // An explicit override (calculate batches) does not re-read the shared header.
         string? idempotencyKey;
@@ -100,7 +100,7 @@ internal sealed class FeatureServerEditsHandler(
             httpContext.TraceIdentifier);
         scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId);
 
-        // Tracks the idempotency reservation this request owns (#3052) and the token that proves
+        // Tracks the idempotency reservation this request owns and the token that proves
         // ownership. Set the moment TryReserveAsync wins; the finally block below releases it
         // unless the write may have committed rows, so no post-reservation exit — rejection,
         // rollback, cancellation before dispatch, or a confirmed zero-row response — can leave the
@@ -179,7 +179,7 @@ internal sealed class FeatureServerEditsHandler(
                 return limitsValidationResult;
             }
 
-            // Resolve the target branch version (#1272, ADR-0051). Absent / SDE.DEFAULT resolves to
+            // Resolve the target branch version (ADR-0051). Absent / SDE.DEFAULT resolves to
             // VersionContext.Default — the byte-identical non-versioned write path. A named version
             // is Pro-gated and Postgres-only.
             var (versionContext, versionError) = await FeatureServerVersioning.ResolveEditVersionAsync(
@@ -205,7 +205,7 @@ internal sealed class FeatureServerEditsHandler(
 
             // Metadata capabilities are an editing contract, not merely advisory text. Reject
             // an edit kind that the published service did not declare instead of allowing the
-            // handler to expose a broader surface than Esri clients were told exists (#4073).
+            // handler to expose a broader surface than Esri clients were told exists.
             var undeclaredOperation = request.Adds?.Length > 0 && !FeatureServerEndpoints.ServiceSupportsOperationV2(service, "Create", publication)
                 ? "Create"
                 : request.Updates?.Length > 0 && !FeatureServerEndpoints.ServiceSupportsOperationV2(service, "Update", publication)
@@ -261,8 +261,13 @@ internal sealed class FeatureServerEditsHandler(
                 }
             }
 
+            if (FeatureServerEditRefusals.ForSourceTable(httpContext, snapshot, publication) is { } sourceTableRefusal)
+            {
+                return sourceTableRefusal;
+            }
+
             // Resolve the authenticated principal once so owner-based edit policies
-            // (ownership-based access control, #2132) are enforced consistently in the
+            // (ownership-based access control) are enforced consistently in the
             // shared edit pipeline rather than by caller discipline.
             var editPrincipal = ResolveEditPrincipal(httpContext);
 
@@ -290,7 +295,7 @@ internal sealed class FeatureServerEditsHandler(
 
                 // Atomic reserve: only one concurrent request carrying the same Idempotency-Key may
                 // proceed to execute the edit. The loser returns 409 so the client can retry after the
-                // winner has written the response; the retry will hit the replay path above (#2250, BH5-001).
+                // winner has written the response; the retry will hit the replay path above (BH5-001).
                 var reservationToken = await _idempotencyStore.TryReserveAsync(replayScope, cancellationToken).ConfigureAwait(false);
                 if (reservationToken is null)
                 {
@@ -302,7 +307,7 @@ internal sealed class FeatureServerEditsHandler(
                     // serialized at all once reflection-based serialization is off — Honua.Server
                     // sets JsonSerializerIsReflectionEnabledByDefault=false — so this branch's
                     // payload was the one applyEdits response that was neither AOT-safe nor
-                    // protocol-shaped (#3052).
+                    // protocol-shaped.
                     return StandardErrorHelpers.CreateConflict(httpContext,
                         "A concurrent request with the same Idempotency-Key is already being processed. Retry after a brief delay.");
                 }
@@ -319,7 +324,7 @@ internal sealed class FeatureServerEditsHandler(
             // updates with that snapshot's token, then re-read, merge and validate again only
             // after a confirmed precondition failure. Never retry an ambiguous commit or a
             // caller-supplied precondition, and never replay a multi-operation request.
-            // Collaborative-editing lock enforcement (#4402). A lease handed out by
+            // Collaborative-editing lock enforcement. A lease handed out by
             // /collaboration/feature-locks is binding on this write path: an update or
             // delete of a feature another editor currently holds is rejected with the
             // stable per-feature FeatureLocked code instead of silently overwriting the
@@ -403,24 +408,24 @@ internal sealed class FeatureServerEditsHandler(
             var finalResponse = BuildFinalResponse(editContext, editResult);
             // The edit moment is taken once the write has returned and travels with the response the
             // idempotency store records below, so a replayed retry reports when the edits were
-            // originally applied (#4105). The endpoint emits it only when returnEditMoment=true.
+            // originally applied. The endpoint emits it only when returnEditMoment=true.
             finalResponse.EditMoment = (httpContext.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System)
                 .GetUtcNow()
                 .ToUnixTimeMilliseconds();
             FeatureServerLog.ApplyEditsCompleted(_logger, serviceId, layerId, finalResponse.Success);
 
-            // Record the response for at-most-once replay (#2250) only when the edit actually committed
+            // Record the response for at-most-once replay only when the edit actually committed
             // rows. A fully-failed/no-op request is intentionally not recorded so a genuine retry is
             // re-attempted rather than replaying a no-op failure. Best-effort: the store swallows errors.
             if (idempotencyScope is { } recordScope && heldReservationToken is { } recordToken && editCommittedRows)
             {
                 // The reservation is replaced by the recorded response rather than released: a
                 // successful key stays occupied for the whole dedupe window so a duplicate retry
-                // replays this response instead of re-applying the edit (#2250). The finally block
+                // replays this response instead of re-applying the edit. The finally block
                 // below skips the release for exactly this reason (writeOutcome.MayHaveCommitted).
                 // The response is stored only while this request still owns the reservation.
                 // An ambient calculate transaction has not committed yet. Recording now would make
-                // a rolled-back batch replay as success and skip the write on retry (#6359).
+                // a rolled-back batch replay as success and skip the write on retry.
                 if (ambientTransaction is null)
                 {
                     await _idempotencyStore.SetAsync(recordScope, recordToken, finalResponse, CancellationToken.None).ConfigureAwait(false);
@@ -442,7 +447,7 @@ internal sealed class FeatureServerEditsHandler(
         {
             // A batch-level validation failure is a client error. Mapping it to 500 made one
             // bad add fail the whole request, including rows that rollbackOnFailure=false
-            // should have kept (#6133). Per-slot failures are reported on the edit result
+            // should have kept. Per-slot failures are reported on the edit result
             // instead; this is the leftover that never reached a slot.
             FeatureServerLog.ApplyEditsFailed(_logger, serviceId, layerId, ex.Message, ex);
             scope.RecordException(ex);
@@ -455,7 +460,7 @@ internal sealed class FeatureServerEditsHandler(
         // provider's documented posture, not an internal failure, so map it through the
         // shared exception mapping (405 Method Not Allowed) instead of a generic 500 —
         // mirroring the explicit NotSupportedException handling the OGC API Features
-        // transaction handlers already do (honua-server#2983).
+        // transaction handlers already do.
         catch (NotSupportedException ex)
         {
             FeatureServerLog.ApplyEditsFailed(_logger, serviceId, layerId, ex.Message, ex);
@@ -472,8 +477,8 @@ internal sealed class FeatureServerEditsHandler(
         }
         finally
         {
-            // Release the reservation only when this request provably put nothing in the database
-            // (#3052). That covers every post-reservation exit that recorded no replay value and
+            // Release the reservation only when this request provably put nothing in the database.
+            // That covers every post-reservation exit that recorded no replay value and
             // committed nothing: a rejection or cancellation before the write was dispatched, the
             // read-only provider's blanket NotSupportedException, the rollbackOnFailure validation
             // response, a rolled-back batch, and a confirmed zero-row response (which
@@ -722,7 +727,7 @@ internal sealed class FeatureServerEditsHandler(
                 // row does not exist OR is hidden from this caller by row-level security. The
                 // edit SQL filters only on (layer_id, objectid) with no RLS predicate, so the
                 // not-found rejection MUST be unconditional — skipping it on the default-OBJECTID
-                // fast path would let a caller mutate an RLS-hidden row (#2066).
+                // fast path would let a caller mutate an RLS-hidden row.
                 if (existingFeature is null)
                 {
                     context.HasValidationErrors = true;
@@ -736,7 +741,7 @@ internal sealed class FeatureServerEditsHandler(
                 // existingFeature is guaranteed to have a value here (the null case returns above),
                 // so the previous `existingFeature?.Id ?? objectId` had a dead `?? objectId` branch
                 // that could never execute; access .Value.Id directly instead.
-                // Collaborative-editing lease enforcement (#4402): reject the slot when
+                // Collaborative-editing lease enforcement: reject the slot when
                 // another editor holds an active lock on this feature. Emitted as the stable
                 // per-feature FeatureLocked code so an Esri client can branch on it, and
                 // recorded as a validation error so rollbackOnFailure=true fails the whole
@@ -794,7 +799,7 @@ internal sealed class FeatureServerEditsHandler(
                 context.UpdateFeatures.Add(updateFeature);
                 // The full merged row above serves rules, validation, hooks and events. The
                 // DEFAULT writer receives only what this request changes, so the row it locks
-                // supplies every other field and the omitted geometry (#6094). The versioned
+                // supplies every other field and the omitted geometry. The versioned
                 // overlay writer persists the payload verbatim and keeps the merged row.
                 context.UpdateWriteFeatures.Add(versionContext is { IsDefault: false }
                     ? updateFeature
@@ -921,8 +926,8 @@ internal sealed class FeatureServerEditsHandler(
             // so a null result means the row is missing OR hidden from this caller by RLS. The
             // DELETE SQL filters only on (layer_id, objectid) with no RLS predicate, so ordinary
             // requests MUST reject this result — skipping it on the default-OBJECTID fast path would
-            // let a caller delete an RLS-hidden row (#2066). The only exception below is a server-only
-            // expected-absence precondition, which the transactional writer re-validates (#2430).
+            // let a caller delete an RLS-hidden row. The only exception below is a server-only
+            // expected-absence precondition, which the transactional writer re-validates.
             if (existingFeature is null)
             {
                 if (expectedAbsentObjectIds?.Contains(objectId) == true && usesInternalObjectIds)
@@ -931,7 +936,7 @@ internal sealed class FeatureServerEditsHandler(
                     // precondition, not a validation failure: dispatch the no-op delete so the writer
                     // reserves the logical key and re-checks absence inside its transaction. A
                     // concurrent insert then fails the precondition instead of being deleted after
-                    // this pre-read (#2430).
+                    // this pre-read.
                     context.DeleteIds.Add(objectId);
                     context.DeleteResponseObjectIds.Add(objectId);
                     context.DeleteIndexes.Add(i);
@@ -954,7 +959,7 @@ internal sealed class FeatureServerEditsHandler(
                 continue;
             }
 
-            // Owner-based edit policy (#2132, #5426): the batch owner read is not copied
+            // Owner-based edit policy: the batch owner read is not copied
             // onto the masked feature the caller already holds. A non-owner is still refused.
             var deleteSnapshot = SnapshotFor(ownerSnapshots, existingFeature.Value.Id);
             var ownerDecision = OwnerEditPolicyFieldAccess.Decide(
@@ -972,7 +977,7 @@ internal sealed class FeatureServerEditsHandler(
                 continue;
             }
 
-            // Collaborative-editing lease enforcement (#4402), same contract as the update
+            // Collaborative-editing lease enforcement, same contract as the update
             // path: a feature another editor holds cannot be deleted out from under them.
             if (await EvaluateEditLockAsync(context.LockScope, objectId, "delete", cancellationToken)
                     .ConfigureAwait(false) is { } deleteLockConflict)
@@ -1064,7 +1069,7 @@ internal sealed class FeatureServerEditsHandler(
         // Server-side optimistic-concurrency preconditions, when the caller supplied them. The writer
         // re-checks each token against the locked row inside the write transaction, so a concurrent
         // edit between the caller's check and this write fails the operation instead of being
-        // overwritten (#2430). Absent for ordinary wire requests, which leaves the batch unchanged.
+        // overwritten. Absent for ordinary wire requests, which leaves the batch unchanged.
         if (!request.Preconditions.IsDefaultOrEmpty)
         {
             editBatch = editBatch with
@@ -1079,7 +1084,7 @@ internal sealed class FeatureServerEditsHandler(
         }
 
         // Thread the resolved branch version onto the canonical edit batch. A null/DEFAULT context
-        // leaves the byte-identical non-versioned write path unchanged (#1272, ADR-0051).
+        // leaves the byte-identical non-versioned write path unchanged (ADR-0051).
         if (versionContext is { IsDefault: false })
         {
             editBatch = editBatch with { VersionContext = versionContext };
@@ -1111,11 +1116,11 @@ internal sealed class FeatureServerEditsHandler(
         // when rollbackOnFailure=false the writer commits rows independently, so an exception out of
         // ApplyEditsAsync — a cancellation between rows, a transport fault mid-batch — can unwind
         // with rows already committed and no result to inspect. Raise the flag BEFORE dispatching so
-        // the handler's finally keeps the idempotency reservation in exactly that case (#3052); the
+        // the handler's finally keeps the idempotency reservation in exactly that case; the
         // caller lowers it again only when the returned result proves nothing landed.
         // An ambient transaction commits only after every calculate batch succeeds. Raising
         // the flag here would treat a staged batch as durable and pin its idempotency key
-        // across a later rollback (#6359).
+        // across a later rollback.
         if (writerTransaction is null)
         {
             writeOutcome.MayHaveCommitted = true;
@@ -1818,7 +1823,7 @@ internal sealed class FeatureServerEditsHandler(
         }
 
         // Drop client GlobalID, editor-tracking, and (on insert) other non-editable
-        // values before validation. Stamp replaces them after rules run (#6134).
+        // values before validation. Stamp replaces them after rules run.
         attributesToValidate = ServerMaintainedEditFields.OmitClientValues(
             resource,
             attributesToValidate,
@@ -1890,7 +1895,7 @@ internal sealed class FeatureServerEditsHandler(
             }
         }
 
-        // Owner-based edit policy (#2132, #5426): authorize update against the batch's
+        // Owner-based edit policy: authorize update against the batch's
         // unmasked owner read and stamp the owner on insert. That read is not copied into
         // attributes. When the owner was masked, the writer keeps the stored value via
         // PreserveOmittedMaskedAttributes, so the response still omits it.
@@ -1943,7 +1948,7 @@ internal sealed class FeatureServerEditsHandler(
             useGlobalIds,
             existingFeature?.Attributes);
 
-        // Contingent-value enforcement (#2133): the effective merged attribute row (existing
+        // Contingent-value enforcement: the effective merged attribute row (existing
         // values + this edit) must satisfy the resource's restrictive contingent-value groups.
         // An invalid cross-field combination is rejected per-feature naming the offending group.
         var contingentResult = ContingentValueValidator.Validate(resource, attributes);
@@ -2344,7 +2349,7 @@ internal sealed class FeatureServerEditsHandler(
             };
         }
 
-        // Map the writer's typed outcome onto the stable per-feature conflict code (#2251)
+        // Map the writer's typed outcome onto the stable per-feature conflict code
         // so clients can classify deterministically (e.g. update-update vs delete-delete)
         // without parsing the free-form description.
         return CreateFailureResult(
@@ -2508,7 +2513,7 @@ internal sealed class FeatureServerEditsHandler(
 
         // The caller's finally rolls this transaction back and releases reservations while
         // PreserveReservations is false. Set it before the receipt and hook awaits so a throw
-        // cannot turn a durable calculate into a second apply on retry (#6359).
+        // cannot turn a durable calculate into a second apply on retry.
         ambient.PreserveReservations = true;
 
         var recordedTokens = new HashSet<string>(ambient.Recorded.Count, StringComparer.Ordinal);

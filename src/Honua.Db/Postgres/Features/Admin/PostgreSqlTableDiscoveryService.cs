@@ -3,6 +3,7 @@
 
 using System.Data.Common;
 using System.Globalization;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -13,17 +14,41 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Admin;
 
+internal sealed record PostgreSqlTableDiscoveryOptions(
+    ISchemaContext? SchemaContext = null,
+    PostgresSchemaConfiguration? SchemaConfiguration = null,
+    Func<string, CancellationToken, ValueTask<NpgsqlConnection>>? ConnectionFactory = null);
+
 internal sealed class PostgreSqlTableDiscoveryService(
     ILogger<PostgreSqlTableDiscoveryService> logger,
-    ISchemaContext? schemaContext = null,
-    PostgresSchemaConfiguration? schemaConfiguration = null) : ITableDiscoveryService
+    PostgreSqlTableDiscoveryOptions options) : ITableDiscoveryService
 {
     private readonly ILogger<PostgreSqlTableDiscoveryService> _logger = logger;
-    private readonly ISchemaContext? _schemaContext = schemaContext;
-    private readonly PostgresSchemaConfiguration _schemaConfiguration = schemaConfiguration ?? new PostgresSchemaConfiguration(
+    private readonly ISchemaContext? _schemaContext = options.SchemaContext;
+    private readonly PostgresSchemaConfiguration _schemaConfiguration = options.SchemaConfiguration ?? new PostgresSchemaConfiguration(
         PostgresSchemaConfiguration.DefaultMetadataSchema,
         PostgresSchemaConfiguration.DefaultDataSchema,
         [PostgresSchemaConfiguration.DefaultDataSchema, "public"]);
+
+    public PostgreSqlTableDiscoveryService(
+        ILogger<PostgreSqlTableDiscoveryService> logger,
+        ISchemaContext? schemaContext = null,
+        PostgresSchemaConfiguration? schemaConfiguration = null)
+        : this(logger, new PostgreSqlTableDiscoveryOptions(schemaContext, schemaConfiguration))
+    {
+    }
+
+    private async ValueTask<NpgsqlConnection> CreateConnectionAsync(
+        string connectionString,
+        CancellationToken cancellationToken)
+    {
+        if (options.ConnectionFactory is not null)
+        {
+            return await options.ConnectionFactory(connectionString, cancellationToken).ConfigureAwait(false);
+        }
+
+        return new NpgsqlConnection(connectionString);
+    }
 
     public async Task<List<TableInfo>> DiscoverPostGisTablesAsync(
         string connectionString,
@@ -33,8 +58,15 @@ internal sealed class PostgreSqlTableDiscoveryService(
 
         try
         {
-            await using var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync(cancellationToken);
+            await using var connection = await CreateConnectionAsync(connectionString, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is DbException or TimeoutException or System.Security.Authentication.AuthenticationException)
+            {
+                throw new ServiceUnavailableException("The database connection could not be opened.", ex);
+            }
 
             return await DiscoverPostGisTablesCoreAsync(connection, cancellationToken);
         }
@@ -232,7 +264,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
 
         try
         {
-            await using var connection = new NpgsqlConnection(connectionString);
+            await using var connection = await CreateConnectionAsync(connectionString, cancellationToken).ConfigureAwait(false);
             await connection.OpenAsync(cancellationToken);
 
             await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);

@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Diagnostics.CodeAnalysis;
+using Honua.Core.Features.Edit;
 using Honua.Plugins.Abstractions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -37,11 +38,15 @@ public static class ServiceCollectionExtensions
         // aggregates are singletons (safe to consume from a scoped service).
         services.TryAddScoped<IPluginEditPipeline, PluginEditPipeline>();
 
+        // Replace, not TryAdd: edit protocols register the no-op hooks so they work without
+        // plugins, and the plugin hooks must win whichever registration runs first.
+        services.Replace(ServiceDescriptor.Scoped<IFeatureEditHooks, PluginFeatureEditHooks>());
+
         // Computed-field pipeline is read-path only and consumes singleton providers + the
         // singleton license service, so it can be a singleton.
         services.TryAddSingleton<IComputedFieldPipeline, ComputedFieldPipeline>();
 
-        // Output-format registry (issue #2856, ADR-0067). Registered as the real, license-gated
+        // Output-format registry (ADR-0067). Registered as the real, license-gated
         // registry only when at least one output-format plugin is present; otherwise the export /
         // format-negotiation seam gets the zero-overhead no-op so it can depend on
         // IFeatureOutputFormatRegistry unconditionally. It aggregates singleton IFeatureOutputFormat

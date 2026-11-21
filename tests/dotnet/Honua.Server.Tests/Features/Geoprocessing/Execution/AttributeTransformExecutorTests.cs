@@ -18,14 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// In-memory unit coverage for the reconciled GeoETL attribute transform
-/// executors (transform.attribute-rename, transform.attribute-cast,
-/// transform.computed-field, transform.attribute-filter). Each builds an input
-/// FeatureCollection, runs the executor, and asserts the published
-/// FeatureCollection data URI carries the expected attributes through. Mirrors
-/// the slice-5 geometry.dissolve executor test shape.
-/// </summary>
 public sealed class AttributeTransformExecutorTests
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";
@@ -177,12 +169,12 @@ public sealed class AttributeTransformExecutorTests
         ReadFeatures(uri!).Should().HaveCount(1);
     }
 
-    // ----- BH-022 regression: non-numeric values must FAIL all numeric comparisons -----
+    // ----- non-numeric values must FAIL all numeric comparisons -----
 
     [UnitTest]
     public async Task AttributeFilter_Lt_WithNonNumericField_ExcludesNonNumericRows()
     {
-        // BH-022: int.MinValue was returned for non-numeric operands; because
+        // int.MinValue was returned for non-numeric operands; because
         // int.MinValue < 0 is true, every non-numeric row falsely passed 'lt'.
         var executor = new AttributeFilterTransformExecutor(Options());
         var input = BuildInputUri(
@@ -208,7 +200,7 @@ public sealed class AttributeTransformExecutorTests
     [UnitTest]
     public async Task AttributeFilter_Lte_WithNonNumericField_ExcludesNonNumericRows()
     {
-        // BH-022: lte also used int.MinValue comparison and falsely admitted non-numeric rows.
+        // lte also used int.MinValue comparison and falsely admitted non-numeric rows.
         var executor = new AttributeFilterTransformExecutor(Options());
         var input = BuildInputUri(
             Feature(Point(0, 0), ("score", 10.0)),

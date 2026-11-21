@@ -24,14 +24,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OperationsRedisOff;
 
-/// <summary>
-/// 2026.1 rc.3 J1/S1: a host composed without Redis must still advertise the governed
-/// <c>honua_admin_*</c> catalog and refuse proposal-requiring calls with the typed
-/// capability-unavailable outcome. Before the fix the 20 <see cref="AdminApiOperationCatalog"/>
-/// tools were silently absent on Redis-off cells, because <c>AddOperationsToolset</c> gates their
-/// executors on a registered <see cref="IOperationProposalStore"/> and Program.cs registered one
-/// only inside the Redis block.
-/// </summary>
 public sealed class RedisOffGovernedControlPlaneTests
 {
     [UnitTest]
@@ -132,7 +124,7 @@ public sealed class RedisOffGovernedControlPlaneTests
     [UnitTest]
     public async Task RedisOffComposition_ApprovalBridge_RefusesWithTypedSystemDatabaseDependency()
     {
-        // honua-server#5733: even where the operation record itself is volatile (Development/Test),
+        // Even where the operation record itself is volatile (Development/Test),
         // an approval-gated call must not invent a proposal, and must not degrade to a non-durable
         // failure every adapter projects as an untyped 500. The bridge refuses with the typed
         // capability-unavailable receipt the rest of the Redis-off surface emits.

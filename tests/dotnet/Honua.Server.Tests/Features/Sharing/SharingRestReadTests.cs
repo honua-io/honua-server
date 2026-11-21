@@ -17,17 +17,11 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Sharing;
 
-/// <summary>
-/// Integration tests for the read-only ArcGIS Portal/Sharing REST surface (#1243):
-/// <c>info</c>, <c>portals/self</c>, <c>community/self</c>, <c>search</c>, and
-/// <c>content/items/{id}</c>. Verifies the Esri response shapes, RBAC-scoped
-/// visibility through <c>IPortalItemProjector</c>, paging, and entitlement gating.
-/// </summary>
 [Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
-public sealed class SharingRestReadTests : IAsyncLifetime
+public sealed class SharingRestReadTests : IClassFixture<SharingRestReadTests.ReadHost>
 {
     private const string AdminPassword = WebAppFixture.SharedAdminPassword;
     private const string PublicServiceId = "public-svc";
@@ -41,20 +35,22 @@ public sealed class SharingRestReadTests : IAsyncLifetime
 
     private readonly WebAppFixture _fixture;
 
-    public SharingRestReadTests()
+    public SharingRestReadTests(ReadHost host)
     {
-        _fixture = CreateFixture();
+        _fixture = host.Fixture;
     }
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+    // Cases on the default graph only send anonymous reads, so one application serves them all;
+    // each case still creates its own client. Cases with other settings build their own.
+    public sealed class ReadHost : IAsyncLifetime
+    {
+        public WebAppFixture Fixture { get; } = CreateFixture();
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+        public Task InitializeAsync() => Fixture.InitializeAsync();
 
-    /// <summary>
-    /// Builds a fixture with a fixed Metadata v2 graph: one anonymously-readable
-    /// FeatureServer, one role-restricted FeatureServer, and one non-Esri (OGC)
-    /// service that must never project to a portal item.
-    /// </summary>
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
+
     private static WebAppFixture CreateFixture()
     {
         var graph = new TestMetadataV2GraphBuilder()

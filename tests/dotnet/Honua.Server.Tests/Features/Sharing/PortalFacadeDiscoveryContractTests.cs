@@ -20,35 +20,11 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Sharing;
 
-/// <summary>
-/// End-to-end conformance for the ArcGIS Portal/Sharing facade discovery flow that
-/// packaged Esri clients (ArcGIS Pro "Add Portal", Field Maps) drive (epic #1240,
-/// child #1372). Where <see cref="SharingRestReadTests"/> proves the anonymous read
-/// surface and <see cref="SharingRestTokenTests"/> proves token issuance, this suite
-/// closes the two coverage gaps the epic acceptance criteria call out:
-/// <list type="number">
-/// <item>
-/// the full <c>public</c>/<c>org</c>/<c>private</c> RBAC-projected access ladder — the
-/// existing read tests only exercise <c>public</c> and role-restricted items
-/// <em>anonymously</em>, never the <c>org</c> tier nor a token-authenticated caller; and
-/// </item>
-/// <item>
-/// the exact Esri wire shapes a real client is strict about: <c>generateToken</c>'s
-/// <c>expires</c> as Unix <em>milliseconds</em> (not seconds), and the
-/// <c>portals/self</c>/<c>community/self</c> user blocks that only appear once a token
-/// authenticates the request.
-/// </item>
-/// </list>
-/// The access tier is a projection of the shared RBAC evaluator, so the fixture uses a
-/// <c>portal-admin</c>-restricted private service to prove the admin-issued token sees
-/// <c>public</c> + <c>org</c> content but is still denied the role-gated <c>private</c>
-/// item — i.e. the Portal <c>access</c> string cannot drift from the real access decision.
-/// </summary>
-[Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
-public sealed class PortalFacadeDiscoveryContractTests : IAsyncLifetime
+public sealed class PortalFacadeDiscoveryContractTests(PortalFacadeDiscoveryContractTests.DiscoveryHost host)
+    : IClassFixture<PortalFacadeDiscoveryContractTests.DiscoveryHost>
 {
     private const string AdminPassword = WebAppFixture.SharedAdminPassword;
     private const string PublicServiceId = "portal-public-svc";
@@ -66,41 +42,16 @@ public sealed class PortalFacadeDiscoveryContractTests : IAsyncLifetime
         PropertyNameCaseInsensitive = true,
     };
 
-    private readonly WebAppFixture _fixture;
+    private readonly WebAppFixture _fixture = host.Application;
 
-    public PortalFacadeDiscoveryContractTests()
+    // One host for the class: every case reads the discovery projection or issues a token
+    // of its own, and neither generateToken nor the issuer caps or rate-limits a principal.
+    // The stamped client IP is tracked by the failed-attempt gate, so a case that posts bad
+    // credentials belongs on a host of its own.
+    public sealed class DiscoveryHost : IAsyncLifetime
     {
-        var graph = new TestMetadataV2GraphBuilder()
-            .AddService(
-                PublicServiceId,
-                "Public Basemap",
-                protocols: [ServiceProtocols.FeatureServer],
-                accessPolicy: new AccessPolicy { AllowAnonymous = true })
-            .AddService(
-                OrgServiceId,
-                "Org Operational Layers",
-                protocols: [ServiceProtocols.FeatureServer],
-                // No AllowAnonymous, no role restriction -> any authenticated principal
-                // is allowed, which the projector maps to the "org" access tier.
-                accessPolicy: new AccessPolicy())
-            .AddService(
-                PrivateServiceId,
-                "Restricted Parcels",
-                protocols: [ServiceProtocols.FeatureServer],
-                // Role-gated: the admin token (role "admin") must NOT satisfy this,
-                // proving the "private" tier and that access cannot drift from RBAC.
-                accessPolicy: new AccessPolicy { AllowedRoles = ["portal-admin"] })
-            .Build();
-
-        graph = graph with
-        {
-            Services = graph.Services.Select(service => service.Metadata.Id == OrgServiceId
-                ? service with { Metadata = service.Metadata with { Publisher = "gis-team", Description = "status:deprecated" } }
-                : service).ToArray(),
-        };
-
-        _fixture = new WebAppFixture()
-            .ReplaceService<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph))
+        public WebAppFixture Application { get; } = new WebAppFixture()
+            .ReplaceService<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(BuildGraph()))
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -112,11 +63,43 @@ public sealed class PortalFacadeDiscoveryContractTests : IAsyncLifetime
                 builder.ConfigureServices(services =>
                     services.AddSingleton<IStartupFilter>(new RemoteIpStartupFilter(ClientIp)));
             });
+
+        public Task InitializeAsync() => Application.InitializeAsync();
+
+        public Task DisposeAsync() => Application.DisposeAsync();
+
+        private static MetadataV2Graph BuildGraph()
+        {
+            var graph = new TestMetadataV2GraphBuilder()
+                .AddService(
+                    PublicServiceId,
+                    "Public Basemap",
+                    protocols: [ServiceProtocols.FeatureServer],
+                    accessPolicy: new AccessPolicy { AllowAnonymous = true })
+                .AddService(
+                    OrgServiceId,
+                    "Org Operational Layers",
+                    protocols: [ServiceProtocols.FeatureServer],
+                    // No AllowAnonymous, no role restriction -> any authenticated principal
+                    // is allowed, which the projector maps to the "org" access tier.
+                    accessPolicy: new AccessPolicy())
+                .AddService(
+                    PrivateServiceId,
+                    "Restricted Parcels",
+                    protocols: [ServiceProtocols.FeatureServer],
+                    // Role-gated: the admin token (role "admin") must NOT satisfy this,
+                    // proving the "private" tier and that access cannot drift from RBAC.
+                    accessPolicy: new AccessPolicy { AllowedRoles = ["portal-admin"] })
+                .Build();
+
+            return graph with
+            {
+                Services = graph.Services.Select(service => service.Metadata.Id == OrgServiceId
+                    ? service with { Metadata = service.Metadata with { Publisher = "gis-team", Description = "status:deprecated" } }
+                    : service).ToArray(),
+            };
+        }
     }
-
-    public Task InitializeAsync() => _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTheory]
     [InlineData(PublicServiceId, true)]
@@ -329,10 +312,6 @@ public sealed class PortalFacadeDiscoveryContractTests : IAsyncLifetime
             ?? throw new InvalidOperationException("Empty token response body.");
     }
 
-    /// <summary>
-    /// Stamps a fixed remote IP onto each request so IP-bound token flows behave as they
-    /// do behind Kestrel, where Connection.RemoteIpAddress is always populated.
-    /// </summary>
     private sealed class RemoteIpStartupFilter(IPAddress remoteIp) : IStartupFilter
     {
         public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)

@@ -14,11 +14,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Tests.Features.Studio;
 
-/// <summary>
-/// Role-fixture matrix for <see cref="StudioAuthorizationService"/> (honua-server#3001): flag
-/// on/off, admin vs. non-admin, own vs. cross-user resources, and the elevated
-/// (publish-request/rollback) operator-grant tier.
-/// </summary>
 public sealed class StudioAuthorizationServiceTests
 {
     private const string Alice = "alice";
@@ -71,7 +66,7 @@ public sealed class StudioAuthorizationServiceTests
     [UnitTest]
     public async Task AuthorizeAsync_FlagOn_NonAdminOwnerlessExistingResource_DeniedFailClosed()
     {
-        // honua-server#3001 follow-up (P2): owner_id is a nullable column -- legacy rows
+        // The owner_id column is nullable -- legacy rows
         // created before the ownership migration (or a partial backfill) may still have no
         // recorded owner. A null owner must never be treated as "owned by whoever asks" (that
         // would let any authenticated caller claim it); it fails closed to admin-only until an
@@ -310,7 +305,7 @@ public sealed class StudioAuthorizationServiceTests
     [UnitTest]
     public async Task AuthorizeAsync_FlagOn_NonAdminOwnResource_GenerateUsesExecuteOperatorOperation()
     {
-        // honua-server#3023: AI generation is elevated and maps to the Execute operator
+        // AI generation is elevated and maps to the Execute operator
         // operation. A Publish or Rollback grant must not authorize generation -- each
         // elevated operation is independently policy-gated.
         var service = BuildService(enabled: true, out var evaluator);
@@ -379,11 +374,10 @@ public sealed class StudioAuthorizationServiceTests
     [UnitTest]
     public void IsAdmin_RecognizesConfiguredOidcAdminRoleAlias()
     {
-        // honua-server#3001 follow-up (P1): IsAdmin must recognize the same Oidc:AdminRoles
-        // aliases (for example "administrator") that OidcAuthenticationExtensions.AddOidcAuthorization
-        // uses to widen AdminPolicy/AdminPolicyAlias/the Temporal-* policies -- not just the
-        // literal "admin" role -- so an OIDC admin authenticated under an alias role is never
-        // incorrectly scoped to ownership.
+        // IsAdmin must recognize the same Oidc:AdminRoles aliases (for example "administrator") that
+        // OidcAuthenticationExtensions.AddOidcAuthorization uses to widen
+        // AdminPolicy/AdminPolicyAlias/the Temporal-* policies -- not just the literal "admin" role --
+        // so an OIDC admin authenticated under an alias role is never incorrectly scoped to ownership.
         var service = BuildService(enabled: true, out _, adminRoles: ["admin", "administrator"]);
         var aliasedAdmin = new ClaimsPrincipal(new ClaimsIdentity(
             [
@@ -487,8 +481,8 @@ public sealed class StudioAuthorizationServiceTests
             otherTenant.ResolveCallerId(principal),
             StudioAuthorizationOperation.ReadDraft,
             resourceOwnerId: ownerId,
-            // Deliberately the caller's OWN tenant: honua-server#4905's tenant boundary would
-            // otherwise answer first, and this case is about the owner key alone (#3429) --
+            // Deliberately the caller's OWN tenant: the tenant boundary would
+            // otherwise answer first, and this case is about the owner key alone --
             // an equal subject minted into another tenant must never own the same draft, even
             // when the record itself sits in the caller's tenant.
             resourceTenantId: "tenant-b");
@@ -710,11 +704,6 @@ public sealed class StudioAuthorizationServiceTests
         }
     }
 
-    /// <summary>
-    /// Records every evaluated request and grants access only for explicitly allow-listed
-    /// (resourceType, resourceId, operation) tuples -- deny-by-default, matching the real
-    /// evaluator's posture for a principal with no matching grant.
-    /// </summary>
     private sealed class FakeOperatorAuthorizationEvaluator : IOperatorAuthorizationEvaluator
     {
         private readonly HashSet<(OperatorResourceType, string, OperatorOperation)> _allowed = [];

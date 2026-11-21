@@ -111,7 +111,7 @@ internal static partial class MapServerEndpoints
             .WithTags("MapServer")
             .AllowAnonymous();
 
-        // Asynchronous durable exportTiles (Compact Cache V2 / TPKX) job lifecycle (#2706).
+        // Asynchronous durable exportTiles (Compact Cache V2 / TPKX) job lifecycle.
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/jobs/{jobId}",
                 static (HttpContext context, string serviceId, string jobId) => HandleExportTilesJobStatus(context, serviceId, jobId))
             .WithDisplayName("Get Export Map Tiles Job Status")
@@ -283,7 +283,7 @@ internal static partial class MapServerEndpoints
 
         // The ArcGIS Maps SDK for JavaScript and the .NET Runtime SDK hydrate
         // sublayers via /MapServer/layers (the canonical Esri spelling of the
-        // allLayersAndTables resource). Return the identical document (#1454).
+        // allLayersAndTables resource). Return the identical document.
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/layers",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleAllLayersAndTables(context))
             .WithDisplayName("Get All Layers and Tables (layers resource)")
@@ -314,7 +314,7 @@ internal static partial class MapServerEndpoints
             .WithSharedCacheClass(ResponseCacheClass.MetadataDocument);
 
         // Esri services accept BOTH GET and POST for queryDomains; clients POST large
-        // layers arrays that exceed URL limits (honua-server#1825). The POST companion
+        // layers arrays that exceed URL limits. The POST companion
         // shares the read-only handler (no CacheOutput, matching the other MapServer POST
         // companions).
         endpoints.MapPost("/rest/services/{serviceId}/MapServer/queryDomains",

@@ -21,7 +21,7 @@ All endpoints require admin authentication — see [Authentication](../../guides
 | PATCH | `/api/v1/admin/api-keys/{id}/restrictions` | Replace referrer and IP restrictions without changing the secret |
 | GET | `/api/v1/admin/api-keys/{id}/effective-permissions` | Get the key's effective permissions |
 
-In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/api-keys` with `{"name":"ci-publisher","permissions":["admin:write"]}`. The body takes `name`, `permissions`, an optional `expiresAt`, and optional request restrictions `allowedReferrers` (origin patterns such as `https://app.example.com` or `https://*.example.com`) and `allowedIpRanges` (CIDR ranges or addresses); an empty `permissions` list grants full admin access. Restrictions are recommended for keys used from browsers or in the `token` query parameter; see [Restrict keys used from browsers or in URLs](../../guides/secure/authentication.md#restrict-keys-used-from-browsers-or-in-urls).
+In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/api-keys` with `{"name":"ci-publisher","permissions":["admin:write"]}`. The body takes `name`, `permissions`, an optional `kind` (`standard` or `agent`; an agent key always carries the `agent` grant, and a key created by an agent or from an agent's proposal is always an agent key), an optional `expiresAt`, and optional request restrictions `allowedReferrers` (origin patterns such as `https://app.example.com` or `https://*.example.com`) and `allowedIpRanges` (CIDR ranges or addresses); an empty `permissions` list grants full admin access. Restrictions are recommended for keys used from browsers or in the `token` query parameter; see [Restrict keys used from browsers or in URLs](../../guides/secure/authentication.md#restrict-keys-used-from-browsers-or-in-urls).
 
 ### Grant grammar
 
@@ -57,6 +57,16 @@ full-administrator credential authority:
 | DELETE | `/api/v1/admin/users/{id}` |
 | POST | `/api/v1/admin/oauth-clients` |
 | DELETE | `/api/v1/admin/oauth-clients/{id}` |
+| PUT | `/api/v1/admin/oauth-scopes` |
+| DELETE | `/api/v1/admin/oauth-scopes/{scope}` |
+| POST | `/api/v1/admin/roles` |
+| PUT | `/api/v1/admin/roles/{id}` |
+| DELETE | `/api/v1/admin/roles/{id}` |
+| PUT | `/api/v1/admin/roles/{id}/permissions` |
+
+Role names the server assigns to principals itself (`admin`, `viewer`, `agent`, `orchestrator`,
+`approved-operation`, `scoped-admin-key`, `scoped-api-key`, `layer-write-key`) cannot be used for a
+new role, here or in Console access, and the permissions of built-in roles cannot be changed.
 
 Full-administrator credential authority is one of:
 
@@ -109,8 +119,16 @@ Run `GET /api/v1/admin/roles/{roleId}/permissions`, substituting `editor` or ano
 | PUT | `/api/v1/admin/oidc/providers/{id}` | Update an OIDC provider |
 | DELETE | `/api/v1/admin/oidc/providers/{id}` | Delete an OIDC provider |
 | POST | `/api/v1/admin/oidc/providers/{id}/test` | Test an OIDC provider connection |
+| GET | `/api/v1/admin/oidc/providers/{id}/revisions` | List the provider's recorded changes, newest first |
+| POST | `/api/v1/admin/oidc/providers/{id}/undo` | Undo the provider's newest change |
 
 Run `GET /api/v1/admin/oidc/providers`.
+
+### Settings history and undo
+
+OIDC providers and rate-limit policies (`/api/v1/admin/rate-limits/{id}/revisions` and `/api/v1/admin/rate-limits/{id}/undo`) keep their newest 32 changes when settings are stored in PostgreSQL. Each revision has a `revisionId`, its `change` (`baseline`, `created`, `updated` or `deleted`), the configuration `generation` it produced and when it happened. Stored values are never returned. History keeps earlier values encrypted in the database, including replaced client secrets, until 32 newer changes to the same item displace them. The history of a deleted item, its secrets included, stays in the database.
+
+To undo, send `{"expectedRevisionId": <newest revisionId>}`. The previous state is restored as a new revision with `restoredFrom` naming the undone one, so generations only increase. A later change by anyone returns `409`; read the history again. Undoing an undo re-applies the change. Settings written before history began start with a `baseline` revision, which has nothing to undo. Undo restores a deleted rate-limit policy, but not a deleted OIDC provider: create that provider again so the provider entitlement is checked. A server that keeps settings in process memory returns `409`.
 
 ## License
 

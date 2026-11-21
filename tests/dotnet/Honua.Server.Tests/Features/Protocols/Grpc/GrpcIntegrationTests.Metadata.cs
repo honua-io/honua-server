@@ -65,7 +65,13 @@ public sealed partial class GrpcIntegrationTests
             .Should().Contain(["objectid", "name", "category"]);
         response.Layer.Capabilities.Query.Should().BeTrue();
         response.Layer.Capabilities.QueryStream.Should().BeTrue();
+        response.Layer.Capabilities.ListAttachments.Should().BeTrue();
         response.Layer.Capabilities.UploadAttachments.Should().BeFalse();
+        response.Layer.Capabilities.DeleteAttachments.Should().BeFalse();
+        response.Layer.AttachmentLimits.Should().NotBeNull();
+        response.Layer.AttachmentLimits.MaxFileBytes.Should().Be(5 * 1024 * 1024);
+        response.Layer.AttachmentLimits.MaxUnaryUploadBytes.Should().Be(1024 * 1024);
+        response.Layer.AttachmentLimits.MaxChunkBytes.Should().Be(1024 * 1024);
         response.Layer.MaxRecordCount.Should().BePositive();
     }
 
@@ -84,6 +90,7 @@ public sealed partial class GrpcIntegrationTests
         response.Service.ServiceId.Should().Be(WebAppFixture.TestServiceId);
         response.Layers.Should().ContainSingle();
         response.Service.Capabilities.Query.Should().BeTrue();
+        response.Service.Capabilities.ListAttachments.Should().BeTrue();
         var invalid = async () => await _client!.DescribeServiceAsync(new Proto.DescribeServiceRequest
         {
             ServiceId = WebAppFixture.TestServiceId,

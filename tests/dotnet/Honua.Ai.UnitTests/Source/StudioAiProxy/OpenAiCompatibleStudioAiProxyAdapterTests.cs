@@ -17,12 +17,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
 
-/// <summary>
-/// Streaming-parse contract tests for <see cref="OpenAiCompatibleStudioAiProxyAdapter"/> against
-/// canned OpenAI-compatible <c>chat.completion.chunk</c> SSE fixtures — no live provider call. This
-/// is the adapter kind that covers OpenAI itself, OpenRouter, LiteLLM, Ollama, and vLLM, so the
-/// fixtures below use the wire shape common to all of them.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
 {
@@ -146,6 +140,18 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
         events.Should().ContainSingle();
         events[0].Type.Should().Be(StudioAiChatEventType.Error);
         events[0].ErrorMessage.Should().Contain("502");
+    }
+
+    [UnitTest]
+    public async Task StreamAsync_OverlongStreamLine_EndsWithSingleStreamError()
+    {
+        var overlong = "data: " + new string('x', StudioAiProxyHttpStreamHelpers.MaximumStreamLineChars) + "\n";
+        var adapter = CreateAdapter(overlong);
+        var events = await CollectAsync(adapter, ToolFreeRequest());
+
+        events.Should().ContainSingle();
+        events[0].Type.Should().Be(StudioAiChatEventType.Error);
+        events[0].ErrorMessage.Should().Be("Provider stream ended unexpectedly.");
     }
 
     [UnitTest]
@@ -275,7 +281,7 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
     [UnitTest]
     public async Task StreamAsync_TopLevelSystemAndSystemRoleMessage_BothForwardAsSystemRoleMessages()
     {
-        // honua-server#3010 review: documents/locks in the contract the Anthropic adapter's system-
+        // Documents/locks in the contract the Anthropic adapter's system-
         // prompt handling is aligned to -- the top-level `system` field becomes a leading "system"
         // chat message, and any messages[] entry already carrying role=system is forwarded as its
         // own "system"-role message, in request order, with no restriction on position.
@@ -313,7 +319,7 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
     [UnitTest]
     public async Task StreamAsync_ToolResultMessage_PreservesToolCallIdInRequestBody()
     {
-        // honua-server#3010 review: OpenAI-compatible tool loops correlate a tool result back to
+        // OpenAI-compatible tool loops correlate a tool result back to
         // the call it answers via tool_call_id; dropping it breaks every turn after the first tool
         // call.
         var handler = new StudioAiProxyMockHttpMessageHandler(TextTurnFixture);
@@ -376,8 +382,7 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
 
         var act = async () => await CollectAsync(adapter, DefaultOptions(), request);
 
-        // Before the fix this threw synchronously inside BuildRequest (an anonymous type passed to
-        // JsonSerializer.SerializeToElement has no source-generated JsonTypeInfo).
+        // Request serialization must work with source-generated JsonTypeInfo.
         await act.Should().NotThrowAsync();
 
         handler.CapturedRequestBody.Should().NotBeNull();

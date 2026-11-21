@@ -19,7 +19,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
 
-/// <summary>Connected preparation/HTTP regressions with inert provider transport, never live inference.</summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class StudioAiHttpPreparationTests
 {
@@ -138,7 +137,7 @@ public sealed class StudioAiHttpPreparationTests
         var original = (byte[])accepted.Clone();
         var wire = JsonSerializer.Deserialize(accepted, StudioAiProxyJsonContext.Default.StudioAiChatHttpRequest)!;
         var (request, mappingError) = StudioAiChatRequestMapper.ToDomain(wire, acceptedRequestJson: accepted,
-            certificationTenantId: "original-tenant");
+            certificationTenantId: "original-tenant", certificationActorId: "apikey:api-key:00000000-0000-0000-0000-000000000007");
         mappingError.Should().BeNull();
         request.Should().NotBeNull();
         using var handler = new CapturingHandler("openai");
@@ -172,6 +171,8 @@ public sealed class StudioAiHttpPreparationTests
         signedRequest.Should().Equal(StudioAiTranscriptSigner.Canonicalize(original),
             "accepted-wire identity must stay original, without inserting resolved defaults");
         transcript.RootElement.GetProperty("candidateId").GetString().Should().Be("original-candidate");
+        transcript.RootElement.GetProperty("requestedBy").GetString()
+            .Should().Be("apikey:api-key:00000000-0000-0000-0000-000000000007");
         prepared.Request.AcceptedRequestJson.Should().Equal(original);
         prepared.Request.AcceptedRequestJson.Should().NotBeSameAs(accepted);
     }

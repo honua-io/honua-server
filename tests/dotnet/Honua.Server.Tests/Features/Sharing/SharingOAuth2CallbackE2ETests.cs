@@ -19,14 +19,6 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Tests.Features.Sharing;
 
-/// <summary>
-/// End-to-end coverage for the ArcGIS OAuth2 bridge callback IdP round-trip
-/// (#1242/#1484). A mock OIDC provider is wired into the broker's named HTTP client
-/// (discovery + token endpoints) and a symmetric signing key validates the relayed
-/// id_token, so the test exercises the full authorize → IdP-redirect → callback →
-/// token path that previously only had the not-configured 404 gate.
-/// </summary>
-[Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
@@ -54,11 +46,11 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
                 builder.UseSetting("Authentication:PortalToken:RequireHttps", "false");
 
-                // Allow-list the ArcGIS client redirect (#1484 open-redirect mitigation).
+                // Allow-list the ArcGIS client redirect (open-redirect mitigation).
                 builder.UseSetting("Authentication:PortalToken:OAuth2:AllowedRedirectUris:0", RedirectUri);
 
                 // UseOidc stays false. The bridge callback must validate the IdP token
-                // itself whenever OIDC is configured (honua-server#5424).
+                // itself whenever OIDC is configured.
 
                 // A Generic OIDC provider with a static symmetric signing key: the
                 // verifier validates the id_token without JWKS discovery, and the
@@ -425,10 +417,6 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    /// <summary>
-    /// Minimal mock OIDC provider: serves the discovery document and the token
-    /// endpoint (returning a signed id_token) for the broker's IdP leg.
-    /// </summary>
     private sealed class MockOidcProviderHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(

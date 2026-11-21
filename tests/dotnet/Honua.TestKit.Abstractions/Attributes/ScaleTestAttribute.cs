@@ -8,13 +8,6 @@ using Xunit.Sdk;
 
 namespace Honua.TestKit.Attributes;
 
-/// <summary>
-/// Marks a test as a multi-node scale test.
-/// Skips execution when required environment variables are not present.
-/// Tier=Slow with Category=Scale — runs only on a future scale-dedicated workflow
-/// (multi-node compose fixtures); the existing nightly slow-tier workflow scopes
-/// to Category=Emulator. See ADR-0037.
-/// </summary>
 [TraitDiscoverer("Honua.TestKit.Attributes.ScaleTestDiscoverer", "Honua.TestKit.Abstractions")]
 public sealed class ScaleTestAttribute : FactAttribute, ITraitAttribute
 {

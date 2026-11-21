@@ -73,7 +73,12 @@ internal sealed class PostgresFeatureLayerCopyService(
         await using var schemaCommand = new NpgsqlCommand("SELECT current_schema()", connection);
         var schema = (string)(await schemaCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
         var qualified = SqlIdentifier.QuoteIdentifier(schema) + "." + SqlIdentifier.QuoteIdentifier(table);
-        var columnDefinitions = fields.Select(f => SqlIdentifier.QuoteIdentifier(f.Name) + " " + SqlType(f) + (f.Nullable ? "" : " NOT NULL"));
+        // A source with exact fields is copied as an exact layer; its DateTime fields then use a
+        // zone-less column so the exact republish keeps them DateTime rather than TimestampOffset.
+        var exactCopy = fields.Any(f => f.Type is MetadataV2FieldType.Decimal or MetadataV2FieldType.TimestampOffset);
+        var columnDefinitions = fields.Select(f => SqlIdentifier.QuoteIdentifier(f.Name) + " "
+            + (exactCopy && f.Type == MetadataV2FieldType.DateTime ? "timestamp without time zone" : SqlType(f))
+            + (f.Nullable ? "" : " NOT NULL"));
         var ddl = $"CREATE TABLE {qualified} ({string.Join(",", columnDefinitions)}, {SqlIdentifier.QuoteIdentifier(geometryField)} geometry, "
             + $"PRIMARY KEY ({SqlIdentifier.QuoteIdentifier(primary)}), CHECK (ST_SRID({SqlIdentifier.QuoteIdentifier(geometryField)}) = {srid.ToString(CultureInfo.InvariantCulture)}))";
         long count = 0;
@@ -99,6 +104,8 @@ internal sealed class PostgresFeatureLayerCopyService(
             {
                 var attributes = feature.Attributes.ToDictionary(kv => kv.Key,
                     kv => kv.Value is byte[] binary ? (object)("\\x" + Convert.ToHexString(binary)) : kv.Value);
+                if (exactCopy) StoreUtcWallClockDateTimes(attributes, fields);
+
                 attributes.TryAdd(primary, feature.Id);
                 var json = JsonSerializer.Serialize(attributes, FeatureAttributesJsonContext.Default.DictionaryStringObject);
                 bytes += Encoding.UTF8.GetByteCount(json) + (feature.Geometry?.Length ?? 0);
@@ -132,7 +139,8 @@ internal sealed class PostgresFeatureLayerCopyService(
                 Fields = fields.Select(f => f.Name).ToArray(),
                 Srid = srid,
                 ServiceName = serviceName,
-                Enabled = false
+                Enabled = false,
+                ExactTypes = exactCopy
             }, cancellationToken).ConfigureAwait(false);
             var current = await metadata.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var targetResource = current.Index.ResourcesByStorageLayerId[target.StorageLayerId];
@@ -210,15 +218,61 @@ internal sealed class PostgresFeatureLayerCopyService(
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    // timestamp without time zone drops an offset using the session TimeZone.
+    // Store the UTC wall clock so a DateTime field keeps its instant.
+    private static void StoreUtcWallClockDateTimes(
+        Dictionary<string, object?> attributes,
+        MetadataV2Field[] fields)
+    {
+        foreach (var field in fields)
+        {
+            if (field.Type != MetadataV2FieldType.DateTime)
+            {
+                continue;
+            }
+
+            var key = attributes.Keys.FirstOrDefault(name =>
+                name.Equals(field.Name, StringComparison.OrdinalIgnoreCase));
+            if (key is not null && attributes[key] is { } temporal)
+            {
+                attributes[key] = ZoneLessUtcDateTime(temporal);
+            }
+        }
+    }
+
+    // A zoned instant becomes UTC wall-clock text. Text with no offset is already a civil time.
+    internal static object ZoneLessUtcDateTime(object value)
+    {
+        const string format = "yyyy'-'MM'-'dd'T'HH':'mm':'ss'.'fffffff";
+        switch (value)
+        {
+            case DateTimeOffset offset:
+                return offset.UtcDateTime.ToString(format, CultureInfo.InvariantCulture);
+            case DateTime dateTime:
+                var utc = dateTime.Kind == DateTimeKind.Local ? dateTime.ToUniversalTime() : dateTime;
+                return utc.ToString(format, CultureInfo.InvariantCulture);
+            case string text when HasExplicitOffset(text)
+                && DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed):
+                return parsed.UtcDateTime.ToString(format, CultureInfo.InvariantCulture);
+            default:
+                return value;
+        }
+    }
+
+    private static bool HasExplicitOffset(string text)
+        => text.EndsWith('Z') || text.EndsWith('z')
+            || (text.Length >= 6 && text[^6] is '+' or '-' && text[^3] == ':');
+
     private static string SqlType(MetadataV2Field field) => field.Type switch
     {
         MetadataV2FieldType.String => field.Length is > 0 ? $"varchar({field.Length.Value.ToString(CultureInfo.InvariantCulture)})" : "text",
         MetadataV2FieldType.Integer => "integer",
         MetadataV2FieldType.BigInteger => "bigint",
         MetadataV2FieldType.Double => "double precision",
+        MetadataV2FieldType.Decimal => "numeric",
         MetadataV2FieldType.Float => "real",
         MetadataV2FieldType.Boolean => "boolean",
-        MetadataV2FieldType.DateTime => "timestamp with time zone",
+        MetadataV2FieldType.DateTime or MetadataV2FieldType.TimestampOffset => "timestamp with time zone",
         MetadataV2FieldType.Date => "date",
         MetadataV2FieldType.Time => "time",
         MetadataV2FieldType.Json => "jsonb",

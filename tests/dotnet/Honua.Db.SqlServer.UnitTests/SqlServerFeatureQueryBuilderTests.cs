@@ -11,10 +11,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Db.SqlServer.Tests;
 
-/// <summary>
-/// Unit tests for the SQL Server query builder. Verifies T-SQL dialect, identifier
-/// quoting, parameter binding, and rejection of unsupported relationships/inputs.
-/// </summary>
 public class SqlServerFeatureQueryBuilderTests
 {
     private const int TestLayerId = 7;
@@ -630,7 +626,7 @@ public class SqlServerFeatureQueryBuilderTests
     {
         // Esri esriSpatialRelWithin = filter geometry is within feature geometry, so the filter
         // geometry must be the calling instance: filter.STWithin(feature). Leading with the
-        // feature column inverts the relationship and returns the wrong (empty) set (#2068).
+        // feature column inverts the relationship and returns the wrong (empty) set.
         var mapping = BuildMapping();
         var query = new FeatureQuery
         {
@@ -647,7 +643,7 @@ public class SqlServerFeatureQueryBuilderTests
     public void BuildSelectQuery_ContainsFilter_LeadsWithFilterGeometry()
     {
         // Esri esriSpatialRelContains = filter geometry contains feature geometry, so the filter
-        // geometry must be the calling instance: filter.STContains(feature) (#2068).
+        // geometry must be the calling instance: filter.STContains(feature).
         var mapping = BuildMapping();
         var query = new FeatureQuery
         {
@@ -905,8 +901,7 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Equal(expected, SqlServerIdentifier.IsValid(value));
     }
 
-    // BH2-D01 regression: SRID resolves to 0 when both filter and mapping SRID are absent ->
-    // SQL Server spatial predicates return NULL (not false) -> silent zero-row result.
+    // Reject missing SRIDs to prevent silent empty results.
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_SpatialFilter_NullFilterSridAndNullMappingSrid_Throws()
@@ -946,7 +941,7 @@ public class SqlServerFeatureQueryBuilderTests
     [Fact]
     public void BuildSelectQuery_TemporalFilter_ThrowsNotSupported()
     {
-        // Temporal analytics went GA (#2429); providers that cannot translate a temporal
+        // Temporal analytics went GA; providers that cannot translate a temporal
         // predicate must fail loud rather than silently return rows outside the requested
         // window. The SQL Server provider has no T-SQL temporal translation in this slice.
         var query = new FeatureQuery

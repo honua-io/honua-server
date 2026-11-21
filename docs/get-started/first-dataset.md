@@ -9,7 +9,7 @@ See the [Honua vocabulary](../concepts/domain/README.md) for the meanings of Con
 
 Upload a GeoJSON file, publish it as a layer, and query it through the supported Honua clients.
 
-**Prerequisites:** a running server with an admin password set (steps 1–4 of the [quickstart](quickstart.md)), Python 3.11+ with the pinned clients `honua-admin` 0.3.1 and `honua-sdk` 0.3.1 and the MCP Python client `mcp` 2.1.1 (step 2 installs them), and Node.js with `npx`.
+**Prerequisites:** a running server with an admin password set (steps 1–4 of the [quickstart](quickstart.md)), Python 3.11+ with the pinned clients `honua-admin` 0.3.2 and `honua-sdk` 0.3.2 and the MCP Python client `mcp` 2.1.1 (step 2 installs them), and Node.js with `npx`.
 
 > **Shell.** Every block on this page is `bash` — heredocs, `export`, and `python3`. On Windows run
 > them in WSL or Git Bash, not PowerShell, and note that a bare `python3` there resolves to the
@@ -47,7 +47,7 @@ a database table. Install the pinned clients and the MCP client. MCP tool calls 
 the `X-API-Key` header. HTTP Basic auth is refused.
 
 ```bash
-python3 -m pip install 'honua-admin==0.3.1' 'honua-sdk==0.3.1' 'mcp==2.1.1'
+python3 -m pip install 'honua-admin==0.3.2' 'honua-sdk==0.3.2' 'mcp==2.1.1'
 ```
 
 ```bash
@@ -121,7 +121,7 @@ through that connection. The route accepts the connection id (`connection.connec
 connection name; the steps below pass the id.
 
 ```bash
-python3 -m pip install 'honua-admin==0.3.1' 'honua-sdk==0.3.1'
+python3 -m pip install 'honua-admin==0.3.2' 'honua-sdk==0.3.2'
 python3 - <<'PY'
 import os
 
@@ -173,9 +173,9 @@ with HonuaAdminClient(os.environ["HONUA_BASE_URL"], api_key=os.environ["HONUA_AP
     ))
 if not layer.service_name:
     raise SystemExit("publish did not return a service name")
-open("layer.id", "w").write(str(layer.layer_id) + "\n")
+open("layer.id", "w").write(str(layer.storage_layer_id) + "\n")
 open("service.name", "w").write(layer.service_name + "\n")
-print(f"{layer.service_name} {layer.layer_id}")
+print(f"{layer.service_name} {layer.storage_layer_id}")
 PY
 export HONUA_SERVICE="$(cat service.name)"
 export HONUA_LAYER_ID="$(cat layer.id)"

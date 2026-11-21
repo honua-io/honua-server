@@ -21,7 +21,7 @@ public sealed class CorsConfigurationTests
     [Fact]
     public async Task DevelopmentPolicy_ExposesPMTilesRangeProxyResponseHeaders()
     {
-        // The PMTiles RangeProxy strategy (#845) requires browser clients to read
+        // The PMTiles RangeProxy strategy requires browser clients to read
         // Accept-Ranges, Content-Range, Content-Length, ETag, and Last-Modified
         // off the proxy response. AllowAnyHeader on the development policy only
         // covers request headers, so exposed response headers must still be
@@ -76,6 +76,24 @@ public sealed class CorsConfigurationTests
     }
 
     [UnitTest]
+    public async Task ProductionPolicy_MergesAdminUiCorsOriginsWithConfiguredAllowedOrigins()
+    {
+        var policy = await ResolvePolicyAsync(
+            CorsConfiguration.ProductionPolicy,
+            isDevelopment: false,
+            new Dictionary<string, string?>
+            {
+                ["Cors:AllowedOrigins:0"] = "http://localhost:18080",
+                ["HONUA_ADMIN_UI_CORS_ORIGINS"] = "https://localhost:18083"
+            });
+
+        Assert.True(policy.IsOriginAllowed("http://localhost:18080"));
+        Assert.True(policy.IsOriginAllowed("https://localhost:18083"));
+        Assert.False(policy.IsOriginAllowed("http://localhost:18083"));
+        Assert.False(policy.IsOriginAllowed("https://unapproved.example"));
+    }
+
+    [UnitTest]
     public async Task DevelopmentPolicy_ExposesMcpSessionHeader()
     {
         var policy = await ResolvePolicyAsync(
@@ -94,7 +112,7 @@ public sealed class CorsConfigurationTests
     {
         // If-Match (and other conditional headers) must be allowed cross-origin so
         // browser/Office clients can send ETag preconditions on PATCH/PUT/DELETE,
-        // enabling optimistic concurrency from the browser (#1629).
+        // enabling optimistic concurrency from the browser.
         var policy = await ResolvePolicyAsync(
             CorsConfiguration.ProductionPolicy,
             isDevelopment: false,

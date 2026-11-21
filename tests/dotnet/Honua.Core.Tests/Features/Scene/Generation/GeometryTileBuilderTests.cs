@@ -12,9 +12,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene.Generation;
 
-/// <summary>
-/// Unit tests for the deterministic GLB tile builder.
-/// </summary>
 public sealed class GeometryTileBuilderTests
 {
     [UnitTest]
@@ -75,11 +72,9 @@ public sealed class GeometryTileBuilderTests
     [UnitTest]
     public void BuildGlb_RecentersPositionsAboutNodeTranslation()
     {
-        // Regression for the float32 ECEF precision defect: vertex positions
-        // used to be stored as ABSOLUTE ECEF meters (~6.3e6 magnitude) cast to
-        // float32, quantizing every vertex to ~0.5-1 m. The builder now subtracts
-        // a per-tile ECEF centroid (emitted as the node translation) BEFORE the
-        // float cast, so the stored POSITION values are small-magnitude.
+        // Subtract the per-tile ECEF centroid, emitted as the node translation, before
+        // casting positions to float32. Absolute ECEF coordinates near 6.3e6 meters
+        // would quantize vertices to roughly 0.5–1 meter.
         var glb = BuildSimpleSquare();
         var json = ExtractJsonChunk(glb);
 
@@ -316,11 +311,8 @@ public sealed class GeometryTileBuilderTests
     [UnitTest]
     public void BuildGlb_StringMetadataFromNumericValue_IsCultureInvariant()
     {
-        // Regression for the culture-dependent STRING formatting (#5): a numeric
-        // value routed to a STRING column must be formatted with the invariant
-        // culture so the GLB stays byte-identical across locales. Under de-DE a
-        // naive double.ToString() would emit "1234,5"; the builder must emit
-        // "1234.5".
+        // Numeric values routed to a STRING column use invariant formatting so the GLB
+        // stays byte-identical across locales: 1234.5 must remain "1234.5" under de-DE.
         var features = new[]
         {
             new SceneFeature
@@ -449,10 +441,8 @@ public sealed class GeometryTileBuilderTests
     [UnitTest]
     public void BuildGlb_Int64Column_FractionalDoubleEmitsCoercionWarning()
     {
-        // The doc contract says fractional values are non-integral and must
-        // emit the coercion warning. The previous implementation only
-        // counted out-of-range values, so a fractional in-range double like
-        // 12.5 was silently truncated.
+        // Fractional values are non-integral and must emit the coercion warning,
+        // including an in-range double such as 12.5.
         var features = NumericFeaturePair(
             new Dictionary<string, object?>(StringComparer.Ordinal) { ["big_id"] = 12.5 },
             new Dictionary<string, object?>(StringComparer.Ordinal) { ["big_id"] = 99.75 });
@@ -480,9 +470,8 @@ public sealed class GeometryTileBuilderTests
     [UnitTest]
     public void BuildGlb_Int64Column_DecimalMaxValueClampsWithoutThrowing()
     {
-        // (long)decimal.MaxValue is a CHECKED cast in C# and throws
-        // OverflowException; the previous implementation would crash the
-        // generation rather than emitting the documented non-fatal warning.
+        // Casting decimal.MaxValue to long is checked in C# and throws
+        // OverflowException; report it as a non-fatal coercion warning.
         var features = NumericFeaturePair(
             new Dictionary<string, object?>(StringComparer.Ordinal) { ["big_id"] = decimal.MaxValue },
             new Dictionary<string, object?>(StringComparer.Ordinal) { ["big_id"] = decimal.MinValue });
@@ -675,9 +664,6 @@ public sealed class GeometryTileBuilderTests
     [UnitTest]
     public void BuildGlb_Int32Column_DecimalMaxValueClampsWithoutThrowing()
     {
-        // Companion fix: (int)decimal cast also throws on out-of-range
-        // values. Ensure the Integer column's clamping helper survives
-        // decimal.MaxValue without crashing the generation.
         var features = NumericFeaturePair(
             new Dictionary<string, object?>(StringComparer.Ordinal) { ["height"] = decimal.MaxValue },
             new Dictionary<string, object?>(StringComparer.Ordinal) { ["height"] = decimal.MinValue });

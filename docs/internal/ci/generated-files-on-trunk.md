@@ -147,12 +147,19 @@ Review Gate + per-PR lander path, so there is no second trunk writer to prove
 anything about, and the isolated-writer/untrusted-bundle machinery the first
 version needed to make a direct trunk push safe is no longer necessary.
 
-No diff produces no commit and no PR activity. Force-with-lease is confined to
+No diff produces no commit or branch push. When the validated source still
+matches remote trunk, the publisher closes an obsolete open generated-files PR
+only after verifying its source ancestry and observing the same PR head and
+remote automation head. A moved trunk or changed head preserves the PR; the
+workflow concurrency group serializes publishers. The automation branch remains
+available for diagnosis. No open PR means no PR write. This uses the existing
+nightly/on-demand job: zero additional workflows, jobs or runners per PR.
+Force-with-lease is confined to
 the fixed automation branch, which can never resolve to trunk, so a concurrent
 run can only ever race itself for that branch, never trunk. A push-triggered
 run whose diff is byte-identical to what a previous run already proposed (for
 example, the run triggered by that automation PR's own merge) finds nothing to
-publish and exits at the diff check; no self-trigger provenance guard is
+publish and reconciles any obsolete open proposal; no self-trigger provenance guard is
 needed for that case, unlike the direct-push design it replaces.
 
 ## Local proof

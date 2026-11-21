@@ -287,18 +287,6 @@ public sealed class OgcFeaturesStreamingTests : IClassFixture<OgcFeaturesStreami
         connections.Should().Be(1, "both complete pages must reuse the same keep-alive connection");
     }
 
-    /// <summary>
-    /// Regression for BH4-008: streaming responses must expose an advisory
-    /// <c>numberMatched</c> snapshot count in the JSON <c>FeatureCollection</c>
-    /// body — the spec-compliant location (OGC 17-069r4 §7.14.4). The value is a
-    /// pre-flight snapshot estimate — advisory per OGC API Features Part 1 §7.7,
-    /// not an authoritative exact count — but it must always be a non-negative
-    /// integer, never absent or negative.
-    ///
-    /// The non-standard <c>OGC-NumberMatched</c> response header was removed in
-    /// #2418 (PA-122/PA-168); this test now guards that it stays absent so the
-    /// count is carried only in its spec-compliant body location.
-    /// </summary>
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     public async Task GetItems_LargeLimit_Streaming_ProvidesAdvisorySnapshotNumberMatched()
@@ -318,9 +306,8 @@ public sealed class OgcFeaturesStreamingTests : IClassFixture<OgcFeaturesStreami
         nmProp.GetInt64().Should().BeGreaterThanOrEqualTo(0,
             "numberMatched snapshot estimate must be a non-negative integer");
 
-        // The non-standard OGC-NumberMatched header was removed in #2418 (PA-122/PA-168):
-        // the count lives only in the spec-compliant JSON body location above. Guard that the
-        // header is not reintroduced.
+        // The count lives only in the spec-compliant JSON body location above. Guard that the
+        // non-standard OGC-NumberMatched header is not introduced.
         response.Headers.TryGetValues("OGC-NumberMatched", out _)
             .Should().BeFalse("the non-standard OGC-NumberMatched header was removed in #2418 (PA-122/PA-168)");
     }

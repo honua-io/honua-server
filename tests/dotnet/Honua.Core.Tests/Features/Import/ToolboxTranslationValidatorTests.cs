@@ -8,11 +8,6 @@ using Honua.Core.Features.Migration.Services;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Classification-rule tests for <see cref="ToolboxTranslationValidator"/> (#2145): the
-/// server-authoritative round-trip of SDK-translated toolbox tool descriptors against the
-/// canonical process catalog.
-/// </summary>
 public sealed class ToolboxTranslationValidatorTests
 {
     [Trait("Tier", "Fast")]
@@ -306,7 +301,7 @@ public sealed class ToolboxTranslationValidatorTests
     {
         // Where the discriminator's domain IS enumerable the probe answers exactly, so the
         // report must name the faulting branches instead of falling back to the conservative
-        // "cannot pin this down" wording (#3048).
+        // "cannot pin this down" wording.
         var report = ToolboxTranslationValidator.Validate(
             Manifest(Tool("AspectLikeTool", "test.optional-only", Mapping("in_layer", "layerId"))),
             new FakeCatalog(),
@@ -334,7 +329,7 @@ public sealed class ToolboxTranslationValidatorTests
         // Gaps are reported per PARAMETER, so each group read as individually escapable even
         // when the groups TOGETHER covered every branch. With eps missing on dbscan and k
         // missing on kmeans, no value of `algorithm` executes, and telling the operator to
-        // "constrain the source value" points at a remedy that cannot exist (#3048 review).
+        // "constrain the source value" points at a remedy that cannot exist.
         var report = ToolboxTranslationValidator.Validate(
             Manifest(Tool("ClusterLikeTool", "test.branching", Mapping("in_layer", "input"), Mapping("algo", "algorithm"))),
             new FakeCatalog(),
@@ -384,7 +379,7 @@ public sealed class ToolboxTranslationValidatorTests
     {
         // NDBI is executable, but NDVI/SAVI/EVI all fail for red and NDWI fails for green.
         // Each per-parameter issue must describe the collective uncovered branch rather than
-        // claim every value outside that individual parameter's list executes (#3048 review).
+        // claim every value outside that individual parameter's list executes.
         var report = ToolboxTranslationValidator.Validate(
             Manifest(Tool(
                 "SpectralLikeTool",
@@ -546,12 +541,6 @@ public sealed class ToolboxTranslationValidatorTests
         TargetParameter = target
     };
 
-    /// <summary>
-    /// Stands in for the canonical <see cref="IProcessConditionalInputProbe"/>: reports a
-    /// missing conditional input unless at least one member of the group is supplied, reports
-    /// the parameters it was told are branch-dependent, and reports the exact branch
-    /// requirements it was told an enumerable domain proves.
-    /// </summary>
     private sealed class FakeProbe(
         string[] requiredAnyOf,
         string[]? branchDependent = null,
@@ -612,11 +601,6 @@ public sealed class ToolboxTranslationValidatorTests
             OutputArtifactKinds = []
         };
 
-        /// <summary>
-        /// Mirrors the shape of catalog processes such as <c>surface.aspect</c> whose raster
-        /// source parameters are individually optional but conditionally required by the
-        /// canonical plan validator.
-        /// </summary>
         private static readonly ProcessDefinition OptionalOnly = new()
         {
             ProcessId = "test.optional-only",
@@ -632,11 +616,6 @@ public sealed class ToolboxTranslationValidatorTests
             OutputArtifactKinds = []
         };
 
-        /// <summary>
-        /// Mirrors a process such as <c>analytics.cluster-managed</c>: an enumerable
-        /// discriminator whose branches require different parameters, so branch coverage across
-        /// all reported gaps is decidable.
-        /// </summary>
         private static readonly ProcessDefinition Branching = new()
         {
             ProcessId = "test.branching",

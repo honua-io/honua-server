@@ -11,13 +11,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Regression tests for #1923: a MapServer sublayer's metadata must surface the same
-/// <c>relationships</c> and <c>hasAttachments</c> that the equivalent FeatureServer layer
-/// advertises, so ArcGIS clients consuming the MapServer can discover related records and
-/// attachments. The seeded test layer 0 declares a relationship class and opts into
-/// attachments, so both protocol surfaces are expected to report them.
-/// </summary>
 [Protocol(TestProtocols.MapServer)]
 [Collection("Database.CoreFeatureStore")]
 public sealed class MapServerSublayerRelationshipMetadataTests : IAsyncLifetime
@@ -48,7 +41,7 @@ public sealed class MapServerSublayerRelationshipMetadataTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/{layerId}")]
     public async Task MapServerSublayerMetadata_SurfacesRelationshipsAndHasAttachments()
     {
-        // The core of #1923: the MapServer sublayer previously emitted relationships:[] and
+        // The MapServer sublayer must expose relationship metadata and
         // hasAttachments:false even though the same layer's FeatureServer metadata advertised
         // both. Assert the MapServer sublayer now mirrors the underlying layer.
         using var document = await GetLayerMetadataAsync("MapServer");

@@ -18,13 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// In-memory unit coverage for the managed (NetTopologySuite)
-/// buffer-aggregate executor — the job-dispatchable counterpart to trunk's
-/// PostGIS-protocol <c>analytics.buffer-aggregate</c>. Buffers every input
-/// feature by 'distance' in the supplied unit and optionally dissolves the
-/// result into one feature per groupByFields group with a COUNT attribute.
-/// </summary>
 public sealed class ManagedBufferAggregateExecutorTests
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";
@@ -166,7 +159,7 @@ public sealed class ManagedBufferAggregateExecutorTests
     {
         // A linear buffer distance is meaningless in degree space; when the caller declares
         // the input CRS as geographic (EPSG:4326) the executor must reject rather than emit a
-        // silently-wrong meters-as-degrees buffer (#2808).
+        // silently-wrong meters-as-degrees buffer.
         var executor = new ManagedBufferAggregateExecutor(Options());
         var (status, _) = await RunAsync(
             executor,

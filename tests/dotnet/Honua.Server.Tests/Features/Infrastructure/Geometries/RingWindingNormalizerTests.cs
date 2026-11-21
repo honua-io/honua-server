@@ -9,11 +9,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Geometries;
 
-/// <summary>
-/// Verifies that the shared secondary-emitter winding helper rewrites polygon rings to the
-/// RFC 7946 / ISO 19107 right-hand rule (exterior CCW, holes CW) so clockwise-exterior stored
-/// geometry — common via Esri applyEdits and shapefile imports — is emitted correctly (#2745).
-/// </summary>
 public sealed class RingWindingNormalizerTests
 {
     private static readonly GeometryFactory _factory =
@@ -117,7 +112,7 @@ public sealed class RingWindingNormalizerTests
     public void NormalizeToRightHandRule_ReorientedCopy_PreservesSourceSrid()
     {
         // A factory whose SRID is 0 does not stamp the geometry's SRID onto the reoriented copy;
-        // the normalizer must carry the source geometry's SRID (3857) across the reversal (#2745).
+        // the normalizer must carry the source geometry's SRID (3857) across the reversal.
         var sridlessFactory = NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory(srid: 0);
         var cw = sridlessFactory.CreatePolygon(Reverse(_ccwShell));
         cw.SRID = 3857;

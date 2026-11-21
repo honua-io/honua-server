@@ -22,7 +22,7 @@ internal static class DataEnrichmentServiceCollectionExtensions
             configuration.GetSection(EnrichmentCatalogOptions.SectionName));
         services.AddSingleton<EnrichmentCatalog>();
 
-        // Managed registry store (Postgres-only; no-op on other providers, #2280).
+        // Managed registry store (Postgres-only; no-op on other providers).
         services.AddPostgresEnrichmentDatasetCatalog(configuration);
 
         // Composing catalog service. Registered via a factory so the registry store,
@@ -34,7 +34,7 @@ internal static class DataEnrichmentServiceCollectionExtensions
             sp.GetService<ICacheService>(),
             sp.GetService<ISchemaContext>()));
 
-        // Neutral resolver seam (#2283) consumed by the enrichment.enrich
+        // Neutral resolver seam consumed by the enrichment.enrich
         // geoprocessing job executor, so the async batch path resolves datasets
         // through the same merged catalog as POST /api/enrich.
         services.AddScoped<IEnrichmentDatasetResolver, EnrichmentDatasetResolver>();

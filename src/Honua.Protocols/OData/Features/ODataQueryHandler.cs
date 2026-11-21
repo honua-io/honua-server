@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -146,8 +147,8 @@ internal sealed partial class ODataQueryHandler(
             // Probe one extra layer beyond the requested page so a followable
             // @odata.nextLink is emitted whenever a full page was returned. The Layers
             // collection paginates in memory; without this continuation a client that
-            // requests /odata/Layers?$top=N over >N layers concludes there are no more
-            // (#1989). $top=0 (Limit == 0) yields an empty page and no continuation.
+            // requests /odata/Layers?$top=N over >N layers concludes there are no more.
+            // $top=0 (Limit == 0) yields an empty page and no continuation.
             var probeLimit = pagination.Limit < int.MaxValue ? pagination.Limit + 1 : pagination.Limit;
             var layerData = layerQuery.Take(probeLimit).ToArray();
 
@@ -166,7 +167,7 @@ internal sealed partial class ODataQueryHandler(
             var includeContext = ODataUtilityService.ShouldIncludeContext(context.Request, format);
 
             // A client $top bounds the whole Layers collection, so the continuation carries
-            // the remaining budget and stops once it is spent (#5464).
+            // the remaining budget and stops once it is spent.
             string? nextLink = null;
             if (hasMoreLayers &&
                 ODataUtilityService.TryGetContinuationTop(topValue, layerData.Length, out var continuationTop))
@@ -528,13 +529,13 @@ internal sealed partial class ODataQueryHandler(
             // COUNT(*) OVER() column, but the ExtractTotalCount fallback (and read-only
             // non-Postgres providers) can degrade TotalCount to the page length, which
             // would suppress nextLink and silently truncate paging. The streaming path
-            // guards this the same way (#1989).
+            // guards this the same way.
             //
             // The probe is applied AFTER the build, on the materialized FeatureQuery, rather
             // than by inflating the requested $top: the OData query-parameter adapter clamps
-            // $top to OData:MaxPageSize (#1644), so a pre-build Limit + 1 would be clamped
+            // $top to OData:MaxPageSize, so a pre-build Limit + 1 would be clamped
             // straight back to the page size and drop the probe row — truncating paging at
-            // the first server page (#1989). pagination.Limit is already clamped to
+            // the first server page. pagination.Limit is already clamped to
             // MaxPageSize, so probing the built query keeps the +1 row intact.
             var (featureQuery, queryError) = await _querySearchService.BuildFeatureQueryAsync(
                 effectiveFilter,
@@ -628,13 +629,12 @@ internal sealed partial class ODataQueryHandler(
             // Convert features to OData format
             var featuresData = queryResult.Items.Select(f =>
             {
-                var attributes = ODataAttributeSerializer.Serialize(f.Attributes);
                 var geometry = ODataGeometryConverter.ConvertWkbToGeometry(
                     _geometryService,
                     f.Geometry,
                     layerSrid,
                     axisOrder);
-                var dict = ODataUtilityService.BuildFeaturePayload(publicLayerId, f, geometry, attributes);
+                var dict = ODataUtilityService.BuildFeaturePayload(publicLayerId, f, geometry);
 
                 // Add expanded relations if available
                 if (expandedRelations != null && expandedRelations.TryGetValue(f.Id, out var relations))
@@ -658,9 +658,9 @@ internal sealed partial class ODataQueryHandler(
 
             // Calculate @odata.nextLink if there are more results. The continuation probe
             // (Limit + 1 fetch) is the source of truth here so paging is not truncated when
-            // the provider TotalCount degrades to the page length (#1989). An ordinary
+            // the provider TotalCount degrades to the page length. An ordinary
             // collection also stops once the client $top is spent and carries the remaining
-            // budget forward (#5464); change-tracking continuations keep paging by $top.
+            // budget forward; change-tracking continuations keep paging by $top.
             int? continuationTop = pagination.Limit;
             var isDeltaPaging = trackChangesRequested || !string.IsNullOrWhiteSpace(deltatoken);
             string? nextLink = null;
@@ -807,7 +807,7 @@ internal sealed partial class ODataQueryHandler(
             // ($top=0) data page. Build the count query with a null limit rather than the
             // page's Limit of 0: the shared query validator rejects Limit <= 0 ("Limit must
             // be greater than zero"), so passing 0 here would turn $top=0&$count=true into a
-            // 400 (#1989). Offset is likewise irrelevant to the total, so it is dropped.
+            // 400. Offset is likewise irrelevant to the total, so it is dropped.
             var (countQuery, queryError) = await _querySearchService.BuildFeatureQueryAsync(
                 filter,
                 orderby,
@@ -866,7 +866,7 @@ internal sealed partial class ODataQueryHandler(
                 GeometryLimits = geometryLimits,
                 OutFields = outFields,
                 Logger = _logger,
-                EncodingLimits = limitsOptions?.Value?.GeoParquet
+                EncodingLimits = (limitsOptions?.Value?.GeoParquet ?? new GeoParquetLimits()).ForQuery()
             });
 
             ODataUtilityService.SetODataHeaders(context);
@@ -880,12 +880,17 @@ internal sealed partial class ODataQueryHandler(
         {
             // $format=parquet requested on a runtime image that cannot load the native
             // ParquetSharp Arrow encoder (glibc-only; absent on Alpine/musl). Return a
-            // clean 501 capability response instead of an unhandled 500 (honua-server#1942).
+            // clean 501 capability response instead of an unhandled 500.
             return ODataUtilityService.CreateODataError(
                 context,
                 "NotImplemented",
                 ParquetRuntimeUnavailableException.CapabilityMessage,
                 StatusCodes.Status501NotImplemented);
+        }
+        catch (ServiceUnavailableException ex)
+        {
+            // Full scratch storage is transient; answer 503 with Retry-After, not a query error.
+            return StandardErrorHelpers.CreateFromException(context, ex);
         }
         catch (InvalidOperationException ex)
         {

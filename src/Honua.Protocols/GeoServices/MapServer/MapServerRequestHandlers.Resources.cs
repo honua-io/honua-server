@@ -75,7 +75,9 @@ internal static partial class MapServerEndpoints
             var tableResponses = new List<MapServerLayerResponse>();
             foreach (var layer in visibleLayers)
             {
-                var drawingInfo = ResolveMapServerDrawingInfo(layer.Resource, snapshot);
+                var schemaResource = await GeoServicesWithheldFields.HideMaskedFieldsAsync(
+                    context, layer.Resource, cancellationToken).ConfigureAwait(false);
+                var drawingInfo = ResolveVisibleMapServerDrawingInfo(layer.Resource, schemaResource, snapshot);
                 var mapExtent = await ResolveCachedExtentAsync(
                     service, [layer.Resource],
                     context.RequestServices.GetRequiredService<ICoordinateTransformService>(),
@@ -83,7 +85,7 @@ internal static partial class MapServerEndpoints
                 var response = MapLayerToMapServerLayerResponse(
                     service,
                     layer.Publication,
-                    layer.Resource,
+                    schemaResource,
                     snapshot,
                     maxRecordCount,
                     mapExtent,
@@ -127,7 +129,7 @@ internal static partial class MapServerEndpoints
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
 
         // Esri services accept BOTH GET and POST for queryDomains; clients POST large
-        // layers arrays that exceed URL limits (honua-server#1825). Merge the form body
+        // layers arrays that exceed URL limits. Merge the form body
         // over the query string so both methods share this read-only handler.
         var (values, readError) = await TryReadMapServerRequestValuesAsync(context);
         if (values is null)
@@ -186,7 +188,10 @@ internal static partial class MapServerEndpoints
             var domains = new List<MapServerDomainInfo>();
             foreach (var layer in accessibleLayers)
             {
-                foreach (var field in layer.Resource.SchemaFields)
+                // A masked field's domain names it and lists its coded values, as a hidden field's would.
+                var schemaResource = await GeoServicesWithheldFields.HideMaskedFieldsAsync(
+                    context, layer.Resource, cancellationToken).ConfigureAwait(false);
+                foreach (var field in schemaResource.SchemaFields)
                 {
                     if (field.Hidden || field.Domain is null)
                     {

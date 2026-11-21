@@ -20,13 +20,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Testcontainers integration coverage for the reconciled sink.external-postgis executor.
-/// Proves the executor creates its destination table in a PostGIS database that is not the
-/// Honua catalog and inserts features (tagged with the batch id) through the managed
-/// Npgsql + WKB path — no GDAL. Uses an isolated schema as the "external" target.
-/// Requires Docker; skipped automatically when the database fixture is unavailable.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
@@ -239,10 +232,8 @@ public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
     [Fact]
     public async Task ExecuteAsync_MidBatchFailure_RollsBackAllPreviouslyInsertedRows()
     {
-        // Regression for BH2-018: without the transaction wrapping, a constraint violation
-        // on the 2nd batch would leave the 1st batch's rows permanently committed in the
-        // external table. With the fix, the transaction wraps both batches
-        // and the entire load is rolled back atomically.
+        // Wrap both batches in one transaction so a constraint violation in the second
+        // batch rolls back the first batch as well.
         var resolver = Substitute.For<ISecureConnectionResolver>();
         resolver
             .ResolveConnectionStringAsync("external-target", Arg.Any<CancellationToken>())
@@ -283,9 +274,7 @@ public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
 
         Assert.Equal(ExecutionJobStatus.Failed, result.Status);
 
-        // Without the transaction fix, the first batch (first_feature) would be committed
-        // before the second batch fails. With the fix, the transaction wraps both batches
-        // and the entire load is rolled back → 0 rows in the table.
+        // The second batch fails; the transaction must roll back both batches, leaving zero rows.
         await using var countConnection = await _fixture.DataSource.OpenConnectionAsync();
         await using var countCmd = new NpgsqlCommand(
             $"SELECT COUNT(*) FROM \"{_schemaName}\".partial_test", countConnection);

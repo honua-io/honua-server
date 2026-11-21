@@ -10,6 +10,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.SharedCaching;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,9 +18,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Authentication;
 
-/// <summary>
-/// Built-in viewer and editor wildcard grants must not skip a layer role list (#6358).
-/// </summary>
 public sealed class LayerRoleListGrantTests
 {
     [UnitTest]
@@ -222,6 +220,8 @@ public sealed class LayerRoleListGrantTests
             AuthorizationOperation.Update);
 
         serviceResult.Should().BeNull();
+        ResponseAccessVerdict.Restricted(context).Should().BeFalse();
+        ResponseAccessVerdict.GrantedToAnonymous(context).Should().BeFalse();
     }
 
     private static async Task<AccessDecision> EvaluateAsync(
@@ -264,9 +264,6 @@ public sealed class LayerRoleListGrantTests
         return services.BuildServiceProvider();
     }
 
-    /// <summary>
-    /// Replacement evaluator whose forbidden text is not the built-in role-denial sentence.
-    /// </summary>
     private sealed class ReasonRewritingEvaluator(IAccessPolicyEvaluator inner) : IAccessPolicyEvaluator
     {
         public const string CustomReason = "policy denied the principal";
@@ -322,10 +319,6 @@ public sealed class LayerRoleListGrantTests
             AccessPolicy = accessPolicy,
         };
 
-    /// <summary>
-    /// Mirrors the built-in viewer and editor wildcard grants. The grants stay broad;
-    /// the role list is what narrows them.
-    /// </summary>
     private sealed class BuiltInGrantRoleStore : IRoleStore
     {
         private static readonly PermissionGrant[] ViewerGrants =

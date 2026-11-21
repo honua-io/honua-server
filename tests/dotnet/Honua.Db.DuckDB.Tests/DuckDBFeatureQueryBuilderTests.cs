@@ -10,10 +10,6 @@ using Honua.Db.DuckDB.Features.Infrastructure;
 
 namespace Honua.Db.DuckDB.Tests;
 
-/// <summary>
-/// Unit tests for DuckDB SQL query generation.
-/// Verifies correct DuckDB SQL dialect, parameter handling, and unsupported operation rejection.
-/// </summary>
 public class DuckDBFeatureQueryBuilderTests
 {
     private readonly DuckDBFeatureQueryBuilder _builder;
@@ -250,7 +246,7 @@ public class DuckDBFeatureQueryBuilderTests
         Assert.DoesNotContain("ORDER BY", result.Sql);
     }
 
-    // #3372: an aggregate result set's columns are the declared statistic aliases plus the
+    // An aggregate result set's columns are the declared statistic aliases plus the
     // group-by fields, so ORDER BY must be able to name them. Each clause is re-resolved
     // against those declarations, so only a declared name can reach the SQL.
     [Fact]
@@ -327,7 +323,7 @@ public class DuckDBFeatureQueryBuilderTests
     {
         // Esri esriSpatialRelWithin = filter geometry is within feature geometry, so the filter
         // geometry must be the FIRST operand: ST_Within(filter, feature). Leading with the
-        // feature column inverts the relationship and returns the wrong (empty) set (#2068).
+        // feature column inverts the relationship and returns the wrong (empty) set.
         var wkb = new byte[] { 1, 2, 3, 4 };
         var query = new FeatureQuery
         {
@@ -344,7 +340,7 @@ public class DuckDBFeatureQueryBuilderTests
     public void BuildSelectQuery_ContainsFilter_LeadsWithFilterGeometry()
     {
         // Esri esriSpatialRelContains = filter geometry contains feature geometry: the filter
-        // geometry must be the FIRST operand, ST_Contains(filter, feature) (#2068).
+        // geometry must be the FIRST operand, ST_Contains(filter, feature).
         var wkb = new byte[] { 1, 2, 3, 4 };
         var query = new FeatureQuery
         {
@@ -495,11 +491,6 @@ public class DuckDBFeatureQueryBuilderTests
             _builder.BuildSelectQuery(999, new FeatureQuery()));
     }
 
-    /// <summary>
-    /// Regression test for BH-016: a WHERE clause that references a field not in the
-    /// layer mapping must produce ArgumentException (HTTP 400), not let the unknown
-    /// column reach DuckDB where it causes a DbException (HTTP 500).
-    /// </summary>
     [Theory]
     [InlineData("populaton > 1000")]          // misspelled — not in mapping
     [InlineData("nonexistent = 'foo'")]        // entirely unknown field
@@ -608,7 +599,7 @@ public class DuckDBFeatureQueryBuilderTests
     {
         // EPSG:4674 (SIRGAS 2000) is a geographic degree CRS but is not in the geodesic allowlist.
         // Running planar ST_DWithin(metres) against degrees would match the whole planet, so the
-        // builder must reject the distance filter rather than emit silently-wrong SQL (#2731).
+        // builder must reject the distance filter rather than emit silently-wrong SQL.
         var geographicMapping = new DuckDBLayerMapping
         {
             LayerId = 1,
@@ -690,11 +681,6 @@ public class DuckDBFeatureQueryBuilderTests
         Assert.Contains(500.0, result.WhereParameters.OfType<double>());
     }
 
-    /// <summary>
-    /// BH4-024: Permanent row-visibility filter must be included in the generated WHERE clause.
-    /// The enforced filter is applied before any caller-supplied SqlFilter so it cannot be
-    /// bypassed.
-    /// </summary>
     [Fact]
     public void BuildSelectQuery_WithEnforcedSqlFilter_IncludesFilterInWhereClause()
     {

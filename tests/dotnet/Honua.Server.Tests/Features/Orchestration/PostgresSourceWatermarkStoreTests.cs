@@ -7,7 +7,6 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
-using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Orchestration;
 
@@ -21,7 +20,7 @@ public sealed class PostgresSourceWatermarkStoreTests
         new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero).AddTicks(7);
 
     [IntegrationTest]
-    public async Task AdvanceAsync_WithoutRedis_IsReadableAfterTheWritingHostStops()
+    public async Task AdvanceAsync_IsReadableAfterTheWritingHostStops()
     {
         var mark = Mark($"pipeline-{Guid.NewGuid():N}", "source", Timestamp);
         await using (var writer = CreateHost())
@@ -204,6 +203,5 @@ public sealed class PostgresSourceWatermarkStoreTests
     };
 
     private static WebAppFixture CreateHost() => new WebAppFixture()
-        .WithProductionJobSubstrate()
-        .ConfigureWebHost(builder => builder.UseSetting("ConnectionStrings:redis", string.Empty));
+        .WithProductionJobSubstrate();
 }

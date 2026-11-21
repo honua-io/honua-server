@@ -15,10 +15,6 @@ using Honua.Tests.ProviderUnitSupport;
 
 namespace Honua.Db.MySql.Tests;
 
-/// <summary>
-/// Unit tests for <see cref="MySqlFeatureStore"/> behaviours that do not require a real
-/// MySQL/MariaDB connection — primarily streaming-path budget handling.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class MySqlFeatureStoreTests
 {
@@ -196,7 +192,7 @@ public class MySqlFeatureStoreTests
     [Theory]
     [InlineData("page")]
     [InlineData("stream")]
-    public async Task Read_WithNoPolicyResolved_EmitsSameSqlAsWithoutResolver(string operation)
+    public async Task Read_WithNoPolicyResolved_EmitsSameSqlAsEmptyResolver(string operation)
     {
         var baseline = new RecordingFeatureDataAccess(pages: [ImmutableArray.Create(Feature.Create(1, null))]);
         await InvokeReadAsync(CreateStore(baseline), operation);
@@ -217,6 +213,7 @@ public class MySqlFeatureStoreTests
         var store = new MySqlFeatureStore(
             new MySqlFeatureQueryBuilder(new MySqlLayerMappingRegistry([mapping])),
             dataAccess,
+            new LayerReadSecurityResolver(null, null, null, null),
             new StubV2Provider(LayerId, permanentFilterExpression: "name = 'visible'"),
             new FixedFilterExpressionService(new Honua.Core.Queries.Filters.SqlFragment("`name` = @p0", ["visible"])));
 
@@ -279,7 +276,7 @@ public class MySqlFeatureStoreTests
     {
         var registry = new MySqlLayerMappingRegistry([CreateMapping()]);
         var queryBuilder = new MySqlFeatureQueryBuilder(registry);
-        return new MySqlFeatureStore(queryBuilder, dataAccess, readSecurity: readSecurity);
+        return new MySqlFeatureStore(queryBuilder, dataAccess, readSecurity: readSecurity ?? new LayerReadSecurityResolver(null, null, null, null));
     }
 
     private static MySqlLayerMapping CreateMapping() => new()

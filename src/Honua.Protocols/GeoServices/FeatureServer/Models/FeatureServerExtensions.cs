@@ -56,6 +56,15 @@ public static class FeatureServerExtensions
             Geometry = geometry
         };
 
+    // Only a formatter that has just built the base may hand over its dictionary;
+    // the public conversion keeps returning a detached copy.
+    internal static GeoJsonFeature ToGeoJsonFeatureWithOwnedProperties(
+        this GeoJsonFeatureBase featureBase,
+        GeoJsonGeometry? geometry)
+        => featureBase.Properties is Dictionary<string, object?> properties
+            ? new() { Type = "Feature", Id = featureBase.Id, Properties = properties, Geometry = geometry }
+            : featureBase.ToGeoJsonFeature(geometry);
+
     public static GeoJsonFeatureBase ToGeoJsonFeatureBase(this GeoJsonFeature geoJsonFeature)
         => GeoJsonFeatureBase.Create(
             geoJsonFeature.Id,

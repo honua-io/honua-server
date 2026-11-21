@@ -61,7 +61,7 @@ internal sealed class ExecutePlanTool : IMcpTool
             .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Process, OperatorOperation.Execute, cancellationToken)
             .ConfigureAwait(false);
 
-        // Pro spec-apply gate (#1592): MCP execute is an agentic execution tool
+        // Pro spec-apply gate: MCP execute is an agentic execution tool
         // that submits server-side work, so it routes through the same
         // ai.spec-apply entitlement as POST /v1/spec/apply. Discovery/query MCP
         // tools stay ungated (Community).
@@ -73,7 +73,7 @@ internal sealed class ExecutePlanTool : IMcpTool
             throw new GeoprocessingPreconditionFailedException(entitlement.UpgradeMessage);
         }
 
-        // AI-operations guardrail ladder (#1631): agent-initiated execution is a
+        // AI-operations guardrail ladder: agent-initiated execution is a
         // mutating operation, so it also crosses the shared edition-driven policy.
         // Community runs directly; Pro requires the validation-layer entitlement;
         // Enterprise additionally requires the approval-workflows entitlement.
@@ -96,11 +96,11 @@ internal sealed class ExecutePlanTool : IMcpTool
             .SubmitJobAsync(plan, idempotencyKey, principal, metadata, cancellationToken)
             .ConfigureAwait(false);
 
-        // honua-server#1954: when the call is part of a streamable-HTTP session
+        // When the call is part of a streamable-HTTP session
         // and the server-initiated stream is on, stream the job's progress to the
         // session's GET /mcp SSE channel. The stream is off by default, and a
-        // job-store poll then has no channel that can deliver the frames
-        // (honua-server#5629). Resolved leniently so a lightweight test host
+        // job-store poll then has no channel that can deliver the frames.
+        // Resolved leniently so a lightweight test host
         // (no session services registered) keeps working.
         StartProgressStreaming(httpContext, jobRecord.OperationId, principal);
 
@@ -133,7 +133,7 @@ internal sealed class ExecutePlanTool : IMcpTool
         sessions.AssociateJob(sessionId, jobId);
 
         // The job-to-session index is recorded above. The background job-store
-        // poll only starts when GET /mcp can deliver notifications/progress.
+        // poll only starts when GET /mcp can deliver notifications/message job status.
         var streamEnabled = httpContext.RequestServices.GetService<IOptions<McpOptions>>()
             ?.Value.ServerInitiatedStreamEnabled == true;
         if (streamEnabled)

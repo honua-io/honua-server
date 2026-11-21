@@ -11,12 +11,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.DuckDB.Tests;
 
-/// <summary>
-/// Verifies the spatial extension is loaded onto every fresh DuckDB connection.
-/// LOAD is connection-scoped in DuckDB; if the bootstrap only loaded on the first
-/// connection, subsequent connections would fail when query execution references
-/// spatial ST_* functions.
-/// </summary>
 public sealed class DuckDBSpatialBootstrapTests
 {
     [Fact]
@@ -57,9 +51,6 @@ public sealed class DuckDBSpatialBootstrapTests
     [Fact]
     public async Task StTransform_WithAlwaysXy_TreatsCoordinatesAsLonLat()
     {
-        // Round-trip proof for the always_xy fix (#2731): Honua stores X=lon, Y=lat, so a WGS84
-        // point ST_Point(lon, lat) must reproject to Web Mercator without axis transposition.
-        // Helsinki (24.94 E, 60.17 N) -> EPSG:3857 x ≈ 2,776,000 m, y ≈ 8,437,000 m.
         var bootstrap = new DuckDBSpatialBootstrap(
             extensionPath: null,
             logger: NullLogger<DuckDBSpatialBootstrap>.Instance);
@@ -127,11 +118,12 @@ public sealed class DuckDBSpatialBootstrapTests
         Assert.Contains("LOAD spatial", first.Commands);
         Assert.Contains("INSTALL httpfs", first.Commands);
         Assert.Contains("LOAD httpfs", first.Commands);
-        Assert.Contains("SET s3_region = 'us-east-1'", first.Commands);
-        Assert.Contains("SET s3_url_style = 'path'", first.Commands);
+        Assert.Contains("SET GLOBAL s3_region = 'us-east-1'", first.Commands);
+        Assert.Contains("SET GLOBAL s3_url_style = 'path'", first.Commands);
         Assert.Contains(
             "CREATE OR REPLACE TEMP VIEW \"parcels\" AS SELECT * FROM read_parquet('s3://county/parcels/*.parquet', union_by_name = true)",
             first.Commands);
+        AssertLockdownBeforeViews(first.Commands);
 
         var second = new RecordingDbConnection();
         await bootstrap.EnsureSpatialExtensionAsync(second, CancellationToken.None);
@@ -142,6 +134,56 @@ public sealed class DuckDBSpatialBootstrapTests
         Assert.Contains(
             "CREATE OR REPLACE TEMP VIEW \"parcels\" AS SELECT * FROM read_parquet('s3://county/parcels/*.parquet', union_by_name = true)",
             second.Commands);
+    }
+
+    [Fact]
+    public async Task EnsureSpatialExtensionAsync_OnLockedInstance_OnlyCreatesViews()
+    {
+        var layers = new[]
+        {
+            new DuckDBLayerOptions
+            {
+                Id = 4,
+                Table = "roads",
+                ExternalSource = new DuckDBExternalSourceOptions { Path = "/data/roads.parquet" }
+            }
+        };
+        using var bootstrap = new DuckDBSpatialBootstrap(
+            extensionPath: "/opt/duckdb/extensions",
+            additionalExtensions: [],
+            connectionSettingCommands: [],
+            externalSourcePlans: DuckDBExternalSourceSql.BuildExternalSourcePlans(layers),
+            logger: NullLogger<DuckDBSpatialBootstrap>.Instance);
+
+        await using var connection = new RecordingDbConnection();
+        await bootstrap.EnsureSpatialExtensionAsync(connection, CancellationToken.None);
+        Assert.Contains("SET allowed_paths = ['/data/roads.parquet']", connection.Commands);
+        var firstPassCount = connection.Commands.Count;
+
+        // Same instance again (shared file database): settings stay as they are.
+        await bootstrap.EnsureSpatialExtensionAsync(connection, CancellationToken.None);
+        var secondPass = connection.Commands.Skip(firstPassCount).ToList();
+
+        Assert.DoesNotContain(secondPass, command => command.StartsWith("SET ", StringComparison.Ordinal));
+        Assert.DoesNotContain(secondPass, command => command.StartsWith("LOAD ", StringComparison.Ordinal));
+        Assert.Contains(
+            "CREATE OR REPLACE TEMP VIEW \"roads\" AS SELECT * FROM read_parquet('/data/roads.parquet')",
+            secondPass);
+    }
+
+    private static void AssertLockdownBeforeViews(List<string> commands)
+    {
+        var allowed = commands.IndexOf("SET allowed_directories = ['/var/tmp/honua.duckdb.tmp/', 's3://county/parcels/']");
+        var external = commands.IndexOf("SET enable_external_access = false");
+        var locked = commands.IndexOf("SET lock_configuration = true");
+        var view = commands.FindIndex(command => command.StartsWith("CREATE OR REPLACE TEMP VIEW", StringComparison.Ordinal));
+        var region = commands.IndexOf("SET GLOBAL s3_region = 'us-east-1'");
+
+        Assert.True(region >= 0 && region < allowed, "object-store settings precede the allow-list");
+        Assert.True(allowed >= 0 && allowed < external && external < locked, "allow-list precedes the access and configuration lock");
+        Assert.True(locked < view, "views bind after the lockdown");
+        Assert.Contains("SET autoinstall_known_extensions = false", commands);
+        Assert.Contains("SET autoload_known_extensions = false", commands);
     }
 
     private sealed class RecordingDbConnection : DbConnection
@@ -215,7 +257,13 @@ public sealed class DuckDBSpatialBootstrapTests
 
         public override object? ExecuteScalar()
         {
-            throw new NotSupportedException();
+            commands.Add(CommandText ?? string.Empty);
+            return CommandText switch
+            {
+                "SELECT current_setting('lock_configuration')" => commands.Contains("SET lock_configuration = true"),
+                "SELECT current_setting('temp_directory')" => "/var/tmp/honua.duckdb.tmp",
+                _ => throw new NotSupportedException(),
+            };
         }
 
         public override void Prepare()

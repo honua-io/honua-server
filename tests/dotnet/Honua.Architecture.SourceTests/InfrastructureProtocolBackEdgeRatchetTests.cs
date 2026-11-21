@@ -6,24 +6,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Ratchet that asserts no source file under the audit-A1 OData-required
-/// Infrastructure sub-areas takes a using-clause dependency on any
-/// <c>Honua.Server.Features.Protocols.*</c> namespace. Replacing those
-/// back-edges with delegate-override registrations (see
-/// <c>Honua.Infrastructure.Models.StandardErrorResponseFormatter</c>
-/// and
-/// <c>Honua.Infrastructure.Validation.LayerValidationHelpers</c>
-/// for the canonical pattern) is what unblocks Phase 1 protocol-assembly
-/// extraction. This ratchet locks in the cleanup so a future PR cannot
-/// silently regress it.
-/// </summary>
-/// <remarks>
-/// Detection is source-based (scanning the verbatim using directives in
-/// each <c>.cs</c> file) rather than reflection-based, because some
-/// back-edges manifest only via fully-qualified type references that a
-/// reflection walk over method signatures cannot observe.
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class InfrastructureProtocolBackEdgeRatchetTests
 {
@@ -62,9 +44,8 @@ public sealed class InfrastructureProtocolBackEdgeRatchetTests
         {
             if (!Directory.Exists(subAreaDir))
             {
-                // The sub-area may have been extracted to a new assembly /
-                // location by a follow-up PR; that case is checked by a
-                // sibling test, not this one. Skip silently.
+                // A sibling test checks extracted sub-areas at their new assembly
+                // locations; this scan covers sub-areas remaining in this root.
                 continue;
             }
 

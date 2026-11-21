@@ -884,12 +884,6 @@
       "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
     },
     {
-      "path": "tests/dotnet/Honua.Core.Tests/Features/Metadata/Services/FileMetadataV2GraphProviderTests.cs",
-      "rule": "layer-type",
-      "line": "                    PublicationType = MetadataV2LayerType.OgcCollection,",
-      "reason": "Existing metadata property or wire contract retained during the identifiers-only stage 2.1a rename; property and schema migration is the separately assigned stage 2.1b."
-    },
-    {
       "path": "tests/dotnet/Honua.Core.Tests/Features/Portal/PortalItemProjectorTests.cs",
       "rule": "layer-type",
       "line": "                    PublicationType = MetadataV2LayerType.EsriFeatureLayer,",
@@ -2448,6 +2442,30 @@
       "rule": "content-item",
       "line": "    {\"id\": \"studio-kind\", \"object\": \"actual kind, such as Map, App or Dashboard\", \"terms\": [\"content item\", \"item\", \"package\", \"composition\", \"family\"]},",
       "reason": "Surface vocabulary policy lists the retired term so the check can reject it."
+    },
+    {
+      "path": "docs/reference/release-notes/2026.1-rc.2.md",
+      "rule": "dataset-reference",
+      "line": "| Layer sidecar `ResourceId` / `resourceId` | `DatasetId` / `datasetId` |",
+      "reason": "Historical rename table names the removed field so clients can migrate to datasetId."
+    },
+    {
+      "path": "src/Honua.Server/Features/Console/Services/PublishedConsoleContent.cs",
+      "rule": "dataset-reference",
+      "line": "        foreach (var group in published.Publications.GroupBy(publication => publication.ResourceId))",
+      "reason": "Existing persisted metadata publication reference; this change renames the Console sidecar to datasetId without migrating metadata storage."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Console/PublishedContentProjectionTests.Datasets.cs",
+      "rule": "dataset-reference",
+      "line": "        Assert.False(layerMetadata.TryGetProperty(\"resourceId\", out _));",
+      "reason": "Negative assertion proves the retired resourceId field is absent from the Console Layer sidecar."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Console/PublishedContentProjectionTests.Datasets.cs",
+      "rule": "dataset-reference",
+      "line": "            Publications = [graph.Publications[0] with { ResourceId = datasetId }]",
+      "reason": "Fixture references the existing persisted metadata publication field; Console output uses datasetId."
     }
   ]
 }

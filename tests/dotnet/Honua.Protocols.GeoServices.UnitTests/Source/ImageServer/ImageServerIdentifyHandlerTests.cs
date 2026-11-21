@@ -22,9 +22,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Tests for ImageServerIdentifyHandler functionality.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerIdentifyHandlerTests
 {
@@ -43,7 +40,7 @@ public class ImageServerIdentifyHandlerTests
     }
 
     // Esri's NLCDLandCover2001 and CharlotteLAS sample services return a feature set,
-    // not an array of Honua-specific id/name/footprint records (#5238).
+    // not an array of Honua-specific id/name/footprint records.
     [UnitTheory]
     [InlineData(true)]
     [InlineData(false)]
@@ -164,7 +161,7 @@ public class ImageServerIdentifyHandlerTests
         responseJson.RootElement.GetProperty("properties").GetProperty("HasData").GetBoolean().Should().BeFalse();
         responseJson.RootElement.GetProperty("location").GetProperty("x").GetDouble().Should().Be(10);
         responseJson.RootElement.GetProperty("location").GetProperty("y").GetDouble().Should().Be(20);
-        // Nothing was sampled and the request named no sr, so no reference is fabricated (#4064).
+        // Nothing was sampled and the request named no sr, so no reference is fabricated.
         responseJson.RootElement.GetProperty("location").TryGetProperty("spatialReference", out _).Should().BeFalse();
     }
 
@@ -506,7 +503,7 @@ public class ImageServerIdentifyHandlerTests
             F = "json",
         };
         var result = await _handler.IdentifyAsync(context, 1, request);
-        // #2795: not-implemented operations surface body error.code 501 (pass-through), not the 500 collapse.
+        // Not-implemented operations surface body error.code 501 (pass-through), not the 500 collapse.
         await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
     }
 
@@ -582,7 +579,7 @@ public class ImageServerIdentifyHandlerTests
         var context = CreateImageServerContext();
 
         var result = await _handler.IdentifyAsync(context, 1, request);
-        // #2795: an unavailable multidimensional reader is NotImplemented (501); GeoServices passes it
+        // An unavailable multidimensional reader is NotImplemented (501); GeoServices passes it
         // through as body error.code 501 (pass-through) rather than collapsing to 500. Consolidated onto
         // the shared GeoServicesErrorAssertions helper (asserts transport 200 + body code).
         await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
@@ -616,7 +613,7 @@ public class ImageServerIdentifyHandlerTests
             .Should().Be(StatusCodes.Status400BadRequest);
     }
 
-    // #4064: Esri identify reports a multi-band pixel as "v1, v2, v3" (invariant culture) and labels
+    // Esri identify reports a multi-band pixel as "v1, v2, v3" (invariant culture) and labels
     // the location with its spatial reference.
     [UnitTest]
     [Operation(Operations.Identify)]
@@ -691,7 +688,7 @@ public class ImageServerIdentifyHandlerTests
             .Should().Be(4326);
     }
 
-    // #4064: esriMosaicLockRaster pins the identified catalog item, as exportImage does, instead of
+    // EsriMosaicLockRaster pins the identified catalog item, as exportImage does, instead of
     // returning the merged mosaic value.
     [UnitTest]
     [Operation(Operations.Identify)]
@@ -732,7 +729,7 @@ public class ImageServerIdentifyHandlerTests
             1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
     }
 
-    // #4064: identify resolves a contested pixel with the same ordering exportImage renders, so the
+    // Identify resolves a contested pixel with the same ordering exportImage renders, so the
     // parsed method (and non-date attribute sort) reaches the mosaic identify call.
     [UnitTest]
     [Operation(Operations.Identify)]
@@ -980,7 +977,7 @@ public class ImageServerIdentifyHandlerTests
     }
 
     // Esri always emits catalogItemVisibilities (an array, empty when no catalog items come
-    // back) alongside catalogItems; a native client reads it positionally against the features (#5238).
+    // back) alongside catalogItems; a native client reads it positionally against the features.
     [UnitTheory]
     [InlineData(true, 1)]
     [InlineData(false, 0)]
@@ -1005,7 +1002,7 @@ public class ImageServerIdentifyHandlerTests
         }
     }
 
-    // #6561: overlapping rasters stay in catalogItems, but only the raster that supplied the
+    // Overlapping rasters stay in catalogItems, but only the raster that supplied the
     // pixel is visible. The id comes from the mosaic union, not from catalog sort position.
     [UnitTheory]
     [InlineData(100L, new double[] { 1.0, 0.0 }, "test-raster")]

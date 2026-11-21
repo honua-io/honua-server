@@ -197,7 +197,7 @@ public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixt
     [InterfaceOperation(TestProtocols.Wps202, "Execute")]
     public async Task Execute_WithoutDurableJobStore_ProjectsCapabilityUnavailableReceiptIntoExceptionReport()
     {
-        // honua-release#202: the WPS surface must carry the same machine-readable receipt as the
+        // The WPS surface must carry the same machine-readable receipt as the
         // other job surfaces on a Redis-less install. OWS constrains the exceptionCode vocabulary
         // (and CITE checks it), so the code stays ServerBusy and the receipt rides additional
         // ows:ExceptionText lines using the stable "key: value" convention.
@@ -208,6 +208,9 @@ public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixt
             Title = "Echo",
             Description = "Echoes a literal value.",
             Category = "test",
+            ExecutionKind = ProcessExecutionKind.Job,
+            SupportedExecutionModes = ProcessExecutionModes.Async | ProcessExecutionModes.Sync,
+            SupportedEntryPoints = ProcessEntryPoints.Job,
             Parameters = [new ProcessParameterSpec { Name = "value", DisplayName = "Value", Description = "Value to echo.", ValueType = ProcessParameterValueType.Text, Required = true }],
             OutputArtifactKinds = []
         });
@@ -253,6 +256,9 @@ public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixt
             Title = "Echo",
             Description = "Echoes a literal value.",
             Category = "test",
+            ExecutionKind = ProcessExecutionKind.Job,
+            SupportedExecutionModes = ProcessExecutionModes.Async | ProcessExecutionModes.Sync,
+            SupportedEntryPoints = ProcessEntryPoints.Job,
             Parameters = [new ProcessParameterSpec { Name = "value", DisplayName = "Value", Description = "Value to echo.", ValueType = ProcessParameterValueType.Text, Required = true }],
             OutputArtifactKinds = []
         });
@@ -811,6 +817,9 @@ public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixt
             Title = "Canonical",
             Description = "Test process.",
             Category = "test",
+            ExecutionKind = ProcessExecutionKind.Job,
+            SupportedExecutionModes = ProcessExecutionModes.Async | ProcessExecutionModes.Sync,
+            SupportedEntryPoints = ProcessEntryPoints.Job,
             Parameters = [],
             OutputArtifactKinds = []
         });

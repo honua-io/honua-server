@@ -28,7 +28,7 @@ public sealed class FeatureQueryBuilderSelectProjectionTests
 
         // The jsonb key is bound as a parameter alongside the value accessor (both reuse
         // $2), so no part of a field name is interpolated into the SQL text.
-        result.Sql.Should().Contain("jsonb_build_object($2::text, attributes -> $2::text)::text AS attributes");
+        result.Sql.Should().Contain("(CASE WHEN attributes ? $2::text THEN jsonb_build_object($2::text, attributes -> $2::text) ELSE '{}'::jsonb END)::text AS attributes");
         result.Sql.Should().NotContain("SELECT objectid, ST_AsBinary(geometry), attributes FROM");
         result.WhereParameters.Should().Equal("population");
     }
@@ -104,14 +104,12 @@ public sealed class FeatureQueryBuilderSelectProjectionTests
 
         var result = queryBuilder.BuildOptimizedSelectQuery(layerId: 1, query);
 
-        result.Sql.Should().Contain("jsonb_build_object($2::text, attributes -> $2::text)::text AS attributes");
+        result.Sql.Should().Contain("(CASE WHEN attributes ? $2::text THEN jsonb_build_object($2::text, attributes -> $2::text) ELSE '{}'::jsonb END)::text AS attributes");
         result.Sql.Should().Contain("COUNT(*) OVER()");
         result.Sql.Should().Contain("LIMIT $");
-        // The optimized builder emits the LIMIT placeholder but does not append the pagination
-        // value to WhereParameters — pagination is bound by AddQueryParameters, matching the
-        // non-optimized BuildSelectQuery convention. Appending it here previously double-bound
-        // pagination at execution (honua-server#1749). Only the OutFields projection parameter
-        // ("category") belongs in WhereParameters.
+        // The optimized builder emits the LIMIT placeholder, but AddQueryParameters
+        // binds pagination, matching BuildSelectQuery. Only the OutFields projection
+        // parameter category belongs in WhereParameters.
         result.WhereParameters.Should().Equal("category");
     }
 
@@ -138,7 +136,7 @@ public sealed class FeatureQueryBuilderSelectProjectionTests
         // ORDER BY objectid. Without it the database returns an arbitrary heap/plan order while
         // the next page (which injects ORDER BY objectid because it carries an Offset) is drawn
         // from a different ordering, silently skipping and duplicating rows across the page
-        // boundary (#2070). Mirrors the sibling MySQL provider, which has no LIKE carve-out.
+        // boundary. Mirrors the sibling MySQL provider, which has no LIKE carve-out.
         var queryBuilder = CreateQueryBuilder();
         var query = new FeatureQuery
         {
@@ -211,15 +209,15 @@ public sealed class FeatureQueryBuilderSelectProjectionTests
     [Fact]
     public void BuildOptimizedSelectGmlQuery_WithCountAndStartIndex_DoesNotDoubleBindPagination()
     {
-        // Regression for honua-server#1749/#1750: WFS GetFeature (and OGC Features/KML) reads with a
-        // count + startIndex route through the optimized window-count GML builder
-        // (PostgresFeatureStore.BuildGmlFeatureCollection -> BuildOptimizedSelectGmlQuery). It
-        // previously appended the LIMIT/OFFSET *values* to WhereParameters in addition to emitting
-        // their placeholders, while FeatureDataAccess.AddQueryParameters binds pagination too —
-        // leaving more bound parameters than SQL placeholders. On the prepared-statement cache path
-        // the misalignment left a pagination placeholder unbound -> "Parameter cannot be null" ->
-        // HTTP 500 on the advertised WFS type. The sibling Esri-JSON builder is covered above; this
-        // locks the GML path (the one the WFS JS suite hits) against the same re-regression.
+        // WFS GetFeature (and OGC Features/KML) reads with a count + startIndex route through the
+        // optimized window-count GML builder (PostgresFeatureStore.BuildGmlFeatureCollection ->
+        // BuildOptimizedSelectGmlQuery). The builder must not append the LIMIT/OFFSET *values* to
+        // WhereParameters in addition to emitting their placeholders:
+        // FeatureDataAccess.AddQueryParameters binds pagination too, which would leave more bound
+        // parameters than SQL placeholders. On the prepared-statement cache path that misalignment
+        // leaves a pagination placeholder unbound -> "Parameter cannot be null" -> HTTP 500 on the
+        // advertised WFS type. The sibling Esri-JSON builder is covered above; this locks the GML
+        // path (the one the WFS JS suite hits).
         var queryBuilder = CreateQueryBuilder();
         var query = new FeatureQuery
         {
@@ -240,7 +238,7 @@ public sealed class FeatureQueryBuilderSelectProjectionTests
     [Fact]
     public void BuildSelectQuery_WithPrefixedExtensionField_ProjectsFieldWithParameterBoundKey()
     {
-        // honua-server#3392: a declared, queryable STAC/EO extension property such as
+        // A declared, queryable STAC/EO extension property such as
         // `eo:cloud_cover` was rejected by the identifier-shaped validator and never
         // reached the projection, so the server advertised the field in /queryables, the
         // CSV header and the GeoServices `fields` array and then omitted it from every
@@ -254,7 +252,7 @@ public sealed class FeatureQueryBuilderSelectProjectionTests
 
         var result = queryBuilder.BuildSelectQuery(layerId: 1, query);
 
-        result.Sql.Should().Contain("jsonb_build_object($2::text, attributes -> $2::text)::text AS attributes");
+        result.Sql.Should().Contain("(CASE WHEN attributes ? $2::text THEN jsonb_build_object($2::text, attributes -> $2::text) ELSE '{}'::jsonb END)::text AS attributes");
         result.Sql.Should().NotContain("eo:cloud_cover");
         result.WhereParameters.Should().Equal("eo:cloud_cover");
     }

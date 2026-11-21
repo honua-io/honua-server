@@ -13,21 +13,13 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Regression coverage for the additive metadata-release lifecycle review fixes (PR #1739):
-/// the singleton preflight gate must resolve the scoped compatibility prevalidation service per
-/// evaluation (no scoped-from-singleton capture), and idempotency-key replays that change the
-/// request must conflict rather than silently returning the prior operation.
-/// </summary>
 public sealed class MetadataReleaseLifecycleFixTests
 {
     [Fact]
     public async Task PreflightGate_ResolvedAsSingletonUnderScopeValidation_ResolvesScopedPrevalidationPerEvaluation()
     {
-        // Build a provider that validates scopes (the production/development configuration that
-        // surfaced the scoped-from-singleton DI error). The gate is a singleton; the canonical
-        // prevalidation service is scoped. Before the fix, resolving the singleton gate captured the
-        // scoped service from the root provider and threw under scope validation.
+        // Validate DI scopes as in production and development. The singleton gate must
+        // resolve the scoped canonical prevalidation service within an evaluation scope.
         var recordingPrevalidation = new RecordingPrevalidationService();
         var services = new ServiceCollection();
         services.AddScoped<IMetadataCompatibilityPrevalidationService>(_ => recordingPrevalidation);
@@ -42,8 +34,7 @@ public sealed class MetadataReleaseLifecycleFixTests
         // Resolve the gate from the ROOT provider (as the singleton reconciler does).
         var gate = provider.GetRequiredService<IMetadataReleasePreflightGate>();
 
-        // A GUID package id drives the canonical prevalidation path, exercising the per-evaluation
-        // scope. This would throw before the fix; after it, the scoped service is resolved cleanly.
+        // A GUID package ID exercises canonical prevalidation within its evaluation scope.
         var plan = CreatePlan(packageId: Guid.NewGuid().ToString());
         var result = await gate.EvaluateAsync(plan);
 

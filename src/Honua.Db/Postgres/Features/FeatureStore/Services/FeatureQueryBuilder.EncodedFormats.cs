@@ -65,7 +65,7 @@ internal sealed partial class FeatureQueryBuilder
             AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
             AppendOrderByClause(sql, query, ref paramIndex, parameters);
             AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, geometryStorageType, ref paramIndex);
-            AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
+            AppendPagination(sql, isKnnQuery, query, ref paramIndex);
             sql.Append(") q");
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
@@ -105,7 +105,7 @@ internal sealed partial class FeatureQueryBuilder
 
     internal static IEnumerable<MetadataV2Field> GetEncodedBinaryAttributeFields(MetadataV2Object resource, FeatureQuery query)
     {
-        // Field-level security (#1940): drop masked columns from the binary-format
+        // Field-level security: drop masked columns from the binary-format
         // projection regardless of the requested outFields (fail-secure).
         var maskedFields = ResolveMaskedFields(query);
 
@@ -158,9 +158,9 @@ internal sealed partial class FeatureQueryBuilder
             MetadataV2FieldType.Integer => $"NULLIF({attributeValue}, '')::integer",
             MetadataV2FieldType.BigInteger => $"NULLIF({attributeValue}, '')::bigint",
             MetadataV2FieldType.Float => $"NULLIF({attributeValue}, '')::real",
-            MetadataV2FieldType.Double => $"NULLIF({attributeValue}, '')::double precision",
+            MetadataV2FieldType.Double or MetadataV2FieldType.Decimal => $"NULLIF({attributeValue}, '')::double precision",
             MetadataV2FieldType.Boolean => $"NULLIF({attributeValue}, '')::boolean",
-            MetadataV2FieldType.DateTime => $"NULLIF({attributeValue}, '')::timestamptz",
+            MetadataV2FieldType.DateTime or MetadataV2FieldType.TimestampOffset => $"NULLIF({attributeValue}, '')::timestamptz",
             MetadataV2FieldType.Date => $"NULLIF({attributeValue}, '')::date",
             MetadataV2FieldType.Time => $"NULLIF({attributeValue}, '')::time",
             MetadataV2FieldType.Uuid => $"NULLIF({attributeValue}, '')::uuid",
@@ -215,7 +215,7 @@ internal sealed partial class FeatureQueryBuilder
             // to `parameters` here as well double-binds pagination, producing more bound parameters
             // than SQL placeholders and an Npgsql "Parameter '' cannot be null" 500 on WFS
             // GetFeature (which sets both count -> Limit and startIndex -> Offset).
-            AppendPagination(sql, isKnnQuery: false, query, spatialFilter: null, ref paramIndex);
+            AppendPagination(sql, isKnnQuery: false, query, ref paramIndex);
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }

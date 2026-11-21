@@ -12,20 +12,6 @@ using System.Text.Json;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Integration tests for FeatureServer query input-validation edge cases
-/// (honua-server#1823). A class of malformed query inputs used to bypass up-front
-/// validation and crash at SQL-execution time as a 500; each must instead be
-/// rejected as a structured 400:
-/// <list type="bullet">
-/// <item>arithmetic errors in <c>where</c> (division/modulo by zero, overflow,
-/// invalid LOG/POWER/SQRT argument, bad CAST) raised at eval time;</item>
-/// <item>a numeric aggregate (avg/sum/stddev/var) applied to a string field;</item>
-/// <item>a <c>groupByFieldsForStatistics</c> referencing an unknown column.</item>
-/// </list>
-/// The seeded <c>test</c> layer (id 0) exposes a numeric <c>objectid</c> and a
-/// string <c>name</c> field.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database.CoreSpatial")]
 public sealed class FeatureServerQueryValidationEdgeCaseTests : IAsyncLifetime
@@ -138,7 +124,7 @@ public sealed class FeatureServerQueryValidationEdgeCaseTests : IAsyncLifetime
         response.Be200Ok();
     }
 
-    // BH7-003 regression: outStatistics with groupByFieldsForStatistics must apply
+    // outStatistics with groupByFieldsForStatistics must apply
     // the configured MaxRecordCount cap (default 10 000, not null) so a
     // high-cardinality groupBy cannot exhaust server memory. With few groups the
     // cap is never hit; the test guards the code path and verifies no regression

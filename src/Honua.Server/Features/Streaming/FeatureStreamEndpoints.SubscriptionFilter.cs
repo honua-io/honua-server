@@ -290,6 +290,12 @@ internal static partial class FeatureStreamEndpoints
 
         var subscriberSecurity = await ResolveSubscriberSecurityAsync(
             context, snapshot, service, layerIds, context.RequestAborted).ConfigureAwait(false);
+        // 403, not 400: the request is well formed, but the subscriber's read policy forbids streaming the layer.
+        if (subscriberSecurity.DescribeUnstreamableLayer(hasExplicitLayerScope ? layerIds : null) is { } unstreamableError)
+        {
+            FeatureStreamLog.FilterValidationFailed(logger, unstreamableError);
+            return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateForbidden(context, unstreamableError));
+        }
 
         if (!hasAnyFilter)
         {
@@ -319,6 +325,12 @@ internal static partial class FeatureStreamEndpoints
             routabilityGuard: deps.RoutabilityGuard,
             subscriberSecurity: subscriberSecurity);
 
+        if (DescribeMaskedFilterField(filter) is { } maskedFieldError)
+        {
+            FeatureStreamLog.FilterValidationFailed(logger, maskedFieldError);
+            return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, maskedFieldError));
+        }
+
         var snapshotScopeError = ValidateSnapshotScope(mode, filter);
         if (snapshotScopeError is not null)
         {
@@ -328,6 +340,12 @@ internal static partial class FeatureStreamEndpoints
 
         return new SubscriptionParseResult(filter, true, mode, null);
     }
+
+    // Same refusal as a feature query: a field hidden from the caller cannot drive a predicate.
+    private static string? DescribeMaskedFilterField(StreamSubscriptionFilter filter)
+        => filter.FindMaskedFilterField() is { } field
+            ? $"Field '{field}' is masked and cannot be used by a streaming filter."
+            : null;
 
     private static async Task<StreamSubscriberSecurity> ResolveSubscriberSecurityAsync(
         HttpContext context,
@@ -418,6 +436,7 @@ internal static partial class FeatureStreamEndpoints
         var named = new Dictionary<(string Service, int Layer), StreamLayerReadPolicy>();
         var deniedNames = new HashSet<(string Service, int Layer)>();
         var deniedExact = new HashSet<(string Service, int Layer)>();
+        var unstreamablePolicyLayers = new HashSet<int>();
         var policies = new Dictionary<string, StreamLayerReadPolicy>(StringComparer.Ordinal);
         foreach (var service in snapshot.Graph.Services)
         {
@@ -453,10 +472,12 @@ internal static partial class FeatureStreamEndpoints
                 if (!policies.TryGetValue(layer.Resource.Metadata.Id, out var policy))
                 {
                     var predicates = (await rowSource.ResolveExpressionsAsync(layer.Resource, cancellationToken).ConfigureAwait(false)).ToList();
-                    if (!PermanentFilterAccepted(layer.Resource, filterService, predicates))
+                    if (!PermanentFilterAccepted(layer.Resource, filterService, predicates) ||
+                        predicates.Any(static predicate => !InMemoryFilterEvaluator.TryValidateStreamingExpression(predicate, out _)))
                     {
                         deniedNames.Add(nameKey);
                         deniedExact.Add((service.Metadata.Id, layer.LayerId));
+                        unstreamablePolicyLayers.Add(layer.LayerId);
                         continue;
                     }
 
@@ -476,7 +497,13 @@ internal static partial class FeatureStreamEndpoints
         }
 
         return new StreamSubscriberSecurity(
-            snapshot.Graph.Services.Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal), exact, named, deniedExact);
+            snapshot.Graph.Services.Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal),
+            exact,
+            named,
+            deniedExact)
+        {
+            UnstreamablePolicyLayers = unstreamablePolicyLayers,
+        };
     }
 
     private static bool TryResolveFilterLanguage(string? filterLang, out FilterLanguage language, out string error)

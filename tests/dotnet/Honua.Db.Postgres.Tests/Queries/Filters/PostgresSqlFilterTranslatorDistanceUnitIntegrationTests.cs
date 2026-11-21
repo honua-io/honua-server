@@ -10,12 +10,6 @@ using Honua.TestKit;
 
 namespace Honua.Db.Postgres.Tests.Queries.Filters;
 
-/// <summary>
-/// FES distances carry a unit of measure; the parser normalises them to metres. On a projected
-/// layer the planar predicate measures in the CRS's native unit, so the translator must convert
-/// (honua-server#5462). The oracle is exact unit arithmetic: in EPSG:2264 (US survey feet) the
-/// fixture points sit 50 ftUS = 15.24 m and 100 ftUS = 30.48 m from the filter point.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresSqlFilterTranslatorDistanceUnitIntegrationTests(PostgresFixture fixture)
 {

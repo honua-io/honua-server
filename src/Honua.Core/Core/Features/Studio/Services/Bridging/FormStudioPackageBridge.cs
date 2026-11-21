@@ -33,7 +33,7 @@ public sealed class FormStudioPackageBridge : IStudioFamilyPersistenceBridge
 
     private static readonly string[] BridgeLimitations =
     [
-        "form packages persist through the native forms package store (/api/v1/admin/forms/packages); a content version saved through the lifecycle is a native draft version and remains natively editable until published",
+        "form packages persist through the native forms package store (/api/v1/admin/forms); a content version saved through the lifecycle is a native draft version and remains natively editable until published",
         "bridged form items appear in content-item enumeration once first saved; unsaved drafts are listed under /studio/package-drafts",
         "content-item enumeration merges at most 1000 bridged form packages",
         "rollback is not supported for bridged form packages; reopen the target version and republish instead",
@@ -90,7 +90,7 @@ public sealed class FormStudioPackageBridge : IStudioFamilyPersistenceBridge
             ItemId = itemId,
             CurrentVersionId = VersionGuid(formId, current.Version),
             PublishedVersionId = published is null ? null : VersionGuid(formId, published.Version),
-            // Forms has no ownership model; a null owner fails closed under the #3018
+            // Forms has no ownership model; a null owner fails closed under the Studio
             // authorization model (admin-only), matching the native surface's posture.
             OwnerId = null,
         };

@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
@@ -68,6 +69,75 @@ public sealed partial class LayerPublishingIntegrationTests
         {
             await _fixture.Postgres.ExecuteDdlUnderLockAsync($"DROP TABLE IF EXISTS public.{table};");
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task PublishProjectedPoints_AdvertisedCrs84Extent_ContainsEveryFeature()
+    {
+        var table = $"projected_edge_{Guid.NewGuid():N}";
+        try
+        {
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync($"""
+                CREATE TABLE public.{table} (
+                    id integer PRIMARY KEY,
+                    name text NOT NULL,
+                    geom geometry(Point, 3857) NOT NULL);
+                INSERT INTO public.{table} VALUES
+                    (1, 'NYC', ST_SetSRID(ST_Point(-8238310.24, 4970071.58), 3857)),
+                    (2, 'London', ST_SetSRID(ST_Point(-14226.63, 6711542.47), 3857));
+                """);
+
+            _layerId = (await PublishLayerAsync(ProjectedEdgeRequest(table))).StorageLayerId;
+
+            var (west, south, east, north) = await ReadAdvertisedCrs84ExtentAsync();
+
+            using var items = JsonDocument.Parse(await ReadOgcItemsAsync("limit=10"));
+            var features = items.RootElement.GetProperty("features");
+            features.GetArrayLength().Should().Be(2);
+            foreach (var feature in features.EnumerateArray())
+            {
+                var coordinates = feature.GetProperty("geometry").GetProperty("coordinates");
+                coordinates[0].GetDouble().Should().BeInRange(west, east);
+                coordinates[1].GetDouble().Should().BeInRange(south, north);
+            }
+
+            var bbox = string.Create(CultureInfo.InvariantCulture, $"{west},{south},{east},{north}");
+            using var filtered = JsonDocument.Parse(await ReadOgcItemsAsync($"limit=10&bbox={bbox}"));
+            filtered.RootElement.GetProperty("features").GetArrayLength().Should().Be(2);
+        }
+        finally
+        {
+            await _fixture.Postgres.ExecuteDdlUnderLockAsync($"DROP TABLE IF EXISTS public.{table};");
+        }
+    }
+
+    private PublishLayerRequest ProjectedEdgeRequest(string table) => new()
+    {
+        Schema = "public",
+        Table = table,
+        LayerName = "Projected edge points",
+        ServiceName = _serviceName,
+        GeometryColumn = "geom",
+        GeometryType = "Point",
+        Srid = 3857,
+        PrimaryKey = "id",
+        Fields = _idNameFields,
+        Enabled = true
+    };
+
+    private async Task<(double West, double South, double East, double North)> ReadAdvertisedCrs84ExtentAsync()
+    {
+        using var response = await _client.GetAsync($"/ogc/features/collections/{_layerId}?f=json");
+        var payload = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
+        using var collection = JsonDocument.Parse(payload);
+        var bbox = collection.RootElement.GetProperty("extent").GetProperty("spatial").GetProperty("bbox")[0];
+        return (bbox[0].GetDouble(), bbox[1].GetDouble(), bbox[2].GetDouble(), bbox[3].GetDouble());
     }
 
     private async Task AssertProjectedMetadataBoundsAsync(double xmin, double ymin, double xmax, double ymax)

@@ -230,7 +230,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 .ToArray()
         };
 
-        // ADR-0048 Phase 2 (#1389): project the independent style catalog into the
+        // ADR-0048 Phase 2: project the independent style catalog into the
         // canonical graph. Emit a Type=Style resource per associated catalog style and
         // point the data resource's StyleResourceIds at them ([0] = primary), so the
         // FeatureServer/MapServer StyleResourceIds read path lights up with real data
@@ -1762,9 +1762,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Name = RestoreMutationValue(current.Name, previousValue.Name, persistedValue.Name),
             Email = RestoreMutationValue(current.Email, previousValue.Email, persistedValue.Email),
             Url = RestoreMutationValue(current.Url, previousValue.Url, persistedValue.Url),
+            Phone = RestoreMutationValue(current.Phone, previousValue.Phone, persistedValue.Phone),
         };
 
-        return previous is null && restored.AdditionalProperties is not { Count: > 0 } && restored.Name is null && restored.Email is null && restored.Url is null
+        return previous is null && restored.AdditionalProperties is not { Count: > 0 } && restored.Name is null && restored.Email is null && restored.Url is null && restored.Phone is null
             ? null
             : restored;
     }
@@ -2833,6 +2834,27 @@ internal sealed partial class PostgreSqlLayerPublishingService
             JsonSerializer.SerializeToElement(left, typeInfo),
             JsonSerializer.SerializeToElement(right, typeInfo));
 
+    // A link reuses an existing resource, so it is primary only when nothing else is. The
+    // resource's first primary publication stays its canonical service, and writes through
+    // the linked publication must also satisfy that service's data-editor grant.
+    private static bool HasPrimaryPublication(MetadataV2Graph graph, string resourceId)
+        => PrimaryPublications(graph, resourceId).Any();
+
+    // Deterministic survivor when a legacy graph holds several primaries for one resource:
+    // the oldest by creation time (undated last), then by publication id.
+    private static bool IsEarliestPrimaryPublication(MetadataV2Graph graph, MetadataV2Layer publication)
+        => PrimaryPublications(graph, publication.ResourceId)
+            .OrderBy(candidate => candidate.Metadata.CreatedAt ?? DateTimeOffset.MaxValue)
+            .ThenBy(candidate => candidate.Metadata.Id, StringComparer.Ordinal)
+            .Select(candidate => candidate.Metadata.Id)
+            .FirstOrDefault() is { } earliestId
+           && string.Equals(earliestId, publication.Metadata.Id, StringComparison.Ordinal);
+
+    private static IEnumerable<MetadataV2Layer> PrimaryPublications(MetadataV2Graph graph, string resourceId)
+        => graph.Publications.Where(publication =>
+            publication.IsPrimary &&
+            string.Equals(publication.ResourceId, resourceId, StringComparison.Ordinal));
+
     internal static MetadataV2Graph BuildLinkedLayerMetadataV2Graph(
         MetadataV2Graph graph,
         string serviceName,
@@ -2905,7 +2927,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             featurePublication = existingFeaturePublication with
             {
-                Status = WithReadyStatus(existingFeaturePublication.Status, readyStatus)
+                Status = WithReadyStatus(existingFeaturePublication.Status, readyStatus),
+                // Re-linking repairs a graph written before links became secondary: only the
+                // resource's earliest primary publication keeps the canonical role.
+                IsPrimary = existingFeaturePublication.IsPrimary &&
+                            IsEarliestPrimaryPublication(graph, existingFeaturePublication)
             };
         }
         else
@@ -2933,7 +2959,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 BuildLayerGraphId("layer", layerId, storageScope?.ManagedLayerIds?.Contains(layerId) == true ? null : storageScope?.ConnectionId),
                 layerName,
                 MetadataV2LayerType.EsriFeatureLayer,
-                isPrimary: true,
+                isPrimary: !HasPrimaryPublication(graph, resource.Metadata.Id),
                 idPrefix: "pub",
                 enabled,
                 now);
@@ -3135,11 +3161,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
     // container where no snapshot has been activated yet (e.g. migration 031 ran
     // but the compat/bootstrap compile has not). In that case we start from an
     // empty graph and force the first write (null expectedEtag) instead of 500ing
-    // the admin layer-publish path. (honua-server#1341.)
+    // the admin layer-publish path.
     //
     // This deliberately reads only the persisted snapshot via the write-base reader,
     // NOT GetCurrentAsync. GetCurrentAsync synthesizes a graph from the V1 catalog when
-    // no snapshot is activated (honua-server#1412); building a publish on top of that
+    // no snapshot is activated; building a publish on top of that
     // synthesized-but-never-persisted base makes SaveAsync's reconciliation fail, so
     // every AutoPublish import would report "publishing did not complete".
     private async Task<(MetadataV2Graph Graph, string? ExpectedEtag)> LoadCurrentOrEmptyGraphAsync(
@@ -3189,7 +3215,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // persisted snapshot only (same rationale as LoadCurrentOrEmptyGraphAsync): a
         // synthesized V1-compat graph is never persisted and would fail SaveAsync.
         // When no snapshot is activated there is nothing to update — extents are served
-        // straight from the V1 catalog — so skip. (honua-server#1412.)
+        // straight from the V1 catalog — so skip.
         MetadataV2GraphSnapshot? snapshot;
         if (_metadataWriteBaseReader is not null)
         {
@@ -3416,12 +3442,12 @@ internal sealed partial class PostgreSqlLayerPublishingService
             },
             // Carry the captured Esri subtypes into the canonical graph so they survive
             // the compat-compile snapshot and are served on the FeatureServer layer
-            // metadata (subtypeField / subtypes / defaultSubtypeCode) (honua-server#1378).
+            // metadata (subtypeField / subtypes / defaultSubtypeCode).
             Subtypes = ResolveSubtypesForPublish(request.Subtypes, fields),
             Editing = ResolveEditingForPublish(request, fields),
             // Carry the captured Esri attribute rules into the canonical graph so they
             // fire on the shared edit path (FeatureServer applyEdits). Calculation rules
-            // whose target column was not published are dropped (honua-server#1271).
+            // whose target column was not published are dropped.
             AttributeRules = ResolveAttributeRulesForPublish(request.AttributeRules, fields),
             Status = LayerReadyStatus(request.Enabled, now)
         };
@@ -3563,7 +3589,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // table the managed feature writer writes: no connection of its own (reads use the
         // server connection the writer uses) and the writer's schema qualification, if any.
         // That is what lets the storage-routing guard admit edits and makes every accepted
-        // edit readable back (honua-server#4707, #4859).
+        // edit readable back.
         var storageConnectionId = storage.IsManagedStore ? null : request.ConnectionId;
         var connectionId = storageConnectionId?.ToString("D");
         var options = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
@@ -3600,7 +3626,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // metadata schema. A user source table that merely happens to be named
         // 'features' in another schema (e.g. public.features) has neither the JSONB
         // 'attributes' column nor 'layer_id', so applying these options there would make
-        // the reader emit columns the table lacks and fail with 42703. (honua-server#1238.)
+        // the reader emit columns the table lacks and fail with 42703.
         //
         // A managed-store layer is bound to the managed features table by construction (its
         // schema is resolved from the connection, e.g. public.features), so it always gets
@@ -3749,7 +3775,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Length = field.MaxLength,
             // Carry the captured Esri coded-value/range domain into the canonical
             // graph so it survives the compat-compile snapshot and is served via the
-            // FeatureServer field domain and queryDomains surfaces (honua-server#1255).
+            // FeatureServer field domain and queryDomains surfaces.
             Domain = field.Domain
         };
     }
@@ -3761,9 +3787,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
             MetadataV2FieldType.Integer => MetadataV2FieldType.Integer,
             MetadataV2FieldType.BigInteger => MetadataV2FieldType.BigInteger,
             MetadataV2FieldType.Double => MetadataV2FieldType.Double,
+            MetadataV2FieldType.Decimal => MetadataV2FieldType.Decimal,
             MetadataV2FieldType.Float => MetadataV2FieldType.Float,
             MetadataV2FieldType.Boolean => MetadataV2FieldType.Boolean,
             MetadataV2FieldType.DateTime => MetadataV2FieldType.DateTime,
+            MetadataV2FieldType.TimestampOffset => MetadataV2FieldType.TimestampOffset,
             MetadataV2FieldType.Date => MetadataV2FieldType.Date,
             MetadataV2FieldType.Time => MetadataV2FieldType.Time,
             MetadataV2FieldType.Geometry => MetadataV2FieldType.Geometry,

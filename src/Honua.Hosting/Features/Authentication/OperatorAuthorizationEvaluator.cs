@@ -49,7 +49,7 @@ internal sealed class OperatorAuthorizationEvaluator(
         // operator-RBAC role registered in IRoleStore, so without this it always fell
         // through to "no operator-eligible roles" and lost every operator-gated read —
         // including admin:read-only and admin:read+admin:approve keys reading durable
-        // jobs (#4981). Its admin:* grant already authorized the read at the shared
+        // jobs. Its admin:* grant already authorized the read at the shared
         // AdminPermissionRequirement layer; honour that same grant here for Read so a
         // scoped read (or approve, which implies read) key is not double-gated by a
         // second, unrelated authorization model. Mutating operations stay excluded:
@@ -115,8 +115,8 @@ internal sealed class OperatorAuthorizationEvaluator(
 
         // This evaluator is a singleton, but IRoleStore may be a scoped durable provider
         // (PostgresRoleStore depends on the scoped connection provider). Resolve it within a
-        // fresh scope per evaluation so the singleton never captures a scoped dependency
-        // (#1575). EffectivePermissions is fully materialised before the scope is disposed.
+        // fresh scope per evaluation so the singleton never captures a scoped dependency.
+        // EffectivePermissions is fully materialised before the scope is disposed.
         EffectivePermissions effective;
         using (var scope = scopeFactory.CreateScope())
         {

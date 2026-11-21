@@ -12,16 +12,6 @@ using Honua.Core.Features.Licensing.Domain;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Comprehensive OData integration tests using Microsoft.OData.Client.
-/// Tests service document parsing, metadata validation, and query operations
-/// with deterministic test data for cross-protocol parity verification.
-/// </summary>
-/// <remarks>
-/// Behavior reference: Issue #158 - Add OData integration tests using Microsoft.OData.Client
-/// These tests validate that the OData service document parses correctly,
-/// metadata is accessible, and query operations return expected results.
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataClientIntegrationTests : IAsyncLifetime
@@ -210,7 +200,7 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
         var features = document.RootElement.GetProperty("value").EnumerateArray().ToList();
         features.Should().HaveCount(5);
 
-        // OData 4.01 Part 1 §11.2.6.3 (#5464): $top=5 bounds the requested collection, so no
+        // OData 4.01 Part 1 §11.2.6.3: $top=5 bounds the requested collection, so no
         // nextLink may lead a client past the fifth item.
         document.RootElement.TryGetProperty("@odata.nextLink", out _).Should().BeFalse();
     }
@@ -866,8 +856,8 @@ public sealed class ODataClientIntegrationTests : IAsyncLifetime
 
     // NOTE: These tests are intentionally designed to FAIL with current implementation
     // to drive the implementation of spatial filter support in OData endpoints.
-    // Per issue #158: "Tests should intentionally fail rather than skip to force
-    // implementation of geo-spatial functions and CRS metadata alignment."
+    // They fail rather than skip, to force implementation of geo-spatial functions
+    // and CRS metadata alignment.
     //
     // When spatial filtering is implemented, these tests should pass.
     // DO NOT change these to pass without implementing actual spatial filtering.

@@ -26,6 +26,7 @@ using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Observability.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Monitoring;
+using Honua.Infrastructure.Security;
 using Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -66,6 +67,13 @@ public sealed class McpPlatformOpsReaderIntegrationTests
             ProposeMetadataReleaseTool.ToolName => new ProposeMetadataReleaseTool(NullLogger<ProposeMetadataReleaseTool>.Instance),
             _ => throw new InvalidOperationException($"Tool '{toolName}' is not a governed proposal tool.")
         };
+        var apiKeys = new InMemoryAdminApiKeyStore(TimeProvider.System);
+        var proposer = await apiKeys.CreateAsync(
+            "proposal-evidence-proposer",
+            ["admin:operation:POST:/api/v1/admin/proposals"],
+            DateTimeOffset.UtcNow.AddMinutes(5),
+            "test",
+            CancellationToken.None);
         var descriptor = tool.Describe();
         var request = new StudioAiChatRequest
         {
@@ -78,7 +86,8 @@ public sealed class McpPlatformOpsReaderIntegrationTests
                 ReleaseId = "2026.1-rc.1",
                 EndpointIdentity = "candidate-proxy",
                 ActionId = "governed-mutation",
-                RunNonce = "nonce-1"
+                RunNonce = $"nonce-{Guid.NewGuid():N}",
+                RequestedBy = CanonicalSecurityActor.Resolve(McpPlatformOpsReaderTests.CreateApiKeyPrincipal(proposer.Record.Id))!.ActorId
             },
             Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "propose the release mutation" }],
             Tools =
@@ -138,18 +147,10 @@ public sealed class McpPlatformOpsReaderIntegrationTests
                 tool,
                 verifiedCall.ToolArguments,
                 metadata.RootElement,
-                "tenant-a",
-                "session-candidate-a",
+                new ProposalEvidenceCaller("tenant-a", request.Certification!.RequestedBy, "session-candidate-a"),
                 callId.RootElement,
                 CancellationToken.None);
 
-        var apiKeys = new InMemoryAdminApiKeyStore(TimeProvider.System);
-        var proposer = await apiKeys.CreateAsync(
-            "proposal-evidence-proposer",
-            ["admin:operation:POST:/api/v1/admin/proposals"],
-            DateTimeOffset.UtcNow.AddMinutes(5),
-            "test",
-            CancellationToken.None);
         var proposalStore = (await Honua.Server.Tests.Features.Infrastructure.ControlPlane.SharedControlPlaneState.GetAsync())
             .CreateProposalStore();
         var ladder = Substitute.For<Honua.Core.Features.Guardrails.Abstractions.IGuardrailLadder>();
@@ -198,12 +199,45 @@ public sealed class McpPlatformOpsReaderIntegrationTests
         persisted.Evidence.PolicyRevision.Should().Be(OperationGateway.ComputePolicyRevision(decision));
         await actuator.DidNotReceive().ExecuteAsync(
             Arg.Any<OperationGatewayRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        await AssertRequesterSwapRefusedAtApprovalAsync(signer, tool, persisted);
+    }
+
+    // Approval re-verifies the signed transcript against the durable requester, not just the proposer's authority.
+    private static async Task AssertRequesterSwapRefusedAtApprovalAsync(
+        StudioAiTranscriptSigner signer,
+        IMcpTool tool,
+        OperationProposal persisted)
+    {
+        var apiKeys = new InMemoryAdminApiKeyStore(TimeProvider.System);
+        var other = await apiKeys.CreateAsync(
+            "proposal-evidence-other-proposer",
+            ["admin:*"],
+            DateTimeOffset.UtcNow.AddMinutes(5),
+            "test",
+            CancellationToken.None);
+        using var services = new ServiceCollection().AddSingleton(tool).BuildServiceProvider();
+        var validator = new OperationProposalEvidenceValidator(
+            new ProposalEvidenceVerifier(signer, TimeProvider.System),
+            services,
+            Substitute.For<IGuardrailLadder>(),
+            apiKeys,
+            TimeProvider.System);
+        var requester = persisted.RequestedBy!;
+        var swapped = persisted with
+        {
+            RequestedBy = requester[..(requester.IndexOf(":api-key:", StringComparison.Ordinal) + 9)]
+                + other.Record.Id.ToString("D"),
+        };
+
+        var act = () => validator.ValidateApprovalAsync(
+            swapped,
+            new OperationProposalApprovalContext { ApprovedBy = "approver-1", TenantId = "tenant-a" },
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*different actor*");
     }
 }
 
-/// <summary>
-/// Unit coverage for the server-side MCP platform-ops adapter (#2566).
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class McpPlatformOpsReaderTests
 {
@@ -1453,16 +1487,16 @@ public sealed class McpPlatformOpsReaderTests
                 new DeployTargetOptions
                 {
                     TargetId = "serving-us-west",
-                    TargetKind = DeployTargetKind.SelfHostedRolling,
-                    Backend = "self-hosted",
+                    TargetKind = DeployTargetKind.AwsEcs,
+                    Backend = "honua-aws-ecs-alb",
                     Environment = "prod",
                     TargetName = "Serving west",
                 },
                 new DeployTargetOptions
                 {
                     TargetId = "serving-pinned",
-                    TargetKind = DeployTargetKind.SelfHostedRolling,
-                    Backend = "self-hosted",
+                    TargetKind = DeployTargetKind.AwsEcs,
+                    Backend = "honua-aws-ecs-alb",
                     Environment = "prod",
                     TargetName = "Pinned",
                     ArtifactReference = "ghcr.io/honua/server:old",
@@ -1500,8 +1534,8 @@ public sealed class McpPlatformOpsReaderTests
             Deploy = new DeployOperationSpec
             {
                 TargetId = targetId,
-                TargetKind = DeployTargetKind.SelfHostedRolling,
-                Backend = "self-hosted",
+                TargetKind = DeployTargetKind.AwsEcs,
+                Backend = "honua-aws-ecs-alb",
                 Environment = "prod",
                 TargetName = "Honua serving",
                 CurrentRevision = currentRevision,

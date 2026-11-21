@@ -84,7 +84,7 @@ Provision an ops-reader credential so a status dashboard or copilot can read the
 
 With a full-admin credential, `POST /api/v1/admin/api-keys` with `{"name":"ops-dashboard","permissions":["ops:read"]}` — see [Authenticate clients](../secure/authentication.md#2-create-scoped-api-keys-for-automation) for the call.
 
-The returned key authorizes the read-only ops surfaces — `GET /api/v1/operate/status`, `GET /api/v1/admin/observability/{ops-health,findings}`, and `GET /api/v1/admin/observability/alerts` — but is rejected with a `403` on every mutating ops operation (deploy rollback/promote/submit, `findings/{id}/propose`, alert `acknowledge`/`suppress`/`resolve`) and on non-ops admin surfaces such as key management. Full-admin keys and client-certificate admins are unaffected.
+The returned key authorizes the read-only ops surfaces — `GET /api/v1/operate/status`, `GET /api/v1/admin/observability/{ops-health,findings}`, and `GET /api/v1/admin/observability/alerts` (mapped only when the experimental `Capabilities:Experimental:alerts.geofence:Enabled=true` is set; otherwise every `/api/v1/admin/observability/alerts*` route returns `404` for every credential, and `GET /api/v1/operate/status` reports `domains.alerts.enabled: false` unless `Alerts:Ops:Enabled=true`) — but is rejected with a `403` on every mutating ops operation (deploy rollback/promote/submit, `findings/{id}/propose`, alert `acknowledge`/`suppress`/`resolve`) and on non-ops admin surfaces such as key management. Full-admin keys and client-certificate admins are unaffected.
 
 ## Steps
 
@@ -95,7 +95,20 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
 Observability__Prometheus__Path=/metrics
 ```
 
-2. Point your scraper or collector at the server. `/metrics` requires admin authorization, so the scraper must send the `X-API-Key` header. For OTLP export instead of scraping, set the standard `OTEL_*` variables (for example `OTEL_EXPORTER_OTLP_ENDPOINT`) and metrics/traces/logs flow to your collector.
+2. Point your scraper or collector at the server. `/metrics` requires admin authorization, so the scraper must send the key in the `X-API-Key` header or as `Authorization: ApiKey <key>`. Use the second form for scrapers that can set only the `Authorization` header, such as a Prometheus Operator ServiceMonitor. Use a read-only `admin:read` key (minted as in step 5), not the bootstrap admin password, because an in-cluster scrape sends it over plain HTTP. Keep the key in a Secret:
+
+```yaml
+endpoints:
+  - port: http
+    path: /metrics
+    authorization:
+      type: ApiKey
+      credentials:
+        name: honua-metrics-scrape
+        key: api-key
+```
+
+A plain Prometheus `scrape_config` takes the same `authorization` block (`type: ApiKey` plus `credentials_file`). On `/metrics` and the Admin API, `Authorization: Bearer` does not carry an API key. For OTLP export instead of scraping, set the standard `OTEL_*` variables (for example `OTEL_EXPORTER_OTLP_ENDPOINT`) and metrics, traces and logs flow to your collector.
 
 > Verify the configured Prometheus target is **UP** and inspect the scraped `honua_*` series; `/metrics` is a scraper endpoint, not an OpenAPI-explorer operation.
 
@@ -160,11 +173,10 @@ Expected: `Healthy` followed by a JSON health snapshot with status fields.
 
 ## Troubleshoot
 
-- **`/metrics` returns 401 or 403** — the endpoint requires the `Admin` policy. Scrape it with an admin credential, or keep it on an interface Prometheus can reach and your users cannot.
+- **`/metrics` returns 401 or 403** — the endpoint requires the `Admin` policy. A `401` means the scrape sent no credential: add the `X-API-Key` header (or an OIDC bearer token). A `403` means the credential is not an admin one. Scrape it with an admin credential, or keep it on an interface Prometheus can reach and your users cannot.
 - **`/metrics` returns 404** — the path was moved with `Observability__Prometheus__Path`, or no meter provider is registered (the server logs that it skipped mapping the endpoint).
-- **`/metrics` returns 401** — the scrape request is missing the `X-API-Key` header (or OIDC bearer token).
 - **No traces in your backend** — set `OTEL_EXPORTER_OTLP_ENDPOINT`, and check `Tracing__Enabled` has not been turned off; confirm status via `GET /api/v1/admin/observability/telemetry`.
-- **`/healthz/ready` flaps** — usually database connectivity; check `GET /monitoring/health/comprehensive` for the failing dependency. If Redis is configured, an unreachable Redis also fails readiness (durable feature-change event storage); a deployment with no Redis configured runs events in single-node in-memory mode and stays `Ready`.
+- **`/healthz/ready` flaps** — usually database connectivity; check `GET /monitoring/health/comprehensive` for the failing dependency. Readiness checks include migrations, PostgreSQL connectivity, the per-replica cache, and feature-change storage. Inspect server logs for the named failing check; a healthy cache alone does not prove durable shared-state availability.
 
 ## Next steps
 

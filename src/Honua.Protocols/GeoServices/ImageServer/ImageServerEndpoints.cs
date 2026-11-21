@@ -67,7 +67,7 @@ internal static class ImageServerEndpoints
         // `conf.json` while reading raster configuration and treats a bare/empty
         // 404 as a fatal "Failed to read configuration data". Serving the
         // Esri-shaped "no fused cache" document here lets LoadAsync proceed down
-        // the dynamic path instead of erroring (#1456).
+        // the dynamic path instead of erroring.
         group.MapGet("/conf.json", GetTileCacheConf)
             .WithDisplayName("Get Image Service Tile Cache Configuration")
             .WithName("GetImageServiceConf")
@@ -497,7 +497,7 @@ internal static class ImageServerEndpoints
             .Produces(404)
             .Produces(503);
 
-        // Asynchronous durable exportTiles (Compact Cache V2 / TPKX) job lifecycle (#2707).
+        // Asynchronous durable exportTiles (Compact Cache V2 / TPKX) job lifecycle.
         group.MapGet("/jobs/{jobId}", ExportTilesJobStatus)
             .WithName("ImageServerExportTilesJobStatus")
             .WithSummary("Get async exportTiles job status")
@@ -548,7 +548,7 @@ internal static class ImageServerEndpoints
             .Produces(404);
 
         // POST mirror of legend. The ArcGIS API for Python ImageryLayer.legend() and the JS API
-        // POST to /legend; without this route the SDK receives a 405 (#1900).
+        // POST to /legend; without this route the SDK receives a 405.
         group.MapPost("/legend", GetLegendPost)
             .WithDisplayName("Get Image Server Legend (POST)")
             .WithName("GetImageServerLegendPost")
@@ -728,7 +728,7 @@ internal static class ImageServerEndpoints
             .Produces<ImageServerServiceInfo>()
             .Produces(404);
 
-        // See the {id:int} group's conf.json route for why this exists (#1456).
+        // See the {id:int} group's conf.json route for why this exists.
         serviceGroup.MapGet("/conf.json", GetTileCacheConfByService)
             .WithDisplayName("Get Image Service Tile Cache Configuration by Service")
             .WithName("GetImageServiceConfByService")
@@ -1329,9 +1329,9 @@ internal static class ImageServerEndpoints
     // public Esri ImageServer: conf.json yields the extent/
     // spatialReference/… service info, not a tile-cache schema). The ArcGIS
     // Maps SDK for .NET native runtime reads this while loading an
-    // ImageServiceRaster; honua previously 404'd here, so LoadAsync failed with
+    // ImageServiceRaster; a 404 here makes LoadAsync fail with
     // "could not read configuration data". Serve the service descriptor (always
-    // JSON, the runtime does not send f=json) so the dynamic load proceeds (#1456).
+    // JSON, the runtime does not send f=json) so the dynamic load proceeds.
     private static async Task<IResult> GetTileCacheConf(
         int id,
         HttpContext context,
@@ -2223,7 +2223,7 @@ internal static class ImageServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, error ?? "Invalid request.");
         }
 
-        return await handler.ComputeAsync(context, id, values, cancellationToken);
+        return await handler.ComputeAsync(context, new StatisticsRequest { LayerId = id, Values = values, Aoi = StatisticsAoi.Required }, cancellationToken);
     }
 
     private static async Task<IResult> ComputeStatisticsHistogramsGetByService(
@@ -2275,7 +2275,7 @@ internal static class ImageServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, error ?? "Invalid request.");
         }
 
-        return await handler.ComputeAsync(context, id, merged, cancellationToken);
+        return await handler.ComputeAsync(context, new StatisticsRequest { LayerId = id, Values = merged, Aoi = StatisticsAoi.Required }, cancellationToken);
     }
 
     private static async Task<IResult> ComputeStatisticsHistogramsPostByService(
@@ -2311,7 +2311,7 @@ internal static class ImageServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, error ?? "Invalid request.");
         }
 
-        return await handler.ComputeHistogramsAsync(context, id, values, cancellationToken);
+        return await handler.ComputeHistogramsAsync(context, new StatisticsRequest { LayerId = id, Values = values, Aoi = StatisticsAoi.Required }, cancellationToken);
     }
 
     private static async Task<IResult> ComputeHistogramsGetByService(
@@ -2353,7 +2353,7 @@ internal static class ImageServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, error ?? "Invalid request.");
         }
 
-        return await handler.ComputeHistogramsAsync(context, id, merged, cancellationToken);
+        return await handler.ComputeHistogramsAsync(context, new StatisticsRequest { LayerId = id, Values = merged, Aoi = StatisticsAoi.Required }, cancellationToken);
     }
 
     private static async Task<IResult> ComputeHistogramsPostByService(
@@ -3266,7 +3266,7 @@ internal static class ImageServerEndpoints
     }
 
     // POST mirror of /legend. The ArcGIS API for Python ImageryLayer.legend() and the JS API
-    // POST to /legend; without this route the SDK receives a 405 (#1900). Merge form/body over
+    // POST to /legend; without this route the SDK receives a 405. Merge form/body over
     // the query like the other dual-method ImageServer operations so f and renderingRule can
     // arrive via either transport, then defer to the same legend handler as GET.
     private static async Task<IResult> GetLegendPost(
@@ -3785,7 +3785,7 @@ internal static class ImageServerEndpoints
     {
         // A service-scoped route has already resolved and authorized its own publication for
         // this storage layer; re-validating by storage id alone could bind (and authorize) a
-        // different publication that shares the layer (#4065).
+        // different publication that shares the layer.
         if (ImageServerV2Lookups.TryGetRouteBinding(context, layerId, authorizationOperation, out var routeResolution))
         {
             return routeResolution;
@@ -3915,6 +3915,8 @@ internal static class ImageServerEndpoints
     private static bool? TryGetBool(IReadOnlyDictionary<string, StringValues> values, string key)
         => bool.TryParse(ImageServerRequestValues.GetString(values, key), out var value) ? value : null;
 
+    // geometry is optional here: a COG-only layer answers without one, and the handler refuses a
+    // catalog layer whose request has none. A supplied geometry must be complete and valid.
     private static bool TryValidateComputeStatisticsHistogramsRequest(
         IReadOnlyDictionary<string, StringValues> values,
         out string? error)
@@ -3923,8 +3925,7 @@ internal static class ImageServerEndpoints
 
         if (string.IsNullOrWhiteSpace(ImageServerRequestValues.GetString(values, "geometry")))
         {
-            error = "geometry is required.";
-            return false;
+            return true;
         }
 
         var geometryType = ImageServerRequestValues.GetString(values, "geometryType");

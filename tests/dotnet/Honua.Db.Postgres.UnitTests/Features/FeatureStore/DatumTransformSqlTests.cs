@@ -7,13 +7,28 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Unit tests for <see cref="DatumTransformSql"/> (issue #1274). Asserts the shared
-/// chokepoint emits the 2-argument PostGIS ST_Transform by default and the explicit
-/// 3-argument pipeline form when a datum transformation is selected.
-/// </summary>
 public sealed class DatumTransformSqlTests
 {
+    [UnitTheory]
+    [InlineData("f.geometry", 4326, 3857)]
+    [InlineData("f.geometry::geometry", 4269, 3857)]
+    [InlineData("f.geometry", 3857, 4326)]
+    public void CachedTransformExpression_MatchesTheBuiltExpression(string operand, int fromSrid, int toSrid)
+    {
+        var built = DatumTransformSql.BuildTransformExpression(operand, toSrid, selection: null, fromSrid);
+
+        DatumTransformSql.CachedTransformExpression(operand, fromSrid, toSrid).Should().Be(built);
+        DatumTransformSql.CachedTransformExpression(operand, fromSrid, toSrid)
+            .Should().BeSameAs(DatumTransformSql.CachedTransformExpression(operand, fromSrid, toSrid));
+    }
+
+    [UnitTheory]
+    [InlineData("f.geometry", 3857)]
+    [InlineData("f.geometry", 4326)]
+    public void CachedTransformExpressionForRuntimeSrid_MatchesTheBuiltExpression(string operand, int toSrid)
+        => DatumTransformSql.CachedTransformExpressionForRuntimeSrid(operand, toSrid)
+            .Should().Be(DatumTransformSql.BuildTransformExpressionForRuntimeSrid(operand, toSrid));
+
     [UnitTest]
     public void BuildTransformExpression_NoSelection_EmitsTwoArgumentForm()
     {
@@ -59,7 +74,7 @@ public sealed class DatumTransformSqlTests
     {
         // A reverse selection (e.g. NAD83 -> NAD27) carries the forward NADCON pipeline verbatim
         // with TransformForward=false. Emitting it as-is would shift coordinates the wrong way —
-        // roughly twice the intended NADCON correction (#2069). The emitted pipeline must invert
+        // roughly twice the intended NADCON correction. The emitted pipeline must invert
         // the direction-sensitive hgridshift step (+inv) and reverse the step order.
         var selection = new DatumTransformationSelection
         {

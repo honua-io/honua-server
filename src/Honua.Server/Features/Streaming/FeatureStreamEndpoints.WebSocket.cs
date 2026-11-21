@@ -77,7 +77,7 @@ internal static partial class FeatureStreamEndpoints
         // using the replay cursor so events are delivered exactly once.
         // Snapshot-then-delta on the query-string (default) subscription. A baseline
         // replaces the delta stream when the subscription is fresh, or when the supplied
-        // resume cursor has fallen outside the retained window (#3038 REQ-001).
+        // resume cursor has fallen outside the retained window.
         string? snapshotReason = null;
         if (addDefaultSubscription &&
             (cursor.HasValue || IsSnapshotMode(mode)) &&
@@ -124,7 +124,7 @@ internal static partial class FeatureStreamEndpoints
                 // publish a cursor past the incomplete baseline, so the client checkpoints it
                 // and permanently omits the features the cap dropped — they did not change, so
                 // no delta will ever carry them. SSE ends the stream here; the socket paths must
-                // not silently accept what SSE refuses (honua-server#3038 review).
+                // not silently accept what SSE refuses.
                 if (!snapshotResult.Complete)
                 {
                     await SendWebSocketStatusAsync(
@@ -156,8 +156,7 @@ internal static partial class FeatureStreamEndpoints
             catch (Exception exception) when (exception is not OutOfMemoryException)
             {
                 // The socket is already open, so the failure can only be reported in-band. End
-                // with a terminal error frame rather than unwinding into an aborted connection
-                // (honua-server#3181 REQ-002).
+                // with a terminal error frame rather than unwinding into an aborted connection.
                 FeatureStreamLog.SnapshotEmitFailed(
                     logger,
                     session.SessionId,
@@ -293,7 +292,7 @@ internal static partial class FeatureStreamEndpoints
         // clears grace so subsequent overflows are genuine slow consumers.
         // For fresh live sessions (no cursor), onFirstRead is null and the first
         // message flows straight to normal delivery.
-        // Default-subscription delivery fence (honua-server#6104): replayCursor is the
+        // Default-subscription delivery fence: replayCursor is the
         // durable-store sweep floor; live sends are remembered per cursor rather than
         // raising a high-water mark, so an out-of-order lower cursor is still delivered.
         var defaultDelivered = new FeatureStreamDeliveredCursorWindow(replayCursor);
@@ -591,8 +590,8 @@ internal static partial class FeatureStreamEndpoints
                     // sends do not raise that floor: they are remembered per cursor in
                     // defaultDelivered, so a queued frame is dropped only when it was swept
                     // or already sent live. A lower cursor that arrives after a higher one
-                    // (thread-pool or cross-node reordering) is still delivered
-                    // (honua-server#6104). Send-time dedup (TryClaimSubscriptionDelivery)
+                    // (thread-pool or cross-node reordering) is still delivered.
+                    // Send-time dedup (TryClaimSubscriptionDelivery)
                     // alone is not enough: the recent-event LRU is bounded at
                     // RecentEventIdCapacity (128). SSE applies the same fence at its drain.
                     // Non-default subscriptions are protected by their pause/unpause/post-
@@ -635,7 +634,7 @@ internal static partial class FeatureStreamEndpoints
 
                     // Sequence is allocated after the delivery claim and immediately before
                     // the write, so numbers are never burned by filtered, deduplicated, or
-                    // stale-generation frames (#3038 REQ-002).
+                    // stale-generation frames.
                     if (!await SendStampedWebSocketJsonAsync(
                             webSocket,
                             session.WriteLock,
@@ -652,7 +651,7 @@ internal static partial class FeatureStreamEndpoints
                     // Record the live send. For the default subscription the cursor is
                     // remembered (not used as a high-water mark) so the next durable sweep,
                     // which resumes from the swept floor, skips it while still recovering any
-                    // lower cursor whose live broadcast never arrived (honua-server#6104).
+                    // lower cursor whose live broadcast never arrived.
                     // Non-default subscriptions advance their per-subscription poll
                     // watermark so the next sweep does not re-emit frames whose dedup keys
                     // were evicted from the bounded RecentEventIdCapacity LRU.
@@ -920,7 +919,7 @@ internal static partial class FeatureStreamEndpoints
                 // Same contract as the query-string path above: an incomplete baseline is not a
                 // resumable checkpoint. The subscription is REMOVED rather than unpaused, so the
                 // client must re-subscribe and take a fresh snapshot instead of resuming deltas
-                // from a truncated one (honua-server#3038 review).
+                // from a truncated one.
                 if (!snapshotResult.Complete)
                 {
                     deps.SessionManager.TryRemoveSubscription(session.SessionId, subscriptionId);
@@ -955,7 +954,7 @@ internal static partial class FeatureStreamEndpoints
             catch (Exception exception) when (exception is not OutOfMemoryException)
             {
                 // Same in-band contract as the query-string path: the subscription is removed and
-                // the condition is named, never left as an aborted socket (honua-server#3181).
+                // the condition is named, never left as an aborted socket.
                 FeatureStreamLog.SnapshotEmitFailed(logger, session.SessionId, subscriptionId, exception);
                 deps.SessionManager.TryRemoveSubscription(session.SessionId, subscriptionId);
                 await TrySendWebSocketTerminalErrorAsync(
@@ -1370,7 +1369,12 @@ internal static partial class FeatureStreamEndpoints
 
         var subscriberSecurity = await ResolveSubscriberSecurityAsync(
             context, snapshot, service, layerIds, cancellationToken).ConfigureAwait(false);
-        return (new StreamSubscriptionFilter(
+        if (subscriberSecurity.DescribeUnstreamableLayer(hasExplicitLayerScope ? layerIds : null) is { } unstreamableError)
+        {
+            return (null, unstreamableError);
+        }
+
+        var filter = new StreamSubscriptionFilter(
             serviceId: serviceId,
             serviceIdIsExact: serviceIdIsExact,
             resolvedServiceId: service?.Metadata.Id,
@@ -1380,7 +1384,10 @@ internal static partial class FeatureStreamEndpoints
             attributeFilter: attributeFilter,
             temporalFilter: temporalFilter,
             routabilityGuard: deps.RoutabilityGuard,
-            subscriberSecurity: subscriberSecurity), null);
+            subscriberSecurity: subscriberSecurity);
+        return DescribeMaskedFilterField(filter) is { } maskedFieldError
+            ? (null, maskedFieldError)
+            : (filter, null);
     }
 
     private static int[]? ResolveControlLayerIds(FeatureStreamControlMessage control)

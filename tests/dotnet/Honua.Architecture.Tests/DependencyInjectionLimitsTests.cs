@@ -11,52 +11,18 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Enforces dependency injection parameter limits to prevent over-injection anti-patterns.
-/// Endpoints: max 5 parameters | Handlers/Coordinators/Managers: max 4 collaborators.
-/// The checks run across every production Honua assembly (server, protocol adapters, and
-/// providers), not just <c>Honua.Server</c>, so SRP fan-out is enforced everywhere the rule
-/// claims to apply. A small, explicit allowlist documents pre-existing exceptions so the
-/// rule ratchets: it blocks new violations while tracking known debt.
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class DependencyInjectionLimitsTests
 {
     private const int MaxEndpointParameters = 5;
     private const int MaxHandlerConstructorParameters = 4;
 
-    /// <summary>
-    /// Service/coordinator/facade types are legitimately composed of more collaborators than a
-    /// single request handler, so they are held to a looser "god object" ceiling. This still
-    /// catches the 15+ dependency aggregates the handler limit is meant to flag while not
-    /// failing every normally-sized service.
-    /// </summary>
     private const int MaxServiceCollaborators = 8;
 
-    /// <summary>
-    /// Endpoint over-injection accepted as tracked debt. Now empty: the raster tile render paths
-    /// (TilesEndpoints.HandleRasterTileAsync / HandleDatasetRasterTileAsync) were decomposed to
-    /// pass their shared render inputs through a single carrier, so the gate enforces the endpoint
-    /// parameter limit with no exceptions. Add an entry here only with a follow-up issue; do not
-    /// grow this list for new code.
-    /// </summary>
     private static readonly HashSet<string> AllowedEndpointExceptions = new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Handler/coordinator/manager over-injection accepted as tracked debt. Now empty: the last
-    /// allowlisted handler (ImageServerProjectHandler) was decomposed so its CRS/datum/transform
-    /// collaborators fold behind one projection seam, keeping it within the collaborator limit.
-    /// Add a type here only with a follow-up issue; do not grow this list for new code.
-    /// </summary>
     private static readonly HashSet<string> AllowedHandlerExceptions = new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Service/coordinator/facade god objects accepted as tracked debt. Now empty: prior aggregates
-    /// (GeoservicesImportService, then GeoprocessingJobService — whose 9th approval-lane
-    /// IOperationGateway collaborator was folded into the dispatcher's approval-proposal routing,
-    /// #2859) were decomposed rather than allowlisted. Add a type here only with a follow-up issue;
-    /// do not grow this list for new code.
-    /// </summary>
     private static readonly HashSet<string> AllowedServiceExceptions = new(StringComparer.Ordinal);
 
     [ArchitectureTest]
@@ -147,10 +113,6 @@ public sealed class DependencyInjectionLimitsTests
             "Collapse option bundles into a snapshot, remove service-locator (IServiceProvider) injection, and split per-domain responsibilities.");
     }
 
-    /// <summary>
-    /// Loads every production Honua assembly that landed in the test output directory and yields
-    /// its loadable types. Test, benchmark, and test-kit assemblies are excluded.
-    /// </summary>
     private static IEnumerable<Type> ProductionTypes()
     {
         var baseDirectory = AppContext.BaseDirectory;
@@ -210,12 +172,6 @@ public sealed class DependencyInjectionLimitsTests
             || typeName.EndsWith("Coordinator", StringComparison.Ordinal)
             || typeName.EndsWith("Manager", StringComparison.Ordinal);
 
-    /// <summary>
-    /// Behavioral construct names held to the god-object collaborator ceiling. Beyond the classic
-    /// <c>Service</c>/<c>Facade</c> suffixes this covers the common aliases a high-fan-out type could
-    /// otherwise hide behind (<c>Pipeline</c>, <c>Engine</c>, <c>Runner</c>, <c>Dispatcher</c>, etc.)
-    /// so the ratchet cannot be evaded by renaming. Data-carrier suffixes are intentionally excluded.
-    /// </summary>
     private static readonly string[] ServiceLikeSuffixes =
     {
         "Service", "Services", "Facade", "Pipeline", "Engine", "Runner", "Dispatcher",
@@ -226,19 +182,10 @@ public sealed class DependencyInjectionLimitsTests
     private static bool HasServiceLikeName(string typeName)
         => ServiceLikeSuffixes.Any(suffix => typeName.EndsWith(suffix, StringComparison.Ordinal));
 
-    /// <summary>
-    /// Detects C# records (and record structs) by their compiler-synthesized clone member so that
-    /// value/DTO carriers with many positional parameters are not mistaken for over-injected services.
-    /// </summary>
     private static bool IsRecordType(Type type)
         => type.GetMethod("<Clone>$", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic) is not null
             || type.GetMethod("PrintMembers", BindingFlags.Instance | BindingFlags.NonPublic) is not null;
 
-    /// <summary>
-    /// Counts the real collaborators a type injects, excluding configuration and logging
-    /// plumbing (IOptions, ILogger) and primitive/route values so the count reflects genuine
-    /// dependency fan-out rather than noise.
-    /// </summary>
     private static int CountConstructorCollaborators(Type type)
     {
         var primaryConstructor = type.GetConstructors()
@@ -290,9 +237,6 @@ public sealed class DependencyInjectionLimitsTests
             || definition == typeof(IOptionsMonitor<>);
     }
 
-    /// <summary>
-    /// Determines if a method is an endpoint handler based on naming conventions and signature patterns.
-    /// </summary>
     private static bool IsEndpointHandlerMethod(MethodInfo method)
     {
         var methodName = method.Name;
@@ -310,9 +254,6 @@ public sealed class DependencyInjectionLimitsTests
         return hasHandleInName && hasCorrectReturnType && isInEndpointsClass && hasHttpContext;
     }
 
-    /// <summary>
-    /// Counts parameters that are injected via DI, excluding route parameters and query parameters.
-    /// </summary>
     private static int CountInjectedParameters(ParameterInfo[] parameters)
         => parameters
             .Select(param => param.ParameterType)
@@ -322,9 +263,6 @@ public sealed class DependencyInjectionLimitsTests
                 && paramType != typeof(CancellationToken)
                 && !typeof(Delegate).IsAssignableFrom(paramType));
 
-    /// <summary>
-    /// Determines if a parameter type is a primitive or route parameter (not injected).
-    /// </summary>
     private static bool IsPrimitiveOrRouteParameter(Type paramType)
     {
         if (paramType.IsPrimitive || paramType == typeof(string) || paramType == typeof(Guid) || paramType.IsEnum)

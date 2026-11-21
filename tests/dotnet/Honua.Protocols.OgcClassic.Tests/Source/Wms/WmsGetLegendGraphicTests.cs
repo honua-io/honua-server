@@ -10,9 +10,6 @@ using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
-/// <summary>
-/// Endpoint coverage for WMS GetLegendGraphic (#2855).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wms13)]
 public sealed class WmsGetLegendGraphicTests : IAsyncLifetime
@@ -207,7 +204,7 @@ public sealed class WmsGetLegendGraphicTests : IAsyncLifetime
         content.Should().Contain("<LegendURL>");
         content.Should().Contain("REQUEST=GetLegendGraphic");
 
-        // The advertised URL must actually serve a legend — capability honesty (#2803).
+        // The advertised URL must actually serve a legend — capability honesty.
         var start = content.IndexOf("REQUEST=GetLegendGraphic", StringComparison.Ordinal);
         start.Should().BeGreaterThan(0);
         var hrefStart = content.LastIndexOf("xlink:href=\"", start, StringComparison.Ordinal) + "xlink:href=\"".Length;

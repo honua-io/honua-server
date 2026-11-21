@@ -14,12 +14,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// #4019: a replica scope or download backlog larger than the per-layer limit used to be a permanent
-/// 400. It is now delivered in bounded generation windows. The host runs with
-/// <c>Limits:Query:MaxRecordCount=100</c> and <c>Limits:Replica:MaxChangesPerLayer=250</c>; the expected
-/// rows are read back from the database with SQL, independently of the replica API.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerReplicaDeliveryWindowTests : IAsyncLifetime
@@ -112,9 +106,9 @@ public sealed class FeatureServerReplicaDeliveryWindowTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     public async Task CreateReplica_SmallScopeOnLayerWithLargeUnrelatedHistory_ReturnsTheWholeSnapshot()
     {
-        // The window limit counts only changes the replica can receive. 300 changes outside the scope used to
-        // narrow the window before scope filtering, which a syncModel=none snapshot cannot continue, so a
-        // two-row snapshot was refused with 400.
+        // The window limit counts only changes deliverable to the replica.
+        // Out-of-scope changes must not narrow a syncModel=none snapshot window,
+        // which cannot be continued.
         await InsertFeaturesAsync(firstObjectId: 7_430_000_000, count: 300, longitude: 160.0, latitude: -40.0);
         await InsertFeaturesAsync(firstObjectId: 7_431_000_000, count: 2, longitude: -60.0, latitude: -60.0);
         var expected = await ReadRowsAsync(7_431_000_000, 7_431_000_001);

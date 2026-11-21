@@ -120,6 +120,7 @@ internal sealed partial class Wfs20Handler
             IndividualName = metadata.ContactPoint?.Name,
             ContactInfo = metadata.ContactPoint is { } contact ? new ContactInfo
             {
+                Phone = string.IsNullOrWhiteSpace(contact.Phone) ? null : new Phone { Voice = contact.Phone },
                 Address = string.IsNullOrWhiteSpace(contact.Email) ? null : new Address { ElectronicMailAddress = contact.Email },
                 OnlineResource = string.IsNullOrWhiteSpace(contact.Url) ? null : new OnlineResource { Href = contact.Url }
             } : null
@@ -144,9 +145,8 @@ internal sealed partial class Wfs20Handler
         {
             var requestedTypes = Wfs20Utilities.ParseTypeNames(typeNames);
             var publishedTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken);
-            var selectedTypes = requestedTypes.Length == 0
-                ? SelectAdvertisedFeatureTypes(publishedTypes)
-                : ResolveRequestedFeatureTypes(publishedTypes, requestedTypes);
+            var selectedTypes = await WithCallerMasksAsync(
+                context, SelectDescribedFeatureTypes(publishedTypes, requestedTypes), cancellationToken).ConfigureAwait(false);
             if (selectedTypes.Length == 0 && requestedTypes.Length > 0)
             {
                 throw new ArgumentException($"Requested feature type(s) not found: {string.Join(", ", requestedTypes)}.");
@@ -204,20 +204,10 @@ internal sealed partial class Wfs20Handler
         }
 
         var descriptors = ImmutableArray.CreateBuilder<WfsFeatureTypeDescriptor>(candidates.Count);
+        var declaredNamespaces = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var candidate in candidates.OrderBy(static candidate => candidate.Publication.Metadata.Id, StringComparer.Ordinal))
         {
-            var resourceName = GetResourceFeatureTypeName(candidate.Resource);
-            var localName = XmlConvert.EncodeLocalName(candidate.Publication.Metadata.Id);
-            descriptors.Add(new WfsFeatureTypeDescriptor(
-                candidate.Resource,
-                candidate.Publication,
-                candidate.Service,
-                candidate.StorageLayerId,
-                $"{GetFeatureNamespacePrefix(resourceName)}:{localName}",
-                localName,
-                GetFeatureNamespacePrefix(resourceName),
-                GetFeatureNamespaceUri(resourceName),
-                snapshot));
+            descriptors.Add(CreateFeatureTypeDescriptor(candidate, snapshot, declaredNamespaces));
         }
 
         return descriptors.ToImmutable();
@@ -241,23 +231,95 @@ internal sealed partial class Wfs20Handler
             .ToImmutableArray();
 
 
-    private static string GetFeatureNamespacePrefix(string layerName)
-        => layerName switch
+    private static WfsFeatureTypeDescriptor CreateFeatureTypeDescriptor(
+        (int StorageLayerId, MetadataV2Object Resource, MetadataV2Layer Publication, MetadataV2Service Service) candidate,
+        MetadataV2GraphSnapshot snapshot,
+        Dictionary<string, string> claimedNamespaces)
+    {
+        var declared = WfsDeclaredEncoding.Read(candidate.Resource);
+        if (declared.NamespacePrefix is { } declaredPrefix &&
+            !TryClaimNamespacePrefix(claimedNamespaces, declaredPrefix, declared.NamespaceUri!))
         {
-            "Other" or "Fifteen" or "Seven" or "Nulls" or "Locks" => "cdf",
-            "Points" or "Lines" or "Polygons" or "MPoints" or "MLines" or "MPolygons" => "cgf",
-            _ => FeatureNamespacePrefix
-        };
+            // One prefix names one namespace in a document: the first declaration keeps it
+            // and a conflicting one falls back to the server namespace.
+            declared = declared.WithoutNamespace();
+        }
 
-
-    private static string GetFeatureNamespaceUri(string layerName)
-        => layerName switch
+        var namespacePrefix = declared.NamespacePrefix ?? FeatureNamespacePrefix;
+        var localName = XmlConvert.EncodeLocalName(candidate.Publication.Metadata.Id);
+        return new WfsFeatureTypeDescriptor(
+            candidate.Resource,
+            candidate.Publication,
+            candidate.Service,
+            candidate.StorageLayerId,
+            $"{namespacePrefix}:{localName}",
+            localName,
+            namespacePrefix,
+            declared.NamespaceUri ?? FeatureNamespaceUri,
+            snapshot)
         {
-            "Other" or "Fifteen" or "Seven" or "Nulls" or "Locks" => "http://www.opengis.net/cite/data",
-            "Points" or "Lines" or "Polygons" or "MPoints" or "MLines" or "MPolygons" => "http://www.opengis.net/cite/geometry",
-            _ => FeatureNamespaceUri
+            Declared = declared
         };
+    }
 
+    // A prefix names one namespace and a namespace has one prefix; the server prefix and
+    // namespace cannot be declared.
+    private static bool TryClaimNamespacePrefix(Dictionary<string, string> claimed, string prefix, string uri)
+    {
+        if (string.Equals(prefix, FeatureNamespacePrefix, StringComparison.Ordinal) ||
+            string.Equals(uri, FeatureNamespaceUri, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (claimed.TryGetValue(prefix, out var claimedUri))
+        {
+            return string.Equals(claimedUri, uri, StringComparison.Ordinal);
+        }
+
+        if (claimed.ContainsValue(uri))
+        {
+            return false;
+        }
+
+        claimed.Add(prefix, uri);
+        return true;
+    }
+
+    // DescribeFeatureType without TYPENAMES describes the advertised types.
+    private static ImmutableArray<WfsFeatureTypeDescriptor> SelectDescribedFeatureTypes(
+        ImmutableArray<WfsFeatureTypeDescriptor> publishedTypes,
+        string[] requestedTypes)
+        => requestedTypes.Length == 0
+            ? SelectAdvertisedFeatureTypes(publishedTypes)
+            : ResolveRequestedFeatureTypes(publishedTypes, requestedTypes);
+
+    // The caller's masked fields are hidden in the types an operation reads, so no schema or feature encoding names them.
+    // Masks are resolved only for those types, once per resource.
+    private static async Task<ImmutableArray<WfsFeatureTypeDescriptor>> WithCallerMasksAsync(
+        HttpContext context,
+        ImmutableArray<WfsFeatureTypeDescriptor> featureTypes,
+        CancellationToken cancellationToken)
+    {
+        var visibleByResource = new Dictionary<string, MetadataV2Object>(StringComparer.Ordinal);
+        var masked = ImmutableArray.CreateBuilder<WfsFeatureTypeDescriptor>(featureTypes.Length);
+        foreach (var featureType in featureTypes)
+        {
+            var resourceId = featureType.Resource.Metadata.Id;
+            if (!visibleByResource.TryGetValue(resourceId, out var visible))
+            {
+                visible = await CallerVisibleSchema.HideMaskedFieldsAsync(context, featureType.Resource, cancellationToken)
+                    .ConfigureAwait(false);
+                visibleByResource[resourceId] = visible;
+            }
+
+            masked.Add(ReferenceEquals(visible, featureType.Resource)
+                ? featureType
+                : featureType with { Resource = visible, Declared = featureType.Declared.WithoutWfs10Schema() });
+        }
+
+        return masked.MoveToImmutable();
+    }
 
     private static ImmutableArray<WfsFeatureTypeDescriptor> ResolveRequestedFeatureTypes(
         ImmutableArray<WfsFeatureTypeDescriptor> publishedTypes,

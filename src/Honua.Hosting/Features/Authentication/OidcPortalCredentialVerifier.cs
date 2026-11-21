@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -41,6 +42,7 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
     private readonly ILogger<OidcPortalCredentialVerifier> _logger;
     private readonly OidcConfigurationManagerCache _configurationManagerCache;
     private readonly IOidcRuntimeProviderSource? _runtimeProviders;
+    private readonly ITokenReplayStore? _replays;
     private readonly JsonWebTokenHandler _handler = new();
 
     // A null catalog validates only the providers named in options, and the singleton cache exists so JWKS is not fetched on every check.
@@ -49,7 +51,8 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
         IClaimsTransformation claimsTransformation,
         OidcConfigurationManagerCache configurationManagerCache,
         ILogger<OidcPortalCredentialVerifier> logger,
-        IOidcRuntimeProviderSource? runtimeProviders = null)
+        IOidcRuntimeProviderSource? runtimeProviders = null,
+        ITokenReplayStore? replays = null)
     {
         ArgumentNullException.ThrowIfNull(oidcOptions);
         ArgumentNullException.ThrowIfNull(configurationManagerCache);
@@ -58,6 +61,7 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _configurationManagerCache = configurationManagerCache;
         _runtimeProviders = runtimeProviders;
+        _replays = replays;
     }
 
     public Task<PortalCredentialPrincipal?> VerifyAsync(
@@ -83,28 +87,15 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
             return null;
         }
 
-        var parameters = await ResolveParametersAsync(providerKey, cancellationToken).ConfigureAwait(false);
-        if (parameters is null)
+        var result = await ValidateSourceTokenAsync(password, providerKey, cancellationToken).ConfigureAwait(false);
+        if (result?.ClaimsIdentity is not { } identity)
         {
-            return null;
-        }
-
-        var result = await _handler.ValidateTokenAsync(password, parameters).ConfigureAwait(false);
-        if (!result.IsValid || result.ClaimsIdentity is null)
-        {
-            if (_logger.IsEnabled(LogLevel.Information))
-            {
-#pragma warning disable CA1873 // Reason string only evaluated inside the IsEnabled gate above.
-                OidcAuthenticationLog.PortalCredentialRejected(_logger, result.Exception?.GetType().Name ?? "invalid token");
-#pragma warning restore CA1873
-            }
-
             return null;
         }
 
         // Normalize provider claims through the shared OIDC transformation so the
         // projected roles/name match a direct OIDC session exactly.
-        var principal = new ClaimsPrincipal(result.ClaimsIdentity);
+        var principal = new ClaimsPrincipal(identity);
         principal = await _claimsTransformation.TransformAsync(principal).ConfigureAwait(false);
         if (principal.Identity is not { IsAuthenticated: true })
         {
@@ -140,7 +131,7 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
             .ToArray();
 
         // Carry the transformation's provenance marker so the issued token knows whether its
-        // roles depend on an entitlement that can expire (honua-server#2997 review).
+        // roles depend on an entitlement that can expire.
         var rolesMappingMarker = principal.FindFirst(OidcClaimsTransformation.RolesFromClaimsMappingClaimType);
         var rolesRequireClaimsMapping = rolesMappingMarker is not null;
         var rolesDependOnlyOnRoleClaimSelection = string.Equals(
@@ -157,7 +148,7 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
 
         // Same provenance question for the tenant: a CustomMappings entry can synthesize it,
         // and a mapping-derived tenant that outlives the entitlement authorizes another
-        // tenant's data (honua-server#2997 review).
+        // tenant's data.
         var tenantMappingMarker = principal.FindFirst(
             OidcClaimsTransformation.TenantFromClaimsMappingClaimType);
         var markerNamesKnownClaimType = tenantMappingMarker?.Value is TenantIdClaimType or AzureTenantClaimType;
@@ -182,6 +173,15 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
             return null;
         }
 
+        // Recorded only once every check has passed, so a refused exchange leaves no replay marker.
+        var replay = new ExchangedTokenReplayContext(_oidcOptions.TokenValidation, _replays, _logger);
+        if (!await OidcAuthenticationExtensions.TryAdmitExchangedTokenAsync(result.SecurityToken, replay, cancellationToken)
+            .ConfigureAwait(false))
+        {
+            OidcAuthenticationLog.PortalCredentialRejected(_logger, "replay protection refused the source token");
+            return null;
+        }
+
         return new PortalCredentialPrincipal(
             principalId, displayName, tenantId, roles, rolesRequireClaimsMapping,
             tenantRequiresClaimsMapping, rolesWithoutClaimsMapping,
@@ -193,6 +193,35 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
         {
             RolesDependOnlyOnRoleClaimSelection = rolesDependOnlyOnRoleClaimSelection,
         };
+    }
+
+    // The exchange is an HTTP API admission of the source token: VerifyCoreAsync records it in the
+    // replay store, so a token already admitted on another surface is a replay here.
+    private async Task<TokenValidationResult?> ValidateSourceTokenAsync(
+        string token,
+        string? providerKey,
+        CancellationToken cancellationToken)
+    {
+        var parameters = await ResolveParametersAsync(providerKey, cancellationToken).ConfigureAwait(false);
+        if (parameters is null)
+        {
+            return null;
+        }
+
+        var result = await _handler.ValidateTokenAsync(token, parameters).ConfigureAwait(false);
+        if (!result.IsValid || result.ClaimsIdentity is null)
+        {
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+#pragma warning disable CA1873 // Reason string only evaluated inside the IsEnabled gate above.
+                OidcAuthenticationLog.PortalCredentialRejected(_logger, result.Exception?.GetType().Name ?? "invalid token");
+#pragma warning restore CA1873
+            }
+
+            return null;
+        }
+
+        return result;
     }
 
     private async Task<TokenValidationParameters?> ResolveParametersAsync(

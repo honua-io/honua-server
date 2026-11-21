@@ -12,13 +12,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Isolation between the control plane's telemetry client and its candidate probes (honua-server#4617).
-/// The probes used to share the telemetry client, whose retry and circuit breaker suit a metrics backend.
-/// On a real rollout of the 9f2f16a server image, a candidate whose readiness answered 503 opened that
-/// breaker, so the Prometheus queries behind the telemetry gate failed with BrokenCircuitException while
-/// Prometheus itself reported a 0.79 error rate. The gate recovered only by missing-evidence rollback.
-/// </summary>
 public sealed class ControlPlaneHttpClientsTests
 {
     [Fact]
@@ -32,17 +25,12 @@ public sealed class ControlPlaneHttpClientsTests
         services.AddHttpClient(ControlPlaneHttpClients.Telemetry).ConfigurePrimaryHttpMessageHandler(() => handler);
         await using var provider = services.BuildServiceProvider();
         var factory = provider.GetRequiredService<IHttpClientFactory>();
-        var probe = new HttpLocalReplicaHealthProbe(factory);
+        using var probe = factory.CreateClient(ControlPlaneHttpClients.Probe);
 
-        for (var round = 0; round < 5; round++)
+        for (var sample = 0; sample < 15; sample++)
         {
-            var result = await probe.ProbeAsync(
-                "http://127.0.0.1:18081/healthz/ready",
-                samples: 3,
-                timeoutSeconds: 5,
-                expectedStatusCode: 200,
-                CancellationToken.None);
-            result.Failures.Should().Be(3);
+            using var answer = await probe.GetAsync(new Uri("http://127.0.0.1:18081/healthz/ready"));
+            answer.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         }
 
         handler.RequestsTo("/healthz/ready").Should().Be(15, "each probe sample is exactly one request; a retry would hide how the candidate answers");
@@ -93,9 +81,6 @@ public sealed class ControlPlaneHttpClientsTests
         }
     }
 
-    /// <summary>
-    /// A candidate whose readiness answers 503 on every request, next to a Prometheus that answers queries.
-    /// </summary>
     private sealed class CandidateAndPrometheusHandler : HttpMessageHandler
     {
         private readonly ConcurrentDictionary<string, int> _requests = new(StringComparer.Ordinal);

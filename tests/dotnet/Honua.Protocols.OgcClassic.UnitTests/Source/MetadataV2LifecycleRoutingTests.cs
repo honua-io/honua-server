@@ -12,10 +12,6 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic;
 
-/// <summary>
-/// Regression coverage for the shared Metadata v2 retirement boundary used by the
-/// classic OGC adapters.
-/// </summary>
 public sealed class MetadataV2LifecycleRoutingTests
 {
     [UnitTest]
@@ -68,10 +64,9 @@ public sealed class MetadataV2LifecycleRoutingTests
         method.Should().NotBeNull();
 
         // Bind the argument array to the live signature rather than a hard-coded arity:
-        // honua-server#4526 added the owning-service out parameter and this reflection
-        // call kept passing three arguments, so the case died with an opaque
-        // TargetParameterCountException instead of proving the retirement boundary.
-        // The resolver is invoked positionally, so a renamed or reordered parameter must
+        // a call that passes too few arguments dies with an opaque
+        // TargetParameterCountException instead of proving the retirement boundary. The
+        // resolver is invoked positionally, so a renamed or reordered parameter must
         // fail here rather than silently feed a value into the wrong slot.
         var parameters = method!.GetParameters();
         parameters.Length.Should().BeGreaterThanOrEqualTo(4);

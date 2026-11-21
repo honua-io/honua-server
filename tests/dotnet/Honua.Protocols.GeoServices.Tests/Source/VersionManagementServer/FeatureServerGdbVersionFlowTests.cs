@@ -13,12 +13,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer;
 
-/// <summary>
-/// End-to-end branch-versioning flow over the GeoServices surfaces (#1272, ADR-0051): create a
-/// version, edit with <c>gdbVersion</c>, confirm the versioned query sees the edit while DEFAULT is
-/// unaffected, reconcile, post, and confirm DEFAULT then reflects the change. Also asserts the
-/// DEFAULT (gdbVersion-absent) path is unchanged and the capability metadata advertises versioning.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
@@ -116,7 +110,7 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
     public async Task Calculate_WithGdbVersion_ReadsAndWritesBranchOnly()
     {
-        // #6095: calculate must read candidates from the named version and write the
+        // Calculate must read candidates from the named version and write the
         // updates there; DEFAULT must stay untouched.
         var marker = "vcalc_" + Guid.NewGuid().ToString("N")[..8];
         var seed = await PostFormAsync($"{LayerBase}/applyEdits", ("adds", BuildAddsJson(marker)), ("f", "json"));
@@ -160,7 +154,7 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/append")]
     public async Task Append_WithGdbVersion_UpsertsWithinBranchOnly()
     {
-        // #6095: append must match upserts within the named version and write adds and
+        // Append must match upserts within the named version and write adds and
         // updates there; DEFAULT must stay untouched.
         var marker = "vappend_" + Guid.NewGuid().ToString("N")[..8];
         var versionGuid = await CreateVersionAsync("admin." + marker);

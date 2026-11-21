@@ -6,12 +6,6 @@ using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 
 namespace Honua.Db.DuckDB.Tests;
 
-/// <summary>
-/// Verifies that the shared no-op replica repository no-ops writes and returns empty reads.
-/// Extract capability is stripped from DuckDB services at startup, so createReplica
-/// should not normally reach this repository; the no-op upsert is a defensive
-/// guarantee that the caching write-through path does not throw if it does.
-/// </summary>
 public sealed class ReadOnlyReplicaRepositoryTests
 {
     private readonly NoOpReplicaRepository _repo = new();
@@ -20,7 +14,7 @@ public sealed class ReadOnlyReplicaRepositoryTests
     public void SupportsReplicaPersistence_IsFalse()
     {
         // Read-only providers cannot durably persist replicas, so the synchronize adapter emits a
-        // conformant "operation not supported" response instead of silently no-op'ing a sync (#2136).
+        // conformant "operation not supported" response instead of silently no-op'ing a sync.
         Assert.False(_repo.SupportsReplicaPersistence);
     }
 

@@ -6,6 +6,7 @@ using System.Data;
 using System.Text;
 using FluentAssertions;
 using Honua.Core.Configuration;
+using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Collaboration.FeatureLocks;
 using Honua.Core.Features.Edit;
@@ -39,9 +40,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Wfs;
 
-/// <summary>
-/// Checks edit leases through the WFS transaction handler and shared writer decorators.
-/// </summary>
 [Protocol(TestProtocols.Wfs20)]
 public sealed class WfsMultiLayerTransactionLockTests
 {
@@ -217,7 +215,7 @@ public sealed class WfsMultiLayerTransactionLockTests
                 return Task.FromResult<string?>(null);
             });
             var writer = new FeatureLockEnforcingFeatureWriter(
-                new AuditingFeatureWriter(provider, auditLog, _accessor),
+                new AuditingFeatureWriter(provider, auditLog, new FeatureWriteAuditScope(_accessor, static () => new AuditPolicyOptions())),
                 _locks, new FeatureEditGuard(_locks), metadata, _accessor);
             var reader = Substitute.For<IFeatureReader>();
             reader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
@@ -245,7 +243,7 @@ public sealed class WfsMultiLayerTransactionLockTests
                     new FeatureMutationValidator(Substitute.For<IGeometryValidator>()),
                     new FeatureMutationEventService(Substitute.For<IFeatureChangeEventPublisher>()), limits),
                 new Wfs20SpatialServices(new OgcFeaturesGeometryServices(Substitute.For<IGeometryService>(),
-                    coordinateTransform, limits, NullLogger<OgcFeaturesGeometryServices>.Instance),
+                    coordinateTransform, limits),
                     coordinateTransform, Substitute.For<ICrsRegistry>()));
         }
 

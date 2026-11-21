@@ -296,8 +296,6 @@ internal static class StacFilterHelpers
             // OGC API-Features / STAC datetime value: an interval must have at least one
             // bounded (closed) end. The STAC API conformance validator requires these to be
             // rejected with 400, so return null here to fail the caller's syntax guard.
-            // (The earlier BH-S-02 no-op-filter behavior from #2423 accepted them with 200
-            // and regressed STAC item-search conformance.)
             return null;
         }
         if (start > end)
@@ -350,6 +348,13 @@ internal static class StacFilterHelpers
             if (offsetStart > fractionalSeparator)
             {
                 var fractionalLength = offsetStart - fractionalSeparator - 1;
+                if (fractionalLength == 0 ||
+                    normalized.AsSpan(fractionalSeparator + 1, fractionalLength).IndexOfAnyExceptInRange('0', '9') >= 0)
+                {
+                    timestamp = default;
+                    return false;
+                }
+
                 if (fractionalLength > 7)
                 {
                     normalized = normalized[..(fractionalSeparator + 8)] + normalized[offsetStart..];
@@ -372,7 +377,9 @@ internal static class StacFilterHelpers
 
     private static bool HasExplicitRfc3339TimeZone(string value)
     {
-        if (value.Length <= 11 || value[10] != 'T')
+        if (value.Length < 20 || value[10] != 'T' ||
+            value[13] != ':' || value[16] != ':' ||
+            !char.IsAsciiDigit(value[17]) || !char.IsAsciiDigit(value[18]))
         {
             return false;
         }

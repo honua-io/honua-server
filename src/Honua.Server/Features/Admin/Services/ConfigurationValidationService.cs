@@ -7,6 +7,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Capabilities;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
+using Honua.Server.Startup;
 
 namespace Honua.Server.Features.Admin.Services;
 
@@ -23,9 +24,11 @@ internal static class ConfigurationValidationService
         var warnings = new List<string>();
         var isRelaxedEnvironment = isDevelopment || isTest;
 
-        // Check database connection (required in production unless explicitly allowed)
+        // The PostgreSQL/PostGIS primary needs its connection (in production unless explicitly allowed);
+        // a DuckDB or MySQL primary has its own connection settings and no system database.
         var connectionString = configuration.GetConnectionString("DefaultConnection");
-        if (string.IsNullOrEmpty(connectionString) && !isRelaxedEnvironment && !allowMissingDatabase)
+        if (string.IsNullOrEmpty(connectionString) && !isRelaxedEnvironment && !allowMissingDatabase
+            && SystemDatabaseComposition.PrimaryProviderComposesIt(configuration))
         {
             errors.Add("ConnectionStrings__DefaultConnection is required. Set this environment variable to your PostgreSQL connection string.");
         }
@@ -38,7 +41,7 @@ internal static class ConfigurationValidationService
         LogFeatureStatus(configuration, logger, "HONUA_OPENTELEMETRY", "OpenTelemetry tracing");
         LogFeatureStatus(configuration, logger, "HONUA_SKIP_MIGRATIONS", "Skip migrations");
 
-        // Experimental feature gates (audit PA-096/PA-103/PA-116/PA-145/PA-001/PA-181/PA-182, #2436).
+        // Experimental feature gates (audit PA-096/PA-103/PA-116/PA-145/PA-001/PA-181/PA-182).
         // Each is default-off; operators must explicitly opt in. All three warehouse providers are
         // reported here so an operator's startup log shows the same evidence for each of them.
         LogExperimentalFeatureStatus(configuration, logger, "Capabilities:Experimental:serve.sensorthings:Enabled", "SensorThings API Preview");
@@ -685,7 +688,6 @@ internal static class ConfigurationValidationService
             ["Security:ConnectionEncryption:MasterKey"] = _connectionSecretPrefixes,
             ["ConnectionStrings:DefaultConnection"] = _connectionSecretPrefixes,
             ["ConnectionStrings:honua"] = _connectionSecretPrefixes,
-            ["ConnectionStrings:redis"] = _envOnlyPrefixes,
             ["Oidc:AzureAd:ClientSecret"] = _envOnlyPrefixes,
             ["Oidc:Google:ClientSecret"] = _envOnlyPrefixes,
             ["Oidc:Generic:ClientSecret"] = _envOnlyPrefixes,

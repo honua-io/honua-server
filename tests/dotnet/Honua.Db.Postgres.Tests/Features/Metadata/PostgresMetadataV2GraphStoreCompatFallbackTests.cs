@@ -13,15 +13,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Metadata;
 
-/// <summary>
-/// Regression tests for honua-server#1412 — the Metadata v2 cutover (~2026-05-18) made
-/// every protocol that resolves through <see cref="PostgresMetadataV2GraphStore"/> require
-/// an activated v2 snapshot, which regressed OGC API Features <c>/collections</c> (and the
-/// collection-detail/items paths) to HTTP 500 on any deployment whose only catalog data is
-/// the legacy V1 catalog (<c>honua.services</c> / <c>honua.layers</c>). The store now
-/// synthesizes a compat snapshot from the V1 catalog when no v2 snapshot is activated, and
-/// still serves the activated snapshot when one exists.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixture fixture)
 {
@@ -159,8 +150,7 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
             var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance, schemaName: schema);
 
-            // No metadata_v2_current row exists for this schema, so before the fix this threw
-            // InvalidOperationException ("No Metadata v2 snapshot has been activated ...").
+            // Exercise compatibility fallback without a metadata_v2_current row for this schema.
             var snapshot = await store.GetCurrentAsync();
 
             snapshot.Should().NotBeNull();
@@ -198,7 +188,7 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
             // ImageServer resolves the raster sidecar through its storage binding's integer
             // storage-layer handle. The compat compiler must preserve the V1 layer id here;
             // otherwise the service exists in metadata but the resolver reports that
-            // ImageServer is not enabled. (honua-server#2638.)
+            // ImageServer is not enabled.
             var imageBinding = snapshot.Graph.StorageBindings.Should()
                 .ContainSingle(b => b.Metadata.Id == "storage-image-layer-700").Which;
             imageBinding.StorageLayerId.Should().Be(700);
@@ -439,13 +429,49 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
     }
 
     [IntegrationTest]
+    public async Task GetCurrentAsync_LayerMetadataProtocolObjects_AreCarriedIntoResourceExtensions()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
+        try
+        {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
+            await CreateV1CatalogTablesAsync(fixture.DataSource, schema);
+            await ExecuteAsync(fixture.DataSource, schema, $$"""
+                INSERT INTO "{{schema}}".layers (
+                    layer_id, layer_name, description, table_schema, table_name,
+                    geometry_type, srid, extent, default_visibility, metadata
+                )
+                VALUES
+                    (0, 'Declared', '', '{{schema}}', 'features', 'Point', 4326, NULL, TRUE,
+                     '{"wms":{"dimensions":[{"name":"elevation","units":"m","extent":"0/10/1"}]},"wmts":{"queryable":false},"wfs":{"namespace":{"prefix":"ex","uri":"https://example.test/x"} } }'::jsonb),
+                    (1, 'Plain', '', '{{schema}}', 'features', 'Point', 4326, NULL, TRUE, '{"wms":"not-an-object"}'::jsonb),
+                    (2, 'NoMetadata', '', '{{schema}}', 'features', 'Point', 4326, NULL, TRUE, NULL);
+                """);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance, schemaName: schema);
+
+            var resources = (await store.GetCurrentAsync()).Graph.Resources.ToDictionary(r => r.Metadata.Id, r => r.Extensions);
+
+            resources["res-layer-0"].Keys.Should().BeEquivalentTo("wms", "wmts", "wfs");
+            resources["res-layer-0"]["wfs"].GetProperty("namespace").GetProperty("prefix").GetString().Should().Be("ex");
+            resources["res-layer-0"]["wms"].GetProperty("dimensions")[0].GetProperty("extent").GetString().Should().Be("0/10/1");
+            resources["res-layer-0"]["wmts"].GetProperty("queryable").GetBoolean().Should().BeFalse();
+            resources["res-layer-1"].Should().BeEmpty();
+            resources["res-layer-2"].Should().BeEmpty();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task GetCurrentAsync_NoV2SnapshotAndEmptyV1Catalog_ReturnsEmptySnapshot()
     {
-        // Before honua-server#1619 this threw InvalidOperationException and caused every
-        // catalog-style endpoint (STAC, /rest/services, /ogc/features/collections, …) to
-        // return HTTP 500 on a freshly deployed server with zero published datasets.
-        // The correct behaviour is an empty-but-valid snapshot so those endpoints return
-        // 200 with zero items instead.
+        // A freshly deployed server with zero published datasets must get an
+        // empty-but-valid snapshot, so every catalog-style endpoint (STAC,
+        // /rest/services, /ogc/features/collections, …) returns 200 with zero items
+        // instead of an HTTP 500 from an InvalidOperationException.
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
         try
         {
@@ -474,7 +500,6 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
     {
         // When the V1 catalog tables are absent (v2-only fresh database or pre-migration
         // container), the store should still return an empty snapshot rather than 500ing.
-        // (honua-server#1619.)
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
         try
         {
@@ -498,7 +523,7 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
     [IntegrationTest]
     public async Task GetCurrentAsync_ActivatedSnapshotFailsToMaterialize_StillThrows()
     {
-        // The empty-snapshot fallback (honua-server#1619) must apply ONLY when no snapshot
+        // The empty-snapshot fallback must apply ONLY when no snapshot
         // exists. A snapshot that IS activated in the database but cannot be materialized
         // (corrupt/empty document) is a genuine failure and must keep erroring — silently
         // serving an empty catalog would mask data loss.
@@ -586,7 +611,7 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
 
     private static async Task CreateV1CatalogTablesAsync(NpgsqlDataSource dataSource, string schema)
     {
-        // #2020: CREATE EXTENSION is database-global, but this static helper only has a raw
+        // CREATE EXTENSION is database-global, but this static helper only has a raw
         // dataSource/schema and no PostgresFixture handle to reach the shared seed advisory
         // lock. It is idempotent (postgis is pre-created by the test container), so it is left
         // unlocked here rather than threading a fixture through every call site.

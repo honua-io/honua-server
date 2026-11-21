@@ -41,7 +41,7 @@ internal sealed class ODataCrudHandler(
     private readonly Honua.Infrastructure.Caching.IETagService _etagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
     private readonly FeatureMutationEventService _mutationEventService = mutationEventService ?? throw new ArgumentNullException(nameof(mutationEventService));
 
-    // OData CRUD is an open-protocol edit surface and remains Community (#1591). Keep this
+    // OData CRUD is an open-protocol edit surface and remains Community. Keep this
     // path on shared validation/authz/telemetry, but do not apply the FeatureServer Pro gate.
 
     public async Task<IResult> HandleGetSingleFeatureAsync(
@@ -568,7 +568,7 @@ internal sealed class ODataCrudHandler(
             return updateStorageError;
         }
 
-        // Collaborative-editing lease enforcement (#4402): a feature another editor
+        // Collaborative-editing lease enforcement: a feature another editor
         // holds a lease on cannot be replaced or merged out from under them, on this surface as
         // much as on GeoServices applyEdits and OGC API Features.
         var lockConflict = await EvaluateVisibleFeatureLockAsync(
@@ -712,7 +712,7 @@ internal sealed class ODataCrudHandler(
             return deleteStorageError;
         }
 
-        // Collaborative-editing lease enforcement (#4402): a feature another editor
+        // Collaborative-editing lease enforcement: a feature another editor
         // holds a lease on cannot be deleted out from under them, on this surface as
         // much as on GeoServices applyEdits and OGC API Features.
         var lockConflict = await EvaluateVisibleFeatureLockAsync(

@@ -297,8 +297,7 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
         root.GetProperty("readyToSubmit").GetBoolean().Should().BeTrue();
         root.GetProperty("backendRegistered").GetBoolean().Should().BeTrue();
         // GitOps backends report SupportsRollback=false until they implement a real
-        // revert (#3301 truthfulness, flipped in #3627); the plan must relay that
-        // honestly rather than the old aspirational claim.
+        // revert; the plan must relay that honestly.
         root.GetProperty("capabilities").GetProperty("supportsRollback").GetBoolean().Should().BeFalse();
     }
 
@@ -468,7 +467,7 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
         rollbackResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var rollbackDocument = JsonDocument.Parse(await rollbackResponse.Content.ReadAsStringAsync());
-        // #2811: the GitOps hand-off backend cannot perform a real revert, so a rollback request fails
+        // The GitOps hand-off backend cannot perform a real revert, so a rollback request fails
         // loudly (manual intervention) rather than falsely reporting RollbackRequested — the operator is
         // told to revert the pinned revision out of band instead of being led to believe it rolled back.
         rollbackDocument.RootElement.GetProperty("status").GetString().Should().Be("ManualInterventionRequired");
@@ -657,12 +656,14 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/deploy/operations/{operationId}/approval-review/{action}")]
     [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/promote")]
     public async Task PromoteDeployOperation_WhenParkedInReconciling_ForcesCutover()
     {
         var promoteStore = new InMemoryWorkflowOperationStore();
         var backend = new PromotableDeployBackend();
-        var promoteFixture = new WebAppFixture()
+        using var identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
+        var promoteFixture = HumanApprovalHttpClient.Configure(new WebAppFixture(), identityProvider)
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IDatabaseMigrationRunner>();
@@ -679,18 +680,25 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
         try
         {
             await promoteFixture.InitializeAsync();
-            var client = promoteFixture.CreateAdminClient();
+            using var human = await HumanApprovalHttpClient.AuthenticateAsync(promoteFixture, identityProvider);
 
             var operationId = $"deploy-{Guid.NewGuid():N}";
             await promoteStore.TryCreateAsync(CreateParkedOperation(operationId));
 
-            var response = await client.PostAsJsonAsync(
-                $"/api/v1/admin/deploy/operations/{operationId}/promote",
-                new { reason = "Operator forcing cutover; telemetry unavailable" });
+            using var machine = promoteFixture.CreateAdminClient();
+            using var denied = await machine.PostAsJsonAsync(
+                $"/api/v1/admin/deploy/operations/{operationId}/promote", new { reason = "Promote" });
+            denied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            using var deniedReview = await machine.GetAsync(
+                $"/api/v1/admin/deploy/operations/{operationId}/approval-review/promote");
+            deniedReview.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            backend.PromoteCalls.Should().Be(0);
+            var snapshot = await human.OpenDeployReviewAsync(operationId, "promote");
+            using var response = await human.SubmitDeployReviewAsync(operationId, "promote", snapshot);
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            // honua-server#4618: a forced manual promotion opens the same post-activation observation
+            // A forced manual promotion opens the same post-activation observation
             // window an automatic promotion does, so the operation stays Reconciling with a Protection
             // record rather than jumping straight to a terminal Succeeded.
             document.RootElement.GetProperty("status").GetString().Should().Be("Reconciling");
@@ -931,13 +939,13 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
             Audit = new OperationAuditInfo { RequestedBy = "alice", Reason = "Rollout" },
             Concurrency = new OperationConcurrencyPolicy
             {
-                PartitionKey = "production:onprem-rolling",
+                PartitionKey = "production:promotable-target",
                 RequiresExclusiveLease = true
             },
             Deploy = new DeployOperationSpec
             {
-                TargetId = "onprem-rolling",
-                TargetKind = DeployTargetKind.SelfHostedRolling,
+                TargetId = "promotable-target",
+                TargetKind = DeployTargetKind.AwsEcs,
                 Backend = "test-promote-backend",
                 Environment = "production",
                 TargetName = "honua-server",
@@ -951,8 +959,8 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
     {
         private static readonly DeployTargetDefinition Target = new()
         {
-            TargetId = "onprem-rolling",
-            TargetKind = DeployTargetKind.SelfHostedRolling,
+            TargetId = "promotable-target",
+            TargetKind = DeployTargetKind.AwsEcs,
             Backend = "test-promote-backend",
             Environment = "production",
             TargetName = "honua-server",
@@ -972,7 +980,7 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
 
         public string BackendName => "test-promote-backend";
 
-        public DeployTargetKind TargetKind => DeployTargetKind.SelfHostedRolling;
+        public DeployTargetKind TargetKind => DeployTargetKind.AwsEcs;
 
         public Task<DeployBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(new DeployBackendCapabilities { SupportsRollback = true, SupportsProgressPolling = true });

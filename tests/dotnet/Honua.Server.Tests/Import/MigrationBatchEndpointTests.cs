@@ -18,14 +18,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests for the footprint-driven batch import orchestration
-/// endpoints (issue #1253): <c>POST /api/v1/admin/import/migrations</c> and
-/// <c>GET /api/v1/admin/import/migrations/{batchId}</c>. Uses an in-memory
-/// catalog plus a recording orchestrator so the endpoints exercise routing,
-/// validation, serialization, and status-code policy without the distributed
-/// job pipeline.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
@@ -152,11 +144,6 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
         _catalog.BatchCount.Should().Be(0);
     }
 
-    /// <summary>
-    /// #4600 (AC1): a caller that requires full fidelity gets 422 with the construct accounting that
-    /// refused the selection, and no run is created. The manifest discovers layers 0 and 1; only layer 0 is
-    /// selected, so layer 1 is the blocking unselected resource.
-    /// </summary>
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/migrations")]
     public async Task StartBatch_WhenFullFidelityIsRequiredAndADiscoveredLayerIsUnselected_ReturnsUnprocessableEntity()
@@ -352,7 +339,7 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
         children[0].GetProperty("publishedLayerId").GetInt32().Should().Be(42);
         children[1].GetProperty("dependsOn")[0].GetString().Should().Be("resource:x:layer:0");
 
-        // #4600: the service-level verdict and its differences, and each child's verdict, are on the wire.
+        // The service-level verdict and its differences, and each child's verdict, are on the wire.
         doc.RootElement.GetProperty("fidelityVerdict").GetString().Should().Be("unverified");
         var difference = doc.RootElement.GetProperty("fidelityDifferences").EnumerateArray().Should().ContainSingle().Subject;
         difference.GetProperty("code").GetString().Should().Be("fidelity.service.layer-unverified");
@@ -361,7 +348,7 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
         children[0].GetProperty("fidelityVerdict").GetString().Should().Be("unverified");
         children[1].TryGetProperty("fidelityVerdict", out _).Should().BeFalse("a running child has no verdict yet");
 
-        // #4600 (AC1): the construct accounting is replayed from the persisted manifest and child rows. The
+        // The construct accounting is replayed from the persisted manifest and child rows. The
         // manifest discovers layers 0, 1 and 2; the batch selected 0 and 1, so layer 2 blocks.
         var accounting = doc.RootElement.GetProperty("constructAccounting");
         accounting.GetProperty("executed").GetBoolean().Should().BeTrue();

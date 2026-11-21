@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import re
 import sys
 from pathlib import Path
 
@@ -291,7 +292,7 @@ def parameter_types(params: str) -> str:
         cleaned = []
         index = 0
         while index < len(part):
-            if part[index] == "[":
+            if part[index] == "[" and not "".join(cleaned).strip():
                 depth = 1
                 index += 1
                 while index < len(part) and depth:
@@ -307,6 +308,7 @@ def parameter_types(params: str) -> str:
         equals = text.find("=")
         if equals >= 0:
             text = text[:equals]
+        text = re.sub(r"\s*\[([,\s]*)\]", lambda match: "[" + "," * match[1].count(",") + "]", text)
         tokens = [token for token in text.split() if token not in {"out", "ref", "in", "params", "this", "scoped"}]
         if len(tokens) >= 2:
             types.append(" ".join(tokens[:-1]))
@@ -394,7 +396,9 @@ class Method:
 
     def endpoint(self, disambiguate: bool) -> str:
         suffix = f"@{self.line}" if disambiguate else ""
-        return f"{self.path}::{self.name}({self.types}){suffix}"
+        # Keep persisted baseline identifiers stable; exact-copy matching uses the full types.
+        legacy_types = re.sub(r"\[[,\s]*\]", "", self.types)
+        return f"{self.path}::{self.name}({legacy_types}){suffix}"
 
 
 def extract_methods(path: str, text: str) -> tuple[list[Method], bool]:
@@ -535,6 +539,24 @@ internal sealed class Short
 '''
 
 
+def static_helper_array_self_test(scalar_method: Method) -> str | None:
+    for array_type in ("string[]", "string[,]", "string[][]", "string []", "string[ , ]", "string [] []"):
+        array_sample = STATIC_HELPER_SAMPLE.replace("Trim(string value)", f"Trim({array_type} value)")
+        array, _ = extract_methods("src/Array.cs", array_sample)
+        canonical_type = array_type.replace(" ", "")
+        if array[0].types != canonical_type or is_pair(scalar_method, array[0]):
+            return "self-test: array parameter ranks were lost or paired with a scalar"
+        canonical_sample = STATIC_HELPER_SAMPLE.replace("Trim(string value)", f"Trim({canonical_type} value)")
+        canonical, _ = extract_methods("src/Canonical.cs", canonical_sample)
+        if not is_pair(array[0], canonical[0]):
+            return "self-test: whitespace in array ranks prevented exact-copy matching"
+        if array[0].endpoint(disambiguate=False) != "src/Array.cs::Trim(string)":
+            return "array parameter ranks changed persisted baseline identifiers"
+    if parameter_types("[NotNull] [Other] string[] value") != "string[]":
+        return "self-test: parameter attributes were not removed independently of array ranks"
+    return None
+
+
 def static_helper_self_test(long_method: Method) -> str | None:
     """Return the failure message for the static-helper tier, or None when it behaves."""
     one, _ = extract_methods("src/C.cs", STATIC_HELPER_SAMPLE)
@@ -568,7 +590,7 @@ def static_helper_self_test(long_method: Method) -> str | None:
     field, _ = extract_methods("src/H.cs", field_sample)
     if [method.name for method in field] != ["Trim"]:
         return "self-test: a static field initializer was taken for a static helper"
-    return None
+    return static_helper_array_self_test(one[0])
 
 
 def self_test() -> int:

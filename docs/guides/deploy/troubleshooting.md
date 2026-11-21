@@ -15,7 +15,7 @@ You'll diagnose the most common operational failures by symptom and apply the ve
 
 Expected: `Healthy` and `Ready`. If either fails, start with the startup or database tables below. Admin-only diagnostics: `GET /monitoring/health/production`, `GET /monitoring/health/comprehensive`, `GET /api/v1/admin/observability/errors`.
 
-A single-node deployment with no Redis configured reports `Ready` — feature-change events run in node-local in-memory mode (a startup warning notes this). When Redis is configured, every readiness probe requires successful cache write/read/delete operations, including index access and while cached data uses in-process fallback. Overlapping local probes share an in-flight round-trip, and shutdown drains it before disposing the cache. The direct Redis path checks atomic index updates. The distributed-cache-only path reads the production index and checks write/read/delete on a separate reserved index entry, preserving concurrent replicas' production index contents. The reserved health and index probe keys use the cache's configured namespace, are removed after a successful probe, and expire after 30 seconds if interrupted. A Redis-related readiness `503` can indicate a connection failure, denied cache commands, or a read-only Redis endpoint; check `ConnectionStrings__Redis`, Redis permissions, and the server itself.
+A single-node deployment whose feature-change events run in node-local in-memory mode still reports `Ready` (a startup warning notes this). Every readiness probe requires a successful write/read/delete round-trip against the in-process cache.
 
 ## Startup
 
@@ -166,32 +166,14 @@ Do not disable rate limiting during an attack or raise every caller's limit to a
 | Upload rejected as too large | File exceeds the configured import limit | Check `GET /api/v1/admin/import/limits`; split the file or raise the limit |
 | Unsupported format error | Format not in the importer matrix | Check `GET /api/v1/admin/import/formats` and convert |
 | Import job fails on geometry | Invalid geometry or unsupported CRS in the source | Validate/fix geometries before import (`ST_MakeValid`), declare the correct source CRS |
-| Import accepted but job never progresses | Queued imports require Redis | Set `ConnectionStrings__Redis` and ensure Redis is reachable |
-| `503` on OGC Processes / GPServer job routes | Redis-backed durable job store not configured | Enable Redis; see [Scale and tune performance](scaling-and-performance.md) |
-| Capability manifest reports `jobs.runner` or `operations.proposals` with `dependency-unavailable` although Redis is configured | Redis did not connect at startup | Check the connection string, network path, TLS and credentials, then restart |
+| Import accepted but job never progresses | No job runner is executing on any node | Check `jobs.runner` in `GET /api/v1/capabilities/manifest` and the server log for job execution errors |
+| `503` on OGC Processes / GPServer job routes | Durable job store not configured | Configure the system database (`ConnectionStrings__DefaultConnection`) |
+| Capability manifest reports `jobs.runner` or `operations.proposals` with `dependency-unavailable` | The system database is not configured or not reachable | Check `ConnectionStrings__DefaultConnection`, the network path, TLS and credentials, then restart |
 
-## Redis durability
+## Durable job store
 
 Jobs, the job queue, execution logs, proposals and workflow operations are
-stored in the system database. A self-managed Redis keeps acknowledged writes
-across a restart with this policy:
-
-| Redis setting | Required value | Why |
-|---|---|---|
-| `appendonly` | `yes` (and `INFO persistence` reports `aof_enabled:1`) | Acknowledged writes survive a restart |
-| `appendfsync` | `everysec` or `always` | An acknowledged write is not left only in the OS page cache |
-| `maxmemory-policy` | `noeviction` | Durable control-plane keys are never evicted under memory pressure |
-
-Durability is a property of the Redis deployment you run. On managed Redis,
-rely on the service: MemoryDB's transaction log, or ElastiCache replication,
-Multi-AZ and snapshots. A stock `redis:7-alpine` defaults to `appendonly no`.
-To make a self-managed Redis durable, start it with the policy:
-
-```yaml
-redis:
-  image: redis:7-alpine
-  command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory-policy", "noeviction"]
-```
+stored in the system database.
 
 ### `Jobs:RequireDurableStore`
 
@@ -206,6 +188,9 @@ Jobs__RequireDurableStore=true
 The job store is in the system database, so a server with
 `ConnectionStrings__DefaultConnection` set satisfies it. Without one the server
 exits with a single typed startup error that names the setting to add.
+
+`limits.job.durableJobRuntimeAvailable` in `GET /api/v1/capabilities/manifest`
+reports whether the job store and job queue are available.
 
 Recent jobs: `GET /api/v1/admin/import/jobs`; durable job detail and logs: `GET /api/v1/admin/jobs/{jobId}/logs`. For stuck workflow runs, see [Automate workflows](../query-analyze/automate-workflows.md).
 
@@ -250,7 +235,7 @@ capabilities and are not provided by these local commands.
 |---|---|---|
 | Memory climbs with large exports/queries | Oversized result sets buffered per request | Tighten `Limits__Query__MaxRecordCount`/`MaxOffset`; prefer paged/streaming clients |
 | OOM kills in containers | Limit below working set | Inspect `GET /api/v1/metrics/memory` and `GET /monitoring/metrics/resources`; raise the container memory limit or tighten query/tile limits |
-| High latency, healthy DB | Cold or missing shared cache | Check `GET /api/v1/metrics/cache` hit rates; configure Redis so replicas share caches |
+| High latency, healthy DB | Cold cache after a restart or scale-out | Check `GET /api/v1/metrics/cache` hit rates; each replica warms its own in-process cache |
 | Slow queries after bulk load | Stale planner statistics | `ANALYZE` the affected tables |
 | Throughput drops as replicas are added | Database admission ceiling | Re-run pool sizing: `max_connections >= pool_size × replicas + headroom` |
 
@@ -258,7 +243,7 @@ capabilities and are not provided by these local commands.
 
 Use these steps when `HonuaServiceDown` fires or normal triage cannot restore readiness. Preserve logs and the failing instance when possible; a restart can erase the best evidence.
 
-1. Confirm scope from outside the cluster or host. Check `/healthz/live` and `/healthz/ready` on each instance, the load balancer target state, recent deploys, and the database and Redis health. If only one replica is unhealthy, remove that replica from service while healthy replicas continue serving.
+1. Confirm scope from outside the cluster or host. Check `/healthz/live` and `/healthz/ready` on each instance, the load balancer target state, recent deploys, and the database health. If only one replica is unhealthy, remove that replica from service while healthy replicas continue serving.
 2. Stop new traffic and let in-flight requests drain, then perform a graceful restart with the deployment platform (`docker compose restart honua`, `kubectl -n honua rollout restart deployment/honua-honua` for the supported Helm installation, or the equivalent release-specific or managed-service action). Watch rollout status and both health probes before restoring traffic.
 3. If an instance does not terminate within the platform's grace period, capture its logs and diagnostics, then force-delete only that stuck container or pod. Do not force-restart every replica at once; keep a healthy replica serving whenever possible.
 4. If database sessions from dead instances exhaust the pool, identify them in `pg_stat_activity` by application name, client address, state, and age. After replacing `<failed-client-address>` with the address verified in that inspection, terminate only idle sessions belonging to that failed instance:

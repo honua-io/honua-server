@@ -115,9 +115,9 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/packages")]
     public async Task PublishMapPackage_WithCliBuiltPackage_ProposesPublicationWithoutMovingPublishedPointer()
     {
-        // honua-server#4906: the body `honua map publish <id> --package @map.json` sends
+        // The body `honua map publish <id> --package @map.json` sends
         // (honua-sdk-js map-package.publish), carrying the honua_map_package.v1 fixture from the
-        // sdk-js#1426 replay. It omits nothing the CLI omits and keeps the members the server's
+        // SDK CLI replay. It omits nothing the CLI omits and keeps the members the server's
         // MapPackage record does not model (view, layers, widgets, styleRefs[].body).
         var body = $$"""
             {
@@ -148,6 +148,27 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
         pointers!.CurrentVersionId.Should().Be(versionId);
         pointers.PublishedVersionId.Should().BeNull(
             "the admin route proposes publication; only a separate principal's approval may move the published pointer");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /api/v1/admin/packages")]
+    public async Task PublishMapPackage_WithCliBuiltPackage_SavesAVersionThatPassesPublicationValidation()
+    {
+        // Actuation rejects an approved publication whose saved version is Invalid, so the
+        // version this route saves must pass the same Studio validation.
+        await using var host = await PublishingHost.StartAsync();
+        using var response = await PostPublishAsync(host.Client, $$"""{"package": {{CliMapPackageJson(string.Empty)}}}""");
+
+        var payload = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted, payload);
+        using var document = JsonDocument.Parse(payload);
+        using var scope = host.Fixture.Services.CreateScope();
+        var version = await scope.ServiceProvider.GetRequiredService<IStudioPackageLifecycleService>().GetVersionAsync(
+            document.RootElement.GetProperty("itemId").GetGuid(), document.RootElement.GetProperty("versionId").GetGuid());
+        version.Should().NotBeNull();
+        version!.Validation.Status.Should().NotBe(StudioPackageValidationStatus.Invalid,
+            string.Join("; ", version.Validation.Diagnostics.Select(diagnostic => diagnostic.Code)));
     }
 
     [IntegrationTest]

@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Text;
 using System.Text.RegularExpressions;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Core.Queries.Filters;
@@ -136,6 +137,34 @@ public static class FeatureQuerySecurity
         {
             ThrowIfExpressionReferencesMaskedField(masked, expression, surface);
         }
+    }
+
+    // Every field a parsed filter reads, whichever operator, negation or function consumes it.
+    public static IReadOnlyList<string> CollectFieldReferences(FilterExpression expression)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+
+        // Iterative: parsed trees are bounded by FilterParserGuard, but callers may also pass
+        // server-built trees, so the walk must not depend on recursion depth.
+        var fields = new List<string>();
+        var pending = new Stack<FilterExpression>();
+        pending.Push(expression);
+        while (pending.Count > 0)
+        {
+            var current = pending.Pop();
+            if (current is PropertyReference property)
+            {
+                fields.Add(property.PropertyName);
+                continue;
+            }
+
+            foreach (var child in EnumerateChildren(current))
+            {
+                pending.Push(child);
+            }
+        }
+
+        return fields;
     }
 
     public static void ValidateH3(FeatureQuery query, H3AggregationQuery h3Query)
@@ -276,7 +305,7 @@ public static class FeatureQuerySecurity
     {
         if (masked.Contains(field))
         {
-            throw new ArgumentException(
+            throw new MaskedFieldReferenceException(
                 $"Field '{field}' is masked and cannot be used by {surface}.",
                 nameof(field));
         }
@@ -290,7 +319,7 @@ public static class FeatureQuerySecurity
                      FieldSortRegex(field).IsMatch(expression) ||
                      AttributeAccessorRegex(field).IsMatch(expression)))
         {
-            throw new ArgumentException(
+            throw new MaskedFieldReferenceException(
                 $"Field '{field}' is masked and cannot be used by {surface}.",
                 nameof(expression));
         }
@@ -334,23 +363,9 @@ public static class FeatureQuerySecurity
         FilterExpression expression,
         string surface)
     {
-        // Iterative: parsed trees are bounded by FilterParserGuard, but callers may also pass
-        // server-built trees, so the walk must not depend on recursion depth.
-        var pending = new Stack<FilterExpression>();
-        pending.Push(expression);
-        while (pending.Count > 0)
+        foreach (var field in CollectFieldReferences(expression))
         {
-            var current = pending.Pop();
-            if (current is PropertyReference property)
-            {
-                ThrowIfMasked(masked, property.PropertyName, surface);
-                continue;
-            }
-
-            foreach (var child in EnumerateChildren(current))
-            {
-                pending.Push(child);
-            }
+            ThrowIfMasked(masked, field, surface);
         }
     }
 

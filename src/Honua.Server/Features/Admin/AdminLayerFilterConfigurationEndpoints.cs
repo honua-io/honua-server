@@ -7,6 +7,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
@@ -28,16 +29,16 @@ internal static class AdminLayerFilterConfigurationEndpoints
             .WithTags("Admin", "Metadata", "Filters")
             .RequireAdminAuthorization();
 
-        _ = group.MapGet("/{storageLayerId:int}/filter", HandleGetLayerFilter)
-            .WithName("GetAdminLayerFilter")
-            .WithSummary("Get persisted layer permanent filter configuration")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var getFilter = AdminHttpOperationRouteBinding.ForApi("admin.layer.filter.get", "/metadata/layers", "/{storageLayerId:int}/filter");
+        _ = group.MapMethods(getFilter.RoutePattern, getFilter.Methods, HandleGetLayerFilter)
+            .WithAdminOperation(getFilter.Definition)
+            .WithSummary("Get persisted layer permanent filter configuration");
 
-        _ = group.MapPut("/{storageLayerId:int}/filter", HandleUpdateLayerFilter)
+        var setFilter = AdminHttpOperationRouteBinding.ForApi("admin.layer.filter.set", "/metadata/layers", "/{storageLayerId:int}/filter");
+        _ = group.MapMethods(setFilter.RoutePattern, setFilter.Methods, HandleUpdateLayerFilter)
+            .WithAdminOperation(setFilter.Definition)
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
-            .WithName("UpdateAdminLayerFilter")
-            .WithSummary("Update persisted layer permanent filter configuration")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+            .WithSummary("Update persisted layer permanent filter configuration");
     }
 
     private static async Task<IResult> HandleGetLayerFilter(
@@ -46,7 +47,7 @@ internal static class AdminLayerFilterConfigurationEndpoints
         [FromServices] IResourceValidator resourceValidator,
         CancellationToken cancellationToken)
     {
-        var layerResult = await ValidateLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
+        var layerResult = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync((storageLayerId, context), resourceValidator, cancellationToken).ConfigureAwait(false);
         if (layerResult.Problem != null || layerResult.Resource == null)
         {
             return layerResult.Problem!;
@@ -68,7 +69,7 @@ internal static class AdminLayerFilterConfigurationEndpoints
         [FromServices] OutputCacheInvalidationService cacheInvalidator,
         CancellationToken cancellationToken)
     {
-        var layerResult = await ValidateLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
+        var layerResult = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync((storageLayerId, context), resourceValidator, cancellationToken).ConfigureAwait(false);
         if (layerResult.Problem != null || layerResult.Resource == null)
         {
             return layerResult.Problem!;
@@ -198,21 +199,6 @@ internal static class AdminLayerFilterConfigurationEndpoints
             default:
                 return false;
         }
-    }
-
-    private static async Task<(MetadataV2Object? Resource, IResult? Problem)> ValidateLayerAsync(
-        int storageLayerId,
-        HttpContext context,
-        IResourceValidator resourceValidator,
-        CancellationToken cancellationToken)
-    {
-        var layerResult = await resourceValidator.ValidateStorageLayerV2Async(storageLayerId, cancellationToken).ConfigureAwait(false);
-        if (!layerResult.IsValid || layerResult.Resource == null)
-        {
-            return (null, ServiceResourceValidationHelpers.CreateAdminValidationProblem(context, layerResult, $"Layer {storageLayerId} not found."));
-        }
-
-        return (layerResult.Resource, null);
     }
 
     private static LayerFilterConfigurationResponse BuildResponse(int storageLayerId, MetadataV2PermanentFilter? filter)

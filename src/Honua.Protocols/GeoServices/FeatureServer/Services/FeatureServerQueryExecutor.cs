@@ -43,7 +43,7 @@ internal sealed partial class FeatureServerQueryExecutor
         _streamingFormatter = streamingFormatter ?? throw new ArgumentNullException(nameof(streamingFormatter));
         _providerQueryRouter = providerQueryRouter;
         _metadataGraphProvider = metadataGraphProvider;
-        // Plugin computed-field projection (#1562). Optional so direct-construction tests keep
+        // Plugin computed-field projection. Optional so direct-construction tests keep
         // working; defaults to the zero-overhead no-op pipeline when no Enterprise plugin SDK is
         // present. Applied at the materialized-Feature query seam in the V2 overload below.
         _computedFieldPipeline = computedFieldPipeline ?? NoOpComputedFieldPipeline.Instance;
@@ -169,8 +169,10 @@ internal sealed partial class FeatureServerQueryExecutor
     {
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         var queryFields = QueryFormatter.BuildQueryFields(resource, outFields: null, objectIdFieldName);
-        var allowedAttributeNames = queryFields.Select(field => field.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var temporalFieldTypes = GeoServicesFieldConventions.ResolveTemporalFieldTypes(resource);
+        var selection = new RawAttributeSelection(
+            queryFields.Select(field => field.Name).ToHashSet(StringComparer.OrdinalIgnoreCase),
+            GeoServicesFieldConventions.ResolveTemporalFieldTypes(resource),
+            objectIdFieldName);
         var displayFieldName = QueryFormatter.ResolveDisplayFieldName(resource, queryFields, objectIdFieldName);
         var srid = outputSrid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         var buffer = new ArrayBufferWriter<byte>(EstimateRawGeoServicesPointPayloadCapacity(result, queryFields));
@@ -193,7 +195,7 @@ internal sealed partial class FeatureServerQueryExecutor
         {
             writer.WriteStartObject();
             writer.WritePropertyName("attributes");
-            WriteRawGeoServicesAttributes(writer, feature, allowedAttributeNames, temporalFieldTypes, objectIdFieldName);
+            WriteRawGeoServicesAttributes(writer, feature, selection);
 
             if (returnGeometry)
             {
@@ -229,27 +231,20 @@ internal sealed partial class FeatureServerQueryExecutor
     private static void WriteRawGeoServicesAttributes(
         Utf8JsonWriter writer,
         RawGeoServicesFeature feature,
-        IReadOnlySet<string> allowedAttributeNames,
-        IReadOnlyDictionary<string, MetadataV2FieldType> temporalFieldTypes,
-        string objectIdFieldName)
+        RawAttributeSelection selection)
     {
         writer.WriteStartObject();
         if (!string.IsNullOrWhiteSpace(feature.AttributesJson))
         {
-            WriteDeclaredRawAttributes(writer, feature.AttributesJson, allowedAttributeNames, temporalFieldTypes, objectIdFieldName);
+            WriteDeclaredRawAttributes(writer, feature.AttributesJson, selection);
         }
 
-        writer.WritePropertyName(objectIdFieldName);
+        writer.WritePropertyName(selection.ObjectIdFieldName);
         WriteRawGeoServicesObjectIdValue(writer, feature);
         writer.WriteEndObject();
     }
 
-    private static void WriteDeclaredRawAttributes(
-        Utf8JsonWriter writer,
-        string attributesJson,
-        IReadOnlySet<string> allowedAttributeNames,
-        IReadOnlyDictionary<string, MetadataV2FieldType> temporalFieldTypes,
-        string objectIdFieldName)
+    private static void WriteDeclaredRawAttributes(Utf8JsonWriter writer, string attributesJson, RawAttributeSelection selection)
     {
         using var document = JsonDocument.Parse(attributesJson);
         if (document.RootElement.ValueKind != JsonValueKind.Object)
@@ -259,44 +254,38 @@ internal sealed partial class FeatureServerQueryExecutor
 
         foreach (var property in document.RootElement.EnumerateObject())
         {
-            if (!ShouldIncludeRawGeoServicesAttribute(property.Name, allowedAttributeNames, objectIdFieldName))
+            if (selection.Choose(property) is { } choice)
             {
-                continue;
+                RawAttributeSelection.WriteName(writer, property, choice);
+                WriteDeclaredRawAttributeValue(writer, property.Value, choice.TemporalType);
             }
-
-            writer.WritePropertyName(property.Name);
-
-            // Match the materialized path: booleans are small integers, while JSON
-            // arrays and objects are strings as required by the advertised field type.
-            if (property.Value.ValueKind is JsonValueKind.True or JsonValueKind.False
-                or JsonValueKind.Array or JsonValueKind.Object)
-            {
-                JsonSerializer.Serialize(writer, GeoServicesAttributeProjection.ToEsriValue(property.Value),
-                    FeatureServerJsonContext.Default.Object);
-                continue;
-            }
-
-            // Match the other JSON paths: timestamp epochs and ISO calendar dates.
-            // Null and unconvertible values retain their stored representation.
-            if (property.Value.ValueKind is not JsonValueKind.Null
-                && temporalFieldTypes.TryGetValue(property.Name, out var temporalType)
-                && GeoServicesFieldConventions.TryConvertTemporalValue(property.Value, temporalType, out var converted))
-            {
-                JsonSerializer.Serialize(writer, converted, FeatureServerJsonContext.Default.Object);
-                continue;
-            }
-
-            property.Value.WriteTo(writer);
         }
     }
 
-    private static bool ShouldIncludeRawGeoServicesAttribute(
-        string fieldName,
-        IReadOnlySet<string> allowedAttributeNames,
-        string objectIdFieldName)
-        => !fieldName.StartsWith("__", StringComparison.Ordinal) &&
-           !fieldName.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase) &&
-           allowedAttributeNames.Contains(fieldName);
+    private static void WriteDeclaredRawAttributeValue(Utf8JsonWriter writer, JsonElement value, MetadataV2FieldType? temporalType)
+    {
+        // Match the materialized path: booleans are small integers, while JSON
+        // arrays and objects are strings as required by the advertised field type.
+        if (value.ValueKind is JsonValueKind.True or JsonValueKind.False
+            or JsonValueKind.Array or JsonValueKind.Object)
+        {
+            JsonSerializer.Serialize(writer, GeoServicesAttributeProjection.ToEsriValue(value),
+                FeatureServerJsonContext.Default.Object);
+            return;
+        }
+
+        // Match the other JSON paths: timestamp epochs and ISO calendar dates.
+        // Null and unconvertible values retain their stored representation.
+        if (value.ValueKind is not JsonValueKind.Null
+            && temporalType is { } fieldType
+            && GeoServicesFieldConventions.TryConvertTemporalValue(value, fieldType, out var converted))
+        {
+            JsonSerializer.Serialize(writer, converted, FeatureServerJsonContext.Default.Object);
+            return;
+        }
+
+        value.WriteTo(writer);
+    }
 
     private static void WriteRawGeoServicesObjectIdValue(Utf8JsonWriter writer, RawGeoServicesFeature feature)
     {

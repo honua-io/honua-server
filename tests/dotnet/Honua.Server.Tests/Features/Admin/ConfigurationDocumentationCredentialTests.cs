@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
@@ -18,10 +19,6 @@ using ConfigurationSection = Honua.Core.Configuration.ConfigurationSection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Admin configuration documentation masks credential-bearing current values the same way
-/// discovery does, and still shows public URLs (honua-server#6025).
-/// </summary>
 public sealed class ConfigurationDocumentationCredentialTests
 {
     private const string TokenWebhook = "https://hooks.example.com/events?token=super-secret";
@@ -79,6 +76,84 @@ public sealed class ConfigurationDocumentationCredentialTests
         currentValues.Should().NotContain(NestedToken);
         currentValues.Should().NotContain("webhook-signing-secret");
     }
+
+    [UnitTest]
+    public void BuildDocumentation_LimitDefaultsComeFromUnconfiguredOptions()
+    {
+        var documentation = CreateService(ConfiguredLimits()).BuildDocumentation();
+        var code = new LimitsOptions();
+
+        foreach (var limit in LimitCases)
+        {
+            var property = Property(documentation, limit.Path);
+            property.DefaultValue.Should().Be(limit.Read(code), limit.Path);
+            property.CurrentValue.Should().Be(limit.Configured, limit.Path);
+        }
+
+        EnvironmentDefault(documentation, "Limits__Query__MaxRecordCount")
+            .Should().Be(code.Query.MaxRecordCount.ToString(CultureInfo.InvariantCulture));
+        EnvironmentDefault(documentation, "Limits__Geometry__MaxVerticesPerGeometry")
+            .Should().Be(code.Geometry.MaxVerticesPerGeometry.ToString(CultureInfo.InvariantCulture));
+        EnvironmentDefault(documentation, "Limits__Connections__MaxConcurrentQueries")
+            .Should().Be(code.Connections.MaxConcurrentQueries.ToString(CultureInfo.InvariantCulture));
+    }
+
+    // Each documented limit: its path, how to read it from LimitsOptions and the value ConfiguredLimits sets.
+    private sealed record LimitCase(string Path, Func<LimitsOptions, object> Read, object Configured);
+
+    private static readonly LimitCase[] LimitCases =
+    [
+        new("Limits:Query:MaxRecordCount", options => options.Query.MaxRecordCount, 2000),
+        new("Limits:Geometry:MaxVerticesPerGeometry", options => options.Geometry.MaxVerticesPerGeometry, 1000),
+        new("Limits:Geometry:MaxGeometrySize", options => options.Geometry.MaxGeometrySize, 1L),
+        new("Limits:Geometry:MaxOverlayCandidatePairs", options => options.Geometry.MaxOverlayCandidatePairs, 1000L),
+        new("Limits:Edits:MaxFeaturesPerEdit", options => options.Edits.MaxFeaturesPerEdit, 2),
+        new("Limits:Edits:MaxEditsPerTransaction", options => options.Edits.MaxEditsPerTransaction, 3),
+        new("Limits:Edits:MaxPayloadSize", options => options.Edits.MaxPayloadSize, 4L),
+        new("Limits:Attachments:MaxAttachmentSize", options => options.Attachments.MaxAttachmentSize, 5L),
+        new("Limits:Attachments:MaxAttachmentsPerFeature", options => options.Attachments.MaxAttachmentsPerFeature, 1),
+        new("Limits:Attachments:MaxTotalAttachmentSize", options => options.Attachments.MaxTotalAttachmentSize, 6L),
+        new("Limits:Tiles:MaxTileZoom", options => options.Tiles.MaxTileZoom, 5),
+        new("Limits:Tiles:MaxFeaturesPerTile", options => options.Tiles.MaxFeaturesPerTile, 7),
+        new("Limits:Tiles:TileTimeout", options => options.Tiles.TileTimeout, TimeSpan.FromSeconds(1)),
+        new("Limits:Connections:MaxConcurrentQueries", options => options.Connections.MaxConcurrentQueries, 10),
+        new("Limits:Connections:RequestTimeout", options => options.Connections.RequestTimeout, TimeSpan.FromSeconds(11)),
+    ];
+
+    private static LimitsOptions ConfiguredLimits()
+    {
+        var configured = new LimitsOptions();
+        configured.Query.MaxRecordCount = 2000;
+        configured.Geometry.MaxVerticesPerGeometry = 1000;
+        configured.Geometry.MaxGeometrySize = 1;
+        configured.Geometry.MaxOverlayCandidatePairs = 1000;
+        configured.Edits.MaxFeaturesPerEdit = 2;
+        configured.Edits.MaxEditsPerTransaction = 3;
+        configured.Edits.MaxPayloadSize = 4;
+        configured.Attachments.MaxAttachmentSize = 5;
+        configured.Attachments.MaxAttachmentsPerFeature = 1;
+        configured.Attachments.MaxTotalAttachmentSize = 6;
+        configured.Tiles.MaxTileZoom = 5;
+        configured.Tiles.MaxFeaturesPerTile = 7;
+        configured.Tiles.TileTimeout = TimeSpan.FromSeconds(1);
+        configured.Connections.MaxConcurrentQueries = 10;
+        configured.Connections.RequestTimeout = TimeSpan.FromSeconds(11);
+        return configured;
+    }
+
+    private static string? EnvironmentDefault(ConfigurationDocumentation documentation, string name)
+        => documentation.EnvironmentVariables.Should().ContainSingle(variable => variable.Name == name).Which.Default;
+
+    private static ConfigurationDocumentationService CreateService(LimitsOptions limits)
+        => new(
+            new ConfigurationBuilder().Build(),
+            new TestWebHostEnvironment(),
+            Options.Create(limits),
+            Options.Create(new CacheOptions()),
+            Options.Create(new TileOptions()),
+            Options.Create(new AdaptiveSamplingOptions()),
+            Options.Create(new TracingOptions()),
+            []);
 
     private static ConfigurationProperty Property(ConfigurationDocumentation documentation, string path)
     {

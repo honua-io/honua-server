@@ -20,7 +20,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
-/// <summary>MapServer metadata, query and legend endpoint integration tests.</summary>
 [Collection("Database.GeoServicesMapServer")]
 [Protocol(TestProtocols.MapServer)]
 public sealed class MapServerEndpointTests : MapServerEndpointTestBase
@@ -98,7 +97,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
     {
         // arcpy.management.MakeWCSLayer copies the integer out of
         // /rest/services/{id}/ImageServer/WCS and probes {id}.MapServer. That integer is a
-        // storage-layer id, not a service name (#5036).
+        // storage-layer id, not a service name.
         foreach (var path in new[]
         {
             $"/admin/services/{WebAppFixture.TestLayerId}.MapServer?f=json",
@@ -164,7 +163,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
     public async Task MapServer_Metadata_WithInvalidIdentifier_ReturnsBadRequest()
     {
         var response = await Fixture.Client.GetAsync("/rest/services/%20/MapServer?f=json");
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -242,7 +241,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/dynamicLayer?f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("dynamicLayer requires a layer parameter.");
@@ -259,7 +258,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/dynamicLayer?f=json&layer={layer}");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("unsupported source type");
@@ -277,7 +276,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/dynamicLayer?f=json&layer={malformedLayer}");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -292,7 +291,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
     [Endpoint("GET /rest/services/{serviceId}/MapServer")]
     public async Task MapServer_Metadata_SupportedImageFormatTypes_DoesNotAdvertiseGif()
     {
-        // Regression (#1772): GIF was advertised in supportedImageFormatTypes but the
+        // GIF was advertised in supportedImageFormatTypes but the
         // SkiaSharp export renderer ships no GIF encoder, so export?format=gif was
         // rejected. Capabilities must match behavior -> GIF must not be advertised.
         var response = await Fixture.Client.GetAsync($"/rest/services/{WebAppFixture.TestServiceId}/MapServer?f=json");
@@ -493,7 +492,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json&dynamicLayers={dynamicLayers}");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("unsupported drawingInfo renderer");
@@ -594,7 +593,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=html");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -620,7 +619,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json&size=20,20,20");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -630,7 +629,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
     public async Task MapServer_Legend_WithInvalidIdentifier_ReturnsBadRequest()
     {
         var response = await Fixture.Client.GetAsync("/rest/services/%20/MapServer/legend?f=json");
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -767,7 +766,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/query?layers={WebAppFixture.TestLayerId},&where=1%3D1&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -787,7 +786,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/query",
             payload);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -823,7 +822,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/query",
             requestContent);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Invalid JSON payload");
@@ -859,7 +858,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
     public async Task MapServer_AllLayersAndTables_WithInvalidIdentifier_ReturnsBadRequest()
     {
         var response = await Fixture.Client.GetAsync("/rest/services/%20/MapServer/allLayersAndTables?f=json");
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -892,7 +891,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
     [Endpoint("GET /rest/services/{serviceId}/MapServer/layers")]
     public async Task MapServer_Layers_ReturnsSameDocumentAsAllLayersAndTables()
     {
-        // Regression for #1454: the ArcGIS Maps SDK for JavaScript and the .NET SDK
+        // The ArcGIS Maps SDK for JavaScript and the .NET SDK
         // hydrate sublayers via /MapServer/layers (not /allLayersAndTables). The
         // /layers resource must exist and return the identical {layers,tables} document.
         var layersResponse = await Fixture.Client.GetAsync(
@@ -934,8 +933,8 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
         domains.ValueKind.Should().Be(JsonValueKind.Array);
     }
 
-    // honua-server#1825: Esri services accept BOTH GET and POST for queryDomains; clients
-    // POST large layers arrays that exceed URL limits. Previously POST returned 405.
+    // Accept GET and POST for queryDomains; clients POST layers arrays
+    // that exceed URL limits.
     [IntegrationTest]
     [Operation(Operations.QueryDomains)]
     [Endpoint("POST /rest/services/{serviceId}/MapServer/queryDomains")]
@@ -962,7 +961,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/queryDomains?layers=987654&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -1001,7 +1000,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/2147483646?f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -1063,7 +1062,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/generateRenderer?f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("layer or layerId is required.");
@@ -1176,7 +1175,7 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId=987654");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 

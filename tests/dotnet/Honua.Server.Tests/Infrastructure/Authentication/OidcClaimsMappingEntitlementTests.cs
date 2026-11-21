@@ -84,11 +84,6 @@ public sealed class OidcClaimsMappingEntitlementTests
             CanonicalSecurityActor.FindStampedValue(result, CanonicalSecurityActor.AuthenticationSchemeClaim));
     }
 
-    /// <summary>
-    /// Claim types minted by the server's own authentication handlers and then read as
-    /// authoritative by shared authorization (SEC-10). Nothing outside the process may
-    /// populate them.
-    /// </summary>
     private static readonly string[] FrameworkAuthorityClaimTypes =
     [
         "permission", "auth_type", "api_key_id", "api_key_name", "plan", "honua_plan",
@@ -368,10 +363,6 @@ public sealed class OidcClaimsMappingEntitlementTests
         Assert.True(result.IsInRole("user"));
     }
 
-    /// <summary>
-    /// Builds a transformation whose PRIMARY role claim type is a provider-specific claim,
-    /// with no other custom mapping configured.
-    /// </summary>
     private static OidcClaimsTransformation CreateRoleClaimTypeTransformation(HonuaEdition edition)
     {
         var options = Options.Create(new OidcAuthenticationOptions
@@ -391,11 +382,6 @@ public sealed class OidcClaimsMappingEntitlementTests
             services);
     }
 
-    /// <summary>
-    /// Mirrors what the JWT/OIDC handlers produce when
-    /// <c>TokenValidationParameters.RoleClaimType</c> is the configured custom type: the
-    /// identity itself resolves <c>IsInRole</c> against <c>groups</c>.
-    /// </summary>
     private static ClaimsPrincipal CreateGroupsPrincipal() => new(new ClaimsIdentity(
         [
             new Claim("sub", "user-123"),
@@ -443,10 +429,8 @@ public sealed class OidcClaimsMappingEntitlementTests
     [UnitTest]
     public async Task TransformAsync_WithEntitlement_CustomRoleClaimTypeApplies()
     {
-        // Pro gets what it configured: `groups` values are roles and reach AdminRoles.
-        // The admin assertion also pins a latent defect this change settles — `admin` is
-        // written as a ClaimTypes.Role claim, which an identity keyed on `groups` could never
-        // resolve, so a custom-role-claim deployment used to get no admin at all.
+        // Configured groups values must act as roles and reach AdminRoles. An identity
+        // using a custom role claim type must also resolve the synthesized admin role.
         var transformation = CreateRoleClaimTypeTransformation(HonuaEdition.Pro);
 
         var result = await transformation.TransformAsync(CreateGroupsPrincipal());
@@ -461,7 +445,7 @@ public sealed class OidcClaimsMappingEntitlementTests
         // Provenance for anything that PERSISTS these roles. The portal token exchange copies
         // the transformed ClaimTypes.Role values into a durable record and the restore path
         // never re-runs this transformation, so without a marker an expired entitlement kept
-        // being honoured for the token's whole lifetime (honua-server#2997 review).
+        // being honoured for the token's whole lifetime.
         var transformation = CreateRoleClaimTypeTransformation(HonuaEdition.Enterprise);
 
         var result = await transformation.TransformAsync(CreateGroupsPrincipal());

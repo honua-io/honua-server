@@ -21,11 +21,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// End-to-end coverage for the workflow-transition seam (#2562): deploy lifecycle transitions raised
-/// through <see cref="IWorkflowOperationTransitionListener"/> surface as <c>Release</c> events on the
-/// Operate timeline and are filterable via the existing observability events endpoint.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
@@ -34,6 +29,7 @@ public sealed class DeployReleaseTimelineTests : IAsyncLifetime
     private readonly ReleaseTimelineBuffer _buffer = new();
     private readonly InMemoryWorkflowOperationStore _inner = new();
     private readonly TimelineDeployBackend _backend = new();
+    private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
@@ -44,7 +40,8 @@ public sealed class DeployReleaseTimelineTests : IAsyncLifetime
             new IWorkflowOperationTransitionListener[] { new ReleaseTimelineTransitionListener(_buffer) },
             NullLogger<TransitionObservingWorkflowOperationStore>.Instance);
 
-        _fixture = new WebAppFixture()
+        // Promotion requires a current review from an interactive admin session.
+        _fixture = HumanApprovalHttpClient.Configure(new WebAppFixture(), _identityProvider)
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IDatabaseMigrationRunner>();
@@ -68,7 +65,11 @@ public sealed class DeployReleaseTimelineTests : IAsyncLifetime
         _client = _fixture.CreateAdminClient();
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        using var identityProvider = _identityProvider;
+        await _fixture.DisposeAsync();
+    }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/observability/events")]
@@ -99,7 +100,6 @@ public sealed class DeployReleaseTimelineTests : IAsyncLifetime
             .ToList();
         titlesForTwo.Should().Contain(t => t!.StartsWith("Deploy needs manual intervention"));
 
-        // The ReleaseId filter now returns data and scopes to a single release.
         var scoped = await GetReleaseEventsAsync($"releaseId={Uri.EscapeDataString(releaseOne)}&pageSize=200");
         scoped.Should().NotBeEmpty();
         scoped.Should().OnlyContain(e => e.GetProperty("releaseId").GetString() == releaseOne);
@@ -128,8 +128,8 @@ public sealed class DeployReleaseTimelineTests : IAsyncLifetime
         }
         else
         {
-            var promoteResponse = await _client.PostAsJsonAsync(
-                $"/api/v1/admin/deploy/operations/{operationId}/promote", new { reason = "Cutover" });
+            using var reviewer = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider);
+            using var promoteResponse = await reviewer.ReviewDeployAsync(operationId, "promote");
             promoteResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             _backend.NextRollbackStatus = WorkflowOperationStatus.RolledBack;
         }

@@ -8,9 +8,9 @@ resource: "honua://capability/identity.claims-mapping"
 
 Decide who can read and who can write each published service and layer, using access policies for coarse rules and roles with per-operation grants for fine-grained RBAC.
 
-**Prerequisites:** An admin API key ([Authenticate clients](authentication.md)) and a published service. Open the local API explorer at `http://localhost:8080/docs` and authorize it with the admin key before running these operations.
+**Prerequisites:** An admin API key ([Authenticate clients](authentication.md)) and a published service. Open the local API explorer at `http://localhost:8080/docs` (enabled by default in Development; set `HONUA_SERVE_API_DOCS=true` in Production) and authorize it with the admin key before running these operations, or send the requests directly with `X-API-Key`.
 
-Two mechanisms compose: a per-resource **access policy** (`allowAnonymous`, `allowAnonymousWrite`, `allowedRoles`, `allowedWriteRoles`) and **RBAC roles** carrying `(service, layer, operation)` permission grants with `*` wildcards. An explicit write policy on a resource stays authoritative; when none is set, a matching RBAC write grant (`insert`/`update`/`delete`), a global data-editor role (`Rbac__DataEditorRoles`), or a service-scoped `data-editor:{service}` role authorizes the mutation. Admin endpoints (`/api/v1/admin/*`) and metrics endpoints always require the `admin` role.
+Two mechanisms compose: a per-resource **access policy** (`allowAnonymous`, `allowAnonymousWrite`, `allowedRoles`, `allowedWriteRoles`) and **RBAC roles** carrying `(service, layer, operation)` permission grants with `*` wildcards. A scoped write key (`write:<service>` or `write:<service>/<layer>`) is authorized by its own grant, independently of `allowedWriteRoles`; revoke the key to stop it. Otherwise an explicit write policy on a resource stays authoritative; when none is set, a matching RBAC write grant (`insert`/`update`/`delete`), a global data-editor role (`Rbac__DataEditorRoles`), or a service-scoped `data-editor:{service}` role authorizes the mutation. Admin endpoints (`/api/v1/admin/*`) and metrics endpoints always require the `admin` role.
 
 ## Steps
 
@@ -39,7 +39,7 @@ Run `POST /api/v1/admin/roles` in the explorer with this body:
 }
 ```
 
-Note the returned `roleId`. `GET /api/v1/admin/roles` lists all roles; `PUT`/`DELETE /api/v1/admin/roles/{id}` rename or remove one.
+Note the returned `data.roleId`. `GET /api/v1/admin/roles` lists all roles; `PUT`/`DELETE /api/v1/admin/roles/{id}` rename or remove one.
 
 ### 3. Grant per-operation permissions to the role
 
@@ -85,7 +85,11 @@ Run `POST /api/v1/admin/rls-policies` with this body:
 }
 ```
 
-With this policy in place, a caller whose token carries `region=west` sees only features where `region = 'west'`; a caller with `region=east` sees only `east` features. The claim value is bound as a query parameter, so it can never inject SQL. `comparison` is `in` (default — matches any of the caller's claim values) or `equals`. Use `*` wildcards on `role`/`service`/`layer` to scope broadly, or concrete names to target one layer. `GET /api/v1/admin/rls-policies` lists policies; `DELETE /api/v1/admin/rls-policies/{id}` removes one.
+With this policy in place, a caller whose token carries `region=west` sees only features where `region = 'west'`; a caller with `region=east` sees only `east` features. The claim value is bound as a query parameter, so it can never inject SQL. `comparison` is `in` (default — matches any of the caller's claim values) or `equals`. Use `*` wildcards on `role`/`service`/`layer` to scope broadly, or concrete names to target one layer. The response returns the new policy's id as `data.policyId`. `GET /api/v1/admin/rls-policies` lists policies; `DELETE /api/v1/admin/rls-policies/{policyId}` removes one.
+
+A policy can also include `filterExpression`, a CQL2 text expression of up to 4,096 characters, and `areaGeometry`, a string containing a WGS84 GeoJSON Polygon or MultiPolygon of up to 65,536 characters. For example, `"filterExpression": "status = 'active'"` further limits the caller's rows to active features. An area limits results to features whose primary geometry intersects that area. Features retain their original geometry. Both restrictions are combined with the claim comparison using AND; callers still need a matching claim. Omitted or null fields preserve the claim-only behavior. Invalid configured restrictions reject policy creation, and restrictions that cannot be applied to a queried layer deny that read.
+
+Before configuring these optional fields, apply the policy schema migration and upgrade every server instance that reads the catalog. Verify that all readers understand the fields before activation; older readers cannot enforce them. Supply longitude and latitude coordinate pairs, without a `crs` or `bbox` member, for an area.
 
 RLS is **fail-secure**: if a matching policy exists but the caller carries no value for the referenced claim, the predicate hides every row rather than revealing them. RLS composes with (and is independent of) a layer's always-on metadata permanent filter — both are AND-ed together.
 
@@ -113,6 +117,19 @@ must pass row visibility; when a row policy applies and the event has no before-
 the delete is withheld because its visibility cannot be established. Stream routes
 also require access to the publication in the subscriber's effective tenant.
 
+Streams evaluate row policies on each event in memory, which covers claim values and
+attribute filter expressions but not a policy area (`areaGeometry`) or other spatial
+or unsupported predicates. A layer whose policy for the subscriber has one is not
+streamed to that subscriber. A subscription that names such a layer (`layers=` or a
+WebSocket `subscribe` with layer IDs), and has no other readable route for it, is
+refused: SSE answers `403` and WebSocket sends an `error` frame, both naming the
+layer. This applies to the whole subscription, so `layers=0,1` is refused when
+only layer 1 has such a policy; subscribe to the other layers separately. Read those
+rows with a feature query (FeatureServer, OGC API Features or OData), which applies
+the area. A subscription that names no layers (unscoped, or scoped only to a
+service) is still accepted and delivers no events from that layer. A policy change that adds an area to a layer
+already being streamed ends the subscription as a revocation.
+
 Offline replica downloads (`synchronizeReplica`, `extractChanges`) judge each update
 and delete against the row image the change log recorded before the change, under the
 caller's current row policy and the replica scope. A delete is delivered only when the
@@ -128,7 +145,7 @@ Run `GET /api/v1/admin/users/{userId}/effective-permissions` in the explorer.
 { "success": true, "data": { "userId": "…", "roles": ["editors"], "permissions": [ { "service": "parks", "layer": "*", "operation": "update" } ] } }
 ```
 
-Then confirm enforcement: an anonymous `POST .../FeatureServer/{layerIndex}/addFeatures` against the restricted service returns a GeoServices error with code `499` in an HTTP 200 response, a signed-in caller without the grant gets HTTP `403`, and a caller holding `editors` succeeds. API keys have the same introspection at `GET /api/v1/admin/api-keys/{id}/effective-permissions`.
+Then confirm enforcement: an anonymous `POST .../FeatureServer/{layerIndex}/addFeatures` against the restricted service returns a GeoServices error with code `499` in an HTTP 200 response, a signed-in caller without the grant gets HTTP `403`, and a caller holding `editors` succeeds. API keys can also be inspected at `GET /api/v1/admin/api-keys/{id}/effective-permissions`, which returns `{ id, name, status, kind, permissions, canAuthenticate }` under `data`.
 
 ## Troubleshoot
 

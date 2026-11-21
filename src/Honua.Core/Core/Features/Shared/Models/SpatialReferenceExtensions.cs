@@ -8,16 +8,6 @@ namespace Honua.Core.Features.Shared.Models;
 
 public static class SpatialReferenceExtensions
 {
-    public static SpatialReference ToUnifiedSpatialReference(this (int Srid, string? WellKnownText) catalogSpatialRef)
-        => new()
-        {
-            Wkid = catalogSpatialRef.Srid,
-            Wkt = catalogSpatialRef.WellKnownText
-        };
-
-    public static (int Srid, string? WellKnownText) ToCatalogSpatialReference(this SpatialReference spatialRef)
-        => (spatialRef.Wkid, spatialRef.Wkt);
-
     public static string ToOgcCrsUri(this SpatialReference spatialRef)
         => spatialRef.Wkid switch
         {
@@ -31,7 +21,7 @@ public static class SpatialReferenceExtensions
         if (string.IsNullOrWhiteSpace(crsUri))
             return null;
 
-        // PA-028: Normalize https:// → http:// before matching. The OGC canonical form uses http://,
+        // Normalize https:// → http:// before matching. The OGC canonical form uses http://,
         // but some servers (including Honua's Maps handler) emit https:// Content-Crs headers.
         var normalized = crsUri.StartsWith("https://www.opengis.net/", StringComparison.OrdinalIgnoreCase)
             ? "http://" + crsUri["https://".Length..]
@@ -66,7 +56,7 @@ public static class SpatialReferenceExtensions
 
         if (spatialRef.Wkid == 4326)
         {
-            // PA-022: EPSG:4326 is distinct from CRS84: it uses NorthEast (lat/lon) axis order.
+            // EPSG:4326 is distinct from CRS84: it uses NorthEast (lat/lon) axis order.
             // Both must be advertised so clients sending ?crs=EPSG:4326 receive a supported-CRS hit.
             // CRS84 is already the first URI via ToOgcCrsUri() above.
             uris.Add(Epsg4326CrsUri);
@@ -77,16 +67,12 @@ public static class SpatialReferenceExtensions
             uris.Add(SpatialReference.WGS84.ToOgcCrsUri());
         }
 
-        // PA-023: Web Mercator (EPSG:3857) is only advertised when it is the layer's own CRS.
-        // Unconditional advertisement was a false capability claim for providers that do not
-        // support on-the-fly ST_Transform to 3857. The 3857 URI is already emitted as the
+        // Web Mercator (EPSG:3857) is only advertised when it is the layer's own CRS.
+        // Providers need not support on-the-fly ST_Transform to 3857. Its URI is emitted as the
         // first entry for 3857-native layers, so no additional entry is needed here.
 
         return uris.ToImmutableArray();
     }
-
-    public static bool IsSupportedByOgc(this SpatialReference spatialRef)
-        => spatialRef.Wkid is 4326 or 3857 or > 0;
 
     // WKID 4326 is CRS84 and is governed by the OGC, so its authority name is OGC rather than EPSG.
     public static string GetAuthorityName(this SpatialReference spatialRef)
@@ -111,16 +97,4 @@ public static class SpatialReferenceExtensions
 
     public static bool IsWebMercatorSrid(int srid)
         => NormalizeWebMercatorSrid(srid) == 3857;
-
-    public static SpatialReference FromWkid(int wkid)
-        => SpatialReference.Create(wkid);
-
-    public static SpatialReference FromWkidAndWkt(int wkid, string? wkt)
-        => new() { Wkid = wkid, Wkt = wkt };
-
-    public static SpatialReference? ToNullable(this SpatialReference spatialRef)
-        => spatialRef;
-
-    public static SpatialReference? FromOptionalWkid(int? wkid)
-        => wkid.HasValue ? SpatialReference.Create(wkid.Value) : null;
 }

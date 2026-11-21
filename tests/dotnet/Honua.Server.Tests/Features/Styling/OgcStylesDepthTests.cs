@@ -16,15 +16,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Styling;
 
-/// <summary>
-/// Depth pack for the OGC API - Styles surface (#2983): content negotiation beyond the
-/// happy path (Esri drawingInfo encoding, quality ordering, wildcard fallback, 406),
-/// manage-styles error contracts (415/400/404), Esri drawingInfo round trips through
-/// PUT including lossy-conversion strict/non-strict handling, standalone catalog style
-/// behavior (server-assigned ids, metadata, derived SLD), output-cache eviction on
-/// mutation, and unknown-query-parameter rejection. Complements the happy-path suite
-/// in <see cref="OgcStylesEndpointTests"/>.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiStyles)]
 public sealed class OgcStylesDepthTests : IAsyncLifetime
@@ -873,7 +864,7 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
     {
         await SeedTestLayerStyleAsync(adminClient);
 
-        // Every feature collection now publishes a style (#4993), so the list is not just the
+        // Every feature collection now publishes a style, so the list is not just the
         // seeded one: resolve the seeded layer's own style id and prove it is listed.
         var styleId = _fixture.GetCurrentV2GraphSnapshot()
             .Index.ResourcesByStorageLayerId[WebAppFixture.TestLayerId].Metadata.Name;

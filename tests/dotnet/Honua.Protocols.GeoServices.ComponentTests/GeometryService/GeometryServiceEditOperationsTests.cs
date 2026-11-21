@@ -12,12 +12,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 
-/// <summary>
-/// Integration coverage for the geometry edit/transform GeometryServer operations
-/// added as a follow-up to #1301: cut, trimExtend, offset, autoComplete, reshape,
-/// and findTransformations. These are the remaining operations ArcGIS Pro and the
-/// ArcGIS SDKs invoke that previously returned 404.
-/// </summary>
 [Protocol(TestProtocols.GeometryService)]
 [Collection("Database.GeoServicesRaster")]
 public sealed class GeometryServiceEditOperationsTests
@@ -363,7 +357,7 @@ public sealed class GeometryServiceEditOperationsTests
     {
         // Existing left square [0,0]-[1,1] plus a polyline tracing the three open sides of the
         // adjacent right square. Polygonization yields both faces; autoComplete must return ONLY
-        // the new right square, not the pre-existing input polygon (#2742).
+        // the new right square, not the pre-existing input polygon.
         var body = """
         {
             "polygons": [

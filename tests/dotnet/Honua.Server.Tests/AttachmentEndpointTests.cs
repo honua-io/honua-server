@@ -23,10 +23,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Integration tests for FeatureServer attachment endpoints.
-/// Tests Issue #13 - Attachment CRUD operations implementation.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database.CoreFeatureStore")]
 public sealed class AttachmentEndpointTests : IAsyncLifetime
@@ -39,8 +35,6 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
-        // The default test graph declares no edit capabilities. applyEdits treats that as
-        // Query-only, and attachment writes now use the same resolver (#6135).
         _fixture.EnableV2ServiceEditingCapabilities(
             TestServiceId,
             ["Query", "Create", "Update", "Delete"]);
@@ -168,7 +162,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments")]
     public async Task QueryAttachments_AlwaysEmitsParentGlobalIdKey()
     {
-        // Regression: the ArcGIS API for Python AttachmentManager.search() reads
+        // The ArcGIS API for Python AttachmentManager.search() reads
         // group['parentGlobalId'] unconditionally and raises KeyError when the key
         // is absent. Esri always emits the key (empty string when there is no
         // global-id column). Assert the raw JSON carries the key on every group,
@@ -232,7 +226,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         seededGroup.AttachmentInfos.Should().NotBeEmpty();
         seededGroup.AttachmentInfos.Should().OnlyContain(attachment => !string.IsNullOrWhiteSpace(attachment.Url));
 
-        // #4404: a non-blank URL was never dereferenced, so a wrong or unroutable URL passed.
+        // A non-blank URL was never dereferenced, so a wrong or unroutable URL passed.
         // Fetch the advertised URL for the seeded text attachment and compare the bytes.
         var textAttachment = seededGroup.AttachmentInfos.Single(attachment => attachment.Name == "test1.txt");
         var urlResponse = await _fixture.Client.GetAsync(ResolveAdvertisedUrl(textAttachment.Url!));
@@ -297,8 +291,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         result!.AddAttachmentResult.Success.Should().BeTrue();
         result.AddAttachmentResult.ObjectId.Should().BeGreaterThan(0);
 
-        // #4404: a successful insert over a missing or garbled blob used to pass here.
-        // Read the bytes back through the public download route.
+        // Read the stored bytes back through the public download route.
         var downloaded = await DownloadAttachmentBytesAsync(result.AddAttachmentResult.ObjectId);
         downloaded.Should().Equal(fileContent);
     }
@@ -348,7 +341,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments")]
     public async Task AddAttachment_ThenGetAttachmentInfos_ReturnsNewAttachmentNotStaleCache()
     {
-        // Regression: the per-feature attachment-infos GET must not be served from the
+        // The per-feature attachment-infos GET must not be served from the
         // anonymous-only output cache, otherwise the ArcGIS SDK round-trip
         // attachments.add(oid) -> get_list(oid) returns the stale empty list cached by the
         // first get_list. Prime the cache, add, then re-read for the SAME oid.
@@ -415,8 +408,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         result!.AddAttachmentResult.Success.Should().BeTrue();
         result.AddAttachmentResult.ObjectId.Should().BeGreaterThan(0);
 
-        // #4404: a successful insert over a missing or garbled blob used to pass here.
-        // Read the bytes back through the public download route.
+        // Read the stored bytes back through the public download route.
         var downloaded = await DownloadAttachmentBytesAsync(result.AddAttachmentResult.ObjectId);
         downloaded.Should().Equal(fileContent);
     }
@@ -449,7 +441,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     public async Task AddAttachment_TextMimeTypeWithDefaultAllowList_IsStoredAndDownloadable(
         string contentType, string fileName, string text)
     {
-        // #5017: the default allow-list was image/*,application/pdf, so text notes, CSV tallies and
+        // The default allow-list was image/*,application/pdf, so text notes, CSV tallies and
         // JSON payloads were refused with "File type '...' is not allowed".
         var payload = Encoding.UTF8.GetBytes(text);
         var attachmentId = await AddAttachmentAsync(payload, fileName, contentType);
@@ -470,6 +462,23 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
         var downloaded = await DownloadAttachmentBytesAsync(attachmentId);
         downloaded.Should().Equal(payload);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.DownloadAttachment)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}")]
+    public async Task DownloadAttachment_IsNeverRenderedInline()
+    {
+        // Stored content types are client-supplied: downloads must force a file save and forbid
+        // MIME sniffing so markup in an attachment never runs in the server's origin.
+        var attachmentId = await AddAttachmentAsync("<b>note</b>"u8.ToArray(), "note.txt", "text/plain");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments/{attachmentId}");
+
+        response.BeSuccessful();
+        response.Content.Headers.ContentDisposition!.DispositionType.Should().Be("attachment");
+        response.Headers.GetValues("X-Content-Type-Options").Should().Equal("nosniff");
     }
 
     [IntegrationTest]
@@ -506,8 +515,8 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment",
             requestContent);
 
-        // #4404: 500 was previously accepted here, so an unhandled crash passed a media-type
-        // test. The endpoint must answer an unsupported media type with 415.
+        // The endpoint must answer an unsupported media type with 415. Accepting 500
+        // here would let an unhandled crash pass a media-type test.
         await response.AssertGeoServicesErrorAsync(415);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Unsupported Media Type");
@@ -632,8 +641,8 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/updateAttachment",
             requestContent);
 
-        // #4404: 500 was previously accepted here, so an unhandled crash passed a media-type
-        // test. The endpoint must answer an unsupported media type with 415.
+        // The endpoint must answer an unsupported media type with 415. Accepting 500
+        // here would let an unhandled crash pass a media-type test.
         await response.AssertGeoServicesErrorAsync(415);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Unsupported Media Type");
@@ -812,8 +821,8 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/deleteAttachments",
             requestContent);
 
-        // #4404: 500 was previously accepted here, so an unhandled crash passed a media-type
-        // test. The endpoint must answer an unsupported media type with 415.
+        // The endpoint must answer an unsupported media type with 415. Accepting 500
+        // here would let an unhandled crash pass a media-type test.
         await response.AssertGeoServicesErrorAsync(415);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Unsupported Media Type");
@@ -844,7 +853,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments")]
     public async Task AttachmentInfos_WithFormPost_ReturnsSameAttachmentInfosAsGet()
     {
-        // honua-server#5012: ArcGIS Pro lists a feature's attachments with a form-encoded POST.
+        // ArcGIS Pro lists a feature's attachments with a form-encoded POST.
         // The GeoServices REST contract is that a resource answers GET and POST alike, so the
         // POST must return the same attachment infos as the GET rather than an error envelope.
         var getResponse = await _fixture.Client.GetAsync(
@@ -892,7 +901,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}")]
     public async Task DownloadAttachment_WithFormPost_ReturnsFileContent()
     {
-        // honua-server#5012: the per-attachment download answers POST as well as GET.
+        // The per-attachment download answers POST as well as GET.
         const long attachmentId = 1;
 
         using var form = new FormUrlEncodedContent([]);
@@ -922,7 +931,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         response.BeSuccessful();
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/plain");
 
-        // #4404: `NotBeEmpty` passed for a truncated or wrong object. The seeded content is
+        // `NotBeEmpty` passed for a truncated or wrong object. The seeded content is
         // known exactly (AttachmentTestData), so assert it exactly.
         var bytes = await response.Content.ReadAsByteArrayAsync();
         bytes.Should().Equal(AttachmentTestData.SeededTextFileBytes.ToArray());
@@ -968,12 +977,6 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         content.Should().Contain("exceeds maximum allowed size");
     }
 
-    /// <summary>
-    /// The core attachment promise: what goes in comes back out, byte for byte, through the
-    /// public API. Before this test exactly one assertion in the whole endpoint suite compared
-    /// bytes, and it was on the replace path — an <c>addAttachment</c> that committed a row
-    /// over a garbled or truncated blob passed (honua-server#4404).
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.AddAttachment)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
@@ -1000,11 +1003,6 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         info.Name.Should().Be("roundtrip.png");
     }
 
-    /// <summary>
-    /// <c>deleteAttachments</c> must remove both halves of the two-store write. The existing
-    /// test asserted only that the response said success and never re-queried, making it
-    /// strictly weaker than the store-level test one layer down (honua-server#4404).
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.DeleteAttachments)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments")]
@@ -1047,11 +1045,6 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             "a deleted attachment must not leave its object behind");
     }
 
-    /// <summary>
-    /// A rejected upload must leave neither a row nor a partial object. The 413 and 415 tests
-    /// asserted only the status, so a handler that streamed the body to storage before
-    /// rejecting it would have passed (honua-server#4404).
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.AddAttachment)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
@@ -1088,11 +1081,6 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             infosBefore, "a rejected upload must not leave a metadata row");
     }
 
-    /// <summary>
-    /// Two uploads to the same feature at the same time must both land as distinct, complete
-    /// attachments — no id collision, no crossed blobs. No attachment test had any concurrency
-    /// at all before this (honua-server#4404, see also #4250).
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.AddAttachment)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
@@ -1117,11 +1105,6 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         infos.Single(info => info.Id == uploads[1]).Size.Should().Be(second.Length);
     }
 
-    /// <summary>
-    /// An upload racing the delete of a different attachment on the same feature must leave
-    /// both outcomes intact: the survivor keeps its exact bytes and the deleted attachment
-    /// takes its object with it (honua-server#4404).
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.AddAttachment)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
@@ -1160,23 +1143,6 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         (await storage.ExistsAsync(doomedPath)).Should().BeFalse();
     }
 
-    /// <summary>
-    /// Attachment authorization with the development authentication bypass disabled
-    /// (honua-server#4404).
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Every other test in this file runs as the dev-bypass principal, and a grep for
-    /// "attachment" across both security test projects returns nothing — so the attachment
-    /// surface had no authorization evidence at all. This runs on an isolated host with
-    /// <c>HONUA_DEV_AUTH_ALLOW_BYPASS=false</c>.
-    /// </para>
-    /// <para>
-    /// The refusal is a GeoServices error envelope (HTTP 200 with <c>error.code</c> 499), not a
-    /// transport 401 — the convention this surface uses. The assertion that matters either way is
-    /// that the object's bytes are never in the response body.
-    /// </para>
-    /// </remarks>
     [IntegrationTest]
     [Operation(Operations.DownloadAttachment)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}")]
@@ -1246,25 +1212,8 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         result.Should().NotBeNull();
         result!.AttachmentInfos.Should().BeEmpty();
     }
-    /// <summary>
-    /// Media type used for the binary round-trip payloads. The upload validator's default
-    /// allowlist is <c>image/*,application/pdf,text/plain,text/csv,application/json</c>
-    /// (<c>LimitsOptions.AllowedMimeTypes</c>), so an
-    /// <c>application/octet-stream</c> upload is rejected before it ever reaches storage.
-    /// </summary>
     private const string BinaryContentType = "image/png";
 
-    /// <summary>
-    /// Deterministic binary payload: not valid UTF-8, contains NUL/CR/LF, and is a pure
-    /// function of (length, seed) so an expected value can be recomputed rather than
-    /// snapshotted from the server's own output.
-    /// </summary>
-    /// <remarks>
-    /// It opens with the PNG signature, which is both what makes the declared
-    /// <see cref="BinaryContentType"/> honest and a built-in tripwire: the signature itself
-    /// contains <c>0x0D 0x0A 0x1A 0x0A</c>, so any newline translation or text round-trip
-    /// corrupts it. The bytes immediately after it force a NUL and a 0xFF as well.
-    /// </remarks>
     private static byte[] BuildBinaryPayload(int length, int seed = 7)
     {
         var payload = new byte[length];
@@ -1379,10 +1328,6 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         return infos.Should().ContainSingle(info => info.Id == attachmentId).Subject;
     }
 
-    /// <summary>
-    /// Reads the storage identifier of an attachment straight from the metadata table, so a
-    /// test can assert on the object after the row that names it has been deleted.
-    /// </summary>
     private static string QuoteSchema(string schema)
     {
         using var builder = new Npgsql.NpgsqlCommandBuilder();
@@ -1409,14 +1354,6 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         return files.Select(file => file.FileId).ToHashSet(StringComparer.Ordinal);
     }
 
-    /// <summary>
-    /// The <c>returnUrl</c> form emits either an absolute URL (when a base URL is
-    /// configured) or a base-path-relative one. The test client routes every request to the
-    /// in-memory server regardless of the authority in the URI, so an absolute URL naming
-    /// the wrong scheme, host or port would still be fetched successfully; assert the
-    /// authority explicitly before dereferencing, or the round trip proves nothing about
-    /// whether the advertised URL is usable by a real client (honua-server#4468).
-    /// </summary>
     private Uri ResolveAdvertisedUrl(string url)
     {
         var baseAddress = _fixture.Client.BaseAddress;

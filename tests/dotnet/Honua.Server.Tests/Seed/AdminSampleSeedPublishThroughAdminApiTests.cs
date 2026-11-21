@@ -16,9 +16,6 @@ using Honua.TestKit.Seeding;
 
 namespace Honua.Server.Tests.Seed;
 
-/// <summary>
-/// Verifies the admin sample seed can be registered through the layer publishing API.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Protocol(TestProtocols.FeatureServer)]
@@ -190,11 +187,11 @@ public sealed class AdminSampleSeedPublishThroughAdminApiTests : IAsyncLifetime
             return;
         }
 
-        // #2020: serialize the global honua.* cleanup deletes under the schema-mutation advisory
+        // Serialize the global honua.* cleanup deletes under the schema-mutation advisory
         // lock (parameterized multi-statement command spanning a TEMP staging table).
         await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
         {
-            // honua-server#1568 residual: scope search_path to this test's isolated schema so the
+            // Scope search_path to this test's isolated schema so the
             // unqualified `features` cleanup resolves to the schema that actually owns it. With the
             // default (public) search_path this raced concurrent collections' DROP SCHEMA/public
             // churn and failed with `relation "features" does not exist` under load.

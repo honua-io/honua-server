@@ -22,21 +22,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps;
 
-/// <summary>
-/// Endpoint coverage for a numeric layer id published through both a raster and a vector
-/// storage binding that share the same StorageLayerId (the browser-compat pattern in
-/// honua-server#2759 / #2799).
-/// </summary>
-/// <remarks>
-/// The raster binding is declared first, so it wins the deliberately one-to-one, first-wins
-/// <c>ResourcesByStorageLayerId</c> index. Only the vector service enables OGC API - Maps.
-/// These tests use the <b>real</b> <see cref="Honua.Core.Features.Raster.Abstractions.IRasterMapRenderer"/>
-/// (the vector-aware decorator over the provider raster renderer) — they do not mock it — so
-/// the handler-resolved resource identity must flow into the renderer, otherwise the renderer
-/// re-resolves first-wins to the raster resource, finds no geometry, and 404s. Only the
-/// feature reader is stubbed so the vector Skia path renders deterministically without seeded
-/// geometry.
-/// </remarks>
 [Collection("Database.OgcApiTiles")]
 [Protocol(TestProtocols.OgcApiMaps)]
 public sealed class OgcMapsDuplicateStorageBindingEndpointTests : IAsyncLifetime
@@ -99,8 +84,8 @@ public sealed class OgcMapsDuplicateStorageBindingEndpointTests : IAsyncLifetime
     public async Task GetMapTileSets_DuplicateStorageLayerBindings_ReturnsTileSets()
     {
         // The sibling map-tiles endpoint must resolve the same Maps-enabled (vector) resource
-        // as the map endpoint; before #2799 the tile-set handler's first-wins lookup 404'd
-        // while the map endpoint returned 200 (a capabilities/runtime consistency violation).
+        // as the map endpoint; a first-wins lookup in the tile-set handler would 404 while
+        // the map endpoint returns 200 (a capabilities/runtime consistency violation).
         using var response = await _fixture.Client.GetAsync(
             $"/ogc/maps/collections/{LayerId}/map/tiles");
         var body = await response.Content.ReadAsStringAsync();
@@ -114,9 +99,9 @@ public sealed class OgcMapsDuplicateStorageBindingEndpointTests : IAsyncLifetime
     [Endpoint("GET /ogc/maps/map")]
     public async Task GetDatasetMap_DuplicateStorageLayerBindings_UnfilteredIncludesCollidingCollection_ReturnsPng()
     {
-        // The unfiltered dataset-map path enumerates storage layer ids; before #2799 it read
-        // the first-wins index directly and excluded the colliding Maps-enabled collection,
-        // so with layer 2000 as the only collection it 404'd. It must now include it.
+        // The unfiltered dataset-map path enumerates storage layer ids; reading the
+        // first-wins index directly would exclude the colliding Maps-enabled collection and,
+        // with layer 2000 as the only collection, 404. It must include it.
         using var response = await _fixture.Client.GetAsync(
             "/ogc/maps/map?bbox=-122.44,37.76,-122.40,37.79&width=256&height=256&f=png");
         var responseBytes = await response.Content.ReadAsByteArrayAsync();

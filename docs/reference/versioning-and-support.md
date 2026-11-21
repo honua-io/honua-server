@@ -41,21 +41,19 @@ so moving to it does not shorten the runtime support window. Honua moves to .NET
 first release after .NET 12 ships (November 2027), before .NET 11 support ends. The container
 images carry their own runtime: operators do not install .NET.
 
-Serverless images use separate host bases. The Azure Functions managed and AOT
-images use the Azure Functions host on Ubuntu 24.04; Honua is published
-self-contained with .NET 11, so it does not use the base image's .NET 10 shared
-frameworks. The managed AWS Lambda image uses the Amazon Linux 2023 provided
-runtime base with self-contained .NET 11. The Lambda AOT image uses Ubuntu 26.04
-chiseled runtime dependencies. These base choices are defined in the corresponding
-`docker/Dockerfile.functions*` and `docker/Dockerfile.lambda*` files.
+Serverless images use separate host bases. The managed AWS Lambda image uses the
+Amazon Linux 2023 provided runtime base with self-contained .NET 11. The Lambda
+AOT image uses Ubuntu 26.04 chiseled runtime dependencies. These base choices are
+defined in the `docker/Dockerfile.lambda*` files.
 
-Packages for plug-in and custom-code authors keep .NET 10 LTS working:
+The `Honua.Core`, `Honua.Core.Abstractions`, and `Honua.Plugins.Abstractions`
+packages built from this source target `net11.0`. Plug-in authors need the .NET 11
+SDK and must rebuild their plug-ins for .NET 11. These builds do not include a
+.NET 10 target.
 
-| Package or template | Target frameworks |
-| --- | --- |
-| `Honua.Core` package, and the `Honua.Core.Abstractions` and `Honua.Plugins.Abstractions` libraries in the source release | `net10.0` and `net11.0` |
-| `Honua.CustomCode.Sdk` and the `gp-dotnet` process template | `net10.0` (builds with a .NET 10 or .NET 11 SDK) |
-| `Honua.Sdk.*` client packages | `net10.0` (usable from .NET 10 and .NET 11 apps) |
+Client SDK and custom-code packages have their own release versions. Check the
+target frameworks in the exact package or template being used; an older published
+package does not establish support for that framework in the current source release.
 
 ## Admin API (`/api/v1/admin/*`)
 

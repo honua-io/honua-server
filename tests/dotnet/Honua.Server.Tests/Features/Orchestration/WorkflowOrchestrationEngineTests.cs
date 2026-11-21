@@ -3,21 +3,17 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Orchestration.Domain;
 using Honua.Server.Features.Orchestration;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Orchestration;
 
-/// <summary>
-/// Engine-level behavior tests for <see cref="WorkflowOrchestrationEngine"/>. Each test
-/// drives the engine through explicit reconcile ticks using in-memory stores, so the
-/// acceptance criteria (chained execution, scheduled execution, dependency-aware recovery)
-/// can be verified without background timers.
-/// </summary>
 public sealed class WorkflowOrchestrationEngineTests
 {
     private static readonly ClaimsPrincipal Operator = new(
@@ -55,7 +51,7 @@ public sealed class WorkflowOrchestrationEngineTests
     [Fact]
     public async Task CreateRun_MutatingStepWithoutRequestingPrincipalTier_ThrowsAndPersistsNoRun()
     {
-        // #2798: the reconcile loop submits step jobs under an admin-bypassing orchestrator
+        // The reconcile loop submits step jobs under an admin-bypassing orchestrator
         // principal, so the mutating-process tier must be evaluated against the REQUESTING
         // principal at run creation. A denial there must fail the run before any state is
         // persisted or any step job is submitted.
@@ -93,10 +89,33 @@ public sealed class WorkflowOrchestrationEngineTests
         Assert.Single(harness.JobService.Submitted);
     }
 
+    [UnitTest]
+    public async Task ReconcileWorkflowRun_RunWithoutRequesterSnapshot_IsEndedWithoutTouchingItsJobs()
+    {
+        var harness = new OrchestrationTestHarness();
+        var definition = BuildSingleStepDefinition(
+            harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
+        await harness.Definitions.TryCreateAsync(definition);
+        var run = await harness.Engine.CreateRunAsync(definition, WorkflowTriggerKind.Manual, Operator);
+        await harness.RunStore.SetAsync(run with
+        {
+            Audit = run.Audit with { SubmitterSecurityContext = null },
+            StepStates = run.StepStates.Select(step => step with { Status = WorkflowStepStatus.Running, JobId = "victim-job" }).ToArray(),
+        });
+
+        await harness.Engine.ReconcileWorkflowRunAsync(run.RunId);
+
+        var ended = (await harness.RunStore.GetAsync(run.RunId))!;
+        Assert.Equal(WorkflowRunStatus.Failed, ended.Status);
+        Assert.All(ended.StepStates, step => Assert.Equal(WorkflowStepStatus.Cancelled, step.Status));
+        Assert.Contains(ended.Warnings, warning => warning.Contains("victim-job", StringComparison.Ordinal));
+        Assert.Empty(harness.JobService.Submitted);
+    }
+
     [Fact]
     public async Task ReconcileWorkflowRun_ReplaysRunRequestersSecurityContextOnStepSubmission()
     {
-        // #3068: each step job is submitted under OrchestrationSystemPrincipal, which carries
+        // Each step job is submitted under OrchestrationSystemPrincipal, which carries
         // role=admin so the reconcile loop can dispatch. If the step's row/field security
         // snapshot were captured from THAT principal, every workflow step would read with admin
         // row/field visibility — laundering away the requester's RLS predicate and field mask.
@@ -127,7 +146,7 @@ public sealed class WorkflowOrchestrationEngineTests
     [Fact]
     public async Task CreateRun_TriggeredFiring_AuthorizesTheAuthorRatherThanTheOrchestrator()
     {
-        // #3046: the scheduler and event-trigger services have no requesting principal, so they
+        // The scheduler and event-trigger services have no requesting principal, so they
         // call in as OrchestrationSystemPrincipal — role=admin, which passes every gate. Left
         // that way, the layer/mutating check at run creation would be a no-op on every tick and
         // the publication-time check would be the only one that ever ran, going stale the moment
@@ -216,10 +235,6 @@ public sealed class WorkflowOrchestrationEngineTests
     [Fact]
     public async Task CreateRun_TriggeredFiringOnLegacyDefinition_IsRefusedBeforeAnyGateRuns()
     {
-        // A definition published before the author snapshot existed cannot reconstruct an
-        // identity to authorize. Falling back to the orchestrator is the escalation this fix
-        // exists to remove, so the firing is refused — and refused BEFORE the gate loop, so no
-        // partial authorization is attributed to a principal that was never resolved.
         var harness = new OrchestrationTestHarness();
         var definition = BuildSingleStepDefinition(
             harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail) with
@@ -482,10 +497,8 @@ public sealed class WorkflowOrchestrationEngineTests
         Assert.Equal(WorkflowRunStatus.Failed, final!.Status);
         Assert.NotNull(final.ErrorMessage);
 
-        // Sibling-path regression: the previous implementation left step states Pending,
-        // which kept the run in the active reconcile set forever and blocked the persist-
-        // time terminal telemetry gate. Step states must also be terminal so the run
-        // leaves the active set exactly once.
+        // Sibling step states must become terminal so the run leaves the active
+        // reconcile set exactly once and passes the persist-time terminal telemetry gate.
         Assert.All(final.StepStates, s => Assert.True(
             s.Status is WorkflowStepStatus.Cancelled
                 or WorkflowStepStatus.Failed
@@ -499,7 +512,7 @@ public sealed class WorkflowOrchestrationEngineTests
     [Fact]
     public async Task ReconcileWorkflowRun_FailsStepWhenArtifactsUnavailable_AndDownstreamBindingsExist()
     {
-        // HIGH regression: when a step's underlying job succeeds but results retrieval fails
+        // When a step's underlying job succeeds but results retrieval fails
         // (e.g. transient result-package store outage) AND downstream steps bind artifacts
         // from it, the engine must fail the step fast so the run surfaces the real cause
         // rather than later failing the dependent with a confusing selector error.
@@ -564,10 +577,8 @@ public sealed class WorkflowOrchestrationEngineTests
     [Fact]
     public async Task CancelRunAsync_ReturnsLeaseContention_WhenLeaseUnavailableWithinRetryWindow()
     {
-        // MEDIUM regression: before the fix, a lease-contention scenario on the admin cancel
-        // path surfaced as a TimeoutException / 500. The outcome is now shaped as
-        // LeaseContention, which the admin endpoint translates into a retriable 409 instead
-        // of leaking an internal exception to the caller.
+        // Admin cancel lease contention returns LeaseContention, translated to a retriable
+        // 409 response without exposing an internal exception.
         var harness = new OrchestrationTestHarness();
         var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
         await harness.Definitions.TryCreateAsync(definition);
@@ -666,7 +677,7 @@ public sealed class WorkflowOrchestrationEngineTests
     [Fact]
     public async Task ReconcileWorkflowRun_TransientObservationFailureDoesNotTerminaliseStep()
     {
-        // Regression: a transient GetJobAsync exception must not surface as a permanent step
+        // A transient GetJobAsync exception must not surface as a permanent step
         // failure. The state should be preserved so the next reconcile observes the actual
         // job outcome. After the transport heals, the step completes normally.
         var harness = new OrchestrationTestHarness();
@@ -723,11 +734,8 @@ public sealed class WorkflowOrchestrationEngineTests
     [Fact]
     public async Task CancelRunAsync_KeepsRunInActiveReconcileSetUntilStepsTerminate()
     {
-        // Regression: before the fix, CancelRunAsync marked the run Cancelled which made
-        // the run-store treat it as terminal and drop it from the active reconcile index.
-        // The reconcile loop then never cascaded cancellation to the queued child job.
-        // After the fix, a run stays in the active set until every step has also reached
-        // a terminal state, so the background reconciler still sees it.
+        // Keep a cancelled run in the active reconcile index until every step is terminal
+        // so the background reconciler can cascade cancellation to queued children.
         var harness = new OrchestrationTestHarness();
         var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
         await harness.Definitions.TryCreateAsync(definition);
@@ -758,11 +766,8 @@ public sealed class WorkflowOrchestrationEngineTests
     [Fact]
     public async Task CancelRunAsync_SerialisesAgainstReconcileLease()
     {
-        // Regression: CancelRunAsync previously did a read-modify-write without taking
-        // the reconcile lease, so a concurrent reconcile could clobber the Cancelled
-        // status back to Running/Succeeded after cancel had already returned success.
-        // Verify the cancel path now blocks on the lease and resumes cleanly after the
-        // lease is released.
+        // Cancel must hold the reconcile lease so a concurrent reconcile cannot overwrite
+        // the cancellation. Verify that cancel blocks until the lease is released.
         var harness = new OrchestrationTestHarness();
         var definition = BuildSingleStepDefinition(harness.Clock.GetUtcNow(), retryPolicy: null, WorkflowStepFailurePolicy.Fail);
         await harness.Definitions.TryCreateAsync(definition);
@@ -791,7 +796,7 @@ public sealed class WorkflowOrchestrationEngineTests
     [Fact]
     public async Task ReconcileWorkflowRun_SubmitsJobWithTimeoutSecondsMetadataWhenConfigured()
     {
-        // Regression: WorkflowStepDefinition.TimeoutSeconds was documented as surfaced to
+        // WorkflowStepDefinition.TimeoutSeconds was documented as surfaced to
         // the underlying job substrate but was not plumbed into the protocol metadata.
         // Verify it is now published so substrate adapters and cost/quota controls can
         // consume it.
@@ -992,6 +997,29 @@ public sealed class WorkflowOrchestrationEngineTests
         var principal = OrchestrationSystemPrincipal.Create("some-operator");
         Assert.True(principal.IsInRole("admin"));
         Assert.True(principal.IsInRole("orchestrator"));
+    }
+
+    [UnitTest]
+    public void OrchestrationSystemPrincipal_ForRunWithSnapshot_ActsWithTheRunTenant()
+    {
+        var principal = OrchestrationSystemPrincipal.ForRun(new OperationAuditInfo
+        {
+            RequestedBy = "requester",
+            SubmitterSecurityContext = new JobSecurityContext("requester", "tenant-a", []),
+        });
+
+        Assert.True(principal.IsInRole("admin"));
+        Assert.Equal("tenant-a", principal.FindFirst("tenant_id")?.Value);
+    }
+
+    [UnitTest]
+    public void OrchestrationSystemPrincipal_ForRunWithoutSnapshot_HasNoAdministrativeRole()
+    {
+        var principal = OrchestrationSystemPrincipal.ForRun(new OperationAuditInfo { RequestedBy = "requester" });
+
+        Assert.False(principal.IsInRole("admin"));
+        Assert.True(principal.IsInRole("orchestrator"));
+        Assert.Equal("requester", principal.Identity!.Name);
     }
 
     [Fact]

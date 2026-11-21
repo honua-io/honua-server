@@ -8,10 +8,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Enforces vertical slice isolation by preventing cross-feature dependencies.
-/// Each feature should be independent and not directly reference other features.
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class VerticalSliceIsolationTests
 {
@@ -25,15 +21,15 @@ public sealed class VerticalSliceIsolationTests
         "CloudDemo",
         "Collaboration",
         "Console",
-        "DataEnrichment", // Data-enrichment API slice (honua-server#374): curated catalog facade over the shared spatial-join pipeline.
+        "DataEnrichment", // Data-enrichment API slice: curated catalog facade over the shared spatial-join pipeline.
         "Forms",
         "Geocoding",
         "Geoprocessing",
         "Grounding",
-        "Identity", // Enterprise identity slice (honua-server#508/#510): SCIM 2.0 provisioning + SAML 2.0 SP SSO bridge over the shared user/role model.
+        "Identity", // Enterprise identity slice: SCIM 2.0 provisioning + SAML 2.0 SP SSO bridge over the shared user/role model.
         "Orchestration",
         "PackageReview",
-        "Plugins", // Plugin/extension SDK host slice (honua-server#1562): maps plugin-contributed ICustomEndpoint routes.
+        "Plugins", // Plugin/extension SDK host slice: maps plugin-contributed ICustomEndpoint routes.
         "Portal", // Persistent Portal sharing and request-scoped audience hydration.
         "Protocols",
         "Mobile", // Parent container for mobile sub-feature slices (e.g. FieldCollection sync)
@@ -44,7 +40,7 @@ public sealed class VerticalSliceIsolationTests
         "Migration",    // Import-split: ArcGIS/legacy migration slice.
         "RasterImport", // Import-split: raster ingest slice.
         "ControlPlane", // Relocated out of the Infrastructure grab-bag (audit-A1).
-        "Provisioner",  // Per-area geocoder/router build-job slice (honua-server#1752): service/job-only,
+        "Provisioner",  // Per-area geocoder/router build-job slice: service/job-only,
                         // no HTTP surface — rides the GP-on-Batch dispatch path. Satisfies the vertical-slice
                         // rule via its in-folder ProvisionerServiceCollectionExtensions.cs (mirrors ControlPlane).
         "FileStorage",
@@ -62,30 +58,11 @@ public sealed class VerticalSliceIsolationTests
         "Styling", // Relocated out of the Infrastructure grab-bag into its own top-level slice.
         "WorkflowPackages",
         "Operations", // Honua Operations Toolset slice: descriptor/executor split + policy-gated dispatcher over composable operations.
-        "Temporal", // Temporal data history slice (honua-server#1166): capability discovery + as-of read.
-        "FieldWorkflows", // Back-office field workflow slice (honua-server#1158/#1159/#1160): review/QA + exports over form submissions.
+        "Temporal", // Temporal data history slice: capability discovery + as-of read.
+        "FieldWorkflows", // Back-office field workflow slice: review/QA + exports over form submissions.
         "AgentWorkspace" // Owner-scoped native local process workspaces: identity store + sandbox gateway.
     };
 
-    /// <summary>
-    /// Sub-areas under <c>Honua.Infrastructure.*</c> that are explicitly
-    /// permitted shared plumbing. The arch test treats these as a closed allow-list so
-    /// future additions to Infrastructure require an intentional update here. See ADR-0044
-    /// for the carve-out that moved Authentication / Caching / Events / Helpers / Models /
-    /// Validation out of Honua.Infrastructure into Honua.Hosting (their
-    /// namespaces are preserved under <c>Honua.Infrastructure.*</c> but
-    /// the source lives in the Hosting assembly).
-    /// </summary>
-    /// <remarks>
-    /// Audit-A1 (structural-audit-2026-05): the audit found Infrastructure had grown to
-    /// 351 files / 42 subdirs with Auth(45), ControlPlane(38), Styling(26), Rendering(16)
-    /// misfiled — entries that should have been their own slices. The Hosting carve moved
-    /// six sub-areas out (Authentication, Caching, Events, Helpers, Models, Validation),
-    /// and ControlPlane / Styling have been extracted to their own slices. Anything not on
-    /// this allow-list is treated as a real feature slice and must comply with vertical
-    /// isolation. Update the list when a new genuinely-shared subsystem is added; reject
-    /// additions that look like a slice in disguise.
-    /// </remarks>
     private static readonly HashSet<string> _infrastructureAllowedSubAreas =
         new(StringComparer.Ordinal)
         {
@@ -127,7 +104,7 @@ public sealed class VerticalSliceIsolationTests
             "Caching",          // Lives in Honua.Hosting under the preserved namespace.
             "Collaboration",    // Hosting-resident FeatureEditLockEnforcement: the single seam
                                 // every feature-write surface consults before mutating a feature
-                                // so a collaborative-editing lease is binding (#4402). Shared by
+                                // so a collaborative-editing lease is binding. Shared by
                                 // three protocol assemblies (GeoServices FeatureServer, OGC API
                                 // Features, OData), so it cannot live in any one of them; the
                                 // /feature-locks endpoints stay in
@@ -154,7 +131,6 @@ public sealed class VerticalSliceIsolationTests
             "Progress",
             "Raster",
             "RateLimiting",
-            "Redis",
             "Rendering",
             "Resilience",
             "Scene",
@@ -176,15 +152,6 @@ public sealed class VerticalSliceIsolationTests
             "Validation",       // Lives in Honua.Hosting under the preserved namespace.
         };
 
-    /// <summary>
-    /// Protocol-adapter features that are allowed to consume a specific domain
-    /// feature's transport-neutral services. The Mcp operator surface adapts
-    /// <c>IGeoprocessingJobService</c> and <c>IAnalysisReportService</c>, but
-    /// lives in its own vertical slice per ticket #728 / #801.
-    /// Grounding is a domain feature that reuses the Geoprocessing process
-    /// catalog + destructive classifier per ticket #742. Each entry lists the
-    /// cross-feature references permitted for the key.
-    /// </summary>
     private static readonly Dictionary<string, IReadOnlyCollection<string>> _allowedCrossFeatureRefs =
         new(StringComparer.Ordinal)
         {
@@ -197,10 +164,17 @@ public sealed class VerticalSliceIsolationTests
             // Surfaced once these became tracked features; tech debt to retire by
             // routing through shared Core abstractions (and, for the ingest set,
             // by the Honua.Import extraction).
-            ["Admin"] = new[] { "Styling", "ControlPlane", "Console", "Import", "Migration", "FileImport", "RasterImport" },
+            // Operations: Admin folder routes bind their path, method and metadata to the
+            // canonical AdminApiOperationCatalog definitions, so the HTTP surface and governed
+            // execution cannot drift apart.
+            ["Admin"] = new[] { "Styling", "ControlPlane", "Console", "Import", "Migration", "FileImport", "RasterImport", "Operations" },
             // ControlPlane orchestrates deploy/release workflows over the
             // Geoprocessing job runtime and is wired from the Admin surface.
             ["ControlPlane"] = new[] { "Geoprocessing", "Admin" },
+            // The governed operation executor runs approved folder mutations through
+            // Admin's transport-neutral folder mutation service, the same path the
+            // direct HTTP routes use, instead of a loopback HTTP call.
+            ["Operations"] = new[] { "Admin" },
             // Studio composes the Console authoring surface.
             ["Studio"] = new[] { "Console" },
             // The ingest cluster (Import + Migration + FileImport + RasterImport)
@@ -245,21 +219,6 @@ public sealed class VerticalSliceIsolationTests
             "Infrastructure is an exception as it provides shared services.");
     }
 
-    /// <summary>
-    /// Audit-A1 ratchet: confirms the Infrastructure carve-out is intact. The blanket
-    /// "Infrastructure is exempt" rule is anchored to the explicit
-    /// <see cref="_infrastructureAllowedSubAreas"/> allow-list — any new top-level folder
-    /// under <c>src/Honua.Server/Features/Infrastructure/</c> must be reviewed and either
-    /// (a) extracted to its own slice (preferred for misfiled slices like the historical
-    /// Auth/ControlPlane/Styling sub-areas) or (b) added to the allow-list with a comment
-    /// explaining why it is shared plumbing.
-    /// </summary>
-    /// <remarks>
-    /// See <see cref="_infrastructureAllowedSubAreas"/> for the historical context and
-    /// ADR-0044 for the Hosting carve. This test scans the filesystem (not the assembly)
-    /// so it captures namespaces whose source has moved to Honua.Hosting under the same
-    /// <c>Honua.Infrastructure.*</c> namespace.
-    /// </remarks>
     [ArchitectureTest]
     public void Infrastructure_SubAreas_ShouldBeOnExplicitAllowList()
     {

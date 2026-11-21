@@ -15,29 +15,13 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
 
-/// <summary>
-/// Catalog registration tests for the Esri I3S SceneServer (#1807). A
-/// registered scene is discoverable as a <c>type:"SceneServer"</c> directory
-/// entry at the canonical <c>/rest/services/{id}/SceneServer</c> path for
-/// Enterprise editions, and is omitted entirely from the open-core catalog.
-/// </summary>
-/// <remarks>
-/// honua-server#1568 (signature 2): the scene registry persists to the literal,
-/// process-global <c>honua.scene_datasets</c> table — it is schema-qualified, so the
-/// per-test <c>search_path</c> isolation that scopes the rest of the catalog does NOT
-/// scope it. These tests therefore run in a serialized collection
-/// (<c>Database.GeoServicesSceneCatalog</c>) and truncate the global table around each
-/// case so a fixed-id scene cannot collide on <c>scene_datasets_id_unique</c> with, or
-/// leak its directory entry into, a peer test. The <c>ContainSingle()</c> assertion is
-/// preserved — the truncation makes the global registry deterministic rather than
-/// weakening the check.
-/// </remarks>
 [Collection("Database.GeoServicesSceneCatalog")]
 [Protocol(TestProtocols.GeoservicesCatalog)]
 public sealed class GeoservicesCatalogSceneServerTests
 {
     private const string SceneId = "catalog-scene";
     private const string SceneName = "Catalog Scene";
+    private const string AdminPassword = "catalog-scene-test-key";
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
@@ -110,6 +94,39 @@ public sealed class GeoservicesCatalogSceneServerTests
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services")]
+    public async Task GetServicesDirectory_ProtectedScene_NamedOnlyForCallerWhoMayReadIt()
+    {
+        var fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Enterprise)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            });
+        await fixture.InitializeAsync();
+        try
+        {
+            await ResetSceneRegistryAsync(fixture);
+            await RegisterSceneAsync(fixture, SceneVisibility.Protected);
+            using var administrator = fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+
+            using var anonymous = await fixture.Client.GetAsync("/rest/services?f=json");
+            using var authorized = await administrator.GetAsync("/rest/services?f=json");
+
+            (await anonymous.Content.ReadAsStringAsync()).Should().NotContain(SceneName).And.NotContain(SceneId);
+            authorized.Be200Ok();
+            (await authorized.Content.ReadAsStringAsync()).Should().Contain(SceneName);
+        }
+        finally
+        {
+            await ResetSceneRegistryAsync(fixture);
+            await fixture.DisposeAsync();
+        }
+    }
+
     [IntegrationTheory]
     [InlineData(true)]
     [InlineData(false)]
@@ -169,7 +186,9 @@ public sealed class GeoservicesCatalogSceneServerTests
         }
     }
 
-    private static async Task RegisterSceneAsync(WebAppFixture fixture)
+    private enum SceneVisibility { Public, Protected }
+
+    private static async Task RegisterSceneAsync(WebAppFixture fixture, SceneVisibility visibility = SceneVisibility.Public)
     {
         var registration = fixture.GetService<ISceneRegistrationService>();
         await registration.RegisterAsync(new SceneDatasetRecord
@@ -181,7 +200,8 @@ public sealed class GeoservicesCatalogSceneServerTests
             TilesetFileName = "tileset.json",
             DatasetType = SceneDatasetType.HostedTiles,
             CachePolicy = SceneCachePolicy.Default,
-            IsPublic = true,
+            IsPublic = visibility == SceneVisibility.Public,
+            RequiresAuth = visibility == SceneVisibility.Protected,
             Status = SceneDatasetStatus.Active,
             CreatedAt = DateTimeOffset.UtcNow,
             CreatedBy = "test",
@@ -192,13 +212,13 @@ public sealed class GeoservicesCatalogSceneServerTests
     // schema-qualified honua.scene_datasets table instead of the schema-partitioned
     // in-memory Metadata v2 graph, so it is shared process-globally across every parallel
     // test schema. Clear it around each case so the global registry state is deterministic
-    // for this serialized collection (honua-server#1568).
+    // for this serialized collection.
     private static Task ResetSceneRegistryAsync(WebAppFixture fixture)
     {
         // honua.scene_datasets is schema-qualified to the literal global honua schema, so
         // the search_path the fixture sets is irrelevant here — any connection on the shared
         // data source clears the one table every scene-catalog test contends on.
-        // #2020: route the global honua.scene_datasets TRUNCATE through the schema-mutation advisory lock.
+        // Route the global honua.scene_datasets TRUNCATE through the schema-mutation advisory lock.
         return fixture.Postgres.ApplyGlobalSeedSqlAsync("TRUNCATE TABLE honua.scene_datasets;");
     }
 }

@@ -10,10 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Compliance;
 
-/// <summary>
-/// Unit tests for <see cref="InMemoryEncryptionPostureProvider"/> — covers the
-/// "encryption-at-rest keys can be rotated without downtime" acceptance criterion.
-/// </summary>
 public sealed class EncryptionPostureProviderTests
 {
     [Trait("Tier", "Fast")]
@@ -144,7 +140,7 @@ public sealed class EncryptionPostureProviderTests
     [Fact]
     public async Task Rotate_WhenAuditWriteFails_StillSucceedsButReportsAuditNotRecorded()
     {
-        // PA-032: the in-memory posture must still advance (Succeeded = true) even when the
+        // the in-memory posture must still advance (Succeeded = true) even when the
         // audit trail write fails, but the outcome must distinguish "rotated" from "rotated
         // AND auditable" instead of unconditionally claiming the audit event was recorded.
         var audit = new ThrowingAuditLog();

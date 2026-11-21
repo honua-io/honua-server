@@ -117,7 +117,7 @@ internal static partial class PackageReviewEndpoints
         HttpContext context,
         [FromServices] IStudioDraftMutationRuntime mutationRuntime)
     {
-        // honua-server#4906: the body is read here rather than bound by the framework. Framework
+        // The body is read here rather than bound by the framework. Framework
         // binding refused every package the installed CLI sends with an empty 400: the
         // honua_map_package.v1 document makes status/createdAt optional where MapPackage marks
         // them required, and the combined HTTP resolver reads PackageStatus without the
@@ -145,7 +145,7 @@ internal static partial class PackageReviewEndpoints
             Envelope = new StudioPackageEnvelope
             {
                 Family = StudioPackageFamily.Map,
-                SchemaVersion = "studio_map.v1",
+                SchemaVersion = "1.0",
                 Format = request.Package.Format,
                 Body = packageJson,
                 PublicationIntent = request.Intent

@@ -238,8 +238,11 @@ internal static partial class OracleFeatureQueryBuilder
                 mapping,
                 attributeColumns,
                 rejectAmbiguousMatch: true);
+            // An outFields name no column declares is left out of the projection, as before.
             var requested = new HashSet<string>(
-                requestedOutFields.Select(resolveColumnName),
+                requestedOutFields
+                    .Where(name => attributeColumns.Any(column => column.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                    .Select(resolveColumnName),
                 StringComparer.Ordinal);
             columns = attributeColumns.Where(c => requested.Contains(c));
         }
@@ -320,7 +323,16 @@ internal static partial class OracleFeatureQueryBuilder
                 foldedMatch = physicalName;
             }
 
-            return foldedMatch ?? requested;
+            if (foldedMatch is not null || attributeColumns is null)
+            {
+                return foldedMatch ?? requested;
+            }
+
+            // A name that matches no declared column could still address an unpublished
+            // physical column once quoted, so it is refused before any SQL is built.
+            throw new ArgumentException(
+                $"Oracle field name '{requested}' is not declared on layer {mapping.LayerId}.",
+                nameof(requested));
         };
     }
 
@@ -444,7 +456,7 @@ internal static partial class OracleFeatureQueryBuilder
                 $"SDO_RELATE(SDO_GEOM.SDO_MBR({geomCol}), {filterExpr}, 'mask=ANYINTERACT') = 'TRUE'",
             // Esri semantics: esriSpatialRelWithin = filter geometry is within feature geometry;
             // esriSpatialRelContains = filter geometry contains feature geometry. Lead with the
-            // filter geometry to match the canonical PostGIS reference (#2068). SDO_RELATE masks
+            // filter geometry to match the canonical PostGIS reference. SDO_RELATE masks
             // are operand-order sensitive: SDO_RELATE(A, B, 'mask=INSIDE') means A is inside B, so
             // the filter geometry must be the first operand. Reversing inverts the relationship and
             // returns the wrong (typically empty) result set.

@@ -5,9 +5,9 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Google.Protobuf;
+using Honua.Core.Features.Edit.Receipts;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Infrastructure.Security;
-using Microsoft.Extensions.Caching.Memory;
 
 namespace Honua.Server.Features.Protocols.Grpc;
 
@@ -17,15 +17,9 @@ namespace Honua.Server.Features.Protocols.Grpc;
 // results and keeps an unknown outcome from running again.
 internal abstract class GrpcEditReceipts<TResponse> : IDisposable where TResponse : class, IMessage<TResponse>
 {
-    internal static readonly TimeSpan DefaultResponseWindow = TimeSpan.FromHours(24);
-    internal const long DefaultLocalResponseBudgetBytes = 64L * 1024 * 1024;
-
-    private const int LocalEntryOverheadBytes = 256;
-
-    private readonly IFeatureEditIdempotencyReceipts? _durableReceipts;
-    private readonly TimeSpan _responseWindow;
-    private readonly MemoryCache _localResponses;
-    private readonly Dictionary<string, KeyGate> _gates = new(StringComparer.Ordinal);
+    internal static readonly TimeSpan DefaultResponseWindow = FeatureEditReceiptCache.DefaultResponseWindow;
+    internal const long DefaultLocalResponseBudgetBytes = FeatureEditReceiptCache.DefaultLocalResponseBudgetBytes;
+    private readonly FeatureEditReceiptCache _cache;
 
     protected GrpcEditReceipts(IFeatureEditIdempotencyReceipts? durableReceipts = null)
         : this(durableReceipts, new LocalResultLimits(DefaultResponseWindow, DefaultLocalResponseBudgetBytes))
@@ -34,13 +28,8 @@ internal abstract class GrpcEditReceipts<TResponse> : IDisposable where TRespons
 
     protected GrpcEditReceipts(IFeatureEditIdempotencyReceipts? durableReceipts, LocalResultLimits limits)
     {
-        _durableReceipts = durableReceipts;
-        _responseWindow = limits.ResponseWindow;
-        _localResponses = new MemoryCache(new MemoryCacheOptions
-        {
-            SizeLimit = limits.BudgetBytes,
-            ExpirationScanFrequency = _responseWindow < TimeSpan.FromMinutes(1) ? _responseWindow : TimeSpan.FromMinutes(1),
-        });
+        _cache = new FeatureEditReceiptCache(durableReceipts,
+            new FeatureEditReceiptCache.Limits(limits.ResponseWindow, limits.BudgetBytes));
     }
 
     internal readonly record struct LocalResultLimits(TimeSpan ResponseWindow, long BudgetBytes);
@@ -57,24 +46,22 @@ internal abstract class GrpcEditReceipts<TResponse> : IDisposable where TRespons
 
     internal enum ReceiptOutcome { NotRecorded, Recorded, Unknown }
 
-    internal readonly record struct ScopeLease(string Scope, KeyGate Gate);
-
-    internal int GateCount
-    {
-        get
-        {
-            lock (_gates)
-            {
-                return _gates.Count;
-            }
-        }
-    }
-
-    internal int LocalResponseCount => _localResponses.Count;
-
-    internal DateTimeOffset ResponseExpiresAt => TimeProvider.System.GetUtcNow() + _responseWindow;
+    internal int GateCount => _cache.GateCount;
+    internal int LocalResponseCount => _cache.LocalResponseCount;
+    internal DateTimeOffset ResponseExpiresAt => _cache.ResponseExpiresAt;
 
     protected abstract DurableEditReceipt DecodeDurable(ReadOnlyMemory<byte> receipt);
+    protected virtual DurableEditReceipt DecodeLocal(ReadOnlyMemory<byte> receipt) => DecodeDurable(receipt);
+    protected abstract byte[] EncodeLocal(TResponse response, string? fingerprint);
+
+    private DurableEditReceipt Decode(FeatureEditReceiptCache.Receipt receipt)
+        => receipt.State switch
+        {
+            FeatureEditReceiptCache.ReceiptState.Recorded => DecodeDurable(receipt.Payload),
+            FeatureEditReceiptCache.ReceiptState.LocalRecorded => DecodeLocal(receipt.Payload),
+            FeatureEditReceiptCache.ReceiptState.Unknown => new(null, ReceiptOutcome.Unknown),
+            _ => default,
+        };
 
     // An identity that cannot be bound to a durable actor gets no retry scope.
     protected static string? CreateScope(HttpContext? httpContext, ScopeKey key, string prefix)
@@ -95,129 +82,34 @@ internal abstract class GrpcEditReceipts<TResponse> : IDisposable where TRespons
 
     public async Task<Entry> EnterAsync(string scope, CancellationToken cancellationToken)
     {
-        var gate = await AcquireGateAsync(scope, cancellationToken).ConfigureAwait(false);
+        var entry = await _cache.EnterAsync(scope, cancellationToken).ConfigureAwait(false);
         try
         {
-            // A result this node committed wins over a database read. A committed database
-            // receipt wins over this node's ambiguous marker and over a failure that
-            // committed nothing, since another node may have committed the key since.
-            if (_localResponses.TryGetValue(scope, out object? cached) && cached is DurableEditReceipt { Response: not null } local)
-            {
-                return new Entry(this, new ScopeLease(scope, gate), local with { Response = local.Response.Clone() });
-            }
-
-            var durable = await ReadDurableAsync(scope, cancellationToken).ConfigureAwait(false);
-            if (durable is { Response: null, OutcomeUnknown: false })
-            {
-                durable = cached switch
-                {
-                    AmbiguousLocal => new DurableEditReceipt(null, ReceiptOutcome.Unknown),
-                    UncommittedLocal failure => failure.Receipt with { Response = failure.Receipt.Response!.Clone() },
-                    _ => durable,
-                };
-            }
-
-            return new Entry(this, new ScopeLease(scope, gate), durable);
+            return new Entry(this, entry, Decode(entry.Recorded));
         }
         catch
         {
-            ReleaseGate(scope, gate);
+            entry.Dispose();
             throw;
         }
     }
 
-    public void Dispose() => _localResponses.Dispose();
+    public void Dispose() => _cache.Dispose();
 
     private static void AppendComponent(StringBuilder builder, string value)
         => builder.Append('|').Append(value.Length.ToString(CultureInfo.InvariantCulture)).Append(':').Append(value);
-
-    private async Task<DurableEditReceipt> ReadDurableAsync(string scope, CancellationToken cancellationToken)
-    {
-        if (_durableReceipts is null)
-        {
-            return default;
-        }
-
-        var payload = await _durableReceipts.TryReadAsync(scope, cancellationToken).ConfigureAwait(false);
-        return payload is { Length: > 0 } bytes ? DecodeDurable(bytes) : default;
-    }
-
-    private async Task<KeyGate> AcquireGateAsync(string scope, CancellationToken cancellationToken)
-    {
-        KeyGate? gate;
-        lock (_gates)
-        {
-            if (!_gates.TryGetValue(scope, out gate))
-            {
-                gate = new KeyGate();
-                _gates.Add(scope, gate);
-            }
-
-            gate.References++;
-        }
-
-        try
-        {
-            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            return gate;
-        }
-        catch
-        {
-            DropGateReference(scope, gate);
-            throw;
-        }
-    }
-
-    private void ReleaseGate(string scope, KeyGate gate)
-    {
-        gate.Release();
-        DropGateReference(scope, gate);
-    }
-
-    // A gate leaves the map only when no holder or waiter references it, so callers
-    // queued on one key always share one semaphore.
-    private void DropGateReference(string scope, KeyGate gate)
-    {
-        lock (_gates)
-        {
-            if (--gate.References == 0)
-            {
-                _gates.Remove(scope);
-            }
-        }
-    }
-
-    private void StoreLocal(string scope, object entry, long size)
-        => _localResponses.Set(scope, entry, new MemoryCacheEntryOptions
-        {
-            Size = size + LocalEntryOverheadBytes,
-            AbsoluteExpirationRelativeToNow = _responseWindow,
-        });
-
-    private sealed class AmbiguousLocal
-    {
-        public static readonly AmbiguousLocal Instance = new();
-    }
-
-    private sealed record UncommittedLocal(DurableEditReceipt Receipt);
-
-    internal sealed class KeyGate() : SemaphoreSlim(1, 1)
-    {
-        public int References { get; set; }
-    }
 
     // Holds the scope's gate on this node until disposed.
     public sealed class Entry : IDisposable
     {
         private readonly GrpcEditReceipts<TResponse> _receipts;
-        private readonly KeyGate _gate;
-        private bool _disposed;
+        private readonly FeatureEditReceiptCache.Entry _entry;
 
-        internal Entry(GrpcEditReceipts<TResponse> receipts, ScopeLease lease, DurableEditReceipt recorded)
+        internal Entry(GrpcEditReceipts<TResponse> receipts, FeatureEditReceiptCache.Entry entry, DurableEditReceipt recorded)
         {
             _receipts = receipts;
-            _gate = lease.Gate;
-            Scope = lease.Scope;
+            _entry = entry;
+            Scope = entry.Scope;
             Response = recorded.Response;
             OutcomeUnknown = recorded.OutcomeUnknown;
             RequestFingerprint = recorded.RequestFingerprint;
@@ -232,34 +124,16 @@ internal abstract class GrpcEditReceipts<TResponse> : IDisposable where TRespons
         // A keyed write that may have committed must not be executed again, and it is not a stored failure.
         public bool OutcomeUnknown { get; }
 
-        public Task<DurableEditReceipt> ReadCommittedAsync(CancellationToken cancellationToken)
-            => _receipts.ReadDurableAsync(Scope, cancellationToken);
+        public async Task<DurableEditReceipt> ReadCommittedAsync(CancellationToken cancellationToken)
+            => _receipts.Decode(await _entry.ReadCommittedAsync(cancellationToken).ConfigureAwait(false));
 
         public void Complete(TResponse response, string? fingerprint = null)
-        {
-            var copy = response.Clone();
-            _receipts.StoreLocal(Scope, new DurableEditReceipt(copy, ReceiptOutcome.Recorded) { RequestFingerprint = fingerprint }, copy.CalculateSize());
-        }
+            => _entry.Complete(_receipts.EncodeLocal(response, fingerprint), response.CalculateSize());
 
-        // A result that committed nothing and left no receipt is replayed only while no
-        // other node has committed a receipt for the key.
         public void CompleteUncommitted(TResponse response, string? fingerprint = null)
-        {
-            var copy = response.Clone();
-            _receipts.StoreLocal(Scope, new UncommittedLocal(new DurableEditReceipt(copy, ReceiptOutcome.Recorded) { RequestFingerprint = fingerprint }), copy.CalculateSize());
-        }
+            => _entry.CompleteUncommitted(_receipts.EncodeLocal(response, fingerprint), response.CalculateSize());
 
-        public void RetainAmbiguous() => _receipts.StoreLocal(Scope, AmbiguousLocal.Instance, size: 0);
-
-        public void Dispose()
-        {
-            if (_disposed)
-            {
-                return;
-            }
-
-            _disposed = true;
-            _receipts.ReleaseGate(Scope, _gate);
-        }
+        public void RetainAmbiguous() => _entry.RetainAmbiguous();
+        public void Dispose() => _entry.Dispose();
     }
 }

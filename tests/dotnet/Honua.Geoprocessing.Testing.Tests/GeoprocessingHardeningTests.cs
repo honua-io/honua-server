@@ -18,11 +18,6 @@ using Xunit;
 
 namespace Honua.Geoprocessing.Testing.Tests;
 
-/// <summary>
-/// Unit tests for S1 security hardening: SSRF validation on WFS/OGC-features
-/// remote sources (PA-194) and terminal-callback status correctness when the
-/// result-package store write fails (PA-209).
-/// </summary>
 public sealed class GeoprocessingHardeningTests
 {
     // Step-input parameter prefix for step ordinal 0 (matches ExecutionJobParameterKeys internals).
@@ -32,7 +27,7 @@ public sealed class GeoprocessingHardeningTests
     private const string ProcessDefinitionsKey = "honua.geoprocessing.process_definitions";
 
     // -----------------------------------------------------------------------
-    // PA-194: SSRF guard on source.wfs and source.ogc-features
+    // SSRF guard on source.wfs and source.ogc-features
     // -----------------------------------------------------------------------
 
     [Theory]
@@ -73,7 +68,7 @@ public sealed class GeoprocessingHardeningTests
     }
 
     // -----------------------------------------------------------------------
-    // PA-209: terminal callback must set Failed when result-package SetAsync throws
+    // terminal callback must set Failed when result-package SetAsync throws
     // -----------------------------------------------------------------------
 
     [UnitTest]
@@ -122,9 +117,7 @@ public sealed class GeoprocessingHardeningTests
             scopeFactory,
             NullLogger<GeoprocessingJobTerminalCallback>.Instance);
 
-        // Succeeded job — without the fix the outer catch would leave
-        // artifactPersistenceError null, so effectiveStatus stays Succeeded
-        // and the progress would be written as Completed (wrong).
+        // Start with a succeeded job to verify that artifact persistence failure changes its status.
         var job = new ExecutionJobRecord
         {
             OperationId = operationId,
@@ -149,9 +142,7 @@ public sealed class GeoprocessingHardeningTests
         // --- act ---
         await callback.OnTerminalAsync(job, CancellationToken.None);
 
-        // --- assert ---
-        // After the fix the outer catch sets artifactPersistenceError, so
-        // effectiveStatus flips to Failed and progress must be written as Failed.
+        // Artifact persistence errors must produce Failed status and progress.
         await progressStore.Received(1).SetProgressAsync(
             operationId,
             Arg.Is<IOperationProgress>(p =>

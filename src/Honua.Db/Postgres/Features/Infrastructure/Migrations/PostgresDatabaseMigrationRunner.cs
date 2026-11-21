@@ -77,7 +77,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         // (HONUA_APPROVE_CONTRACT_MIGRATIONS=<nonce>), read via the IConfiguration indexer (Abstractions
         // only, no Binder dependency). It intentionally lives outside the bound options record so an
         // operator can grant one-shot approval for a single upgrade without editing config files. The raw
-        // token is validated against the pending-script nonce at apply time (#2812), so a stale value can
+        // token is validated against the pending-script nonce at apply time, so a stale value can
         // never approve a later, unrelated contract migration.
         var rawApproval = configuration?[MigrationSafetyOptions.ApproveContractMigrationsKey];
         _contractApprovalToken = string.IsNullOrWhiteSpace(rawApproval) ? null : rawApproval.Trim();
@@ -113,7 +113,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 includeRasterProviderMigrations,
                 _includeConfiguredSchemaAdoption,
                 _migrations.ConfiguredSchemaAdoptionMigration,
-                attachmentSchema, _migrations.Attachments);
+                attachmentSchema, _migrations.Attachments,
+                _migrations.ResidentTables);
             var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
             var readerVerified = await VerifyReaderCompatibilityAsync(
                 upgrader, migrationsAssembly, usesCanonicalMigrationRoots, connection,
@@ -214,7 +215,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             return null;
         }
 
-        // One-shot nonce (#2812): the approval token must match the digest of THIS pending contract-script
+        // One-shot nonce: the approval token must match the digest of THIS pending contract-script
         // set. A blanket/stale value (e.g. a left-behind "true") never matches, so approving one upgrade
         // does not silently approve the next one.
         var expectedNonce = ComputeApprovalNonce(classifications, bindings);
@@ -319,7 +320,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 includeRasterProviderMigrations,
                 _includeConfiguredSchemaAdoption,
                 _migrations.ConfiguredSchemaAdoptionMigration,
-                attachmentSchema, _migrations.Attachments);
+                attachmentSchema, _migrations.Attachments,
+                _migrations.ResidentTables);
             var upgrader = CreateUpgrader();
             var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
             var readerVerified = await VerifyReaderCompatibilityAsync(
@@ -342,7 +344,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 return DatabaseMigrationResult.Failed(rejection, rejection.Message);
             }
 
-            // 2. Journal-scoped contract-apply gate (#2565): block annotated contract scripts on an
+            // 2. Journal-scoped contract-apply gate: block annotated contract scripts on an
             //    existing database unless the operator approved them.
             if (TryBuildContractGateRejection(classifications, journalIsNonEmpty, bindings) is { } gateRejection)
             {
@@ -426,7 +428,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
 
     // Unpooled: the migration lock is a session advisory lock and migration scripts may SET
     // session state. Behind RDS Proxy either pins the proxy session, and a pooled connection
-    // would keep that pin after the host starts, through every Lambda freeze (honua-server#6760).
+    // would keep that pin after the host starts, through every Lambda freeze.
     internal static string BuildMigrationConnectionString(string connectionString) =>
         new NpgsqlConnectionStringBuilder(connectionString)
         {
@@ -544,7 +546,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         bool includeConfiguredSchemaAdoption,
         string configuredSchemaAdoptionMigration,
         string? attachmentSchema = null,
-        PostgresAttachmentMigrationContract? attachmentContract = null)
+        PostgresAttachmentMigrationContract? attachmentContract = null,
+        IReadOnlyList<HonuaResidentTableBinding>? residentTableBindings = null)
     {
         var builder = DeployChanges.To
             .PostgresqlDatabase(connectionString)
@@ -561,6 +564,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         var migrationAssemblies = includeRasterProviderMigrations
             ? new[] { typeof(PostgresDatabaseMigrationRunner).Assembly, migrationsAssembly }
             : new[] { migrationsAssembly };
+        var bindsResidentTablesToHonua = !string.Equals(metadataSchemaVariable,
+            SchemaSearchPath.ValidateAndQuote(HonuaResidentTableScriptProvider.ResidentSchema), StringComparison.Ordinal);
 
         foreach (var assembly in migrationAssemblies)
         {
@@ -571,8 +576,11 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 name => name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase) &&
                     (includeConfiguredSchemaAdoption ||
                      !string.Equals(name, configuredSchemaAdoptionMigration, StringComparison.Ordinal)));
-            IScriptProvider selectedProvider = attachmentSchema is null ? provider :
-                new AttachmentSchemaScriptProvider(provider, attachmentSchema, migrationsAssembly,
+            IScriptProvider schemaBoundProvider = bindsResidentTablesToHonua && residentTableBindings is { Count: > 0 }
+                ? new HonuaResidentTableScriptProvider(provider, residentTableBindings)
+                : provider;
+            IScriptProvider selectedProvider = attachmentSchema is null ? schemaBoundProvider :
+                new AttachmentSchemaScriptProvider(schemaBoundProvider, attachmentSchema, migrationsAssembly,
                     attachmentContract ?? throw new InvalidOperationException("Canonical attachment identities were not supplied."));
             builder.WithScripts(selectedProvider);
         }

@@ -13,11 +13,6 @@ using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Fake-runner coverage for <see cref="GdalMultidimCoverageMetadataJobExecutor"/>
-/// (Path B, ADR-0039): VSI path projection, gdalmdiminfo invocation, the raw-JSON
-/// artifact contract, and input guardrails — without GDAL installed.
-/// </summary>
 public sealed class GdalMultidimCoverageExecutorTests
 {
     private const string GdalMdimInfoJson =
@@ -322,7 +317,7 @@ public sealed class GdalMultidimCoverageExecutorTests
     {
         // The executor passes the source straight to gdalmdiminfo + gdalmdimtranslate
         // -of Zarr, so a .grib2 object is converted exactly like NetCDF — proving
-        // GRIB needs no executor change (#1795).
+        // GRIB needs no executor change.
         var runner = new FakeGdalCommandRunner((_, _, _) =>
             new GdalCommandResult { ExitCode = 0, StandardOutput = GdalMdimInfoJson });
         var executor = NewExecutor(runner, out _);

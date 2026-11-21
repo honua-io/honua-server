@@ -19,9 +19,6 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
-/// <summary>
-/// Exercises the advertised geometry property with attribute-only schema metadata.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wfs10)]
 [Protocol(TestProtocols.Wfs20)]
@@ -183,7 +180,7 @@ public sealed partial class WfsFallbackGeometryTransactionTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Transaction_InsertPointIntoPolygonFeatureType_IsRejectedWithoutChangingSql()
     {
-        // #6108: WFS-T shares the mutation validator that enforces the declared geometry type.
+        // WFS-T shares the mutation validator that enforces the declared geometry type.
         _fixture.UpdateV2ResourceMetadata(0, spatial: new MetadataV2ObjectSpatial
         {
             SpatialReference = MetadataV2SpatialReference.Wgs84,

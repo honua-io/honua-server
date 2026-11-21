@@ -20,12 +20,6 @@ internal static partial class McpLog
     [LoggerMessage(8154, LogLevel.Information, "MCP authorization denied: ToolOrResource={Target}, Authenticated={Authenticated}")]
     public static partial void AuthorizationDenied(ILogger logger, string target, bool authenticated);
 
-    [LoggerMessage(8155, LogLevel.Information, "MCP boundary rejection: Target={Target}, Reason={Reason}")]
-    public static partial void BoundaryRejection(ILogger logger, string target, string reason);
-
-    [LoggerMessage(8156, LogLevel.Debug, "MCP stub tool invoked: ToolName={ToolName}, BlockedBy={BlockedBy}")]
-    public static partial void StubToolInvoked(ILogger logger, string toolName, string blockedBy);
-
     [LoggerMessage(8157, LogLevel.Information, "MCP operator surface initialized: Tools={ToolCount}, Resources={ResourceCount}")]
     public static partial void SurfaceInitialized(ILogger logger, int toolCount, int resourceCount);
 
@@ -92,7 +86,7 @@ internal static partial class McpLog
     [LoggerMessage(8225, LogLevel.Information, "MCP session mode selected: Mode={Mode}, Reason={Reason}")]
     public static partial void SessionModeSelected(ILogger logger, string mode, string reason);
 
-    [LoggerMessage(8226, LogLevel.Warning, "MCP sessions are in-memory on a multi-instance host; another instance will answer a session id with 404. Set Mcp:SessionSigningKey or connect Redis. Reason={Reason}")]
+    [LoggerMessage(8226, LogLevel.Warning, "MCP sessions are in-memory on a multi-instance host; another instance will answer a session id with 404. Set Mcp:SessionSigningKey or configure the PostgreSQL system database. Reason={Reason}")]
     public static partial void SessionModeDegraded(ILogger logger, string reason);
 
     [LoggerMessage(8192, LogLevel.Warning, "MCP shared session store unavailable: Operation={Operation}")]
@@ -103,6 +97,15 @@ internal static partial class McpLog
 
     [LoggerMessage(8191, LogLevel.Information, "MCP batch refused: Length={Length}, MaxBatchSize={MaxBatchSize}")]
     public static partial void BatchTooLarge(ILogger logger, int length, int maxBatchSize);
+    [LoggerMessage(8175, LogLevel.Warning, "MCP access audit record failed: Action={Action}, Target={Target}")]
+    public static partial void AccessAuditFailed(ILogger logger, string action, string target, Exception exception);
+    [LoggerMessage(8227, LogLevel.Warning, "MCP access audit queue full; record dropped: Dropped={Dropped}, Capacity={Capacity}")]
+    public static partial void AccessAuditDropped(ILogger logger, long dropped, int capacity);
+    [LoggerMessage(8228, LogLevel.Warning, "MCP access audit batch write failed: Count={Count}")]
+    public static partial void AccessAuditBatchFailed(ILogger logger, int count, Exception exception);
+    [LoggerMessage(8229, LogLevel.Warning, "MCP access audit record arrived after the audit writer stopped; record not written")]
+    public static partial void AccessAuditAfterStop(ILogger logger);
+
     [LoggerMessage(EventId = 7750, Level = LogLevel.Warning, Message = "MCP workflow notification publication failed")]
     public static partial void WorkflowNotificationFailed(ILogger logger, Exception exception);
 }

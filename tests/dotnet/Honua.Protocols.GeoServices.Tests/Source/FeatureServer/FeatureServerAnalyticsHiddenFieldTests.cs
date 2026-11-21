@@ -15,10 +15,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Database-backed application whose layer 0 marks <c>category</c> (string) and
-/// <c>timestamp</c> (date) as publisher-hidden.
-/// </summary>
 public sealed class FeatureServerAnalyticsHiddenFieldFixture : IAsyncLifetime
 {
     public WebAppFixture App { get; } = new WebAppFixture()
@@ -53,11 +49,6 @@ public sealed class FeatureServerAnalyticsHiddenFieldFixture : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// FeatureServer analytics endpoints refuse publisher-hidden fields exactly like
-/// <c>/query</c> outStatistics, so distinct values, class breaks and bin counts of a
-/// hidden column cannot be read (#6098).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerAnalyticsHiddenFieldTests(FeatureServerAnalyticsHiddenFieldFixture fixture)
@@ -135,6 +126,19 @@ public sealed class FeatureServerAnalyticsHiddenFieldTests(FeatureServerAnalytic
     {
         var groupByMember = groupBy is null ? string.Empty : $",\"groupBy\":{groupBy}";
         var payload = $$"""{"resolution":{"indexResolution":7,"model":"h3"},"summaries":{{summaries}}{{groupByMember}},"f":"json"}""";
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+        using var response = await _fixture.Client.PostAsync($"{LayerPath}/queryH3", content);
+        var body = await response.Content.ReadAsStringAsync();
+        await response.AssertGeoServicesErrorAsync((int)HttpStatusCode.BadRequest);
+        body.Should().NotContain("sample");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryH3)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryH3")]
+    public async Task QueryH3_WhereNamesHiddenField_Returns400()
+    {
+        const string payload = """{"resolution":{"indexResolution":7,"model":"h3"},"summaries":[{"id":"featureCount","kind":"count"}],"where":"category = 'a'","f":"json"}""";
         using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         using var response = await _fixture.Client.PostAsync($"{LayerPath}/queryH3", content);
         var body = await response.Content.ReadAsStringAsync();

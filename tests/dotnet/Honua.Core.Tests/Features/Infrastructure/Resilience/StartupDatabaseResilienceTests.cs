@@ -8,10 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Infrastructure.Resilience;
 
-/// <summary>
-/// Unit tests for <see cref="StartupDatabaseResilience"/> — the degraded-start classifier and
-/// backoff used to keep a serverless host alive when the database is unavailable at boot (#1632).
-/// </summary>
 public sealed class StartupDatabaseResilienceTests
 {
     [UnitTest]
@@ -55,9 +51,9 @@ public sealed class StartupDatabaseResilienceTests
     [UnitTest]
     public void IsTransientConnectivityError_WithContractGatePolicyBlock_ReturnsFalse()
     {
-        // A migration-safety policy block (#2565 gate rejection, or the ADR-0060 unannotated fail-closed)
+        // A migration-safety policy block (a contract gate rejection, or the ADR-0060 unannotated fail-closed)
         // surfaces as an InvalidOperationException. It must classify as terminal/non-retryable so
-        // degraded-start recovery (#1632) gives up rather than retrying a policy block with backoff.
+        // degraded-start recovery gives up rather than retrying a policy block with backoff.
         var gateBlock = new InvalidOperationException(
             "Migration safety gate blocked pending contract-phase migration(s) on an existing database.");
 

@@ -10,11 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Fake-runner coverage for <see cref="GdalRasterizeJobExecutor"/>: gdal_rasterize
-/// burn/grid argument projection, the burn/grid XOR guards, and the GeoTIFF artifact
-/// contract (#2240).
-/// </summary>
 public sealed class GdalRasterizeExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-rasterize-test";
@@ -143,7 +138,7 @@ public sealed class GdalRasterizeExecutorTests
     public async Task Rasterize_OverCapOutputSize_FailsBeforeReachingTheCli()
     {
         // A tiny vector input requesting an enormous output grid must be refused before
-        // gdal_rasterize allocates the width×height raster (#2782).
+        // gdal_rasterize allocates the width×height raster.
         var runner = new FakeGdalCommandRunner((_, _, _) =>
             throw new InvalidOperationException("gdal_rasterize must not run for an over-cap output grid"));
         var scratch = GdalCli.NewScratch(ScratchSuite);
@@ -177,7 +172,7 @@ public sealed class GdalRasterizeExecutorTests
     {
         // A 10×10-unit vector envelope rasterized at a 0.0001-unit cell derives a
         // 100 000 px output grid per axis — past the width cap. The cellSize → -tr output
-        // must be refused before gdal_rasterize allocates the grid (#2793).
+        // must be refused before gdal_rasterize allocates the grid.
         var runner = new FakeGdalCommandRunner((_, _, _) =>
             throw new InvalidOperationException("gdal_rasterize must not run for an over-cap -tr output grid"));
         var scratch = GdalCli.NewScratch(ScratchSuite);

@@ -38,7 +38,7 @@
     <PackageVersion Include="FluentAssertions.Json" Version="6.1.0" />
     <PackageVersion Include="FsCheck.Xunit" Version="3.3.2" />
     <PackageVersion Include="Google.Protobuf" Version="3.36.2" />
-    <PackageVersion Include="Geospatial.Grpc" Version="1.4.0" />
+    <PackageVersion Include="Geospatial.Grpc" Version="1.5.0" />
     <PackageVersion Include="Grpc.AspNetCore" Version="2.80.0" />
     <PackageVersion Include="Grpc.AspNetCore.HealthChecks" Version="2.80.0" />
     <PackageVersion Include="Grpc.AspNetCore.Server.Reflection" Version="2.80.0" />
@@ -52,6 +52,10 @@
     <!-- Published .NET GeoServices SDK: the protocol client for ArcGIS source reads in the import path.
          1.10.4 is the published release pin with lossless source metadata and nullable/WKT fidelity. -->
     <PackageVersion Include="Honua.Sdk.GeoServices" Version="1.10.4" />
+    <!-- Published .NET field SDK: the shared XLSForm workbook reader, writer and converter behind form package import/export.
+         Its Honua.Sdk.Abstractions 5.0.1 dependency keeps every public API that GeoServices 1.10.4 and Admin 1.7.0 use.
+         Field targets net11.0 only, so only the net11.0 server references it; Honua.Core stays on GeoServices 1.10.4 for net10.0. -->
+    <PackageVersion Include="Honua.Sdk.Field" Version="5.0.1" />
     <PackageVersion Include="Mapsui" Version="5.0.2" />
     <!-- Pin the NBomber.Contracts test dependency to its patched release. -->
     <PackageVersion Include="MessagePack" Version="2.5.307" />
@@ -69,7 +73,6 @@
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="6.1.2" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="11.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="11.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="11.0.0" />
     <PackageVersion Include="Microsoft.Extensions.AI" Version="10.5.2" />
     <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.5.2" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="11.0.0" />
@@ -109,7 +112,6 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.15.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Process" Version="1.15.1-beta.1" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.StackExchangeRedis" Version="1.14.0-beta.1" />
     <PackageVersion Include="Oracle.ManagedDataAccess.Core" Version="23.9.1" />
     <PackageVersion Include="Corvus.Text.Json" Version="5.7.9" />
     <PackageVersion Include="Parquet.Net" Version="5.6.0" />
@@ -140,7 +142,6 @@
     <PackageVersion Include="SharpZipLib" Version="1.4.2" />
     <PackageVersion Include="SSH.NET" Version="2026.0.0" />
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
-    <PackageVersion Include="StackExchange.Redis" Version="2.12.14" />
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.19.2" />
     <!-- SqlClient and Oracle transitively select vulnerable Pkcs versions; direct references
          in their consumers select the patched framework asset (CVE-2026-84008 / CVE-2026-70162). -->
@@ -154,14 +155,7 @@
     <PackageVersion Include="Testcontainers.MySql" Version="4.11.0" />
     <PackageVersion Include="Testcontainers.Oracle" Version="4.11.0" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.11.0" />
-    <PackageVersion Include="Testcontainers.Redis" Version="4.11.0" />
     <PackageVersion Include="WireMock.Net" Version="2.2.0" />
-    <PackageVersion Include="Yarp.ReverseProxy" Version="2.3.0" />
-    <!-- Fully-managed C# port of zstd (MIT): decodes ZSTD-compressed COG tiles without a
-         native libzstd, keeping the serving path AOT- and trim-safe. Already in the
-         graph transitively via Parquet.Net; pinned at the version that resolves today so
-         making it a direct reference does not move Parquet's zstd. -->
-    <PackageVersion Include="ZstdSharp.Port" Version="0.8.7" />
     <PackageVersion Include="Xunit.SkippableFact" Version="1.5.23" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.abstractions" Version="2.0.3" />

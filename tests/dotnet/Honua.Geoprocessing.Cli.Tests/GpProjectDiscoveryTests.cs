@@ -7,10 +7,6 @@ using Xunit;
 
 namespace Honua.Geoprocessing.Cli.Tests;
 
-/// <summary>
-/// Project discovery (#6217): a scaffolded custom task reports its own prerequisites.
-/// A catalog registration is not a substitute, and a missing dependency is never a remote submit.
-/// </summary>
 [Trait("Tier", "Fast")]
 public sealed class GpProjectDiscoveryTests
 {
@@ -98,7 +94,7 @@ public sealed class GpProjectDiscoveryTests
             allowInstalledRestore: true);
         blocked.RunnableHere.Should().BeFalse();
         blocked.BlockedBy.Should().Be(GpProjectDiscovery.DotnetRuntimeName);
-        blocked.Prerequisites[0].Detail.Should().Contain(".NET 10 SDK").And.Contain("dotnet --list-sdks").And.Contain(GpProjectDiscovery.NoSubmit);
+        blocked.Prerequisites[0].Detail.Should().Contain(".NET 11 SDK").And.Contain("dotnet --list-sdks").And.Contain(GpProjectDiscovery.NoSubmit);
     }
 
     [Fact]
@@ -128,14 +124,16 @@ public sealed class GpProjectDiscoveryTests
     }
 
     [Theory]
-    [InlineData("10.0.100 [/usr/share/dotnet/sdk]\n", true)]
-    [InlineData("8.0.414 [/usr/share/dotnet/sdk]\n10.0.100-rc.1 [/usr/share/dotnet/sdk]\n", true)]
+    [InlineData("11.0.100 [/usr/share/dotnet/sdk]\n", true)]
+    [InlineData("8.0.414 [/usr/share/dotnet/sdk]\n11.0.100-rc.1 [/usr/share/dotnet/sdk]\n", true)]
     [InlineData("8.0.414 [/usr/share/dotnet/sdk]\n", false)]
+    [InlineData("10.0.404 [/usr/share/dotnet/sdk]\n", false)]
+    [InlineData("10.0.404 [/usr/share/dotnet/sdk]\n11.0.100 [/usr/share/dotnet/sdk]\n", true)]
     [InlineData("", false)]
     [InlineData("The command could not be loaded. A .NET SDK is required.\n", false)]
-    public void SdkList_RequiresANet10Sdk(string sdkList, bool includes)
+    public void SdkList_RequiresANet11Sdk(string sdkList, bool includes)
     {
-        GpEnvironmentProbe.SdkListIncludesNet10(sdkList).Should().Be(includes);
+        GpEnvironmentProbe.SdkListIncludesNet11(sdkList).Should().Be(includes);
     }
 
     [Fact]

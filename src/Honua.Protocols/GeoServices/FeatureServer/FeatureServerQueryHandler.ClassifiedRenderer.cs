@@ -760,7 +760,7 @@ internal sealed partial class FeatureServerQueryHandler
     {
         // Publisher-hidden fields resolve exactly like unknown fields, matching /query
         // outStatistics: classifying or listing distinct values of a hidden column would
-        // otherwise disclose it (#6098).
+        // otherwise disclose it.
         var match = resource.FindVisibleSchemaField(fieldName);
         if (match is not null)
         {
@@ -782,7 +782,8 @@ internal sealed partial class FeatureServerQueryHandler
         return fieldType is MetadataV2FieldType.Integer
             or MetadataV2FieldType.BigInteger
             or MetadataV2FieldType.Double
-            or MetadataV2FieldType.Float;
+            or MetadataV2FieldType.Float
+            or MetadataV2FieldType.Decimal;
     }
 
     private static bool TryParseClassificationMethod(string value, out ClassificationMethod method)

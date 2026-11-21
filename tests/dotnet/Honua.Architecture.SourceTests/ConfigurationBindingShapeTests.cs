@@ -7,32 +7,9 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Protects source-generated configuration binding from init-only properties (#3055).
-/// </summary>
-/// <remarks>
-/// <para>
-/// Covered registration shapes: <c>Configure&lt;T&gt;(IConfiguration)</c>,
-/// <c>AddOptions&lt;T&gt;().Bind(...)</c> / <c>.BindConfiguration(...)</c> (chained or through a
-/// deferred builder local), <c>Get&lt;T&gt;()</c>, <c>GetSection(T.SectionName).Bind(instance)</c>, and
-/// <c>section.Bind(local)</c> where the local is created with <c>new T()</c>. All of these use the
-/// source-generated assignment path, which silently skips init-only properties.
-/// </para>
-/// <para>
-/// A type that is populated by a hand-rolled parser instead of a binder is NOT in scope here — it is
-/// unreachable from any binding root by construction. That shape is guarded by
-/// <see cref="HandParsedConfigurationSectionTests"/> (#3315).
-/// </para>
-/// </remarks>
 [Trait("Category", "Architecture")]
 public sealed partial class ConfigurationBindingShapeTests
 {
-    /// <summary>
-    /// Drift anchor, not the discovery mechanism: roots are discovered from source on every run;
-    /// these known registrations must keep being discovered or the extraction patterns have
-    /// rotted. The tail entries anchor one representative per non-generic registration shape
-    /// (direct instance binds via <c>new T()</c> locals and <c>T.SectionName</c> section hints).
-    /// </summary>
     private static readonly string[] AuditedRootNames =
     [
         "AlertDeliveryOptions",
@@ -52,7 +29,7 @@ public sealed partial class ConfigurationBindingShapeTests
         "TemporaryFileOptions",
         "TileOptions",
         "WorkspaceOptions",
-        // Direct instance-bind shapes (#3055 follow-up): `var options = new T(); section.Bind(options)`
+        // Direct instance-bind shapes: `var options = new T(); section.Bind(options)`
         // and `GetSection(T.SectionName).Bind(instance)`.
         "MySqlOptions",
         "OidcAuthenticationOptions",
@@ -60,21 +37,13 @@ public sealed partial class ConfigurationBindingShapeTests
         "SecurityHeadersOptions",
     ];
 
-    /// <summary>
-    /// Nested option graphs that the recursive walk must keep reaching (#3306). A root being
-    /// discovered is not enough — the walk has to descend through its nested option objects, which
-    /// is where the init-only properties actually hide. Each entry is a qualified type name that is
-    /// only reachable through another type's property, so if the traversal ever stops descending the
-    /// guard fails loudly instead of going quietly green over a smaller graph.
-    /// </summary>
     private static readonly string[] AuditedNestedGraphNames =
     [
-        // Limits -> Imports. #3306 was filed believing this reached
-        // Honua.Core.Features.Import.Domain.ImportLimits; it does not, and must not — that is a
-        // different type built by a hand parser and guarded by
-        // HandParsedConfigurationSectionTests. LimitsOptions.Imports is the settable
-        // Honua.Core.Configuration.ImportSizeLimits declared in AdvancedLimits.cs (#3346),
-        // and the walk must keep descending into it.
+        // Limits -> Imports. This does not reach
+        // Honua.Core.Features.Import.Domain.ImportLimits, and must not — that is a different
+        // type built by a hand parser and guarded by HandParsedConfigurationSectionTests.
+        // LimitsOptions.Imports is the settable Honua.Core.Configuration.ImportSizeLimits
+        // declared in AdvancedLimits.cs, and the walk must keep descending into it.
         "Honua.Core.Configuration.ImportSizeLimits",
         "Honua.Core.Configuration.AttachmentLimits",
         "Honua.Core.Configuration.TileLimits",
@@ -84,13 +53,6 @@ public sealed partial class ConfigurationBindingShapeTests
         "Honua.Geocoding.Features.Geocoding.Domain.GeocodeProviderConfiguration",
     ];
 
-    /// <summary>
-    /// Recorded decisions for init-only types that are deliberately NOT converted to setters
-    /// (#3306 AC4). Each entry asserts the type stays OUT of the bound graph: it is a domain or
-    /// metadata record, not an options root, so <c>init</c> is correct. If a future change makes one
-    /// of these reachable from a binding root, this guard fails and forces the decision to be
-    /// re-taken — either the registration is wrong, or the record must move to ordinary setters.
-    /// </summary>
     private static readonly Dictionary<string, string> DeliberatelyUnboundInitOnlyTypes =
         new(StringComparer.Ordinal)
         {
@@ -133,10 +95,8 @@ public sealed partial class ConfigurationBindingShapeTests
         var visited = new HashSet<string>(StringComparer.Ordinal);
         var violations = new SortedSet<string>(StringComparer.Ordinal);
 
-        // #3306: a property whose simple type name matches several declarations that neither the
-        // declaring namespace nor the file's imports disambiguate used to be dropped silently, so
-        // the walk could stop early and stay green over a graph it never actually inspected. Such a
-        // reference is now collected and reported rather than skipped.
+        // Collect and report an ambiguous property type when its declaring namespace and
+        // imports cannot distinguish declarations, so the graph walk cannot skip it silently.
         var unresolvable = new SortedSet<string>(StringComparer.Ordinal);
 
         while (pending.TryPop(out var typeShape))

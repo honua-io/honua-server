@@ -5,10 +5,13 @@ from datetime import datetime, timezone
 import json
 import os
 import shutil
+import signal
 import sys
 from pathlib import Path
 import subprocess
 import tempfile
+import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -26,7 +29,7 @@ class FeedbackTests(unittest.TestCase):
         self.catalog = {'projects': {
             self.unit: {'role': 'unit', 'isolated': True, 'resources': []},
             self.component: {'role': 'component', 'isolated': False, 'resources': ['postgres']},
-            self.mixed: {'role': 'mixed', 'isolated': False, 'resources': ['postgres', 'redis']}}}
+            self.mixed: {'role': 'mixed', 'isolated': False, 'resources': ['docker', 'postgres']}}}
         self.registry = {'shards': [
             {'name': 'unit-id', 'shard_name': 'Unit', 'csproj': self.unit, 'filter': 'FullyQualifiedName~Unit'},
             {'shard_name': 'Component', 'csproj': self.component, 'filter': 'FullyQualifiedName~Component', 'timeout_minutes': 3},
@@ -84,7 +87,7 @@ class FeedbackTests(unittest.TestCase):
         self.assertEqual([s['name'] for s in result['shards']], ['Component', 'Mixed'])
         self.assertNotIn('Tier!=Fast', result['shards'][0]['effectiveFilter'])
         self.assertIn('Tier!=Fast', result['shards'][1]['effectiveFilter'])
-        self.assertEqual(result['resources'], ['postgres', 'redis'])
+        self.assertEqual(result['resources'], ['docker', 'postgres'])
         self.assertFalse(result['validatesPullRequest'])
         self.assertTrue(result['fullGatesRequired'])
 
@@ -134,15 +137,85 @@ class FeedbackTests(unittest.TestCase):
             (directory / 'feedback.trx').write_text('<TestRun><ResultSummary><Counters total="2" executed="2"/></ResultSummary></TestRun>')
         with tempfile.TemporaryDirectory() as root:
             feedback.execute(Path(root), result, run=run)
-        self.assertEqual([c[0][0:2] for c in calls], [['dotnet', 'restore'], ['dotnet', 'build'], ['dotnet', 'test'], ['bash', 'scripts/ci/run-server-test-shard.sh']])
+        self.assertEqual(len(calls), 4)
+        self.assertEqual([c[0][0:2] for c in calls[:2]], [['dotnet', 'restore'], ['dotnet', 'build']])
+        tests = {c[0][0]: c for c in calls[2:]}
+        self.assertEqual(sorted(tests), ['bash', 'dotnet'])
         self.assertTrue(all(call[1]['env']['DOTNET_PROCESSOR_COUNT'] == '5' for call in calls))
-        self.assertIn('--no-build', calls[2][0])
-        self.assertIn('--no-restore', calls[2][0])
-        self.assertEqual(calls[3][1]['env']['HONUA_SERVER_TEST_FILTER'], 'FullyQualifiedName~Component')
+        self.assertIn('--no-build', tests['dotnet'][0])
+        self.assertIn('--no-restore', tests['dotnet'][0])
+        self.assertEqual(tests['bash'][0], ['bash', 'scripts/ci/run-server-test-shard.sh'])
+        self.assertEqual(tests['bash'][1]['env']['HONUA_SERVER_TEST_FILTER'], 'FullyQualifiedName~Component')
         self.assertTrue(all(c[1]['check'] for c in calls))
         self.assertIn('--no-restore', calls[1][0])
         self.assertIn('-p:RunAnalyzers=false', calls[1][0])
         self.assertTrue(any(arg.startswith('-maxCpuCount:') for arg in calls[1][0]))
+
+    @staticmethod
+    def write_trx(command, kwargs):
+        if command[:2] == ['dotnet', 'test']:
+            directory = Path(command[command.index('--results-directory') + 1])
+        elif command[0] == 'bash':
+            directory = Path(kwargs['env']['HONUA_SERVER_TEST_RESULTS_DIR'])
+        else:
+            return
+        (directory / 'feedback.trx').write_text('<TestRun><Counters total="1" executed="1"/></TestRun>')
+
+    @patch.dict(os.environ, {'HONUA_STAGE0_MAX_CPU_COUNT': '4', 'HONUA_STAGE0_TEST_PARALLELISM': '2'})
+    def test_independent_test_commands_overlap(self):
+        # Two parties only meet when the unit project and the shard run at the same time.
+        barrier = threading.Barrier(2, timeout=10)
+        def run(command, **kwargs):
+            if command[1] not in ('restore', 'build'):
+                barrier.wait()
+            self.write_trx(command, kwargs)
+        with tempfile.TemporaryDirectory() as root:
+            results = feedback.execute(Path(root), self.plan([self.unit], ['Unit', 'Component']), run=run)
+            status = json.loads((results / 'result.json').read_text())
+        self.assertEqual(status['status'], 'passed')
+        self.assertEqual([c['status'] for c in status['commands']], ['passed'] * 4)
+
+    @patch.dict(os.environ, {'HONUA_STAGE0_MAX_CPU_COUNT': '4', 'HONUA_STAGE0_TEST_PARALLELISM': '2'})
+    def test_one_failing_test_command_fails_the_run(self):
+        def run(command, **kwargs):
+            if command[0] == 'bash':
+                raise subprocess.CalledProcessError(1, command)
+            self.write_trx(command, kwargs)
+        with tempfile.TemporaryDirectory() as root:
+            with self.assertRaises(subprocess.CalledProcessError):
+                feedback.execute(Path(root), self.plan([self.unit], ['Unit', 'Component']), run=run)
+            runs = list((Path(root) / 'artifacts/test-results/local-feedback').iterdir())
+            status = json.loads((runs[0] / 'result.json').read_text())
+        self.assertEqual(status['status'], 'failed')
+        shard = [c for c in status['commands'] if c['command'][0] == 'bash']
+        self.assertEqual([c['status'] for c in shard], ['failed'])
+
+    @patch.dict(os.environ, {'HONUA_STAGE0_MAX_CPU_COUNT': '4', 'HONUA_STAGE0_TEST_PARALLELISM': '1'})
+    def test_interrupt_starts_no_queued_test_command(self):
+        started = []
+        def run(command, **kwargs):
+            started.append(command[1])
+            if command[1] not in ('restore', 'build'):
+                os.kill(os.getpid(), signal.SIGINT)  # Ctrl-C lands in the main thread while this job runs
+                time.sleep(0.5)
+        with tempfile.TemporaryDirectory() as root, self.assertRaises(KeyboardInterrupt):
+            feedback.execute(Path(root), self.plan([self.unit], ['Unit', 'Component']), run=run)
+        self.assertEqual(len(started), 3)
+
+    @patch.dict(os.environ, {'HONUA_STAGE0_MAX_CPU_COUNT': '4', 'HONUA_STAGE0_TEST_PARALLELISM': '9'})
+    def test_invalid_parallelism_fails_before_the_build(self):
+        calls = []
+        with tempfile.TemporaryDirectory() as root, self.assertRaisesRegex(ValueError, 'TEST_PARALLELISM'):
+            feedback.execute(Path(root), self.plan([self.unit]), run=lambda command, **kwargs: calls.append(command))
+        self.assertEqual(calls, [])
+
+    def test_test_parallelism_is_bounded_by_the_cpu_budget(self):
+        for value in ['0', '5']:
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'TEST_PARALLELISM'):
+                feedback.test_parallelism({'DOTNET_PROCESSOR_COUNT': '4', 'HONUA_STAGE0_TEST_PARALLELISM': value})
+        self.assertEqual(feedback.test_parallelism({'DOTNET_PROCESSOR_COUNT': '4'}), 3)
+        self.assertEqual(feedback.test_parallelism({'DOTNET_PROCESSOR_COUNT': '2'}), 2)
+        self.assertEqual(feedback.test_parallelism({'DOTNET_PROCESSOR_COUNT': '1'}), 1)
 
     def test_zero_or_missing_trx_fails_even_if_executor_exits_successfully(self):
         for contents in [None, '<TestRun><Counters total="0"/></TestRun>',

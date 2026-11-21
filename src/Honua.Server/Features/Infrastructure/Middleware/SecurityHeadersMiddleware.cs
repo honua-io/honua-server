@@ -12,6 +12,7 @@ internal sealed class SecurityHeadersMiddleware
     private readonly ILogger<SecurityHeadersMiddleware> _logger;
     private readonly SecurityHeadersOptions _options;
     private readonly (string headerName, string policy) _defaultCspHeader;
+    private readonly string _hstsHeader;
 
     public SecurityHeadersMiddleware(
         RequestDelegate next,
@@ -26,6 +27,7 @@ internal sealed class SecurityHeadersMiddleware
         // default CSP once instead of reconstructing the policy builder and logging
         // identical validation warnings on every request.
         _defaultCspHeader = BuildContentSecurityPolicy();
+        _hstsHeader = BuildHstsHeader(_options);
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -46,6 +48,16 @@ internal sealed class SecurityHeadersMiddleware
         await _next(context);
     }
 
+    private static string BuildHstsHeader(SecurityHeadersOptions options)
+    {
+        var hstsValue = $"max-age={options.HstsMaxAge}";
+        if (options.HstsIncludeSubdomains)
+            hstsValue += "; includeSubDomains";
+        if (options.HstsPreload)
+            hstsValue += "; preload";
+        return hstsValue;
+    }
+
     private void ApplySecurityHeaders(HttpContext context)
     {
         var headers = context.Response.Headers;
@@ -59,13 +71,7 @@ internal sealed class SecurityHeadersMiddleware
         // terminates TLS but forwards as HTTP) don't ship a meaningless header.
         if (_options.EnableHsts && (!_options.HstsHttpsOnly || context.Request.IsHttps))
         {
-            var hstsValue = $"max-age={_options.HstsMaxAge}";
-            if (_options.HstsIncludeSubdomains)
-                hstsValue += "; includeSubDomains";
-            if (_options.HstsPreload)
-                hstsValue += "; preload";
-
-            headers["Strict-Transport-Security"] = hstsValue;
+            headers["Strict-Transport-Security"] = _hstsHeader;
         }
 
         // Content-Security-Policy - Prevent XSS and injection attacks. CSP, COEP,
@@ -454,12 +460,6 @@ internal static partial class SecurityHeadersLog
         Level = LogLevel.Debug,
         Message = "Security headers applied to response: {RequestMethod} {RequestPath}")]
     public static partial void SecurityHeadersApplied(ILogger logger, string requestPath, string requestMethod);
-
-    [LoggerMessage(
-        EventId = 4201,
-        Level = LogLevel.Information,
-        Message = "Security headers configuration validated successfully")]
-    public static partial void SecurityHeadersConfigurationValidated(ILogger logger);
 
     [LoggerMessage(
         EventId = 4202,

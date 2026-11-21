@@ -18,18 +18,9 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Protocols.Grpc;
 
-/// <summary>
-/// Integration tests for the gRPC SceneService, TileService, and ElevationService
-/// (honua-server#1194 / #1195) exercised through the full ASP.NET Core pipeline
-/// with a real PostgreSQL database via <see cref="WebAppFixture"/>. A
-/// configuration-backed hosted-tiles scene (the canonical fixture tileset) is
-/// registered so scene discovery and tile delivery run against real assets.
-/// Uses gRPC-Web transport (HTTP/1.1) since the in-memory test server does not
-/// support HTTP/2.
-/// </summary>
 [Collection("Database.SceneGrpc")]
 [Protocol(TestProtocols.Grpc)]
-public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
+public sealed partial class SceneGrpcIntegrationTests : IAsyncLifetime, IClassFixture<SceneGrpcIntegrationTests.SharedSceneHost>
 {
     private const string FixtureSceneId = "fixture-tileset";
     private const string MissingContentSceneId = "missing-content-tileset";
@@ -60,68 +51,20 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
 
     private readonly WebAppFixture _fixture;
     private readonly string _missingContentRoot;
-    private readonly string _missingTilesetRoot;
-    private readonly string _malformedTilesetRoot;
-    private readonly string _oversizedTileRoot;
     private GrpcChannel? _channel;
     private Proto.SceneService.SceneServiceClient? _sceneClient;
     private Proto.TileService.TileServiceClient? _tileClient;
     private Proto.ElevationService.ElevationServiceClient? _elevationClient;
     private Metadata? _headers;
 
-    public SceneGrpcIntegrationTests()
+    public SceneGrpcIntegrationTests(SharedSceneHost host)
     {
-        var fixtureRoot = ResolveFixtureRoot();
-        _missingContentRoot = CreateMissingContentTilesetRoot();
-        _missingTilesetRoot = CreateMissingTilesetRoot();
-        _malformedTilesetRoot = CreateMalformedTilesetRoot();
-        _oversizedTileRoot = CreateOversizedTileRoot();
-        _fixture = new WebAppFixture()
-            .ConfigureWebHost(builder =>
-            {
-                builder.ConfigureAppConfiguration((_, configBuilder) =>
-                {
-                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
-                    {
-                        ["Scenes:Datasets:0:Id"] = FixtureSceneId,
-                        ["Scenes:Datasets:0:Name"] = "Honua Fixture Tileset",
-                        ["Scenes:Datasets:0:Description"] = "Static 3D Tiles fixture used by gRPC tests",
-                        ["Scenes:Datasets:0:AssetRoot"] = fixtureRoot,
-
-                        // A scene whose root node references a content uri that
-                        // does not exist on disk, to exercise the GetTile
-                        // content-resolution NotFound path.
-                        ["Scenes:Datasets:1:Id"] = MissingContentSceneId,
-                        ["Scenes:Datasets:1:Name"] = "Missing Content Tileset",
-                        ["Scenes:Datasets:1:AssetRoot"] = _missingContentRoot,
-
-                        // A scene whose asset root has NO tileset.json, exercising
-                        // the LoadCatalogAsync missing-tileset NotFound branch.
-                        ["Scenes:Datasets:2:Id"] = MissingTilesetSceneId,
-                        ["Scenes:Datasets:2:Name"] = "Missing Tileset",
-                        ["Scenes:Datasets:2:AssetRoot"] = _missingTilesetRoot,
-
-                        // A scene whose tileset.json deserializes to null (root:
-                        // null), exercising the LoadTilesetAsync Internal branch.
-                        ["Scenes:Datasets:3:Id"] = MalformedTilesetSceneId,
-                        ["Scenes:Datasets:3:Name"] = "Malformed Tileset",
-                        ["Scenes:Datasets:3:AssetRoot"] = _malformedTilesetRoot,
-
-                        // A scene whose root content uri points at a file larger
-                        // than MaxTileContentBytes, exercising the GetTile/
-                        // StreamTiles ResourceExhausted oversized-tile branch.
-                        ["Scenes:Datasets:4:Id"] = OversizedTileSceneId,
-                        ["Scenes:Datasets:4:Name"] = "Oversized Tile",
-                        ["Scenes:Datasets:4:AssetRoot"] = _oversizedTileRoot,
-                    });
-                });
-            });
+        _fixture = host.Fixture;
+        _missingContentRoot = host.MissingContentRoot;
     }
 
     public async Task InitializeAsync()
     {
-        await _fixture.InitializeAsync();
-
         var grpcWebHandler = new GrpcWebHandler(GrpcWebMode.GrpcWeb, _fixture.CreateHandler());
         _channel = GrpcChannel.ForAddress("http://localhost", new GrpcChannelOptions { HttpHandler = grpcWebHandler });
         _sceneClient = new Proto.SceneService.SceneServiceClient(_channel);
@@ -137,12 +80,6 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         await RegisterExtentSceneAsync();
     }
 
-    /// <summary>
-    /// Registers a database-backed scene with a persisted extent so the
-    /// ListScenes spatial-filter tests have a scene whose footprint can be
-    /// included or excluded by an extent constraint (configuration scenes carry
-    /// no extent and so are always included).
-    /// </summary>
     private async Task RegisterExtentSceneAsync()
     {
         var registration = _fixture.GetService<ISceneRegistrationService>();
@@ -163,21 +100,6 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         });
     }
 
-    /// <summary>
-    /// Removes this instance's rows from the shared, process-global
-    /// <c>honua.scene_datasets</c> table (see the comment on the
-    /// <c>DELETE FROM honua.scene_datasets</c> line in tests/seed/server.yaml).
-    /// That table is NOT scoped by this fixture's per-test schema isolation, and
-    /// every OTHER isolated <see cref="WebAppFixture"/> host applies the same
-    /// default seed on startup; if this instance left its own id row behind,
-    /// another concurrently-initializing host's seed would leave it there
-    /// indefinitely (the seed excludes these ids for exactly that reason) and
-    /// the next <see cref="SceneGrpcIntegrationTests"/> test to register the
-    /// same id would fail on the unique constraint. Deleting it here — before
-    /// the schema/host teardown below — keeps each test's registered rows
-    /// scoped to its own lifetime, matching the per-test isolation every other
-    /// table in this fixture already gets.
-    /// </summary>
     private Task DeleteRegisteredScenesAsync()
         => _fixture.Postgres.ApplyGlobalSeedSqlAsync(
             $"DELETE FROM honua.scene_datasets WHERE id IN ('{ExtentSceneId}', '{InactiveSceneId}');");
@@ -186,22 +108,6 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     {
         _channel?.Dispose();
         await DeleteRegisteredScenesAsync();
-        await _fixture.DisposeAsync();
-
-        foreach (var root in new[] { _missingContentRoot, _missingTilesetRoot, _malformedTilesetRoot, _oversizedTileRoot })
-        {
-            try
-            {
-                if (Directory.Exists(root))
-                {
-                    Directory.Delete(root, recursive: true);
-                }
-            }
-            catch (IOException)
-            {
-                // Best-effort cleanup of the temp fixture root.
-            }
-        }
     }
 
     [IntegrationTest]
@@ -353,16 +259,6 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
     public async Task ListScenes_AfterConcurrentPeerHostAppliesDefaultSeed_StillIncludesRegisteredScene()
     {
-        // Regression test for the flaky "Server Tests (Operator Eval Harness)" shard: another
-        // isolated WebAppFixture host initializing concurrently in the same shard (a different
-        // xUnit collection than "Database.SceneGrpc", so it is free to run in parallel with this
-        // test) applies the same default seed (tests/seed/server.yaml) against its own fresh
-        // schema during its own InitializeAsync. That seed's "DELETE FROM honua.scene_datasets"
-        // statement targets the literal, process-global honua.scene_datasets table — not this
-        // fixture's per-test search_path schema — so without excluding this fixture's own ids it
-        // deletes "extent-scene" out from under this test between InitializeAsync's registration
-        // and any later ListScenes call. Simulate that peer host's seed apply directly and assert
-        // the registered scene survives it.
         await _fixture.Postgres.CreateSeededSchemaAsync(
             nameof(SceneGrpcIntegrationTests) + "Peer",
             RepositoryPaths.Resolve("tests", "seed", "server.yaml"));
@@ -814,7 +710,7 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
     {
         // The fixture region is ~(-75.6 lon, 40.04 lat) in degrees. An extent that
         // overlaps that footprint must still stream the matching tiles (positive
-        // filter outcome, #10), complementing the disjoint-yields-empty case.
+        // filter outcome), complementing the disjoint-yields-empty case.
         var request = new Proto.StreamTilesRequest { SceneId = FixtureSceneId };
         request.Extent = new Proto.Extent3D
         {
@@ -1224,140 +1120,9 @@ public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
         return tiles;
     }
 
-    /// <summary>
-    /// Creates a temporary scene asset root containing a valid
-    /// <c>tileset.json</c> whose root content uri points at a b3dm file that
-    /// does not exist, so GetTile resolves the node but cannot read its bytes.
-    /// </summary>
-    private static string CreateMissingContentTilesetRoot()
-    {
-        // Every Path.Combine call below only ever joins a temp directory with
-        // fixed/generated relative literal segments, so no later segment can be
-        // rooted and silently discard the one before it.
-        var root = Path.Join(Path.GetTempPath(), "honua-grpc-missing-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
 
-        const string tilesetJson = """
-        {
-          "asset": { "version": "1.1" },
-          "geometricError": 100.0,
-          "root": {
-            "boundingVolume": { "region": [-1.31970, 0.69886, -1.31965, 0.69890, 0.0, 20.0] },
-            "geometricError": 100.0,
-            "refine": "REPLACE",
-            "content": { "uri": "tiles/does-not-exist.b3dm" }
-          }
-        }
-        """;
-        File.WriteAllText(Path.Join(root, "tileset.json"), tilesetJson);
-        return root;
-    }
-
-    /// <summary>
-    /// Creates a temporary scene asset root that exists but contains NO
-    /// <c>tileset.json</c>, so the catalog loader cannot resolve the tileset
-    /// document (LoadCatalogAsync NotFound branch).
-    /// </summary>
-    private static string CreateMissingTilesetRoot()
-    {
-        // Second segment is a generated relative literal, so it can never be
-        // rooted and silently discard Path.GetTempPath().
-        var root = Path.Join(Path.GetTempPath(), "honua-grpc-no-tileset-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        return root;
-    }
-
-    /// <summary>
-    /// Creates a temporary scene asset root whose <c>tileset.json</c> is the JSON
-    /// literal <c>null</c>, so deserialization yields a null document (the
-    /// LoadTilesetAsync "could not be parsed" Internal branch).
-    /// </summary>
-    private static string CreateMalformedTilesetRoot()
-    {
-        // Both Path.Combine calls below only join a temp directory with a fixed
-        // or generated relative literal segment, so neither later segment can be
-        // rooted and silently discard the one before it.
-        var root = Path.Join(Path.GetTempPath(), "honua-grpc-malformed-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        File.WriteAllText(Path.Join(root, "tileset.json"), "null");
-        return root;
-    }
-
-    /// <summary>
-    /// Creates a temporary scene asset root whose <c>tileset.json</c> root
-    /// content uri points at a file just over the gRPC tile service's
-    /// MaxTileContentBytes cap (256 MiB). The oversized payload is a sparse,
-    /// zero-filled file produced via <see cref="FileStream.SetLength"/> so it
-    /// consumes no real disk and the test stays CI-fast, exercising the
-    /// ResourceExhausted oversized-tile rejection branch.
-    /// </summary>
-    private static string CreateOversizedTileRoot()
-    {
-        // Every Path.Combine call below only joins a temp directory with fixed
-        // or generated relative literal segments, so no later segment can be
-        // rooted and silently discard the one before it.
-        var root = Path.Join(Path.GetTempPath(), "honua-grpc-oversized-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-
-        const string tilesetJson = """
-        {
-          "asset": { "version": "1.1" },
-          "geometricError": 100.0,
-          "root": {
-            "boundingVolume": { "region": [-1.31970, 0.69886, -1.31965, 0.69890, 0.0, 20.0] },
-            "geometricError": 100.0,
-            "refine": "REPLACE",
-            "content": { "uri": "tiles/oversized.b3dm" }
-          }
-        }
-        """;
-        File.WriteAllText(Path.Join(root, "tileset.json"), tilesetJson);
-
-        var tilesDir = Path.Join(root, "tiles");
-        Directory.CreateDirectory(tilesDir);
-        // 256 MiB + 1 byte: one byte over MaxTileContentBytes. SetLength on a
-        // fresh file produces a sparse extent on the platforms CI runs on, so no
-        // bytes are actually written.
-        const long oversized = (256L * 1024 * 1024) + 1;
-        using (var fs = new FileStream(Path.Join(tilesDir, "oversized.b3dm"), FileMode.CreateNew, FileAccess.Write))
-        {
-            fs.SetLength(oversized);
-        }
-
-        return root;
-    }
-
-    private static string ResolveFixtureRoot()
-    {
-        var directory = AppContext.BaseDirectory;
-        while (directory is not null)
-        {
-            // All later segments are fixed relative literals, so none can be
-            // rooted and silently discard directory.
-            var candidate = Path.Join(directory, "tests", "fixtures", "scenes", "fixture-tileset");
-            if (Directory.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            directory = Path.GetDirectoryName(directory);
-        }
-
-        throw new DirectoryNotFoundException(
-            "Could not locate tests/fixtures/scenes/fixture-tileset from the test base directory.");
-    }
 }
 
-/// <summary>
-/// Authorization tests proving the gRPC scene/tile services enforce the same
-/// per-scene <c>AccessPolicy</c> the HTTP/I3S surfaces enforce
-/// (honua-server#1194 / #1195). A protected (non-public) scene must not be
-/// served — metadata or tiles — to an unauthenticated gRPC caller; it returns
-/// <see cref="StatusCode.Unauthenticated"/> (or
-/// <see cref="StatusCode.PermissionDenied"/> for an authenticated-but-unauthorized
-/// caller). Dev-auth is disabled so the anonymous caller is genuinely
-/// unauthenticated, mirroring <c>SceneAuthorizationTests</c> on the HTTP side.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Grpc)]
 public sealed class SceneGrpcAuthorizationTests : IAsyncLifetime
@@ -1438,7 +1203,7 @@ public sealed class SceneGrpcAuthorizationTests : IAsyncLifetime
     {
         // The positive counterpart to the deny test: an authorized caller must be
         // GRANTED the protected scene's tiles, pinning the SceneAccessGuard allow
-        // branch on the gRPC adapter (#9).
+        // branch on the gRPC adapter.
         var response = await _tileClient!.GetTileAsync(
             new Proto.GetTileRequest { SceneId = ProtectedSceneId, NodeId = "0" },
             _authHeaders);
@@ -1544,20 +1309,23 @@ public sealed class SceneGrpcAuthorizationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]
     [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
-    public async Task ListScenes_ProtectedScene_WithoutAuth_StillListsScene()
+    public async Task ListScenes_ProtectedScene_WithoutAuth_OmitsScene()
     {
-        // Documented intentional divergence (HonuaSceneGrpcService.ListScenes):
-        // ListScenes is ungated and mirrors the public HTTP scene-discovery
-        // catalog, so it lists EVERY active scene — including protected ones —
-        // while per-scene authorization is enforced only when metadata or tiles are
-        // actually fetched (GetScene / GetTile / StreamTiles, covered above). This
-        // pins that discovery parity so a future change that filters protected
-        // scenes from the anonymous listing fails here instead of silently
-        // diverging from the HTTP surface.
         var response = await _sceneClient!.ListScenesAsync(new Proto.ListScenesRequest(), _headers);
 
-        response.Scenes.Should().Contain(scene => scene.SceneId == ProtectedSceneId,
-            "ListScenes is intentionally ungated and lists protected scenes for discovery parity.");
+        response.Scenes.Should().NotContain(scene => scene.SceneId == ProtectedSceneId,
+            "a listing shows only the scenes the caller may read, as the HTTP catalog does.");
+        response.Scenes.Should().Contain(scene => scene.SceneId == PublicSceneId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("POST /geospatial.v1.SceneService/ListScenes")]
+    public async Task ListScenes_ProtectedScene_WithAuthorizedRole_ListsScene()
+    {
+        var response = await _sceneClient!.ListScenesAsync(new Proto.ListScenesRequest(), _authHeaders);
+
+        response.Scenes.Should().Contain(scene => scene.SceneId == ProtectedSceneId);
         response.Scenes.Should().Contain(scene => scene.SceneId == PublicSceneId);
     }
 
@@ -1582,16 +1350,6 @@ public sealed class SceneGrpcAuthorizationTests : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// Authorization tests proving the gRPC <c>ElevationService</c> enforces the same
-/// per-layer RBAC the HTTP elevation surface enforces. The HTTP adapter validates
-/// the elevation layer through <c>LayerValidationHelpers.ValidateLayerWithAccessV2Async</c>
-/// at read scope before querying; the gRPC adapter routes through the shared
-/// <c>ElevationAccessGuard</c>/<c>EvaluateLayerReadAccessV2Async</c> seam. A
-/// protected (anonymous-denied) elevation layer must therefore be refused for an
-/// unauthenticated gRPC caller, and a public layer must remain queryable. Dev-auth
-/// is disabled so the anonymous caller is genuinely unauthenticated.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Grpc)]
 public sealed class ElevationGrpcAuthorizationTests : IAsyncLifetime
@@ -1815,7 +1573,7 @@ public sealed class ElevationGrpcAuthorizationTests : IAsyncLifetime
     {
         await using var heldRasters = await HoldFullWorldRasterAsync(100.0);
 
-        // #7: pin the POINT happy-path contract. The proto GetElevationResponse
+        // Pin the POINT happy-path contract. The proto GetElevationResponse
         // echoes x/y and carries mosaic_rule + source metadata, but the existing
         // point happy-path only asserted HasElevation. Mirror the profile
         // assertion so the point mapping (SceneGrpcMapping.ToElevationResponse) is
@@ -1863,12 +1621,8 @@ public sealed class ElevationGrpcAuthorizationTests : IAsyncLifetime
     [Endpoint("POST /geospatial.v1.ElevationService/GetElevation")]
     public async Task GetElevation_LayerWithNoRasterSource_ThrowsNotFound()
     {
-        // #4: the gRPC adapter must mirror the HTTP elevation status mapping
-        // (ElevationEndpoints.MapElevationException), where ElevationFailureKind
-        // .SourceUnavailable maps to NotFound (HTTP 404). Previously every
-        // ElevationQueryException collapsed to FailedPrecondition. Clearing the
-        // layer's rasters makes the query raise SourceUnavailable, which must now
-        // surface as gRPC NotFound rather than FailedPrecondition.
+        // Mirror the HTTP elevation status mapping: SourceUnavailable is HTTP 404
+        // and gRPC NotFound. Clearing the layer rasters exercises this error.
         _fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
             accessPolicy: new AccessPolicy { AllowAnonymous = true });

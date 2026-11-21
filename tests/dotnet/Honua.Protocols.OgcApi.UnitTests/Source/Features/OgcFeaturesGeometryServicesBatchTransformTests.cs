@@ -13,12 +13,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
-/// <summary>
-/// Covers the batched coordinate transform on the OGC Features mutation path (#1593):
-/// the coordinate-sequence transform issues one <c>TransformPointsAsync</c> call per
-/// sequence instead of one awaited <c>TransformPointAsync</c> per vertex, and the
-/// batched results are identical to the per-point default path.
-/// </summary>
 public sealed class OgcFeaturesGeometryServicesBatchTransformTests
 {
     private const int InputSrid = 4326;
@@ -106,8 +100,7 @@ public sealed class OgcFeaturesGeometryServicesBatchTransformTests
         => new(
             new Honua.Infrastructure.Services.GeometryService(Options.Create(new LimitsOptions())),
             transformService,
-            Options.Create(new LimitsOptions()),
-            NullLogger<OgcFeaturesGeometryServices>.Instance);
+            Options.Create(new LimitsOptions()));
 
     private static (double X, double Y) Affine(double x, double y)
         => ((x * 2.0) + 100.0, (y * 0.5) - 50.0);

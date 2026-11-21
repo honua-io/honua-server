@@ -2,12 +2,18 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Net.Sockets;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Infrastructure.Monitoring;
 
-internal sealed class OpsFindingsCollectionLedger
+internal sealed partial class OpsFindingsCollectionLedger(ILogger? logger = null)
 {
+    private readonly ILogger _logger = logger ?? NullLogger.Instance;
+    private static readonly TimeSpan RepeatedFailureLogInterval = TimeSpan.FromMinutes(5);
     private readonly ConcurrentDictionary<string, DateTimeOffset> _lastSuccessfulAt = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, (string FailureClass, DateTimeOffset LoggedAt)> _lastLoggedFailure = new(StringComparer.Ordinal);
 
     public DateTimeOffset? GetLastSuccessfulAt(string sourceId)
         => _lastSuccessfulAt.TryGetValue(sourceId, out var at) ? at : null;
@@ -18,6 +24,50 @@ internal sealed class OpsFindingsCollectionLedger
             sourceId,
             observedAt,
             (_, current) => observedAt > current ? observedAt : current);
+
+    // A collection with no failed read re-arms the failure log for its source.
+    public void RecordNoFailure(string sourceId) => _lastLoggedFailure.TryRemove(sourceId, out _);
+
+    // Exception text can carry connection details, so only the failure class is logged. Findings are
+    // evaluated on every admin read and sample, so an unchanged failure is logged at most every five minutes.
+    public void RecordFailure(string sourceId, OpsFindingsReadFailure failure, DateTimeOffset now)
+    {
+        var key = failure.ComponentId + ": " + failure.FailureClass;
+        if (_lastLoggedFailure.TryGetValue(sourceId, out var last)
+            && last.FailureClass == key && now - last.LoggedAt < RepeatedFailureLogInterval)
+        {
+            return;
+        }
+        _lastLoggedFailure[sourceId] = (key, now);
+        ReadFailed(_logger, sourceId, failure.ComponentId, failure.FailureClass);
+    }
+
+    [LoggerMessage(EventId = 7463, Level = LogLevel.Warning,
+        Message = "Ops findings source {SourceId} could not read {ComponentId}: {FailureClass}.")]
+    private static partial void ReadFailed(ILogger logger, string sourceId, string componentId, string failureClass);
+}
+
+internal sealed record OpsFindingsReadFailure(string ComponentId, string FailureClass)
+{
+    public static OpsFindingsReadFailure From(string componentId, Exception exception)
+        => new(componentId, DescribeFailure(exception));
+
+    internal static string DescribeFailure(Exception exception)
+    {
+        var description = exception switch
+        {
+            HttpRequestException { StatusCode: { } status } => $"{exception.GetType().Name} status {(int)status}",
+            HttpRequestException http => $"{exception.GetType().Name} {http.HttpRequestError}",
+            _ => exception.GetType().Name
+        };
+        var cause = exception.GetBaseException();
+        return cause switch
+        {
+            _ when ReferenceEquals(cause, exception) => description,
+            SocketException socket => $"{description} ({nameof(SocketException)} {socket.SocketErrorCode})",
+            _ => $"{description} ({cause.GetType().Name})"
+        };
+    }
 }
 
 internal readonly record struct OpsFindingsStoreRead<T>(bool Succeeded, T? Value);
@@ -31,7 +81,7 @@ internal sealed class OpsFindingsStoreCollection(
     private readonly List<string> _expected = [];
     private readonly List<string> _included = [];
     private DateTimeOffset? _observedAt;
-    private bool _failed;
+    private OpsFindingsReadFailure? _failure;
 
     public async Task<OpsFindingsStoreRead<T>> ReadAsync<T>(
         string componentId,
@@ -39,7 +89,7 @@ internal sealed class OpsFindingsStoreCollection(
         CancellationToken cancellationToken)
     {
         _expected.Add(componentId);
-        if (_failed)
+        if (_failure is not null)
         {
             return default;
         }
@@ -54,9 +104,19 @@ internal sealed class OpsFindingsStoreCollection(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _failed = true;
+            _failure = OpsFindingsReadFailure.From(componentId, ex);
             return default;
         }
+    }
+
+    private void RecordReadOutcome(OpsFindingsCollectionLedger ledger)
+    {
+        if (_failure is null)
+        {
+            ledger.RecordNoFailure(sourceId);
+            return;
+        }
+        ledger.RecordFailure(sourceId, _failure, clock.GetUtcNow());
     }
 
     // A read the pass left unread is published as partial, not complete.
@@ -65,6 +125,7 @@ internal sealed class OpsFindingsStoreCollection(
     // When no read succeeded the clocks stay at the last successful collection, never the evaluation time.
     public EvidenceSourceEnvelope Publish(OpsFindingsCollectionLedger ledger, TimeSpan maximumAge)
     {
+        RecordReadOutcome(ledger);
         if (_observedAt is { } observedAt)
         {
             ledger.RecordSuccess(sourceId, observedAt);

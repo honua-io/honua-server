@@ -6,11 +6,6 @@ using Honua.Core.Features.Spec.Services;
 
 namespace Honua.Core.Tests.Features.Spec;
 
-/// <summary>
-/// Covers the structural diagnostics surfaced by <see cref="SpecDagResolver"/>:
-/// topological ordering, duplicate ids, unresolved references, and cycle
-/// detection.
-/// </summary>
 public class SpecDagResolverTests
 {
     [Trait("Tier", "Fast")]
@@ -174,13 +169,6 @@ public class SpecDagResolverTests
     [InlineData("\t")]
     public void Resolve_BlankNodeId_EmitsInvalidNodeIdAndBlocks(string blankId)
     {
-        // Regression for the review finding: the public contract documents
-        // node ids as "stable node identifiers", but the resolver only guarded
-        // duplicates, cycles, and unresolved references. A document with
-        // `id: ""` therefore planned and applied successfully and emitted blank
-        // `nodeId` values in the event stream. Reject at the resolver so both
-        // REST and gRPC surface a stable diagnostic without reaching the
-        // executor.
         var document = Document(
             Node(blankId),
             Node("b"));

@@ -14,16 +14,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols;
 
-/// <summary>
-/// Regression coverage for honua-server#3392 (client-certification case
-/// <c>NB-GPD-SCH-01</c>): a declared schema field whose name is not a bare SQL
-/// identifier — the STAC EO extension's <c>eo:cloud_cover</c> is the canonical
-/// case — was advertised by <c>/queryables</c>, the CSV header and the
-/// GeoServices <c>fields</c> array, was filterable through CQL2, and was returned
-/// by WFS 2.0, yet was silently absent from every OGC API Features
-/// <c>properties</c> object and every GeoServices <c>attributes</c> object, and
-/// was emitted as an empty CSV cell.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiFeatures)]
 [Operation(Operations.Query)]
@@ -109,9 +99,7 @@ public sealed class PrefixedSchemaFieldProjectionTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/ogc/features/collections/{CollectionId}/items?limit=1&properties={EncodedPrefixedFieldName}");
 
-        // Explicitly asserted: before the fix this token was rejected outright as
-        // "Invalid properties field", and relaxing only the protocol-side guard would
-        // have turned it into an unhandled provider ArgumentException (HTTP 500).
+        // The prefixed field must pass both protocol validation and provider projection.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var properties = await ReadFirstFeaturePropertiesAsync(response);

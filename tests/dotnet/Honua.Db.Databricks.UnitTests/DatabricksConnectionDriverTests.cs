@@ -12,10 +12,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.Databricks.Tests;
 
-/// <summary>
-/// Admin connection-test driver for Databricks: connection-string shape, stubbed
-/// <c>SELECT 1</c> success, and failure when the token is rejected.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class DatabricksConnectionDriverTests
 {
@@ -60,6 +56,23 @@ public class DatabricksConnectionDriverTests
 
         Assert.Equal(["dbc-abc123.cloud.databricks.com"], security.Hosts);
         Assert.True(security.RequiresTls);
+    }
+
+    [Fact]
+    public async Task TestConnectionAsync_LoopbackDestination_ReturnsUnhealthyWithoutConnecting()
+    {
+        using var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var endpoint = (IPEndPoint)listener.LocalEndpoint;
+        var driver = CreateDriver();
+        var connectionString = driver.BuildConnectionString(new ConnectionTarget(
+            "127.0.0.1", endpoint.Port, "warehouse", "token", "secret", SslMode.Require));
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+
+        var status = await driver.TestConnectionAsync(connectionString, cancellation.Token);
+
+        Assert.Equal(ConnectionHealthStatus.Unhealthy, status);
+        Assert.False(listener.Pending());
     }
 
     [Fact]
@@ -167,10 +180,6 @@ public class DatabricksConnectionDriverTests
     private static DatabricksConnectionDriver CreateDriver(HttpMessageHandler? handler = null)
         => new(NullLogger<DatabricksConnectionDriver>.Instance, handler);
 
-    /// <summary>
-    /// Raises the same <see cref="TaskCanceledException"/> <see cref="HttpClient.Timeout"/> raises
-    /// when the caller token is still active.
-    /// </summary>
     private sealed class TimeoutHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

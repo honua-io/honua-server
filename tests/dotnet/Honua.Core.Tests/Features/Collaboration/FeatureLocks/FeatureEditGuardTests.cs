@@ -207,7 +207,7 @@ public sealed class FeatureEditGuardTests
     [Operation(TestOperations.Update)]
     public async Task EvaluateAsync_HonorActiveLock_NoLeaseHeld_Allows()
     {
-        // The policy every write path enforces (#4402). Claiming a lease stays optional,
+        // The policy every write path enforces. Claiming a lease stays optional,
         // so a caller that never touched /feature-locks must be unaffected — this is the
         // case that keeps enforcement from becoming a blanket block on all editing.
         var (guard, _) = CreateGuard();

@@ -82,7 +82,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
                 $"Supported ids in this slice: {supported}.");
         }
 
-        // Establish the job-security scope for the whole dispatch (#3068). The worker has no
+        // Establish the job-security scope for the whole dispatch. The worker has no
         // HttpContext, so the request-scoped RLS and field-mask sources would otherwise resolve
         // NO row filter and an EMPTY mask and hand the submitter data they cannot see
         // synchronously. Begun here — the single seam every managed process executor runs
@@ -140,7 +140,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             activity?.SetStatus(ActivityStatusCode.Error, result.ErrorMessage);
         }
 
-        // Usage-ranked tiering (#2144): record every dispatched invocation with its
+        // Usage-ranked tiering: record every dispatched invocation with its
         // outcome. Recording never throws, so it cannot affect the job result.
         _usageTelemetry?.RecordInvocation(processId, result.Status == ExecutionJobStatus.Succeeded);
 
@@ -160,6 +160,14 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             return (null, context, null, true);
         }
 
+        // The owner comes from the submitter snapshot; without one the stored requester alone does
+        // not establish whose workspace this is, so the job is refused rather than routed to it.
+        if (job.Audit.SubmitterSecurityContext is not { } submitter)
+        {
+            return (null, context,
+                $"env:workspace='{requestedLabel}' was requested but the job carries no submitter security context.", false);
+        }
+
         var scope = _serviceScopeFactory?.CreateScope();
         var workspaceLifecycle = scope?.ServiceProvider.GetService<IWorkspaceLifecycleService>();
         if (workspaceLifecycle is null)
@@ -169,13 +177,13 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
                 $"env:workspace='{requestedLabel}' was requested but no workspace storage provider is configured for this deployment.", false);
         }
 
-        var workspaceOwner = job.Audit.SubmitterSecurityContext?.WorkspaceOwnerId ?? job.Audit.RequestedBy;
+        var workspaceOwner = submitter.WorkspaceOwnerId ?? job.Audit.RequestedBy;
         var ownerId = string.IsNullOrWhiteSpace(workspaceOwner) ? "anonymous" : workspaceOwner;
 
         Workspace resolvedWorkspace;
         try
         {
-            var scopeId = job.Audit.SubmitterSecurityContext?.TenantId;
+            var scopeId = submitter.TenantId;
             resolvedWorkspace = scopeId is null
                 ? await workspaceLifecycle.GetOrCreateNamedWorkspaceAsync(ownerId, requestedLabel, cancellationToken).ConfigureAwait(false)
                 : await workspaceLifecycle.GetOrCreateScopedWorkspaceAsync(ownerId, requestedLabel, scopeId, cancellationToken).ConfigureAwait(false);

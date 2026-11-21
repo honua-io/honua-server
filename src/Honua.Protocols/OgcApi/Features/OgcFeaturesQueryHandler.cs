@@ -7,7 +7,6 @@ using System.Globalization;
 using System.Buffers;
 using System.Linq;
 using System.Text.Json;
-using Honua.Core.Exceptions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -253,8 +252,11 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             if (hasCompatibleStreamingStore && string.Equals(outputFormat, MediaTypes.Csv, StringComparison.OrdinalIgnoreCase))
             {
+                var csvSchema = await CallerVisibleSchema.HideMaskedFieldsAsync(context, resource, cancellationToken).ConfigureAwait(false);
+                var csvFieldNames = ResolveCsvFieldNames(csvSchema, projectedProperties);
                 return CreateStreamingCsvResult(streamingFeatureStore, new CsvStreamQuery(resource, layerId, query)
                 {
+                    FieldNames = csvFieldNames,
                     AxisOrder = outputAxisOrder,
                     ProjectedProperties = projectedProperties,
                     CrsUri = outputCrsUri
@@ -335,6 +337,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
             var useNativeGeoJson = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase) ||
                                    string.Equals(outputFormat, MediaTypes.Json, StringComparison.OrdinalIgnoreCase);
             var includeFeatureLinks = _ogcFeaturesOptions.IncludeFeatureLinks;
+            var linkTemplate = includeFeatureLinks
+                ? OgcFeatureLinkTemplate.Create(request, new(collectionId, outputFormat))
+                : null;
             QueryResult<GmlFeature>? gmlResult = null;
             QueryResult<Feature>? featureResult = null;
             QueryResult<EncodedGeoJsonFeature>? encodedResult = null;
@@ -375,13 +380,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 features = pagedEncodedResult.Value.Items
                     .Select(feature =>
                     {
-                        ImmutableArray<Link>? links = includeFeatureLinks
-                            ? OgcFeaturesUtilities.BuildFeatureLinks(
-                                request,
-                                collectionId,
-                                OgcFeatureIdentifierResolver.FormatPublicId(feature, resource),
-                                outputFormat)
-                            : null;
+                        ImmutableArray<Link>? links = linkTemplate?.Build(
+                            OgcFeatureIdentifierResolver.FormatPublicId(feature, resource));
                         return ToOgcFeature(
                             feature,
                             resource,
@@ -399,13 +399,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 features = pagedFeatureResult.Value.Items
                     .Select(feature =>
                     {
-                        ImmutableArray<Link>? links = includeFeatureLinks
-                            ? OgcFeaturesUtilities.BuildFeatureLinks(
-                                request,
-                                collectionId,
-                                OgcFeatureIdentifierResolver.FormatPublicId(feature, resource),
-                                outputFormat)
-                            : null;
+                        ImmutableArray<Link>? links = linkTemplate?.Build(
+                            OgcFeatureIdentifierResolver.FormatPublicId(feature, resource));
                         return ToOgcFeature(
                             feature,
                             resource,
@@ -423,13 +418,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 features = encodedResult.Value.Items
                     .Select(feature =>
                     {
-                        ImmutableArray<Link>? links = includeFeatureLinks
-                            ? OgcFeaturesUtilities.BuildFeatureLinks(
-                                request,
-                                collectionId,
-                                OgcFeatureIdentifierResolver.FormatPublicId(feature, resource),
-                                outputFormat)
-                            : null;
+                        ImmutableArray<Link>? links = linkTemplate?.Build(
+                            OgcFeatureIdentifierResolver.FormatPublicId(feature, resource));
                         return ToOgcFeature(
                             feature,
                             resource,
@@ -447,13 +437,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 features = featureResult.Value.Items
                     .Select(feature =>
                     {
-                        ImmutableArray<Link>? links = includeFeatureLinks
-                            ? OgcFeaturesUtilities.BuildFeatureLinks(
-                                request,
-                                collectionId,
-                                OgcFeatureIdentifierResolver.FormatPublicId(feature, resource),
-                                outputFormat)
-                            : null;
+                        ImmutableArray<Link>? links = linkTemplate?.Build(
+                            OgcFeatureIdentifierResolver.FormatPublicId(feature, resource));
                         return ToOgcFeature(
                             feature,
                             resource,
@@ -561,8 +546,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             if (string.Equals(outputFormat, MediaTypes.Csv, StringComparison.OrdinalIgnoreCase))
             {
-                var fieldNames = ResolveCsvFieldNames(resource, projectedProperties);
-                var csv = OgcResponseFormatter.BuildCsvResponse(features, fieldNames);
+                var csvSchema = await CallerVisibleSchema.HideMaskedFieldsAsync(context, resource, cancellationToken).ConfigureAwait(false);
+                var fieldNames = ResolveCsvFieldNames(csvSchema, projectedProperties);
+                var csv = OgcResponseFormatter.BuildCsvResponse(features, fieldNames, resource.FindPrimaryIdField()?.Name);
                 return Results.Text(csv, MediaTypes.Csv);
             }
 
@@ -589,9 +575,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         {
             OgcFeaturesLog.ItemsQueryFailed(_logger, collectionId, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
-            return ex is ServiceUnavailableException
-                ? StandardErrorHelpers.CreateFromException(context, ex)
-                : StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving items.");
+            return StandardErrorHelpers.CreateQueryFailure(context, ex, "An error occurred while retrieving items.");
         }
         finally
         {
@@ -893,8 +877,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             if (string.Equals(outputFormat, MediaTypes.Csv, StringComparison.OrdinalIgnoreCase))
             {
-                var fieldNames = ResolveCsvFieldNames(resource, null);
-                var csv = OgcResponseFormatter.BuildCsvResponse([ogcFeature], fieldNames);
+                var csvSchema = await CallerVisibleSchema.HideMaskedFieldsAsync(context, resource, cancellationToken).ConfigureAwait(false);
+                var fieldNames = ResolveCsvFieldNames(csvSchema, null);
+                var csv = OgcResponseFormatter.BuildCsvResponse([ogcFeature], fieldNames, resource.FindPrimaryIdField()?.Name);
                 return Results.Text(csv, MediaTypes.Csv);
             }
 
@@ -928,9 +913,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         {
             OgcFeaturesLog.ItemQueryFailed(_logger, collectionId, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
-            return ex is ServiceUnavailableException
-                ? StandardErrorHelpers.CreateFromException(context, ex)
-                : StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving the feature.");
+            return StandardErrorHelpers.CreateQueryFailure(context, ex, "An error occurred while retrieving the feature.");
         }
         finally
         {
@@ -1555,6 +1538,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
         var hasMoreResults = false;
         var featuresSinceFlush = 0;
         GeoJsonFeatureBaseBuilder.PreparedSchema? featureSchema = null;
+        var linkTemplate = includeFeatureLinks
+            ? OgcFeatureLinkTemplate.Create(context.Request, new(collectionId, outputFormat))
+            : null;
         while (hasFeature)
         {
             var feature = enumerator.Current;
@@ -1565,13 +1551,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 break;
             }
 
-            ImmutableArray<Link>? featureLinks = includeFeatureLinks
-                ? OgcFeaturesUtilities.BuildFeatureLinks(
-                    context.Request,
-                    collectionId,
-                    OgcFeatureIdentifierResolver.FormatPublicId(feature, resource),
-                    outputFormat)
-                : null;
+            ImmutableArray<Link>? featureLinks = linkTemplate?.Build(
+                OgcFeatureIdentifierResolver.FormatPublicId(feature, resource));
             var ogcFeature = ToOgcFeature(feature, resource, axisOrder, geometryServices, projectedProperties, featureLinks,
                 featureSchema ??= new GeoJsonFeatureBaseBuilder.PreparedSchema(resource, false));
             JsonSerializer.Serialize(writer, ogcFeature, OgcJsonContext.Default.GeoJsonFeature);

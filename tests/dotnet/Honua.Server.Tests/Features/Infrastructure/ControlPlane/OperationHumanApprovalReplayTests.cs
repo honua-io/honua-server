@@ -46,7 +46,15 @@ public sealed class OperationHumanApprovalReplayTests
         using var host = new OperationHumanApprovalTestHost();
         var human = await host.CreateHumanAsync(origin: origin);
         var proposal = OperationHumanApprovalTestHost.Proposal(CanonicalSecurityActor.Resolve(human.Principal)!.ActorId);
-        proposal = proposal with { Audit = proposal.Audit with { OperationInstanceId = "approved-instance" } };
+        proposal = proposal with
+        {
+            Audit = proposal.Audit with { OperationInstanceId = "approved-instance" },
+            Initiation = proposal.Initiation! with
+            {
+                Kind = OperationInitiationKind.Human,
+                Channel = OperationInitiationChannel.InteractiveOidc,
+            },
+        };
         host.ReviewRequest(human);
         var review = await host.Authority.OpenReviewAsync(proposal, host.Context);
         host.ApproveRequest(human, review);

@@ -18,12 +18,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Db.Oracle.Tests;
 
-/// <summary>
-/// Verifies that the Oracle provider plugs into the shared Metadata v2 provider seam:
-/// it is discoverable by canonical name and aliases, advertises read-only capabilities,
-/// and resolves through <see cref="FeatureProviderQueryRouter"/> for source-backed publications
-/// whose connection selects the Oracle engine.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class OracleProviderResolutionTests
 {
@@ -68,7 +62,7 @@ public class OracleProviderResolutionTests
     [Fact]
     public async Task GetEstimatesAsync_WithPermanentFilterConfigured_ThrowsNotSupportedException()
     {
-        // BH6-021 regression: GetEstimatesAsync was missing the EnsureNoPermanentFilterAsync
+        // GetEstimatesAsync was missing the EnsureNoPermanentFilterAsync
         // guard that all other public read methods call. A permanent (row-visibility) filter
         // configured on an Oracle layer must block estimates just as it blocks queries.
         var provider = CreateOracleStore(v2Provider: new StubV2Provider(LayerId, permanentFilterExpression: "status = 'active'") { Locator = "SCHEMA.TABLE" });
@@ -377,14 +371,9 @@ public class OracleProviderResolutionTests
         var probe = new AcceptingProbe();
         var guard = new OracleSpatialGuard(probe, NullLogger<OracleSpatialGuard>.Instance);
 
-        return new OracleFeatureStore(dataAccess, guard, v2Provider, readSecurity);
+        return new OracleFeatureStore(dataAccess, guard, v2Provider, readSecurity ?? new LayerReadSecurityResolver(null, null, null, null));
     }
 
-    /// <summary>
-    /// Probe stub that approves any SDO_GEOMETRY column and reports no versioning. Allows
-    /// resolution tests to exercise binding/connection flow without a real Oracle connection
-    /// while still proving that the guard is invoked before the data access call.
-    /// </summary>
     private sealed class AcceptingProbe : IOracleSpatialMetadataProbe
     {
         public Task<string?> GetGeometryColumnTypeAsync(OracleLayerMapping mapping, DataConnection? dataConnection, CancellationToken cancellationToken)

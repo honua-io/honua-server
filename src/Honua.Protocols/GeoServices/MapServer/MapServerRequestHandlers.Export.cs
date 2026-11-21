@@ -137,7 +137,7 @@ internal static partial class MapServerEndpoints
             }
 
             var serviceSrid = ResolveExportServiceSrid(service, publishedLayers);
-            // The service resource advertises the Web Mercator tile cache (#5504).
+            // The service resource advertises the Web Mercator tile cache.
             // Clients that omit bboxSR/imageSR therefore send coordinates in that
             // CRS. serviceSrid stays the native CRS used to read features.
             bboxSrid ??= CachedMapSpatialReferenceId;
@@ -658,7 +658,7 @@ internal static partial class MapServerEndpoints
             return true;
         }
 
-        // #5503: a geographic view padded past ±180/±90 is still a finite, ordered
+        // A geographic view padded past ±180/±90 is still a finite, ordered
         // envelope. RasterParsingHelpers rejects that range before MapServer can
         // see the ordinates, so retry without the geographic range gate.
         if (TryParseMapServerBoundingBox(bbox, axisOrder, isGeographic: false, out minX, out minY, out maxX, out maxY))
@@ -1025,6 +1025,12 @@ internal static partial class MapServerEndpoints
             if (document.RootElement.ValueKind != JsonValueKind.Array)
             {
                 error = "dynamicLayers must be a JSON array.";
+                return false;
+            }
+
+            if (document.RootElement.GetArrayLength() > sourceResolver.MaxLayers)
+            {
+                error = $"dynamicLayers may contain at most {sourceResolver.MaxLayers.ToString(CultureInfo.InvariantCulture)} entries.";
                 return false;
             }
 

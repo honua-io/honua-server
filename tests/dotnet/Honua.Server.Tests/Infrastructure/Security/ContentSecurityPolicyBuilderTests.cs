@@ -5,10 +5,6 @@ using Honua.Infrastructure.Security;
 
 namespace Honua.Server.Tests.Infrastructure.Security;
 
-/// <summary>
-/// Tests for the ContentSecurityPolicyBuilder class.
-/// Verifies CSP policy generation, validation, and geospatial-specific configurations.
-/// </summary>
 [Trait("Category", "Unit")]
 [Trait("Component", "Security")]
 [Trait("Feature", "ContentSecurityPolicy")]

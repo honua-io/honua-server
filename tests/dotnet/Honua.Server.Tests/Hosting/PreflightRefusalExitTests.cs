@@ -10,15 +10,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Hosting;
 
-/// <summary>
-/// Boots the real server entry point with a database connection string the driver cannot parse
-/// (a generated password that begins with <c>=</c> reads as <c>Password==...</c>, honua-server#6495).
-/// The PostGIS preflight must refuse with a message that names the problem, without echoing the
-/// credential, and the process must exit with <see cref="GatedBootShutdown.RefusalExitCode"/>
-/// instead of an abort or segmentation fault (exit 134 / 139), which is what an unhandled
-/// startup exception produces. An in-process host cannot observe the process status, so the
-/// test starts <c>Honua.Server.dll</c> out of process.
-/// </summary>
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class PreflightRefusalExitTests
 {
@@ -29,9 +20,7 @@ public sealed class PreflightRefusalExitTests
         "HONUA_SKIP_MIGRATIONS",
         "HONUA_REGISTER_TEST_INFRASTRUCTURE",
         "HONUA_TEST_SCHEMA_HEADERS",
-        "HONUA_DB_DEGRADED_START",
-        "ConnectionStrings__redis",
-        "ConnectionStrings__Redis"
+        "HONUA_DB_DEGRADED_START"
     ];
 
     [IntegrationTest]

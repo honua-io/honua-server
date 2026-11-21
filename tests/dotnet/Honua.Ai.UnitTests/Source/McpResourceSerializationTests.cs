@@ -18,13 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Verifies that MCP resource handlers serialize domain records into the
-/// canonical <c>honua://...</c> JSON envelope advertised in
-/// <c>AI_OPERATOR_CONTRACT.md §9</c>. The tests pin the wire fields that
-/// operators parse — job ids, resource URIs, map-package identifiers, and
-/// stub markers — so accidental rename of a JSON property breaks the build.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpResourceSerializationTests
 {
@@ -154,6 +147,26 @@ public sealed class McpResourceSerializationTests
         body.GetProperty("workspaceRefs")[0].GetProperty("resourceUri").GetString().Should().Be("honua://workspaces/ws-42");
         body.GetProperty("mapPackageId").GetString().Should().Be("map-55");
         body.TryGetProperty("notImplementedReason", out _).Should().BeFalse();
+    }
+
+    [UnitTheory]
+    [InlineData(null, null)]
+    [InlineData("honua://artifacts/a%2Fb", "ef0329fc8c7782d34ee0d3af02d0f46c3e7b215610b6259a8336e1f40d865579")]
+    [InlineData("honua://artifacts/a/b", "da653253ceb4a953db579c794ec84eb8b549c3d3aa1e7cd5a2e876024f651b3f")]
+    [InlineData("honua://artifacts/日本", "17f84f9781c9f215b1644c83f8e15f069e781a54e77fd7db71bb41cb909e4222")]
+    public void JobResultsProjection_ReferenceChecksumUsesExactUtf8Uri(string? uri, string? expectedChecksum)
+    {
+        var package = AnalysisResultPackage.CreateCompleted(
+            "package-1",
+            new ResultSummary { Title = "Completed output" },
+            [new ArtifactRef { ArtifactId = "artifact-1", Kind = ArtifactKind.FeatureLayer, Label = "Output", Uri = uri }],
+            [],
+            new ProvenanceRecord { Sources = [], ProcessDefinitions = [] });
+
+        var projected = JobResultsResource.ToResource("job-1", package);
+
+        projected.Artifacts[0].ReferenceSha256.Should().Be(expectedChecksum);
+        projected.Artifacts[0].Uri.Should().Be(uri);
     }
 
     [UnitTest]
@@ -323,7 +336,7 @@ public sealed class McpResourceSerializationTests
         var source = processes.EnumerateArray()
             .Single(process => process.GetProperty("processId").GetString() == "source.geojson");
         source.GetProperty("executionKind").GetString().Should().Be("WorkflowOnly");
-        // GA is defined per entry point (#4409): a DAG-only source must not read as
+        // GA is defined per entry point: a DAG-only source must not read as
         // job-submittable to an agent planning an execution.
         source.GetProperty("entryPoints").EnumerateArray()
             .Select(entry => entry.GetString()).Should().BeEquivalentTo(["workflow"]);
@@ -376,8 +389,8 @@ public sealed class McpResourceSerializationTests
         // implemented. Deriving the set from the enum rather than pinning the
         // literals keeps this honest when a reviewed
         // capability-maturity-overrides.v1.json row demotes a capability
-        // (honua-release#100 demoted scene.catalog to "deferred" when D0.2 moved
-        // 3D to 2026.2) while still failing on any value outside the vocabulary.
+        // (scene.catalog to "deferred", for example) while still failing on any
+        // value outside the vocabulary.
         // The resource serves the catalog unfiltered; that each non-implemented
         // tier is *explained* is gated by FeatureCatalogDriftTests.
         var maturityTiers = Enum.GetValues<CapabilityMaturity>()

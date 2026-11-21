@@ -13,10 +13,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.HealthCheck;
 
-/// <summary>
-/// Covers the scheduled audit hash-chain verifier (#2810): a broken link must raise a paged signal
-/// (the integrity health check flips Unhealthy) instead of being caught only on a manual /verify.
-/// </summary>
 public sealed class AuditChainVerificationTests
 {
     [UnitTest]

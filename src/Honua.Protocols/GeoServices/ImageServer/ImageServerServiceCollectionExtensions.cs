@@ -20,13 +20,13 @@ internal static class ImageServerServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         // Opt-in WebMercatorQuad tileInfo advertising. Defaults OFF to keep the
-        // dynamic (#1456-safe) ImageServer contract the ArcGIS Maps SDK for .NET
+        // dynamic ImageServer contract the ArcGIS Maps SDK for .NET
         // native runtime requires; deployments serving tiled Esri clients enable it
-        // via GeoServices:ImageServer:TileMetadata:Enabled (#1648).
+        // via GeoServices:ImageServer:TileMetadata:Enabled.
         services.Configure<ImageServerTileMetadataOptions>(
             configuration.GetSection(ImageServerTileMetadataOptions.SectionName));
 
-        // Additive, off-by-default opt-in for non-WebMercatorQuad WMTS matrix sets (#2665). With an
+        // Additive, off-by-default opt-in for non-WebMercatorQuad WMTS matrix sets. With an
         // empty list ImageServer advertises and serves only WebMercatorQuad, preserving the WMTS
         // CITE baseline; operators enable WorldCRS84Quad (or a registered custom gridset) via
         // GeoServices:ImageServer:TileMatrixSets:Enabled.
@@ -34,12 +34,12 @@ internal static class ImageServerServiceCollectionExtensions
             configuration.GetSection(ImageServerTileMatrixSetOptions.SectionName));
 
         // computeClassStatistics admission limits (per-class pixel budget, class count). Bounds the
-        // CPU/memory a class-signature request can consume (#2662).
+        // CPU/memory a class-signature request can consume.
         services.Configure<ImageServerClassStatisticsOptions>(
             configuration.GetSection(ImageServerClassStatisticsOptions.SectionName));
 
         // calculateVolume admission limits (per-AOI DEM pixel budget, geometry count). Bounds the
-        // CPU/memory a synchronous cut/fill volume request can consume (#2667, ADR-0065).
+        // CPU/memory a synchronous cut/fill volume request can consume (ADR-0065).
         services.Configure<ImageServerCalculateVolumeOptions>(
             configuration.GetSection(ImageServerCalculateVolumeOptions.SectionName));
 
@@ -65,8 +65,9 @@ internal static class ImageServerServiceCollectionExtensions
         services.AddScoped<ImageServerComputeTiePointsHandler>();
         services.AddScoped<ImageServerCalculateVolumeHandler>();
         services.AddScoped<ImageServerExportTilesHandler>();
+        services.AddExportTilesArtifactBudget(configuration);
 
-        // Durable tile-export raster producer + source fence (#2707). Registered as singletons so
+        // Durable tile-export raster producer + source fence. Registered as singletons so
         // the singleton TileExport job executor can hold them; each resolves the scoped raster store
         // and metadata graph from a per-job scope via IServiceScopeFactory.
         services.AddSingleton<Honua.Infrastructure.Tiles.ITileExportPackageProducer, Tiles.ImageServerTileExportProducer>();
@@ -79,7 +80,7 @@ internal static class ImageServerServiceCollectionExtensions
         // Register supporting services
         services.TryAddScoped<SpatialReferenceResolver>();
 
-        // Protocol-neutral class-statistics analyzer (#2662): reads training-AOI pixel vectors
+        // Protocol-neutral class-statistics analyzer: reads training-AOI pixel vectors
         // through the shared raster store and folds them into per-class signatures. TryAdd keeps a
         // single registration if another protocol registers the same analyzer.
         services.TryAddScoped<RasterClassStatisticsAnalyzer>();

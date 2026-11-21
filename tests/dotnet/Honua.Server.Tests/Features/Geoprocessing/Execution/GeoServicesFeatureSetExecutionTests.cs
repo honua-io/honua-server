@@ -73,7 +73,7 @@ public sealed class GeoServicesFeatureSetExecutionTests
     [InlineData(102100)]
     public async Task Project_EsriGeometryWithoutSridInput_ExecutesWithExpectedMercatorOrdinates(int esriWkid)
     {
-        // #4033: geometry.project declares fromSrid/toSrid but no 'srid'. The GPServer adapter translates
+        // Geometry.project declares fromSrid/toSrid but no 'srid'. The GPServer adapter translates
         // an esriGeometry without adding one (the task declares none), and the spatial reference travels
         // inside the EWKB, which the executor checks against fromSrid. 102100 is Esri's Web Mercator alias.
         var (x, y, fromSrid, toSrid) = esriWkid == 4326
@@ -111,7 +111,7 @@ public sealed class GeoServicesFeatureSetExecutionTests
     [UnitTest]
     public async Task GeometryFormat_EsriGeometryWithoutSridInput_ExecutesAndKeepsTheSpatialReference()
     {
-        // #4033: conversion.geometry-format declares no 'srid'; the esriGeometry spatial reference must
+        // Conversion.geometry-format declares no 'srid'; the esriGeometry spatial reference must
         // still reach the executor through the EWKB and come back on the result envelope.
         var translated = GPServerEsriInputTranslation.Translate(
             new Dictionary<string, string>

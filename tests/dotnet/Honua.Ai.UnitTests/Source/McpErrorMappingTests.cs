@@ -10,12 +10,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Verifies that <see cref="McpErrorMapper"/> translates every geoprocessing
-/// domain exception and protocol-level failure into the canonical MCP error
-/// envelope so clients can react to recoverable signals (approval, idempotency,
-/// auth) without parsing message strings.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpErrorMappingTests
 {
@@ -50,7 +44,7 @@ public sealed class McpErrorMappingTests
     [UnitTest]
     public void AuthorizationException_ScopeDenial_MapsToInsufficientScopeDistinctFromPermissionDenied()
     {
-        // A scope denial (#2851) must be a distinct structured reason from a grant denial so an
+        // A scope denial must be a distinct structured reason from a grant denial so an
         // operator can tell an under-scoped agent token apart from an under-privileged principal.
         var error = McpErrorMapper.Map(new GeoprocessingAuthorizationException(
             requiresAuthentication: false,
@@ -109,8 +103,8 @@ public sealed class McpErrorMappingTests
     [UnitTest]
     public void StoreUnavailableException_WithDependencyReceipt_MapsToUnavailableWithMissingDependency()
     {
-        // honua-release#202: Redis is optional for a local install, so an absent durable job
-        // store is a deployment fact, not a blip. The envelope must name the missing dependency,
+        // A local install may run without a durable job store, so its absence
+        // is a deployment fact, not a blip. The envelope must name the missing dependency,
         // the capability it disables, and the remediation — and must NOT be marked retryable,
         // because retrying cannot help until an operator changes the install.
         var error = McpErrorMapper.Map(new GeoprocessingStoreUnavailableException());
@@ -129,7 +123,7 @@ public sealed class McpErrorMappingTests
     {
         // MCP tools report failures as an isError result with a structured envelope rather than
         // a JSON-RPC error, so the receipt has to survive that projection too — otherwise the
-        // agent-facing surface is the one place that loses it (honua-release#202).
+        // agent-facing surface is the one place that loses it.
         var result = Honua.Ai.Protocols.Mcp.Tools.McpToolHelpers.ErrorResult(
             new GeoprocessingStoreUnavailableException());
 
@@ -279,7 +273,7 @@ public sealed class McpErrorMappingTests
         // A presented-but-invalid bearer token (bad signature, expired, wrong issuer, or an
         // audience minted for another resource) is an RFC 6750 invalid_token rejection. It
         // shares the unauthenticated code and re-authentication signal with the no-credential
-        // case so a client reacts identically (#2850).
+        // case so a client reacts identically.
         var error = McpErrorMapper.InvalidToken();
 
         error.Code.Should().Be(JsonRpcServerError);

@@ -15,11 +15,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for embed governance: key lifecycle, scoped policy
-/// evaluation, CORS/domain enforcement, rate limiting, analytics ingestion, and
-/// usage aggregation.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ApiKeyManagement)]
@@ -262,8 +257,6 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
         {
             Events =
             [
-                // Valid event first: under the old per-event persistence this would commit
-                // before the second event rejects, double-counting on client retry.
                 new EmbedAnalyticsEventDto { EventType = "view", Origin = "https://app.example.com", ServiceId = "services/Roads" },
                 // Invalid: a raw embed key in the payload is rejected by the validator, so the
                 // entire batch must be rejected and nothing persisted.

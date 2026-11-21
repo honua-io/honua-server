@@ -31,44 +31,21 @@ namespace Honua.Server.Tests.Features.Studio;
 [Collection("Database")]
 [Protocol(TestProtocols.Studio)]
 [Operation(Operations.StudioLifecycle)]
-public sealed class StudioPackageEndpointsTests : IAsyncLifetime
+public sealed partial class StudioPackageEndpointsTests : IClassFixture<StudioPackageEndpointsTests.StudioHost>
 {
-    private readonly CapturingAuditLog _auditLog = new();
+    private readonly CapturingAuditLog _auditLog;
     private readonly WebAppFixture _fixture;
-    private HttpClient _client = null!;
+    private readonly HttpClient _client;
 
-    public StudioPackageEndpointsTests()
+    public StudioPackageEndpointsTests(StudioHost host)
     {
-        _fixture = new WebAppFixture()
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-            })
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<IStudioPackageStore>();
-                services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
-                // The content-items list endpoint joins publication-registry lifecycle badges
-                // (REQ-004); use the in-memory store here (like ContentPublicationEndpointsTests)
-                // so the HTTP + join path is exercised without a migrated Postgres schema. The
-                // Postgres store's join query has dedicated integration coverage in
-                // PostgresContentPublicationStoreTests.
-                services.RemoveAll<IContentPublicationStore>();
-                services.AddSingleton<IContentPublicationStore, InMemoryContentPublicationStore>();
-                services.RemoveAll<IAuditLog>();
-                services.AddSingleton<IAuditLog>(_auditLog);
-            });
-    }
+        _fixture = host.Fixture;
+        _client = host.Client;
+        _auditLog = host.AuditLog;
 
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-        _client = _fixture.CreateAdminClient();
+        // The host is shared; each case asserts on the audit events of its own requests.
+        _auditLog.Events.Clear();
     }
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/studio/package-drafts/{draftId}/content-versions")]
@@ -78,7 +55,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
             {
-                PackageKey = "bodyless-version-save",
+                PackageKey = $"bodyless-version-save-{Guid.NewGuid():N}",
                 WorkspaceId = "studio",
                 Envelope = BuildEnvelope("1=1"),
             },
@@ -118,6 +95,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/content-items/{itemId}/rollback-requests")]
     public async Task StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback()
     {
+        var route = $"/studio/parcels-{Guid.NewGuid():N}";
         var familiesResponse = await _client.GetAsync("/api/v1/studio/package-families");
         familiesResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var families = await ReadAsync<StudioPackageFamilyCapabilities>(
@@ -130,9 +108,9 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
             {
-                PackageKey = "parcels-query",
+                PackageKey = $"parcels-query-{Guid.NewGuid():N}",
                 WorkspaceId = "studio",
-                Envelope = BuildEnvelope("1=1"),
+                Envelope = BuildEnvelope("1=1", route),
             },
             StudioApiJsonContext.Default.CreateStudioPackageDraftRequest);
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -197,7 +175,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
                 PackageKey = reopened.PackageKey,
                 WorkspaceId = reopened.WorkspaceId,
                 OwnerId = reopened.OwnerId,
-                Envelope = BuildEnvelope("POPULATION > 1000"),
+                Envelope = BuildEnvelope("POPULATION > 1000", route),
                 Generation = reopened.Generation,
             },
             StudioApiJsonContext.Default.UpdateStudioPackageDraftRequest);
@@ -234,7 +212,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             $"/api/v1/studio/content-items/{version.ItemId:D}/versions/{secondVersion.VersionId:D}/publish-requests",
             new CreateStudioPublicationRequest { WarningAcknowledgement = "reviewed" },
             StudioApiJsonContext.Default.CreateStudioPublicationRequest);
-        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, await publishResponse.Content.ReadAsStringAsync());
         var publication = await ReadAsync<StudioPublicationRequest>(
             publishResponse,
             StudioApiJsonContext.Default.ApiResponseStudioPublicationRequest);
@@ -276,7 +254,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     {
         var body = new CreateStudioPackageDraftRequest
         {
-            PackageKey = "idempotent-draft",
+            PackageKey = $"idempotent-draft-{Guid.NewGuid():N}",
             Envelope = BuildEnvelope("1=1"),
         };
 
@@ -317,7 +295,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
             {
-                PackageKey = "list-draft-only",
+                PackageKey = $"list-draft-only-{Guid.NewGuid():N}",
                 WorkspaceId = "studio",
                 OwnerId = "bob",
                 Envelope = BuildEnvelope("1=1"),
@@ -333,7 +311,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
             {
-                PackageKey = "list-published",
+                PackageKey = $"list-published-{Guid.NewGuid():N}",
                 WorkspaceId = "studio",
                 OwnerId = "alice",
                 Envelope = BuildEnvelope("1=1"),
@@ -377,7 +355,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         publishedRow.State.Should().Be(StudioContentItemState.Published);
         publishedRow.CreatedBy.Should().NotBeNullOrWhiteSpace();
 
-        // `owner` filters the item's real owner_id column (honua-server#3001). The published
+        // `owner` filters the item's real owner_id column. The published
         // draft above was created with an explicit OwnerId of "alice", so the item's owner_id
         // is "alice" (not the creating admin actor recorded as createdBy).
         var byOwner = await _client.GetAsync("/api/v1/studio/content-items?owner=alice");
@@ -464,7 +442,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests")]
     public async Task EndUserAuthorization_FlagOn_OwnerCrudSucceeds_CrossUserDenied_ElevatedGatedOnGrant()
     {
-        // honua-server#3001 role-fixture matrix: two genuinely non-admin principals (scoped
+        // Role-fixture matrix: two genuinely non-admin principals (scoped
         // admin API keys carrying neither a full-admin nor a layer-scoped write: grant --
         // see ApiKeyAuthenticationHandler.CreateSuccessfulAuthenticationResult -- authenticate
         // as role "scoped-api-key", never "admin") against a host with
@@ -485,7 +463,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             JsonContent(
                 new CreateStudioPackageDraftRequest
                 {
-                    PackageKey = "enduser-owner-query",
+                    PackageKey = $"enduser-owner-query-{Guid.NewGuid():N}",
                     WorkspaceId = "studio",
                     OwnerId = "someone-else",
                     Envelope = BuildEnvelope("1=1"),
@@ -498,7 +476,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             JsonContent(
                 new CreateStudioPackageDraftRequest
                 {
-                    PackageKey = "enduser-owner-query",
+                    PackageKey = $"enduser-owner-query-{Guid.NewGuid():N}",
                     WorkspaceId = "studio",
                     Envelope = BuildEnvelope("1=1"),
                 },
@@ -559,7 +537,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/app-packages/generate")]
     public async Task GeneratePackages_FlagOn_NonAdminScopedKeyDeniedBeforeHandler()
     {
-        // honua-server#3023: the end-user flag no longer hard-blocks non-admins at the route
+        // The end-user flag does not hard-block non-admins at the route
         // policy; instead each generate handler denies a grant-less non-admin at the elevated
         // authorization gate, before the request body is parsed or any draft is created.
         // Without a StudioDraft Execute operator grant the outcome stays 403.
@@ -653,7 +631,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         // Same non-admin scoped-key principal as the flag-on matrix above, but against the
         // class fixture, which never sets Studio:EndUserAuthorization:Enabled (default false)
         // -- NFR-001: a non-admin caller is denied regardless of ownership, matching the
-        // pre-#3001 admin-only posture exactly.
+        // admin-only posture exactly.
         var apiKeyStore = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
         var scopedKey = await apiKeyStore.CreateAsync("carol", ["studio:enduser"], null, null, CancellationToken.None);
         using var scopedClient = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", scopedKey.Key));
@@ -687,19 +665,10 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/studio/content-items")]
     public async Task ListEndpoints_FlagOn_UnresolvableCallerId_DeniedInsteadOfListingEverything()
     {
-        // PR #3018 review, item 3: once end-user mode is on, ResolveEffectiveOwnerFilter scopes
-        // a non-admin caller's list request to their own resolved id. If ResolveCallerId cannot
-        // resolve any id at all (for example a principal missing NameIdentifier/sub/api-key/name
-        // claims -- not reachable via any api-key-authenticated request in this codebase today,
-        // since every branch of ApiKeyAuthenticationHandler.CreateSuccessfulAuthenticationResult
-        // unconditionally stamps ClaimTypes.Name, but a real risk for other auth schemes such as
-        // mTLS certificates or an OIDC JWT missing its subject claim), the filter used to
-        // collapse to null, which NormalizeOptionalQueryValue treats as "no owner filter" --
-        // silently listing every draft/content item instead of denying. This test isolates the
-        // endpoint-level fix (DenyIfCallerUnresolvedForScopedListingAsync) from exactly how such a
-        // principal authenticates by substituting a fake IStudioAuthorizationService whose
-        // ResolveCallerId always returns null while IsAdmin returns false, simulating the shape
-        // of that principal regardless of transport.
+        // In end-user mode, list requests are scoped to the resolved caller ID. Deny a
+        // non-admin caller whose ID cannot be resolved rather than listing every item.
+        // A fake authorization service isolates this endpoint contract from transport
+        // authentication, including subject-less mTLS or OIDC principals.
         var auditLog = new CapturingAuditLog();
         await using var fixture = await CreateUnresolvableCallerFixtureAsync(auditLog);
         var apiKeyStore = fixture.Services.GetRequiredService<IAdminApiKeyStore>();
@@ -732,9 +701,9 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/studio/content-items")]
     public async Task ListContentItems_FlagOn_ResponseIncludesOwnerId()
     {
-        // PR #3018 review, item 4: StudioContentItemListRow.OwnerId was never populated by
-        // ToListRow, so GET /studio/content-items never returned the documented field even
-        // though the query already scopes by owner. Assert it is actually present in the
+        // StudioContentItemListRow.OwnerId must be populated by
+        // ToListRow so GET /studio/content-items returns the documented field.
+        // The query scopes by owner; assert the field is present in the
         // response.
         await using var endUserFixture = await CreateEndUserFixtureAsync();
         var apiKeyStore = endUserFixture.Services.GetRequiredService<IAdminApiKeyStore>();
@@ -758,9 +727,9 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/package-drafts")]
     public async Task AdminReadOnlyKey_CanReadButNotMutateStudio()
     {
-        // PR #3018 review: the StudioLifecycle policy replaced RequireAdminAuthorization() for
+        // The StudioLifecycle policy replaced RequireAdminAuthorization() for
         // this group, and must preserve the scoped admin-permission boundary that gate enforced
-        // (#1985) -- an admin:read-scoped key is still stamped with the admin role (it carries an
+        // -- an admin:read-scoped key is still stamped with the admin role (it carries an
         // admin: grant) and must keep read access while losing write, exactly as it could not
         // mutate any other admin-gated surface. This runs against the class fixture (flag off),
         // matching NFR-001's "byte-identical, including scoped-key denial semantics".
@@ -776,7 +745,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             JsonContent(
                 new CreateStudioPackageDraftRequest
                 {
-                    PackageKey = "admin-read-only-query",
+                    PackageKey = $"admin-read-only-query-{Guid.NewGuid():N}",
                     WorkspaceId = "studio",
                     Envelope = BuildEnvelope("1=1"),
                 },
@@ -826,7 +795,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/studio/content-items/{itemId}/versions/{versionId}")]
     public async Task ListAndGetVersions_FlagOn_NonOwnerSeesOnlyThePublishedVersion()
     {
-        // PR #3018 review: a published pointer must not open the item's entire immutable
+        // A published pointer must not open the item's entire immutable
         // history to a non-owner. Alice's item has two saved versions; only the first is
         // published. Bob (non-owner) must see exactly the published version in the list and
         // must be able to fetch it by id, but must be denied the second (current, unpublished)
@@ -896,7 +865,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
     public async Task ExportDeliverable_FlagOn_NonOwnerCanExportOnlyThePublishedVersion()
     {
-        // PR #3018 review, decision (documented in
+        // Authorization decision (documented in
         // docs/internal/admin-api/studio-package-lifecycle.md#authorization): a non-owner may
         // export a Studio content item's *published* version -- deliverable export mirrors the
         // read-visibility boundary above -- but never "latest" (which resolves by highest
@@ -969,7 +938,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             JsonContent(
                 new CreateStudioPackageDraftRequest
                 {
-                    PackageKey = "unpublished-export-map",
+                    PackageKey = $"unpublished-export-map-{Guid.NewGuid():N}",
                     WorkspaceId = "studio",
                     OwnerId = ownerId,
                     Envelope = BuildDeliverableEnvelope(StudioPackageFamily.Map, "honua_map_package.v1"),
@@ -994,7 +963,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests")]
     public async Task PublishRequest_FlagOn_AuthorizesAgainstItemOwnerNotVersionOwner()
     {
-        // PR #3018 review, round 5, item 1 (P1): studio_content_items.owner_id is immutable, but
+        // The studio_content_items.owner_id column is immutable, but
         // a version's OwnerId only snapshots who created *that* version (for example an
         // admin-assisted draft created under an existing item on a different principal's
         // behalf) and can diverge from the item's recorded owner. Publish-request moves the
@@ -1020,7 +989,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
 
         // OperatorAuthorizationEvaluator resolves its grant-lookup subject through the same
         // chain as StudioAuthorizationService.ResolveCallerId (NameIdentifier -> sub ->
-        // api_key_id -> api_key_name; PR #3024 review), so each API-key principal's grants are
+        // api_key_id -> api_key_name), so each API-key principal's grants are
         // provisioned under its own api_key_id -- the same id it owns content under. Both
         // callers hold a real "own" grant, exactly as two OIDC principals each independently
         // would: Bob's denial below rests entirely on the item-vs-version ownership boundary
@@ -1054,7 +1023,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/content-items/{itemId}/rollback-requests")]
     public async Task Rollback_FlagOn_AuthorizesAgainstItemOwnerNotVersionOwner()
     {
-        // PR #3018 review, round 5, item 1 (P1): same rationale as
+        // Same rationale as
         // PublishRequest_FlagOn_AuthorizesAgainstItemOwnerNotVersionOwner -- rollback moves the
         // item's current/published pointer, so it must authorize against the item's owner, not
         // the target version's OwnerId.
@@ -1102,7 +1071,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/studio/content-items/{itemId}/versions")]
     public async Task ListVersions_FlagOn_FiltersEachVersionByItsOwner()
     {
-        // PR #3018 review, round 6, item 1: content-item ownership cannot authorize the
+        // Content-item ownership cannot authorize the
         // complete immutable history when individual versions under that item have different
         // owners. Each returned version must satisfy the same owner-or-published rule as the
         // single-version endpoint.
@@ -1137,7 +1106,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/content-items/{itemId}/version-comparisons")]
     public async Task CompareVersions_FlagOn_BothSidesAuthorizedIndividually()
     {
-        // PR #3018 review, round 5, item 2 (P2): only the left version was authorized, so a
+        // Both versions must be authorized, otherwise a
         // caller owning leftVersionId could pass another principal's unpublished version as
         // rightVersionId and read it via the comparison output. Both requested versions must be
         // individually authorized.
@@ -1180,23 +1149,12 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         allowedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    /// <summary>
-    /// Grants used by the round-5 mixed-owner publish-request/rollback tests: self-service
-    /// "own"-sentinel Publish and Rollback rights on StudioDraft resources.
-    /// </summary>
     private static readonly IReadOnlyList<PermissionGrant> StudioDraftOwnPublishAndRollbackGrants =
     [
         new PermissionGrant { Service = "StudioDraft", Layer = "own", Operation = "Publish" },
         new PermissionGrant { Service = "StudioDraft", Layer = "own", Operation = "Rollback" },
     ];
 
-    /// <summary>
-    /// Creates a Studio content item via <paramref name="adminClient"/> owned by
-    /// <paramref name="itemOwnerId"/>, then a second draft under the SAME item explicitly owned
-    /// by <paramref name="versionOwnerId"/>, saved as a version -- reproducing the mixed-owner
-    /// scenario from PR #3018 review round 5 item 1 (a version whose OwnerId diverges from the
-    /// immutable item owner_id). Returns <c>(itemId, mixedOwnerVersionId)</c>.
-    /// </summary>
     private async Task<(Guid ItemId, Guid MixedOwnerVersionId)> CreateItemWithMixedOwnerVersionAsync(
         HttpClient adminClient,
         string itemOwnerId,
@@ -1215,11 +1173,6 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         return (itemId, mixedOwnerVersion.VersionId);
     }
 
-    /// <summary>
-    /// Creates an item owned by <paramref name="itemOwnerId"/>, establishes its first current
-    /// version, then creates (without saving) another draft under that item owned by
-    /// <paramref name="draftOwnerId"/>.
-    /// </summary>
     private async Task<(Guid ItemId, Guid CurrentVersionId, StudioPackageDraft MixedOwnerDraft)> CreateItemWithMixedOwnerDraftAsync(
         HttpClient adminClient,
         string itemOwnerId,
@@ -1266,10 +1219,6 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         return (itemOwnerVersion.ItemId, itemOwnerVersion.VersionId, mixedOwnerDraft);
     }
 
-    /// <summary>
-    /// Builds a fresh <see cref="WebAppFixture"/> with <c>Studio:EndUserAuthorization:Enabled</c>
-    /// on and the in-memory Studio store, for the honua-server#3001 end-user role-fixture tests.
-    /// </summary>
     private static async Task<WebAppFixture> CreateEndUserFixtureAsync(Action<IServiceCollection>? configureServices = null)
     {
         var fixture = new WebAppFixture()
@@ -1295,13 +1244,6 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         return fixture;
     }
 
-    /// <summary>
-    /// Builds a fresh <see cref="WebAppFixture"/> with <c>Studio:EndUserAuthorization:Enabled</c>
-    /// on and <see cref="IStudioAuthorizationService"/> replaced with a fake whose
-    /// <see cref="IStudioAuthorizationService.ResolveCallerId"/> always returns
-    /// <see langword="null"/> and <see cref="IStudioAuthorizationService.IsAdmin"/> always
-    /// returns <see langword="false"/>, for the PR #3018 review item 3 regression test.
-    /// </summary>
     private static async Task<WebAppFixture> CreateUnresolvableCallerFixtureAsync(CapturingAuditLog auditLog)
     {
         var fixture = new WebAppFixture()
@@ -1325,29 +1267,11 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         return fixture;
     }
 
-    /// <summary>
-    /// Creates a Studio content item owned by <paramref name="ownerId"/> with two saved
-    /// versions, publishing only the first, via <paramref name="adminClient"/> (admin bypasses
-    /// the elevated publish-request operator-grant gate, so this setup helper does not need the
-    /// owner to hold a StudioDraft grant). Returns
-    /// <c>(itemId, publishedVersionId, currentUnpublishedVersionId)</c>.
-    /// </summary>
     private async Task<(Guid ItemId, Guid PublishedVersionId, Guid CurrentVersionId)> CreatePublishedTwoVersionItemAsync(
         HttpClient adminClient,
         string ownerId)
         => await CreatePublishedTwoVersionItemAsync(adminClient, ownerId, BuildEnvelope("1=1"), "owner-scoped-query");
 
-    /// <summary>
-    /// Map-family variant of <see cref="CreatePublishedTwoVersionItemAsync(HttpClient, string)"/>
-    /// for the deliverable-export tests, which need a family the exporter can actually render
-    /// (kind must match family) <em>and</em> a body that satisfies
-    /// <c>StudioPackageValidator</c>'s strict <c>MapPackage</c> deserialization for the publish
-    /// request to be Accepted (required members: <c>mapPackageId</c>, <c>format</c>,
-    /// <c>status</c>, <c>createdAt</c>) -- the lighter body <see cref="BuildDeliverableEnvelope"/>
-    /// uses elsewhere in this file is fine for the composer (title/description/layers/basemap)
-    /// but throws during that stricter deserialization, which the plain export round-trip tests
-    /// never exercise (they never publish).
-    /// </summary>
     private async Task<(Guid ItemId, Guid PublishedVersionId, Guid CurrentVersionId)> CreatePublishedTwoVersionMapItemAsync(
         HttpClient adminClient,
         string ownerId)
@@ -1424,7 +1348,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/package-drafts")]
     public async Task CreateDraft_WithNullCollections_Returns201WithEmptyCollections()
     {
-        // Regression: honua-server#2351 — an explicit JSON null for bindings/dependencies/
+        // An explicit JSON null for bindings/dependencies/
         // provenance must be treated like an omitted (empty) collection: a clean 201 with
         // empty collections and no spurious ArgumentNullException logged on the success path.
         const string requestJson = """
@@ -1477,7 +1401,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
             {
-                PackageKey = "stale-generation-query",
+                PackageKey = $"stale-generation-query-{Guid.NewGuid():N}",
                 WorkspaceId = "studio",
                 Envelope = BuildEnvelope("1=1"),
             },
@@ -1531,7 +1455,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
             {
-                PackageKey = "invalid-publication-intent-query",
+                PackageKey = $"invalid-publication-intent-query-{Guid.NewGuid():N}",
                 WorkspaceId = "studio",
                 Envelope = BuildEnvelope("1=1"),
             },
@@ -1570,11 +1494,9 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/map-packages/generate")]
     public async Task CreateMapPackageDraft_StructuredInput_ReturnsDraftWithStableIdentifier()
     {
-        // ADR-0076 (#3255): the route is a deterministic draft-creation entry point. It takes
-        // structured composition input, calls no model, and must hand back a real package with a
-        // stable map_ identifier -- the behavioural guard the ADR asks for, at the REST surface.
-        // sourceBindings was previously rejected outright and initialView was published in the
-        // schema and then dropped; both are honored here.
+        // ADR-0076 defines deterministic draft creation from structured input without a
+        // model call. Return a real package with a stable map_ identifier and honor both
+        // sourceBindings and initialView.
         using var body = new StringContent(
             """
             {
@@ -1621,7 +1543,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/map-packages/generate")]
     public async Task GenerateMapPackage_FlagOn_NonAdminRequiresExecuteGrant()
     {
-        // PR #3018 review, round 7 (P1): the group-level end-user widening must not implicitly
+        // The group-level end-user widening must not implicitly
         // open the package draft-creation endpoints to every authenticated principal -- draft
         // creation is an elevated operation requiring a StudioDraft Execute grant for non-admins.
         // An empty JSON body is sufficient on both sides of the boundary: the authorization
@@ -1650,7 +1572,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
 
         // With the self-service "own"-sentinel Execute grant, provisioned under Alice's real
         // api_key_id-resolved subject id (the evaluator mirrors
-        // StudioAuthorizationService.ResolveCallerId; PR #3024 review): past the gate, into
+        // StudioAuthorizationService.ResolveCallerId): past the gate, into
         // prompt validation.
         roleStore.Grant(
             aliceKey.Record.Id.ToString("D"),
@@ -1658,9 +1580,9 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         var allowedMap = await aliceClient.PostAsync("/api/v1/studio/map-packages/generate", EmptyJson());
         allowedMap.StatusCode.Should().Be(HttpStatusCode.Created);
 
-        // Per-key isolation (PR #3024 review, P1): Alice's Execute grant must not authorize
-        // Bob's key -- previously every API-key principal resolved to the same empty subject
-        // id, so any one key's grant opened generation to all of them.
+        // Per-key isolation: Alice's Execute grant must not authorize
+        // Bob's key. Each API-key principal must resolve to a distinct subject id so
+        // one key's grant cannot open generation to all of them.
         var bobDenied = await bobClient.PostAsync("/api/v1/studio/map-packages/generate", EmptyJson());
         bobDenied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var bobProblem = JsonSerializer.Deserialize<JsonElement>(await bobDenied.Content.ReadAsStringAsync());
@@ -1676,7 +1598,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/app-packages/generate")]
     public async Task CreateAppPackageDraft_StructuredInput_ReturnsDraftWithStableIdentifier()
     {
-        // ADR-0076 (#3255) counterpart of the map route: deterministic, model-free, and returning
+        // ADR-0076 counterpart of the map route: deterministic, model-free, and returning
         // a real package with a stable app_ identifier.
         using var body = new StringContent(
             """{"templateId":"basic-app","mapPackageId":"map_00000000000000000000000000000000"}""",
@@ -1746,7 +1668,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
     public async Task ExportDeliverable_NoRenderableTypeface_ReturnsServiceUnavailableWithMachineReadableCode()
     {
-        // honua-server#4908: when the composer cannot render (no font on the host resolves
+        // When the composer cannot render (no font on the host resolves
         // glyphs), the export must fail loudly with a non-200 status and a machine-readable
         // reason -- never a 200 over a blank artifact. Route the whole export surface through a
         // fake exporter on a dedicated fixture so the assertion does not depend on this test
@@ -1824,7 +1746,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
             {
-                PackageKey = $"{family.ToString().ToLowerInvariant()}-export",
+                PackageKey = $"{family.ToString().ToLowerInvariant()}-export-{Guid.NewGuid():N}",
                 WorkspaceId = "studio",
                 Envelope = BuildDeliverableEnvelope(family, format),
             },
@@ -1869,18 +1791,6 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         };
     }
 
-    /// <summary>
-    /// A map envelope whose body satisfies both <c>StudioDeliverableComposer</c> (which
-    /// reads <c>title</c>/<c>description</c>/<c>layers</c>/<c>basemap</c> loosely) and
-    /// <c>StudioPackageValidator</c>'s <c>ValidateFamilyBody</c>, which deserializes the body
-    /// strictly into the geoprocessing <c>MapPackage</c> record (required:
-    /// <c>mapPackageId</c>/<c>format</c>/<c>status</c>/<c>createdAt</c>) -- unlike
-    /// <see cref="BuildDeliverableEnvelope"/>'s body, which is fine for the composer but throws
-    /// during that stricter deserialization, producing a Rejected (not Accepted) publication
-    /// request. Needed by the honua-server#3001 end-user export-authorization tests, which
-    /// (unlike the plain export round-trip tests above) must publish the item.
-    /// Each layer also needs a stable composition id so publication validation accepts it.
-    /// </summary>
     private static StudioPackageEnvelope BuildExportableMapEnvelope()
     {
         const string bodyJson = """
@@ -1909,7 +1819,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     private static readonly byte[] PngMagic = [0x89, 0x50, 0x4E, 0x47];
     private static readonly byte[] PdfMagic = [0x25, 0x50, 0x44, 0x46]; // %PDF
 
-    // honua-server#4907: an approved publication reported activeUrl = its intent route
+    // An approved publication reported activeUrl = its intent route
     // ("/maps/<key>"), which nothing served (404). activeUrl must now be followable: it resolves
     // to the item's Active (published-pointer) version, so a republish and a rollback both move
     // what it serves and a superseded version is never returned.
@@ -1983,7 +1893,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         (await ReadPublishedAsync(anonymous, movedUrl)).VersionId.Should().Be(version.VersionId);
     }
 
-    // honua-server#5788: the publish-request read a client polls to Active must carry the final
+    // The publish-request read a client polls to Active must carry the final
     // publication URL -- the same activeUrl the operation handle names -- and only once the
     // request is accepted; a pending or rejected request has no URL.
     [IntegrationTest]
@@ -2026,7 +1936,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         }
     }
 
-    // honua-server#5449: the version read returns the exact bytes the server hashed, so a client
+    // The version read returns the exact bytes the server hashed, so a client
     // recomputes contentHash as their SHA-256 instead of only checking that two readers agree.
     // The where clause carries non-ASCII and HTML-sensitive characters the serializer escapes.
     [IntegrationTest]
@@ -2219,7 +2129,12 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         return envelope.Data!;
     }
 
+    // Accepted publications claim their route, so each envelope gets its own unless a case
+    // passes one route for all of its versions.
     private static StudioPackageEnvelope BuildEnvelope(string where)
+        => BuildEnvelope(where, $"/studio/parcels-{Guid.NewGuid():N}");
+
+    private static StudioPackageEnvelope BuildEnvelope(string where, string route)
     {
         using var body = JsonDocument.Parse($$"""{"where":"{{where}}"}""");
         return new StudioPackageEnvelope
@@ -2257,12 +2172,12 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
                     Rel = "generated-by",
                 },
             ],
-            PublicationIntent = new StudioPublicationIntent { Route = "/studio/parcels", Visibility = "organization" },
+            PublicationIntent = new StudioPublicationIntent { Route = route, Visibility = "organization" },
             Body = body.RootElement.Clone(),
         };
     }
 
-    private sealed class CapturingAuditLog : IAuditLog
+    internal sealed class CapturingAuditLog : IAuditLog
     {
         public List<AuditEvent> Events { get; } = [];
 
@@ -2274,14 +2189,6 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// Fake <see cref="IStudioAuthorizationService"/> that simulates a non-admin principal whose
-/// caller id cannot be resolved (PR #3018 review item 3): end-user mode is always enabled, the
-/// principal is never treated as admin, and <see cref="ResolveCallerId"/> always returns
-/// <see langword="null"/> regardless of the actual claims presented, isolating
-/// StudioPackageEndpoints's "deny when unresolvable" fix from exactly how such a principal would
-/// authenticate in production.
-/// </summary>
 file sealed class UnresolvableCallerStudioAuthorizationService : IStudioAuthorizationService
 {
     public bool IsEndUserAuthorizationEnabled => true;
@@ -2306,16 +2213,6 @@ file sealed class UnresolvableCallerStudioAuthorizationService : IStudioAuthoriz
             "Authentication is required for Studio package lifecycle operations."));
 }
 
-/// <summary>
-/// Fake <see cref="IRoleStore"/> that returns pre-seeded <see cref="PermissionGrant"/>s for a
-/// given user id, for the PR #3018 review round 5 item 1 mixed-owner publish-request/rollback
-/// tests -- these need a real, evaluatable operator grant (unlike the rest of this file's
-/// grant-denial tests, which only assert the "no grant present" path) so the fix can be proven
-/// against a caller who legitimately holds a StudioDraft grant but is not the item's owner.
-/// Only <see cref="GetEffectivePermissionsAsync"/> is implemented; every other member is unused
-/// by <see cref="Honua.Infrastructure.Authentication.OperatorAuthorizationEvaluator"/>'s
-/// grant-lookup path exercised here.
-/// </summary>
 file sealed class FakeGrantingRoleStore : IRoleStore
 {
     private readonly Dictionary<string, List<PermissionGrant>> _grantsByUserId = new(StringComparer.Ordinal);
@@ -2363,11 +2260,6 @@ file sealed class FakeGrantingRoleStore : IRoleStore
         => throw new NotSupportedException("Not used by the tests exercising this fake.");
 }
 
-/// <summary>
-/// Fake <see cref="IStudioDeliverableExporter"/> that always reports the render-unavailable
-/// outcome (honua-server#4908), so the endpoint's HTTP mapping can be proven without depending
-/// on whether this test host happens to have a font that resolves glyphs.
-/// </summary>
 file sealed class RenderUnavailableStudioDeliverableExporter : IStudioDeliverableExporter
 {
     public const string ReasonCode = "studio_deliverable/no_renderable_typeface";

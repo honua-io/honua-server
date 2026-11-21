@@ -16,13 +16,6 @@ using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Worker-side coverage for the native-profile GDAL executors. The fake-runner
-/// tests pin routing, input validation, guardrails, and the canonical
-/// artifact-publication contract without requiring GDAL on the host. The
-/// integration test exercises the real <c>ogr2ogr</c> CLI when it is present in
-/// the worker image / dev host.
-/// </summary>
 public sealed class GdalWorkerExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-test";
@@ -87,7 +80,7 @@ public sealed class GdalWorkerExecutorTests
         dispatcher.AcceptedRuntimeProfiles.Should().NotContain(RuntimeProfiles.Managed);
         dispatcher.SupportedProcessIds.Should().Contain(new[] { "gdal.ogr2ogr", "gdal.gdalwarp" });
 
-        // The raster analysis & terrain GP tool packs (#2141, #2239, #2240) must all be
+        // The raster analysis & terrain GP tool packs must all be
         // routable by the worker dispatcher, including the ids served by a custom worker
         // step rather than a stock GDAL CLI (interpolate-kriging's own solver,
         // euclidean-allocation's Python step).
@@ -302,7 +295,7 @@ public sealed class GdalWorkerExecutorTests
             new GdalRasterZonalStatisticsJobExecutor(runner, options, NullLogger<GdalRasterZonalStatisticsJobExecutor>.Instance),
             new GdalMultidimCoverageMetadataJobExecutor(runner, options, NullLogger<GdalMultidimCoverageMetadataJobExecutor>.Instance),
             new PdalPointCloudConvertJobExecutor(runner, options, NullLogger<PdalPointCloudConvertJobExecutor>.Instance),
-            // Raster analysis & terrain GP tool packs (#2141, #2239, #2240).
+            // Raster analysis & terrain GP tool packs.
             new GdalRasterResampleJobExecutor(runner, options, NullLogger<GdalRasterResampleJobExecutor>.Instance),
             new GdalRasterInterpolateJobExecutor(runner, options, NullLogger<GdalRasterInterpolateJobExecutor>.Instance),
             new GdalRasterMosaicJobExecutor(runner, options, NullLogger<GdalRasterMosaicJobExecutor>.Instance),

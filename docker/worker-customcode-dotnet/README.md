@@ -14,9 +14,9 @@ common .NET geo stack + the Honua .NET SDK baked into the NuGet cache.
 
 ## Image contents
 
-- **Base:** `ghcr.io/osgeo/gdal:ubuntu-full-3.12.4` (pinned) — the full GDAL driver set
+- **Base:** `ghcr.io/osgeo/gdal:ubuntu-full-3.13.1` (pinned, Ubuntu 26.04 Resolute matching the .NET 11 SDK image) — the full GDAL driver set
   for tools that shell out to or P/Invoke GDAL.
-- Added: the **.NET 10 SDK** (pinned channel), `git`, `ca-certificates`.
+- Added: the **.NET 11 SDK** (copied from the digest-pinned SDK image of the build stage), `git`, `ca-certificates`.
 - Pre-warmed NuGet cache (no per-job restore for the common case): **NetTopologySuite**,
   `NetTopologySuite.IO.GeoJSON`, **`Honua.Sdk`** (the .NET SDK umbrella), and the **GDAL
   C# bindings** (`MaxRev.Gdal.Core` + `MaxRev.Gdal.LinuxRuntime.Minimal`).
@@ -68,11 +68,15 @@ the SDK-as-transport / GDAL-as-engine pattern.
 ## The contract (job inputs)
 
 Identical to the python runtime (one contract, two runtimes). The Batch container
-receives the auth spine as **env vars** (standard Batch secret injection, so the token
-is strippable):
+receives the auth spine as **env vars** (standard Batch secret injection, so they
+are strippable):
 
 - `HONUA_BASE_URL`
-- `HONUA_JOB_TOKEN` — the scoped, job-bound bearer token (from the server)
+- `HONUA_JOB_REDEMPTION_CODE` — a single-use code the harness exchanges once, before
+  fetching source, for the scoped job-bound token
+  (`POST /api/geoprocessing/jobs/{jobId}/attempts/{attempt}/capability`); the server
+  never puts the token itself in the AWS Batch job
+- `HONUA_JOB_TOKEN` — the scoped token directly, for local runs only
 
 The `customcode.*` parameters are resolved in this order (see
 `harness/src/Honua.CustomCode.Harness/JobSpec.cs`):
@@ -174,6 +178,17 @@ a fake git/build/SDK-client/uploader. Run:
 ```bash
 cd docker/worker-customcode-dotnet/harness
 dotnet test Honua.CustomCode.slnx --configuration Release -p:NuGetAudit=false
+```
+
+Every harness project and the restore-only warm-cache project (`harness/warm/`) carry a
+committed `packages.lock.json`; the image and CI restore in locked mode, and the image build
+refuses a project without a lock. After changing a version in `harness/Directory.Packages.props`
+or adding a project, regenerate the locks with the SDK of the image's `DOTNET_SDK_IMAGE`:
+
+```bash
+cd docker/worker-customcode-dotnet/harness
+dotnet restore Honua.CustomCode.slnx -p:RestoreLockedMode=false -p:RestoreForceEvaluate=true
+dotnet restore warm/Honua.CustomCode.Warm.csproj -p:RestoreLockedMode=false -p:RestoreForceEvaluate=true
 ```
 
 Before the first typed SDK operation, the harness authenticates the job capability at `/healthz/live` with a 30-second startup budget. This waits for the provider-to-server Running transition using ordinary HTTP status codes, including when the eventual operation uses GeoServices error envelopes. Only the read-only readiness probe is retried; the SDK operation is sent once.

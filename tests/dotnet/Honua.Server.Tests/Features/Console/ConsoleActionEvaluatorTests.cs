@@ -14,11 +14,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Console;
 
-/// <summary>
-/// Verifies Console RBAC evaluator decisions across the 7 Console verbs and the
-/// route entitlement surface. The evaluator is server-authored, so these tests
-/// guard the canonical decision matrix.
-/// </summary>
 public class ConsoleActionEvaluatorTests
 {
     private static readonly IOptions<RbacOptions> RbacOpts = Options.Create(new RbacOptions());
@@ -47,7 +42,7 @@ public class ConsoleActionEvaluatorTests
 
     private static ClaimsPrincipal Anonymous() => new(new ClaimsIdentity());
 
-    private static ConsoleContentItem Sample(ConsoleVisibility visibility = ConsoleVisibility.Organization, string owner = "other-user", ConsoleContentItemType type = ConsoleContentItemType.SavedMap)
+    private static ConsoleContentItem Sample(ConsoleVisibility visibility = ConsoleVisibility.Organization, string owner = "other-user", ConsoleContentItemType type = ConsoleContentItemType.Map)
     {
         return new ConsoleContentItem
         {
@@ -293,9 +288,6 @@ public class ConsoleActionEvaluatorTests
     [UnitTest]
     public async Task Viewer_OnOthersPersonalItem_HasNoView()
     {
-        // Viewer principal has metadata.read; this test guards the
-        // CanView fallthrough fix — metadata.read alone must not bypass
-        // Personal owner-only visibility.
         var evaluator = BuildEvaluator();
         var item = Sample(visibility: ConsoleVisibility.Personal, owner: "other-user");
 

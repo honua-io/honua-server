@@ -13,13 +13,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Authorization;
 
-/// <summary>
-/// Integration tests for <see cref="PostgresRoleStore"/> (#1374) using the shared
-/// Testcontainers Postgres fixture. Exercises CRUD parity with the in-memory
-/// store, built-in role protection, multi-role effective-permission resolution,
-/// and restart durability against an isolated per-test schema mirroring
-/// migration 041.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresRoleStoreTests(PostgresFixture fixture)
 {
@@ -312,7 +305,7 @@ public sealed class PostgresRoleStoreTests(PostgresFixture fixture)
     [IntegrationTest]
     public async Task GetEffectivePermissions_RbacTablesAbsent_ReturnsNoGrants_DoesNotThrow()
     {
-        // Regression (#1385): integration-test fixtures and fresh/legacy DBs that
+        // Integration-test fixtures and fresh/legacy DBs that
         // never ran migration 041 lack the rbac_* tables. The store must treat the
         // missing relation (42P01) as "no grants" so PermissionResolver yields
         // NoMatch and AccessPolicyHelpers falls back to the coarse AccessPolicy,

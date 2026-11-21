@@ -36,7 +36,7 @@ internal static class GeoprocessingReservedParameterPolicy
         CustomCodeJobContract.DepsManifestParam,
         CustomCodeJobContract.ParamsJsonParam,
         CustomCodeJobContract.DeclaredScopeParam,
-        // Logical process whose live release binding admits the job (honua-server#6221).
+        // Logical process whose live release binding admits the job.
         GpProcessReleaseAdmission.ProcessParam,
         // Legacy declared scope; validated to be within the submitter's own reach.
         CustomCodeOwnerScopeCapture.DeclaredScopeMetadataKey,

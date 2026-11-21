@@ -16,16 +16,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.LocalRunner;
 
-/// <summary>
-/// Unit coverage for the headless <see cref="GeoprocessingLocalRunner"/> (GP Devkit,
-/// issue #2123) against a managed geometry op. Proves the runner drives a real
-/// <see cref="IProcessExecutor"/> with no Redis/queue/job-store, projecting step-0
-/// inputs into the durable parameter contract and surfacing the published artifact,
-/// structured logs, status, and wall-clock timing. The GDAL-op path (the actual CLI
-/// command surfaced for a native op) is covered offline in
-/// <c>Honua.Worker.Gdal.Tests.GeoprocessingLocalRunnerGdalTests</c> against a fake
-/// GDAL command runner.
-/// </summary>
 public sealed class GeoprocessingLocalRunnerTests
 {
     // POINT(0 0) — the same WKB the durable-runtime buffer tests use.

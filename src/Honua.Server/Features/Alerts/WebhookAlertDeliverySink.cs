@@ -96,7 +96,7 @@ internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
             var signature = WebhookDeliveryHelper.ComputeSignature(signingSecret.Value!, timestamp, alertEvent.PayloadJson);
 
             // Ops notifications are not linked to an alert rule; emit the ops source
-            // instead of a misleading "0" rule reference (#2427).
+            // instead of a misleading "0" rule reference.
             if (OpsNotificationPresentation.TryResolve(alertEvent) is { } ops)
             {
                 WebhookDeliveryHelper.AddValidatedHeader(request.Headers, "X-Honua-Alert-Source", ops.Source);

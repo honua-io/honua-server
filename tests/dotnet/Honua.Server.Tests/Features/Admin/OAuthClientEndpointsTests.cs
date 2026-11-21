@@ -13,12 +13,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for the first-class OAuth2 client-registry and scope-catalogue
-/// admin endpoints (ADR-0053 Increment 2, #1888): client CRUD, scope catalogue
-/// CRUD, secret returned only at create (never on list), and admin authorization
-/// required on the management surface.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]
@@ -130,6 +124,30 @@ public sealed class OAuthClientEndpointsTests : IAsyncLifetime
 
         var afterDelete = await _client.GetAsync($"/api/v1/admin/oauth-clients/{created.Client.Id}");
         Assert.Equal(HttpStatusCode.NotFound, afterDelete.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/oauth-scopes")]
+    [Endpoint("DELETE /api/v1/admin/oauth-scopes/{scope}")]
+    public async Task OperationalWriteKey_CannotDefineOrDeleteOAuthScopes()
+    {
+        var keyResponse = await _client.PostAsJsonAsync(
+            "/api/v1/admin/api-keys",
+            new CreateAdminApiKeyRequest { Name = "operational-scope-key", Permissions = ["admin:read", "admin:write", "read:*"] },
+            _jsonOptions);
+        Assert.Equal(HttpStatusCode.Created, keyResponse.StatusCode);
+        var operational = JsonSerializer.Deserialize<ApiResponse<AdminApiKeySecretResponse>>(
+            await keyResponse.Content.ReadAsStringAsync(), _jsonOptions)!.Data!;
+        using var operationalClient = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", operational.Key));
+
+        var define = await operationalClient.PutAsJsonAsync(
+            "/api/v1/admin/oauth-scopes",
+            new DefineOAuthScopeRequest { Scope = "operational:widen", Permissions = ["admin"] },
+            _jsonOptions);
+        var delete = await operationalClient.DeleteAsync("/api/v1/admin/oauth-scopes/features:read");
+
+        Assert.Equal(HttpStatusCode.Forbidden, define.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, delete.StatusCode);
     }
 
     [IntegrationTest]

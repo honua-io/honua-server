@@ -19,12 +19,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20;
 
-/// <summary>
-/// Covers the WCS 2.0 GetCoverage Zarr slice spatial-trim semantics (#2796): an
-/// over-extent trim clamps to the intersection with the coverage extent instead of
-/// 404ing, matching the plain IRasterStore path. Uses a sub-global coverage extent so
-/// the over-extent trim stays within valid geographic coordinates.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wcs201)]
 public sealed class Wcs20ZarrTrimEndpointsTests : IAsyncLifetime
@@ -79,8 +73,7 @@ public sealed class Wcs20ZarrTrimEndpointsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
     public async Task Wcs_GetCoverage_OverExtentZarrTrim_ClampsToCoverageAndReturnsPng()
     {
-        // The trim reaches past the coverage extent on every side; previously the reader
-        // required full containment and 404ed, now it clamps to the intersection.
+        // A trim extending past every coverage edge clamps to the intersection.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/WCS" +
             "?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0" +

@@ -17,13 +17,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Scene;
 
-/// <summary>
-/// Hermetic unit tests for the wired LAS point-cloud ingest executor (#1201).
-/// They exercise the full decode → tile → register → promote pipeline against a
-/// temp output root and an in-memory registration stub, proving the produced
-/// <c>.pnts</c> tileset is written to a servable asset root with point-cloud
-/// dataset semantics without standing up Postgres or an HTTP host.
-/// </summary>
 public sealed class PointCloudScenePublishExecutorTests : IDisposable
 {
     private readonly string _outputRoot;
@@ -224,7 +217,7 @@ public sealed class PointCloudScenePublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Ingest_PromotionFails_MarksActivityAsErrorAndRethrows()
     {
-        // PA-203: IngestAsync already starts a span but never marked it failed when the
+        // IngestAsync already starts a span but never marked it failed when the
         // stage -> register -> promote pipeline's final promote step throws. Force
         // Directory.Move to fail by pre-occupying the final path with a plain file (not a
         // directory), which is exactly what the promotion catch/compensation branch guards

@@ -24,9 +24,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests for GeoParquet import (upload) endpoint.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
@@ -481,7 +478,7 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         responseContent.Should().Contain("GeoParquet");
         responseContent.Should().Contain("\"success\":true");
 
-        // honua-server#4396: the response substring above proves the import *reported* success.
+        // The response substring above proves the import *reported* success.
         // Read the persisted rows back and assert the values the fixture actually wrote, so an
         // import that committed the wrong geometry, dropped the attributes or reprojected the
         // point cannot pass. The import stages into a provider-chosen physical table

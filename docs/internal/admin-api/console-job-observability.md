@@ -104,11 +104,11 @@ Supported query parameters:
 | `alertId` | Matches `honua.job.alert_id`. |
 | `from` | Inclusive ISO-8601 lower bound for `createdAt`. |
 | `to` | Exclusive ISO-8601 upper bound for `createdAt`. |
-| `limit` | Defaults to `50`; Redis-backed store clamps to `1..200`. |
+| `limit` | Defaults to `50`; the PostgreSQL job store clamps to `1..200`. |
 | `cursor` | Opaque cursor returned as `nextCursor`; invalid cursors return `400`. |
 
-String filters are trimmed and compared case-insensitively by the Redis-backed
-store. Clients should not rely on case-sensitive distinctions when filtering
+String filters are trimmed and compared case-insensitively by the PostgreSQL
+job store. Clients should not rely on case-sensitive distinctions when filtering
 the Console jobs list.
 
 The list path applies authorization per returned job. A page can therefore
@@ -129,7 +129,7 @@ perform full log reads.
 | `claimedBy`, `claimedAt`, `lastHeartbeatAt` | Worker claim and heartbeat state. |
 | `cancellationRequestedAt` | Set when remote or cooperative cancellation is in progress. |
 | `warnings[]` | Retained warnings on the durable record. |
-| `failure` | `{ message, classification }`; classification is `execution_failed` or `cancelled`. |
+| `failure` | `{ message, classification }`; classification is `execution_failed`, `worker_lost`, `timeout` or `cancelled`, the same value `/diagnostics` reports. |
 | `retryPolicy` | `{ maxAttempts, strategy, baseDelayMs, maxDelayMs }`. |
 | `parentJobId`, `childJobIds[]` | Workflow parent/child metadata from canonical job parameters. |
 | `selectedMetadata` | Safe metadata keys only; secret-like keys/values are omitted and long values are truncated to 512 characters. |
@@ -169,7 +169,7 @@ for the export definition, run-history, and traffic contract.
 }
 ```
 
-`limit` defaults to `100`; the Redis log store clamps to `1..500`. Cursors are
+`limit` defaults to `100`; the PostgreSQL log store clamps to `1..500`. Cursors are
 opaque offset tokens. Invalid cursors return `400`.
 
 If the execution log store is not registered, the endpoint still returns `200`
@@ -220,7 +220,7 @@ Action advertisement rules:
 
 | Action | Advertised when | Additional checks |
 | --- | --- | --- |
-| `cancel` | Job status is `Queued`, `Provisioning`, or `Running`. | Caller needs `OperatorOperation.Execute`; destructive-approval policy can require approval. |
+| `cancel` | Job status is `Queued`, `Provisioning`, or `Running`. | Caller needs `OperatorOperation.Execute`; destructive-approval policy can require approval. After a cancel is recorded (`cancellationRequestedAt`), the job can keep running until its worker or the reconciler stops it; meanwhile `allowed = false` with `disabledReason` `cancellation requested; waiting for the worker to stop`. |
 | `retry` | Job status is `Failed` or `Cancelled`. | Caller needs execute permission and `JobRetryPolicy` must allow another attempt. Local jobs also require `IJobQueue`; remote jobs require a registered backend that supports retry. |
 
 Use the `actions[]` response, not the presence of `links.cancel` or
@@ -302,8 +302,9 @@ event row for every job state transition.
 
 ## Retention and storage notes
 
-Redis-backed execution jobs and structured logs use a default 7-day retention.
-The job store maintains sorted-set indexes for list filters and removes stale
-index members opportunistically during queries. Log and artifact paging use
+Execution jobs and structured logs live in PostgreSQL with a default 7-day
+retention (`Jobs:Store:JobRetention`, `Jobs:Store:LogRetention`); logs of
+terminal jobs are kept a fixed 7 days. List filters match normalized
+lookup keys stored on each job row. Log and artifact paging use
 bounded cursor reads so Console views do not load every entry or artifact into
 memory.

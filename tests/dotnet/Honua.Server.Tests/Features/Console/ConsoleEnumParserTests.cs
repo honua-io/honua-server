@@ -8,21 +8,52 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Console;
 
-/// <summary>
-/// Whitelist checks reject undefined numeric enum values that
-/// <c>JsonStringEnumConverter</c> would otherwise admit during deserialization.
-/// </summary>
 public class ConsoleEnumParserTests
 {
+    [UnitTheory]
+    [InlineData("dataset", "Dataset")]
+    [InlineData("map", "Map")]
+    [InlineData("app", "App")]
+    public void TryParse_ContentKind_UsesCanonicalVocabulary(string wireName, string modelName)
+    {
+        Assert.True(ConsoleEnumParser.TryParse(wireName, out ConsoleContentItemType itemType));
+        Assert.Equal(modelName, itemType.ToString());
+        Assert.Equal($"\"{wireName}\"", System.Text.Json.JsonSerializer.Serialize(itemType));
+    }
+
+    [UnitTheory]
+    [InlineData("saved-map")]
+    [InlineData("SavedMap")]
+    [InlineData("savedMap")]
+    [InlineData("generated-app")]
+    [InlineData("GeneratedApp")]
+    [InlineData("generatedApp")]
+    public void TryParse_ContentKind_RejectsRetiredNames(string retiredName)
+    {
+        Assert.False(ConsoleEnumParser.TryParse(retiredName, out ConsoleContentItemType _));
+    }
+
+    [UnitTheory]
+    [InlineData("saved-map")]
+    [InlineData("SavedMap")]
+    [InlineData("generated-app")]
+    [InlineData("GeneratedApp")]
+    public void Deserialize_ContentKind_RejectsRetiredNames(string retiredName)
+    {
+        Assert.Throws<System.Text.Json.JsonException>(() =>
+            System.Text.Json.JsonSerializer.Deserialize<ConsoleContentItemType>($"\"{retiredName}\""));
+    }
+
     [UnitTest]
     public void IsDefined_ConsoleContentItemType_AcceptsAllDeclaredMembers()
     {
+        Assert.True(ConsoleEnumParser.IsDefined(ConsoleContentItemType.Dataset));
         Assert.True(ConsoleEnumParser.IsDefined(ConsoleContentItemType.Service));
         Assert.True(ConsoleEnumParser.IsDefined(ConsoleContentItemType.Layer));
-        Assert.True(ConsoleEnumParser.IsDefined(ConsoleContentItemType.SavedMap));
+        Assert.True(ConsoleEnumParser.IsDefined(ConsoleContentItemType.Map));
         Assert.True(ConsoleEnumParser.IsDefined(ConsoleContentItemType.Dashboard));
         Assert.True(ConsoleEnumParser.IsDefined(ConsoleContentItemType.Report));
-        Assert.True(ConsoleEnumParser.IsDefined(ConsoleContentItemType.GeneratedApp));
+        Assert.True(ConsoleEnumParser.IsDefined(ConsoleContentItemType.App));
         Assert.True(ConsoleEnumParser.IsDefined(ConsoleContentItemType.OpenData));
     }
 

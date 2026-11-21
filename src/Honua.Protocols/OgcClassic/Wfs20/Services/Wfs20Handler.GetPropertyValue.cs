@@ -111,7 +111,8 @@ internal sealed partial class Wfs20Handler
                     "typeNames");
             }
 
-            var selectedTypes = ResolveRequestedFeatureTypes(publishedTypes, requestedTypes);
+            var selectedTypes = await WithCallerMasksAsync(
+                context, ResolveRequestedFeatureTypes(publishedTypes, requestedTypes), cancellationToken).ConfigureAwait(false);
             if (selectedTypes.Length == 0)
             {
                 return CreateEmptyValueCollectionResult(normalizedOutputFormat);

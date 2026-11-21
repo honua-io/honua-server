@@ -16,9 +16,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for admin layer storage validation endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public sealed class LayerValidationEndpointsTests : IAsyncLifetime

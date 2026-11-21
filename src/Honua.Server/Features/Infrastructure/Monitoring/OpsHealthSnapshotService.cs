@@ -59,7 +59,9 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
     public async Task<OpsHealthSnapshotResponse> GetAsync(CancellationToken cancellationToken = default)
     {
         var healthReport = await _healthCheckService.CheckHealthAsync(cancellationToken).ConfigureAwait(false);
-        var deploySnapshot = await _deployProbe.ProbeAsync(cancellationToken).ConfigureAwait(false);
+        var deploySnapshot = await _deployProbe
+            .ProbeAsync(DeployPreflightProbe.BackgroundMigrationPlanMaxAge, cancellationToken)
+            .ConfigureAwait(false);
         var gpQueue = await BuildGpQueueViewAsync(cancellationToken).ConfigureAwait(false);
         var healthMetrics = _metricsCollector.GetHealthMetrics();
         var servingLatencyResult = await BuildServingLatencyViewAsync(cancellationToken).ConfigureAwait(false);
@@ -250,7 +252,7 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
 
     // Builds the serving-latency view. On a multi-node deployment the responding instance's live in-process
     // window is merged with peers' most-recent persisted rollup flushes so the snapshot reports whole-cluster
-    // health, not just the instance that served the request (#2553). Fail-open: a rollup-store outage or a
+    // health, not just the instance that served the request. Fail-open: a rollup-store outage or a
     // missing store (non-Postgres) transparently degrades to the local-only view.
     private async Task<ServingLatencyReadResult> BuildServingLatencyViewAsync(CancellationToken cancellationToken)
     {

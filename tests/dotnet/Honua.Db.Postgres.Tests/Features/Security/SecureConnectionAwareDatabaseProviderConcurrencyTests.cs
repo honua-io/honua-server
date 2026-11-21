@@ -12,19 +12,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.Postgres.Tests.Features.Security;
 
-/// <summary>
-/// Regression tests for the interaction between
-/// <see cref="SecureConnectionAwareDatabaseProvider"/> and the shared
-/// <see cref="QueryConcurrencyGate"/> when secure-mode is configured.
-/// </summary>
-/// <remarks>
-/// Ticket #605: a previous fix pass took the gate slot before resolving the
-/// secure connection. The registry's metadata lookup itself opens a connection
-/// through the primary (gated) provider, so the slot acquired by the secure
-/// provider self-blocked the metadata open at <c>MaxConcurrentQueries=1</c> and
-/// double-counted capacity at higher limits. The fix moves the gate acquisition
-/// to <em>after</em> the registry lookup completes.
-/// </remarks>
 [Collection("Database")]
 public sealed class SecureConnectionAwareDatabaseProviderConcurrencyTests
 {
@@ -51,10 +38,9 @@ public sealed class SecureConnectionAwareDatabaseProviderConcurrencyTests
             NullLogger<CachingDatabaseConnectionProvider>.Instance,
             concurrencyGate: gate);
 
-        // Stub resolver that mimics PostgresSecureConnectionRegistry: it opens
-        // a metadata connection through the primary (gated) provider before
-        // returning the resolved connection string. This is the exact path
-        // that previously self-deadlocked.
+        // Mimic PostgresSecureConnectionRegistry by opening a metadata connection through
+        // the primary gated provider before returning the resolved connection string.
+        // The nested access must complete without deadlocking.
         var resolver = new RegistryLookupSimulatingResolver(
             primaryProvider,
             _fixture.ConnectionString,
@@ -79,9 +65,6 @@ public sealed class SecureConnectionAwareDatabaseProviderConcurrencyTests
             activeDbConnectionTracker: null,
             concurrencyGate: gate);
 
-        // Act — this would have raised ServiceUnavailableException pre-fix
-        // because the secure provider held the only slot while the registry
-        // lookup tried to take a second slot via the primary provider.
         await using var connection = await secureProvider.OpenConnectionAsync(CancellationToken.None);
 
         // Assert — the connection opened, the resolver actually ran, and the
@@ -149,10 +132,6 @@ public sealed class SecureConnectionAwareDatabaseProviderConcurrencyTests
         // Act
         await using var connection = await secureProvider.OpenConnectionAsync(CancellationToken.None);
 
-        // Assert — peak consumption during the secure open was exactly one slot
-        // (the metadata open's slot), not two. Pre-fix this would have been 1
-        // because the secure provider already held a slot when the resolver ran,
-        // leaving the metadata open to consume the second slot for a peak of two.
         resolver.SlotsAvailableBeforeMetadataOpen.Should().Be(
             2,
             "the secure provider must not pre-acquire a gate slot — peak consumption per secure open must be one slot, not two");
@@ -167,12 +146,6 @@ public sealed class SecureConnectionAwareDatabaseProviderConcurrencyTests
         gate.AvailableSlots.Should().Be(2);
     }
 
-    /// <summary>
-    /// Test stub that mirrors <see cref="PostgresSecureConnectionRegistry.GetConnectionByNameAsync"/>:
-    /// the resolver opens a metadata connection through the primary provider
-    /// (which is gated by the same <see cref="QueryConcurrencyGate"/>) before
-    /// returning the resolved connection string.
-    /// </summary>
     private sealed class RegistryLookupSimulatingResolver : ISecureConnectionResolver
     {
         private readonly IPrimaryDatabaseConnectionProvider _primaryProvider;
@@ -197,8 +170,6 @@ public sealed class SecureConnectionAwareDatabaseProviderConcurrencyTests
         {
             Interlocked.Increment(ref ResolveCallCount);
 
-            // Capture gate state before the metadata open. Pre-fix this would
-            // have been 0 because the secure provider already held the slot.
             SlotsAvailableBeforeMetadataOpen = _gate.AvailableSlots;
 
             // Mirror PostgresSecureConnectionRegistry.GetConnectionByNameAsync —

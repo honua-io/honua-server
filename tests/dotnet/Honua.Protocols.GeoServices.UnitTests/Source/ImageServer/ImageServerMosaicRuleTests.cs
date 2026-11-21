@@ -10,10 +10,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Unit tests for <see cref="ImageServerMosaicRule"/> parsing and ordering resolution, with a
-/// focus on the non-date <c>esriMosaicAttribute</c> support added in #1870.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerMosaicRuleTests
 {
@@ -117,7 +113,7 @@ public class ImageServerMosaicRuleTests
         rule.ToAttributeSort().Should().BeNull();
     }
 
-    // #4063: the raster store orders ByAttribute by the attribute itself, not by distance from a
+    // The raster store orders ByAttribute by the attribute itself, not by distance from a
     // base sortValue, so a base value is unsupported while a direction token still executes.
     [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
@@ -140,7 +136,7 @@ public class ImageServerMosaicRuleTests
         rule.Ascending.Should().Be(expectedAscending);
     }
 
-    // #4063: service metadata advertises exactly the methods the parser executes. Every advertised
+    // Service metadata advertises exactly the methods the parser executes. Every advertised
     // token, sent back as its esriMosaic* rule, must classify as executable; the Esri methods the
     // service cannot execute (501 on a multi-raster request) must not be advertised.
     [UnitTest]

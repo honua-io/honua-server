@@ -35,7 +35,7 @@ internal static class McpEndpointExtensions
         endpoints.MapPost(RoutePath,
                 static (HttpContext context, CancellationToken ct) => HandlePostAsync(context, ct))
             .AddEndpointFilter(ProtectedResourceChallengeFilter)
-            .AddEndpointFilter(McpModernHttp.ValidateModernOriginAsync)
+            .AddEndpointFilter(McpModernHttp.ValidateOriginAsync)
             .AddEndpointFilter(McpBearerAuthenticationEndpointExtensions.AuthenticateBearerAsync)
             .WithDisplayName("MCP Operator Surface")
             .WithName("McpDataAccessSurface")
@@ -46,7 +46,7 @@ internal static class McpEndpointExtensions
         endpoints.MapGet(RoutePath,
                 static (HttpContext context, CancellationToken ct) => HandleGetAsync(context, ct))
             .AddEndpointFilter(ProtectedResourceChallengeFilter)
-            .AddEndpointFilter(McpModernHttp.ValidateModernOriginAsync)
+            .AddEndpointFilter(McpModernHttp.ValidateOriginAsync)
             .AddEndpointFilter(McpBearerAuthenticationEndpointExtensions.AuthenticateBearerAsync)
             .WithDisplayName("MCP Operator Surface (SSE stream)")
             .WithName("McpDataAccessSurfaceStream")
@@ -58,7 +58,7 @@ internal static class McpEndpointExtensions
         endpoints.MapDelete(RoutePath,
                 static (HttpContext context, CancellationToken ct) => HandleDeleteAsync(context, ct))
             .AddEndpointFilter(ProtectedResourceChallengeFilter)
-            .AddEndpointFilter(McpModernHttp.ValidateModernOriginAsync)
+            .AddEndpointFilter(McpModernHttp.ValidateOriginAsync)
             .AddEndpointFilter(McpBearerAuthenticationEndpointExtensions.AuthenticateBearerAsync)
             .WithDisplayName("MCP Operator Surface (session termination)")
             .WithName("McpDataAccessSurfaceTerminate")
@@ -91,7 +91,7 @@ internal static class McpEndpointExtensions
         cancellationToken = requestCancellation.Token;
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (await McpModernHttp.TryRejectDeclaredOriginAsync(context).ConfigureAwait(false))
+        if (await McpModernHttp.TryRejectPostPreconditionsAsync(context, cancellationToken).ConfigureAwait(false))
         {
             return;
         }
@@ -165,7 +165,7 @@ internal static class McpEndpointExtensions
             // initialize request itself never carries a (validated) session id —
             // it is how a session is established — so it bypasses validation.
             // A live session is additionally bound to the principal that
-            // established it (A3 binding; #2537): a different identity presenting
+            // established it (A3 binding): a different identity presenting
             // the id is rejected with a structured auth error rather than allowed
             // to ride the session.
             if (!isInitialize
@@ -182,7 +182,7 @@ internal static class McpEndpointExtensions
                             // the client re-initializes; serving it session-less would
                             // silently drop the negotiated state (workflow view,
                             // elicitation) and change what tools/list returns mid-
-                            // session. The stateless fallback (honua-server#3027) is
+                            // session. The stateless fallback is
                             // kept only as an explicit development convenience: when
                             // enabled, strip the header so downstream session
                             // consumers observe the request as session-less, and do
@@ -214,7 +214,7 @@ internal static class McpEndpointExtensions
                 await BindTokenReplayContinuationAsync(context, presented.ToString()).ConfigureAwait(false);
             }
 
-            // honua-server#3428: rehydrate the session-negotiated workflow view onto
+            // Rehydrate the session-negotiated workflow view onto
             // the request so tools/list observes the same bounded surface for the
             // life of the session. Read after session validation and only from a
             // session this principal is bound to, so a view can never ride a session
@@ -254,10 +254,10 @@ internal static class McpEndpointExtensions
             // that principal's own least-recently-used session, or refuses in
             // reject mode. Global pressure evicts anonymous sessions only and never
             // another principal. A refusal is a retryable structured error instead
-            // of a session header (A3 hardening; #2537, #5629).
+            // of a session header (A3 hardening).
             if (isInitialize && response.Error is null)
             {
-                // honua-server#2484: bind the client's advertised elicitation
+                // Bind the client's advertised elicitation
                 // capability (recorded on HttpContext.Items during initialize) to
                 // the session so clarification-emitting tools can later choose the
                 // MCP-native elicitation projection over the proprietary envelope.
@@ -265,7 +265,7 @@ internal static class McpEndpointExtensions
                     context.Items.TryGetValue(McpDataAccessSurface.ElicitationCapabilityItemKey, out var flag)
                     && flag is true;
 
-                // honua-server#3428: bind the workflow discovery view the client
+                // Bind the workflow discovery view the client
                 // negotiated at initialize (recorded on HttpContext.Items during
                 // initialize) to the session, so later tools/list calls on this
                 // session receive the same bounded surface without repeating the
@@ -313,7 +313,7 @@ internal static class McpEndpointExtensions
 
         // Per the Streamable-HTTP spec the standalone GET stream is optional: a
         // server that does not offer server-initiated messages MUST answer 405
-        // (+ Allow) so the client skips it. This is the default posture (#2537):
+        // (+ Allow) so the client skips it. This is the default posture:
         // it keeps spec-compliant SDK clients — which open this stream
         // unconditionally after initialize — from hanging it at a non-streaming
         // ingress (CloudFront → API Gateway → Lambda) and, critically, from
@@ -415,7 +415,7 @@ internal static class McpEndpointExtensions
         {
             // Client disconnected or session terminated — normal stream teardown.
             // Critically, this handler NEVER terminates the session on stream
-            // closure (#2537): session lifetime is bounded only by DELETE /mcp or
+            // closure: session lifetime is bounded only by DELETE /mcp or
             // the idle TTL, so a client whose GET stream is severed by a
             // non-streaming ingress can keep POSTing on the same session id.
         }

@@ -1,7 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 //
-// VectorTileServer vector tile data route (honua-server#1778). Implemented WITHOUT editing
+// VectorTileServer vector tile data route. Implemented WITHOUT editing
 // the shared VectorTileServerEndpoints.cs: the route is declared here in this partial file.
 //
 // The handler is a thin protocol adapter over the shared vector-tile pipeline. It resolves
@@ -98,31 +98,16 @@ internal static partial class VectorTileServerEndpoints
 
         try
         {
-            var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-            var serviceResult = await ServiceResourceValidationHelpers.ValidateServiceV2Async(
-                resourceValidator,
-                serviceId,
-                MetadataV2ServiceProtocols.VectorTileServer,
-                context,
-                cancellationToken: cancellationToken);
-            if (!serviceResult.IsValid)
+            var resolved = await ResolveServicePrimaryAsync(context, serviceId, cancellationToken).ConfigureAwait(false);
+            if (resolved.Primary is not { } primary)
             {
-                return serviceResult.ErrorResult!;
+                return resolved.Error ?? StandardErrorHelpers.CreateNotFound(context,
+                    $"Service '{resolved.Service!.EffectivePublicName}' has no tiled layer to render.");
             }
 
-            var service = serviceResult.Service!;
-            var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
-            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var (service, snapshot) = (resolved.Service!, resolved.Snapshot!);
 
-            var primary = await ResolvePrimaryVectorTilePublicationAsync(
-                snapshot, service, context, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
-            if (primary is null)
-            {
-                return StandardErrorHelpers.CreateNotFound(context,
-                    $"Service '{service.EffectivePublicName}' has no tiled layer to render.");
-            }
-
-            var (publication, resource) = primary.Value;
+            var (publication, resource) = primary;
             SharedCacheResponse.UsePublication(context, service, publication);
 
             var storageLayerId = snapshot.ResolveStorageLayerId(publication)
@@ -163,7 +148,7 @@ internal static partial class VectorTileServerEndpoints
                 x,
                 y,
                 z,
-                query,
+                await VectorTileQuery.ForLayerAsync(context, resource, query).ConfigureAwait(false),
                 tileOptions,
                 tileLimits,
                 cancellationToken);

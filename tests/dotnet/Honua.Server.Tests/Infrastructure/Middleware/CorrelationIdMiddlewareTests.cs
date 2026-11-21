@@ -9,31 +9,20 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
 
-/// <summary>
-/// Integration tests for CorrelationIdMiddleware ensuring proper correlation ID handling
-/// across client-provided IDs, OpenTelemetry integration, and fallback generation.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Health)]
 [Operation(Operations.HealthCheck)]
-public class CorrelationIdMiddlewareTests : IAsyncLifetime
+// Every case sends its own request headers to the shared default host and reads the response
+// headers, so one host serves them all.
+public sealed class CorrelationIdMiddlewareTests : IClassFixture<WebAppFixture>
 {
     private readonly ITestOutputHelper _output;
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
 
-    public CorrelationIdMiddlewareTests(ITestOutputHelper output)
+    public CorrelationIdMiddlewareTests(WebAppFixture fixture, ITestOutputHelper output)
     {
+        _fixture = fixture;
         _output = output;
-    }
-
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-    }
-
-    public async Task DisposeAsync()
-    {
-        await _fixture.DisposeAsync();
     }
 
     [IntegrationTest]

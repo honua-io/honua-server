@@ -5,7 +5,6 @@ using System.Collections.Immutable;
 using Grpc.Core;
 using Honua.Infrastructure.Validation;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -24,6 +23,7 @@ using Honua.Infrastructure.Services;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using FilterExpressionHelpers = Honua.Infrastructure.Helpers.FilterExpressionHelpers;
 using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 using Proto = Geospatial.V1;
 
@@ -166,7 +166,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         }
 
         // Standard feature query
-        foreach (var field in layer.AttributeFields)
+        foreach (var field in queryContext.SchemaFields)
         {
             response.Fields.Add(GrpcConversionHelpers.ToProtoField(field));
         }
@@ -183,7 +183,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
                     queryContext.GeometryLimits,
                     query.Distinct ? null : pkField,
                     queryContext.AttributeHiddenFields,
-                    layer.AttributeFields),
+                    queryContext.SchemaFields),
                 feature,
                 queryContext.GlobalIdField));
         }
@@ -234,7 +234,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
                     queryContext.GeometryLimits,
                     query.Distinct ? null : pkField,
                     queryContext.AttributeHiddenFields,
-                    layer.AttributeFields),
+                    queryContext.SchemaFields),
                 enumerator.Current,
                 queryContext.GlobalIdField));
 
@@ -289,8 +289,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         var layer = await ValidateGrpcLayerAsync(
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
 
-        // gRPC ApplyEdits is an open-protocol edit surface and remains Community (#1591).
-        // Geometry and attributes go through FeatureMutationValidator before the write (#6193).
+        // gRPC ApplyEdits is an open-protocol edit surface and remains Community.
+        // Geometry and attributes go through FeatureMutationValidator before the write.
 
         var prepared = await PrepareGrpcEditAsync(new EditCall(request, layer, context)).ConfigureAwait(false);
         var editBatch = prepared.Batch;
@@ -326,10 +326,10 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         editBatch = prepared.Batch;
         globalIds = prepared.GlobalIds;
         var requestBatch = prepared.RequestBatch;
-        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(requestBatch);
+        var gate = prepared.Gate!;
+        var perOperationGeometryChanged = BuildPerOperationGeometryChanged(gate.Without(requestBatch));
         var grpcHttpContext = context.GetHttpContext()
             ?? throw new InvalidOperationException("HttpContext is required for gRPC outbox dispatch.");
-
         var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
             grpcHttpContext,
             request.LayerId,
@@ -353,13 +353,13 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             {
                 keyedApplication = await _featureWriter.ApplyEditsAsync(
                     layer.StorageLayerId,
-                    editBatch,
+                    gate.Written,
                     new FeatureEditIdempotencyReceipt
                     {
                         Scope = keyedEdit.Scope,
                         ExpiresAt = _editReceipts.ResponseExpiresAt,
                         Payload = staged => GrpcApplyEditsReceipts.EncodeReceipt(
-                            StampResultGlobalIds(globalIds, GrpcConversionHelpers.ToProtoApplyEditsResponse(staged))),
+                            StampResultGlobalIds(globalIds, GrpcConversionHelpers.ToProtoApplyEditsResponse(gate.Merge(staged)))),
                     },
                     context.CancellationToken).ConfigureAwait(false);
                 result = keyedApplication.Value.Result;
@@ -368,7 +368,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             {
                 result = await _featureWriter.ApplyEditsAsync(
                     layer.StorageLayerId,
-                    editBatch,
+                    gate.Written,
                     context.CancellationToken).ConfigureAwait(false);
             }
         }
@@ -380,7 +380,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             throw;
         }
 
-        var response = GrpcConversionHelpers.ToProtoApplyEditsResponse(result);
+        var reported = gate.Merge(result);
+        var response = GrpcConversionHelpers.ToProtoApplyEditsResponse(reported);
         StampResultGlobalIds(globalIds, response);
 
         // A receipt committed under this key replaces this attempt's result, and no change
@@ -392,13 +393,21 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             return FilterResultGlobalIds(globalIds, committed);
         }
 
-        await PublishFeatureChangeEventsAsync(
-            request.ServiceId ?? "unknown",
-            request.LayerId,
-            layer,
-            requestBatch,
-            result,
-            context).ConfigureAwait(false);
+        try
+        {
+            await PublishFeatureChangeEventsAsync(
+                request.ServiceId ?? "unknown",
+                request.LayerId,
+                layer,
+                requestBatch,
+                reported,
+                context).ConfigureAwait(false);
+        }
+        finally
+        {
+            // The edit has committed, so its after-hooks run even when publishing its events fails.
+            await gate.RunAfterAsync(result).ConfigureAwait(false);
+        }
 
         return response;
     }
@@ -578,11 +587,6 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             storedById[objectId] = existing.Value;
         }
 
-        if (editBatch.Updates.IsDefaultOrEmpty)
-        {
-            return new VisibleEditTargets(editBatch, storedById);
-        }
-
         var mergedUpdates = ImmutableArray.CreateBuilder<Feature>(editBatch.Updates.Length);
         var preconditions = ImmutableArray.CreateBuilder<FeatureEditPrecondition>();
         var guarded = new HashSet<long>();
@@ -604,16 +608,21 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             }
 
             mergedUpdates.Add(MergePartialUpdate(update, stored));
-            // Masked reads store the full-row token before fields are removed.
-            // Attach that token so a concurrent writer fails the update. An unmasked
-            // read has no token; hashing the caller-visible snapshot would not match
-            // the row the writer locks.
-            if (stored.ReadStateToken is { Length: > 0 } token && guarded.Add(stored.Id))
+        }
+
+        // Both update and delete rules read these snapshots. Bind each target to the row
+        // the writer will lock so a concurrent change cannot bypass the validation.
+        foreach (var stored in storedById.Values)
+        {
+            if (guarded.Add(stored.Id))
             {
                 preconditions.Add(new FeatureEditPrecondition
                 {
                     ObjectId = stored.Id,
-                    ExpectedStateToken = token
+                    ExpectedStateToken = FeatureStateToken.FromReadSnapshot(stored),
+                    MaskedFields = stored.EditValidationAttributes is { } full
+                        ? full.Keys.Except(stored.Attributes.Keys, StringComparer.OrdinalIgnoreCase).ToImmutableArray()
+                        : ImmutableArray<string>.Empty
                 });
             }
         }
@@ -825,7 +834,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             page.GeometryType = GrpcConversionHelpers.ToProtoGeometryType(layer.GeometryType);
             page.SpatialReference = GrpcConversionHelpers.ToProtoSpatialReference(queryContext.ResponseSpatialReference);
 
-            foreach (var field in layer.AttributeFields)
+            foreach (var field in queryContext.SchemaFields)
             {
                 page.Fields.Add(GrpcConversionHelpers.ToProtoField(field));
             }
@@ -892,17 +901,15 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             Offset = pagination.Offset,
             // Streaming pages the full result set itself, and ids-only responses carry no
             // exceeded_transfer_limit signal, so neither may inherit the default page size when the
-            // caller did not ask for one: FeatureServer returnIdsOnly is likewise unbounded (#6112).
+            // caller did not ask for one: FeatureServer returnIdsOnly is likewise unbounded.
             Limit = (streaming || request.ReturnIdsOnly) && !requestedLimit.HasValue ? null : pagination.Limit
         };
 
-        if (query.OrderBy is { } orderBy)
+        var masked = await MaskedFieldNamesAsync(layer.Resource, requestServices, cancellationToken).ConfigureAwait(false);
+        query = query with
         {
-            query = query with
-            {
-                OrderBy = GrpcConversionHelpers.WithSchemaFieldTypes(orderBy, layer.Resource.SchemaFields)
-            };
-        }
+            OrderBy = ResolveCallerOrderBy(request.OrderBy, layer.Resource, masked)
+        };
 
         var outputSrid = query.OutputSrid;
         if (request.OutSr != null)
@@ -950,7 +957,12 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
                 wkt: string.IsNullOrWhiteSpace(request.OutSr?.Wkt) ? null : request.OutSr!.Wkt)
             : layer.SpatialReference;
 
-        var (projected, attributeHiddenFields) = WithGlobalIdField(query, globalIdField, layer.HiddenFields);
+        var (projected, attributeHiddenFields) = WithGlobalIdField(
+            query,
+            globalIdField,
+            masked.Count == 0
+                ? layer.HiddenFields
+                : new HashSet<string>(layer.HiddenFields.Concat(masked), StringComparer.OrdinalIgnoreCase));
         return new QueryContext(
             projected,
             responseSpatialReference,
@@ -959,10 +971,11 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         {
             GlobalIdField = globalIdField,
             AttributeHiddenFields = attributeHiddenFields,
+            SchemaFields = layer.AttributeFields.Where(field => !masked.Contains(field.Name)).ToArray(),
         };
     }
 
-    // A where clause that names a masked field is refused.
+    // A where clause that names a hidden or masked field is refused.
     private static async Task<SqlFragment?> BindWhereClauseAsync(
         string? where,
         MetadataV2Object resource,
@@ -991,17 +1004,14 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             throw new RpcException(new Status(StatusCode.InvalidArgument, "Invalid where clause."));
         }
 
-        if (requestServices.GetService<IFieldMaskSource>() is { } fieldMaskSource)
+        var maskedFields = await MaskedFieldNamesAsync(resource, requestServices, cancellationToken).ConfigureAwait(false);
+        try
         {
-            var maskedFields = await fieldMaskSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
-            try
-            {
-                FeatureQuerySecurity.ValidateFilterExpression(expression, maskedFields, "where");
-            }
-            catch (ArgumentException ex)
-            {
-                throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
-            }
+            FeatureQuerySecurity.ValidateFilterExpression(expression, maskedFields, "where");
+        }
+        catch (ArgumentException ex)
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
         }
 
         // ArcGIS clients send "1=1" for "no filter"; providers already accept it as raw text.
@@ -1010,7 +1020,8 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
             return null;
         }
 
-        var translation = filterService.Translate(expression, resource);
+        // Hidden fields are left out of every public read path, so a filter cannot name one either.
+        var translation = filterService.Translate(expression, resource.WithoutHiddenSchemaFields());
         if (!translation.IsSuccess)
         {
             throw new RpcException(new Status(
@@ -1032,7 +1043,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
     private static void EnsureAggregationNotRequested(Proto.QueryFeaturesRequest request)
     {
-        // #5465: geospatial.v1 defines no aggregate result shape. QueryFeaturesResponse and
+        // The geospatial.v1 contract defines no aggregate result shape. QueryFeaturesResponse and
         // FeaturePage carry the layer's attribute field definitions and feature rows only, so
         // answering out_statistics/group_by would either invent an unpublished response shape
         // or silently return ordinary features. Refuse until the contract defines one.
@@ -1114,48 +1125,54 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
 
     private static async Task EnsureWriteAccessAsync(
         ServerCallContext context,
-        MetadataV2Service service,
-        MetadataV2Object resource,
+        GrpcLayerContext layer,
         FeatureEditBatch editBatch)
     {
-        var httpContext = context.GetHttpContext();
-
         // Match the REST ApplyEdits seam: conversion first establishes the bounded
         // set of requested edit kinds, then every present kind must independently
         // pass the canonical resource data-editor gate before reads, outbox
         // resolution, or writes begin.
         if (!editBatch.Creates.IsEmpty)
         {
-            await EnsureOperationAccessAsync(AuthorizationOperation.Insert).ConfigureAwait(false);
+            await EnsureOperationAccessAsync(context, layer, AuthorizationOperation.Insert).ConfigureAwait(false);
         }
 
         if (!editBatch.Updates.IsEmpty)
         {
-            await EnsureOperationAccessAsync(AuthorizationOperation.Update).ConfigureAwait(false);
+            await EnsureOperationAccessAsync(context, layer, AuthorizationOperation.Update).ConfigureAwait(false);
         }
 
         if (!editBatch.Deletes.IsEmpty)
         {
-            await EnsureOperationAccessAsync(AuthorizationOperation.Delete).ConfigureAwait(false);
+            await EnsureOperationAccessAsync(context, layer, AuthorizationOperation.Delete).ConfigureAwait(false);
         }
 
         // Preserve the prior authorization ceiling for an empty no-op request.
         if (editBatch.Creates.IsEmpty && editBatch.Updates.IsEmpty && editBatch.Deletes.IsEmpty)
         {
-            await EnsureOperationAccessAsync(AuthorizationOperation.Update).ConfigureAwait(false);
+            await EnsureOperationAccessAsync(context, layer, AuthorizationOperation.Update).ConfigureAwait(false);
         }
+    }
 
-        async Task EnsureOperationAccessAsync(AuthorizationOperation operation)
-        {
-            var decision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
-                httpContext,
-                resource,
-                service,
-                operation,
-                context.CancellationToken).ConfigureAwait(false);
+    private static async Task EnsureOperationAccessAsync(
+        ServerCallContext context, GrpcLayerContext layer, AuthorizationOperation operation)
+    {
+        var httpContext = context.GetHttpContext();
 
-            ThrowIfAccessDenied(decision);
-        }
+        var decision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
+            httpContext,
+            layer.Resource,
+            layer.Service,
+            operation,
+            context.CancellationToken).ConfigureAwait(false);
+
+        ThrowIfAccessDenied(decision);
+
+        var canonicalDecision = await LayerValidationHelpers.EvaluateCanonicalServiceWriteAccessAsync(
+            httpContext,
+            (new LayerValidationHelpers.CanonicalWriteSource(layer.Publication, layer.Resource, layer.Snapshot), operation),
+            context.CancellationToken).ConfigureAwait(false);
+        ThrowIfAccessDenied(canonicalDecision);
     }
 
     // An edit kind the publication omits is rejected.
@@ -1205,7 +1222,7 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
     {
         var httpContext = context.GetHttpContext();
 
-        // Per-operation RBAC grants are consulted first (#1376) via the shared
+        // Per-operation RBAC grants are consulted first via the shared
         // seam; the coarse AccessPolicy read evaluation is the no-grant fallback.
         var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
             httpContext,
@@ -1245,6 +1262,9 @@ internal sealed partial class HonuaFeatureService : Proto.FeatureService.Feature
         public string? GlobalIdField { get; init; }
 
         public IReadOnlySet<string> AttributeHiddenFields { get; init; } = new HashSet<string>();
+
+        // The response schema: attribute fields the caller may see.
+        public IReadOnlyList<MetadataV2Field> SchemaFields { get; init; } = [];
     }
 
     private readonly record struct GrpcLayerContext(

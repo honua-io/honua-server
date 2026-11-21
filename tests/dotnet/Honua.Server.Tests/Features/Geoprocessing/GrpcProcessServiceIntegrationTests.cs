@@ -13,10 +13,6 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Integration tests for gRPC ProcessService exercised through the full ASP.NET Core pipeline
-/// with a real PostgreSQL database via <see cref="WebAppFixture"/>.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Grpc)]
 public sealed class GrpcProcessServiceIntegrationTests : IAsyncLifetime
@@ -132,7 +128,7 @@ public sealed class GrpcProcessServiceIntegrationTests : IAsyncLifetime
         }
         catch (RpcException ex) when (ex.StatusCode == StatusCode.Unavailable)
         {
-            // Redis not configured in test environment — expected. honua-release#202 requires the
+            // No durable job store in the test environment — expected. The contract requires the
             // refusal to be machine-readable on gRPC too: the receipt rides trailing metadata
             // because gRPC has no problem+json extension members, so a client branches on the
             // trailers rather than string-matching the status detail.

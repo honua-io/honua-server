@@ -9,11 +9,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Unit tests for the MCP Streamable-HTTP session registry (honua-server#1954).
-/// These run without Docker/PostGIS so the session-id issuance and validation
-/// invariants are covered even when the full integration harness is unavailable.
-/// </summary>
 public sealed class McpSessionManagerTests
 {
     [UnitTest]
@@ -44,7 +39,7 @@ public sealed class McpSessionManagerTests
     [UnitTest]
     public void SupportsElicitation_ReflectsCapabilityRecordedAtCreation()
     {
-        // honua-server#2484: the elicitation capability advertised at initialize is
+        // The elicitation capability advertised at initialize is
         // bound to the session and read back by clarification-emitting tools.
         var manager = new McpSessionManager();
         manager.TryCreateSession("sub:alice", elicitationSupported: true, out var elicit)
@@ -291,7 +286,7 @@ public sealed class McpSessionManagerTests
     [UnitTest]
     public void TryCreateSession_AnonymousAtAnonymousCap_EvictsOnlyAnonymousSessions()
     {
-        // SEC-18: anonymous sessions live in their own bounded pool, so admitting
+        // anonymous sessions live in their own bounded pool, so admitting
         // another anonymous session displaces the oldest anonymous one and never an
         // authenticated session.
         var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
@@ -354,10 +349,6 @@ public sealed class McpSessionManagerTests
         manager.IsValid(newest).Should().BeTrue();
     }
 
-    /// <summary>
-    /// Test <see cref="TimeProvider"/> whose UTC clock only advances when the test
-    /// asks, so idle-TTL and LRU behavior are deterministic without real waits.
-    /// </summary>
     private sealed class MutableTimeProvider(DateTimeOffset start) : TimeProvider
     {
         private DateTimeOffset _now = start;

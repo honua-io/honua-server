@@ -24,7 +24,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>Production dispatcher, independent shared-store clients, and OGC value read-back.</summary>
 public sealed class DurableFeatureStreamTests : IDisposable
 {
     private readonly string _root = Path.Join(Path.GetTempPath(), "honua-shared-stream-" + Guid.NewGuid().ToString("N"));
@@ -325,8 +324,10 @@ public sealed class DurableFeatureStreamTests : IDisposable
     private async Task<List<IFeature>> Read(string reference, ExecutionJobRecord authorized, IGeoprocessingOutputObjectStore store, IServiceScopeFactory? workspaceScopes = null)
     {
         var features = new List<IFeature>();
+        var existingScratch = PrivateScratchFileAssertions.Snapshot("honua-feature-stream-");
         await foreach (var feature in DurableFeatureStream.ReadAsync(reference, authorized, _jobs, store, _staging, workspaceScopes: workspaceScopes))
         {
+            PrivateScratchFileAssertions.AssertOwnerOnly("honua-feature-stream-", existingScratch);
             features.Add(feature);
         }
         return features;

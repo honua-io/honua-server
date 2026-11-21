@@ -6,9 +6,6 @@ using Honua.Core.Features.Licensing.Domain;
 
 namespace Honua.Core.Tests.Features.Licensing;
 
-/// <summary>
-/// Unit tests for FeatureCatalog and LicenseModels.
-/// </summary>
 public sealed class FeatureCatalogTests
 {
     [Trait("Tier", "Fast")]
@@ -71,7 +68,7 @@ public sealed class FeatureCatalogTests
     [InlineData("dr.rto-rpo-reporting")]
     public void All_DisasterRecoveryFeaturesAreEnterpriseTier(string key)
     {
-        // Ticket #356 (ADR-0024): HA/DR is an Enterprise tier capability across backup
+        // ADR-0024: HA/DR is an Enterprise tier capability across backup
         // automation, failover playbooks, cache backup, and RTO/RPO reporting.
         var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == key);
 
@@ -89,7 +86,7 @@ public sealed class FeatureCatalogTests
     [InlineData("analytics.h3")]
     public void All_SpatialAnalyticsFeaturesAreProTier(string key)
     {
-        // ADR-0024 + ticket #342 acceptance: every spatial analytics endpoint
+        // ADR-0024 acceptance: every spatial analytics endpoint
         // must be gated behind at least the Pro edition. This test is the
         // catalog-side counterpart to the SpatialAnalyticsEditionGateTests
         // unit tests on the request handler.
@@ -113,17 +110,6 @@ public sealed class FeatureCatalogTests
 
     [Trait("Tier", "Fast")]
     [Fact]
-    public void All_RedisDistributedCacheIsProTier()
-    {
-        var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == "caching.redis");
-
-        feature.Should().NotBeNull("Redis L2 activation is gated by the Pro license entitlement for ticket #358");
-        feature!.Category.Should().Be(FeatureCatalog.Categories.Caching);
-        feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
-    }
-
-    [Trait("Tier", "Fast")]
-    [Fact]
     public void All_RoutingSolveIsProTier()
     {
         var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == "routing.solve");
@@ -137,7 +123,7 @@ public sealed class FeatureCatalogTests
     [Fact]
     public void All_FeatureServerEditingIsProTier()
     {
-        // Ticket #1591: only the Esri GeoServices FeatureServer write surface is
+        // Only the Esri GeoServices FeatureServer write surface is
         // Pro-gated. Open-protocol edits remain Community while using the shared
         // edit pipeline.
         var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.FeatureServerEditsKey);
@@ -157,7 +143,7 @@ public sealed class FeatureCatalogTests
     [Fact]
     public void All_OfflineFieldSyncIsProTier()
     {
-        // Ticket #1592: disconnected sync and field offline policy discovery
+        // Disconnected sync and field offline policy discovery
         // are Pro entitlements; online form reads/submissions remain Community.
         var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.FieldOpsOfflineSyncKey);
 
@@ -166,7 +152,7 @@ public sealed class FeatureCatalogTests
         feature.Category.Should().Be(FeatureCatalog.Categories.FieldOps);
         feature.MinimumEdition.Should().Be(HonuaEdition.Pro);
 
-        // #5022: replica delivery produces Esri JSON only (createReplica rejects every
+        // Replica delivery produces Esri JSON only (createReplica rejects every
         // other dataFormat), so the description must not advertise a GeoPackage container.
         feature.Description.Should().Contain("Esri JSON");
         feature.Description.Should().NotContain("GeoPackage");
@@ -178,7 +164,7 @@ public sealed class FeatureCatalogTests
     [InlineData(FeatureCatalog.AiGroundingKey, "ai.grounding")]
     public void All_AgenticAiOperationsAreProTier(string key, string expectedKey)
     {
-        // Ticket #1592: AI operations that mutate, generate, or submit
+        // AI operations that mutate, generate, or submit
         // execution work are Pro entitlements. Discovery/query/read surfaces
         // stay Community and are not represented by these keys.
         var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == key);
@@ -208,7 +194,7 @@ public sealed class FeatureCatalogTests
     [Fact]
     public void All_OidcSingleProviderIsProAndGovernanceIsEnterprise()
     {
-        // Ticket #1612: basic single-provider OIDC has no SSO tax and validates
+        // Basic single-provider OIDC has no SSO tax and validates
         // under Pro. Multi-provider configuration and claim-to-role mapping stay
         // Enterprise identity-governance entitlements.
         var oidc = FeatureCatalog.All.SingleOrDefault(f => f.Key == FeatureCatalog.OidcAuthenticationKey);
@@ -255,7 +241,7 @@ public sealed class FeatureCatalogTests
     [Fact]
     public void All_AiGuardrailLadderHasExpectedEditions()
     {
-        // Ticket #1631 / #1592: the AI-operations guardrail ladder is the edition
+        // The AI-operations guardrail ladder is the edition
         // axis. MCP discovery/query stays Community (agent reads never gated), the
         // agent-operations validation layer is Pro, and approval workflows are
         // Enterprise.
@@ -285,7 +271,7 @@ public sealed class FeatureCatalogTests
     [InlineData("temporal.animation-api", HonuaEdition.Pro)]
     public void All_TemporalFeaturesHaveExpectedEdition(string key, HonuaEdition expectedEdition)
     {
-        // Ticket #379 acceptance: capability reporting tells SDK/admin clients
+        // Capability reporting tells SDK/admin clients
         // which temporal features are available and edition-gated.
         var feature = FeatureCatalog.All.SingleOrDefault(f => f.Key == key);
 

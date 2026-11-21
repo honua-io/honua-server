@@ -15,11 +15,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Secret/ConfigMap-sourced worker environment for the Kubernetes Job backend (honua-helm#98,
-/// owner decision 18): references render into <c>envFrom</c> / <c>valueFrom</c>, launch variables stay
-/// literal and protected, and only reference names ever reach the server.
-/// </summary>
 public sealed class KubernetesJobEnvironmentTests
 {
     [UnitTest]
@@ -37,7 +32,7 @@ public sealed class KubernetesJobEnvironmentTests
             ["k8s.env.ConnectionStrings__DefaultConnection.secretKeyRef"] = "honua-db:connection-string",
             ["k8s.env.FEATURE_FLAGS.configMapKeyRef"] = "honua-flags:flags.json",
             ["k8s.envFrom.secret.10"] = "extra-secret",
-            ["k8s.envFrom.secret.2"] = "honua-redis:REDIS_",
+            ["k8s.envFrom.secret.2"] = "honua-storage:STORAGE_",
             ["k8s.envFrom.configMap.0"] = "honua-config",
         });
 
@@ -54,7 +49,7 @@ public sealed class KubernetesJobEnvironmentTests
         manifest.EnvFrom.Should().Equal(
             new KubernetesEnvFromSource(KubernetesEnvSourceKind.Secret, "honua-runtime"),
             new KubernetesEnvFromSource(KubernetesEnvSourceKind.ConfigMap, "honua-config"),
-            new KubernetesEnvFromSource(KubernetesEnvSourceKind.Secret, "honua-redis", "REDIS_"),
+            new KubernetesEnvFromSource(KubernetesEnvSourceKind.Secret, "honua-storage", "STORAGE_"),
             new KubernetesEnvFromSource(KubernetesEnvSourceKind.Secret, "extra-secret"));
 
         using var document = JsonDocument.Parse(KubernetesJobManifestSerializer.SerializeJobManifest(manifest));
@@ -80,8 +75,8 @@ public sealed class KubernetesJobEnvironmentTests
         envFrom[0].GetProperty("secretRef").GetProperty("name").GetString().Should().Be("honua-runtime");
         envFrom[0].TryGetProperty("prefix", out _).Should().BeFalse();
         envFrom[1].GetProperty("configMapRef").GetProperty("name").GetString().Should().Be("honua-config");
-        envFrom[2].GetProperty("secretRef").GetProperty("name").GetString().Should().Be("honua-redis");
-        envFrom[2].GetProperty("prefix").GetString().Should().Be("REDIS_");
+        envFrom[2].GetProperty("secretRef").GetProperty("name").GetString().Should().Be("honua-storage");
+        envFrom[2].GetProperty("prefix").GetString().Should().Be("STORAGE_");
         envFrom[3].GetProperty("secretRef").GetProperty("name").GetString().Should().Be("extra-secret");
     }
 

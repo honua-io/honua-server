@@ -26,45 +26,78 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Tests.Features.StudioAi;
 
-/// <summary>
-/// Endpoint-level tests for the Studio AI proxy (honua-server#3000/#3303): Studio lifecycle
-/// authorization on both routes, the capabilities shape, and — the audit-record requirement
-/// (REQ-002) — that a chat call reaching a known, configured (but unreachable) provider still
-/// produces exactly one audit record with the expected action/resource/outcome. No live provider
-/// is called anywhere in this file: the "provider" here is an unreachable loopback port, so the
-/// HTTP call fails fast with a connection error that the adapter turns into a normal <c>error</c>
-/// SSE event.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
+public sealed class StudioAiProxyEndpointsTests(
+    StudioAiProxyEndpointsTests.AdminProxyHost adminHost,
+    StudioAiProxyEndpointsTests.EndUserProxyHost endUserHost)
+    : IClassFixture<StudioAiProxyEndpointsTests.AdminProxyHost>,
+        IClassFixture<StudioAiProxyEndpointsTests.EndUserProxyHost>
 {
     private const int MaximumRequestBytes = 1_048_576;
     private const string ProviderName = "test-openai";
     private const string Issuer = "https://studio-idp.example.com";
     private const string Audience = "honua-studio-client-id";
     private const string SigningKey = "studio-ai-proxy-test-signing-key-at-least-32-characters";
-    private readonly CapturingAuditLog _audit = new();
-    private readonly WebAppFixture _fixture;
+    private readonly ProxyHost _admin = adminHost.Borrow();
+    private readonly ProxyHost _endUser = endUserHost.Borrow();
+    private readonly WebAppFixture _fixture = adminHost.Fixture;
+    private readonly CapturingAuditLog _audit = adminHost.Audit;
 
-    public StudioAiProxyEndpointsTests()
+    // One application per end-user authorization setting serves every case. Each case borrows the host,
+    // which empties the captured audit log and clears any admission denial or financial setup, so a case
+    // sees only its own audit events and admission outcome; admission counters are read relative to the
+    // case's start.
+    // Cases mint their own tokens, keys and sessions. The admin cases share one subject and send about
+    // 19 chat requests per class run, below the chat endpoint's 30 requests per minute (the rate-limit
+    // counters are process-wide, as they were with one host per case).
+    public abstract class ProxyHost : IAsyncLifetime
     {
-        _fixture = new WebAppFixture()
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<IAuditLog>();
-                services.AddSingleton<IAuditLog>(_audit);
-            })
-            .ConfigureWebHost(builder =>
-            {
-                ConfigureHost(builder, endUserAuthorizationEnabled: false);
-            });
+        internal CapturingAuditLog Audit { get; } = new();
+
+        internal WebAppFixture Fixture { get; private set; } = null!;
+
+        internal RecordingAiAdmission Admission
+            => (RecordingAiAdmission)Fixture.Services.GetRequiredService<IAiExecutionAdmission>();
+
+        public Task InitializeAsync()
+        {
+            Fixture = new WebAppFixture()
+                .ConfigureServices(services =>
+                {
+                    services.RemoveAll<IAuditLog>();
+                    services.AddSingleton<IAuditLog>(Audit);
+                })
+                .ConfigureWebHost(builder => ConfigureHost(builder, EndUserAuthorizationEnabled));
+            return Fixture.InitializeAsync();
+        }
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+
+        protected abstract bool EndUserAuthorizationEnabled { get; }
+
+        internal ProxyHost Borrow()
+        {
+            var admission = Admission;
+            admission.DenialCode = null;
+            admission.Financial = false;
+            admission.FinancialBasis = null;
+            admission.FinancialUsage.Clear();
+            Audit.Recorded.Clear();
+            return this;
+        }
     }
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+    public sealed class AdminProxyHost : ProxyHost
+    {
+        protected override bool EndUserAuthorizationEnabled => false;
+    }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public sealed class EndUserProxyHost : ProxyHost
+    {
+        protected override bool EndUserAuthorizationEnabled => true;
+    }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/studio/ai/capabilities")]
@@ -180,8 +213,8 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
     public async Task StudioAiProxy_FlagOn_SameNonAdminBearerReachesProxyAndMcpDiscovery()
     {
-        var audit = new CapturingAuditLog();
-        await using var fixture = await CreateEndUserFixtureAsync(audit);
+        var audit = _endUser.Audit;
+        var fixture = _endUser.Fixture;
         var token = CreateToken("studio-user-enabled", tenantId: "studio-tenant");
         using var client = CreateBearerClient(fixture, token);
 
@@ -225,7 +258,7 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/ai/chat")]
     public async Task StudioAiProxy_FlagOn_NonAdminCannotRequestCertifiedTranscript()
     {
-        await using var fixture = await CreateEndUserFixtureAsync(new CapturingAuditLog());
+        var fixture = _endUser.Fixture;
         using var client = CreateBearerClient(
             fixture,
             CreateToken("studio-user-enabled", tenantId: "studio-tenant"));
@@ -309,8 +342,8 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/ai/chat")]
     public async Task StudioAiProxy_FlagOn_ClientCredentialsBearerReturns403()
     {
-        var audit = new CapturingAuditLog();
-        await using var fixture = await CreateEndUserFixtureAsync(audit);
+        var audit = _endUser.Audit;
+        var fixture = _endUser.Fixture;
         var token = CreateToken(
             "studio-machine",
             isClientCredentials: true,
@@ -341,8 +374,8 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/ai/chat")]
     public async Task StudioAiProxy_FlagOn_NonAdminScopedApiKeyReturns403()
     {
-        var audit = new CapturingAuditLog();
-        await using var fixture = await CreateEndUserFixtureAsync(audit);
+        var audit = _endUser.Audit;
+        var fixture = _endUser.Fixture;
         var apiKeyStore = fixture.Services.GetRequiredService<IAdminApiKeyStore>();
         var scopedKey = await apiKeyStore.CreateAsync(
             "studio-ai-unrelated-key",
@@ -426,7 +459,7 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/ai/chat")]
     public async Task PostChat_OverDefaultPromptLimit_Returns400ProblemNamingTheLimit()
     {
-        // honua-server#4919: the host leaves StudioAiProxy:MaxPromptCharacters at its default.
+        // The host leaves StudioAiProxy:MaxPromptCharacters at its default.
         var limit = new Honua.Ai.StudioAiProxy.StudioAiProxyConfiguration().MaxPromptCharacters;
         var client = _fixture.CreateAdminClient();
         _audit.Recorded.Clear();
@@ -521,21 +554,22 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Mcp, "initialize")]
     public async Task PostChat_SuppliedSession_BindsToVerifiedOwnerBeforeAdmissionOrSse()
     {
-        await using var fixture = await CreateEndUserFixtureAsync(new CapturingAuditLog());
+        var fixture = _endUser.Fixture;
         using var owner = CreateBearerClient(fixture, CreateToken("session-owner", tenantId: "tenant"));
         using var other = CreateBearerClient(fixture, CreateToken("different-owner", tenantId: "tenant"));
         using var initialized = await owner.SendAsync(BuildMcpRequest(
             """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"admission-test","version":"1"}}}"""));
         initialized.StatusCode.Should().Be(HttpStatusCode.OK);
         var session = initialized.Headers.GetValues("Mcp-Session-Id").Single();
-        var admission = (RecordingAiAdmission)fixture.Services.GetRequiredService<IAiExecutionAdmission>();
+        var admission = _endUser.Admission;
         var before = admission.Acquired;
+        var sentBefore = admission.Sent;
         other.DefaultRequestHeaders.Add("Mcp-Session-Id", session);
         using var mismatch = await other.PostAsJsonAsync("/api/v1/studio/ai/chat", new
         { messages = new[] { new { role = "user", content = "test" } } });
         mismatch.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         admission.Acquired.Should().Be(before);
-        admission.Sent.Should().Be(0);
+        admission.Sent.Should().Be(sentBefore);
         other.DefaultRequestHeaders.Remove("Mcp-Session-Id");
         other.DefaultRequestHeaders.Add("Mcp-Session-Id", "unknown-session");
         using var unknown = await other.PostAsJsonAsync("/api/v1/studio/ai/chat", new
@@ -547,7 +581,7 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         { messages = new[] { new { role = "user", content = "test" } } });
         accepted.StatusCode.Should().Be(HttpStatusCode.OK);
         admission.Acquired.Should().Be(before + 1);
-        admission.Sent.Should().Be(1);
+        admission.Sent.Should().Be(sentBefore + 1);
     }
 
     [IntegrationTheory]
@@ -558,7 +592,8 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/ai/chat")]
     public async Task PostChat_AdmissionDenied_ReturnsProblemBeforeSseOrProviderSend(string code, HttpStatusCode expectedStatus)
     {
-        var admission = (RecordingAiAdmission)_fixture.Services.GetRequiredService<IAiExecutionAdmission>();
+        var admission = _admin.Admission;
+        var sentBefore = admission.Sent;
         admission.DenialCode = code;
         using var client = _fixture.CreateAdminClient();
         using var response = await client.PostAsJsonAsync("/api/v1/studio/ai/chat", new
@@ -568,7 +603,7 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         response.Headers.RetryAfter.Should().NotBeNull();
         using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         problem.RootElement.GetProperty("code").GetString().Should().Be(code);
-        admission.Sent.Should().Be(0);
+        admission.Sent.Should().Be(sentBefore);
         _audit.Recorded.Should().NotContain(entry => entry.Action == "studio_ai.chat");
     }
 
@@ -610,19 +645,6 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
                 [$"StudioAiProxy:Providers:{ProviderName}:TimeoutSeconds"] = "5"
             });
         });
-    }
-
-    private static async Task<WebAppFixture> CreateEndUserFixtureAsync(CapturingAuditLog audit)
-    {
-        var fixture = new WebAppFixture()
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<IAuditLog>();
-                services.AddSingleton<IAuditLog>(audit);
-            })
-            .ConfigureWebHost(builder => ConfigureHost(builder, endUserAuthorizationEnabled: true));
-        await fixture.InitializeAsync();
-        return fixture;
     }
 
     private static HttpClient CreateBearerClient(WebAppFixture fixture, string token)
@@ -703,7 +725,7 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
             "studio_authorization/interactive_principal_required");
     }
 
-    private sealed class CapturingAuditLog : IAuditLog
+    internal sealed class CapturingAuditLog : IAuditLog
     {
         public List<AuditEvent> Recorded { get; } = [];
 

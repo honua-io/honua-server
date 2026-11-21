@@ -47,7 +47,9 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
 
     public bool IsDispatcherRunning => _isRunning;
 
-    public bool IsDispatcherEnabled => _options.Enabled;
+    // Ops notices are the deployment's own operational messages, so they deliver even while the
+    // Preview customer-alert pipeline (Alerts:Enabled, forced off without alerts.geofence) is off.
+    public bool IsDispatcherEnabled => _options.Enabled || _options.Ops.Enabled;
 
     public DateTimeOffset? LastPollAt
     {
@@ -75,7 +77,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!_options.Enabled)
+        if (!IsDispatcherEnabled)
         {
             LogDisabled(_logger);
             return;
@@ -99,14 +101,13 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
                     // Readiness measures whether the dispatcher loop is alive, not whether an
                     // arbitrary remote webhook is responsive. Stamp before claiming/dispatching
                     // the batch so a slow or black-holed sink cannot make every replica appear
-                    // dead while the loop is still making progress (#30).
+                    // dead while the loop is still making progress.
                     Interlocked.Exchange(ref _lastPollAtTicks, now.UtcTicks);
 
                     // Resolved per batch so the entitlement is read LIVE: a dispatch queued while
                     // its channel was entitled can sit in the outbox across a license expiry —
                     // suppressed, retrying, or dead-lettered and revived — and the admission-time
-                    // check in AlertPipeline.GetDeliverableChannels cannot see that
-                    // (honua-server#2998 review).
+                    // check in AlertPipeline.GetDeliverableChannels cannot see that.
                     var editionPolicy = scope.ServiceProvider.GetService<IAlertEditionPolicy>();
 
                     var batch = await dispatchStore
@@ -209,33 +210,6 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
     {
         var now = _time.GetUtcNow();
 
-        // Re-check the channel entitlement immediately before the sink call. Admission gated it
-        // when the row was written, but delivery can happen much later, so an expired license
-        // would otherwise keep sending on a paid channel.
-        //
-        // DEFERRED, not dead-lettered. The earlier reasoning - "retrying cannot make an
-        // unentitled channel deliverable" - was wrong: entitlement is live state, and applying a
-        // renewed or replaced license changes the answer on the very next pass. Dead-lettering
-        // moved every queued dispatch permanently out of automatic processing over a lapse that
-        // may last minutes, requiring an operator to find and redrive them, and even a single
-        // dead-lettered row trips the default unhealthy threshold. Rescheduling follows the
-        // rate-limit and circuit-breaker paths, which likewise defer on conditions that clear on
-        // their own, and it does NOT consume the retry budget (honua-server#2998 review).
-        if (editionPolicy is not null && !editionPolicy.IsChannelAllowed(item.ChannelType))
-        {
-            var entitlementRetryAt = now.Add(UnentitledChannelRetryDelay);
-            var rescheduled = await dispatchStore
-                .RescheduleAsync(item.DispatchId, item.ClaimToken, entitlementRetryAt, cancellationToken)
-                .ConfigureAwait(false);
-            if (!rescheduled)
-            {
-                return;
-            }
-
-            LogChannelUnentitled(_logger, item.DispatchId, item.ChannelType, entitlementRetryAt);
-            return;
-        }
-
         if (!_sinks.TryGetValue(item.ChannelType, out var sink))
         {
             var deadLettered = await dispatchStore
@@ -262,6 +236,20 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
             }
 
             _metrics.RecordDeliveryFailed(item.ChannelType, deadLettered: true, latencyMs: 0);
+            return;
+        }
+
+        if (IsUndeliverableCustomerAlert(editionPolicy, item, alertEvent))
+        {
+            var entitlementRetryAt = now.Add(UnentitledChannelRetryDelay);
+            var rescheduled = await dispatchStore
+                .RescheduleAsync(item.DispatchId, item.ClaimToken, entitlementRetryAt, cancellationToken)
+                .ConfigureAwait(false);
+            if (rescheduled)
+            {
+                LogChannelUnentitled(_logger, item.DispatchId, item.ChannelType, entitlementRetryAt);
+            }
+
             return;
         }
 
@@ -357,6 +345,29 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         LogFailed(_logger, item.DispatchId, item.ChannelType, exhausted, result.Error ?? "Delivery failed.");
     }
 
+    // Re-check the channel entitlement immediately before the sink call. Admission gated it
+    // when the row was written, but delivery can happen much later, so an expired license
+    // would otherwise keep sending on a paid channel.
+    //
+    // DEFERRED, not dead-lettered. The earlier reasoning - "retrying cannot make an
+    // unentitled channel deliverable" - was wrong: entitlement is live state, and applying a
+    // renewed or replaced license changes the answer on the very next pass. Dead-lettering
+    // moved every queued dispatch permanently out of automatic processing over a lapse that
+    // may last minutes, requiring an operator to find and redrive them, and even a single
+    // dead-lettered row trips the default unhealthy threshold. Rescheduling follows the
+    // rate-limit and circuit-breaker paths, which likewise defer on conditions that clear on
+    // their own, and it does NOT consume the retry budget.
+    //
+    // Ops-source dispatches are exempt: they are the deployment's notices to its own operator,
+    // not the alerting product, so Community and Pro installs can reach the operator on any
+    // configured channel. Customer alerts still wait while the Preview pipeline is off.
+    private bool IsUndeliverableCustomerAlert(
+        IAlertEditionPolicy? editionPolicy,
+        AlertDispatchItem item,
+        AlertEventEnvelope alertEvent)
+        => alertEvent.Source != AlertEventSources.Ops
+            && (!_options.Enabled || (editionPolicy is not null && !editionPolicy.IsChannelAllowed(item.ChannelType)));
+
     [LoggerMessage(EventId = 9420, Level = LogLevel.Information, Message = "Alert dispatcher is disabled.")]
     private static partial void LogDisabled(ILogger logger);
 
@@ -381,7 +392,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
     [LoggerMessage(EventId = 9427, Level = LogLevel.Debug, Message = "Alert dispatch {DispatchId} for {ChannelType} deferred until {DeferUntil:O} because the per-channel delivery circuit breaker is open.")]
     private static partial void LogCircuitDeferred(ILogger logger, long dispatchId, AlertChannelType channelType, DateTimeOffset deferUntil);
 
-    [LoggerMessage(EventId = 9429, Level = LogLevel.Warning, Message = "Alert dispatch {DispatchId} for {ChannelType} deferred until {RetryAt:O} because the channel is not permitted by the active license or configured alert edition.")]
+    [LoggerMessage(EventId = 9429, Level = LogLevel.Warning, Message = "Alert dispatch {DispatchId} for {ChannelType} deferred until {RetryAt:O} because customer alerts are disabled or the channel is not permitted by the active license or configured alert edition.")]
     private static partial void LogChannelUnentitled(ILogger logger, long dispatchId, AlertChannelType channelType, DateTimeOffset retryAt);
 
     [LoggerMessage(EventId = 9428, Level = LogLevel.Warning, Message = "Alert delivery circuit breaker opened for channel {ChannelType} after repeated dead-letters; deliveries on this channel are deferred for {Cooldown}.")]

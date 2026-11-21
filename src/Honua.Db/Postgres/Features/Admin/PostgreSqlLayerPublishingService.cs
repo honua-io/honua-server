@@ -70,7 +70,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
     // The publish path loads the current graph as the base it mutates and saves. It must
     // read only the genuinely-activated snapshot, never the V1-catalog compat synthesis
-    // that GetCurrentAsync performs for serving paths (honua-server#1412): a synthesized
+    // that GetCurrentAsync performs for serving paths: a synthesized
     // base is never persisted, so SaveAsync's reconciliation against metadata_v2_current
     // fails and every AutoPublish import reports "publishing did not complete". The
     // Postgres store implements this seam; a non-implementing test double falls back to
@@ -89,7 +89,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     // THIS schema is the shared multi-layer table whose rows carry the JSONB
     // `attributes` column and the `layer_id` discriminator; a user source table that
     // merely happens to be named `features` in another schema (e.g. public.features)
-    // must NOT be treated as the shared table. (honua-server#1238 follow-up.)
+    // must NOT be treated as the shared table.
     private readonly string _metadataSchema = string.IsNullOrWhiteSpace(metadataSchema)
         ? "honua"
         : metadataSchema.Trim();
@@ -97,7 +97,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     // The schema the managed feature writer qualifies the shared `features` table with
     // (Database:Schema, the same value FeatureDataAccess receives), or null when it writes
     // the unqualified table through the server connection's search path. A managed-store
-    // binding must name exactly the table that writer writes (honua-server#4859).
+    // binding must name exactly the table that writer writes.
     private readonly string? _configuredFeatureSchema = string.IsNullOrWhiteSpace(metadataSchema)
         ? null
         : metadataSchema.Trim();
@@ -127,9 +127,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         var layers = await ReadPublishedLayersAsync(
-                connection,
-                transaction: null,
-                normalizedService,
+                new PublishedLayerReadScope(connection, null,
+                    new ConnectionLayerScope(normalizedService, connectionId, ManagedDataConnection.Id)),
                 cancellationToken)
             .ConfigureAwait(false);
         return await ApplyListedLayerScopeAsync(
@@ -170,12 +169,14 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
     private const string PublishedLayerSelect = PublishedLayerColumns + ",\n        COUNT(f.field_name)::int AS field_count";
 
-    private static async Task<List<PublishedLayerSummary>> ReadPublishedLayersAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction? transaction,
-        string normalizedService,
+    private readonly record struct PublishedLayerReadScope(
+        NpgsqlConnection Connection, NpgsqlTransaction? Transaction, ConnectionLayerScope Ownership);
+
+    private async Task<List<PublishedLayerSummary>> ReadPublishedLayersAsync(
+        PublishedLayerReadScope scope,
         CancellationToken cancellationToken)
     {
+        var normalizedService = scope.Ownership.ServiceName;
         var layers = new List<PublishedLayerSummary>();
         const string sql = $"""
             SELECT
@@ -186,13 +187,16 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             LEFT JOIN honua.layer_fields f
                 ON f.layer_id = l.layer_id
             WHERE sl.service_name = @serviceName
+              AND {PublishedLayerConnectionPredicate}
             GROUP BY
                 {PublishedLayerColumns}
             ORDER BY l.layer_id;
             """;
 
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        await using var command = new NpgsqlCommand(sql, scope.Connection, scope.Transaction);
         command.Parameters.AddWithValue("@serviceName", normalizedService);
+        await AddPublishedLayerConnectionParametersAsync(
+            command, scope.Ownership, cancellationToken).ConfigureAwait(false);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -279,7 +283,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             ? await CaptureManagedStoreIdentityAsync(cancellationToken).ConfigureAwait(false)
             : null;
         // This connection holds the importer session lock below. On Lambda it is unpooled, so
-        // closing it ends the RDS Proxy-pinned session (honua-server#6765).
+        // closing it ends the RDS Proxy-pinned session.
         await using var connection = new NpgsqlConnection(
             (sessionLockConnections?.Value ?? PostgresSessionLockConnections.Pooled).Resolve(connectionString));
         await connection.OpenAsync(cancellationToken);
@@ -297,12 +301,15 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 {
                     AllowEmptyTable = request.AllowEmptyTable,
                     ManagedStore = isManagedStore,
+                    ExactTypes = request.ExactTypes,
+                    TemporalColumn = request.TemporalColumn,
                     Schema = schema,
                     Table = table,
                     LayerName = request.LayerName,
                     ServiceName = serviceName,
                     TargetSrid = request.Srid,
                     GeometryColumn = request.GeometryColumn,
+                    GeometryType = request.GeometryType,
                     PrimaryKey = request.PrimaryKey,
                     Fields = request.Fields,
                     ConnectionEndpointFingerprint = request.ConnectionEndpointFingerprint,
@@ -402,7 +409,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         }
 
         // A managed-store layer takes its identity from the managed store, so its source key
-        // may be of any type, unselected or absent (honua-server#4859).
+        // may be of any type, unselected or absent.
         if (!isManagedStore || request.CreateEditableCopy)
         {
             var primaryKeyType = MapPostgresType(primaryKeyColumn!.DataType);
@@ -414,9 +421,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             }
         }
 
-        var fields = isManagedStore && !request.CreateEditableCopy
-            ? BuildManagedLayerFields(selectedColumns, primaryKeyColumn, geometryColumn, request.FieldDomains)
-            : BuildLayerFields(selectedColumns, primaryKeyColumn!, geometryColumn, request.FieldDomains);
+        var fields = WithExactFieldTypes(
+            isManagedStore && !request.CreateEditableCopy
+                ? BuildManagedLayerFields(selectedColumns, primaryKeyColumn, geometryColumn, request.FieldDomains)
+                : BuildLayerFields(selectedColumns, primaryKeyColumn!, geometryColumn, request.FieldDomains),
+            selectedColumns,
+            PublishFieldTypePolicy.ForPublish(request, primaryKeyColumn?.Name));
         var attributeColumns = isManagedStore && !request.CreateEditableCopy
             ? SelectManagedAttributeColumns(selectedColumns, primaryKeyColumn, geometryColumn)
             : selectedColumns;
@@ -454,6 +464,14 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             .CaptureTransactionIdAsync(connection, transaction, cancellationToken)
             .ConfigureAwait(false);
 
+        // One type from a mixed table publishes through its own view, so each type is its own layer.
+        var sourceTable = table;
+        if (!isManagedStore && GeometryFamilyViewFor(validation, request.GeometryType) is { } familyView)
+        {
+            (table, geometryType) = await PrepareGeometryFamilyViewAsync(transaction, familyView, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         var serviceCreated = await EnsureServiceAsync(connection, transaction, serviceName, srid, request.ConnectionId, cancellationToken);
         await AcquireLayerPublishLockAsync(connection, transaction, schema, table, cancellationToken);
 
@@ -482,7 +500,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                     .Select(column => column.Name).ToArray());
 
         var storageCoordinateEpoch = await ResolveImportedStorageEpochAsync(
-            connection, transaction, request, schema, table, geometryColumn, storageSrid,
+            connection, transaction, request, schema, sourceTable, geometryColumn, storageSrid,
             storage.StorageSrid, cancellationToken);
 
         if (storage.IsManagedStore)
@@ -522,6 +540,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         await InsertFieldsAsync(connection, transaction, layerId, fields, cancellationToken);
 
+        var globalIdIndex = ManagedGlobalIdIndexFor(storage, layerId, ResolveEditingForPublish(request, fields)?.GlobalIdField);
+        await SerializeGlobalIdPublishAsync(transaction, globalIdIndex, cancellationToken).ConfigureAwait(false);
         var materializedCount = await MaterializeLayerFeaturesAsync(
             connection,
             transaction,
@@ -540,6 +560,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             await PrepareManagedCopyAsync(connection, transaction, layerId, managedSchema, primaryKeyColumn!.Name,
                 srid, cancellationToken).ConfigureAwait(false);
         }
+
+        await BuildManagedGlobalIdIndexAsync(transaction, globalIdIndex, cancellationToken).ConfigureAwait(false);
 
         var refreshedExtent = await RefreshLayerExtentAsync(connection, transaction, layerId, cancellationToken);
 
@@ -851,6 +873,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                     transaction)
                 .ConfigureAwait(false);
             AddGeometryHealthChecks(geometryHealth, checks, request.AllowEmptyTable);
+            SelectGeometryFamily(geometryHealth, checks, request.ManagedStore ? null : MixedGeometryFamily(request.GeometryType));
         }
         else if (string.IsNullOrWhiteSpace(geometryColumn))
         {
@@ -863,10 +886,15 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         }
 
         // A managed-store publication is an independent copy of the source rows, so an existing
-        // layer over the same table is not a conflict (honua-server#4859).
+        // layer over the same table is not a conflict.
         if (!request.ManagedStore)
         {
-            await AddExistingLayerCheckAsync(connection, schema, table, checks, cancellationToken, transaction)
+            // A layer published from one geometry type of a mixed table is keyed by its view.
+            var publishedFamily = checks.Any(check => check.Code == "mixed-geometry" && check.Severity == SeverityWarning)
+                ? MixedGeometryFamily(request.GeometryType)
+                : null;
+            var layerTable = publishedFamily is null ? table : GeometryFamilyViews.ViewName(table, publishedFamily);
+            await AddExistingLayerCheckAsync(connection, schema, layerTable, checks, cancellationToken, transaction)
                 .ConfigureAwait(false);
         }
 
@@ -1008,9 +1036,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         await UpdateServiceExtentAsync(connection, transaction, normalizedService, cancellationToken);
         var layers = await ReadPublishedLayersAsync(
-                connection,
-                transaction,
-                normalizedService,
+                new PublishedLayerReadScope(connection, transaction,
+                    new ConnectionLayerScope(normalizedService, null, ManagedDataConnection.Id)),
                 cancellationToken)
             .ConfigureAwait(false);
         var hydratedLayers = await HydrateSourceGovernanceAsync(layers, normalizedService, storageScope, cancellationToken)
@@ -1209,7 +1236,32 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         long InvalidGeometryCount,
         int DistinctGeometryTypeCount,
         int? MinSrid,
-        int? MaxSrid);
+        int? MaxSrid)
+    {
+        // Point, LineString and Polygon row counts, single and multi parts together.
+        public long[] FamilyRowCounts { get; init; } = [0L, 0L, 0L];
+
+        public long RowsOfFamily(string family) => family switch
+        {
+            "Point" => FamilyRowCounts[0],
+            "LineString" => FamilyRowCounts[1],
+            "Polygon" => FamilyRowCounts[2],
+            _ => 0
+        };
+    }
+
+    private sealed record GeometryFamilyView
+    {
+        public required string Schema { get; init; }
+
+        public required string SourceTable { get; init; }
+
+        public required string GeometryColumn { get; init; }
+
+        public required string Family { get; init; }
+
+        public string ViewName => GeometryFamilyViews.ViewName(SourceTable, Family);
+    }
 
     private readonly record struct ResolvedPublishValidation(
         string? GeometryColumn,

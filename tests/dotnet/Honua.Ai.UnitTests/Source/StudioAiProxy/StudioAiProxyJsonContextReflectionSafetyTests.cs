@@ -9,17 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
 
-/// <summary>
-/// Reproduces the reflection-disabled constraint the published server image runs under
-/// (<c>JsonSerializerIsReflectionEnabledByDefault=false</c> in <c>Honua.Server.csproj</c>): every
-/// CLR type the Studio AI proxy hands to <c>JsonSerializer.SerializeToElement</c> /
-/// <c>Serialize</c> must have a source-generated <c>JsonTypeInfo</c> registered in
-/// <see cref="StudioAiProxyJsonContext"/>. The rest of this test project runs with reflection
-/// enabled (the xUnit test-host default), which would silently mask an accidental anonymous-type
-/// <c>SerializeToElement</c> call or a missing registration; this test forces source-generated-only
-/// metadata (mirrors <c>MapServerFindSerializationTests</c>) so the gap surfaces as a failing test
-/// instead of a runtime throw on the AOT image (honua-server#3010 review).
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class StudioAiProxyJsonContextReflectionSafetyTests
 {
@@ -37,11 +26,6 @@ public sealed class StudioAiProxyJsonContextReflectionSafetyTests
             Function = new OpenAiProxyToolChoiceFunctionRef { Name = "list_incidents" }
         };
 
-        // The pre-fix adapter built this shape with an anonymous type passed to the
-        // parameterless SerializeToElement(value) overload, which resolves metadata through
-        // JsonSerializerOptions.Default and throws once reflection fallback is unavailable.
-        // Calling through the explicit source-generated JsonTypeInfo, as the fixed adapter does,
-        // must never depend on reflection at all.
         var act = () => JsonSerializer.SerializeToElement(dto, StudioAiProxyJsonContext.Default.OpenAiProxyToolChoiceSpecific);
 
         act.Should().NotThrow();

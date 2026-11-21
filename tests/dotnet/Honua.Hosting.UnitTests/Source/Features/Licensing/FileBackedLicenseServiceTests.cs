@@ -408,14 +408,14 @@ public sealed class FileBackedLicenseServiceTests
     [UnitTest]
     public async Task LoadBootstrapSnapshotAsync_LicenseContentSecretRef_WithResolver_ActivatesProEntitlements()
     {
-        // honua-server#1755: the bootstrap entitlement probe must honor a Secrets-Manager-only Pro
+        // The bootstrap entitlement probe must honor a Secrets-Manager-only Pro
         // license (Licensing:LicenseContentSecretRef) just like the per-request service does, so a
-        // startup gate such as the Redis-cache probe sees its caching.redis entitlement.
+        // startup gate sees its Pro entitlements.
         const string secretRef = "aws:secretsmanager:honua/license-pro";
         var license = LicenseTestSupport.CreateSignedLicense(
             HonuaEdition.Pro,
             expiresAt: DateTimeOffset.UtcNow.AddDays(365),
-            entitlements: ["caching.redis", "analytics.clustering"]);
+            entitlements: ["caching.output-cache", "analytics.clustering"]);
         var envelopeJson = Encoding.UTF8.GetString(license.LicenseData);
         var resolver = new FakeLicenseSecretResolver(envelopeJson);
 
@@ -434,8 +434,8 @@ public sealed class FileBackedLicenseServiceTests
 
         snapshot.Edition.Should().Be(HonuaEdition.Pro);
         snapshot.IsValid.Should().BeTrue();
-        snapshot.HasEntitlement("caching.redis").Should().BeTrue(
-            "the SM-resolved Pro license carries caching.redis, so the bootstrap Redis-cache gate must see it");
+        snapshot.HasEntitlement("caching.output-cache").Should().BeTrue(
+            "the SM-resolved Pro license carries caching.output-cache, so the bootstrap snapshot must see it");
         snapshot.HasEntitlement("analytics.clustering").Should().BeTrue();
         resolver.ResolveCallCount.Should().Be(1);
     }
@@ -475,8 +475,8 @@ public sealed class FileBackedLicenseServiceTests
 
         snapshot.Edition.Should().Be(HonuaEdition.Community);
         snapshot.IsValid.Should().BeTrue();
-        snapshot.HasEntitlement("caching.redis").Should().BeFalse(
-            "caching.redis is a Pro entitlement and must stay inactive for a Community license");
+        snapshot.HasEntitlement("caching.output-cache").Should().BeFalse(
+            "caching.output-cache is a Pro entitlement and must stay inactive for a Community license");
         resolver.ResolveCallCount.Should().Be(0);
     }
 
@@ -504,7 +504,7 @@ public sealed class FileBackedLicenseServiceTests
         var result = await service.UploadLicenseAsync(stream, CancellationToken.None);
 
         result.Success.Should().BeFalse();
-        result.Message.Should().Be("License validation failed: Malformed.");
+        result.Message.Should().Be("License validation failed: Malformed (invalid-size).");
         stream.BytesRead.Should().Be(MaxLicenseFileBytes + 1);
         File.Exists(licensePath).Should().BeFalse();
         logger.Entries.Should().Contain(entry =>
@@ -523,11 +523,6 @@ public sealed class FileBackedLicenseServiceTests
             logger,
             secretResolver is null ? null : [secretResolver]);
 
-    /// <summary>
-    /// Stand-in for a cloud secret store (e.g. AWS Secrets Manager) that returns the
-    /// configured license envelope content for a matching reference. Mirrors the
-    /// fail-safe contract of <see cref="ILicenseContentSecretResolver"/>.
-    /// </summary>
     private sealed class FakeLicenseSecretResolver : ILicenseContentSecretResolver
     {
         private readonly string _prefix;

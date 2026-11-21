@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Configuration;
 using Honua.Infrastructure.Helpers;
 using Honua.Protocols.Ogc.Api.Features;
 using Honua.Protocols.Ogc.Api.Tiles;
@@ -92,7 +93,7 @@ public sealed class CertificationCriticalRegressionTests
             }
             """);
 
-        var resolved = StyleEndpointUrlResolver.Resolve(input.RootElement, "https://public.example.test");
+        var resolved = StyleEndpointUrlResolver.Resolve(input.RootElement, OfflineContext("https://public.example.test"));
 
         resolved.GetProperty("sprite").GetString().Should().Be("https://public.example.test/sprites/default");
         resolved.GetProperty("glyphs").GetString().Should().Be("https://public.example.test/fonts/{fontstack}/{range}.pbf");
@@ -109,7 +110,7 @@ public sealed class CertificationCriticalRegressionTests
             """{"version":8,"sprite":"//cdn.example.test/sprites/default","sources":{"layer-2110":{"type":"vector","tiles":["/tiles/2110/{z}/{x}/{y}.mvt","https://other.example.test/t/{z}/{x}/{y}.mvt"]}},"layers":[]}""";
 
         using var resolved = JsonDocument.Parse(
-            StyleEndpointUrlResolver.Resolve(stored, "https://public.example.test/"));
+            StyleEndpointUrlResolver.Resolve(stored, OfflineContext("https://public.example.test/")));
 
         var tiles = resolved.RootElement.GetProperty("sources").GetProperty("layer-2110").GetProperty("tiles");
         tiles[0].GetString().Should().Be("https://public.example.test/tiles/2110/{z}/{x}/{y}.mvt");
@@ -122,6 +123,8 @@ public sealed class CertificationCriticalRegressionTests
     {
         const string stored = """{ "version": 8, "sources": {}, "layers": [] }""";
 
-        StyleEndpointUrlResolver.Resolve(stored, "https://public.example.test").Should().BeSameAs(stored);
+        StyleEndpointUrlResolver.Resolve(stored, OfflineContext("https://public.example.test")).Should().BeSameAs(stored);
     }
+
+    private static StyleUrlContext OfflineContext(string baseUrl) => new(baseUrl, null, new TileLimits());
 }

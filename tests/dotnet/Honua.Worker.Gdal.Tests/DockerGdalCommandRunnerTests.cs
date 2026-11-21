@@ -10,16 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Offline coverage for the opt-in container-exec GDAL command runner
-/// (<see cref="DockerGdalCommandRunner"/>, issue #2180). Docker is NOT available on a
-/// lean CI agent, so these tests verify the load-bearing, correct-by-construction part
-/// of the runner — the exact <c>docker run …</c> argument vector it builds (image ref,
-/// identical-path bind mount, working dir, user, network, entrypoint-override, tool
-/// args) — and that it delegates to the container-runtime seam. The end-to-end run
-/// against a real container is CI/local-Docker-verified (it needs the
-/// <c>honua-worker-etl</c> image and a Docker daemon).
-/// </summary>
 public sealed class DockerGdalCommandRunnerTests
 {
     [UnitTest]

@@ -24,13 +24,9 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for the anonymous admin auth bootstrap and backend-assisted OIDC endpoints.
-/// </summary>
-[Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
+public sealed partial class AdminAuthEndpointsTests : IClassFixture<AdminAuthEndpointsTests.BaseSessionHost>, IDisposable
 {
     private const string TestTenantId = "11111111-1111-1111-1111-111111111111";
     private const string TestClientId = "22222222-2222-2222-2222-222222222222";
@@ -43,36 +39,18 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     private static readonly RsaSecurityKey _oidcSigningKey = CreateOidcSigningKey();
     private static readonly SigningCredentials _oidcSigningCredentials = new(_oidcSigningKey, SecurityAlgorithms.RsaSha256);
 
-    private readonly WebAppFixture _fixture;
-    private HttpClient? _client;
+    private readonly HttpClient _baseClient;
 
-    public AdminAuthEndpointsTests()
-    {
-        _fixture = CreateBaseFixture();
-    }
+    // Configured OIDC and certificate cases own their app; the default-app cases share the class host.
+    public AdminAuthEndpointsTests(BaseSessionHost baseHost) => _baseClient = baseHost.CreateBrowser();
 
-    public Task InitializeAsync() => Task.CompletedTask;
-
-    // Configured OIDC and certificate cases own their app; boot the default app only when used.
-    private async Task<HttpClient> GetClientAsync()
-    {
-        if (_client is not null)
-        {
-            return _client;
-        }
-
-        await _fixture.InitializeAsync();
-        _client = _fixture.CreateClient();
-        return _client;
-    }
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public void Dispose() => _baseClient.Dispose();
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/auth/config")]
     public async Task GetAuthConfig_IsAnonymous_Returns200()
     {
-        var client = await GetClientAsync();
+        var client = _baseClient;
         var response = await client.GetAsync("/api/v1/admin/auth/config");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -83,7 +61,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/auth/config")]
     public async Task GetAuthConfig_NoOidcConfigured_ReturnsEmptyProviders()
     {
-        var client = await GetClientAsync();
+        var client = _baseClient;
         var response = await client.GetAsync("/api/v1/admin/auth/config");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -227,7 +205,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/auth/logout")]
     public async Task Logout_IsAnonymous_Returns200()
     {
-        var client = await GetClientAsync();
+        var client = _baseClient;
         var response = await client.PostAsJsonAsync("/api/v1/admin/auth/logout", new object());
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -237,7 +215,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
     public async Task CreateAuthorizeUrl_NoOidcConfigured_ReturnsNotFound()
     {
-        var client = await GetClientAsync();
+        var client = _baseClient;
         var response = await client.PostAsJsonAsync(
             "/api/v1/admin/auth/providers/azuread/authorize-url",
             new { });
@@ -295,12 +273,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
                 "https://auth.example.com/token",
                 "https://auth.example.com/logout"));
 
-        var oidcFixture = CreateGenericOidcFixture(stubFactory)
-            .UseEnvironment("Production")
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", "Production-Test-Password1!");
-            });
+        var oidcFixture = CreateProductionGenericOidcFixture(stubFactory);
 
         var initialized = false;
         try
@@ -337,12 +310,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
                 "https://auth.example.com/token",
                 "https://auth.example.com/logout"));
 
-        var oidcFixture = CreateGenericOidcFixture(stubFactory)
-            .UseEnvironment("Production")
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", "Production-Test-Password1!");
-            });
+        var oidcFixture = CreateProductionGenericOidcFixture(stubFactory);
 
         var initialized = false;
         try
@@ -377,12 +345,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
                 "https://auth.example.com/token",
                 "https://auth.example.com/logout"));
 
-        var oidcFixture = CreateGenericOidcFixture(stubFactory)
-            .UseEnvironment("Production")
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", "Production-Test-Password1!");
-            });
+        var oidcFixture = CreateProductionGenericOidcFixture(stubFactory);
 
         var initialized = false;
         try
@@ -432,7 +395,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/token")]
     public async Task RequestToken_NoOidcConfigured_ReturnsNotFound()
     {
-        var client = await GetClientAsync();
+        var client = _baseClient;
         var response = await client.PostAsJsonAsync(
             "/api/v1/admin/auth/providers/azuread/token",
             new
@@ -560,7 +523,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/auth/providers/{providerKey}/logout-url")]
     public async Task GetLogoutUrl_NoOidcConfigured_ReturnsNotFound()
     {
-        var client = await GetClientAsync();
+        var client = _baseClient;
         var response = await client.GetAsync("/api/v1/admin/auth/providers/azuread/logout-url");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -649,6 +612,9 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
         {
             await oidcFixture.InitializeAsync();
             var oidcClient = oidcFixture.CreateClient();
+            // The public base URL is https, so the pending sign-in cookie is Secure and the
+            // browser reaches the server over https.
+            oidcClient.BaseAddress = new Uri("https://localhost");
 
             var authorizeResponse = await oidcClient.PostAsJsonAsync(
                 "/api/v1/admin/auth/providers/oidc/authorize-url",
@@ -1036,7 +1002,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/auth/bearer")]
     public async Task IssueOperatorBearer_WithoutAuthenticatedSession_ReturnsUnauthorized()
     {
-        var client = await GetClientAsync();
+        var client = _baseClient;
         var response = await client.PostAsync("/api/v1/admin/auth/bearer", content: null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -1266,6 +1232,18 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
 
     private static WebAppFixture CreateGenericOidcFixture(IHttpClientFactory httpClientFactory) =>
         ConfigureGenericOidcFixture(CreateBaseFixture(), httpClientFactory);
+
+    private static WebAppFixture CreateProductionGenericOidcFixture(IHttpClientFactory httpClientFactory) =>
+        CreateGenericOidcFixture(httpClientFactory)
+            .UseEnvironment("Production")
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", "Production-Test-Password1!");
+                // Production startup rejects relaxed token validation.
+                builder.UseSetting("Oidc:TokenValidation:ValidateIssuer", "true");
+                builder.UseSetting("Oidc:TokenValidation:ValidateAudience", "true");
+                builder.UseSetting("Oidc:TokenValidation:ValidateIssuerSigningKey", "true");
+            });
 
     internal static WebAppFixture ConfigureGenericOidcFixture(WebAppFixture fixture, IHttpClientFactory httpClientFactory)
     {

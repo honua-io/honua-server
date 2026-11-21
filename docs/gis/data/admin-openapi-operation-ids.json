@@ -279,10 +279,10 @@
       "path": "/folders"
     },
     {
-      "operationId": "createFormPackageDraft",
+      "operationId": "createFormDraft",
       "catalogOperationId": null,
       "method": "POST",
-      "path": "/forms/packages"
+      "path": "/forms"
     },
     {
       "operationId": "createInvestigation",
@@ -301,6 +301,12 @@
       "catalogOperationId": null,
       "method": "POST",
       "path": "/metadata/release-packages"
+    },
+    {
+      "operationId": "createObjectStorageConnectionSetup",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/connections/object-storage/setup"
     },
     {
       "operationId": "createOidcProvider",
@@ -825,10 +831,10 @@
       "path": "/metadata/coordinated-releases/{packageId}/operation"
     },
     {
-      "operationId": "getCurrentFormPackage",
+      "operationId": "getCurrentForm",
       "catalogOperationId": null,
       "method": "GET",
-      "path": "/forms/packages/{formId}"
+      "path": "/forms/{formId}"
     },
     {
       "operationId": "getDatabaseQueryCacheStatistics",
@@ -933,10 +939,10 @@
       "path": "/field-workflows/submissions/{submissionId}"
     },
     {
-      "operationId": "getFormPackageVersion",
+      "operationId": "getFormVersion",
       "catalogOperationId": null,
       "method": "GET",
-      "path": "/forms/packages/{formId}/versions/{packageVersion}"
+      "path": "/forms/{formId}/versions/{formVersion}"
     },
     {
       "operationId": "getGeoServerImportJob",
@@ -1383,6 +1389,12 @@
       "path": "/zarr-stores/{id}"
     },
     {
+      "operationId": "goLiveFormDraft",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/forms/{formId}/versions/{formVersion}/publish"
+    },
+    {
       "operationId": "importGeocoderReferenceData",
       "catalogOperationId": null,
       "method": "POST",
@@ -1527,6 +1539,12 @@
       "path": "/cloud-rasters"
     },
     {
+      "operationId": "listConnectionObjects",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/connections/{id}/objects"
+    },
+    {
       "operationId": "listConsoleJobs",
       "catalogOperationId": null,
       "method": "GET",
@@ -1581,16 +1599,16 @@
       "path": "/folders"
     },
     {
-      "operationId": "listFormPackageVersions",
+      "operationId": "listFormVersions",
       "catalogOperationId": null,
       "method": "GET",
-      "path": "/forms/packages/{formId}/versions"
+      "path": "/forms/{formId}/versions"
     },
     {
-      "operationId": "listFormPackages",
+      "operationId": "listForms",
       "catalogOperationId": null,
       "method": "GET",
-      "path": "/forms/packages"
+      "path": "/forms"
     },
     {
       "operationId": "listGeoServerImportJobs",
@@ -1701,6 +1719,12 @@
       "path": "/observability/audit"
     },
     {
+      "operationId": "listOidcProviderRevisions",
+      "catalogOperationId": "admin.oidc-provider.revisions",
+      "method": "GET",
+      "path": "/oidc/providers/{id}/revisions"
+    },
+    {
       "operationId": "listOidcProviders",
       "catalogOperationId": "admin.oidc-provider.list",
       "method": "GET",
@@ -1747,6 +1771,12 @@
       "catalogOperationId": "admin.rate-limit-policy.list",
       "method": "GET",
       "path": "/rate-limits"
+    },
+    {
+      "operationId": "listRateLimitPolicyRevisions",
+      "catalogOperationId": "admin.rate-limit-policy.revisions",
+      "method": "GET",
+      "path": "/rate-limits/{id}/revisions"
     },
     {
       "operationId": "listRlsPolicies",
@@ -1899,12 +1929,6 @@
       "path": "/raster-artifacts/cog"
     },
     {
-      "operationId": "publishFormPackageVersion",
-      "catalogOperationId": null,
-      "method": "POST",
-      "path": "/forms/packages/{formId}/versions/{packageVersion}/publish"
-    },
-    {
       "operationId": "publishGpProcessRelease",
       "catalogOperationId": null,
       "method": "POST",
@@ -2049,10 +2073,10 @@
       "path": "/investigations/{investigationId}/pins/{pinId}"
     },
     {
-      "operationId": "reopenFormPackageVersion",
+      "operationId": "reopenFormVersion",
       "catalogOperationId": null,
       "method": "POST",
-      "path": "/forms/packages/{formId}/versions/{packageVersion}/reopen"
+      "path": "/forms/{formId}/versions/{formVersion}/reopen"
     },
     {
       "operationId": "replayFeatureChangeEvents",
@@ -2373,6 +2397,18 @@
       "path": "/share/exports/{exportId}/trigger"
     },
     {
+      "operationId": "undoOidcProviderChange",
+      "catalogOperationId": "admin.oidc-provider.undo",
+      "method": "POST",
+      "path": "/oidc/providers/{id}/undo"
+    },
+    {
+      "operationId": "undoRateLimitPolicyChange",
+      "catalogOperationId": "admin.rate-limit-policy.undo",
+      "method": "POST",
+      "path": "/rate-limits/{id}/undo"
+    },
+    {
       "operationId": "unregisterCloudRaster",
       "catalogOperationId": null,
       "method": "DELETE",
@@ -2463,10 +2499,10 @@
       "path": "/folders/{id}"
     },
     {
-      "operationId": "updateFormPackageDraft",
+      "operationId": "updateFormDraft",
       "catalogOperationId": null,
       "method": "PUT",
-      "path": "/forms/packages/{formId}/versions/{packageVersion}"
+      "path": "/forms/{formId}/versions/{formVersion}"
     },
     {
       "operationId": "updateImportedRaster",
@@ -2607,10 +2643,10 @@
       "path": "/connections/{id}/tables/validate"
     },
     {
-      "operationId": "validateFormPackageVersion",
+      "operationId": "validateFormDraft",
       "catalogOperationId": null,
       "method": "POST",
-      "path": "/forms/packages/{formId}/versions/{packageVersion}/validate"
+      "path": "/forms/{formId}/versions/{formVersion}/validate"
     },
     {
       "operationId": "validatePackage",

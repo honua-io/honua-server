@@ -116,7 +116,7 @@ internal sealed partial class GdalProximityJobExecutor(
             var outputPath = Path.Join(workspace, "output.tif");
             // Bound the DECLARED pixel footprint before invoking GDAL so a
             // compressible GeoTIFF declaring enormous dimensions cannot force a
-            // decompression-bomb allocation (#2766).
+            // decompression-bomb allocation.
             if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
                 return JobExecutionResult.Failed($"Invalid raster input: {dimensionError}");
@@ -129,14 +129,9 @@ internal sealed partial class GdalProximityJobExecutor(
 
             if (isAllocation)
             {
-                // Custom worker step: stock gdal_proximity has no nearest-source
-                // allocation mode. python3 Scripts/gdal_euclidean_allocation.py SRC DST
-                // [--band 1] --dist-units U [--max-distance D] [--values v,...] — keep
-                // the positional src/dst pair first so the optional flags follow.
-                // "Scripts" and AllocationScriptName are both fixed relative literals
-                // (the latter a private const), so neither can be rooted and silently
-                // discard AppContext.BaseDirectory.
-                var scriptPath = Path.Join(AppContext.BaseDirectory, "Scripts", AllocationScriptName);
+                // Copy the script into the mounted workspace so container execution can read it.
+                var scriptPath = Path.Join(workspace, AllocationScriptName);
+                File.Copy(Path.Join(AppContext.BaseDirectory, "Scripts", AllocationScriptName), scriptPath, overwrite: true);
                 var allocArgs = new List<string>
                 {
                     scriptPath,
@@ -171,11 +166,12 @@ internal sealed partial class GdalProximityJobExecutor(
                     cancellationToken).ConfigureAwait(false);
             }
 
-            // gdal_proximity.py [options] srcfile dstfile — keep the positional
-            // src/dst pair last so the output path is the final argument.
+            const string DistanceScriptName = "gdal_euclidean_distance.py";
+            var distanceScriptPath = Path.Join(workspace, DistanceScriptName);
+            File.Copy(Path.Join(AppContext.BaseDirectory, "Scripts", DistanceScriptName), distanceScriptPath, overwrite: true);
             var args = new List<string>
             {
-                Path.Join(AppContext.BaseDirectory, "Scripts", "gdal_euclidean_distance.py"),
+                distanceScriptPath,
                 "-of", "GTiff",
                 "-ot", "Float32",
                 "-distunits", distUnits,

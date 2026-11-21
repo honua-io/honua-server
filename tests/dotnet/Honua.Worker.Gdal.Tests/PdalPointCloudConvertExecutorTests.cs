@@ -10,26 +10,12 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Fake-runner coverage for <see cref="PdalPointCloudConvertJobExecutor"/>
-/// (LAZ/COPC decompress + projected-CRS reprojection, #1854). Pins routing,
-/// <c>pdal translate</c> argument projection, the geographic-source pass-through,
-/// the CRS-token guard, the artifact size guard, and the canonical
-/// uncompressed-LAS artifact contract — all without PDAL installed.
-/// </summary>
 public sealed class PdalPointCloudConvertExecutorTests
 {
     private const string ScratchSuite = "honua-pdal-pcloud-test";
 
     private static string Base64(string text) => GdalCli.Base64(text);
 
-    /// <summary>
-    /// A fake runner that succeeds and writes <paramref name="outputBytes"/> to the
-    /// <c>output.las</c> argument. The PDAL argument vector ends with a writer
-    /// option (not the output path), so the generic last-arg
-    /// <see cref="FakeGdalCommandRunner.Succeeding"/> cannot be used here — the
-    /// output path is the third positional argument of <c>pdal translate</c>.
-    /// </summary>
     private static FakeGdalCommandRunner SucceedingWritingOutput(byte[] outputBytes)
         => new((_, args, _) =>
         {
@@ -286,7 +272,7 @@ public sealed class PdalPointCloudConvertExecutorTests
         args.Should().NotContain("reprojection");
         args.Should().Contain("--writers.las.compression=false");
 
-        // honua-server#4401: `pdal translate` otherwise writes its DEFAULT 0.01 scale rather than
+        // `pdal translate` otherwise writes its DEFAULT 0.01 scale rather than
         // the source's, quantising a verbatim decompress. For a geographic source that is 0.01
         // degrees — roughly 1.1 km. Forwarding scale and offset preserves the producer's
         // resolution whatever CRS the source is in.
@@ -302,7 +288,7 @@ public sealed class PdalPointCloudConvertExecutorTests
         args.Should().Contain("--filters.reprojection.in_srs=EPSG:32610");
         args.Should().Contain("--filters.reprojection.out_srs=EPSG:4979");
 
-        // #4401: the output is EPSG:4979 degrees, so the source's projected (metre) scale must
+        // The output is EPSG:4979 degrees, so the source's projected (metre) scale must
         // NOT be forwarded; an explicit geographic scale is pinned instead, with an automatic
         // offset so the int32 point records stay in range.
         args.Should().NotContain("--writers.las.forward=scale,offset");

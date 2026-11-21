@@ -5,27 +5,8 @@ using System.Text.Json;
 
 namespace Honua.ProviderSmoke.Tests;
 
-/// <summary>
-/// Shared interface-level smoke assertions run against every primary-provider
-/// (DuckDB/MySql) web-app fixture (honua-server#2947). Both providers are primary
-/// <c>DataSource:Provider</c> replacements, so the seeded "parcels" layer
-/// (<see cref="ProviderSmokeGraph.LayerId"/>, see <see cref="ProviderSmokeData"/>) is
-/// reachable through every read/query GA
-/// surface it documents support for: GeoServices FeatureServer, OGC API Features,
-/// OData, and tiles (TileJSON + a raster PNG tile; vector MVT is out of scope —
-/// both providers' <c>FeatureProviderCapabilities.SupportsNativeMvt</c> is
-/// <see langword="false"/> by design, see docs/reference/configuration/data-sources).
-/// </summary>
-/// <remarks>
-/// xunit runs <c>[Fact]</c>-attributed methods declared on a base class once per
-/// concrete subclass, so this base class's test bodies execute independently
-/// against the DuckDB fixture (<see cref="DuckDbProviderSmokeTests"/>) and the
-/// MySql fixture (<see cref="MySqlProviderSmokeTests"/>) — real, separate test
-/// results per provider, not a single shared run.
-/// </remarks>
 public abstract class PrimaryProviderSmokeTestsBase
 {
-    /// <summary>HTTP client bound to the concrete subclass's provider-backed host.</summary>
     protected abstract HttpClient Client { get; }
 
     [IntegrationTest]
@@ -50,10 +31,9 @@ public abstract class PrimaryProviderSmokeTestsBase
         }
     }
 
-    // Shared since the honua-server#2965 EWKB/plain-WKB converter fix landed: spatial
-    // filter geometries are now translated to each provider's expected WKB flavor, so the
-    // same bbox assertion runs for real against every primary provider (previously MySQL
-    // 500'd here and each subclass declared its own copy, MySql's skipped).
+    // Shared across providers: spatial filter geometries are translated to each
+    // provider's expected WKB flavor, so the same bbox assertion runs for real against
+    // every primary provider.
     [IntegrationTest]
     [Protocol(ProtocolNames.FeatureServer)]
     [Operation(Operations.Query)]
@@ -170,9 +150,9 @@ public abstract class PrimaryProviderSmokeTestsBase
         // provider to reproject 4326 storage geometry into 3857 tile space. WorldCRS84Quad
         // needs no reprojection. Zoom 0 / row 0 / col 0 covers the western hemisphere
         // (-180..0 longitude), so the seeded parcels (~-122 longitude) always fall inside it.
-        // Shared since honua-server#2965 landed: the tile renderer's envelope-intersects
-        // query previously matched zero rows on MySQL (silent empty 204 tile) because of the
-        // same EWKB/plain-WKB converter bug that broke the explicit bbox path.
+        // The tile renderer's envelope-intersects query depends on the same EWKB/plain-WKB
+        // conversion as the explicit bbox path; a wrong WKB flavor matches zero rows on MySQL
+        // (a silent empty 204 tile).
         var response = await Client.GetAsync(
             $"/ogc/tiles/collections/{ProviderSmokeGraph.LayerId}/tiles/WorldCRS84Quad/0/0/0?f=png");
 

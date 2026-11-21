@@ -17,7 +17,7 @@ internal sealed partial class PostgresVersionManager : IVersionManager
     private const string DefaultVersionSentinel = "sde.default";
 
     // The (service, version) maintenance lock auto-expires after this lease if a holder crashes
-    // mid-reconcile/post, so a stuck lock can never permanently wedge a version (#1553). The Redis
+    // mid-reconcile/post, so a stuck lock can never permanently wedge a version. The lease
     // handle renews the lease while the critical section runs.
     private static readonly TimeSpan MaintenanceLockLease = TimeSpan.FromMinutes(15);
 
@@ -55,7 +55,7 @@ internal sealed partial class PostgresVersionManager : IVersionManager
         // Sequence allocations include uncommitted writes; the merge base must only include committed changes.
         const string sql = """
             WITH committed_generation AS (
-                SELECT COALESCE(MAX(generation), 0) AS generation FROM honua.feature_changes
+                SELECT honua.feature_change_read_horizon() AS generation
             )
             INSERT INTO honua.gdb_versions (version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description)
             SELECT @name, @owner, @parent, @access, 0, generation, generation, @description
@@ -193,7 +193,7 @@ internal sealed partial class PostgresVersionManager : IVersionManager
 
         // Match the wire identity (owner + name, without qualifying a name that already starts with
         // the owner) so a dotted branch name is not split on the last dot. A bare name has no dot and
-        // matches version_name across owners; the caller's own row wins, then the oldest (#6140).
+        // matches version_name across owners; the caller's own row wins, then the oldest.
         // position() is used instead of LIKE so an owner that contains '_' or '%' is not a pattern.
         const string byNameSql = """
             SELECT version_id, version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description, created_at, modified_at

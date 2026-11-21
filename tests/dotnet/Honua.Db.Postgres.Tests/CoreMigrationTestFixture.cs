@@ -5,10 +5,6 @@ using Honua.TestKit;
 
 namespace Honua.Db.Postgres.Tests;
 
-/// <summary>
-/// Applies canonical numbered migration SQL to an isolated test schema. Production stores must
-/// never provision these objects; tests that skip DbUp own their schema setup explicitly.
-/// </summary>
 internal static class CoreMigrationTestFixture
 {
     public static async Task ApplyMetadataV2Async(PostgresFixture fixture, string schema)
@@ -33,11 +29,17 @@ internal static class CoreMigrationTestFixture
         await ApplyGlobalIdIntegrityAsync(fixture, schema);
     }
 
-    public static Task ApplyGlobalIdIntegrityAsync(PostgresFixture fixture, string schema) =>
-        ApplyAsync(
+    public static async Task ApplyGlobalIdIntegrityAsync(PostgresFixture fixture, string schema)
+    {
+        await ApplyAsync(
             fixture,
             schema,
             "src", "Honua.Server", "Migrations", "198_EnforceMetadataGlobalIdUniqueness.sql");
+        await ApplyAsync(
+            fixture,
+            schema,
+            "src", "Honua.Server", "Migrations", "219_SkipGlobalIdIndexesOfPublishingLayers.sql");
+    }
 
     public static Task ApplyRasterLayerStatisticsAsync(PostgresFixture fixture, string schema) =>
         ApplyAsync(
@@ -50,6 +52,14 @@ internal static class CoreMigrationTestFixture
             fixture,
             schema,
             "src", "Honua.Server", "Migrations", "055_SetRasterDataExternalStorage.sql");
+
+    // 156 adds the generation trigger to metadata_v2_current, so the metadata tables come first.
+    public static async Task ApplyObjectStorageConnectionsAsync(PostgresFixture fixture, string schema)
+    {
+        await ApplyPreVocabularyMetadataV2Async(fixture, schema);
+        await ApplyAsync(fixture, schema, "src", "Honua.Server", "Migrations", "156_CreateConfigurationDocuments.sql");
+        await ApplyAsync(fixture, schema, "src", "Honua.Server", "Migrations", "222_CreateObjectStorageConnections.sql");
+    }
 
     private static async Task ApplyAsync(
         PostgresFixture fixture,

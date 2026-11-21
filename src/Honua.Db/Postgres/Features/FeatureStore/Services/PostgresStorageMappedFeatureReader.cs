@@ -127,7 +127,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var objectIdField = _resource.SchemaFields.FirstOrDefault(field =>
             field.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase));
         var injectObjectId = objectIdField is null || objectIdField.Name.Equals(primaryIdFieldName, StringComparison.OrdinalIgnoreCase);
-        // Preserve the historical encoded column name unless a source attribute owns it.
+        // Encode the primary key as objectid unless a source attribute owns that name.
         var encodedPrimaryIdName = injectObjectId ? FieldNames.ObjectId : primaryIdFieldName;
         return (primaryIdFieldName, injectObjectId, encodedPrimaryIdName);
     }
@@ -159,6 +159,26 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return await QueryCoreAsync(query, cancellationToken).ConfigureAwait(false);
     }
 
+    // A page cut short of the nearest count reads one probe row so the more-results flag is exact.
+    private async Task<QueryResult<Feature>> QueryNearestNeighborsAsync(
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+    {
+        var probe = query.NearestNeighborCountExceedsLimit();
+        var nearestItems = await ExecuteFeatureQueryAsync(
+            probe ? query with { Limit = query.Limit + 1 } : query,
+            cancellationToken).ConfigureAwait(false);
+        var hasMoreNearest = probe && nearestItems.Length > query.Limit;
+        if (hasMoreNearest)
+        {
+            nearestItems = nearestItems.RemoveAt(nearestItems.Length - 1);
+        }
+
+        return nearestItems.Length == 0 && !hasMoreNearest
+            ? QueryResult<Feature>.Empty()
+            : QueryResult<Feature>.Create(nearestItems.Length, nearestItems, hasMoreNearest);
+    }
+
     // Only public entry points resolve security. Nested count/page operations use
     // this same resolved query, including when no row filter or field mask applies.
     private async Task<QueryResult<Feature>> QueryCoreAsync(
@@ -167,17 +187,14 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     {
         if (IsNearestNeighborQuery(query))
         {
-            var nearestItems = await ExecuteFeatureQueryAsync(query, probeLimit: false, cancellationToken).ConfigureAwait(false);
-            return nearestItems.Length == 0
-                ? QueryResult<Feature>.Empty()
-                : QueryResult<Feature>.Create(nearestItems.Length, nearestItems, hasMoreResults: false);
+            return await QueryNearestNeighborsAsync(query, cancellationToken).ConfigureAwait(false);
         }
 
         var offset = query.Offset.GetValueOrDefault();
         ImmutableArray<Feature> items = default;
         if (!query.Distinct && offset == 0 && query.Limit is int limit && limit > 0)
         {
-            items = await ExecuteFeatureQueryAsync(query, probeLimit: false, cancellationToken).ConfigureAwait(false);
+            items = await ExecuteFeatureQueryAsync(query, cancellationToken).ConfigureAwait(false);
             // A short first page proves the exact total in that SELECT's snapshot.
             // Full pages still need a separate count; as before, the two reads
             // do not establish a shared snapshot unless the caller supplies one.
@@ -203,7 +220,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
         if (items.IsDefault)
         {
-            items = await ExecuteFeatureQueryAsync(query, probeLimit: false, cancellationToken).ConfigureAwait(false);
+            items = await ExecuteFeatureQueryAsync(query, cancellationToken).ConfigureAwait(false);
         }
 
         var hasMoreResults = offset + items.Length < totalCount;
@@ -452,18 +469,16 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             return PagedQueryResult<Feature>.Create(result.Items, result.HasMoreResults, result.TotalCount);
         }
 
-        var items = await ExecuteFeatureQueryAsync(query, probeLimit: true, cancellationToken).ConfigureAwait(false);
-        if (items.Length == 0)
+        await using var session = await OpenFeatureReadSessionAsync(
+            query, probeLimit: true, allowSerialPlan: true, cancellationToken).ConfigureAwait(false);
+        using var rows = await ReadFeatureRowsAsync(session, cancellationToken).ConfigureAwait(false);
+        if (rows.Count == 0)
         {
             return PagedQueryResult<Feature>.Empty();
         }
 
-        var hasMoreResults = items.Length > query.Limit.Value;
-        if (hasMoreResults)
-        {
-            items = items.RemoveAt(items.Length - 1);
-        }
-
+        var hasMoreResults = rows.Count > query.Limit.Value;
+        var items = rows.ToImmutable(hasMoreResults ? rows.Count - 1 : rows.Count);
         return PagedQueryResult<Feature>.Create(items, hasMoreResults);
     }
 
@@ -515,20 +530,35 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private async Task<ImmutableArray<Feature>> ExecuteFeatureQueryAsync(
         FeatureQuery query,
-        bool probeLimit,
         CancellationToken cancellationToken)
     {
-        var features = ImmutableArray.CreateBuilder<Feature>();
         await using var session = await OpenFeatureReadSessionAsync(
-            query, probeLimit, allowSerialPlan: true, cancellationToken).ConfigureAwait(false);
-        var reader = session.Reader!;
-        var attributesReader = new FeatureAttributeReadContext();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            features.Add(ReadFeature(reader, session.NativeAttributes, attributesReader));
-        }
+            query, probeLimit: false, allowSerialPlan: true, cancellationToken).ConfigureAwait(false);
+        using var rows = await ReadFeatureRowsAsync(session, cancellationToken).ConfigureAwait(false);
+        return rows.ToImmutable(rows.Count);
+    }
 
-        return features.ToImmutable();
+    private async Task<PooledFeatureBuffer> ReadFeatureRowsAsync(
+        FeatureReadSession session,
+        CancellationToken cancellationToken)
+    {
+        var rows = new PooledFeatureBuffer();
+        try
+        {
+            var reader = session.Reader!;
+            var attributesReader = new FeatureAttributeReadContext();
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                rows.Add(ReadFeature(reader, session.NativeAttributes, attributesReader));
+            }
+
+            return rows;
+        }
+        catch
+        {
+            rows.Dispose();
+            throw;
+        }
     }
 
     private SqlBuilder BuildFeatureSelect(FeatureQuery query, bool probeLimit)
@@ -692,11 +722,19 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             }
             else
             {
-                parts.Add(ValidateAndQuoteIdentifier(field.Name));
+                parts.Add(ColumnValueExpression(field));
             }
         }
 
         return $"jsonb_build_object({string.Join(", ", parts)})";
+    }
+
+    // An exact decimal leaves as its canonical text so jsonb never rounds it through a number.
+    // timestamptz already serialises as RFC 3339 text inside jsonb, so it keeps the column.
+    private static string ColumnValueExpression(MetadataV2Field field)
+    {
+        var column = ValidateAndQuoteIdentifier(field.Name);
+        return field.Type == MetadataV2FieldType.Decimal ? $"{column}::text" : column;
     }
 
     private static bool IsObjectIdField(string fieldName)
@@ -726,7 +764,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         // every protocol's projection. STAC extension properties are the concrete
         // case: `eo:cloud_cover` is a declared, filterable queryable, yet it was
         // absent from FeatureServer/OGC API Features/STAC responses because the
-        // colon failed the identifier check (honua-server#3392). The JSONB branch is not
+        // colon failed the identifier check. The JSONB branch is not
         // ungated, though: it keeps the jsonb-key allow-list (which admits the prefixed
         // shapes but no quote, whitespace or control character), so nothing that could
         // break out of the escaped string literal reaches the emitted SQL either way.
@@ -842,8 +880,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     }
 
     // OGC API Features `datetime` (and any temporal query) lands here as a
-    // TemporalFilter. The storage-mapped reader previously dropped it, so the
-    // filter was silently ignored. Row interval is [start, COALESCE(end, start)];
+    // TemporalFilter. Row interval is [start, COALESCE(end, start)];
     // it must intersect the query interval [Start, End].
     private string BuildTemporalFilter(TemporalFilter filter, SqlBuilder sql)
     {
@@ -1187,7 +1224,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 // hold). For text/string fields it must NOT be applied: Esri and PostgreSQL
                 // treat an empty string as a non-NULL value, so wrapping a string column in
                 // NULLIF(..., '') would make `field IS NOT NULL` (and `field = ''`) silently
-                // drop empty-string rows, diverging from the source service (#1703).
+                // drop empty-string rows, diverging from the source service.
                 var fieldType = resolveFieldType?.Invoke(fieldName);
                 if (PreservesEmptyString(fieldType))
                 {
@@ -1382,19 +1419,16 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private static void AppendPagination(SqlBuilder sql, FeatureQuery query, bool probeLimit = false)
     {
-        var spatialFilter = query.SpatialFilter;
-        var isNearestNeighbor = spatialFilter.HasValue &&
-                                spatialFilter.Value.SpatialRelationship == SpatialRelationship.NearestNeighbor;
-        var nearestCount = isNearestNeighbor
-            ? spatialFilter.GetValueOrDefault().NearestCount
-            : null;
+        var isNearestNeighbor = IsNearestNeighborQuery(query);
         var limit = isNearestNeighbor
-            ? nearestCount ?? query.Limit
+            ? query.ResolveNearestNeighborRowLimit()
             : query.Limit;
 
         if (limit.HasValue)
         {
-            var effectiveLimit = probeLimit && !isNearestNeighbor
+            // A nearest-neighbour page needs the probe row only when its count reaches past the page.
+            var probe = probeLimit && (!isNearestNeighbor || query.NearestNeighborCountExceedsLimit());
+            var effectiveLimit = probe
                 ? checked(limit.Value + 1)
                 : limit.Value;
             sql.Append(CultureInfo.InvariantCulture, $" LIMIT {sql.AddParameter(effectiveLimit)}");
@@ -1640,7 +1674,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             // Return the provider's lease intact: for a gated/secure provider the lease's
             // wrapper (e.g. SemaphoreReleasingConnection) releases the QueryConcurrencyGate
             // slot on disposal. Down-casting to NpgsqlConnection here would drop that wrapper
-            // and permanently leak the gate slot on every read (#1978).
+            // and permanently leak the gate slot on every read.
             return await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -1685,7 +1719,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         }
 
         // An external secret reference resolves through the operator-allow-listed resolver, the
-        // same path the admin connection test and the secure resolver use (honua-server#6499).
+        // same path the admin connection test and the secure resolver use.
         // A refusal or lookup failure falls through to the loud failure below, never to the
         // default database.
         if (!string.IsNullOrWhiteSpace(_connection.SecretRef)
@@ -1718,8 +1752,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         // loudly. The single-DB / default-connection deployment is the common case: a layer
         // is bound to a placeholder connection that carries no distinct connection-string
         // material at all, which means "read from the default database". Falling back there
-        // is correct and restores the pre-#1662 behavior (the resolver returned null, and
-        // OpenConnectionAsync opened the default connection).
+        // is correct.
         //
         // When the binding *does* carry connection-string material that we simply cannot
         // unlock (encrypted bytes with no/failed decryption service, or an external secret
@@ -1736,12 +1769,12 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                     : "The connection has encrypted or externally referenced credentials that could not be decrypted."));
         }
 
-        // An empty/whitespace connection ID is the "use the default connection" sentinel
-        // (the pre-#1662 behavior). When such a binding also carries leftover credential
-        // material we could not unlock — e.g. stale encrypted bytes that won't decrypt with
-        // the current master key — we still fall back to the default connection, but log a
-        // Warning so a genuine misconfiguration (an empty ID that was meant to be a real,
-        // distinct source) remains visible in operations.
+        // An empty/whitespace connection ID is the "use the default connection" sentinel.
+        // When such a binding also carries leftover credential material we could not
+        // unlock — e.g. stale encrypted bytes that won't decrypt with the current master
+        // key — we still fall back to the default connection, but log a Warning so a
+        // genuine misconfiguration (an empty ID that was meant to be a real, distinct
+        // source) remains visible in operations.
         if (string.IsNullOrWhiteSpace(_connection.Id)
             && (_connection.EncryptedConnectionString.Length > 0 || !string.IsNullOrWhiteSpace(_connection.SecretRef)))
         {
@@ -1955,7 +1988,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private bool ShouldUseGeodesicNearestNeighbor()
     {
         // The curated canonical geographic-SRID list is the primary source of truth. Until the
-        // classifier unification (#2732) replaces this heuristic, add a safety net: any SRID in
+        // classifier unification replaces this heuristic, add a safety net: any SRID in
         // the EPSG geographic 2D range (4000-4999) that is not already on the allowlist is still a
         // lat/lon degree CRS (e.g. 4674 SIRGAS 2000, 4490 CGCS2000), so planar degree KNN would
         // silently produce meaningless "distances". Route those through the same geodesic path as

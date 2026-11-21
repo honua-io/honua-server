@@ -13,12 +13,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Esri parameter and envelope parity for extractChanges (#4017) and createReplica (#4018). Requests
-/// are form-encoded the way the ArcGIS API for Python sends them. Every expected value is computed from
-/// the rows the test itself writes (names, WGS84 ordinates and the closed-form Web Mercator projection),
-/// never from an earlier response.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerReplicaEsriParityTests : IAsyncLifetime
@@ -44,7 +38,7 @@ public sealed class FeatureServerReplicaEsriParityTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ExtractChanges_LayerServerGens_ReturnsOnlyChangesAfterTheLayerGeneration()
     {
-        // #4017: extract_changes(layer_servergen=[...]) sends layerServerGens only. Honua read serverGen /
+        // Extract_changes(layer_servergen=[...]) sends layerServerGens only. Honua read serverGen /
         // serverGens alone, resolved generation 0 and returned the whole layer as inserts.
         var updatedId = await AddFeatureAsync("lsg-updated", 10.5, 20.5);
         var deletedId = await AddFeatureAsync("lsg-deleted", 11.5, 21.5);
@@ -101,7 +95,7 @@ public sealed class FeatureServerReplicaEsriParityTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ExtractChanges_ServerGensRange_StopsAtTheMaxGeneration()
     {
-        // #4017: the max bound of serverGens=[min,max] was ignored, so a bounded window returned every later change.
+        // The max bound of serverGens=[min,max] was ignored, so a bounded window returned every later change.
         var start = await ReadCurrentGenerationAsync();
         var first = await AddFeatureAsync("range-first", 30.5, 10.5);
         var middle = await ReadCurrentGenerationAsync();
@@ -141,7 +135,7 @@ public sealed class FeatureServerReplicaEsriParityTests : IAsyncLifetime
         await UpdateFeatureAsync(updatedId, "select-updated-2", 43.5, 15.5);
         await DeleteFeatureAsync(deletedId);
 
-        // Once any of returnInserts/returnUpdates/returnDeletes is sent, an omitted one is false (#4017).
+        // Once any of returnInserts/returnUpdates/returnDeletes is sent, an omitted one is false.
         var insertsOnly = await PostFormAsync("extractChanges", new Dictionary<string, string>
         {
             ["layers"] = "[0]",
@@ -202,7 +196,7 @@ public sealed class FeatureServerReplicaEsriParityTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/replicas/{replicaId}")]
     public async Task CreateReplica_GeometryLayerQueriesAndReplicaSR_ScopeDataDeltasAndReplicaInfo()
     {
-        // #4018: geometry, layerQueries and replicaSR were dropped, the response carried no data, and the
+        // Geometry, layerQueries and replicaSR were dropped, the response carried no data, and the
         // replica info claimed useGeometry=true. Scope: envelope (150,-36)-(151,-35) AND name LIKE 'scope-in%'.
         var insideA = await AddFeatureAsync("scope-in-a", 150.25, -35.5);
         var insideB = await AddFeatureAsync("scope-in-b", 150.75, -35.25);
@@ -273,7 +267,7 @@ public sealed class FeatureServerReplicaEsriParityTests : IAsyncLifetime
     public async Task SynchronizeReplica_UpdateAcrossTheScopeBoundary_DeletesRowsThatLeftTheScope()
     {
         // Scope: envelope (60,10)-(61,11). Each row is classified from its state before the first change
-        // in the window (the change log's pre-change image, #4879) and its state now.
+        // in the window (the change log's pre-change image) and its state now.
         var leaving = await AddFeatureAsync("boundary-leaving", 60.25, 10.5);
         var staying = await AddFeatureAsync("boundary-staying", 60.75, 10.25);
         var entering = await AddFeatureAsync("boundary-entering", 62.5, 10.5);
@@ -446,7 +440,7 @@ public sealed class FeatureServerReplicaEsriParityTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/replicas")]
     public async Task CreateReplica_UnsupportedDataFormat_ReturnsHttp400WithEsriErrorEnvelope(string dataFormat)
     {
-        // #5013: ArcGIS Pro's Download Map sends dataFormat=sqlite and reads the transport status alone.
+        // ArcGIS Pro's Download Map sends dataFormat=sqlite and reads the transport status alone.
         // An HTTP 200 carrying the rejection read as success: no offline copy and no error shown.
         var before = await ListReplicaIdsAsync();
 
@@ -472,7 +466,7 @@ public sealed class FeatureServerReplicaEsriParityTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/extractChanges")]
     public async Task ReplicaRejections_OtherThanCreateReplicaDataFormat_KeepHttp200Envelope()
     {
-        // #5013 is deliberately narrow: only createReplica's unsupported dataFormat leaves the
+        // The exception is deliberately narrow: only createReplica's unsupported dataFormat leaves the
         // GeoServices HTTP 200 error-envelope convention.
         var (createStatus, createRoot) = await PostFormForStatusAsync("createReplica", new Dictionary<string, string>
         {
@@ -515,7 +509,7 @@ public sealed class FeatureServerReplicaEsriParityTests : IAsyncLifetime
                 return (row.Id, row.Name, x, y);
             })]);
 
-        // The label must match the reprojected coordinates: replicaSR, not the layer's 4326 (#4018, #4027).
+        // The label must match the reprojected coordinates: replicaSR, not the layer's 4326.
         foreach (var feature in features.EnumerateArray())
         {
             feature.GetProperty("geometry").GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
@@ -580,10 +574,6 @@ public sealed class FeatureServerReplicaEsriParityTests : IAsyncLifetime
         return document.RootElement.Clone();
     }
 
-    /// <summary>
-    /// Posts a request that must fail and returns every string in the error document, so the assertion
-    /// holds for both the Esri error envelope and problem details.
-    /// </summary>
     private async Task<string> PostFormForErrorAsync(string operation, Dictionary<string, string> form)
     {
         using var content = new FormUrlEncodedContent(form);

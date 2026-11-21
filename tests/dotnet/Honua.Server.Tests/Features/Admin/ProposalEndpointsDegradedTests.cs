@@ -15,19 +15,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// honua-release#202: the durable operation proposal/approval control plane is composed only
-/// when Redis is configured, but its routes are mapped unconditionally. On a Redis-less install
-/// the surface used to fail with an untyped <c>500</c> that leaked the unresolved DI service
-/// name; it must instead refuse with the same machine-readable capability-unavailable receipt
-/// the geoprocessing job surfaces emit, so a terminal agent can tell "this install cannot do
-/// this" from "this server is broken".
-/// </summary>
-/// <remarks>
-/// The <see cref="WebAppFixture"/> runs without Redis and registers no
-/// <c>IOperationProposalStore</c>/<c>IOperationGateway</c>, which is exactly the degraded
-/// composition under test. <c>ProposalEndpointsTests</c> covers the composed happy path.
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ApprovalManagement)]
@@ -54,11 +41,10 @@ public sealed class ProposalEndpointsDegradedTests : IAsyncLifetime
     // for a host without a system database.
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/proposals")]
-    public void Composition_WithoutRedis_RegistersNeitherDurableProposalStoreNorGateway()
+    public void Composition_WithoutSystemDatabase_RegistersNeitherDurableProposalStoreNorGateway()
     {
         _fixture.Services.GetService<IOperationProposalStore>().Should().BeOfType<UnavailableOperationProposalStore>(
-            "the only durable implementation is Redis-backed and hard-depends on IConnectionMultiplexer, so "
-            + "a Redis-less host composes only the fail-closed placeholder");
+            "a host without a system database composes only the fail-closed placeholder");
         _fixture.Services.GetService<IOperationGateway>().Should().BeNull(
             "the gateway constructor-injects IOperationProposalStore, so it cannot be composed "
             + "wherever the store is not");

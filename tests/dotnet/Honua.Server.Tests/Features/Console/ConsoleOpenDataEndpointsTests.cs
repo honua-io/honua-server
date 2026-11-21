@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Console.Domain;
@@ -18,12 +19,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Console;
 
-/// <summary>
-/// Integration tests for the Console open-data DCAT and STAC publication API (#1214):
-/// open-data page read/write, eligibility, DCAT export + validation, STAC
-/// publish/update/unpublish/status, and the anonymous open-data/STAC reads with
-/// non-leaking denial.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.RoleManagement)]
@@ -323,6 +318,68 @@ public sealed class ConsoleOpenDataEndpointsTests : IAsyncLifetime
         Assert.DoesNotContain(afterCatalog.Links, link => link.Rel == "child" && link.Href.Contains(collectionId, StringComparison.Ordinal));
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/open-data/datasets")]
+    public async Task AnonymousDatasetList_ListsOnlyPublicIndexedDistributableItems()
+    {
+        var listed = await CreateItemAsync("od-list-public", ConsoleVisibility.Public, itemType: ConsoleContentItemType.Layer, title: "Listed Trails");
+        await SetPublicIndexedAsync(listed.Id);
+        await SaveCompletePageAsync(listed.Id, title: "Listed Trails Page");
+        var personal = await CreateItemAsync("od-list-personal", ConsoleVisibility.Personal, itemType: ConsoleContentItemType.Layer, title: "Personal Unlisted Layer");
+        var organization = await CreateItemAsync("od-list-org", ConsoleVisibility.Organization, itemType: ConsoleContentItemType.Layer, title: "Organization Unlisted Layer");
+        var dashboard = await CreateItemAsync("od-list-dash", ConsoleVisibility.Public, itemType: ConsoleContentItemType.Dashboard, title: "Public Unlisted Dashboard");
+        var linkOnly = await CreateItemAsync("od-list-link", ConsoleVisibility.Public, itemType: ConsoleContentItemType.Layer, title: "Link Only Unlisted Layer");
+        await SetAccessTierAsync(linkOnly.Id, ConsoleShareAccessTier.PublicLink);
+
+        using var response = await _anonymousClient.GetAsync("/api/v1/open-data/datasets");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        var list = await ReadDataAsync<ConsoleOpenDataDatasetListResponse>(response);
+
+        var entry = Assert.Single(list.Items);
+        Assert.Equal(ConsoleContentItemType.Layer, entry.ItemType);
+        Assert.Equal(listed.Id, entry.Page.ItemId);
+        Assert.Equal("Listed Trails Page", entry.Page.Title);
+        foreach (var hidden in new[] { personal, organization, dashboard, linkOnly })
+        {
+            Assert.DoesNotContain(hidden.Id, body, StringComparison.Ordinal);
+            Assert.DoesNotContain(hidden.Title!, body, StringComparison.Ordinal);
+        }
+        Assert.DoesNotContain("\"total\"", body, StringComparison.Ordinal);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/open-data/datasets")]
+    public async Task AnonymousDatasetList_PagesByVisibleIdSoHiddenItemsLeaveNoTrace()
+    {
+        var first = await CreateItemAsync("od-page-a", ConsoleVisibility.Public, itemType: ConsoleContentItemType.Layer, title: "Page A");
+        var hidden = await CreateItemAsync("od-page-b", ConsoleVisibility.Public, itemType: ConsoleContentItemType.Layer, title: "Page B Hidden");
+        await SetAccessTierAsync(hidden.Id, ConsoleShareAccessTier.PublicLink);
+        var second = await CreateItemAsync("od-page-c", ConsoleVisibility.Public, itemType: ConsoleContentItemType.Service, title: "Page C");
+        var ordered = new[] { first.Id, second.Id }.Order(StringComparer.Ordinal).ToArray();
+
+        var firstPage = await ReadListAsync("/api/v1/open-data/datasets?limit=1");
+        Assert.Equal(ordered[0], Assert.Single(firstPage.Items).Page.ItemId);
+        Assert.Equal(ordered[0], Encoding.UTF8.GetString(Convert.FromBase64String(firstPage.NextCursor!)));
+
+        var secondPage = await ReadListAsync($"/api/v1/open-data/datasets?limit=1&cursor={Uri.EscapeDataString(firstPage.NextCursor!)}");
+        Assert.Equal(ordered[1], Assert.Single(secondPage.Items).Page.ItemId);
+
+        var lastPage = await ReadListAsync($"/api/v1/open-data/datasets?limit=1&cursor={Uri.EscapeDataString(secondPage.NextCursor!)}");
+        Assert.Empty(lastPage.Items);
+        Assert.Null(lastPage.NextCursor);
+
+        var malformed = await ReadListAsync("/api/v1/open-data/datasets?limit=1&cursor=%25%25not-base64");
+        Assert.Equal(ordered[0], Assert.Single(malformed.Items).Page.ItemId);
+    }
+
+    private async Task<ConsoleOpenDataDatasetListResponse> ReadListAsync(string path)
+    {
+        using var response = await _anonymousClient.GetAsync(path);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return await ReadDataAsync<ConsoleOpenDataDatasetListResponse>(response);
+    }
+
     private async Task<ConsoleContentItem> CreateItemAsync(
         string name,
         ConsoleVisibility visibility,
@@ -340,11 +397,13 @@ public sealed class ConsoleOpenDataEndpointsTests : IAsyncLifetime
         return await ReadDataAsync<ConsoleContentItem>(response);
     }
 
-    private async Task SetPublicIndexedAsync(string itemId)
+    private Task SetPublicIndexedAsync(string itemId) => SetAccessTierAsync(itemId, ConsoleShareAccessTier.PublicIndexed);
+
+    private async Task SetAccessTierAsync(string itemId, ConsoleShareAccessTier tier)
     {
         var response = await _adminClient.PutAsJsonAsync(
             $"/api/v1/console/content/{itemId}/share/access",
-            new UpdateShareAccessRequest { AccessTier = ConsoleShareAccessTier.PublicIndexed },
+            new UpdateShareAccessRequest { AccessTier = tier },
             JsonOptions);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }

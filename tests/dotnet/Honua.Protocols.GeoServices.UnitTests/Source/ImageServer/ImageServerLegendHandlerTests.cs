@@ -18,10 +18,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Tests for <see cref="ImageServerLegendHandler"/>. The handler builds a
-/// 5-class equal-interval legend over the layer raster statistics.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerLegendHandlerTests
 {
@@ -117,7 +113,7 @@ public class ImageServerLegendHandlerTests
         }
     }
 
-    // Esri's legend layer names its renderer in legendType (#5238).
+    // Esri's legend layer names its renderer in legendType.
     [UnitTest]
     [Operation(Operations.Metadata)]
     public async Task GetLegendAsync_NamesRendererType()

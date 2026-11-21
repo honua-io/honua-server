@@ -18,13 +18,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// HTTP integration tests for the Console Operate alert endpoints (#1168). Uses
-/// in-memory stubs of <see cref="IAlertEventQuery"/>, <see cref="IAlertLifecycleStore"/>,
-/// and <see cref="IAuditLog"/> so wiring + DTO shape are exercised without
-/// migrating the alert tables in the test database.
-/// </summary>
-[Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
 public sealed class ObservabilityAlertEndpointsTests : IAsyncLifetime
@@ -218,7 +211,7 @@ public sealed class ObservabilityAlertEndpointsTests : IAsyncLifetime
             DateTimeOffset resolvedAt, CancellationToken cancellationToken = default)
             => Task.FromResult(Lifecycle);
 
-        // Mirrors the atomic contract (#3865): a mutation always comes back with the
+        // Mirrors the atomic contract: a mutation always comes back with the
         // durable audit intent that was written alongside it.
         public Task<AlertLifecycleTransition> ApplyAsync(
             AlertLifecycleCommand command, CancellationToken cancellationToken = default)

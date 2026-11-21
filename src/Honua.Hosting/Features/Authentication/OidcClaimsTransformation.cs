@@ -81,6 +81,7 @@ internal sealed class OidcClaimsTransformation(
         var authType = identity.FindFirst("auth_type")?.Value;
         if (authType is "admin" or "dev-bypass" or LayerScopedWriteKey.AuthType or ScopedJobTokenIssuer.AuthTypeClaimValue)
         {
+            serviceProvider.GetService<OwnerIdentityScope>()?.StampOwner(principal, mappingSource);
             return principal;
         }
 
@@ -158,18 +159,17 @@ internal sealed class OidcClaimsTransformation(
         // re-admits roles the live gate would now refuse — including a synthesized `admin` —
         // because the restore path never re-runs this transformation. Marking the principal
         // lets the exchange record that its roles depend on the entitlement, so the restore can
-        // revalidate instead of trusting them forever (honua-server#2997 review).
+        // revalidate instead of trusting them forever.
         // A CustomMappings entry can target ClaimTypes.Role directly, which emits a role LATER
         // in this method — after GetRoleClaims has already run — so counting gathered roles
         // alone missed it and the principal went unmarked. The portal exchange then persisted
         // that custom role as entitlement-independent and it kept authorizing requests after
-        // identity.claims-mapping expired (honua-server#2997 review).
+        // identity.claims-mapping expired.
         // The absence check MUST mirror the mapping loop below, which skips a mapping whose
         // target claim type is already present. Without it, an identity that already carries a
         // directly-issued role plus a configured `x -> ClaimTypes.Role` mapping was marked
         // mapping-derived even though the loop emitted nothing - so an expired entitlement
-        // stripped a legitimate role that direct OIDC authentication keeps
-        // (honua-server#2997 review).
+        // stripped a legitimate role that direct OIDC authentication keeps.
         var rolesDependOnClaimsMapping = (roleClaimSelectionEntitled || claimsMappingEntitled)
             && !new HashSet<string>(fullRoles, StringComparer.OrdinalIgnoreCase)
                 .SetEquals(fallbackRoles);
@@ -183,7 +183,7 @@ internal sealed class OidcClaimsTransformation(
         // which the portal exchange persists and TenantContextMiddleware later uses to select
         // the tenant scope. Marking only role provenance meant an expired entitlement dropped
         // the mapping-derived roles while the mapping-derived TENANT kept authorizing
-        // cross-tenant access indefinitely (honua-server#2997 review).
+        // cross-tenant access indefinitely.
         var mappedTenantClaimType = ResolveMappedTenantClaimType(mappingSource, claimsMappingEntitled);
         foreach (var role in roles.Where(role => !identity.HasClaim(c => c.Type == ClaimTypes.Role && c.Value == role)))
         {
@@ -230,7 +230,7 @@ internal sealed class OidcClaimsTransformation(
             transformedClaims.Add(CanonicalSecurityActor.CreateStampedClaim("auth_type", scheme));
         }
 
-        // Apply custom mappings (Enterprise identity.claims-mapping only, #2997)
+        // Apply custom mappings (Enterprise identity.claims-mapping only)
         if (claimsMappingEntitled)
         {
             foreach (var mapping in _options.ClaimsMapping.CustomMappings)
@@ -259,6 +259,9 @@ internal sealed class OidcClaimsTransformation(
             identity.AddClaims(transformedClaims);
             OidcAuthenticationLog.ClaimsTransformed(logger, transformedClaims.Count);
         }
+
+        // The owner value is derived after the user id claim is normalized and from the issuer's own claims, never from a custom mapping.
+        serviceProvider.GetService<OwnerIdentityScope>()?.StampOwner(principal, mappingSource);
 
         // All mapped and synthesized roles use ClaimTypes.Role. Make role checks
         // read those normalized claims, including when the handler uses the default

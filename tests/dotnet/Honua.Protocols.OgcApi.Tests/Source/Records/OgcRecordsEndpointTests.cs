@@ -13,9 +13,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Records;
 
-/// <summary>
-/// Integration tests for the read-only OGC API Records catalog surface.
-/// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiRecords)]
 public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTestsFixture>
@@ -239,9 +236,9 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
         qFiltered.Should().Contain(["layer:pub-layer-1", "layer:pub-layer-2"]);
         qFiltered.Should().NotContain($"layer:pub-layer-{WebAppFixture.TestLayerId}");
 
-        // OGC API - Records defines q as a comma-separated OR list. Before #4152,
-        // the implementation split on whitespace and treated the whole value as one
-        // term, so a client-generated comma list returned no records.
+        // OGC API - Records defines q as a comma-separated OR list. Splitting on
+        // whitespace would treat the whole value as one term, so a client-generated
+        // comma list would return no records.
         var qOrFiltered = await GetRecordIdsAsync("q=Related,Test");
         qOrFiltered.Should().Contain([
             "layer:pub-layer-1",
@@ -500,11 +497,6 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
            hrefElement.GetString()?.Contains(value, StringComparison.OrdinalIgnoreCase) == true;
 }
 
-/// <summary>
-/// Per-class fixture wrapper that builds the Pro-licensed <see cref="WebAppFixture"/> once for the
-/// whole <see cref="OgcRecordsEndpointTests"/> class. All record tests are read-only, so they can
-/// safely share a single server/schema instance.
-/// </summary>
 public sealed class OgcRecordsEndpointTestsFixture : IAsyncLifetime
 {
     public WebAppFixture App { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);

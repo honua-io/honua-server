@@ -30,6 +30,15 @@
   ],
   "instruments": [
     {
+      "instrument": "honua_authentication_failed_attempts_total",
+      "kind": "Counter",
+      "unit": null,
+      "series": [
+        "honua_authentication_failed_attempts_total"
+      ],
+      "source": "src/Honua.Hosting/Features/Authentication/AuthenticationFailureLimiter.cs"
+    },
+    {
       "instrument": "honua_shared_cache_output_requests_total",
       "kind": "Counter",
       "unit": null,
@@ -346,6 +355,13 @@
       "unit": null,
       "series": ["honua_lambda_memory_limit_mib"],
       "source": "src/Honua.ServiceDefaults/LambdaTelemetry.cs"
+    },
+    {
+      "instrument": "honua.mcp.access_audit.dropped",
+      "kind": "Counter",
+      "unit": "{record}",
+      "series": ["honua_mcp_access_audit_dropped_total"],
+      "source": "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpTelemetry.cs"
     },
     {
       "instrument": "honua.mcp.boundary.rejection",
@@ -772,13 +788,6 @@
       "kind": "ObservableGauge",
       "unit": null,
       "series": ["honua_db_active_connections"],
-      "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/ConnectionPoolMetrics.cs"
-    },
-    {
-      "instrument": "honua_db_connection_acquisition_duration_ms",
-      "kind": "Histogram",
-      "unit": null,
-      "series": ["honua_db_connection_acquisition_duration_ms_bucket", "honua_db_connection_acquisition_duration_ms_count", "honua_db_connection_acquisition_duration_ms_sum"],
       "source": "src/Honua.Core/Core/Features/Infrastructure/Monitoring/ConnectionPoolMetrics.cs"
     },
     {

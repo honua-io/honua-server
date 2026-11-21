@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
@@ -12,7 +13,7 @@ internal static class CollaborationSessionEndpoints
 {
     public static void MapCollaborationSessionEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/v{version:apiVersion}/saved-maps/{mapId}/collaboration/sessions")
+        var group = endpoints.MapGroup("/api/v{version:apiVersion}/maps/{mapId}/collaboration/sessions")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Saved Maps", "Collaboration")
@@ -30,7 +31,7 @@ internal static class CollaborationSessionEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
-        // Explicit session end for REST-joined sessions (#2999, REQ-001). WebSocket sessions end
+        // Explicit session end for REST-joined sessions (REQ-001). WebSocket sessions end
         // on disconnect; the prune sweep reclaims anything that never says goodbye.
         group.MapPost("/leave", HandleLeave)
             .WithDisplayName("Leave Saved Map Collaboration Session")
@@ -39,10 +40,14 @@ internal static class CollaborationSessionEndpoints
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized);
 
-        // Authenticated WebSocket v1-envelope stream (#971/#2999). The join is authorized through
+        // Authenticated WebSocket v1-envelope stream. The join is authorized through
         // the Studio-lifecycle-backed authorizer before the upgrade, so an unauthorized client
         // receives a typed 401/403 rather than an opaque socket close.
+        // The live-stream filter keeps checking the credential and the map permission, and closes
+        // the socket once the credential is revoked or expires or the join check refuses the caller.
         group.MapGet("/stream", CollaborationSessionStreamEndpoint.HandleStream)
+            .AddEndpointFilter<LiveStreamAuthorizationFilter>()
+            .WithMetadata(SavedMapStreamResourceAuthorization.Instance)
             .WithDisplayName("Stream Saved Map Collaboration Session")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
             .WithMetadata(WebSocketEndpointMetadata.Instance)
@@ -73,7 +78,7 @@ internal static class CollaborationSessionEndpoints
 
         var result = await sessions.JoinAsync(
                 // One canonical session/log key per draft regardless of the GUID textual form in
-                // the route (honua-server#2999): sessions, appends, replay, and checkpoints agree.
+                // the route: sessions, appends, replay, and checkpoints agree.
                 SavedMapCollaborationMapId.Normalize(mapId),
                 request,
                 context.User,
@@ -126,7 +131,7 @@ internal static class CollaborationSessionEndpoints
 
         // Session ids are NOT a secret capability: the participant id exposed to every session
         // member in snapshots equals the session id, so any participant could otherwise eject
-        // any other (honua-server#2999 review). Scope the leave to the route's canonical map AND
+        // any other. Scope the leave to the route's canonical map AND
         // to the caller's own identity (the same derivation join recorded); mismatches report
         // left=false exactly like an unknown session so probing cannot confirm one exists.
         var left = sessions.Leave(

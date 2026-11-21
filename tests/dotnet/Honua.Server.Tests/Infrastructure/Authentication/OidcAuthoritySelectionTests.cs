@@ -17,11 +17,6 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// The portal credential verifier uses catalog order and the selected provider's
-/// issuer and audience. A token from another configured authority is not accepted
-/// for a broker flow that started at a different provider.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]
@@ -175,7 +170,8 @@ public sealed class OidcAuthoritySelectionTests
             wrapped,
             transformation,
             new OidcConfigurationManagerCache(),
-            NullLogger<OidcPortalCredentialVerifier>.Instance);
+            NullLogger<OidcPortalCredentialVerifier>.Instance,
+            replays: new Honua.Infrastructure.Security.InMemoryTokenReplayStore());
     }
 
     private static OidcAuthenticationOptions AllProviders() => new()
@@ -248,7 +244,8 @@ public sealed class OidcAuthoritySelectionTests
             transformation,
             new OidcConfigurationManagerCache(),
             NullLogger<OidcPortalCredentialVerifier>.Instance,
-            runtime);
+            runtime,
+            new Honua.Infrastructure.Security.InMemoryTokenReplayStore());
     }
 
     private static string CreateRsaToken(string issuer, string audience, RSA rsa, string kid)

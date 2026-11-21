@@ -9,6 +9,7 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Server.Features.Protocols.Zarr;
 using Honua.TestKit;
@@ -21,13 +22,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Coverages.Multidimensional;
 
-/// <summary>
-/// Integration tests for the cloud-optimized HDF5 / NetCDF4 coverage admin
-/// surface. Per ADR-0039 Path B, a metadata refresh dispatches a GDAL worker job
-/// (202 + status URL); the status endpoint materializes the scanned metadata when
-/// the job succeeds. The job substrate is replaced with in-memory recording
-/// doubles so the async contract is exercised without Redis or the GDAL worker.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Cog)]
 [Operation(Operations.CogAdmin)]
@@ -166,6 +160,40 @@ public class MultidimensionalCoverageEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/multidim-coverages")]
+    public async Task Register_ResolvesLayerIdAsStorageHandle_NotServiceLocalIndex()
+    {
+        const int indexOffset = 1000;
+        _fixture.MutateV2Graph(graph => graph with
+        {
+            Publications = graph.Publications
+                .Select(publication => publication with { LayerIndex = publication.LayerIndex + indexOffset })
+                .ToArray(),
+        });
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var publication = snapshot.Graph.Publications.First(candidate =>
+            snapshot.IsRoutable(candidate) && snapshot.ResolveStorageLayerId(candidate) > 0);
+        var storageLayerId = snapshot.ResolveStorageLayerId(publication)!.Value;
+
+        var byStorageHandle = await _client.PostAsJsonAsync(Route, RegistrationFor(storageLayerId));
+        var byServiceIndex = await _client.PostAsJsonAsync(Route, RegistrationFor(publication.LayerIndex!.Value));
+
+        byStorageHandle.StatusCode.Should().Be(HttpStatusCode.Created);
+        byServiceIndex.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    private static object RegistrationFor(int layerId) => new
+    {
+        layerId,
+        name = "storage-handle-multidim",
+        format = "NetCdf4",
+        provider = "AwsS3",
+        bucket = "bucket",
+        objectKey = $"granule-{layerId}.nc4",
+        variables = Array.Empty<string>()
+    };
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/multidim-coverages")]
     public async Task List_WithoutLayerId_Returns400()
     {
@@ -284,17 +312,6 @@ public class MultidimensionalCoverageEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    /// <summary>
-    /// Validates the materializer against a HAND-WRITTEN worker envelope (honua-server#4395).
-    /// </summary>
-    /// <remarks>
-    /// No GDAL multidimensional scan runs here: the worker envelope is a string literal built
-    /// from <c>GdalMdimInfoJson</c> and the job record is seeded as already <c>Succeeded</c>. What
-    /// this proves is that the materializer turns a well-formed <c>mdiminfo</c> document into the
-    /// expected coverage metadata — a real and useful contract, but not evidence that the scan
-    /// chain produces such a document. The real-worker chain runs in
-    /// <c>docker/client-compat/multidim-fixture/verify.py</c>.
-    /// </remarks>
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/multidim-coverages/jobs/{jobId}")]
     public async Task ScanJobStatus_SucceededJob_MaterializesMetadataFromAHandWrittenEnvelope()

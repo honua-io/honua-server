@@ -96,8 +96,8 @@ public static class GpProjectDiscovery
         }
 
         return probe.DotnetSdkAvailable
-            ? new GpPrerequisite(DotnetRuntimeName, "satisfied", $".NET 10 SDK is installed (dotnet --list-sdks). {NoSubmit}")
-            : new GpPrerequisite(DotnetRuntimeName, "missing", $"No .NET 10 SDK is installed (dotnet --list-sdks). The dotnet host alone cannot build a project. Install the .NET 10 SDK and rerun. {NoSubmit}");
+            ? new GpPrerequisite(DotnetRuntimeName, "satisfied", $".NET 11 SDK is installed (dotnet --list-sdks). {NoSubmit}")
+            : new GpPrerequisite(DotnetRuntimeName, "missing", $"No .NET 11 SDK is installed (dotnet --list-sdks). The dotnet host alone cannot build a project. Install the .NET 11 SDK and rerun. {NoSubmit}");
     }
 
     private static GpPrerequisite DependencyLock(GpProjectManifest manifest, string projectDirectory)

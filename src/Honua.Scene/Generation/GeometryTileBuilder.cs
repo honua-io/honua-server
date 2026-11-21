@@ -564,9 +564,7 @@ public static class GeometryTileBuilder
             // on every primitive. glTF 2.0 §3.6.4 says doubleSided=false is
             // the default; without an override, viewers cull triangles that
             // face away from the camera. Source PostGIS polygon rings can
-            // be CW or CCW, so a single double-sided material is the
-            // smallest v1 fix that keeps every viewer (Cesium, three.js,
-            // any OpenGL-derived stack) honest about both faces.
+            // be CW or CCW, so a double-sided material keeps both faces visible.
             writer.WriteStartArray("materials");
             writer.WriteStartObject();
             writer.WriteString("name", "honua_default");

@@ -16,6 +16,7 @@ using Honua.Server.Features.Operations.Status;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Monitoring;
 
@@ -40,7 +41,7 @@ internal static class ObservabilityServiceCollectionExtensions
 
         // Source the db-bounded-admission-pressure finding from the REAL admission gate when it is registered
         // (Postgres provider) — it has live in-flight/limit/waiter state and a windowed acquisition-timeout
-        // count (#2805). Only when the gate is absent (non-Postgres providers) do we fall back to the
+        // count. Only when the gate is absent (non-Postgres providers) do we fall back to the
         // ProductionMetricsCollector-backed signal, whose pool counters otherwise have no production writer.
         services.AddSingleton<IOpsDatabasePressureSignal>(sp =>
         {
@@ -69,7 +70,7 @@ internal static class ObservabilityServiceCollectionExtensions
         AddOperateObservability(services);
         services.AddOpsSelfChecks(configuration);
 
-        // Ops-health snapshot composer + deterministic ops-findings engine (ADR-0060 WS4 / #2457).
+        // Ops-health snapshot composer + deterministic ops-findings engine (ADR-0060 WS4).
         // Both are scoped because they compose the scoped deploy-preflight probe.
         services.AddOptions<OpsFindingsOptions>()
             .Bind(configuration.GetSection(OpsFindingsOptions.SectionName))
@@ -79,11 +80,14 @@ internal static class ObservabilityServiceCollectionExtensions
             .Bind(configuration.GetSection(OpsAutonomyOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
-        services.AddSingleton<IManagedComposeObserver, ManagedComposeObserver>();
+        services.AddSingleton<IManagedComposeObserver>(sp => new ManagedComposeObserver(
+            new(sp.GetRequiredService<IComposeExecutorClient>(), sp.GetRequiredService<IOptions<ComposeExecutorOptions>>().Value),
+            sp.GetRequiredService<IOptionsMonitor<ControlPlaneOptions>>(), sp.GetRequiredService<TimeProvider>(),
+            sp.GetService<ILogger<ManagedComposeObserver>>()));
         services.AddScoped<IOpsHealthSnapshotService, OpsHealthSnapshotService>();
         // Singleton: the scoped engine must still report a store source's last successful collection
-        // after a failed read in a later scope (#4840).
-        services.AddSingleton<OpsFindingsCollectionLedger>();
+        // after a failed read in a later scope.
+        services.AddSingleton(sp => new OpsFindingsCollectionLedger(sp.GetService<ILogger<OpsFindingsCollectionLedger>>()));
         services.AddScoped(sp => new OpsFindingsExtendedSignals
         {
             DatabasePressureSignal = sp.GetService<IOpsDatabasePressureSignal>(),
@@ -110,10 +114,10 @@ internal static class ObservabilityServiceCollectionExtensions
             sp.GetRequiredService<IOpsIncidentObservationStore>(),
             sp.GetRequiredService<IOpsIncidentEpisodeStore>()));
 
-        // Persisted ops-health rollup store + per-replica sampler (#2553). The store itself is registered by
+        // Persisted ops-health rollup store + per-replica sampler. The store itself is registered by
         // the Postgres provider; the sampler and history service resolve it as optional so non-Postgres
         // deployments still expose the (empty) history surface and the realtime flush seam. The flush signal
-        // is the in-process seam the realtime broadcast layer (#2554) subscribes to.
+        // is the in-process seam the realtime broadcast layer subscribes to.
         services.AddOptions<OpsHealthRollupOptions>()
             .Bind(configuration.GetSection(OpsHealthRollupOptions.SectionName))
             .ValidateDataAnnotations()

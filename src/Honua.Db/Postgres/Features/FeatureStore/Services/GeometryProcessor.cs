@@ -25,11 +25,10 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         if (query.OutputSrid.HasValue &&
             (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
         {
-            baseGeometry = DatumTransformSql.BuildTransformExpression(
-                baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation, query.SpatialReferenceSrid);
+            baseGeometry = DatumTransformSql.TransformToOutputSrid(baseGeometry, query);
         }
 
-        // Default to 2D OGC WKB (ST_AsBinary) — byte-identical to the historical read path. When the
+        // Default to 2D OGC WKB (ST_AsBinary). When the
         // canonical query asks to preserve Z/M, read extended WKB (ST_AsEWKB) so the higher ordinates
         // survive to the output formatter; ST_AsBinary silently drops them. The WKB consumers (NTS
         // WKBReader and the GeoServices fast-point parser) read EWKB transparently, including the SRID
@@ -45,8 +44,7 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         if (query.OutputSrid.HasValue &&
             (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
         {
-            baseGeometry = DatumTransformSql.BuildTransformExpression(
-                baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation, query.SpatialReferenceSrid);
+            baseGeometry = DatumTransformSql.TransformToOutputSrid(baseGeometry, query);
         }
 
         // GML 3.2 (ISO 19136) requires gml:id on every GML object, geometries included;
@@ -61,7 +59,7 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         // enforce the orientation to match the GeoJSON path; ST_ForcePolygonCCW is a no-op for
         // non-polygonal geometry. The geometric surface orientation is preserved through the GML
         // axis-flip option: option 16 relabels axes into srsName (lat/lon) order without reversing
-        // the ring, so the CCW-exterior winding still holds (matches GeoServer) (#2745).
+        // the ring, so the CCW-exterior winding still holds (matches GeoServer).
         return $"ST_AsGML(3, ST_ForcePolygonCCW({baseGeometry}), {FeatureQueryEncoding.GeometryTextPrecision}, {GetGmlOptions(query)}, NULL, {gmlIdExpression})";
     }
 
@@ -72,8 +70,7 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         if (query.OutputSrid.HasValue &&
             (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
         {
-            baseGeometry = DatumTransformSql.BuildTransformExpression(
-                baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation, query.SpatialReferenceSrid);
+            baseGeometry = DatumTransformSql.TransformToOutputSrid(baseGeometry, query);
         }
 
         // RFC 7946 §3.1.6 requires right-hand-rule winding (exterior CCW, holes CW).
@@ -91,13 +88,12 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         if (query.OutputSrid.HasValue &&
             (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
         {
-            baseGeometry = DatumTransformSql.BuildTransformExpression(
-                baseGeometry, query.OutputSrid.Value, query.OutputDatumTransformation, query.SpatialReferenceSrid);
+            baseGeometry = DatumTransformSql.TransformToOutputSrid(baseGeometry, query);
         }
 
         // KML polygons use right-hand-rule winding (exterior CCW, holes CW); normalize CW-exterior
         // stored data to match the GeoJSON/GML paths. ST_ForcePolygonCCW passes non-polygonal
-        // geometry through unchanged (#2745).
+        // geometry through unchanged.
         return $"ST_AsKML(ST_ForcePolygonCCW({baseGeometry}), {FeatureQueryEncoding.GeometryTextPrecision})";
     }
 

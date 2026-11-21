@@ -75,6 +75,27 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
             return JobExecutionResult.Failed($"Invalid point-cloud conversion inputs: {inputError}");
         }
 
+        if (LasPublicHeader.TryReadPointCount(sourceBytes, out var declaredPoints, out var recordLength))
+        {
+            if (declaredPoints > (ulong)opts.MaxPointCloudPoints)
+            {
+                Log.InvalidInputs(logger, job.OperationId,
+                    $"declared point count {declaredPoints} exceeds MaxPointCloudPoints={opts.MaxPointCloudPoints}");
+                return JobExecutionResult.Failed(
+                    $"Invalid point-cloud conversion inputs: declared point count {declaredPoints.ToString(CultureInfo.InvariantCulture)} " +
+                    $"exceeds configured MaxPointCloudPoints={opts.MaxPointCloudPoints.ToString(CultureInfo.InvariantCulture)}.");
+            }
+
+            if (recordLength > 0 && declaredPoints > (ulong)(opts.MaxArtifactBytes / recordLength))
+            {
+                Log.InvalidInputs(logger, job.OperationId,
+                    $"estimated uncompressed LAS payload exceeds MaxArtifactBytes={opts.MaxArtifactBytes}");
+                return JobExecutionResult.Failed(
+                    $"Invalid point-cloud conversion inputs: declared point count {declaredPoints.ToString(CultureInfo.InvariantCulture)} " +
+                    $"exceeds configured MaxArtifactBytes={opts.MaxArtifactBytes.ToString(CultureInfo.InvariantCulture)}.");
+            }
+        }
+
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
@@ -133,18 +154,33 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(80, "Encoding decompressed LAS artifact", cancellationToken).ConfigureAwait(false);
 
-            var outputBytes = await File.ReadAllBytesAsync(outputPath, cancellationToken).ConfigureAwait(false);
-            if (outputBytes.Length == 0)
+            var outputInfo = new FileInfo(outputPath);
+            if (!outputInfo.Exists || outputInfo.Length == 0)
             {
                 return JobExecutionResult.Failed("pdal translate produced an empty output point cloud.");
             }
 
-            if (outputBytes.Length > opts.MaxArtifactBytes)
+            if (outputInfo.Length > opts.MaxArtifactBytes)
             {
-                Log.ArtifactTooLarge(logger, job.OperationId, outputBytes.Length, opts.MaxArtifactBytes);
+                Log.ArtifactTooLarge(logger, job.OperationId, outputInfo.Length, opts.MaxArtifactBytes);
                 return JobExecutionResult.Failed(
-                    $"Decompressed LAS size {outputBytes.Length} bytes exceeds configured " +
+                    $"Decompressed LAS size {outputInfo.Length} bytes exceeds configured " +
                     $"MaxArtifactBytes={opts.MaxArtifactBytes}.");
+            }
+
+            var bounded = await GdalArtifactPublisher.ReadBoundedPayloadAsync(outputPath, opts.MaxArtifactBytes, cancellationToken)
+                .ConfigureAwait(false);
+            if (bounded.ExceededLimit)
+            {
+                Log.ArtifactTooLarge(logger, job.OperationId, bounded.Length, opts.MaxArtifactBytes);
+                return JobExecutionResult.Failed(
+                    $"Decompressed LAS size {bounded.Length} bytes exceeds configured " +
+                    $"MaxArtifactBytes={opts.MaxArtifactBytes}.");
+            }
+
+            if (bounded.Payload is not { Length: > 0 } outputBytes)
+            {
+                return JobExecutionResult.Failed("pdal translate produced an empty output point cloud.");
             }
 
             var artifactUri = GdalDataUri.Build(UncompressedLasContentType, outputBytes);
@@ -190,7 +226,7 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
         }
         else
         {
-            // honua-server#4401: without this, `pdal translate` writes the LAS with its DEFAULT
+            // Without this, `pdal translate` writes the LAS with its DEFAULT
             // scale of 0.01 rather than the source's, silently quantising the decompressed cloud.
             // For a geographic source that is 0.01 degrees — roughly 1.1 km of horizontal error on
             // a verbatim "decompress only" conversion. Forwarding scale and offset preserves

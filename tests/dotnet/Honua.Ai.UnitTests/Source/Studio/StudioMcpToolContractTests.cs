@@ -20,18 +20,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Tool-contract tests for the Studio draft lifecycle and composition MCP
-/// tools (honua-server#3002): input-schema shape, generation-conflict typed
-/// errors, family-gating and not-found typed errors, the structural
-/// publish-tool-absence guarantee (REQ-003/REQ-009), read-only honesty for
-/// validate/preview (PR #3016 review), and the per-request service
-/// resolution that keeps the singleton tool descriptors from capturing the
-/// scoped <see cref="IStudioPackageLifecycleService"/>/<see cref="IStudioPackageValidator"/>
-/// as constructor dependencies. Uses mocked collaborators injected via
-/// <c>httpContext.RequestServices</c>; <see cref="StudioMcpToolDelegationTests"/>
-/// covers the real <c>InMemoryStudioPackageStore</c>-backed happy path.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class StudioMcpToolContractTests
 {
@@ -468,10 +456,9 @@ public sealed class StudioMcpToolContractTests
     [Endpoint("POST /mcp tools/call honua_studio_get_draft")]
     public async Task GetDraft_WhenLifecycleServiceIsNotComposed_SurfacesRetryableUnavailable()
     {
-        // PR #3016 review, P1 remediation: registration is unconditional, so a
-        // host that never composed Studio persistence must still advertise the
-        // tool but fail per-call with a structured, retryable error rather
-        // than an opaque internal error.
+        // Registration is unconditional, so a host that never composed Studio
+        // persistence must still advertise the tool but fail per-call with a
+        // structured, retryable error rather than an opaque internal error.
         var tool = new GetStudioDraftTool(_jobService, NullLogger<GetStudioDraftTool>.Instance);
         var arguments = McpTestFactory.ToArguments(
             new McpStudioDraftIdArgument { DraftId = DraftId },
@@ -557,7 +544,7 @@ public sealed class StudioMcpToolContractTests
     [Endpoint("POST /mcp tools/call honua_studio_validate_draft")]
     public async Task ValidateDraft_IsGenuinelyReadOnly_NeverPersistsOrChangesGeneration()
     {
-        // PR #3016 review, P2 honesty: readOnlyHint=true must be honest. The
+        // The readOnlyHint=true annotation must be honest. The
         // tool must call the pure IStudioPackageValidator.Validate directly
         // and never UpdateDraftAsync/ValidateDraftAsync (both of which persist
         // through the store and bump the draft's generation).

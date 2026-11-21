@@ -13,30 +13,10 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// The first tests in this repository that execute real PDAL (honua-server#4401).
-/// </summary>
-/// <remarks>
-/// <para>
-/// Before this file, <c>pcloud.translate</c> — a GA catalog operation — had no executed receipt
-/// at all: its thirteen tests asserted the argument list handed to
-/// <c>FakeGdalCommandRunner</c>, whose fixture bytes are string literals. No workflow installed
-/// PDAL and the only invocation anywhere in the tree was <c>pdal --version</c>.
-/// </para>
-/// <para>
-/// The oracle here is independently computed, not snapshotted. The test authors a small ASCII
-/// point set, compresses it to LAZ with PDAL, runs the production executor over that LAZ, and
-/// then parses the emitted LAS public header block and point records <em>by offset, against the
-/// LAS 1.x specification</em> — sharing no code with the executor or with the server's
-/// <c>LasPointCloudReader</c> — and asserts the decoded coordinates equal the coordinates that
-/// went in.
-/// </para>
-/// </remarks>
 public sealed class PdalPointCloudRealCliTests
 {
     private const string ScratchSuite = "pdal-real-cli";
 
-    /// <summary>The exact points authored into the source cloud; the decode oracle.</summary>
     private static readonly (double X, double Y, double Z)[] SourcePoints =
     [
         (-122.4194, 37.7749, 12.5),
@@ -104,8 +84,8 @@ public sealed class PdalPointCloudRealCliTests
             decoded.MinY.Should().BeApproximately(SourcePoints.Min(p => p.Y), 1e-6);
             decoded.MaxY.Should().BeApproximately(SourcePoints.Max(p => p.Y), 1e-6);
 
-            // honua-server#4401 regression guard. Before the executor forwarded the source's
-            // scale, `pdal translate` fell back to its default 0.01 — 0.01 DEGREES here, roughly
+            // The executor must forward the source's
+            // scale so `pdal translate` does not fall back to its default 0.01 — 0.01 DEGREES here, roughly
             // 1.1 km of horizontal quantisation on a conversion whose entire contract is
             // "decompress verbatim". The coordinate assertions above are what catch it; this
             // pins the mechanism so the cause is obvious when they fail.
@@ -120,10 +100,6 @@ public sealed class PdalPointCloudRealCliTests
         }
     }
 
-    /// <summary>
-    /// Writes the source points as ASCII and compresses them to LAZ with PDAL, so the input to
-    /// the executor is a genuine laz-perf-compressed cloud rather than a fixture string.
-    /// </summary>
     private static async Task<byte[]> CreateCompressedSourceAsync(string scratch)
     {
         Directory.CreateDirectory(scratch);
@@ -153,12 +129,6 @@ public sealed class PdalPointCloudRealCliTests
         return await File.ReadAllBytesAsync(lazPath).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// A minimal LAS 1.x public-header-block and point-record reader written directly against
-    /// the ASPRS specification's byte offsets. Deliberately independent of both the executor and
-    /// the server's <c>LasPointCloudReader</c> so "the points survived" is not proven by the same
-    /// code that would have lost them.
-    /// </summary>
     private static class LasReader
     {
         public static DecodedCloud Read(byte[] las)

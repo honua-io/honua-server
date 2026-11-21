@@ -20,7 +20,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
-/// <summary>MapServer export, tile-package and KML endpoint integration tests.</summary>
 [Collection("Database.GeoServicesMapServer")]
 [Protocol(TestProtocols.MapServer)]
 public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
@@ -68,7 +67,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_WithGifFormat_ReturnsBadRequest()
     {
-        // Regression (#1772): format=gif must be rejected cleanly (400), and the
+        // Format=gif must be rejected cleanly (400), and the
         // capability advertisement above must not promise it.
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&format=gif&f=image");
@@ -81,7 +80,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_WithEmptyShowSelection_RendersEveryLayer()
     {
-        // Regression: layers=show: was rejected with "layers parameter contains an empty
+        // Layers=show: was rejected with "layers parameter contains an empty
         // layer id." That is exactly what stock QGIS sends when its ArcGIS REST Server
         // connection is pointed at a MapServer's "(All layers)" entry - captured from
         // QGIS 3.44.14's own arcgismapserver provider, which means "no restriction" by
@@ -153,7 +152,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_WithJpgPngFormat_ReturnsPngImage()
     {
-        // Regression: format=jpgpng was rejected with "Output format 'jpgpng' is not
+        // Format=jpgpng was rejected with "Output format 'jpgpng' is not
         // supported." That is the Image Encoding QGIS's ArcGIS REST Server connection
         // defaults to, so a stock QGIS user adding a Honua MapServer saw an empty canvas
         // and "Error 400: Bad Request" while identify, legend and the service document
@@ -176,10 +175,10 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_WithMalformedBbox_AsImage_ReturnsBadRequest()
     {
-        // CERT-ERRH-01: a binary image export (f=image) whose bbox cannot be parsed must be
+        // a binary image export (f=image) whose bbox cannot be parsed must be
         // rejected with a real HTTP 4xx. An image client expects raster bytes and cannot
         // interpret a 200 "success" carrying a JSON error envelope, so the malformed request
-        // has to surface as a genuine failure rather than the PA-070/PA-117 200 body.
+        // has to surface as a genuine failure rather than the 200 JSON error body.
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=garbage&f=image");
 
@@ -230,7 +229,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
     [Endpoint("POST /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_WithGeoServicesProJsonEnvelope_MatchesCommaEnvelope(bool usePost)
     {
-        // Regression (#4501), captured from stock ArcGIS Pro 3.7.1: changing only bbox to CSV made
+        // Regression, captured from stock ArcGIS Pro 3.7.1: changing only bbox to CSV made
         // its blank-map HTTP400 become PNG200. Retain the native precision.
         const string bbox = """
             {"xmin":-122.42168401826947,"ymin":37.765347945206912,"xmax":-122.40797808219641,"ymax":37.786301369864447,"spatialReference":{"wkid":4326,"latestWkid":4326}}
@@ -549,9 +548,9 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
     [Endpoint("GET /rest/services/{serviceId}/MapServer/estimateExportTilesSize")]
     public async Task MapServer_EstimateExportTilesSize_WholeWorldHighZoom_DoesNotMaterializeFullGrid()
     {
-        // #2065: a whole-world high-zoom estimate (~6.9e10 tiles at z18) previously built the full
-        // coordinate grid before applying maxTiles, allocating hundreds of GB -> OOM. The count must
-        // be computed first and the build bounded by maxTiles, so this returns promptly with the true
+        // A whole-world high-zoom estimate (~6.9e10 tiles at z18) must not build the full coordinate
+        // grid before applying maxTiles: that allocates hundreds of GB -> OOM. The count must be
+        // computed first and the build bounded by maxTiles, so this returns promptly with the true
         // count, ExceededTransferLimit=true, and no out-of-memory.
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/estimateExportTilesSize?f=json&minZoom=0&maxZoom=18&exportExtent=-180,-85,180,85&maxTiles=1");
@@ -684,7 +683,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
     [Endpoint("GET /rest/services/{serviceId}/MapServer/exportTiles")]
     public async Task MapServer_ExportTiles_WithCompactStorageFormat_ReturnsBadRequest()
     {
-        // Compact Cache V2 / TPKX now negotiates the durable async path (#2706) rather than the old
+        // Compact Cache V2 / TPKX now negotiates the durable async path rather than the old
         // "unsupported" rejection: a single-level request is instead rejected by the TPKX
         // validation, which requires at least two zoom levels.
         var response = await Fixture.Client.GetAsync(
@@ -835,7 +834,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&f=json&time={malformedTime}");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -910,7 +909,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&f=json&dynamicLayers={dynamicLayers}");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("unsupported drawingInfo renderer");
@@ -943,7 +942,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&f=json&layerDefs={malformedLayerDefs}");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -953,8 +952,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
         content.Should().NotContain("System.Text.Json");
     }
 
-    // Regression (#1430): the Esri layerDefs array form [{"layerId":N,"where":...}]
-    // must be accepted (previously rejected with "Invalid layer id").
+    // Accept the Esri layerDefs array form [{"layerId":N,"where":...}].
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
@@ -978,7 +976,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&f=json&dynamicLayers={malformedDynamicLayers}");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -996,7 +994,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&bboxSR=4326&imageSR=999999&size=256,256&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -1014,7 +1012,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,,256&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -1038,7 +1036,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&backgroundColor=255,,0,0&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -1050,7 +1048,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&layers=show:{WebAppFixture.TestLayerId},&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -1062,7 +1060,7 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&layers=show:{WebAppFixture.TestLayerId},foo&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -1074,11 +1072,11 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&layers=show:{WebAppFixture.TestLayerId},999999&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    // #1302: MapServer/export must accept the GeoServices-standard layers visibility
+    // MapServer/export must accept the GeoServices-standard layers visibility
     // prefixes (show:/hide:/include:/exclude:), not just a bare id list.
     [Theory]
     [InlineData("show")]

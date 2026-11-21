@@ -13,14 +13,6 @@ using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Full-pipeline regression tests for the interaction between <c>UseGrpcWeb</c> and
-/// <c>UseHonuaClientCertificateAuthentication</c>. <c>UseGrpcWeb</c> rewrites
-/// <c>Content-Type</c> from <c>application/grpc-web*</c> to <c>application/grpc</c>
-/// before the client-certificate middleware runs, so the capture middleware in
-/// <c>Program.cs</c> must record the original protocol via <c>HttpContext.Items</c>
-/// for required-native mTLS to correctly skip browser/gRPC-Web callers.
-/// </summary>
 [Protocol(TestProtocols.Grpc)]
 [Operation(Operations.Security)]
 public sealed class ClientCertificateGrpcWebPipelineTests
@@ -99,7 +91,7 @@ public sealed class ClientCertificateGrpcWebPipelineTests
                 builder.UseSetting("Authentication:ClientCertificates:Mode", "RequiredForNative");
                 builder.UseSetting("Authentication:ClientCertificates:EnvironmentId", "test");
                 builder.UseSetting("Authentication:ClientCertificates:ProtectedGrpcServices:0", "geospatial.v1.SpecService");
-                // #2958: mTLS is experimental and gated behind Capabilities:Experimental:security.mtls;
+                // MTLS is experimental and gated behind Capabilities:Experimental:security.mtls;
                 // this suite exercises the enforcement middleware directly, so it opts in explicitly.
                 builder.UseSetting("Capabilities:Experimental:security.mtls:Enabled", "true");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");

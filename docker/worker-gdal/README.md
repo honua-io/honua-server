@@ -77,7 +77,7 @@ DOCKER_BUILDKIT=1 docker build -f docker/worker-gdal/Dockerfile -t honua-worker-
 ```
 
 Run alongside the serving image, pointed at the same system PostgreSQL database
-(the worker claims jobs from it and needs no Redis):
+(the worker claims jobs from it):
 
 ```sh
 docker run --rm \

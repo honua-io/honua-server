@@ -25,13 +25,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Cog;
 
-/// <summary>Exercises the registration-to-ImageServer binding through HTTP and the real COG store.</summary>
-/// <remarks>
-/// Service A publishes index 1 over storage layer 42; service B publishes index 2 over storage
-/// layer 1. The registration's <c>layerId</c> is the service-local index (1), so a lookup keyed
-/// by storage id (#4204) would miss A's COG and could serve it to whichever service owns
-/// storage layer 1 (B).
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Cog, TestProtocols.ImageServer)]
 public sealed class CogRegistrationTileTests
@@ -111,7 +104,7 @@ public sealed class CogRegistrationTileTests
             tile.StatusCode.Should().Be(HttpStatusCode.OK);
             tile.Content.Headers.ContentType!.MediaType.Should().Be("image/jpeg");
             var body = await tile.Content.ReadAsByteArrayAsync();
-            // #4205 repro step 3: the served body must carry a DQT segment.
+            // The served body must carry a DQT segment.
             body.AsSpan().IndexOf([(byte)0xFF, (byte)0xDB]).Should().BeGreaterThan(0);
             GdalJpegOracle.AssertMatchesGdalDecode(body, expected, bands);
 
@@ -142,7 +135,7 @@ public sealed class CogRegistrationTileTests
             }
 
             // Service C now also publishes index 1. The registration row carries no service id,
-            // so neither A nor C may be handed the COG (#4204's cross-service disclosure case).
+            // so neither A nor C may be handed the COG (the cross-service disclosure case).
             graph.SetGraph(CreateGraph(withCollision: true).Build(), etag: "\"cog-index-collision\"");
 
             using var formerOwner = await fixture.Client.GetAsync("/rest/services/imagery-a/ImageServer/tile/8/0/0?format=png");

@@ -11,11 +11,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Unit tests proving the canonical replica-sync conflict probe restricts the change-tracker query
-/// to the uploaded update/delete object ids, so a long-offline replica's upload does not
-/// materialize the entire change log since its base generation.
-/// </summary>
 public sealed class ReplicaSyncServiceUploadFilterTests
 {
     [UnitTest]
@@ -70,7 +65,7 @@ public sealed class ReplicaSyncServiceUploadFilterTests
     public async Task ApplyUpload_RollbackOnFailureRequested_FlowsThroughToEditApplier()
     {
         // The protocol adapter's rollbackOnFailure=true must reach the edit applier so the shared edit
-        // pipeline applies each layer's batch atomically (#2136).
+        // pipeline applies each layer's batch atomically.
         var tracker = new RecordingChangeTracker();
         var service = CreateService(tracker);
         var applier = new CountingEditApplier();
@@ -173,10 +168,6 @@ public sealed class ReplicaSyncServiceUploadFilterTests
         }
     }
 
-    /// <summary>
-    /// Conflict repository without durable review support: the sync service then falls back to
-    /// last-write-wins and never writes conflict records, keeping the test focused on the probe.
-    /// </summary>
     private sealed class NoReviewConflictRepository : IReplicaConflictRepository
     {
         public bool SupportsConflictReview => false;

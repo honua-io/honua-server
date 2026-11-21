@@ -18,10 +18,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 
-/// <summary>
-/// Integration tests for OGC API Processes endpoints.
-/// Tests the adapter layer over the canonical geoprocessing runtime.
-/// </summary>
 [Collection("Database.OgcApiData")]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
@@ -414,9 +410,8 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("GET /ogc/processes/processes/{processId}")]
     public async Task ProcessDescription_RasterSurfaceProcess_ReturnsDescription()
     {
-        // #2698: raster/surface process ids are projected for direct discovery,
-        // exactly like the first-slice vector ids. surface.slope is a real registered
-        // ProcessDefinition (GdalSurfaceJobExecutor); it previously returned 404.
+        // Raster and surface process IDs support direct discovery. surface.slope is
+        // registered by GdalSurfaceJobExecutor.
         var response = await _fixture.Client.GetAsync("/ogc/processes/processes/surface.slope");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -444,7 +439,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("GET /ogc/processes/processes/{processId}")]
     public async Task ProcessDescription_ImageryClassify_AdvertisesDelegatedInferenceDescriptors()
     {
-        // #2241: the delegated imagery/ML inference lane is registered with
+        // The delegated imagery/ML inference lane is registered with
         // conformant parameter descriptors. The process is advertised even when no
         // inference backend is configured (execution then fails with a clear
         // message — no silent stub), so discovery must always succeed.
@@ -473,7 +468,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("GET /ogc/processes/processes")]
     public async Task ProcessList_IncludesImageryInferenceProcess()
     {
-        // #2241: imagery.classify appears in the process list for SDK/agent
+        // Imagery.classify appears in the process list for SDK/agent
         // discovery alongside the vector and raster families.
         var response = await _fixture.Client.GetAsync("/ogc/processes/processes");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -490,7 +485,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("GET /ogc/processes/processes")]
     public async Task ProcessList_IncludesRasterSurfaceProcesses()
     {
-        // #2698: raster/surface ids appear in the process list alongside the
+        // Raster/surface ids appear in the process list alongside the
         // first-slice vector ids so SDK clients can discover them for direct execution.
         var response = await _fixture.Client.GetAsync("/ogc/processes/processes");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -611,7 +606,7 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_WithoutDurableJobStore_ReturnsTypedCapabilityUnavailableRefusal()
     {
-        // honua-release#202: Redis is optional for a local install (PostGIS is not). The
+        // A durable job store is optional for a local install (PostGIS is not). The
         // WebAppFixture runs without Redis, so no durable job store is composed. Submission
         // must be refused up front with a machine-readable receipt an agent can branch on —
         // never a hang, an untyped 500, or a job accepted into a queue that can never drain.
@@ -643,8 +638,8 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     public async Task Execute_SynchronousWithoutDurableJobStore_RefusesImmediatelyInsteadOfWaiting()
     {
         // The synchronous path waits up to 30s on the terminal-result service. Without a job
-        // store the refusal must come from submission, before that wait — the no-hang half of
-        // the honua-release#202 contract.
+        // store the refusal must come from submission, before that wait, so the request never
+        // hangs.
         var body = $"{{\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}}}}";
         using var request = new HttpRequestMessage(HttpMethod.Post,
             "/ogc/processes/processes/geometry.buffer/execution");
@@ -1316,14 +1311,11 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     }
 
     // -----------------------------------------------------------------------
-    // Job list — BH7-009 resource-cap regression
+    // Job list — resource cap
     // -----------------------------------------------------------------------
 
-    // BH7-009 regression: before the fix, ListActiveAsync was called with no limit,
-    // so all active jobs were loaded into memory before applying the effectiveLimit
-    // break. The fix passes effectiveLimit to ListActiveAsync so the store applies
-    // a server-side cap. This test verifies that a positive limit= parameter is
-    // accepted and the response shape is valid (or 503 without Redis).
+    // Pass the positive effectiveLimit to ListActiveAsync so the store caps active jobs
+    // before materialization. Verify the response shape, or 503 without a durable job store.
     [IntegrationTest]
     [Operation(Operations.JobStatus)]
     [Endpoint("GET /ogc/processes/jobs")]

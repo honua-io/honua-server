@@ -3,8 +3,10 @@
 
 using System.Collections.Immutable;
 using FluentAssertions;
+using Honua.Core.Features.Shared.Models;
 using Honua.Io.Export;
 using Honua.Io.Export.Writers;
+using Honua.TestKit.Attributes;
 using Microsoft.Data.Sqlite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -12,17 +14,9 @@ using Feature = Honua.Core.Features.FeatureStore.Domain.Feature;
 
 namespace Honua.Server.Tests.Features.Export.Writers;
 
-/// <summary>
-/// Reads the CRS metadata out of an exported GeoPackage (honua-server#4419). The repository's
-/// strongest export round trip — <see cref="GeoPackageAttributeRoundtripTests"/> — passes an SRID
-/// in and never reads it back, and <c>Geometry.EqualsExact</c> does not compare SRID, so
-/// <c>gpkg_spatial_ref_sys</c>, <c>gpkg_contents.srs_id</c>, <c>gpkg_geometry_columns.srs_id</c>
-/// and the per-blob SRID header were all uncovered: a GeoPackage exported with the wrong (or no)
-/// CRS passed everything.
-/// </summary>
 public sealed class GeoPackageExportCrsTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData(4326, "EPSG:4326", "EPSG", 4326)]
     [InlineData(3857, "EPSG:3857", "EPSG", 3857)]
     [InlineData(102100, "ESRI:102100", "ESRI", 102100)]
@@ -30,7 +24,7 @@ public sealed class GeoPackageExportCrsTests
         int srid, string srsName, string expectedOrganization, int expectedCoordsysId)
     {
         const string wkt = "GEOGCS[\"test\",DATUM[\"test\",SPHEROID[\"test\",6378137,298.257223563]]]";
-        var path = await ExportAsync(srid, srsName, wkt);
+        var path = await ExportAsync((srid, srsName, wkt));
         try
         {
             await using var connection = Open(path);
@@ -64,14 +58,44 @@ public sealed class GeoPackageExportCrsTests
         }
     }
 
-    /// <summary>
-    /// The mandatory reserved rows: OGC 12-128r16 requires <c>gpkg_spatial_ref_sys</c> to contain
-    /// srs_id -1 and 0 in every GeoPackage regardless of the layer's own CRS.
-    /// </summary>
-    [Fact]
+    [UnitTheory]
+    [InlineData(4326, 0)]
+    [InlineData(4326, 1)]
+    [InlineData(3857, 0)]
+    [InlineData(3857, 1)]
+    [InlineData(102100, 0)]
+    [InlineData(102100, 1)]
+    public async Task WriteAsync_AnyLayerCrs_ContainsMandatoryWgs84Definition(int srid, int featureCount)
+    {
+        var path = await ExportAsync((srid, $"EPSG:{srid}", null), featureCount);
+        try
+        {
+            await using var connection = Open(path);
+            await connection.OpenAsync();
+
+            (await ScalarLongAsync(connection, "SELECT COUNT(*) FROM gpkg_spatial_ref_sys WHERE srs_id IN (-1, 0, 4326)"))
+                .Should().Be(3, "every GeoPackage must contain the three base spatial reference records");
+            (await ScalarStringAsync(connection, "SELECT organization FROM gpkg_spatial_ref_sys WHERE srs_id = 4326"))
+                .Should().Be("EPSG");
+            (await ScalarLongAsync(connection, "SELECT organization_coordsys_id FROM gpkg_spatial_ref_sys WHERE srs_id = 4326"))
+                .Should().Be(4326);
+            (await ScalarStringAsync(connection, "SELECT definition FROM gpkg_spatial_ref_sys WHERE srs_id = 4326"))
+                .Should().Be(WellKnownCrsWkt.Epsg4326);
+            (await ScalarLongAsync(connection, "SELECT srs_id FROM gpkg_contents WHERE table_name = 'features'"))
+                .Should().Be(srid);
+            (await ScalarLongAsync(connection, "SELECT COUNT(*) FROM features"))
+                .Should().Be(featureCount);
+        }
+        finally
+        {
+            Cleanup(path);
+        }
+    }
+
+    [UnitTest]
     public async Task WriteAsync_AlwaysSeedsTheReservedUndefinedSrsRows()
     {
-        var path = await ExportAsync(4326, "EPSG:4326", srsWkt: null);
+        var path = await ExportAsync((999999, "CUSTOM:999999", null));
         try
         {
             await using var connection = Open(path);
@@ -81,7 +105,7 @@ public sealed class GeoPackageExportCrsTests
                 .Should().Be("NONE");
             (await ScalarStringAsync(connection, "SELECT organization FROM gpkg_spatial_ref_sys WHERE srs_id = 0"))
                 .Should().Be("NONE");
-            (await ScalarStringAsync(connection, "SELECT definition FROM gpkg_spatial_ref_sys WHERE srs_id = 4326"))
+            (await ScalarStringAsync(connection, "SELECT definition FROM gpkg_spatial_ref_sys WHERE srs_id = 999999"))
                 .Should().Be("undefined", "an unresolvable CRS definition is recorded as undefined, not as an empty string");
         }
         finally
@@ -90,8 +114,10 @@ public sealed class GeoPackageExportCrsTests
         }
     }
 
-    private static async Task<string> ExportAsync(int srid, string? srsName, string? srsWkt)
+    private static async Task<string> ExportAsync(
+        (int Srid, string? Name, string? Wkt) crs, int featureCount = 1)
     {
+        var (srid, srsName, srsWkt) = crs;
         // Both segments after GetTempPath() are fixed literals / a GUID, never rooted.
         var path = Path.Join(Path.GetTempPath(), $"honua-gpkg-crs-{Guid.NewGuid():N}.gpkg");
         var factory = new GeometryFactory(new PrecisionModel(), srid);
@@ -102,13 +128,13 @@ public sealed class GeoPackageExportCrsTests
 
         (await GeoPackageExportWriter.WriteAsync(
             path,
-            ToAsyncEnumerable(feature),
+            ToAsyncEnumerable(Enumerable.Repeat(feature, featureCount).ToArray()),
             [new ExportField("name", ExportFieldType.String, true)],
             ExportGeometryType.Point,
             srid,
             srsName,
             srsWkt,
-            CancellationToken.None)).Should().Be(1);
+            CancellationToken.None)).Should().Be(featureCount);
 
         return path;
     }

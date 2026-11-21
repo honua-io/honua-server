@@ -102,7 +102,7 @@ internal sealed partial class PortalTokenIssuer(
         }
 
         // The presented token authenticates the exchange, so it passes exactly the checks a
-        // request presenting it anywhere else passes, binding included (#5491 review).
+        // request presenting it anywhere else passes, binding included.
         var presented = await RestoreBoundRecordAsync(
             request.Token,
             request.PresentedBinding,
@@ -123,7 +123,7 @@ internal sealed partial class PortalTokenIssuer(
         // Derive from the stored record, not from a reduced view of it: the persisted roles,
         // their claims-mapping provenance and fallback, the tenant's provenance and the backing
         // credential all carry over, so the new token is revalidated on every restore exactly as
-        // the presented one is for backing-credential and entitlement changes (#5491 review).
+        // the presented one is for backing-credential and entitlement changes.
         var expiresAt = request.ExpiresAt < presented.ExpiresAt ? request.ExpiresAt : presented.ExpiresAt;
         var token = CreateTokenValue();
         var record = new PortalTokenRecord
@@ -173,7 +173,7 @@ internal sealed partial class PortalTokenIssuer(
         }
 
         // Introspection must agree with ValidateAsync: a token that would be refused there is
-        // not active here either (honua-server#2997 review).
+        // not active here either.
         if (!ClaimsMappingTenantAllowed(record))
         {
             return null;
@@ -250,7 +250,7 @@ internal sealed partial class PortalTokenIssuer(
             // The tenant itself can no longer be validated, so the token is refused rather than
             // degraded. Dropping just the tenant would re-evaluate the caller against whatever
             // scope an absent tenant resolves to, which is not reliably narrower than the one
-            // it was issued for (honua-server#2997 review).
+            // it was issued for.
             PortalTokenLog.ClaimsMappingTenantNoLongerEntitled(_logger, LogValueRedactor.Hash(token));
             return null;
         }
@@ -313,8 +313,8 @@ internal sealed partial class PortalTokenIssuer(
         return record.ClientType switch
         {
             PortalTokenClientType.Bearer => true,
-            // generateToken desktop clients omit Referer after minting client=referer
-            // (honua-server#5558). That exception is stored on the record. Browser
+            // generateToken desktop clients omit Referer after minting client=referer.
+            // That exception is stored on the record. Browser
             // OAuth tokens use the same client type and still require the header.
             PortalTokenClientType.Referer => (record.AcceptMissingReferer && string.IsNullOrWhiteSpace(binding.Referer))
                 || string.Equals(
@@ -340,8 +340,7 @@ internal sealed partial class PortalTokenIssuer(
 
         // true (mapping-derived) or null (persisted before the field existed, so provenance is
         // unknown) both require the live entitlement. Treating null as "not mapping-derived"
-        // would let a pre-upgrade token keep its custom-mapped roles forever
-        // (honua-server#2997 review).
+        // would let a pre-upgrade token keep its custom-mapped roles forever.
         var requiredEntitlement = record.RolesDependOnlyOnRoleClaimSelection
             ? FeatureCatalog.OidcAuthenticationKey
             : FeatureCatalog.OidcClaimsMappingKey;
@@ -392,13 +391,14 @@ internal sealed partial class PortalTokenIssuer(
         PortalTokenRecord record,
         string[] roles)
     {
-        var claims = new List<Claim>
-        {
+        List<Claim> claims =
+        [
             new(ClaimTypes.Name, record.PrincipalId),
             new(ClaimTypes.NameIdentifier, record.PrincipalId),
             new("auth_type", AuthTypeClaimValue),
             new(BindingClaimType, record.ClientType.ToString()),
-        };
+            .. FederatedIssuerClaims(record.Source),
+        ];
 
         if (!string.IsNullOrWhiteSpace(record.DisplayName))
         {
@@ -410,10 +410,9 @@ internal sealed partial class PortalTokenIssuer(
             claims.Add(new Claim(TenantClaimType, record.TenantId!));
         }
 
-        foreach (var role in roles.Where(role => !string.IsNullOrWhiteSpace(role)))
-        {
-            claims.Add(new Claim(ClaimTypes.Role, role));
-        }
+        claims.AddRange(roles
+            .Where(static role => !string.IsNullOrWhiteSpace(role))
+            .Select(static role => new Claim(ClaimTypes.Role, role)));
 
         var identity = new ClaimsIdentity(
             claims,
@@ -427,6 +426,20 @@ internal sealed partial class PortalTokenIssuer(
         CanonicalSecurityActor.StampAuthorityClaims(identity);
 
         return new ClaimsPrincipal(identity);
+    }
+
+    // A token exchanged from a federated sign-in keeps its provider, so owner checks qualify it like the original bearer.
+    private static IEnumerable<Claim> FederatedIssuerClaims(PortalTokenSourceRecord? source)
+    {
+        if (source is not { Kind: PortalCredentialSourceKind.FederatedToken, Reference: { } reference })
+        {
+            return [];
+        }
+
+        var separator = reference.IndexOf('|', StringComparison.Ordinal);
+        return separator > 0
+            ? [CanonicalSecurityActor.CreateStampedClaim(OwnerIdentityScope.SubjectIssuerClaim, reference[..separator])]
+            : [];
     }
 
     // A token another node will not see must not look issued, so a store failure reaches the caller.

@@ -17,11 +17,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Tests.Features.Reporting;
 
-/// <summary>
-/// Verifies the canonical analysis-report builder behavior: contract versioning,
-/// deterministic narrative composition, LLM enrichment, and clean fallback
-/// when the LLM provider fails.
-/// </summary>
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class AnalysisReportBuilderTests
 {
@@ -225,11 +220,8 @@ public sealed class AnalysisReportBuilderTests
     [Operation(Operations.Metadata)]
     public async Task BuildAsync_AllowsMaxTableRowsAboveTwoHundred()
     {
-        // Templates previously hard-coded a 200-row cap, masking any operator
-        // configuration that wanted to surface more rows. Build a package with
-        // >200 rows and a configured cap of 250 — the artifact/assumption
-        // tables must keep all 250 rows inside the cap and only truncate the
-        // overflow.
+        // Use more than 200 rows and a configured cap of 250: artifact and assumption
+        // tables must retain all 250 rows inside the cap and truncate the overflow.
         const int packageRows = 280;
         const int configuredCap = 250;
 
@@ -410,8 +402,8 @@ public sealed class AnalysisReportBuilderTests
 
     private static AnalysisResultPackage BuildLargeGenericPackage(int rowCount)
     {
-        // Generic-template path with rowCount artifacts and assumptions so we
-        // can exercise MaxTableRows values above the historical 200-row clamp.
+        // Include rowCount artifacts and assumptions to exercise MaxTableRows
+        // values above 200.
         var artifacts = Enumerable
             .Range(0, rowCount)
             .Select(i => new ArtifactRef

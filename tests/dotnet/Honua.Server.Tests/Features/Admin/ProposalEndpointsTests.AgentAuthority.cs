@@ -13,6 +13,10 @@ public sealed partial class ProposalEndpointsTests
 {
     private const string AuthorityUrl = "/api/v1/admin/agent-authority";
 
+    // The admin-route admission refuses an agent on every administrative write before the route's own filter.
+    private const string AdminRouteGuidance = "through the operations API";
+    private const string AdminRoutePolicyRef = "operator.agent.admin-route";
+
     [IntegrationTheory]
     [InlineData("public")]
     [InlineData(null)]
@@ -43,11 +47,11 @@ public sealed partial class ProposalEndpointsTests
         seeded.StatusCode.Should().Be(HttpStatusCode.NoContent);
         using var agent = await CreateKeyClientAsync("authority-agent", AgentKeyPermissions);
         using var changed = await agent.PutAsJsonAsync(AuthorityUrl, ceiling with { Enabled = false });
-        await AssertAgentApprovalRefusalAsync(changed, "make this change in Console", "operator.agent.access-grants");
+        await AssertAgentApprovalRefusalAsync(changed, AdminRouteGuidance, AdminRoutePolicyRef);
         // Literal route: the endpoint-registry drift scan matches same-method requests by source path.
         using var removed = await agent.DeleteAsync(
             $"/api/v1/admin/agent-authority?principalId={ceiling.PrincipalId}&tenantId=public");
-        await AssertAgentApprovalRefusalAsync(removed, "make this change in Console", "operator.agent.access-grants");
+        await AssertAgentApprovalRefusalAsync(removed, AdminRouteGuidance, AdminRoutePolicyRef);
         var stored = await _client.GetFromJsonAsync<AgentAuthorityCeiling>(
             AuthorityUrl + $"?principalId={ceiling.PrincipalId}&tenantId=public");
         stored.Should().BeEquivalentTo(ceiling);

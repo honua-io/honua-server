@@ -71,8 +71,7 @@ internal static partial class ControlPlaneLambdaEventEndpoint
         [FromServices] IConfiguration configuration,
         [FromServices] ILogger<ControlPlaneLambdaEventEndpointLog> logger)
         // Resolved here rather than bound with [FromServices]: a host that never composed the
-        // targets must answer a typed refusal, not an unhandled binding exception (honua-release
-        // run 38242272260, Redis-off cell).
+        // targets must answer a typed refusal, not an unhandled binding exception.
         => HandleAsync(
             context,
             configuration,
@@ -103,8 +102,11 @@ internal static partial class ControlPlaneLambdaEventEndpoint
         // A degraded start (database unreachable, or the schema behind this build before the
         // migration task ran) cannot do the control-plane work. Answer a typed not-ready 503 so the
         // invocation fails and EventBridge/Scheduler retries it, instead of running the handler
-        // against a database it cannot use (honua-server#5916).
-        if (ControlPlaneNotReadyGuard.TryRefuse(context, degradedStartup) is { } notReady)
+        // against a database it cannot use.
+        if (ControlPlaneNotReadyGuard.TryRefuse(
+                context,
+                degradedStartup,
+                context.RequestServices.GetService<Honua.Infrastructure.Monitoring.MigrationState>()) is { } notReady)
         {
             LogNotReady(logger, context.Response.Headers[ReadinessReasonCodes.HeaderName].ToString());
             return notReady;
@@ -354,7 +356,7 @@ internal static partial class ControlPlaneLambdaEventEndpoint
     [LoggerMessage(19634, LogLevel.Error, "Control-plane Lambda handler selector '{Selector}' is not recognised; the event was not handled")]
     private static partial void LogUnknownHandler(ILogger logger, string selector);
 
-    [LoggerMessage(19635, LogLevel.Warning, "Control-plane Lambda handler '{Handler}' ({Subject}) refused: missing dependency {MissingDependency}. This host has no durable control-plane store (Redis-off cell); further refusals from this instance are not logged")]
+    [LoggerMessage(19635, LogLevel.Warning, "Control-plane Lambda handler '{Handler}' ({Subject}) refused: missing dependency {MissingDependency}. This host has no durable control-plane store (no system database); further refusals from this instance are not logged")]
     private static partial void LogDependencyUnavailable(ILogger logger, string handler, string subject, string missingDependency);
 
     [LoggerMessage(19636, LogLevel.Error, "Control-plane Lambda handler '{Handler}' failed with {ExceptionType}")]

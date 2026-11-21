@@ -15,15 +15,26 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
-/// <summary>
-/// Integration tests for the OGC SensorThings API (STA v1.1) Phase 3 real-time observation
-/// stream (#1747): the SSE transport handshake and live push of a newly-ingested observation.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.SensorThings)]
-public sealed partial class SensorThingsStreamEndpointsTests : IAsyncLifetime
+public sealed partial class SensorThingsStreamEndpointsTests(SensorThingsStreamEndpointsTests.StreamHost host)
+    : IClassFixture<SensorThingsStreamEndpointsTests.StreamHost>
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureWebHost(builder =>
+    private readonly WebAppFixture _fixture = host.Fixture;
+
+    // One application serves every case. Stream cases open their own connections and read from
+    // the live tail or from a cursor taken in the same case, so observations ingested by an
+    // earlier case are never expected; the tenant-collision case seeds and drops its own schema.
+    public sealed class StreamHost : IAsyncLifetime
+    {
+        public WebAppFixture Fixture { get; } = CreateFixture();
+
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
+
+    private static WebAppFixture CreateFixture() => new WebAppFixture().ConfigureWebHost(builder =>
     {
         builder.UseSetting("HONUA_DEV_AUTH", "false");
         builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
@@ -34,10 +45,6 @@ public sealed partial class SensorThingsStreamEndpointsTests : IAsyncLifetime
                 ["MultiTenancy:MultiTenantAdminRoles:0"] = "admin",
             }));
     });
-
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
     [Operation(Operations.Streaming)]
@@ -208,10 +215,6 @@ public sealed partial class SensorThingsStreamEndpointsTests : IAsyncLifetime
         return JsonDocument.Parse(payload.ToArray());
     }
 
-    /// <summary>
-    /// Reads SSE lines until a line containing <paramref name="marker"/> is seen, then returns
-    /// the marker line plus the following data line. Heartbeats are skipped.
-    /// </summary>
     private static async Task<string> ReadUntilAsync(StreamReader reader, string marker, CancellationToken cancellationToken)
     {
         string? cursor = null;

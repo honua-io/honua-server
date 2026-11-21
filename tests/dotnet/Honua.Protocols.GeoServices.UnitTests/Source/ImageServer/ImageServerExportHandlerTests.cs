@@ -26,9 +26,6 @@ using System.Security.Claims;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Tests for ImageServerExportHandler functionality.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerExportHandlerTests
 {
@@ -47,7 +44,7 @@ public class ImageServerExportHandlerTests
             NullLogger<ImageServerExportHandler>.Instance);
     }
 
-    // #5437: the request annotations are the published OpenAPI contract for exportImage, so
+    // The request annotations are the published OpenAPI contract for exportImage, so
     // they must admit every raw pixel-block format and compression the handler serves.
     [UnitTheory]
     [InlineData("bsq", null)]
@@ -200,7 +197,7 @@ public class ImageServerExportHandlerTests
     public async Task ExportImageAsync_ProLercQuality_ReturnsLercBytes()
     {
         // Pro's draw sends compressionQuality 10000 with LERC. That is a maxZError scale, not a
-        // JPEG quality, and must not 400 while a PNG of the same bbox succeeds (#6563).
+        // JPEG quality, and must not 400 while a PNG of the same bbox succeeds.
         var raster = CreateTestRasterInfo() with { PixelType = "8BUI", BandCount = 1, Width = 2, Height = 2 };
         _rasterStore.QueryRastersAsync(default, default, default).ReturnsForAnyArgs([raster]);
         _rasterStore.ExportImageAsync(1, raster.Id, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
@@ -530,7 +527,7 @@ public class ImageServerExportHandlerTests
         var request = CreateRequest(
             renderingRule: "{\"rasterFunction\":\"BandArithmetic\",\"rasterFunctionArguments\":{\"Method\":1,\"BandIndexes\":[0,1]}}");
         var result = await _handler.ExportImageAsync(context, 1, request);
-        // #2795: not-implemented operations surface body error.code 501 (pass-through), not the 500 collapse.
+        // Not-implemented operations surface body error.code 501 (pass-through), not the 500 collapse.
         await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
         await _rasterStore.DidNotReceive()
             .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
@@ -578,7 +575,7 @@ public class ImageServerExportHandlerTests
         var request = CreateRequest(
             renderingRule: "{\"rasterFunction\":\"ExtractBand\",\"rasterFunctionArguments\":{\"BandNames\":[\"Red\"]}}");
         var result = await _handler.ExportImageAsync(context, 1, request);
-        // #2795: not-implemented operations surface body error.code 501 (pass-through), not the 500 collapse.
+        // Not-implemented operations surface body error.code 501 (pass-through), not the 500 collapse.
         await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
         await _rasterStore.DidNotReceive()
             .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
@@ -826,7 +823,7 @@ public class ImageServerExportHandlerTests
         var request = CreateRequest(mosaicRule: "{\"mosaicMethod\":\"esriMosaicSeamline\"}");
         var result = await _handler.ExportImageAsync(context, 1, request);
 
-        // esriMosaicSeamline is now implemented (#1804): it composites via the seamline ordering
+        // esriMosaicSeamline is now implemented: it composites via the seamline ordering
         // so each raster is clipped to its persisted cutline before the union.
         result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
         capturedOrdering.Should().Be(RasterMosaicOrdering.Seamline);
@@ -841,7 +838,7 @@ public class ImageServerExportHandlerTests
         var context = CreateImageServerContext();
         var request = CreateRequest(pixelType: "U8");
         var result = await _handler.ExportImageAsync(context, 1, request);
-        // #2795: not-implemented operations surface body error.code 501 (pass-through), not the 500 collapse.
+        // Not-implemented operations surface body error.code 501 (pass-through), not the 500 collapse.
         await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
         await _rasterStore.DidNotReceive()
             .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
@@ -947,7 +944,7 @@ public class ImageServerExportHandlerTests
     [Operation(Operations.Export)]
     public async Task ExportImageAsync_MultidimReprojected_ThreadsOutputSridToSliceReader()
     {
-        // #2717: exportImage of a Zarr slice now supports reprojection between bboxSR and imageSR.
+        // ExportImage of a Zarr slice now supports reprojection between bboxSR and imageSR.
         SetupMultidimSliceReader(CreateMultidimRasterResult(), CreateMultidimRgba());
 
         var context = CreateImageServerContext();
@@ -966,7 +963,7 @@ public class ImageServerExportHandlerTests
     [Operation(Operations.Export)]
     public async Task ExportImageAsync_MultidimJpeg_ReturnsInlineJpeg()
     {
-        // #2717: JPEG output is now supported for multidimensional Zarr slices.
+        // JPEG output is now supported for multidimensional Zarr slices.
         SetupMultidimSliceReader(CreateMultidimRasterResult(), CreateMultidimRgba());
 
         var context = CreateImageServerContext();
@@ -983,7 +980,7 @@ public class ImageServerExportHandlerTests
     [Operation(Operations.Export)]
     public async Task ExportImageAsync_MultidimTiff_ReturnsInlineTiff()
     {
-        // #2717: TIFF output is now supported for multidimensional Zarr slices.
+        // TIFF output is now supported for multidimensional Zarr slices.
         SetupMultidimSliceReader(CreateMultidimRasterResult(), CreateMultidimRgba());
 
         var context = CreateImageServerContext();
@@ -1005,7 +1002,7 @@ public class ImageServerExportHandlerTests
     [Operation(Operations.Export)]
     public async Task ExportImageAsync_MultidimBilinearInterpolation_ThreadsResamplingToSliceReader()
     {
-        // #2717: bilinear/cubic interpolation is now supported for multidimensional Zarr slices.
+        // Bilinear/cubic interpolation is now supported for multidimensional Zarr slices.
         SetupMultidimSliceReader(CreateMultidimRasterResult(), CreateMultidimRgba());
 
         var context = CreateImageServerContext();
@@ -1024,7 +1021,7 @@ public class ImageServerExportHandlerTests
     [Operation(Operations.Export)]
     public async Task ExportImageAsync_MultidimColormapRenderingRule_ThreadsColormapToSliceReader()
     {
-        // #2717: Stretch + Colormap rendering rules are now supported for Zarr slices.
+        // Stretch + Colormap rendering rules are now supported for Zarr slices.
         SetupMultidimSliceReader(CreateMultidimRasterResult(), CreateMultidimRgba());
 
         var context = CreateImageServerContext();
@@ -1044,7 +1041,7 @@ public class ImageServerExportHandlerTests
     [Operation(Operations.Export)]
     public async Task ExportImageAsync_MultidimStretchRenderingRule_ThreadsStretchToSliceReader()
     {
-        // #2717: Stretch rendering rules are now supported for Zarr slices.
+        // Stretch rendering rules are now supported for Zarr slices.
         SetupMultidimSliceReader(CreateMultidimRasterResult(), CreateMultidimRgba());
 
         var context = CreateImageServerContext();

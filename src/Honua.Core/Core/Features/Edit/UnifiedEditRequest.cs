@@ -209,17 +209,6 @@ public readonly record struct EditTransactionOptions
     public string? TransactionHandle { get; init; }
 
     public ImmutableDictionary<string, object>? TransactionHints { get; init; }
-
-    public static EditTransactionOptions WithRollback(
-        TransactionIsolationLevel isolationLevel = TransactionIsolationLevel.ReadCommitted,
-        int? timeoutMs = null)
-        => new()
-        {
-            RollbackOnFailure = true,
-            UseExplicitTransaction = true,
-            IsolationLevel = isolationLevel,
-            TimeoutMs = timeoutMs
-        };
 }
 
 public readonly record struct EditOutputCrs
@@ -305,7 +294,4 @@ public readonly record struct EditConstraints
 
     public static EditConstraints WithExpectedState(string expectedStateToken, string? etag = null)
         => new() { ExpectedStateToken = expectedStateToken, ETag = etag };
-
-    public static EditConstraints WithVersion(long version)
-        => new() { Version = version };
 }

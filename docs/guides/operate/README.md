@@ -158,10 +158,10 @@ Current rung by concern:
 Read `honua_ops_findings` or the MCP resource `honua://ops/findings` to see
 these findings. Long-running hosts sample once a minute, with sign-in discovery
 cached for five minutes and the public GitHub latest-release feed cached for
-24 hours. API Lambda hosts also register the sampler while their execution
-environment is running. Event-handler-only Lambda profiles evaluate checks on a
-findings read. Lambda caches last only for the lifetime of the execution
-environment. Each replica keeps its own cache. Before each sign-in probe, it
+24 hours (a failed release-feed read retries sooner). API Lambda hosts also
+register the sampler while their execution environment is running.
+Event-handler-only Lambda profiles evaluate checks on a findings read. Lambda
+caches last only for the lifetime of the execution environment. Each replica keeps its own cache. Before each sign-in probe, it
 refreshes persisted provider configuration even when it serves no admin requests.
 Provider configuration changes therefore appear in these sampled health findings
 within the five-minute interval; request authentication refreshes independently.
@@ -183,7 +183,14 @@ provider or correct its configuration, then allow the five-minute cache to expir
 Release checks compare the running assembly version with the public latest
 stable release, including numeric `rc.N` ordering. A missing release produces no
 notice; a failed release-feed read produces a sanitized `self-check-unavailable`
-warning until the next daily attempt. Review release notes before approving an
+warning and is retried after five minutes, then 10, 20 and 40 minutes and hourly
+after that; a successful retry clears it. Each
+failed scheduled check writes a warning log, event ID 9499, naming the check and
+the failure class (for example `HTTP 503` or a DNS or connection error) without
+the exception message. A failed findings store read (workflow operations,
+external events) logs one warning (event 7463) naming the source, the read and
+its failure class, never the error text; an unchanged failure is logged at most
+every five minutes. Review release notes before approving an
 upgrade. None of these findings includes an executable recommended action.
 They do not by themselves prove inbox or email delivery: that requires deployment
 notification wiring and live validation.
@@ -251,8 +258,8 @@ prior revision and protection policy.
 
 | Backend family | `rollbackSupported` | What a rollback request means |
 |---|---:|---|
-| Kubernetes/ECS/Azure Container Apps GitOps hand-off | `false` | Honua cannot revert the workload. The operation becomes `ManualInterventionRequired`; revert the pinned revision in the GitOps repository and verify it out of band. |
-| Argo Rollouts, YARP rolling replace, Azure revision/slot/alias, and direct cloud adapters that implement revert | `true` when registered/configured | Honua calls the backend rollback operation and records the observed provider outcome. It reports `RolledBack` only after the prior revision is serving, healthy and passes a configured functional query ([completion proof](../deploy/upgrade-and-rollback.md#rollback-completion-proof)). Support remains operation- and prior-revision-dependent. |
+| Kubernetes/ECS GitOps hand-off | `false` | Honua cannot revert the workload. The operation becomes `ManualInterventionRequired`; revert the pinned revision in the GitOps repository and verify it out of band. |
+| Argo Rollouts, Lambda alias, and direct cloud adapters that implement revert | `true` when registered/configured | Honua calls the backend rollback operation and records the observed provider outcome. It reports `RolledBack` only after the prior revision is serving, healthy and passes a configured functional query ([completion proof](../deploy/upgrade-and-rollback.md#rollback-completion-proof)). Support remains operation- and prior-revision-dependent. |
 | Missing/unregistered backend or no prior revision | unavailable | No automatic rollback is claimed; plan/findings surfaces must direct the operator to manual recovery. |
 
 Platform version rollback moves compute back to a known revision. During a

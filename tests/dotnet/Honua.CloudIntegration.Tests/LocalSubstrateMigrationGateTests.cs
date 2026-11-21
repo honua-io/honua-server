@@ -15,19 +15,6 @@ using Xunit;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// ADR-0060 substrate-neutral MIGRATION-GATE lane (#2166, #2457). Puts the expand/contract discipline
-/// in the loop end-to-end: drives the REAL <see cref="PostgresDatabaseMigrationRunner"/> against a real
-/// PostgreSQL database with synthetic migration assemblies so the fail-closed rejection, the annotated
-/// apply path, and the plan-level "pending contract scripts block coordinated deploy" signal are all
-/// proven against a live database rather than a fake.
-/// </summary>
-/// <remarks>
-/// The pure classification logic is unit-tested in <c>MigrationSafetyClassifierTests</c>, and the
-/// probe's consumption of the plan signal is unit-tested in <c>DeployPreflightProbeTests</c>; this lane
-/// deliberately does not duplicate those and instead exercises the real runner + real database path.
-/// Every test <c>[SkippableFact]</c>-skips when Docker is unavailable.
-/// </remarks>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.LocalSubstrate)]
 public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstratePostgresFixture>
 {
@@ -309,7 +296,7 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
     {
         Skip.IfNot(_postgres.Available, "Docker/PostgreSQL is not available for the migration-gate lane.");
 
-        // One-shot proof (#2812): a nonce minted for the FIRST contract migration must not approve a
+        // One-shot proof: a nonce minted for the FIRST contract migration must not approve a
         // LATER, different contract migration — the "HONUA_APPROVE_CONTRACT_MIGRATIONS is never cleared"
         // failure mode. We reuse the exact token that approved script 002 and show it is inert for 004.
         var connectionString = await _postgres.CreateFreshDatabaseAsync();
@@ -445,17 +432,6 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
             name.EndsWith("002_drop_legacy_annotated.sql", StringComparison.Ordinal));
     }
 
-    /// <summary>
-    /// honua-server#4415 - <c>RunMigrations_BackupHook_RunsBeforeContractApplyAndSucceeds</c> proves
-    /// only that the backup hook ran (a sentinel file exists); nothing anywhere verified that the
-    /// backup it produces is restorable, or even non-empty. This test's backup command is a real
-    /// <c>pg_dump</c> (run via <c>docker exec</c> against the same container the migration runs
-    /// against, so no PostgreSQL client tools are required on the test-runner host) of a table
-    /// seeded with independently-known rows, taken immediately before the contract script destroys
-    /// the very column being backed up. The assertion is that <c>pg_restore</c>-ing the dump into a
-    /// brand-new database reproduces those exact rows - the shape honua-release's
-    /// <c>e2e/dr-drill/run.sh</c> already uses for its own backup/restore proof.
-    /// </summary>
     [SkippableFact]
     public async Task RunMigrations_BackupHook_RealPgDumpRestoresIdenticalPreContractSnapshot()
     {
@@ -583,7 +559,7 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
     {
         Skip.IfNot(_postgres.Available, "Docker/PostgreSQL is not available for the migration-gate lane.");
 
-        // #6477: a reader built at baseline N (001-002) starts against a journal at N+2 whose extra
+        // A reader built at baseline N (001-002) starts against a journal at N+2 whose extra
         // scripts are expand-only and were declared by the newer server that applied them.
         var connectionString = await _postgres.CreateFreshDatabaseAsync();
         var runner = CreateEnforcingRunner();

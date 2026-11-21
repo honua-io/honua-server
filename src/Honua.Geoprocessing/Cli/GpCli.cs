@@ -65,7 +65,7 @@ public static class GpCli
         GlassBoxCapture? glassBox = null,
         string? scratchRoot = null)
     {
-        // Only the dev container settings are configurable; no Redis or control-plane
+        // Only the dev container settings are configurable; no job-store or control-plane
         // services are composed. Native bind mounts use the invoking developer's UID/GID.
         // reproduce passes a fresh scratch root and never a path from the bundle.
         var configuration = GpContainerConfiguration.Create(scratchRoot: scratchRoot);
@@ -75,8 +75,8 @@ public static class GpCli
 
         // Managed geometry/analytics/transform/source/sink executors.
         services.AddGeoprocessing(configuration);
-        // Native GDAL executors (Redis-free seam: options + CLI runner + executors only).
-        // In container mode (--real-worker, #2180) each native gdal.* step runs inside
+        // Native GDAL executors (options + CLI runner + executors only).
+        // In container mode (--real-worker) each native gdal.* step runs inside
         // the real honua-worker-etl image so gp run/plan is a true dry-run of the
         // native submit path; the managed executor set and the durable spec are
         // unchanged — only the GDAL command runner differs.
@@ -295,9 +295,9 @@ public static class GpCli
         }
 
         // Ports are the defaults published by docker/compose/docker-compose.gp-dev.yml
-        // (POSTGRES_PORT, REDIS_PORT, HONUA_HTTP_PORT, HONUA_GRPC_PORT).
+        // (POSTGRES_PORT, HONUA_HTTP_PORT, HONUA_GRPC_PORT).
         const string integrationProfile =
-            "integration profile: Docker Compose v2; free host ports 5432 (PostGIS), 6379 (Redis), 8080 (HTTP) and 8081 (gRPC), then run docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile integration up --build -d.";
+            "integration profile: Docker Compose v2; free host ports 5432 (PostGIS), 8080 (HTTP) and 8081 (gRPC); export HONUA_ADMIN_PASSWORD as a random admin API key, then run docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile integration up --build -d.";
         var report = new JsonObject
         {
             ["schemaVersion"] = "1.0",
@@ -1490,7 +1490,7 @@ public static class GpCli
 
     private static void PrintUsage()
     {
-        Console.WriteLine("honua gp — headless, Redis-free geoprocessing dev runner (GP Devkit)");
+        Console.WriteLine("honua gp — headless geoprocessing dev runner (GP Devkit)");
         Console.WriteLine();
         Console.WriteLine("Usage:");
         Console.WriteLine("  Installed tool: honua-gp-devkit <command> (equivalent to the honua gp command family below)");

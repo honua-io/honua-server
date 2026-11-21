@@ -15,12 +15,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Security;
 
-/// <summary>
-/// Cross-protocol smoke proving the canonical permission resolver (#1375) is
-/// LIVE on an already-enforced path: the GeoServices FeatureServer layer-query
-/// read seam consults per-operation RBAC grants, and an explicit role list still
-/// denies a matching grant (#6358).
-/// </summary>
 public sealed class PermissionResolverQuerySmokeTests
 {
     private const string GrantedRole = "alpha-query-grant";
@@ -35,7 +29,7 @@ public sealed class PermissionResolverQuerySmokeTests
     public async Task Query_PerOperationGrant_DoesNotSkipRoleList()
     {
         // Alpha service requires a coarse read role the user does NOT hold.
-        // A matching query grant must not skip that list (#6358).
+        // A matching query grant must not skip that list.
         using var factory = ServiceRbacTestFixture.CreateFactory(
             layerCatalogFactory: static () => new RbacTestLayerCatalog(
                 alphaServiceMetadata: ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["coarse-only-role"])),
@@ -80,15 +74,11 @@ public sealed class PermissionResolverQuerySmokeTests
 
         var response = await client.GetAsync(QueryUrl);
 
-        // PA-070/PA-117 (#2418): the GeoServices query surface reports the coarse-policy
+        // the GeoServices query surface reports the coarse-policy
         // deny as HTTP 200 + {"error":{"code":403}} (or a legacy 403).
         await response.AssertGeoServicesErrorAsync(403);
     }
 
-    /// <summary>
-    /// Minimal <see cref="IRoleStore"/> that resolves the supplied grant for a
-    /// single named role; everything else is empty.
-    /// </summary>
     private sealed class StubRoleStore(string roleName, PermissionGrant grant) : IRoleStore
     {
         public Task<EffectivePermissions> GetEffectivePermissionsAsync(

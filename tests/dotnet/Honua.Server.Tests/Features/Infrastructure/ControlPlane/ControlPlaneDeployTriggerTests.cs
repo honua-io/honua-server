@@ -12,23 +12,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Phase 2 tests for extending the hybrid-trigger seam to the deploy/release reconcilers:
-/// <list type="bullet">
-///   <item><description>
-///     the deploy event handler resolves a deploy provider id to the durable operation id and
-///     reconciles it once, and is duplicate / out-of-order safe (lease + terminal-guard no-op);
-///   </description></item>
-///   <item><description>
-///     the staged self-continue handler reconciles a metadata/coordinated release once (advancing
-///     one stage) and refuses unsupported kinds;
-///   </description></item>
-///   <item><description>
-///     the workflow-operation backstop sweep covers the deploy/metadata/coordinated staged ops:
-///     it reconciles stale active ops, no-ops fresh ones, and walks a staged release forward.
-///   </description></item>
-/// </list>
-/// </summary>
 public sealed class ControlPlaneDeployTriggerTests
 {
     // ---- Deploy event handler ----------------------------------------------
@@ -65,7 +48,7 @@ public sealed class ControlPlaneDeployTriggerTests
     public async Task HandleDeployEvent_DuplicateAndOutOfOrderInvocation_AdvancesDeployOnce()
     {
         // Real deploy reconciler behind the real dispatcher. The backend reports a terminal Succeeded
-        // observation, which honua-server#4618 turns into an open post-activation observation window
+        // observation, which opens a post-activation observation window
         // rather than an immediate terminal state — so duplicate/out-of-order events during that window
         // legitimately keep re-observing (safe: ObserveAsync is read-only and the window guard prevents
         // a second promotion). The invariant that must hold is idempotency of MUTATING actions, not a
@@ -386,11 +369,6 @@ public sealed class ControlPlaneDeployTriggerTests
             }
         };
 
-    /// <summary>
-    /// In-memory workflow-operation store. Lease ops always succeed; <see cref="ListActiveAsync"/>
-    /// filters terminal operations exactly like the Redis store, and <see cref="SetAsync"/> counts
-    /// advancing writes so duplicate/out-of-order reconciles are observable.
-    /// </summary>
     private sealed class FakeWorkflowStore(params WorkflowOperationRecord[] operations) : IWorkflowOperationStore
     {
         private readonly Dictionary<string, WorkflowOperationRecord> _ops =
@@ -452,9 +430,6 @@ public sealed class ControlPlaneDeployTriggerTests
                 or WorkflowOperationStatus.ManualInterventionRequired;
     }
 
-    /// <summary>
-    /// Deploy backend that reports a fixed observation and counts how many times it was observed.
-    /// </summary>
     private sealed class FakeDeployBackend(WorkflowOperationStatus observedStatus) : IDeployBackend
     {
         public int ObserveCount { get; private set; }

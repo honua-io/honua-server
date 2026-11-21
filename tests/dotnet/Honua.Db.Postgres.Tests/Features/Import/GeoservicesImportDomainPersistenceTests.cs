@@ -21,13 +21,6 @@ using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Integration coverage for honua-server#1255: Esri coded-value and range domains
-/// captured on import must persist through publish into the Metadata v2 graph,
-/// survive the compat-compile (activated current snapshot), and surface on the
-/// canonical field the FeatureServer field <c>domain</c> and <c>queryDomains</c>
-/// surfaces read from (<see cref="MetadataV2Field.Domain"/>).
-/// </summary>
 [Collection("Database")]
 public sealed class GeoservicesImportDomainPersistenceTests(PostgresFixture fixture)
 {
@@ -76,8 +69,8 @@ public sealed class GeoservicesImportDomainPersistenceTests(PostgresFixture fixt
                 warning.Contains("publishing did not complete", StringComparison.OrdinalIgnoreCase));
 
             // Read the activated current snapshot — exactly the compat-compiled graph
-            // the serving side reads. If domains were dropped at publish (the #1255
-            // gap) this assertion fails.
+            // the serving side reads. If domains were dropped at publish this
+            // assertion fails.
             var snapshot = await graphStore.GetCurrentAsync();
             var resource = snapshot.Graph.Resources
                 .SingleOrDefault(r => r.SchemaFields.Any(f =>
@@ -164,7 +157,7 @@ public sealed class GeoservicesImportDomainPersistenceTests(PostgresFixture fixt
         var sql = await File.ReadAllTextAsync(RepositoryPaths.Resolve("tests", "seed", "base-schema.sql"));
         // base-schema.sql qualifies catalog tables as honua.* but creates 'features'
         // unqualified; route the unqualified create into the honua schema too.
-        // honua-server#1568 (signature 2): base-schema.sql creates/ALTERs the literal,
+        // It also creates/ALTERs the literal,
         // process-global honua.* catalog tables (search_path isolation does not scope them), so
         // apply it under the shared seed advisory lock to keep parallel [Collection("Database")]
         // tests off the 40P01 deadlock path. The seed's own SET search_path stays first.
@@ -173,7 +166,7 @@ public sealed class GeoservicesImportDomainPersistenceTests(PostgresFixture fixt
 
     private async Task CleanupCatalogAsync(string serviceName)
     {
-        // #2020: these DELETEs mutate the literal, process-global honua.* catalog
+        // These DELETEs mutate the literal, process-global honua.* catalog
         // tables (search_path isolation does not scope them), so route them through the
         // shared seed advisory lock to keep parallel [Collection("Database")] tests off
         // the 40P01 deadlock path.

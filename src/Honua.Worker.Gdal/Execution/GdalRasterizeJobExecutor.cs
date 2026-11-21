@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Logging;
@@ -66,17 +67,25 @@ internal sealed partial class GdalRasterizeJobExecutor(
             return JobExecutionResult.Failed($"Invalid rasterize inputs: {sourceError}");
         }
 
-        // Bound the caller-controlled OUTPUT resolution (cellSize → -tr) before
-        // gdal_rasterize derives the output grid from the input LAYER extent ÷ target cell
-        // size (#2793). The extent comes from the untrusted GeoJSON payload envelope; when
-        // it holds no readable positions the input/timeout backstop remains. The -ts
-        // (width+height) path is already bounded inside TryBuildGridArgs.
-        if (targetCellSize is double cellSize
-            && GdalVectorEnvelopeReader.TryReadEnvelope(sourceBytes, out var envelope)
-            && !GdalOutputGridGuard.TryAdmitResolution(
-                envelope.Width, envelope.Height, cellSize, cellSize, opts, out var resolutionError))
+        // Bound caller-controlled output resolution before gdal_rasterize derives the
+        // grid from input extent / cellSize. Fail closed when no finite GeoJSON envelope
+        // can be parsed unless the input is explicitly an empty GeoJSON FeatureCollection.
+        if (targetCellSize is double cellSize)
         {
-            return JobExecutionResult.Failed($"Invalid rasterize inputs: {resolutionError}");
+            if (GdalVectorEnvelopeReader.TryReadEnvelope(sourceBytes, out var envelope))
+            {
+                if (!GdalOutputGridGuard.TryAdmitResolution(
+                        envelope.Width, envelope.Height, cellSize, cellSize, opts, out var resolutionError))
+                {
+                    return JobExecutionResult.Failed($"Invalid rasterize inputs: {resolutionError}");
+                }
+            }
+            else if (!IsEmptyGeoJsonFeatureCollection(sourceBytes))
+            {
+                return JobExecutionResult.Failed(
+                    "Invalid rasterize inputs: could not determine a finite GeoJSON extent to bound 'cellSize'; " +
+                    "supply valid GeoJSON or specify explicit 'width' and 'height'.");
+            }
         }
 
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
@@ -100,8 +109,11 @@ internal sealed partial class GdalRasterizeJobExecutor(
                     return JobExecutionResult.Failed(
                         $"Invalid rasterize inputs: 'nodata' must be a finite number; got '{nodataRaw}'.");
                 }
+                var nodataLiteral = nodata.ToString("R", CultureInfo.InvariantCulture);
+                args.Add("-init");
+                args.Add(nodataLiteral);
                 args.Add("-a_nodata");
-                args.Add(nodata.ToString("R", CultureInfo.InvariantCulture));
+                args.Add(nodataLiteral);
             }
 
             args.Add(inputPath);
@@ -208,8 +220,8 @@ internal sealed partial class GdalRasterizeJobExecutor(
                 return false;
             }
             // Bound the attacker-controlled OUTPUT grid before gdal_rasterize allocates
-            // a width×height output raster, closing the output-allocation OOM vector
-            // (#2782). Reuses the same caps the input dimension guard applies (#2766).
+            // a width×height output raster, closing the output-allocation OOM vector.
+            // Reuses the same caps the input dimension guard applies.
             if (!GdalOutputGridGuard.TryAdmit(width, height, options, out failure))
             {
                 return false;
@@ -222,6 +234,25 @@ internal sealed partial class GdalRasterizeJobExecutor(
 
         failure = "supply either 'cellSize' or both 'width' and 'height' to define the output grid";
         return false;
+    }
+
+    private static bool IsEmptyGeoJsonFeatureCollection(byte[] sourceBytes)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(sourceBytes);
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("type", out var typeElement)
+                && typeElement.ValueKind == JsonValueKind.String
+                && string.Equals(typeElement.GetString(), "FeatureCollection", StringComparison.Ordinal)
+                && document.RootElement.TryGetProperty("features", out var featuresElement)
+                && featuresElement.ValueKind == JsonValueKind.Array
+                && featuresElement.GetArrayLength() == 0;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static partial class Log

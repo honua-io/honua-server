@@ -26,7 +26,7 @@ public sealed class OutboxDispatcherBackgroundServiceTests
     {
         // Happy path: dispatcher claims a pending row, decodes the canonical payload, publishes,
         // and marks the row dispatched. Verifies that the canonical event_payload field flows end-to-end
-        // and that the strict publish path (#692) is the one driven by the dispatcher.
+        // and that the strict publish path is the one driven by the dispatcher.
         var (repository, capability) = BuildRepository(includePendingRow: true, eventId: "evt-happy");
         var publisher = Substitute.For<IFeatureChangeEventPublisher>();
         FeatureChangeEventRequest? captured = null;
@@ -44,7 +44,7 @@ public sealed class OutboxDispatcherBackgroundServiceTests
         repository.Dispatched.Should().ContainSingle()
             .Which.OutboxId.Should().Be(repository.OnlyOutboxId);
         // The terminal update must use the same claim owner the row was claimed with so a
-        // recovered/reclaimed lease can no-op stale workers (#692).
+        // recovered/reclaimed lease can no-op stale workers.
         repository.Dispatched[0].OwnerNodeId.Should().Be(repository.LastClaimNodeId);
         repository.Failed.Should().BeEmpty();
         // The dispatcher must not fall back to the best-effort publish path, which drops an
@@ -99,7 +99,7 @@ public sealed class OutboxDispatcherBackgroundServiceTests
     [UnitTest]
     public async Task ExecuteOnceAsync_StaleClaimAfterPublish_DoesNotCountAsDispatched()
     {
-        // Recovery race (#692): the worker publishes successfully but its claim was already
+        // Recovery race: the worker publishes successfully but its claim was already
         // recovered (and possibly reclaimed by another node) by the time MarkDispatchedAsync
         // runs. The repository returns false; the dispatcher must not count the row as
         // dispatched and must not overwrite the new owner's eventual terminal state.
@@ -137,7 +137,7 @@ public sealed class OutboxDispatcherBackgroundServiceTests
     [UnitTest]
     public async Task ExecuteOnceAsync_RepositoryResolutionFailure_RecordsStorageFailureForReadinessProbe()
     {
-        // Test-host override guard (#692): some minimal WebApplicationFactory slices remove
+        // Test-host override guard: some minimal WebApplicationFactory slices remove
         // provider services after the Postgres outbox descriptor has been registered. Resolving
         // the repository then throws before any storage call is made; the dispatcher should
         // surface the problem through IOutboxHealth instead of faulting the hosted service.
@@ -162,7 +162,7 @@ public sealed class OutboxDispatcherBackgroundServiceTests
     [UnitTest]
     public async Task ExecuteOnceAsync_ClaimFailure_RecordsStorageFailureForReadinessProbe()
     {
-        // Storage-poll guard (#692): a missing outbox table or permission issue causes
+        // Storage-poll guard: a missing outbox table or permission issue causes
         // every storage call (recovery, claim, backlog) to throw on every pass. The
         // dispatcher must surface the failure on IOutboxHealth so the readiness probe
         // stops reporting Healthy ("awaiting first pass") indefinitely. With all three
@@ -205,7 +205,7 @@ public sealed class OutboxDispatcherBackgroundServiceTests
     [UnitTest]
     public async Task ExecuteOnceAsync_ClaimFailureWithBacklogSuccess_StillReportsPendingClaimFailure()
     {
-        // Per-kind tracking guard (#692): when ClaimPendingAsync throws, the dispatcher's
+        // Per-kind tracking guard: when ClaimPendingAsync throws, the dispatcher's
         // catch block still calls UpdateBacklogAsync to refresh the snapshot if backlog
         // reads still work. With a single shared timestamp pair, the backlog success
         // would post-date the claim failure and the probe would treat the failure as
@@ -273,7 +273,7 @@ public sealed class OutboxDispatcherBackgroundServiceTests
     [UnitTest]
     public async Task ExecuteOnceAsync_StaleClaimAfterPublishFailure_DoesNotIncrementFailureCounter()
     {
-        // Counter source-of-truth (#692): when MarkFailedAsync returns false (the claim
+        // Counter source-of-truth: when MarkFailedAsync returns false (the claim
         // was reset/reclaimed before we could record the terminal state), the dispatcher
         // must not bump honua.outbox.failed_total or honua.outbox.dead_lettered_total.
         // The new owner records its own terminal state and counter; double-counting here
@@ -307,12 +307,6 @@ public sealed class OutboxDispatcherBackgroundServiceTests
     [UnitTest]
     public async Task ExecuteOnceAsync_PayloadDecodeAtRetryExhaustion_RoutesToDeadLetterCounter()
     {
-        // Symmetric counter routing (#692): the payload-decode failure path must go
-        // through the same dead-letter calculation as the publish-failure path. Before
-        // this fix, decode failures always incremented honua.outbox.failed_total even
-        // when retry_count + 1 reached MaxRetries and the row transitioned to
-        // dead_lettered, so honua.outbox.dead_lettered_total under-counted real
-        // dead-letter transitions originating from corrupt payloads.
         var repository = new FakeOutboxRepository();
         var capability = Substitute.For<IOutboxCapabilityProvider>();
         capability.SupportsTransactionalOutbox.Returns(true);
@@ -534,14 +528,6 @@ public sealed class OutboxDispatcherBackgroundServiceTests
             NullLogger<OutboxDispatcherBackgroundService>.Instance);
     }
 
-    /// <summary>
-    /// Subscribes a <see cref="MeterListener"/> to a single named counter on a specific
-    /// meter instance and accumulates the measurements observed during the listener's
-    /// lifetime. Filtering by the exact meter instance (rather than the "Honua" name)
-    /// keeps parallel tests isolated from one another's instruments (#2802). Tests use
-    /// this to verify the dispatcher routes terminal outcomes (Failed, DeadLettered,
-    /// StaleClaim, Errored) onto the expected counters rather than predicting from input shape.
-    /// </summary>
     private sealed class MeterSampleCollector : IDisposable
     {
         private readonly MeterListener _listener;
@@ -579,12 +565,6 @@ public sealed class OutboxDispatcherBackgroundServiceTests
         public List<(Guid OutboxId, string OwnerNodeId, string Error)> Failed { get; } = new();
         public int RecoverCallCount { get; private set; }
         public int ExpiredClaimsToRecover { get; set; }
-        /// <summary>
-        /// The node id stamped on the most recent ClaimPendingAsync call. Used by tests to
-        /// assert that the dispatcher threads the claim owner back through MarkDispatchedAsync
-        /// and MarkFailedAsync, since the dispatcher's internal _nodeId derives from the host
-        /// environment rather than a constructor parameter.
-        /// </summary>
         public string? LastClaimNodeId { get; private set; }
         public OutboxBacklogMetrics Backlog { get; set; } = new()
         {
@@ -593,11 +573,6 @@ public sealed class OutboxDispatcherBackgroundServiceTests
             OldestPendingAgeSeconds = 0,
         };
 
-        /// <summary>
-        /// Set of outbox ids whose claims should be considered stale (e.g. recovered or
-        /// reclaimed by another node). MarkDispatchedAsync/MarkFailedAsync return false for
-        /// these ids without recording the terminal update.
-        /// </summary>
         public HashSet<Guid> StaleClaims { get; } = new();
 
         public List<Guid> DispatchedIds => Dispatched.Select(static x => x.OutboxId).ToList();
@@ -605,24 +580,10 @@ public sealed class OutboxDispatcherBackgroundServiceTests
 
         public Guid OnlyOutboxId => Pending.FirstOrDefault()?.OutboxId ?? Dispatched.Select(static x => x.OutboxId).Concat(Failed.Select(static x => x.OutboxId)).Single();
 
-        /// <summary>
-        /// Set this to a thrown exception factory to simulate ClaimPendingAsync failure
-        /// (missing table, permission issue, transient connectivity failure). When set,
-        /// every call throws and no rows are dequeued.
-        /// </summary>
         public Func<Exception>? ClaimFailureFactory { get; set; }
 
-        /// <summary>
-        /// Set this to simulate GetBacklogMetricsAsync failure. When set, every call throws.
-        /// </summary>
         public Func<Exception>? BacklogFailureFactory { get; set; }
 
-        /// <summary>
-        /// Set this to simulate RecoverExpiredClaimsAsync failure. The dispatcher's
-        /// RecoveryIntervalSeconds default in the test BuildDispatcher is 0 so recovery
-        /// runs every pass; set this factory alongside ClaimFailureFactory to simulate a
-        /// total storage outage (e.g. missing outbox table) where no query succeeds.
-        /// </summary>
         public Func<Exception>? RecoveryFailureFactory { get; set; }
 
         public Task<IReadOnlyList<FeatureChangeOutboxEntry>> ClaimPendingAsync(

@@ -129,7 +129,7 @@ public sealed class OgcProcessesExecutionSubmissionTests : IAsyncLifetime
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_RasterProcessDirect_CreatesSameJobAsPlanWrapped()
     {
-        // #2698 parity proof: a direct raster/surface process-id execution must reach
+        // Parity proof: a direct raster/surface process-id execution must reach
         // the shared submission pipeline and create the SAME canonical job that the
         // honua-geoprocessing single-step plan wrapper creates — not a new synchronous
         // in-process call. Both paths run through the real GeoprocessingJobService
@@ -155,8 +155,7 @@ public sealed class OgcProcessesExecutionSubmissionTests : IAsyncLifetime
             "application/json");
         await _fixture.Client.SendAsync(directRequest);
 
-        // Plan-wrapped execution: a single-step geoprocess plan wrapping surface.slope,
-        // the only way to invoke this tool before #2698.
+        // Plan-wrapped execution: a single-step geoprocess plan wrapping surface.slope.
         using var wrappedRequest = new HttpRequestMessage(
             HttpMethod.Post,
             "/ogc/processes/processes/honua-geoprocessing/execution");
@@ -201,10 +200,10 @@ public sealed class OgcProcessesExecutionSubmissionTests : IAsyncLifetime
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_WithIdempotencyKeyHeader_ThreadsKeyOntoTheDurableJobRecord()
     {
-        // server#4627: OGC API Processes previously submitted with idempotencyKey: null
-        // unconditionally, so a supported stable client-side key had no effect. This is a
-        // documented, additive Honua extension (OGC API Processes has no native
-        // idempotency-key concept) using the same Idempotency-Key header MCP already uses.
+        // A supported stable client-side key must take effect instead of the job being
+        // submitted with a null idempotencyKey. This is a documented, additive Honua
+        // extension (OGC API Processes has no native idempotency-key concept) using the
+        // same Idempotency-Key header MCP already uses.
         _jobQueue.EnqueueAsync(
                 Arg.Any<string>(),
                 Arg.Any<OperationPriority>(),
@@ -234,6 +233,41 @@ public sealed class OgcProcessesExecutionSubmissionTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         created.Should().ContainSingle();
         created[0].Audit.IdempotencyKey.Should().Be("client-retry-key-42");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_RetryWithTheSameIdempotencyKey_ReturnsTheOriginalJob()
+    {
+        _jobQueue.EnqueueAsync(Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        var created = new List<ExecutionJobRecord>();
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                created.Add(call.Arg<ExecutionJobRecord>());
+                return true;
+            });
+        _jobStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => created.Find(job => job.OperationId == call.Arg<string>()) is { } job ? job with { Version = 1 } : null);
+
+        var first = await SubmitKeyedSlopeAsync("client-retry-key-7");
+        var retry = await SubmitKeyedSlopeAsync("client-retry-key-7");
+
+        first.StatusCode.Should().Be(HttpStatusCode.Created);
+        retry.StatusCode.Should().Be(HttpStatusCode.Created, await retry.Content.ReadAsStringAsync());
+        created.Should().ContainSingle();
+        retry.Headers.Location.Should().Be(first.Headers.Location);
+    }
+
+    private async Task<HttpResponseMessage> SubmitKeyedSlopeAsync(string idempotencyKey)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/ogc/processes/processes/surface.slope/execution");
+        request.Headers.Add("Prefer", "respond-async");
+        request.Headers.Add("Idempotency-Key", idempotencyKey);
+        request.Content = new StringContent("""{"inputs":{"source":"AAAA","units":"degrees"}}""", Encoding.UTF8, "application/json");
+        return await _fixture.Client.SendAsync(request);
     }
 
     [IntegrationTest]

@@ -11,11 +11,11 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Import.ObjectStore;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.ObjectStorage;
 using Honua.Import.FileImport.Durable;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Import;
 
@@ -159,6 +159,7 @@ public sealed class FileImportJobExecutorCleanupTests
         {
             ObjectStoreUri = "s3://bucket/layers/roads.gpkg",
             ObjectStoreETag = "\"pin\"",
+            ObjectStoreConnectionId = StaticConnectionResolver.Customer.Id.ToString(),
             FileName = "roads.gpkg",
             TableName = "roads",
             SourceKind = "object-store",
@@ -312,9 +313,9 @@ public sealed class FileImportJobExecutorCleanupTests
                     return scope._storage;
                 }
 
-                if (serviceType == typeof(IOptions<ImportObjectStoreOptions>))
+                if (serviceType == typeof(IObjectStorageConnectionResolver))
                 {
-                    return Options.Create(new ImportObjectStoreOptions { AllowedBuckets = ["bucket"] });
+                    return new StaticConnectionResolver(StaticConnectionResolver.Customer);
                 }
 
                 if (serviceType == typeof(IFileImportService))

@@ -27,10 +27,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Unit tests for the deterministic ops-findings rule set (<see cref="OpsFindingsService"/>), one
-/// rule at a time against fake seams.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed partial class OpsFindingsServiceTests
 {
@@ -191,7 +187,7 @@ public sealed partial class OpsFindingsServiceTests
     [Operation(Operations.TestInfrastructure)]
     public async Task Evaluate_AlertDispatchDeadLetters_ProducesCriticalFindingWithRedriveAction(int deadLetters, int expectedBound)
     {
-        // #2556: the registered alerts.redrive_dead_letters actuator (#2579) means dead-letters now
+        // The registered alerts.redrive_dead_letters actuator means dead-letters now
         // carry a real recommended action instead of being purely informational.
         var alertHealth = new FakeAlertDispatchHealth
         {
@@ -635,10 +631,6 @@ public sealed partial class OpsFindingsServiceTests
         Assert.Contains("manual-intervention-deploy-operations:beyond-materialization-window", coverage.ExpectedComponentIds ?? []);
     }
 
-    /// <summary>
-    /// Stubs the store's kind + status query, the read the real store answers for stuck deploys
-    /// (the Redis store never lists them as active).
-    /// </summary>
     private static void StubStuckDeploys(IWorkflowOperationStore workflowStore, params WorkflowOperationRecord[] operations)
     {
         workflowStore.HasLaterDeployOfTargetAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
@@ -659,13 +651,13 @@ public sealed partial class OpsFindingsServiceTests
     }
 
     [UnitTheory]
-    [InlineData(8, 0)]
-    [InlineData(1, 1)]
+    [InlineData(8, 1, 300)]
+    [InlineData(10, 10, 0)]
     [Operation(Operations.TestInfrastructure)]
-    public async Task Evaluate_AnonymousAdmissionActive_ExplainsTemporaryLimit(int inFlight, int queued)
+    public async Task Evaluate_AnonymousAdmissionActive_ExplainsTemporaryLimit(int inFlight, int queued, double queueWaitMs)
     {
         var gate = Substitute.For<IRuntimeTunableAdmissionGate>();
-        gate.GetPressure().Returns(new DatabaseAdmissionPressure(inFlight, 10, queued, 0, 0));
+        gate.GetPressure().Returns(new DatabaseAdmissionPressure(inFlight, 10, queued, queueWaitMs, 0));
         var service = CreateService(admissionGate: gate);
 
         var findings = await service.EvaluateAsync();
@@ -682,7 +674,7 @@ public sealed partial class OpsFindingsServiceTests
     public async Task Evaluate_AnonymousAdmissionPressureClears_RemovesFindingDespitePastTimeouts()
     {
         var gate = Substitute.For<IRuntimeTunableAdmissionGate>();
-        gate.GetPressure().Returns(new DatabaseAdmissionPressure(8, 10, 0, 0, 0));
+        gate.GetPressure().Returns(new DatabaseAdmissionPressure(8, 10, 1, 300, 0));
         var service = CreateService(admissionGate: gate);
         Assert.Contains(await service.EvaluateAsync(), finding => finding.Rule == "anonymous-pressure-admission");
 
@@ -761,8 +753,6 @@ public sealed partial class OpsFindingsServiceTests
     [Operation(Operations.TestInfrastructure)]
     public async Task Evaluate_DbPoolPressure_FromRealAdmissionGateExhaustion_FiresFinding()
     {
-        // #2805: prove the finding fires from the REAL admission gate under a simulated exhaustion, not from
-        // a fake snapshot — this is the regression the dead ConnectionPoolMetrics counters could not catch.
         using var gate = new QueryConcurrencyGate(new ConnectionLimits
         {
             MaxConcurrentQueries = 1,
@@ -887,7 +877,7 @@ public sealed partial class OpsFindingsServiceTests
     [Operation(Operations.TestInfrastructure)]
     public async Task Evaluate_ServingLatencyBelowMinSampleCount_SuppressesFinding()
     {
-        // #2809: a huge p95 from a single unlucky request must NOT flap a finding. The min-sample guard
+        // A huge p95 from a single unlucky request must NOT flap a finding. The min-sample guard
         // (default 20) suppresses protocols with too few in-window requests to be statistically meaningful.
         var now = DateTimeOffset.UtcNow;
         var rollupStore = Substitute.For<IOpsHealthRollupStore>();
@@ -921,7 +911,7 @@ public sealed partial class OpsFindingsServiceTests
     [Operation(Operations.TestInfrastructure)]
     public async Task Evaluate_ServingP99BreachWithP95BelowThreshold_ProducesFinding()
     {
-        // #2805: the p99 tail catches a slow-outlier regression that a p95-only check misses.
+        // The p99 tail catches a slow-outlier regression that a p95-only check misses.
         var now = DateTimeOffset.UtcNow;
         var rollupStore = Substitute.For<IOpsHealthRollupStore>();
         rollupStore.ReadLatencyAsync(OpsHealthRollupTier.OneMinute, Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
@@ -1077,8 +1067,8 @@ public sealed partial class OpsFindingsServiceTests
     [Operation(Operations.TestInfrastructure)]
     public void AllRecommendedActions_AdminConfigChangeActionNamesAreRegistered()
     {
-        // RC-2556: every recommendedAction's embedded ops-action name (for AdminConfigChange-kind
-        // actions) must exist in the actuator registry (#2579) — enumerate both sides and assert subset.
+        // Every recommendedAction's embedded ops-action name (for AdminConfigChange-kind
+        // actions) must exist in the actuator registry — enumerate both sides and assert subset.
         var registeredActions = new[]
         {
             OpsActionExecutionPayloads.RedriveDeadLetters(),
@@ -1591,8 +1581,7 @@ public sealed partial class OpsFindingsServiceTests
     [Operation(Operations.TestInfrastructure)]
     public async Task Propose_ActionableFinding_WithoutOperationGateway_ReturnsGatewayUnavailable()
     {
-        // Redis-less composition (#2511): OpsFindingsService is constructed without an
-        // IOperationGateway (only wired with the durable control-plane graph). Findings still
+        // OpsFindingsService is constructed without an IOperationGateway. Findings still
         // evaluate; proposing an otherwise-actionable fix degrades cleanly instead of throwing.
         var workflowStore = Substitute.For<IWorkflowOperationStore>();
         StubStuckDeploys(workflowStore, BuildDeployOperation("op-9", WorkflowOperationStatus.ManualInterventionRequired, currentRevision: "rev-1", desiredRevision: "rev-2"));
@@ -1612,14 +1601,17 @@ public sealed partial class OpsFindingsServiceTests
 
         Assert.Equal(OpsFindingProposalStatus.GatewayUnavailable, result.Status);
         Assert.Equal(finding.Id, result.FindingId);
-        Assert.False(string.IsNullOrWhiteSpace(result.Message));
+        Assert.Equal(
+            "The durable control-plane operation gateway is unavailable "
+                + "(it requires a configured system database); the recommended action cannot be proposed.",
+            result.Message);
     }
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public void ServiceComposition_WithoutRedisOperationGateway_ResolvesOpsFindingsService()
     {
-        // Reproduces the #2511 startup failure at the composition level: the server registers
+        // Guards against startup failure at the composition level: the server registers
         // IOpsFindingsService unconditionally, but IOperationGateway is only registered when the
         // durable backend (Redis) is present. With ValidateOnBuild — exactly as Program.cs builds
         // the host — resolving the service must NOT throw when the gateway is absent.
@@ -1875,6 +1867,9 @@ public sealed partial class OpsFindingsServiceTests
         public FakeDeployPreflightProbe(DeployPreflightSnapshot snapshot) => _snapshot = snapshot;
 
         public Task<DeployPreflightSnapshot> ProbeAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(_snapshot);
+
+        public Task<DeployPreflightSnapshot> ProbeAsync(TimeSpan maxMigrationPlanAge, CancellationToken cancellationToken = default)
             => Task.FromResult(_snapshot);
     }
 

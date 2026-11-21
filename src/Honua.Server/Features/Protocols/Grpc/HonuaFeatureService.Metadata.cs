@@ -1,7 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
+using System.Collections.Immutable;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text;
 using Grpc.Core;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -71,7 +74,8 @@ internal sealed partial class HonuaFeatureService
             MaxRecordCount = _maxRecordCount,
             HasZ = resource.Display?.HasZ ?? false,
             HasM = resource.Display?.HasM ?? false,
-            Capabilities = await MetadataCapabilitiesAsync(layer, context).ConfigureAwait(false)
+            Capabilities = await MetadataCapabilitiesAsync(layer, context).ConfigureAwait(false),
+            AttachmentLimits = MetadataAttachmentLimits(context)
         };
         PopulateLayerMetadata(descriptor, layer, fields);
         await AddMetadataRelationshipsAsync(descriptor, new(layer, visible), context).ConfigureAwait(false);
@@ -147,6 +151,7 @@ internal sealed partial class HonuaFeatureService
         var layers = new List<GrpcLayerContext>();
         foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id)
                      .Where(publication => publication.LayerIndex.HasValue && snapshot.IsRoutable(publication))
+                     .DistinctBy(publication => publication.LayerIndex)
                      .OrderBy(publication => publication.LayerIndex))
         {
             var resource = snapshot.ResolveResource(publication)!;
@@ -180,6 +185,9 @@ internal sealed partial class HonuaFeatureService
             result.Create |= capabilities.Create;
             result.Update |= capabilities.Update;
             result.Delete |= capabilities.Delete;
+            result.ListAttachments |= capabilities.ListAttachments;
+            result.UploadAttachments |= capabilities.UploadAttachments;
+            result.DeleteAttachments |= capabilities.DeleteAttachments;
         }
         return result;
     }
@@ -189,16 +197,32 @@ internal sealed partial class HonuaFeatureService
 
     private static async Task<MetadataV2Field[]> VisibleMetadataFieldsAsync(GrpcLayerContext layer, ServerCallContext context)
     {
-        var maskSource = context.GetHttpContext().RequestServices.GetService<IFieldMaskSource>();
-        var fields = layer.Resource.SchemaFields.Where(field => !field.Hidden);
-        if (maskSource is null)
-        {
-            return fields.ToArray();
-        }
-        var masked = (await maskSource.ResolveAsync(layer.Resource, context.CancellationToken).ConfigureAwait(false))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return fields.Where(field => !masked.Contains(field.Name)).ToArray();
+        var masked = await MaskedFieldNamesAsync(
+            layer.Resource, context.GetHttpContext().RequestServices, context.CancellationToken).ConfigureAwait(false);
+        return layer.Resource.SchemaFields.Where(field => !field.Hidden && !masked.Contains(field.Name)).ToArray();
     }
+
+    // Per request scope and resource, so every decision in one call sees the same masks and the store is read once.
+    private static readonly ConditionalWeakTable<IServiceProvider, ConcurrentDictionary<MetadataV2Object, Task<IReadOnlySet<string>>>>
+        _requestMasks = new();
+
+    // The caller's masked attributes; metadata and query responses withhold them alike.
+    private static Task<IReadOnlySet<string>> MaskedFieldNamesAsync(
+        MetadataV2Object resource, IServiceProvider requestServices, CancellationToken cancellationToken)
+    {
+        if (requestServices.GetService<IFieldMaskSource>() is not { } maskSource)
+        {
+            return Task.FromResult<IReadOnlySet<string>>(ImmutableHashSet<string>.Empty);
+        }
+        return _requestMasks
+            .GetValue(requestServices, static _ => new(ReferenceEqualityComparer.Instance))
+            .GetOrAdd(resource, _ => ResolveMaskedFieldNamesAsync(maskSource, resource, cancellationToken));
+    }
+
+    private static async Task<IReadOnlySet<string>> ResolveMaskedFieldNamesAsync(
+        IFieldMaskSource maskSource, MetadataV2Object resource, CancellationToken cancellationToken)
+        => (await maskSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     private async Task<Proto.FeatureCapabilities> MetadataCapabilitiesAsync(GrpcLayerContext layer, ServerCallContext context)
     {
@@ -209,29 +233,36 @@ internal sealed partial class HonuaFeatureService
                 context.CancellationToken).ConfigureAwait(false) is not null,
             QueryDistinct = true,
             QueryOrderBy = true,
-            QueryPagination = true
+            QueryPagination = true,
+            ListAttachments = true
         };
+        if (layer.Resource.Editing is { CanModify: true, SupportsAttachments: true })
+        {
+            result.UploadAttachments = await MetadataEditAllowedAsync(layer, context, AuthorizationOperation.Update).ConfigureAwait(false);
+            result.DeleteAttachments = await MetadataEditAllowedAsync(layer, context, AuthorizationOperation.Delete).ConfigureAwait(false);
+        }
         var binding = layer.Snapshot?.ResolveStorageBinding(layer.Publication);
         if (binding is null || !FeatureStorageMapping.FromMetadata(layer.Resource, binding).SupportsManagedWrites)
         {
             return result;
         }
         var edits = await MetadataProviderEditsAsync(layer, context).ConfigureAwait(false);
-        result.Create = edits.SupportsCreate && await AllowsAsync(AuthorizationOperation.Insert).ConfigureAwait(false);
-        result.Update = edits.SupportsUpdate && await AllowsAsync(AuthorizationOperation.Update).ConfigureAwait(false);
-        result.Delete = edits.SupportsDelete && await AllowsAsync(AuthorizationOperation.Delete).ConfigureAwait(false);
+        result.Create = edits.SupportsCreate && await MetadataEditAllowedAsync(layer, context, AuthorizationOperation.Insert).ConfigureAwait(false);
+        result.Update = edits.SupportsUpdate && await MetadataEditAllowedAsync(layer, context, AuthorizationOperation.Update).ConfigureAwait(false);
+        result.Delete = edits.SupportsDelete && await MetadataEditAllowedAsync(layer, context, AuthorizationOperation.Delete).ConfigureAwait(false);
         return result;
+    }
 
-        async Task<bool> AllowsAsync(AuthorizationOperation operation)
+    private static async Task<bool> MetadataEditAllowedAsync(GrpcLayerContext layer,
+        ServerCallContext context, AuthorizationOperation operation)
+    {
+        if (LayerValidationHelpers.FindUndeclaredEditCapability(layer.Service, layer.Publication, operation) is not null)
         {
-            if (LayerValidationHelpers.FindUndeclaredEditCapability(layer.Service, layer.Publication, operation) is not null)
-            {
-                return false;
-            }
-            var decision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(context.GetHttpContext(),
-                layer.Resource, layer.Service, operation, context.CancellationToken).ConfigureAwait(false);
-            return decision.IsAllowed;
+            return false;
         }
+        var decision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(context.GetHttpContext(),
+            layer.Resource, layer.Service, operation, context.CancellationToken).ConfigureAwait(false);
+        return decision.IsAllowed;
     }
 
     private static int ReadMetadataToken(string token, string serviceId, long revision)

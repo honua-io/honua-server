@@ -20,16 +20,13 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
-/// <summary>Shared lifecycle and data helpers for the partitioned MapServer endpoint suites.</summary>
 public abstract class MapServerEndpointTestBase : IAsyncLifetime
 {
     protected WebAppFixture Fixture { get; } = new();
     private string? _generateKmlServiceName;
 
-    /// <inheritdoc />
     public async Task InitializeAsync() => await Fixture.InitializeAsync();
 
-    /// <inheritdoc />
     public async Task DisposeAsync()
     {
         try
@@ -140,7 +137,7 @@ public abstract class MapServerEndpointTestBase : IAsyncLifetime
                 (90113, 113, ST_Transform(ST_SetSRID(ST_MakePoint(-157.80, 21.30), 4326), 3857), jsonb_build_object('objectid', 90113, 'name', 'KML Projected Point Feature'));
             """;
 
-        // #2020: route the global honua.services/layers/service_layers/layer_fields seed through
+        // Route the global honua.services/layers/service_layers/layer_fields seed through
         // the schema-mutation advisory lock (combined statement also seeds the per-schema features).
         await Fixture.Postgres.ApplyGlobalSeedSqlAsync(sql, schema);
         SeedGenerateKmlMetadataV2Graph(serviceName);

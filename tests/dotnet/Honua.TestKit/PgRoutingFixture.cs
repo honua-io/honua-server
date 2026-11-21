@@ -8,37 +8,14 @@ using Xunit;
 
 namespace Honua.TestKit;
 
-/// <summary>
-/// pgRouting fixture for the gated <c>PgRoutingProvider</c> integration test
-/// (issue #1266). Honors an external connection string via
-/// <c>HONUA_ROUTING_TEST_DB_URL</c> (point it at <c>docker/routing/compose.yml</c>);
-/// otherwise starts a <c>pgrouting/pgrouting</c> Testcontainer. In both cases it
-/// ensures the PostGIS + pgRouting extensions exist and seeds the deterministic
-/// 3x3 lattice topology (identical to <c>docker/routing/init-routing.sql</c>) so
-/// the provider SQL can be validated against a real graph.
-/// </summary>
 public sealed class PgRoutingFixture : IAsyncLifetime
 {
-    /// <summary>
-    /// pgRouting image tag (PG17 / PostGIS 3.5 / pgRouting 3.7.3) used when no
-    /// external database is supplied. Verified pullable from Docker Hub.
-    /// </summary>
     public const string PgRoutingImage = "pgrouting/pgrouting:17-3.5-3.7.3";
 
-    /// <summary>
-    /// Environment variable holding an external pgRouting connection string. When
-    /// set, the fixture uses that database instead of starting a Testcontainer.
-    /// </summary>
     public const string ExternalConnectionStringEnv = "HONUA_ROUTING_TEST_DB_URL";
 
     private const int InitializationMaxAttempts = 5;
 
-    /// <summary>
-    /// The deterministic seed topology. Kept in sync with
-    /// <c>docker/routing/init-routing.sql</c>. A 3x3 lattice (vertices 1-9) at
-    /// 0.01-degree spacing anchored at (0,0); every edge has cost = reverse_cost
-    /// = 1. The least-cost path 1 -> 9 is 4 hops (cost 4).
-    /// </summary>
     public const string SeedSql = """
         CREATE EXTENSION IF NOT EXISTS postgis;
         CREATE EXTENSION IF NOT EXISTS pgrouting;
@@ -110,19 +87,12 @@ public sealed class PgRoutingFixture : IAsyncLifetime
     private NpgsqlDataSource? _dataSource;
     private string? _connectionString;
 
-    /// <summary>
-    /// Connection string for the seeded pgRouting database.
-    /// </summary>
     public string ConnectionString =>
         _connectionString ?? throw new InvalidOperationException("pgRouting fixture not initialized.");
 
-    /// <summary>
-    /// Data source for the seeded pgRouting database.
-    /// </summary>
     public NpgsqlDataSource DataSource =>
         _dataSource ?? throw new InvalidOperationException("pgRouting fixture not initialized.");
 
-    /// <inheritdoc />
     public async Task InitializeAsync()
     {
         try
@@ -161,7 +131,6 @@ public sealed class PgRoutingFixture : IAsyncLifetime
         }
     }
 
-    /// <inheritdoc />
     public async Task DisposeAsync()
     {
         if (_dataSource is not null)

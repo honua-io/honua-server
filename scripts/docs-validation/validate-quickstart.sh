@@ -10,7 +10,6 @@ artifacts="${HONUA_DOCS_ARTIFACTS:-${repo_root}/artifacts/docs-validation/quicks
 http_port="$(python3 "${owned_server}" port --variable HONUA_DOCS_HTTP_PORT --ci-default 18080)"
 grpc_port="$(python3 "${owned_server}" port --variable HONUA_DOCS_GRPC_PORT --ci-default 18081)"
 postgres_port="$(python3 "${owned_server}" port --variable HONUA_DOCS_POSTGRES_PORT --ci-default 15432)"
-redis_port="$(python3 "${owned_server}" port --variable HONUA_DOCS_REDIS_PORT --ci-default 16379)"
 preserve_stack="${HONUA_DOCS_PRESERVE_STACK:-0}"
 base_url="http://127.0.0.1:${http_port}"
 run_dir=$(mktemp -d "${repo_root}/.docs-validation-quickstart.XXXXXX")
@@ -18,7 +17,6 @@ extracted="${run_dir}/quickstart.sh"
 export HONUA_HTTP_PORT="${http_port}"
 export HONUA_GRPC_PORT="${grpc_port}"
 export POSTGRES_PORT="${postgres_port}"
-export REDIS_PORT="${redis_port}"
 export HONUA_STORAGE_VOLUME_NAME="${project_name}_storage"
 compose=(docker compose --project-name "${project_name}" --project-directory "${repo_root}")
 
@@ -47,6 +45,7 @@ python3 "${extractor}" "${document}" --list --output "${extracted}" | tee "${art
 
 python3 "${repo_root}/scripts/docker/test_quickstart.py"
 python3 "${repo_root}/scripts/docker/quickstart.py" --init-only
+admin_key="$(sed -n 's/^HONUA_ADMIN_PASSWORD=//p' "${repo_root}/.env")"
 
 # A validation run owns an isolated Compose project and always begins without its
 # containers or volumes, proving the documented bootstrap against a clean install.
@@ -64,18 +63,24 @@ python3 "${repo_root}/scripts/docker/quickstart.py" --init-only
 layer_id=$(cat "${run_dir}/.quickstart-layer-id")
 python3 "${owned_server}" wait --container "$("${compose[@]}" ps -q honua)" --container-port 8080 \
   --url "${base_url}/healthz/ready" --body Ready --timeout 90
-"${compose[@]}" ps --format json | jq -s -e '
-  length == 3 and all(.[]; .State == "running" and .Health == "healthy")'
+# Long-running services must be up and healthy; the one-shot storage-init
+# service must have exited cleanly. Counting containers broke when a cache
+# service left the stack, so match services by name.
+"${compose[@]}" ps --all --format json | jq -s -e '
+  (map(select(.Service == "honua" or .Service == "postgres"))
+    | length == 2 and all(.[]; .State == "running" and .Health == "healthy"))
+  and (map(select(.Service == "storage-init"))
+    | length == 1 and all(.[]; .State == "exited" and .ExitCode == 0))'
 curl --fail --silent --show-error \
-  -H 'X-API-Key: quickstart-admin-password' \
+  -H "X-API-Key: ${admin_key}" \
   "${base_url}/rest/services/quickstart/FeatureServer/${layer_id}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true" \
   | jq -e '.features | length == 3'
 curl --fail --silent --show-error \
-  -H 'X-API-Key: quickstart-admin-password' \
+  -H "X-API-Key: ${admin_key}" \
   "${base_url}/tiles/${layer_id}/tile.json" \
   | jq -e '.tiles | length > 0'
 curl --fail --silent --show-error \
-  -H 'X-API-Key: quickstart-admin-password' \
+  -H "X-API-Key: ${admin_key}" \
   "${base_url}/tiles/${layer_id}/12/655/1582.mvt" \
   --output "${artifacts}/sample.mvt"
 test -s "${artifacts}/sample.mvt"

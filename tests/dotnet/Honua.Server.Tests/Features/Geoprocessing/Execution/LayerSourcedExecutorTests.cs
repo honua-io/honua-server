@@ -29,17 +29,6 @@ using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// End-to-end coverage for the layer-aware, layer-SOURCED managed executors (#2322,
-/// #2325): <c>analytics.buffer-aggregate</c>, <c>conversion.feature-project</c>,
-/// <c>generalization.dissolve</c>, and <c>generalization.simplify-layer</c>. Each is
-/// the job-executable counterpart of a per-operation OGC API - Processes projection
-/// (#1382) that advertises a <c>layerId</c> input: the executor streams a Honua
-/// catalog layer through <c>source.honua-layer</c> (faked here so no Postgres runs),
-/// applies the managed NetTopologySuite op in one dispatched job, and publishes the
-/// canonical FeatureCollection artifact — reaching a terminal SUCCEEDED state that the
-/// bare projected ids previously never reached (they were refused at dispatch).
-/// </summary>
 public sealed class LayerSourcedExecutorTests
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";
@@ -71,7 +60,7 @@ public sealed class LayerSourcedExecutorTests
             status.Should().Be(ExecutionJobStatus.Failed);
             uri.Should().BeNull();
             _lastErrorForAssertions.Should().Contain("MaxTopologyWork=99").And.Contain("stopped before computation");
-            // A retry repeats the same admission refusal after backoff; the outcome is terminal (#4629).
+            // A retry repeats the same admission refusal after backoff; the outcome is terminal.
             _lastRetryableForAssertions.Should().BeFalse();
         }
     }
@@ -113,7 +102,7 @@ public sealed class LayerSourcedExecutorTests
         uri.Should().BeNull();
         source.Disposed.Should().BeTrue();
         _lastErrorForAssertions.Should().Contain("MaxLayerExecutionSeconds=1").And.Contain("resubmit");
-        // Each retry would spend another full deadline of worker time on the same input (#4629).
+        // Each retry would spend another full deadline of worker time on the same input.
         _lastRetryableForAssertions.Should().BeFalse();
     }
 
@@ -232,7 +221,7 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task Dissolve_TransientSourceReadFailure_KeepsRetryBudget()
     {
-        // Only deterministic refusals are terminal; a storage fault may succeed on the next attempt (#4629).
+        // Only deterministic refusals are terminal; a storage fault may succeed on the next attempt.
         var (status, uri, _) = await RunAsync(
             new LayerDissolveExecutor(ScopeFactory(new FailingLayerSource()), Options(),
                 NullLogger<LayerDissolveExecutor>.Instance),
@@ -295,7 +284,7 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task Dissolve_AtConfiguredFeatureLimit_Succeeds()
     {
-        // #4629 threshold boundary: exactly the configured cap must be admitted.
+        // Threshold boundary: exactly the configured cap must be admitted.
         var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0), PointFeature(1, 1)]);
 
         var (status, _, _) = await RunAsync(
@@ -312,7 +301,7 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task Dissolve_ExceedsConfiguredFeatureLimit_FailsBeforeComputation()
     {
-        // #4629: one feature over the configured cap must fail closed WHILE STREAMING,
+        // One feature over the configured cap must fail closed WHILE STREAMING,
         // with an actionable message — never silently truncate or compute over a partial read.
         var source = new FakeDagFeatureSource(HonuaLayerSourceId,
             [PointFeature(0, 0), PointFeature(1, 1), PointFeature(2, 2)]);
@@ -332,7 +321,7 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task Dissolve_SingleGeometryExceedsVertexLimit_FailsBeforeComputation()
     {
-        // #4629: a feature-count cap alone does not bound one deliberately oversized
+        // A feature-count cap alone does not bound one deliberately oversized
         // geometry; the per-geometry vertex ceiling must charge independently.
         var source = new FakeDagFeatureSource(HonuaLayerSourceId, [LineFeature(vertexCount: 100)]);
 
@@ -367,7 +356,7 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task SpatialJoin_JoinLayerExceedsConfiguredFeatureLimit_FailsBeforeComputation()
     {
-        // #4629: the join (second) layer must be bounded by the SAME admission limits as
+        // The join (second) layer must be bounded by the SAME admission limits as
         // the target layer — a two-layer op that only bounded one side would let the
         // unbounded side alone destabilize the worker.
         var source = new FakeTwoLayerDagFeatureSource(HonuaLayerSourceId, new Dictionary<int, IReadOnlyList<DagSourceFeature>>
@@ -391,7 +380,7 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task Dissolve_SingleGeometryAtByteLimit_Succeeds()
     {
-        // #4629 threshold boundary for the per-geometry serialized-size cap
+        // Threshold boundary for the per-geometry serialized-size cap
         // (Limits:Geometry:MaxGeometrySize): a geometry of exactly the cap is admitted.
         var feature = LineFeature(vertexCount: 10);
         var source = new FakeDagFeatureSource(HonuaLayerSourceId, [feature]);
@@ -432,7 +421,7 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task Dissolve_CumulativeInputAtByteBudget_Succeeds()
     {
-        // #4629: the cumulative input budget (Limits:Analytics:MaxInputBytes). Attribute-free
+        // The cumulative input budget (Limits:Analytics:MaxInputBytes). Attribute-free
         // features make the charge exactly the sum of the serialized geometries.
         DagSourceFeature[] features = [LineFeature(10), LineFeature(10), LineFeature(10)];
         var source = new FakeDagFeatureSource(HonuaLayerSourceId, features);
@@ -497,7 +486,7 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task Dissolve_OutputBeyondArtifactLowerBound_FailsBeforeSerialization()
     {
-        // #4629: a 100-vertex output needs at least 100 x 5 = 500 bytes of GeoJSON ("[x,y]" per
+        // A 100-vertex output needs at least 100 x 5 = 500 bytes of GeoJSON ("[x,y]" per
         // vertex), so a 499-byte artifact budget is refused before serialization allocates it.
         var source = new FakeDagFeatureSource(HonuaLayerSourceId, [LineFeature(vertexCount: 100)]);
 
@@ -593,8 +582,8 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task BufferAggregate_GeographicLayer_BuffersByGroundMeters_NotDegrees()
     {
-        // #4623 regression: a geographic (EPSG:4326) layer buffered by a metric distance
-        // must NOT apply that distance as degrees (the prior bug) — the resulting buffer
+        // A geographic (EPSG:4326) layer buffered by a metric distance must NOT apply
+        // that distance as degrees — the resulting buffer
         // must be a few thousandths of a degree wide, not ~1000 degrees wide. The expected
         // envelope is computed from an INDEPENDENT closed-form approximation (the standard
         // ~111,320 m/degree-of-latitude constant and its cos(latitude) correction for
@@ -635,7 +624,7 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task BufferAggregate_NonMetricProjectedLayer_ConvertsDistanceToNativeUnit()
     {
-        // #4623 regression: a projected layer whose native linear unit is NOT meters (US
+        // A projected layer whose native linear unit is NOT meters (US
         // survey feet here) must convert the metric input distance into that native unit
         // before buffering — never assume every projected CRS is metric. The expected
         // buffer radius (in native units) is computed independently via plain division,
@@ -675,7 +664,7 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task BufferAggregate_NoGeometryOperationServiceConfigured_FailsClosed()
     {
-        // #4623: when the CRS-aware geometry service / metadata provider are unavailable,
+        // When the CRS-aware geometry service / metadata provider are unavailable,
         // the executor must refuse rather than silently fall back to the old CRS-blind math.
         var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0)]);
 
@@ -692,7 +681,7 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task BufferAggregate_ObjectIdsAndWhereAndEnvelope_AllPropagateToSourceRequest()
     {
-        // #4624: 'where' already propagated; 'objectIds' and the GeoServices
+        // 'where' already propagated; 'objectIds' and the GeoServices
         // geometry/geometryType/inSR/spatialRel envelope family did not — the catalog
         // advertised them but LayerSourcedFeatureExecutor silently dropped them. Assert
         // the built DagSourceRequest carries the EXACT values for every selector together,
@@ -730,9 +719,9 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task BufferAggregate_TimeFilter_PropagatesToCanonicalSource()
     {
-        // #4624: time/timeRelation used to be rejected outright; they now reach
-        // source.honua-layer verbatim, which evaluates them against the layer's
-        // configured temporal fields through the canonical translator.
+        // Time/timeRelation reach source.honua-layer verbatim, which evaluates them
+        // against the layer's configured temporal fields through the canonical
+        // translator.
         var source = new FakeDagFeatureSource(HonuaLayerSourceId, [PointFeature(0, 0)]);
 
         var (status, _, request) = await RunAsync(
@@ -918,11 +907,11 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task Dissolve_MultipleStatisticsOnSameField_DoNotDoubleCountSamples()
     {
-        // #4624 regression: requesting more than one aggregate on the SAME field
-        // (e.g. "pop:sum;pop:mean") previously shared one FieldAccumulator keyed by field
-        // name but added the sample once per co-requested stat, silently multiplying
-        // SUM/MEAN by the stat count. Independent oracle: zone "a" has pop values 5 and
-        // 7 -> SUM=12, MEAN=6 regardless of how many stats target "pop".
+        // Requesting more than one aggregate on the SAME field (e.g. "pop:sum;pop:mean")
+        // must not add the sample once per co-requested stat to a FieldAccumulator shared
+        // by field name, which would silently multiply SUM/MEAN by the stat count.
+        // Independent oracle: zone "a" has pop values 5 and 7 -> SUM=12, MEAN=6
+        // regardless of how many stats target "pop".
         var source = new FakeDagFeatureSource(HonuaLayerSourceId,
         [
             BoxFeature(0, 0, 10, 10, ("zone", "a"), ("pop", 5)),
@@ -1082,9 +1071,8 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task BufferAggregate_MultiFieldGroupBy_AmbiguousValues_ProducesSeparateGroups()
     {
-        // BH2-017 regression: BuildGroupKey previously used string.Join("", parts) with no
-        // separator, so {"San","Jose"} and {"Sa","nJose"} both produced key "SanJose" and
-        // were dissolved into the same geometry/group. With the fix they must dissolve separately.
+        // Distinct multi-field values such as {"San","Jose"} and {"Sa","nJose"}
+        // must produce separate groups even when concatenating their fields yields the same text.
         var source = new FakeDagFeatureSource(HonuaLayerSourceId,
         [
             new DagSourceFeature
@@ -1120,20 +1108,12 @@ public sealed class LayerSourcedExecutorTests
     }
 
     // -------------------------------------------------------------------------
-    // #4624 catalog-to-execution parameter fidelity inventory
+    // Catalog-to-execution parameter fidelity inventory
     // -------------------------------------------------------------------------
 
     private static readonly string[] SharedSelectors =
         ["where", "objectIds", "geometry", "geometryType", "inSR", "spatialRel", "time", "timeRelation"];
 
-    /// <summary>
-    /// Every parameter the catalog advertises for a layer-sourced executor, each backed by an
-    /// execution proof: the shared selectors by
-    /// <see cref="LayerSourced_EveryAdvertisedSelector_ReachesTheCanonicalSource"/> (propagation)
-    /// plus LayerSourceExecutionProofTests (the PostGIS rows the canonical translation selects);
-    /// <c>outStatistics</c> by the GeoServices statistics oracles below; the op-specific inputs by
-    /// the per-operation tests above.
-    /// </summary>
     private static readonly IReadOnlyDictionary<string, string[]> ProvenLayerParameters =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
@@ -1230,7 +1210,7 @@ public sealed class LayerSourcedExecutorTests
     [UnitTest]
     public async Task LayerStatistics_GeoServicesPayload_HonorsEveryAggregateAndOutputName()
     {
-        // #4624: ProcessPlanValidator admits outStatistics ONLY as this GeoServices payload, yet the
+        // ProcessPlanValidator admits outStatistics ONLY as this GeoServices payload, yet the
         // layer executors parsed only 'field:stat', so every statistics request submitted through
         // the canonical job API failed. Independent oracle — zone "a" pop {5, 7, null}: SUM 12,
         // AVG 6, MIN 5, MAX 7, COUNT(pop) 2 (the null row joins the group but not COUNT(pop)),
@@ -1432,11 +1412,6 @@ public sealed class LayerSourcedExecutorTests
         return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
     }
 
-    /// <summary>
-    /// A <see cref="LimitsOptions"/> with a tightened <see cref="AnalyticsLimits.MaxInputFeatures"/>
-    /// and/or <see cref="GeometryLimits.MaxVerticesPerGeometry"/> (#4629), so admission tests can
-    /// force the bound without depending on the production defaults (100,000 / 50,000).
-    /// </summary>
     private static IOptions<LimitsOptions> LimitsOptions(
         int? maxInputFeatures = null,
         int? maxVerticesPerGeometry = null,
@@ -1467,7 +1442,6 @@ public sealed class LayerSourcedExecutorTests
         return Microsoft.Extensions.Options.Options.Create(limits);
     }
 
-    /// <summary>A LineString feature with exactly <paramref name="vertexCount"/> vertices.</summary>
     private static DagSourceFeature LineFeature(int vertexCount)
     {
         var ci = System.Globalization.CultureInfo.InvariantCulture;
@@ -1479,13 +1453,6 @@ public sealed class LayerSourcedExecutorTests
         };
     }
 
-    /// <summary>
-    /// Scope factory for <c>analytics.buffer-aggregate</c> tests (#4623): registers the
-    /// CRS-aware <see cref="IGeometryOperationService"/> (a self-contained, independently
-    /// coded Web-Mercator/native-unit buffer implementation — NOT a delegate to production
-    /// PostGIS code) plus an <see cref="IMetadataV2GraphProvider"/> that resolves
-    /// <paramref name="layerId"/> to <paramref name="storageSrid"/>.
-    /// </summary>
     private static IServiceScopeFactory BufferScopeFactory(
         IDagFeatureSource source,
         int layerId,
@@ -1622,12 +1589,6 @@ public sealed class LayerSourcedExecutorTests
         }
     }
 
-    /// <summary>
-    /// Fake <see cref="IDagFeatureSource"/> that returns a distinct feature set per
-    /// catalog layer id, so a two-layer op such as <c>analytics.spatial-join</c> reads
-    /// its target (<c>layerId</c>) and join (<c>joinLayerId</c>) layers from the same
-    /// connector without a Postgres catalog.
-    /// </summary>
     private sealed class FakeTwoLayerDagFeatureSource : IDagFeatureSource
     {
         private readonly IReadOnlyDictionary<int, IReadOnlyList<DagSourceFeature>> _byLayer;
@@ -1660,12 +1621,6 @@ public sealed class LayerSourcedExecutorTests
         }
     }
 
-    /// <summary>
-    /// Resolves a single catalog layer id to a relational storage binding with a fixed SRID
-    /// (#4623), matching the shape <c>MetadataV2GraphSnapshotExtensions.ResolveStorageSrid</c>
-    /// expects: a resource plus a <see cref="MetadataV2StorageBinding"/> whose
-    /// <see cref="MetadataV2StorageBinding.StorageLayerId"/> matches the layer id.
-    /// </summary>
     private sealed class FakeMetadataV2GraphProvider : IMetadataV2GraphProvider
     {
         private readonly MetadataV2GraphSnapshot _snapshot;
@@ -1707,13 +1662,6 @@ public sealed class LayerSourcedExecutorTests
             => ValueTask.FromResult<MetadataV2GraphSnapshot?>(revision == _snapshot.Revision ? _snapshot : null);
     }
 
-    /// <summary>
-    /// Independently coded (not a delegate to <c>PostgresGeometryOperationService</c>)
-    /// CRS-aware buffer implementation used as the test oracle for #4623: a geographic SRID
-    /// buffers through a plain Web Mercator forward/inverse projection with a latitude-scale
-    /// correction; a projected SRID converts the metric distance into its declared native
-    /// linear unit before buffering directly.
-    /// </summary>
     private sealed class FakeGeometryOperationService : IGeometryOperationService
     {
         private const double EarthRadiusMeters = 6378137.0;

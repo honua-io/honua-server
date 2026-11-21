@@ -25,9 +25,26 @@ internal sealed partial class RequestLogRedaction : ILogEventEnricher
 
     public void Enrich(LogEvent logEvent, ILogEventPropertyFactory propertyFactory)
     {
-        foreach (var property in logEvent.Properties.ToArray())
+        // Most properties come back unchanged; only those are left alone, so an event allocates for what
+        // redaction actually rewrites. Updates wait until the enumeration over Properties has finished.
+        List<LogEventProperty>? changed = null;
+        foreach (var property in logEvent.Properties)
         {
-            logEvent.AddOrUpdateProperty(new LogEventProperty(property.Key, Redact(property.Key, property.Value)));
+            var redacted = Redact(property.Key, property.Value);
+            if (!ReferenceEquals(redacted, property.Value))
+            {
+                (changed ??= []).Add(new LogEventProperty(property.Key, redacted));
+            }
+        }
+
+        if (changed is null)
+        {
+            return;
+        }
+
+        foreach (var property in changed)
+        {
+            logEvent.AddOrUpdateProperty(property);
         }
     }
 
@@ -55,7 +72,7 @@ internal sealed partial class RequestLogRedaction : ILogEventEnricher
 
         return value switch
         {
-            ScalarValue { Value: string text } => new ScalarValue(ScrubCredentialParameters(text)),
+            ScalarValue { Value: string text } => ScrubbedScalar(value, text),
             SequenceValue sequence => new SequenceValue(sequence.Elements.Select(element => Redact(string.Empty, element))),
             StructureValue structure => new StructureValue(structure.Properties.Select(property =>
                 new LogEventProperty(property.Name, Redact(property.Name, property.Value))), structure.TypeTag),
@@ -64,6 +81,12 @@ internal sealed partial class RequestLogRedaction : ILogEventEnricher
                     Redact(element.Key.Value as string ?? string.Empty, element.Value)))),
             _ => value
         };
+    }
+
+    private static LogEventPropertyValue ScrubbedScalar(LogEventPropertyValue value, string text)
+    {
+        var scrubbed = ScrubCredentialParameters(text);
+        return string.Equals(scrubbed, text, StringComparison.Ordinal) ? value : new ScalarValue(scrubbed);
     }
 
     private static bool IsSafeDiagnosticIdentifier(string name, LogEventPropertyValue value)

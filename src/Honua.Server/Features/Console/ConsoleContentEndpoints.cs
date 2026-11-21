@@ -355,11 +355,10 @@ internal static class ConsoleContentEndpoints
             }
             catch (InvalidOperationException ioe)
             {
-                // The store enforces the team-scope invariant atomically inside
-                // its CAS loop, so a concurrent PUT that clears teamScopeId
-                // between the pre-flight check and the swap still produces a
-                // contract-friendly 400 instead of a silently-broken stored
-                // state.
+                // The store enforces the team-scope invariant and an authorized
+                // owner atomically inside the write, so a concurrent change
+                // after the pre-flight checks produces a contract-friendly 400
+                // instead of a silently-broken stored state.
                 return TypedResults.BadRequest(ApiResponse<object>.Failure(ioe.Message));
             }
             if (updated is null)

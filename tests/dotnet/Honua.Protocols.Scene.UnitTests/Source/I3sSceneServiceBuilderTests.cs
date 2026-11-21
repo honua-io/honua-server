@@ -9,10 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
-/// <summary>
-/// Unit tests for the I3S SceneServer descriptor builder (#1202). The builder
-/// is a pure mapping from a hosted scene + extent to I3S service/layer JSON.
-/// </summary>
 [Protocol(TestProtocols.Scene)]
 public sealed class I3sSceneServiceBuilderTests
 {
@@ -111,7 +107,7 @@ public sealed class I3sSceneServiceBuilderTests
     [UnitTest]
     public void BuildLayer_DescribesFormatDefinitions()
     {
-        // The enriched 1.7 descriptor (#1808) carries the format
+        // The enriched 1.7 descriptor carries the format
         // definitions/schema that DESCRIBE the served 3D Object format —
         // geometry schema, materials, texture sets, and attribute storage —
         // without advertising any fetchable node store.
@@ -145,7 +141,7 @@ public sealed class I3sSceneServiceBuilderTests
     public void BuildLayer_DoesNotAdvertiseUnservableRootNode()
     {
         // This slice is a descriptor preview: per-node geometry (the nodes/*
-        // store) is a tracked follow-up (#1202) and no node routes are mapped, so
+        // store) is a tracked follow-up and no node routes are mapped, so
         // the descriptor must NOT advertise a fetchable rootNode that would 404
         // for a conformant I3S/ArcGIS client.
         var layer = I3sSceneServiceBuilder.BuildLayer(Scene, Extent);

@@ -14,12 +14,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// #4599: ArcGIS source reads go through the published Honua.Sdk.GeoServices client. These cases pin
-/// the wire shapes the SDK sends for every supported source root, the values the adapter hands the
-/// import pipeline, and the server-owned transport guarantees (credential headers, SSRF guard, retry
-/// and Retry-After, HTTP-200 error envelopes, sanitized errors, bounded bodies, cancellation).
-/// </summary>
 public sealed class GeoServicesRestClientSourceSdkTests
 {
     private const string PointFeatures = """
@@ -716,7 +710,7 @@ public sealed class GeoServicesRestClientSourceSdkTests
     [Theory]
     [InlineData("https://gis.example.com/arcgis/rest/services/Inspections/FeatureServer/0/query")]
     // An ArcGIS service root names its service before the type segment; a bare host-level
-    // FeatureServer has no service id the SDK can address (honua-sdk-dotnet#381).
+    // FeatureServer has no service id the SDK can address.
     [InlineData("https://gis.example.com/FeatureServer")]
     public async Task NonServiceRootUrl_IsRejectedWithoutRequest(string serviceUrl)
     {

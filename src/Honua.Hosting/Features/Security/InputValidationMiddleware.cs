@@ -127,7 +127,7 @@ internal sealed class InputValidationMiddleware
         // access in ValidateRequest reuses the cached result instead of blocking a
         // threadpool thread on sync-over-async body I/O (FormFeature.ReadForm).
         // An unmatched route has no handler that needs form fields. Parsing it
-        // would buffer an anonymous body before authentication (#5615 SRV-INF-008).
+        // would buffer an anonymous body before authentication.
         if (context.GetEndpoint() is not null
             && context.Request.HasFormContentType
             && !IsMultipartFormData(context.Request.ContentType))
@@ -213,7 +213,7 @@ internal sealed class InputValidationMiddleware
         }
 
         // Validate form data if applicable. An unmatched route has no handler that
-        // reads fields; touching Request.Form would buffer the body (#5615 SRV-INF-008).
+        // reads fields; touching Request.Form would buffer the body.
         if (request.HttpContext.GetEndpoint() is not null
             && request.HasFormContentType
             && !IsMultipartFormData(request.ContentType)
@@ -545,6 +545,11 @@ internal sealed class InputValidationMiddleware
             return _odataSystemOptionPattern.Replace(value, string.Empty);
         }
 
+        if (Cql2JsonLiteralMask.AppliesTo(request, paramType, name))
+        {
+            return Cql2JsonLiteralMask.Mask(value);
+        }
+
         // For SQL/CQL filter-expression parameters (where/having/$filter/filter),
         // mask the CONTENT of balanced single-quoted string literals before SQL-
         // injection inspection. Literal content is bound as a parameter by the
@@ -591,7 +596,7 @@ internal sealed class InputValidationMiddleware
     private static bool IsEdrWktCoordsQueryOption(HttpRequest request, string paramType, string name, string value)
     {
         // OGC API - EDR position coords are WKT, and the EDR 1.1 MULTIPOINT((x y),(x y)) form carries
-        // the "((" and "))" tokens the LDAP heuristic flags (#4153). Exempt only a pure WKT value so
+        // the "((" and "))" tokens the LDAP heuristic flags. Exempt only a pure WKT value so
         // anything carrying filter syntax is still inspected.
         return paramType.Equals("query", StringComparison.Ordinal) &&
                name.Equals("coords", StringComparison.OrdinalIgnoreCase) &&
@@ -626,7 +631,7 @@ internal sealed class InputValidationMiddleware
         }
 
         // OGC API - EDR shares the OGC API datetime grammar, so its position/cube queries accept
-        // the same open-start interval (#4151).
+        // the same open-start interval.
         var path = request.Path.Value;
         return path?.StartsWith("/ogc/", StringComparison.OrdinalIgnoreCase) == true ||
                path?.StartsWith("/stac", StringComparison.OrdinalIgnoreCase) == true ||

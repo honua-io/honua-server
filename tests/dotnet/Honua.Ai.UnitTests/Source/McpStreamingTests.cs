@@ -22,13 +22,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Unit tests for the MCP sessions + streaming spine (honua-server#1954):
-/// per-session notification channels, the JSON-RPC notification publisher,
-/// job-progress threading from the canonical job runtime, and the SSE pump. These
-/// run without Docker/PostGIS so the server-push contract is covered even when the
-/// full integration harness is unavailable.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpStreamingTests
 {
@@ -80,24 +73,25 @@ public sealed class McpStreamingTests
     }
 
     [UnitTest]
-    public async Task Publisher_PublishProgress_AppendsWellFormedJsonRpcNotification()
+    public async Task Publisher_PublishMessage_AppendsWellFormedJsonRpcNotification()
     {
         await using var sessions = new McpSessionManager();
         var id = sessions.CreateSession();
         var publisher = CreatePublisher(sessions, out var drafts);
+        using var data = JsonDocument.Parse("""{"jobId":"job-9"}""");
 
-        (await publisher.PublishProgress(id, "job-9", progress: 42, total: 100, message: "Running")).Should().BeTrue();
+        (await publisher.PublishMessage(id, "info", "honua.jobs", data.RootElement)).Should().BeTrue();
 
         var draft = drafts.Should().ContainSingle().Subject;
         draft.ScopeKey.Should().Be(id);
         var root = draft.Payload;
         root.GetProperty("jsonrpc").GetString().Should().Be("2.0");
-        root.GetProperty("method").GetString().Should().Be("notifications/progress");
+        root.GetProperty("method").GetString().Should().Be("notifications/message");
         var parameters = root.GetProperty("params");
-        parameters.GetProperty("progressToken").GetString().Should().Be("job-9");
-        parameters.GetProperty("progress").GetDouble().Should().Be(42);
-        parameters.GetProperty("total").GetDouble().Should().Be(100);
-        parameters.GetProperty("message").GetString().Should().Be("Running");
+        parameters.GetProperty("level").GetString().Should().Be("info");
+        parameters.GetProperty("logger").GetString().Should().Be("honua.jobs");
+        parameters.GetProperty("data").GetProperty("jobId").GetString().Should().Be("job-9");
+        parameters.TryGetProperty("progressToken", out _).Should().BeFalse("job status carries no invented progress token");
     }
 
     [UnitTest]
@@ -123,7 +117,9 @@ public sealed class McpStreamingTests
         var provider = new RecordingFanoutProvider([], failAppend: true);
         var publisher = new McpNotificationPublisher(sessions, NullLogger<McpNotificationPublisher>.Instance, provider);
 
-        Func<Task> progress = () => publisher.PublishProgress(sessionId, "job-1", 42, 100, null).AsTask();
+        using var data = JsonDocument.Parse("{}");
+        var payload = data.RootElement.Clone();
+        Func<Task> progress = () => publisher.PublishMessage(sessionId, "info", "honua.jobs", payload).AsTask();
         Func<Task> broadcast = () => publisher.BroadcastResourcesListChanged().AsTask();
         await progress.Should().ThrowAsync<IOException>();
         await broadcast.Should().ThrowAsync<IOException>();
@@ -158,15 +154,55 @@ public sealed class McpStreamingTests
         {
             draft.ScopeKey.Should().Be(id);
             var root = draft.Payload;
-            root.GetProperty("method").GetString().Should().Be("notifications/progress");
-            root.GetProperty("params").GetProperty("progressToken").GetString().Should().Be("job-1");
-            progresses.Add(root.GetProperty("params").GetProperty("progress").GetDouble());
+            root.GetProperty("method").GetString().Should().Be("notifications/message", "no invented progress token");
+            var data = root.GetProperty("params").GetProperty("data");
+            data.GetProperty("jobId").GetString().Should().Be("job-1");
+            data.GetProperty("uri").GetString().Should().Be("honua://jobs/job-1");
+            progresses.Add(data.GetProperty("progress").GetDouble());
         }
 
         var expectedProgress = new[] { 10d, 60d, 100d };
         progresses.Should().Equal(expectedProgress,
             "the bridge emits a frame on each observed progress change and a final terminal frame");
         await jobService.Received(3).GetJobAsync("job-1", Principal, Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task ProgressBridge_SessionLevelAboveInfo_SuppressesJobStatusMessages()
+    {
+        await using var sessions = new McpSessionManager();
+        var id = sessions.CreateSession();
+        (await sessions.SetLogLevelAsync(id, "warning", CancellationToken.None)).Should().BeTrue();
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        jobService.GetJobAsync("job-1", Principal, Arg.Any<CancellationToken>())
+            .Returns(JobRecord(ExecutionJobStatus.Succeeded, 100, "Complete"));
+        var publisher = CreatePublisher(sessions, out var drafts);
+        var bridge = new McpJobProgressBridge(
+            publisher, sessions, Substitute.For<IServiceScopeFactory>(), NullLogger<McpJobProgressBridge>.Instance);
+
+        await bridge.PumpAsync(id, "job-1", Principal, jobService, TimeSpan.Zero, CancellationToken.None);
+
+        drafts.Should().BeEmpty("job status is info, below the session's logging/setLevel choice");
+    }
+
+    [UnitTest]
+    public async Task ProgressBridge_FailedJob_ReachesASessionThatAskedForErrorsOnly()
+    {
+        await using var sessions = new McpSessionManager();
+        var id = sessions.CreateSession();
+        (await sessions.SetLogLevelAsync(id, "error", CancellationToken.None)).Should().BeTrue();
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        jobService.GetJobAsync("job-1", Principal, Arg.Any<CancellationToken>())
+            .Returns(JobRecord(ExecutionJobStatus.Failed, 40, "Executing"));
+        var publisher = CreatePublisher(sessions, out var drafts);
+        var bridge = new McpJobProgressBridge(
+            publisher, sessions, Substitute.For<IServiceScopeFactory>(), NullLogger<McpJobProgressBridge>.Instance);
+
+        await bridge.PumpAsync(id, "job-1", Principal, jobService, TimeSpan.Zero, CancellationToken.None);
+
+        var parameters = drafts.Should().ContainSingle().Subject.Payload.GetProperty("params");
+        parameters.GetProperty("level").GetString().Should().Be("error");
+        parameters.GetProperty("data").GetProperty("status").GetString().Should().Be(nameof(ExecutionJobStatus.Failed));
     }
 
     [UnitTest]
@@ -314,7 +350,8 @@ public sealed class McpStreamingTests
         // AOT guard: the new wire types must be source-generated, not reflection
         // fallback, since the MCP path serializes them with the slice context.
         McpJsonContext.Default.McpJsonRpcNotification.Should().NotBeNull();
-        McpJsonContext.Default.McpProgressNotificationParams.Should().NotBeNull();
+        McpJsonContext.Default.McpLogMessageParams.Should().NotBeNull();
+        McpJsonContext.Default.McpSetLevelParams.Should().NotBeNull();
     }
 
     private static ExecutionJobRecord JobRecord(ExecutionJobStatus status, double percent, string phase) => new()

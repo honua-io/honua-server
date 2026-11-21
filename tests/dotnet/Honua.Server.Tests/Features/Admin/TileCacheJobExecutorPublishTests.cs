@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.TestKit.Helpers;
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.IO.Compression;
@@ -76,7 +77,7 @@ public sealed partial class TileCacheJobExecutorPublishTests
         var progress = await sut.GetAsync(jobId);
         if (operation == "publish" && !serviceScoped)
         {
-            // #5624: the bare storage-layer id resolves to the "other" resource, which no routable
+            // The bare storage-layer id resolves to the "other" resource, which no routable
             // publication serves. A published archive must be bound to a routable source, so the
             // upload is refused rather than published under a source the proxy cannot authorize.
             progress!.Status.Should().Be(OperationStatus.Failed);
@@ -100,18 +101,12 @@ public sealed partial class TileCacheJobExecutorPublishTests
         fields.GetProperty(serviceScoped ? "requested_field" : "other_field").GetString()
             .Should().Be(serviceScoped ? "string" : "integer");
 
-        // honua-server#4421: the metadata assertions above describe what the archive CLAIMS to
+        // The metadata assertions above describe what the archive CLAIMS to
         // contain. Decode each declared tile so the payload is proven too — with the provider
         // stubbed on four arbitrary bytes, as it was, this suite validated archives of junk.
         AssertEveryArchivedTileDecodes(stub.LastUploadBytes!, header);
     }
 
-    /// <summary>
-    /// Walks the archive's directories and decodes every declared tile slice as a PMTiles client
-    /// would address it. Decoding the tile-data section as one blob is not enough: concatenated
-    /// protobuf messages merge into a single valid message, so a wrong offset or length would still
-    /// "decode".
-    /// </summary>
     private static void AssertEveryArchivedTileDecodes(byte[] archiveBytes, PMTilesHeader header)
     {
         header.TileType.Should().Be(PMTilesTileType.Mvt);
@@ -700,16 +695,11 @@ public sealed partial class TileCacheJobExecutorPublishTests
         return options;
     }
 
-    /// <summary>
-    /// Harness accessor for <see cref="TileCacheSeedCoverageTests"/>, which drives the same job
-    /// service through a seed operation. Reusing this composition keeps both suites on one wiring.
-    /// </summary>
     internal static ServiceProvider BuildScopeForSeed(
         StubCloudStorage stub,
         Action<ITileProvider> configureTileProvider)
         => BuildScope(stub, includeCloudStorage: true, configureTileProvider: configureTileProvider);
 
-    /// <summary>Harness accessor for <see cref="TileCacheSeedCoverageTests"/>.</summary>
     internal static TileCacheJobRunner CreateSutForSeed(ServiceProvider serviceProvider)
         => CreateSut(serviceProvider);
 
@@ -751,16 +741,8 @@ public sealed partial class TileCacheJobExecutorPublishTests
             => _progressStore.GetProgressAsync<TileOperationProgress>(jobId);
     }
 
-    /// <summary>
-    /// Storage layers the unscoped publish and archive tests address by a bare layer id.
-    /// </summary>
     private static readonly int[] _unscopedStorageLayerIds = [1, 5, 9, 21, 22, 31, 100];
 
-    /// <summary>
-    /// Gives every bare layer id the suite publishes without a serviceId a routable source: a
-    /// resource, its storage binding and a publication in a routable service. #5624 refuses to
-    /// upload an archive whose storage layer resolves to no routable publication.
-    /// </summary>
     private static TestMetadataV2GraphBuilder AddRoutableStorageLayers(TestMetadataV2GraphBuilder builder)
     {
         foreach (var layerId in _unscopedStorageLayerIds)
@@ -789,7 +771,7 @@ public sealed partial class TileCacheJobExecutorPublishTests
         graph ??= AddRoutableStorageLayers(new TestMetadataV2GraphBuilder()
             .AddService("svc-publish-test", "publish-test")
             .AddResource("res-publish", "publish-layer")
-            // #5624: an unscoped publish binds the archive to the routable source of its storage
+            // An unscoped publish binds the archive to the routable source of its storage
             // layer and refuses the upload when there is none, so layer 7 needs a storage binding.
             .AddStorageBinding("res-publish-binding", "res-publish", "features", storageLayerId: 7)
             .AddPublication("pub-publish", "svc-publish-test", "res-publish", layerIndex: 7)
@@ -821,7 +803,7 @@ public sealed partial class TileCacheJobExecutorPublishTests
                     Arg.Any<TileLimits>(),
                     Arg.Any<Honua.Core.Features.Tiles.GridGeometry?>(),
                     Arg.Any<CancellationToken>())
-                // honua-server#4421: this stub returned `[0x01, 0x02, 0x03, 0x04]`, which is not a
+                // This stub returned `[0x01, 0x02, 0x03, 0x04]`, which is not a
                 // Mapbox Vector Tile, so every "published PMTiles archive" this suite validated held
                 // four arbitrary bytes per tile. Push a real, decodable tile instead — it costs one
                 // call and lets the archive assertions read back what a client would actually get.
@@ -880,6 +862,7 @@ public sealed partial class TileCacheJobExecutorPublishTests
 
         public Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
         {
+            PrivateScratchFileAssertions.AssertOwnerOnly(request.Content);
             LastUpload = request;
             var fileId = !string.IsNullOrWhiteSpace(request.ObjectKeyOverride)
                 ? request.ObjectKeyOverride

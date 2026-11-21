@@ -40,8 +40,8 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         // Reuse the SAME canonical admission limits the synchronous SpatialAnalytics/
         // DataEnrichment request handlers already enforce (AnalyticsLimits.MaxInputFeatures)
         // and the same per-geometry vertex ceiling FeatureServer edits enforce
-        // (GeometryLimits.MaxVerticesPerGeometry), rather than inventing a GP-local budget
-        // (#4629): a dispatched layer-sourced job and its synchronous sibling now fail at
+        // (GeometryLimits.MaxVerticesPerGeometry), rather than inventing a GP-local budget:
+        // a dispatched layer-sourced job and its synchronous sibling now fail at
         // the same admission point instead of the job path materializing what the
         // synchronous path would have already refused.
         Limits = limitsOptions?.Value ?? new LimitsOptions();
@@ -134,7 +134,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         try
         {
             // Bound the target layer read by the same canonical admission limits the
-            // synchronous analytics/enrichment handlers already enforce (#4629): the read
+            // synchronous analytics/enrichment handlers already enforce: the read
             // fails closed WHILE STREAMING on the first oversized feature count or
             // oversized single geometry, instead of materializing, computing, and
             // serializing an unbounded input before MaxArtifactBytes is ever checked.
@@ -160,7 +160,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         catch (DagSourceSelectionException ex)
         {
             // A geometry/time selector the canonical translator rejected (or could not
-            // evaluate in this deployment): caller-facing, so surface it verbatim (#4624).
+            // evaluate in this deployment): caller-facing, so surface it verbatim.
             return LayerComputationBudget.Refusal($"Invalid {ProcessId} inputs: {ex.Message}");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -182,7 +182,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         List<IFeature> output;
         try
         {
-            output = await ApplyCoreAsync(new LayerOpContext(features, source, scope.ServiceProvider), inputs, cancellationToken)
+            output = await ApplyCoreAsync(new LayerOpContext(features, source, scope.ServiceProvider, request), inputs, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (TransformInputException ex)
@@ -199,7 +199,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
 
         // Refuse before encoding when even the smallest coordinate representation cannot
         // fit. The streaming writer then charges attributes and actual ordinate widths
-        // before each bounded write, without a second JSON document (#4629).
+        // before each bounded write, without a second JSON document.
         var maxBytes = Options.CurrentValue.MaxArtifactBytes;
         var outputVertices = output.Sum(feature => (long)(feature.Geometry?.NumPoints ?? 0));
         if (outputVertices * MinSerializedBytesPerVertex > maxBytes)
@@ -251,11 +251,12 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
 
     private protected readonly struct LayerOpContext
     {
-        public LayerOpContext(List<IFeature> features, IDagFeatureSource layerSource, IServiceProvider services)
+        public LayerOpContext(List<IFeature> features, IDagFeatureSource layerSource, IServiceProvider services, DagSourceRequest request)
         {
             Features = features;
             LayerSource = layerSource;
             Services = services;
+            Request = request;
         }
 
         public List<IFeature> Features { get; }
@@ -263,6 +264,8 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         public IDagFeatureSource LayerSource { get; }
 
         public IServiceProvider Services { get; }
+
+        public DagSourceRequest Request { get; }
     }
 
     // Size is charged before the geometry is parsed so an oversized feature is never materialized past its budget.
@@ -277,7 +280,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         long? maxInputBytes = null,
         int? maxTotalVertices = null)
     {
-        var geoJsonReader = new GeoJsonReader();
+        var geoJsonReader = GeoJsonArtifactCodec.CreateReader(request.OutputSrid ?? 0);
         var features = new List<IFeature>();
         long inputBytes = 0;
         long totalVertices = 0;
@@ -470,7 +473,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
 
     private DagSourceRequest BuildSourceRequest(StepInputReader inputs)
     {
-        // #4624: the catalog advertises objectIds / geometry+geometryType+inSR+spatialRel /
+        // The catalog advertises objectIds / geometry+geometryType+inSR+spatialRel /
         // time+timeRelation on every op that includes SharedAnalyticsFilterParameters
         // (analytics.buffer-aggregate, analytics.spatial-join, generalization.dissolve,
         // generalization.simplify-layer). Every selector is propagated verbatim to

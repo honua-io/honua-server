@@ -8,9 +8,6 @@ using Honua.Server.Features.Infrastructure.AuditLog.Export;
 
 namespace Honua.Server.Tests.Infrastructure.AuditLog.Export;
 
-/// <summary>
-/// Unit tests for <see cref="SplunkHecAuditSink"/> HTTP result classification (#2157).
-/// </summary>
 public sealed class SplunkHecAuditSinkTests
 {
     private static AuditEvent SampleEvent() => new()
@@ -76,7 +73,7 @@ public sealed class SplunkHecAuditSinkTests
     [Fact]
     public async Task SendAsync_ResolvesClientFromFactoryOnEverySend()
     {
-        // PA-081: the sink must not capture a single HttpClient at construction — it should
+        // the sink must not capture a single HttpClient at construction — it should
         // resolve a fresh client from the factory on every send so a rotated/replaced
         // primary handler (e.g. after a DNS change) is observed.
         var handler = new StubHandler(HttpStatusCode.OK);
@@ -113,11 +110,6 @@ public sealed class SplunkHecAuditSinkTests
             return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(_status));
         }
     }
-    /// <summary>
-    /// Minimal <see cref="IHttpClientFactory"/> test double that hands back a client wired
-    /// to a fixed handler on every call, recording how many times (and with what name) it
-    /// was asked — used to assert sinks resolve a client per send instead of caching one.
-    /// </summary>
     private sealed class SingleHandlerHttpClientFactory : IHttpClientFactory
     {
         private readonly HttpMessageHandler _handler;

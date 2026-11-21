@@ -383,21 +383,13 @@ internal sealed class FormPackageLifecycleService
         string formId,
         AuditOutcome outcome,
         string details)
-        => _auditLog.RecordAsync(new AuditEvent
+        => FormPackageAudit.RecordAsync(_auditLog, context, new FormPackageAuditEntry
         {
-            Timestamp = DateTimeOffset.UtcNow,
-            EventType = AuditEventType.AdminAction,
-            Actor = ActorResolver.Resolve(context, ActorResolution.SubjectOrName),
-            ActorType = context.User.Identity?.IsAuthenticated == true ? AuditActorType.UserId : AuditActorType.Anonymous,
-            ResourceType = "form_package",
-            ResourceId = formId,
             Action = action,
+            FormId = formId,
             Outcome = outcome,
-            CorrelationId = context.TraceIdentifier,
-            RemoteIp = context.Connection.RemoteIpAddress?.ToString(),
-            UserAgent = context.Request.Headers.UserAgent.ToString(),
             Details = details
-        }, context.RequestAborted);
+        });
 }
 
 internal static partial class FormPackageLog

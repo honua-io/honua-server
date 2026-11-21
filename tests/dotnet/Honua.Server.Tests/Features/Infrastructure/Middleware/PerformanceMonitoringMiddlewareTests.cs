@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Net;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Infrastructure.Middleware;
@@ -14,9 +15,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Middleware;
 
-/// <summary>
-/// Integration tests for PerformanceMonitoringMiddleware.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.TestQuality)]
 public class PerformanceMonitoringMiddlewareTests
@@ -157,14 +155,6 @@ public class PerformanceMonitoringMiddlewareTests
         performanceMonitor.StartOperation(Arg.Any<string>()).Returns(operationScope);
         operationScope.WithTag(Arg.Any<string>(), Arg.Any<string>()).Returns(operationScope);
 
-        IDictionary<string, string>? detailedTags = null;
-        performanceMonitor
-            .When(m => m.RecordHistogram(
-                "honua_request_duration_detailed_ms",
-                Arg.Any<double>(),
-                Arg.Any<IDictionary<string, string>>()))
-            .Do(callInfo => detailedTags = callInfo.ArgAt<IDictionary<string, string>>(2));
-
         var app = await CreateTestAppAsync(services =>
         {
             services.AddSingleton(performanceMonitor);
@@ -183,8 +173,11 @@ public class PerformanceMonitoringMiddlewareTests
             "/{unmatched}",
             StatusCodes.Status404NotFound,
             Arg.Any<TimeSpan>());
-        Assert.NotNull(detailedTags);
-        Assert.Equal("/{unmatched}", detailedTags!["endpoint"]);
+        // TagList is an inline array, so NSubstitute argument matchers cannot compare it; read the received call instead.
+        var detailedTags = performanceMonitor.ReceivedCalls()
+            .Select(call => call.GetArguments())
+            .Single(arguments => arguments is ["honua_request_duration_detailed_ms", _, TagList])[2];
+        Assert.Contains(new KeyValuePair<string, object?>("endpoint", "/{unmatched}"), (TagList)detailedTags!);
     }
 
     [IntegrationTest]

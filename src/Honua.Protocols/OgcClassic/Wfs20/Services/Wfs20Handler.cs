@@ -5,7 +5,6 @@ using System.Collections.Immutable;
 using System.Collections;
 using System.Diagnostics;
 using System.Globalization;
-using System.Security.Claims;
 using System.Text.Json;
 using System.Text;
 using System.Xml.Linq;
@@ -129,12 +128,11 @@ internal sealed partial class Wfs20Handler
         var plans = ImmutableArray.CreateBuilder<LayerQueryPlan>(featureTypes.Count);
 
         // The per-feature-type query build + count has no cross-type dependency, so run
-        // every feature type's build+count pair concurrently instead of one at a time
-        // (previously a serial CountAsync round trip per feature type in the multi-type
-        // GetFeature path). The offset/limit distribution below IS sequential (each
-        // type's share depends on how much of the offset/count budget prior types in
-        // request order consumed), so that accounting still runs as a second,
-        // I/O-free pass over the precomputed results in the original order.
+        // every feature type's build+count pair concurrently instead of one at a time.
+        // The offset/limit distribution below IS sequential (each type's share depends
+        // on how much of the offset/count budget prior types in request order
+        // consumed), so that accounting still runs as a second, I/O-free pass over the
+        // precomputed results in the original order.
         var perTypeResults = await Task.WhenAll(featureTypes.Select(async featureType =>
         {
             var query = await BuildFeatureQueryAsync(
@@ -148,7 +146,7 @@ internal sealed partial class Wfs20Handler
                 // A qualified RESOURCEID is scoped by its own type name. When the request
                 // selects multiple types (including the implicit all-types selection), ignore
                 // that id while building the other type's plan instead of rejecting the entire
-                // request because the prefix does not match that plan (#4168).
+                // request because the prefix does not match that plan.
                 enforceResourceIdTypeMatch: featureTypes.Count == 1,
                 requireResourceIdQualifier: featureTypes.Count > 1,
                 cancellationToken: cancellationToken,
@@ -291,7 +289,7 @@ internal sealed partial class Wfs20Handler
         }
 
         // Default filter geometry without an explicit srsName to the queried feature type's
-        // storage CRS rather than an unconditional EPSG:4326 assumption (#2737).
+        // storage CRS rather than an unconditional EPSG:4326 assumption.
         resource = resource with
         {
             SchemaFields = resource.SchemaFields.Where(field => !field.Hidden).ToArray()
@@ -533,7 +531,7 @@ internal sealed partial class Wfs20Handler
         // always longitude,latitude; WFS 1.1.0's default (4-element, no explicit CRS) BBOX is
         // also lon,lat. Only a WFS 1.1.0 BBOX with an explicit 5th-element CRS honors that
         // CRS's declared axis order. WFS 2.0 (wfsVersion == null on that path) is unchanged
-        // and keeps the CRS-derived axis order (lat,lon for EPSG:4326) (#2737).
+        // and keeps the CRS-derived axis order (lat,lon for EPSG:4326).
         if (IsWfs10(wfsVersion) || (IsWfs11(wfsVersion) && parts.Length == 4))
         {
             axisOrder = AxisOrder.EastNorth;
@@ -970,7 +968,7 @@ internal sealed partial class Wfs20Handler
         }
 
         var returnedCount = queryResults.Sum(entry => entry.Features.Length);
-        var xml = WriteXmlDocument(writer =>
+        var result = WriteGmlDocumentResult(writer =>
         {
             writer.WriteStartDocument();
             writer.WriteStartElement("wfs", "FeatureCollection", Wfs20Utilities.WfsNamespace);
@@ -998,7 +996,7 @@ internal sealed partial class Wfs20Handler
             writer.WriteEndDocument();
         });
 
-        return (Results.Content(xml, MediaTypes.Gml, Encoding.UTF8), returnedCount);
+        return (result, returnedCount);
     }
 
     private async Task<(IResult Result, int ReturnedCount)> BuildJsonResultAsync(
@@ -1308,7 +1306,7 @@ internal sealed partial class Wfs20Handler
         {
             writer.WriteStartElement(
                 plan.Descriptor.NamespacePrefix,
-                XmlConvert.EncodeLocalName(geometryPropertyName),
+                EncodeFieldLocalName(geometryPropertyName),
                 plan.Descriptor.NamespaceUri);
             writer.WriteRaw(RelabelCrs84SrsName(feature.GeometryGml, plan.Query, plan.RequestedSrsName));
             writer.WriteEndElement();
@@ -1322,7 +1320,7 @@ internal sealed partial class Wfs20Handler
                 {
                     writer.WriteStartElement(
                         plan.Descriptor.NamespacePrefix,
-                        XmlConvert.EncodeLocalName(field.Name),
+                        EncodeFieldLocalName(field.Name),
                         plan.Descriptor.NamespaceUri);
                     writer.WriteAttributeString("xsi", "nil", Wfs20Utilities.XsiNamespace, XmlConvert.ToString(true));
                     writer.WriteEndElement();
@@ -1333,7 +1331,7 @@ internal sealed partial class Wfs20Handler
 
             writer.WriteStartElement(
                 plan.Descriptor.NamespacePrefix,
-                XmlConvert.EncodeLocalName(field.Name),
+                EncodeFieldLocalName(field.Name),
                 plan.Descriptor.NamespaceUri);
             writer.WriteString(ConvertFieldValueToInvariantString(value, field));
             writer.WriteEndElement();
@@ -1344,6 +1342,29 @@ internal sealed partial class Wfs20Handler
         {
             writer.WriteEndElement();
         }
+    }
+
+    // XmlConvert.EncodeLocalName runs a regex for every call; a name made only of ASCII NCName
+    // characters with no "_x" escape sequence encodes to itself, so return it without the scan.
+    internal static string EncodeFieldLocalName(string name)
+        => IsPlainAsciiNcName(name) ? name : XmlConvert.EncodeLocalName(name);
+
+    private static bool IsPlainAsciiNcName(string name)
+    {
+        if (name.Length == 0 || !(char.IsAsciiLetter(name[0]) || name[0] == '_'))
+        {
+            return false;
+        }
+
+        foreach (var c in name)
+        {
+            if (!(char.IsAsciiLetterOrDigit(c) || c is '_' or '-' or '.'))
+            {
+                return false;
+            }
+        }
+
+        return !name.Contains("_x", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool TryGetGmlNameValue(
@@ -1443,11 +1464,9 @@ internal sealed partial class Wfs20Handler
         GeoJsonFeatureBuildOptions buildOptions)
     {
         var geometry = _geometryServices.ConvertGeoJsonToSimpleGeometry(feature.GeometryGeoJson, axisOrder);
-        return GeoJsonFeatureBaseBuilder.Create(
-                feature,
-                resource,
-                buildOptions)
-            .ToOgcGeoJsonFeature(geometry);
+        return OgcGeoJsonFeatureBuilder.CreateFromBuiltBase(
+            GeoJsonFeatureBaseBuilder.Create(feature, resource, buildOptions),
+            geometry);
     }
 
     private GeoJsonFeature CreateGeoJsonFeature(
@@ -1457,11 +1476,9 @@ internal sealed partial class Wfs20Handler
         GeoJsonFeatureBuildOptions buildOptions)
     {
         var geometry = _geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, axisOrder);
-        return GeoJsonFeatureBaseBuilder.Create(
-                feature,
-                resource,
-                buildOptions)
-            .ToOgcGeoJsonFeature(geometry);
+        return OgcGeoJsonFeatureBuilder.CreateFromBuiltBase(
+            GeoJsonFeatureBaseBuilder.Create(feature, resource, buildOptions),
+            geometry);
     }
 
     private static bool ShouldIncludePublicIdentifierProperty(MetadataV2Object resource)
@@ -1574,22 +1591,46 @@ internal sealed partial class Wfs20Handler
         return Results.Content(xml, MediaTypes.Gml, Encoding.UTF8);
     }
 
-    private static string WriteXmlDocument(Action<XmlWriter> writeAction)
-    {
-        var settings = new XmlWriterSettings
-        {
-            Indent = true,
-            IndentChars = "  ",
-            NewLineChars = "\n",
-            Encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
-            OmitXmlDeclaration = false
-        };
+    private static readonly string GmlUtf8ContentType = PooledUtf8ContentResult.WithUtf8Charset(MediaTypes.Gml);
 
+    private static XmlWriterSettings CreateXmlDocumentSettings() => new()
+    {
+        Indent = true,
+        IndentChars = "  ",
+        NewLineChars = "\n",
+        Encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+        OmitXmlDeclaration = false
+    };
+
+    internal static string WriteXmlDocument(Action<XmlWriter> writeAction)
+    {
         using var stream = new MemoryStream();
-        using var writer = XmlWriter.Create(stream, settings);
+        using var writer = XmlWriter.Create(stream, CreateXmlDocumentSettings());
         writeAction(writer);
         writer.Flush();
         return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    // Same bytes as Results.Content(WriteXmlDocument(writeAction), MediaTypes.Gml, Encoding.UTF8), written
+    // into a pooled buffer instead of a growing MemoryStream, its copy, a string and a second encoding.
+    internal static PooledUtf8ContentResult WriteGmlDocumentResult(Action<XmlWriter> writeAction)
+    {
+        var buffer = new PooledByteBuffer();
+        try
+        {
+            using (var writer = XmlWriter.Create(buffer, CreateXmlDocumentSettings()))
+            {
+                writeAction(writer);
+                writer.Flush();
+            }
+
+            return new PooledUtf8ContentResult(buffer, GmlUtf8ContentType);
+        }
+        catch
+        {
+            buffer.Dispose();
+            throw;
+        }
     }
 
     private static void WritePagingAttributes(XmlWriter writer, string? next, string? previous)
@@ -1603,22 +1644,6 @@ internal sealed partial class Wfs20Handler
         {
             writer.WriteAttributeString("previous", previous);
         }
-    }
-
-    private static bool IsAnonymousWriteAllowed(
-        HttpContext context,
-        MetadataV2Object resource,
-        MetadataV2Service? service)
-    {
-        var evaluator = context.RequestServices.GetRequiredService<IAccessPolicyEvaluator>();
-        var anonymousPrincipal = new ClaimsPrincipal(new ClaimsIdentity());
-        var decision = evaluator.Evaluate(
-            anonymousPrincipal,
-            resource.AccessPolicy,
-            service?.AccessPolicy,
-            AccessScope.Write);
-
-        return decision.IsAllowed;
     }
 
     private static string[] ParseQualifiedList(string? value)
@@ -1944,7 +1969,11 @@ internal sealed partial class Wfs20Handler
         string LocalName,
         string NamespacePrefix,
         string NamespaceUri,
-        MetadataV2GraphSnapshot Snapshot);
+        MetadataV2GraphSnapshot Snapshot)
+    {
+        // The encoding the deployer declared for the resource under extensions.wfs.
+        public WfsDeclaredEncoding Declared { get; init; } = WfsDeclaredEncoding.None;
+    }
 
     private sealed record LayerQueryPlan(
         WfsFeatureTypeDescriptor Descriptor,

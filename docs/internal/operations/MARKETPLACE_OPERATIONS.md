@@ -144,13 +144,13 @@ calls `RegisterUsage` exactly once during startup. Behavior:
 
 ```
 [Per-request usage producer]
-  → MarketplaceMeteringQueue (in-memory + Redis durable buffer)
+  → MarketplaceMeteringQueue (in-memory + PostgreSQL durable buffer)
   → AwsMeteringWorker (BackgroundService, PeriodicTimer)
   → MeterUsage / BatchMeterUsage (retry with exponential backoff)
 ```
 
 The metering write path **never** runs inline on the request path. If
-Redis is unavailable, the in-memory buffer keeps records up to its
+PostgreSQL is unavailable, the in-memory buffer keeps records up to its
 configured ceiling; spillover triggers `result="dead_lettered"` and
 emits event-id `10320`.
 
@@ -384,7 +384,7 @@ purchase-flow failure rather than as a Honua telemetry signal.
 |--------|---------|-----------------|
 | `marketplace_webhook_events_total{cloud="azure",result="ack"}` | Equals delivered events. | Drop = JWT verification failing or queue write blocked. |
 | `marketplace_webhook_events_total{cloud="azure",result="rejected"}` | Zero or near-zero. | Spike = publisher credentials rotated, JWT issuer / audience mismatch, or replay attack. |
-| Webhook handler latency (p99) | < 1 s. | > 5 s = DB / Redis backpressure on the queue write. > 10 s = SLA breach; Azure will retry then suspend. |
+| Webhook handler latency (p99) | < 1 s. | > 5 s = database backpressure on the queue write. > 10 s = SLA breach; Azure will retry then suspend. |
 | Reconciler success rate | Equals webhook ack rate. | Backlog growth = reconciler stalled, mint host unreachable, `Get Operation` rejecting events, or `Get Subscription` failing. |
 | `marketplace_operation_status_patches_total{cloud="azure",action ∈ "change_plan"\|"change_quantity"\|"reinstate",result="success_patched"\|"auto_completed"}` | For each `action`, the sum of `success_patched` + `auto_completed` equals the count of webhooks ingested for that action **that proceed to the PATCH step** over the same window. Webhooks that GET operation returns `status=Conflict` for never reach PATCH and are accounted for separately on the aggregate `marketplace_reconciler_runs_total{result="noop_conflict"}` signal (next row) — the reconciler counter carries only `cloud` and `result` labels, so per-action attribution of `noop_conflict` is not available from telemetry; per Microsoft's operations API, GET `status=Conflict` only applies to `ChangePlan` / `ChangeQuantity`, so any shortfall in the per-action `change_plan` / `change_quantity` sum is expected to track the aggregate `noop_conflict` rate. | Audit gap: drop in the sum (after accounting for the aggregate `noop_conflict` rate) means the reconciler is not reaching step 10 — investigate the audit trail. On `change_plan` / `change_quantity`, a rising `auto_completed` rate is **not** a customer-billing problem (Microsoft auto-Successes after 10 s either way) but indicates the reconciler is consistently lagging Microsoft's auto-completion window; tighten the reconciler tick or scale workers. On `reinstate`, an `auto_completed` spike is unusual (Microsoft's Reinstate flow does not document a timeout-driven auto-Success) and warrants investigation of operation supersession or duplicate webhook delivery. |
 | `marketplace_reconciler_runs_total{cloud="azure",result="noop_conflict"}` | Low; tracks `Get Operation` returning `status=Conflict` at the aggregate level — the counter has only `cloud` and `result` labels, so per-action attribution is not available from this metric. Per Microsoft's operations API the conflict only applies to `ChangePlan` / `ChangeQuantity` ("new quantity / plan is the same as existing"), so any non-zero rate is implicitly bounded to those two actions by spec. | Sustained non-zero rate = upstream is producing redundant `ChangePlan` / `ChangeQuantity` submissions; coordinate with the customer-side admin UI to suppress no-op submissions. Reconciler is correct to skip mint + PATCH on this status. |
@@ -396,7 +396,7 @@ Symmetric with AWS:
 
 ```
 [Per-request usage producer]
-  → MarketplaceMeteringQueue (in-memory + Redis durable buffer)
+  → MarketplaceMeteringQueue (in-memory + PostgreSQL durable buffer)
   → AzureMeteringWorker (BackgroundService, PeriodicTimer)
   → Marketplace Metered Billing API (retry with exponential backoff)
 ```
@@ -409,7 +409,7 @@ worker classes share the durable substrate but address different APIs.
 | Symptom | Likely cause | Action |
 |---------|--------------|--------|
 | Webhook returns 401. | JWT issuer/audience mismatch or stale `Azure:Marketplace:Publisher:*` credentials. | Rotate publisher client secret; verify `AllowedAudiences` matches the configured publisher app registration. |
-| Webhook returns 5xx within the 10 s window. | Durable write to `MarketplaceWebhookQueue` failed. | A 5xx is the **correct** behavior here — the handler must not ACK on volatile fallback alone, because losing the event between ACK and reconciler drain would break the at-least-once delivery contract with Microsoft. Restore the durable substrate (Redis health at `/api/v1/metrics/cache`, queue lease coordination, network reachability) so writes succeed; Azure retries on 5xx by design. The in-memory implementation of `MarketplaceWebhookQueue` is reserved for dev/test or single-process deployments where durability is provided externally; production deployments with `Azure:Marketplace:Enabled=true` require Redis-backed persistence. |
+| Webhook returns 5xx within the 10 s window. | Durable write to `MarketplaceWebhookQueue` failed. | A 5xx is the **correct** behavior here — the handler must not ACK on volatile fallback alone, because losing the event between ACK and reconciler drain would break the at-least-once delivery contract with Microsoft. Restore the durable substrate (database readiness at `/healthz/ready`, queue lease coordination, network reachability) so writes succeed; Azure retries on 5xx by design. The in-memory implementation of `MarketplaceWebhookQueue` is reserved for dev/test or single-process deployments where durability is provided externally; production deployments with `Azure:Marketplace:Enabled=true` require PostgreSQL-backed persistence. |
 | Webhook does not ack within 10 s; Azure retries flood. | Inline mint, Get Operation, Get Subscription, or PATCH on the webhook path (regression). | Verify the handler matches the documented ack-and-enqueue pattern — only the JWT verify, body capture, and queue write run inline; every operations / fulfillment API call is the reconciler's responsibility. |
 | `Get Operation` returns 404 in the reconciler. | Webhook payload references an operation Microsoft cannot find — replay, spoofed payload, or operation already aged out. | Drop the event; do **not** mint or PATCH. Surface as `marketplace_reconciler_runs_total{cloud="azure",result="operation_rejected"}` and inspect the audit log for replay patterns. |
 | `Get Operation` returns `status=Conflict` (operation status, not HTTP 409). | Microsoft documents this status as "new quantity / plan is the same as existing" — a no-op terminal where the requested change matches the current value. | Healthy outcome. The reconciler **skips both mint and PATCH** and records `marketplace_reconciler_runs_total{cloud="azure",result="noop_conflict"}`. Persistent spikes indicate the upstream change request flow is producing redundant submissions; investigate the customer-side admin UI or the Microsoft Marketplace flow that originated the change. |
@@ -455,14 +455,14 @@ these invariants:
   rejected before any work happens.
 - **No ACK without durable persistence.** The handler enqueues to
   `MarketplaceWebhookQueue` and only returns 200 after the durable
-  write succeeds. If the durable substrate (Redis) is unavailable,
+  write succeeds. If the durable substrate (PostgreSQL) is unavailable,
   return 5xx so Azure retries — never ACK on the volatile in-memory
   implementation for the webhook queue, since the event would be
   lost on process exit while preventing Azure's retry. The in-memory
   fallback substrate is appropriate for the metering queue (which is
   eventually consistent and accepts dead-letter loss as a counted
   outcome), **not** for the webhook queue. Production deployments
-  with `Azure:Marketplace:Enabled=true` require Redis.
+  with `Azure:Marketplace:Enabled=true` require the PostgreSQL queue tables.
 - **Run the SLA assertion test before every release.** The integration
   test (`AzureWebhook_AcksWithinTenSeconds`) must pass — it asserts
   p99 < 1 s under simulated load with `Get Operation`,

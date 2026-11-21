@@ -14,10 +14,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Infrastructure;
 
-/// <summary>
-/// Import and publish paths hold session advisory locks. On Lambda those connections must end
-/// their session on close; long-lived hosts keep pooled connections (honua-server#6765).
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class PostgresSessionLockConnectionsTests
 {
@@ -52,7 +48,7 @@ public sealed class PostgresSessionLockConnectionsTests
     [Operation(Operations.TestInfrastructure)]
     public void RequiresUnpooled_LambdaAlreadyUnpooled_ReturnsFalse()
     {
-        // Lambda named and bound pools are already unpooled (honua-server#6760).
+        // Lambda named and bound pools are already unpooled.
         var locks = new PostgresSessionLockConnections(releaseSessionOnClose: true);
 
         locks.RequiresUnpooled("Host=localhost;Database=honua;Pooling=false").Should().BeFalse();

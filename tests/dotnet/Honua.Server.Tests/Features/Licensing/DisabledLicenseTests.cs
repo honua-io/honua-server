@@ -59,9 +59,6 @@ public sealed class DisabledLicenseTests
         Assert.Null(snapshot.ExpiresAt);
         Assert.All(FeatureCatalog.All, feature => Assert.True(snapshot.HasEntitlement(feature.Key)));
         Assert.Empty(resolver.ReceivedCalls());
-        var environment = Substitute.For<IHostEnvironment>();
-        environment.EnvironmentName.Returns(Environments.Production);
-        Assert.True(await StartupConfigurationHelpers.IsRedisCacheEntitledAsync(configuration, environment));
     }
 
     [Theory]
@@ -74,7 +71,7 @@ public sealed class DisabledLicenseTests
         var snapshot = await FileBackedLicenseService.LoadBootstrapSnapshotAsync(configuration, NullLoggerFactory.Instance);
         Assert.Equal(HonuaEdition.Community, snapshot.Edition);
         Assert.Equal(LicenseMode.Enabled, snapshot.Mode);
-        Assert.False(snapshot.HasEntitlement("caching.redis"));
+        Assert.False(snapshot.HasEntitlement("caching.output-cache"));
         var environment = Substitute.For<IHostEnvironment>();
         environment.EnvironmentName.Returns(Environments.Production);
         var services = new ServiceCollection().AddLogging().AddHonuaLicensing(configuration, environment);
@@ -149,8 +146,7 @@ public sealed class DisabledLicenseTests
             ["Licensing:LicenseContent"] = poisonedSources ? "not a signed license" : null,
             ["Licensing:LicenseContentSecretRef"] = poisonedSources ? "aws:secretsmanager:synthetic-unreachable-license" : null,
             ["Licensing:TrustedKeys:synthetic"] = "not a signing key",
-            ["Licensing:AllowAdminUpload"] = "true",
-            ["ConnectionStrings:redis"] = "localhost:6379"
+            ["Licensing:AllowAdminUpload"] = "true"
         }).Build();
 
     private sealed class RejectTimerTimeProvider : TimeProvider

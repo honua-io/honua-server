@@ -8,14 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Unit coverage for the safe, AOT-friendly computed-field expression engine. The
-/// engine parses a whitelisted grammar into an immutable AST and evaluates it
-/// against a field-reference context — no reflection, no runtime code generation.
-/// These tests exercise arithmetic, string, conditional, comparison/logical, math,
-/// date, and field-reference evaluation, and assert that unsafe / malformed input
-/// is rejected at parse time.
-/// </summary>
 public sealed class ExpressionEngineTests
 {
     [global::Xunit.Trait("Tier", "Fast")]
@@ -40,7 +32,6 @@ public sealed class ExpressionEngineTests
     {
         var context = new MapContext { ["name"] = "  Acme  ", ["year"] = 2026d };
 
-        // The headline example from the ticket.
         ExpressionEngine.Evaluate("upper(trim(name)) + \"-\" + cast(year, string)", context)
             .Should().Be("ACME-2026");
 

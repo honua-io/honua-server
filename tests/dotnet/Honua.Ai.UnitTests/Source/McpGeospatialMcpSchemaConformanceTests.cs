@@ -25,35 +25,8 @@ using StandardSchema = Newtonsoft.Json.Schema.JSchema;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Conformance tests that assert Honua's live <c>/mcp</c> advertised tool input
-/// schemas and resource payload shapes conform to the published
-/// <c>geospatial-mcp</c> JSON Schemas (draft 2020-12). Honua is the reference
-/// implementation of the open standard, so these tests pin Honua to the standard
-/// it champions.
-///
-/// <para>
-/// The vendored standard schemas live under
-/// <c>ConformanceSchemas/geospatial-mcp/</c> and the standard's own conformance
-/// fixtures under <c>ConformanceSchemas/fixtures/</c> (see the directory README).
-/// </para>
-///
-/// <para>
-/// Strategy: for every tool Honua implements, the standard's fixture example
-/// inputs (representative valid arguments) MUST validate against BOTH Honua's
-/// live advertised <c>inputSchema</c> and the vendored standard schema — i.e.
-/// the two contracts agree on what a valid call looks like. Standard tools Honua
-/// does not yet implement as discrete MCP tools (the map/app composition and
-/// publish families) are tracked as known-gaps: their absence does not fail the
-/// suite. Only NON-CONFORMANCE of an IMPLEMENTED tool fails.
-/// </para>
-/// </summary>
 public sealed partial class McpTaxonomyAlignmentTests
 {
-    /// <summary>
-    /// Maps Honua's advertised tool name to the bare standard tool name (and its
-    /// vendored schema file). Tools Honua implements today.
-    /// </summary>
     private static readonly Dictionary<string, string> ImplementedToolStandardNames =
         new(StringComparer.Ordinal)
         {
@@ -78,8 +51,8 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_get_style"] = "get_style",
             ["honua_apply_style_preset"] = "apply_style_preset",
             ["honua_publish_service"] = "publish_service",
-            // honua_publish_result (#2482): promotes a completed analysis job's
-            // materialized artifact into a hosted layer. The standard
+            // honua_publish_result promotes a completed analysis job's
+            // materialized artifact into a Layer. The standard
             // publish_result requires only `sourceId`; the live schema mirrors that
             // required set (additionalProperties allowed) so the required-field
             // match and standard-fixture assertions both hold.
@@ -97,7 +70,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_propose_deploy_operation"] = "propose_deploy_operation",
             ["honua_propose_metadata_release"] = "propose_metadata_release",
             ["honua_propose_platform_release_convergence"] = "propose_platform_release_convergence",
-            // Honua extensions over the bare taxonomy (#1949): the standard models
+            // Honua extensions over the bare taxonomy: the standard models
             // entity resolution and capability discovery as CapabilityCatalog reads;
             // the reference implementation exposes them as discrete tools and ships
             // vendored conformance schemas marked x-honua-extension. Their live and
@@ -120,18 +93,6 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_studio_remove_control"] = "remove_control",
         };
 
-    /// <summary>
-    /// Implemented tools whose live <c>inputSchema</c> deliberately requires MORE than the
-    /// standard schema does, because the standard addresses a composition document
-    /// (<c>mapPackageId</c>/<c>appPackageId</c>) while the reference implementation
-    /// addresses the optimistic-concurrency draft the composition lives in. ADR-0030
-    /// admits that <c>draftId</c> + <c>generation</c> spelling explicitly as
-    /// <c>x-honua-reference-shape</c>, and the standard schema declares both properties —
-    /// so a standard-shaped call using the reference target validates against both
-    /// contracts. The value set enumerates the EXTRA required members permitted; anything
-    /// beyond them fails, and the standard's own required set must still be a subset of
-    /// the live one (a standard-required field Honua does not require would still fail).
-    /// </summary>
     private static readonly Dictionary<string, string[]> ReferenceShapeTargetedTools =
         new(StringComparer.Ordinal)
         {
@@ -141,12 +102,6 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_studio_remove_control"] = ["draftId", "generation"],
         };
 
-    /// <summary>
-    /// Standard tool families enumerated in the geospatial-mcp taxonomy that
-    /// Honua does not yet advertise as discrete MCP tools. These are known-gaps:
-    /// they are recorded so coverage stays honest, but their absence must not
-    /// fail the conformance suite.
-    /// </summary>
     private static readonly string[] KnownGapStandardTools =
     {
         "refine_map_package",
@@ -161,11 +116,10 @@ public sealed partial class McpTaxonomyAlignmentTests
         // by any adopter that makes a different trust decision — but not by Honua.
         "edit_features",
         // Direct geoprocessing verbs: members of the standard's opt-in 'analysis'
-        // conformance profile (geospatial-mcp#55, upstream ADR-0029). The index
-        // marks them known-gap for the reference implementation; they are required
-        // for FULL only when a manifest declares the analysis profile. Honua does
-        // not ship direct verbs yet (#2555/#2566 and the A8/analysis track) —
-        // plan_analysis/execute_plan cover those workflows today.
+        // conformance profile (upstream ADR-0029). The index marks them known-gap
+        // for the reference implementation; they are required for FULL only when a
+        // manifest declares the analysis profile. Honua does not ship direct verbs
+        // yet — plan_analysis/execute_plan cover those workflows today.
         "buffer_features",
         "overlay_features",
         "summarize_statistics",
@@ -175,40 +129,29 @@ public sealed partial class McpTaxonomyAlignmentTests
         "propose_operation",
     };
 
-    /// <summary>
-    /// Implemented Honua tools that have no 1:1 geospatial-mcp standard schema
-    /// because their input contract intentionally diverges from the standard.
-    /// <c>honua_publish_service</c> publishes a source database table as a new
-    /// hosted service (connectionId/schema/table/layerName); the standard
-    /// <c>publish_result</c> instead promotes an existing result/package
-    /// (sourceId) and its concrete publish field set is still finalizing upstream
-    /// (honua-server#730/#732). These are recorded so coverage stays honest, but
-    /// they are excluded from the standard-schema required-field match until the
-    /// standard finalizes a service-publish contract.
-    /// </summary>
     private static readonly HashSet<string> HonuaNativeToolsWithoutStandardSchema =
         new(StringComparer.Ordinal)
         {
             "honua_publish_service",
             // honua_describe_layer / honua_list_jobs are Honua capability-breadth
-            // extensions (#2813) with no 1:1 geospatial-mcp standard tool schema:
+            // extensions with no 1:1 geospatial-mcp standard tool schema:
             // the standard models layer schema via CapabilityCatalog reads and does
             // not publish a discrete describe_layer or list_jobs tool. Recorded here
             // so coverage stays honest until the standard defines them.
             "honua_describe_layer",
             "honua_list_jobs",
-            // honua_get_job_results is a Honua extension (#3608). The vendored
+            // honua_get_job_results is a Honua extension. The vendored
             // geospatial-mcp index has no finalized results verb; status polling
             // stays on honua_list_jobs.
             "honua_get_job_results",
-            // Job diagnostics are Honua extensions over the admin job projection (#6219).
+            // Job diagnostics are Honua extensions over the admin job projection.
             "honua_diagnose_job",
             "honua_job_evidence",
-            // Completed job artifacts are imported by canonical reference (#6422).
+            // Completed job artifacts are imported by canonical reference.
             // The geospatial-mcp standard has no job-artifact source kind; browser-file
             // and local-process-artifact remain separate dataset-import variants.
             "honua_ingest_job_artifact",
-            // Studio draft lifecycle + composition tools (honua-server#3002) are
+            // Studio draft lifecycle + composition tools are
             // Honua extensions with vendored index.json entries (family "Studio
             // composition and lifecycle (Honua extension)") but no published
             // geospatial-mcp standard schema yet — the standard's map/app
@@ -787,7 +730,7 @@ public sealed partial class McpTaxonomyAlignmentTests
     }
 
     // -------------------------------------------------------------------
-    // Resource-URI-TEMPLATE conformance (Track A, #2323): the live resource
+    // Resource-URI-TEMPLATE conformance: the live resource
     // grammar IS the contract. Every live URI template that maps onto a
     // standard resource family must match the vendored index.json uriForm
     // (Decision A grammar), and every standard family the index marks
@@ -798,13 +741,6 @@ public sealed partial class McpTaxonomyAlignmentTests
 
     private static string VendoredIndexPath => Path.Join(SchemaRoot, "index.json");
 
-    /// <summary>
-    /// Normalizes a URI template by collapsing every <c>{token}</c> placeholder
-    /// to <c>{}</c> so the server's domain token names
-    /// (<c>{packageId}</c>) compare equal to the standard's snake_case tokens
-    /// (<c>{map_package_id}</c>): Decision A pins the path grammar, not the
-    /// placeholder spelling.
-    /// </summary>
     private static string NormalizeUriTemplate(string uri) =>
         Regex.Replace(uri, "\\{[^}]*\\}", "{}");
 
@@ -885,7 +821,7 @@ public sealed partial class McpTaxonomyAlignmentTests
     }
 
     // -------------------------------------------------------------------
-    // Emitted-manifest conformance (Track A, #2323): the CapabilityManifestEmitter
+    // Emitted-manifest conformance: the CapabilityManifestEmitter
     // projection must stay bound to the live tool catalog and score FULL against
     // the vendored index — the same coverage check conformance/check_manifest.py
     // runs in geospatial-mcp CI.
@@ -1038,12 +974,6 @@ public sealed partial class McpTaxonomyAlignmentTests
         errors.Should().BeEmpty($"{reason} must conform to '{schemaFile}'");
     }
 
-    /// <summary>
-    /// Reads <paramref name="property"/> from <paramref name="parent"/> and, if it is a
-    /// draft 2020-12 <c>$ref</c> into local <c>$defs</c>, resolves the referenced
-    /// schema against <paramref name="root"/>. Only the local
-    /// <c>#/$defs/&lt;name&gt;</c> form used by the vendored schemas is supported.
-    /// </summary>
     private static JsonElement ResolveRef(JsonElement root, JsonElement parent, string property)
     {
         parent.TryGetProperty(property, out var value).Should().BeTrue(

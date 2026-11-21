@@ -10,10 +10,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Comprehensive OData v4 pagination tests for $top, $skip, $count combinations
-/// and nextLink validation. Implements parity with OGC API Features test matrices per issue #200.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataPaginationTests : IAsyncLifetime
@@ -51,7 +47,7 @@ public sealed class ODataPaginationTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$top=0")]
     public async Task Top_Zero_ReturnsEmptyPage()
     {
-        // OData v4 conformance (#1989): $top=0 is a deliberately empty page and
+        // OData v4 conformance: $top=0 is a deliberately empty page and
         // returns 200 with an empty value array, not a 400. Negative $top is
         // still rejected.
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=0");
@@ -334,7 +330,7 @@ public sealed class ODataPaginationTests : IAsyncLifetime
     // OData 4.01 Part 1 §11.2.6.3: $top=n limits the requested collection to at most n
     // items, and §11.2.6.7 next links only retrieve partial sets of that collection. A
     // $top smaller than the server page is therefore satisfied in one response with no
-    // @odata.nextLink (#5464). Server-driven paging below OData:MaxPageSize is covered by
+    // @odata.nextLink. Server-driven paging below OData:MaxPageSize is covered by
     // ODataServerPagingEndpointTests, which pins a small page size.
     [IntegrationTest]
     [Operation(Operations.Pagination)]
@@ -489,7 +485,7 @@ public sealed class ODataPaginationTests : IAsyncLifetime
     [Endpoint("GET /odata/Features({layerId})?$top=0&$count=true")]
     public async Task TopZero_WithCount_ReturnsEmptyPageAndTrueCount()
     {
-        // OData v4 conformance (#1989): $top=0 with $count=true returns 200 with an
+        // OData v4 conformance: $top=0 with $count=true returns 200 with an
         // empty value array while @odata.count still reports the true total,
         // independent of the empty data page.
         var response = await _fixture.Client.GetAsync($"/odata/Features({TestLayerId})?$top=0&$count=true");
@@ -521,8 +517,8 @@ public sealed class ODataPaginationTests : IAsyncLifetime
 
         // OData v4.01 §11.2.5.5: $count is the total number of items matching the request's
         // filter, independent of $skip/$top. Skipping beyond the last match yields an empty
-        // page, but the total is unchanged. The earlier expectation of 0 reflected a
-        // COUNT(*) OVER()-on-returned-rows bug (empty page => count 0) fixed in #1567/#1599.
+        // page, but the total is unchanged. A COUNT(*) OVER() over the returned rows
+        // would report 0 for the empty page.
         document.RootElement.TryGetProperty("@odata.count", out var countElement).Should().BeTrue();
         countElement.GetInt64().Should().Be(15);
     }

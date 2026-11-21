@@ -15,11 +15,6 @@ using Honua.Server.Tests.Infrastructure.Telemetry;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
-/// <summary>
-/// Behavioural tests for the alert dispatcher's suppression (#A11b-2) and per-channel circuit
-/// breaking (#A11b-3): a suppressed event must be recorded but NOT delivered while suppressed, and a
-/// channel whose circuit breaker is open must defer rather than drive delivery to the dead-letter path.
-/// </summary>
 public sealed class AlertDispatchBackgroundServiceTests
 {
     [UnitTest]
@@ -239,6 +234,7 @@ public sealed class AlertDispatchBackgroundServiceTests
         var lifecycleStore = Substitute.For<IAlertLifecycleStore>();
         var editionPolicy = Substitute.For<IAlertEditionPolicy>();
         editionPolicy.IsChannelAllowed(AlertChannelType.Webhook).Returns(false);
+        eventStore.GetAsync(eventId, Arg.Any<CancellationToken>()).Returns(Envelope("unentitled"));
 
         ReturnBatchOnce(dispatchStore, new[] { DispatchItem(dispatchId, eventId) });
         var deferred = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -275,7 +271,55 @@ public sealed class AlertDispatchBackgroundServiceTests
             dispatchId, Arg.Any<Guid>(), Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
         await dispatchStore.DidNotReceive().MarkDeliveredAsync(
             dispatchId, Arg.Any<Guid>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
-        await eventStore.DidNotReceive().GetAsync(eventId, Arg.Any<CancellationToken>());
+        await lifecycleStore.DidNotReceive().GetAsync(eventId, Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task Dispatcher_OpsOnlyMode_DeliversOpsNoticeOnUnentitledChannel()
+    {
+        // A substitute policy denies every channel by default: no alert license at all.
+        var unlicensed = Substitute.For<IAlertEditionPolicy>();
+        var (sink, dispatchStore) = await RunOpsOnlyAsync(Envelope("ops:deploy:1") with { Source = AlertEventSources.Ops }, unlicensed);
+
+        sink.Delivered.Should().ContainSingle("ops notices reach the operator without the Preview pipeline or an alert license");
+        await dispatchStore.DidNotReceive().RescheduleAsync(
+            Arg.Any<long>(), Arg.Any<Guid>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task Dispatcher_OpsOnlyMode_DefersCustomerAlert()
+    {
+        // Entitled channel: only Alerts:Enabled=false can be what holds the customer alert back.
+        var entitled = Substitute.For<IAlertEditionPolicy>();
+        entitled.IsChannelAllowed(Arg.Any<AlertChannelType>()).Returns(true);
+        var (sink, dispatchStore) = await RunOpsOnlyAsync(Envelope("customer"), entitled);
+
+        sink.Delivered.Should().BeEmpty("customer alerts stay dormant while Alerts:Enabled is off");
+        await dispatchStore.Received(1).RescheduleAsync(
+            Arg.Any<long>(), Arg.Any<Guid>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+    }
+
+    private static async Task<(RecordingSink Sink, IAlertDispatchStore DispatchStore)> RunOpsOnlyAsync(AlertEventEnvelope envelope, IAlertEditionPolicy editionPolicy)
+    {
+        var dispatchStore = Substitute.For<IAlertDispatchStore>();
+        var eventStore = Substitute.For<IAlertEventStore>();
+        eventStore.GetAsync(500, Arg.Any<CancellationToken>()).Returns(envelope);
+        ReturnBatchOnce(dispatchStore, new[] { DispatchItem(5000, 500) });
+        var options = BuildOptions();
+        options.Value.Enabled = false;
+        options.Value.Ops = new AlertOpsOptions { Enabled = true, Channels = ["webhook"] };
+
+        var sink = new RecordingSink();
+        await RunDispatcherAsync(
+            dispatchStore,
+            eventStore,
+            Substitute.For<IAlertLifecycleStore>(),
+            sink,
+            stopWhen: () => !sink.Delivered.IsEmpty || dispatchStore.ReceivedCalls().Any(call => call.GetMethodInfo().Name == nameof(IAlertDispatchStore.RescheduleAsync)),
+            editionPolicy: editionPolicy,
+            options: options,
+            settleDelayMs: 50);
+        return (sink, dispatchStore);
     }
 
     private static void ReturnBatchOnce(IAlertDispatchStore dispatchStore, IReadOnlyList<AlertDispatchItem> batch)

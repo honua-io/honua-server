@@ -18,11 +18,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.GeoServicesRest.Tests;
 
-/// <summary>
-/// Regression coverage for #2011: the federated provider must page across the
-/// upstream <c>maxRecordCount</c> via <c>resultOffset</c> instead of surfacing
-/// only the first <c>/query</c> page when <c>exceededTransferLimit</c> is set.
-/// </summary>
 public sealed class GeoServicesRestPaginationTests
 {
     private const int LayerId = 1;
@@ -145,7 +140,7 @@ public sealed class GeoServicesRestPaginationTests
     [Fact]
     public async Task QueryObjectIdsAsync_UpstreamMaxRecordCountLessThanDefaultPageSize_ReturnsAllIds()
     {
-        // BH4-001: when the upstream maxRecordCount (e.g. 1000) is less than
+        // when the upstream maxRecordCount (e.g. 1000) is less than
         // DefaultPageSize (2000), the old short-page sentinel fired on every page,
         // causing the loop to terminate after page 1 and silently drop all IDs
         // beyond the first page. The count-first strategy must return all IDs.
@@ -188,13 +183,13 @@ public sealed class GeoServicesRestPaginationTests
     [Fact]
     public async Task QueryAsync_MultiPageResult_EmitsOneSpanTaggedWithPageAndFeatureCounts()
     {
-        // PA-108: a single QueryAsync call can page many times, but must record exactly
+        // a single QueryAsync call can page many times, but must record exactly
         // one "honua.arcgisrest.query" span (not one per page) tagged with the remote
         // service/layer plus the total page and feature counts observed across the loop.
         var client = new PagingGeoServicesRestFeatureClient(upstreamMaxRecordCount: 2, totalFeatures: 5);
         var reader = CreateReader(client, out _);
 
-        // #2943: the process-global ActivityListener means a sibling test class that
+        // The process-global ActivityListener means a sibling test class that
         // also matches "Honua.GeoServicesRest" can invoke this listener's ActivityStopped
         // callback concurrently from a different thread. A plain List<Activity> is not
         // thread-safe against a concurrent Add racing this test's own Assert.Single
@@ -235,7 +230,10 @@ public sealed class GeoServicesRestPaginationTests
     private static IFeatureReader CreateReader(IGeoServicesRestFeatureClient client, out GeoServicesRestFeatureStore provider)
     {
         var connection = CreateConnection();
-        provider = new GeoServicesRestFeatureStore(client, NullLogger<GeoServicesRestFeatureStore>.Instance);
+        provider = new GeoServicesRestFeatureStore(
+            client,
+            NullLogger<GeoServicesRestFeatureStore>.Instance,
+            new LayerReadSecurityResolver(null, null, null, null));
         return ((IBindableFeatureDataProvider)provider).CreateReaderForBinding(CreateBinding(provider, connection));
     }
 
@@ -251,12 +249,6 @@ public sealed class GeoServicesRestPaginationTests
     private static FeatureProviderBinding CreateBinding(GeoServicesRestFeatureStore provider, DataConnection connection)
         => Parcels.CreateBinding(provider, connection);
 
-    /// <summary>
-    /// Fake client that simulates an upstream FeatureServer with a fixed
-    /// <c>maxRecordCount</c>: it honors <c>resultOffset</c>/<c>resultRecordCount</c>
-    /// from the request URL and flags <c>exceededTransferLimit</c> whenever more
-    /// rows remain past the returned page.
-    /// </summary>
     private sealed class PagingGeoServicesRestFeatureClient(int upstreamMaxRecordCount, int totalFeatures) : IGeoServicesRestFeatureClient
     {
         public List<string> QueryRequests { get; } = [];
@@ -415,10 +407,6 @@ public sealed class GeoServicesRestPaginationTests
         }
     }
 
-    /// <summary>
-    /// Fake client whose <c>/query</c> always flags <c>exceededTransferLimit</c> but
-    /// never returns a feature — exercises the infinite-loop guard.
-    /// </summary>
     private sealed class EmptyButFlaggingGeoServicesRestFeatureClient : IGeoServicesRestFeatureClient
     {
         private int _queryCallCount;

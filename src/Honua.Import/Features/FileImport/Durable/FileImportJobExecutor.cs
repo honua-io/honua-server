@@ -9,6 +9,7 @@ using Honua.Core.Features.FileImport.Services;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Import.ObjectStore;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.ObjectStorage;
 
 namespace Honua.Import.FileImport.Durable;
 
@@ -105,17 +106,17 @@ internal sealed partial class FileImportJobExecutor(
                 var active = request;
                 if (active.UsesObjectStore)
                 {
-                    var reader = scope.ServiceProvider.GetRequiredService<IImportObjectStoreReader>();
                     var cloud = scope.ServiceProvider.GetService<ICloudFileStorage>();
-                    var storeOptions = scope.ServiceProvider
-                        .GetRequiredService<Microsoft.Extensions.Options.IOptions<ImportObjectStoreOptions>>().Value;
                     var materialized = await ImportObjectStoreMaterializer.MaterializeAsync(
-                        active,
-                        reader,
-                        cloud,
-                        storeOptions,
-                        cancellationToken,
-                        fileSize > 0 ? fileSize : null).ConfigureAwait(false);
+                        new ImportObjectStoreMaterializer.Source
+                        {
+                            Request = active,
+                            Reader = scope.ServiceProvider.GetRequiredService<IImportObjectStoreReader>(),
+                            Connections = scope.ServiceProvider.GetRequiredService<IObjectStorageConnectionResolver>(),
+                            CloudStorage = cloud,
+                            ContentLength = fileSize > 0 ? fileSize : null,
+                        },
+                        cancellationToken).ConfigureAwait(false);
                     active = materialized.Request;
                     if (materialized.DisposeStream)
                     {
@@ -140,7 +141,7 @@ internal sealed partial class FileImportJobExecutor(
                 if (result.Success)
                 {
                     // None, not the job token: a committed import still refreshes its snapshot when
-                    // the worker token is already cancelled (trunk #6256).
+                    // the worker token is already cancelled.
                     await ImportedSnapshotRefresher.RefreshAsync(
                         scope.ServiceProvider,
                         request.TargetSchema,

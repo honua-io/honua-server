@@ -9,7 +9,7 @@ public static partial class EndpointRegistry
     // initializer; this keeps `All` independent of cross-file static-init order.
     private static IReadOnlyList<EndpointDefinition> ConsoleEndpoints =>
     [
-        // v1 console metadata v2 content + RBAC baseline (#1162)
+        // v1 console metadata v2 content + RBAC baseline
         new("GET", "/api/v1/console/session"),
         new("GET", "/api/v1/console/content"),
         new("POST", "/api/v1/console/content"),
@@ -20,14 +20,14 @@ public static partial class EndpointRegistry
         new("DELETE", "/api/v1/console/content/{id}"),
         new("GET", "/api/v1/console/content/{id}/provenance"),
         new("POST", "/api/v1/console/actions/check"),
-        // v1 Console Access role/member management (#3355)
-        new("GET", "/api/v1/console/access/{workspaceId}/roles"),
-        new("GET", "/api/v1/console/access/{workspaceId}/members"),
-        new("POST", "/api/v1/console/access/{workspaceId}/roles"),
-        new("PUT", "/api/v1/console/access/{workspaceId}/roles/{roleId}"),
-        new("DELETE", "/api/v1/console/access/{workspaceId}/roles/{roleId}"),
-        new("GET", "/api/v1/console/access/{workspaceId}/roles/audit"),
-        // v1 Console Share access public-link + embed API (#1215)
+        // v1 Console Access role/member management
+        new("GET", "/api/v1/console/access/{environmentId}/roles"),
+        new("GET", "/api/v1/console/access/{environmentId}/members"),
+        new("POST", "/api/v1/console/access/{environmentId}/roles"),
+        new("PUT", "/api/v1/console/access/{environmentId}/roles/{roleId}"),
+        new("DELETE", "/api/v1/console/access/{environmentId}/roles/{roleId}"),
+        new("GET", "/api/v1/console/access/{environmentId}/roles/audit"),
+        // v1 Console Share access public-link + embed API
         new("GET", "/api/v1/console/content/{id}/share"),
         new("PUT", "/api/v1/console/content/{id}/share/access"),
         new("GET", "/api/v1/console/content/{id}/share/dependencies"),
@@ -39,7 +39,7 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/console/share/content/{id}"),
         new("GET", "/api/v1/console/share/link/{token}"),
         new("POST", "/api/v1/console/share/embed/{token}/redeem"),
-        // v1 Console open-data DCAT + STAC publication API (#1214)
+        // v1 Console open-data DCAT + STAC publication API
         new("GET", "/api/v1/console/content/{id}/open-data"),
         new("PUT", "/api/v1/console/content/{id}/open-data"),
         new("GET", "/api/v1/console/content/{id}/open-data/eligibility"),
@@ -47,16 +47,17 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/console/content/{id}/open-data/stac"),
         new("POST", "/api/v1/console/content/{id}/open-data/stac/publish"),
         new("DELETE", "/api/v1/console/content/{id}/open-data/stac"),
+        new("GET", "/api/v1/open-data/datasets"),
         new("GET", "/api/v1/open-data/datasets/{id}"),
         new("GET", "/api/v1/open-data/datasets/{id}/data.json"),
         new("GET", "/api/v1/open-data/datasets/{id}/schema.org"),
         new("GET", "/api/v1/open-data/stac"),
         new("GET", "/api/v1/open-data/stac/collections/{collectionId}"),
         new("GET", "/api/v1/open-data/stac/collections/{collectionId}/items/{itemId}"),
-        // v1 Console catalog discovery-endpoints registry read API (#1279)
-        new("GET", "/api/v1/console/catalog-endpoints/{workspaceId}"),
-        new("GET", "/api/v1/console/catalog-endpoints/{workspaceId}/{endpointKey}"),
-        new("GET", "/api/v1/console/catalog-endpoints/{workspaceId}/{endpointKey}/items/{itemId}"),
+        // v1 Console catalog discovery-endpoints registry read API
+        new("GET", "/api/v1/console/catalog-endpoints/{environmentId}"),
+        new("GET", "/api/v1/console/catalog-endpoints/{environmentId}/{endpointKey}"),
+        new("GET", "/api/v1/console/catalog-endpoints/{environmentId}/{endpointKey}/items/{itemId}"),
         new("POST", "/api/v1/admin/packages/validate"),
         new("POST", "/api/v1/admin/packages/preview"),
         new("POST", "/api/v1/admin/packages"),
@@ -69,6 +70,7 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/operations/{id}/submit"),
         new("GET", "/api/v1/operations/handles/{handleId}"),
         new("POST", "/api/v1/operations/handles/{handleId}/secrets/{referenceId}/consume"),
+        new("POST", "/api/v1/operations/handles/{handleId}/compensate"),
         new("GET", "/api/v1/console/workflow-packages"),
         new("POST", "/api/v1/console/workflow-packages"),
         new("GET", "/api/v1/console/workflow-packages/{packageId}"),

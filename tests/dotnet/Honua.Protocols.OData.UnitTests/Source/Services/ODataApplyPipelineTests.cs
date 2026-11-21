@@ -7,12 +7,6 @@ using Xunit;
 
 namespace Honua.Protocols.OData.Tests.Services;
 
-/// <summary>
-/// Unit tests for OData <c>$apply</c> pipeline parsing (#1636). The handler previously parsed only
-/// a single transform, so on a <c>filter(...)/groupby(...)</c> pipeline the filter() regex greedily
-/// swallowed the rest of the pipeline and produced a broken filter — 400ing extent-scoped
-/// aggregation such as <c>filter(geo.intersects(...))/groupby(...)</c>.
-/// </summary>
 [Trait("Category", "Unit")]
 [Trait("Component", "OData")]
 [Trait("Feature", "Apply")]
@@ -58,8 +52,8 @@ public sealed class ODataApplyPipelineTests
     [Fact]
     public void ParseApplyExpression_FilterSegmentOfPipeline_ParsesFilterOnly()
     {
-        // Each segment parses independently — the leading filter must capture only its own
-        // expression, not the trailing groupby it used to greedily absorb.
+        // Parse each segment independently: the leading filter captures only its
+        // expression, excluding the trailing groupby.
         var segments = ODataAggregationHandler.SplitApplyTransforms(
             "filter(gisacres gt 5)/groupby((gisacres))");
 

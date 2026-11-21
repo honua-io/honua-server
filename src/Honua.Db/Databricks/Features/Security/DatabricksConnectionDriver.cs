@@ -3,8 +3,10 @@
 
 using System.Data.Common;
 using System.Globalization;
+using System.Net;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Db.Databricks.Features.FeatureStore.Services;
 using Honua.Db.Databricks.Features.Infrastructure;
@@ -67,7 +69,11 @@ internal sealed partial class DatabricksConnectionDriver : IConnectionDriver, IS
         {
             var (endpoint, warehouseId, token) = Parse(connectionString);
             using var client = _handler is null
-                ? new HttpClient()
+                ? new HttpClient(new PinnedDnsConnector(
+                    static (host, ct) => Dns.GetHostAddressesAsync(host, ct),
+                    new("The workspace destination is not a public address.",
+                        "Unable to connect to the workspace destination."))
+                    .CreateHandler(maxConnectionsPerServer: 2))
                 : new HttpClient(_handler, disposeHandler: false);
             client.BaseAddress = endpoint;
             client.Timeout = TimeSpan.FromSeconds(20);

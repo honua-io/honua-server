@@ -8,10 +8,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Test helpers for building execution-job records and options for the GDAL
-/// worker executors.
-/// </summary>
 internal static class GdalJobFactory
 {
     public static ExecutionJobRecord Job(string processId, params (string Name, string Value)[] inputs)
@@ -77,6 +73,9 @@ internal static class GdalJobFactory
             MaxKrigingPredictionWork = maxKrigingPredictionWork ?? defaults.MaxKrigingPredictionWork,
         });
     }
+
+    public static IOptionsMonitor<GdalWorkerOptions> OptionsMonitor(GdalWorkerOptions value)
+        => new StaticOptionsMonitor<GdalWorkerOptions>(value);
 
     public static IOptionsMonitor<GeoprocessingOutputStagingOptions> StagingOptions()
         => new StaticOptionsMonitor<GeoprocessingOutputStagingOptions>(new GeoprocessingOutputStagingOptions

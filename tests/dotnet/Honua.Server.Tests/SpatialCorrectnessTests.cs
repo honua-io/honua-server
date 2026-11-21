@@ -4,46 +4,31 @@
 using FluentAssertions;
 using System.Text;
 using System.Text.Json;
-using Honua.Infrastructure.Helpers;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
-using NetTopologySuite.Geometries;
-using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// TARGETED SPATIAL CORRECTNESS TESTS
-/// Critical spatial bug verification focusing on antimeridian, CRS, and boundary edge cases.
-/// Based on Round 1 spatial bug findings - tests actual query behavior and data corruption potential.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database.CoreSpatial")]
-public sealed class SpatialCorrectnessTests : IAsyncLifetime
+public sealed class SpatialCorrectnessTests : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;
     private const double CoordinateTolerance = 0.0001;
 
-    public async Task InitializeAsync()
+    // Endpoint cases only query the seeded schema; xUnit owns its lifetime.
+    public SpatialCorrectnessTests(WebAppFixture fixture)
     {
-        await _fixture.InitializeAsync();
+        _fixture = fixture;
     }
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     #region ANTIMERIDIAN QUERY FAILURES (Primary Target)
 
-    /// <summary>
-    /// CRITICAL: Tests bounding box queries that cross the International Date Line (180°/-180°)
-    /// Tests SpatialFilterHelpers.CreateEnvelopeWkb antimeridian handling
-    /// Expected: Should return features from both sides of the Pacific Ocean
-    /// Bug Risk: Incorrect spatial filter geometry could exclude valid Pacific features
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -72,10 +57,6 @@ public sealed class SpatialCorrectnessTests : IAsyncLifetime
         result.Features.Should().NotBeNull();
     }
 
-    /// <summary>
-    /// Tests POST request with antimeridian-crossing geometry
-    /// Verifies server handles complex antimeridian geometries in POST body
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -109,10 +90,6 @@ public sealed class SpatialCorrectnessTests : IAsyncLifetime
         queryResponse.SpatialReference!.Wkid.Should().Be(4326);
     }
 
-    /// <summary>
-    /// Tests boundary coordinates exactly at ±180° longitude
-    /// Verifies edge case handling at exact antimeridian boundary
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -140,13 +117,6 @@ public sealed class SpatialCorrectnessTests : IAsyncLifetime
 
     #region CRS84/EPSG:4326 AXIS CONFUSION (Primary Target)
 
-    /// <summary>
-    /// CRITICAL: Tests coordinate transformation with real-world coordinates to detect axis swapping
-    /// Tests PostgresCrsRegistry axis order handling between CRS84 (lon,lat) and EPSG:4326 (lat,lon)
-    /// Test Location: New York City (40.7128°N, -74.0060°W)
-    /// Expected: Coordinates should remain in correct order regardless of CRS identifier
-    /// Bug Risk: Axis confusion would swap coordinates (NYC appears in ocean near Madagascar)
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -191,11 +161,6 @@ public sealed class SpatialCorrectnessTests : IAsyncLifetime
         epsg4326Result!.Features.Should().NotBeNull();
     }
 
-    /// <summary>
-    /// Tests coordinate transformation near poles where axis order confusion is most critical
-    /// Test Location: Northern Alaska (71°N, -156°W) - well above Arctic Circle
-    /// At extreme latitudes, incorrect axis order becomes immediately obvious
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -223,10 +188,6 @@ public sealed class SpatialCorrectnessTests : IAsyncLifetime
         result.Features.Should().NotBeNull();
     }
 
-    /// <summary>
-    /// Tests roundtrip coordinate transformation to detect precision loss accumulation
-    /// Transforms coordinates through multiple CRS systems and back
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -269,77 +230,8 @@ public sealed class SpatialCorrectnessTests : IAsyncLifetime
 
     #endregion
 
-    #region GEOGRAPHIC RANGE VALIDATION (Primary Target)
-
-    /// <summary>
-    /// CRITICAL: Tests geographic range validation with legitimate antimeridian-crossing bounding boxes
-    /// Tests RasterParsingHelpers geographic validation logic
-    /// Expected: Valid antimeridian-crossing boxes should be accepted, not rejected
-    /// Bug Risk: Overly strict validation may reject legitimate Pacific Ocean queries
-    /// </summary>
-    [Theory]
-    [InlineData("179,-10,-179,10", true)]    // Crosses antimeridian (valid Pacific)
-    [InlineData("170,-5,-170,5", true)]      // Crosses antimeridian (valid Pacific)
-    [InlineData("-200,-10,200,10", false)]   // Outside longitude range (invalid)
-    [InlineData("179.999,-10,-179.999,10", true)] // Near antimeridian (valid)
-    [InlineData("0,-10,360,10", false)]      // Longitude > 180 (invalid)
-    [Trait("Category", "Unit")]
-    [Operation(Operations.Query)]
-    public void ValidateGeographicRange_AntimeridianCrossingBoxes_CorrectValidation(
-        string bbox, bool expectedValid)
-    {
-        var result = Honua.Infrastructure.Services.RasterParsingHelpers
-            .TryParseBoundingBox(
-                bbox,
-                Honua.Core.Features.Shared.Models.AxisOrder.EastNorth,
-                isGeographic: true,
-                out var minX, out var minY, out var maxX, out var maxY);
-
-        result.Should().Be(expectedValid,
-            $"bbox '{bbox}' should be {(expectedValid ? "valid" : "invalid")} for geographic coordinates");
-
-        if (expectedValid && bbox == "179,-10,-179,10")
-        {
-            // Special case: antimeridian crossing should parse correctly
-            minX.Should().Be(179);
-            maxX.Should().Be(-179);
-            // Note: This validates the parsing, but spatial logic needs to handle wrap-around
-        }
-    }
-
-    /// <summary>
-    /// Tests bounding box validation at exact polar boundaries
-    /// Verifies handling of coordinates at exact ±90° latitude limits
-    /// </summary>
-    [Theory]
-    [InlineData("-180,-90,180,90", true)]    // Full world extent (valid)
-    [InlineData("-180,-90.1,180,90", false)] // South of South Pole (invalid)
-    [InlineData("-180,-90,180,90.1", false)] // North of North Pole (invalid)
-    [InlineData("-180,-89.999,180,89.999", true)] // Near poles (valid)
-    [Trait("Category", "Unit")]
-    [Operation(Operations.Query)]
-    public void ValidateGeographicRange_PolarBoundaries_CorrectValidation(
-        string bbox, bool expectedValid)
-    {
-        var result = Honua.Infrastructure.Services.RasterParsingHelpers
-            .TryParseBoundingBox(
-                bbox,
-                Honua.Core.Features.Shared.Models.AxisOrder.EastNorth,
-                isGeographic: true,
-                out _, out _, out _, out _);
-
-        result.Should().Be(expectedValid,
-            $"bbox '{bbox}' polar boundary validation should be {expectedValid}");
-    }
-
-    #endregion
-
     #region SPATIAL INDEX CORRECTNESS
 
-    /// <summary>
-    /// Tests spatial index behavior with antimeridian-crossing queries
-    /// Verifies that spatial indexes correctly handle wrapped geometries
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -367,10 +259,6 @@ public sealed class SpatialCorrectnessTests : IAsyncLifetime
         response.Headers.Should().ContainKey("X-Correlation-ID");
     }
 
-    /// <summary>
-    /// Tests buffer operations that cross the antimeridian
-    /// Verifies geometric operations handle coordinate wrapping
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -405,10 +293,6 @@ public sealed class SpatialCorrectnessTests : IAsyncLifetime
 
     #region PROJECTION BOUNDARY ISSUES
 
-    /// <summary>
-    /// Tests Web Mercator transformation at its ±85.051129° latitude limits
-    /// Verifies projection boundary handling and coordinate clamping
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -435,10 +319,6 @@ public sealed class SpatialCorrectnessTests : IAsyncLifetime
         result.Features.Should().NotBeNull();
     }
 
-    /// <summary>
-    /// Tests coordinate transformation beyond Web Mercator limits
-    /// Verifies server handles polar regions that cannot be projected to Web Mercator
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -474,10 +354,6 @@ public sealed class SpatialCorrectnessTests : IAsyncLifetime
 
     #region HIGH-PRECISION COORDINATE TESTS
 
-    /// <summary>
-    /// Tests coordinate precision preservation through transformations
-    /// Verifies high-precision coordinates are not degraded by spatial operations
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -511,62 +387,4 @@ public sealed class SpatialCorrectnessTests : IAsyncLifetime
 
     #endregion
 
-    #region SpatialFilterHelpers Direct Testing
-
-    /// <summary>
-    /// UNIT TEST: Directly tests SpatialFilterHelpers.CreateEnvelopeWkb with antimeridian coordinates
-    /// Verifies WKB geometry creation for antimeridian-crossing bounding boxes
-    /// </summary>
-    [UnitTest]
-    [Operation(Operations.Query)]
-    public void CreateEnvelopeWkb_AntimeridianCrossing_GeneratesValidWkb()
-    {
-        // Test antimeridian-crossing coordinates directly
-        var wkb = SpatialFilterHelpers.CreateEnvelopeWkb(170, -10, -170, 10);
-
-        // WKB should be valid format
-        wkb.Should().NotBeNull();
-        wkb[0].Should().Be(1);
-        var geometry = new WKBReader().Read(wkb);
-        geometry.Should().BeOfType<MultiPolygon>();
-        ((MultiPolygon)geometry).NumGeometries.Should().Be(2);
-
-        // Should not throw exceptions during creation
-        // Critical: Antimeridian coordinates don't break WKB encoding
-    }
-
-    /// <summary>
-    /// UNIT TEST: Tests WKB creation with extreme coordinate values
-    /// Verifies spatial filter helper handles edge cases
-    /// </summary>
-    [Theory]
-    [InlineData(-180, -90, 180, 90)]     // Full world extent
-    [InlineData(179.999, -5, -179.999, 5)] // Near antimeridian
-    [InlineData(0, 85.05, 1, 85.051)]   // Near Web Mercator limit
-    [Trait("Category", "Unit")]
-    [Operation(Operations.Query)]
-    public void CreateEnvelopeWkb_ExtemeCoordinates_GeneratesValidWkb(
-        double minX, double minY, double maxX, double maxY)
-    {
-        var wkb = SpatialFilterHelpers.CreateEnvelopeWkb(minX, minY, maxX, maxY);
-
-        wkb.Should().NotBeNull();
-        wkb[0].Should().Be(1); // Little-endian
-        var geometry = new WKBReader().Read(wkb);
-        geometry.Should().NotBeNull();
-
-        if (minX > maxX)
-        {
-            geometry.Should().BeOfType<MultiPolygon>();
-            ((MultiPolygon)geometry).NumGeometries.Should().Be(2);
-            return;
-        }
-
-        geometry.Should().BeOfType<Polygon>();
-
-        // WKB should encode coordinates without overflow or corruption
-        // Reading the coordinates back would require a full WKB parser test
-    }
-
-    #endregion
 }

@@ -17,14 +17,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Regression tests for honua-server#1400 — a streamed file import created the
-/// staging table (<c>imported_&lt;table&gt;</c>) only when OverwriteExisting was set, so a
-/// default upload streamed into a table that was never created and the first batch
-/// failed with Npgsql 42P01 ("relation does not exist"). The staging table is now
-/// always created on the same connection before the load, and a PostgresException
-/// surfaces its server message instead of the generic "Import failed.".
-/// </summary>
 [Collection("Database")]
 public sealed partial class StreamingFileImportStagingTableTests(PostgresFixture fixture)
 {
@@ -234,7 +226,7 @@ public sealed partial class StreamingFileImportStagingTableTests(PostgresFixture
         }
     }
 
-    // honua-server#4002 fixture. The expected rows below are read off the fixture file and the
+    // Overwrite-guard fixture. The expected rows below are read off the fixture file and the
     // seed statements by hand, never captured from a run of the importer.
     private const string OverwriteGuardFixtureFileName = "overwrite-existing-false.geojson";
 
@@ -286,21 +278,6 @@ public sealed partial class StreamingFileImportStagingTableTests(PostgresFixture
         }
     }
 
-    /// <summary>
-    /// honua-server#4002 (P0) — <c>ImportFileAsync</c> replaced a live target even when the
-    /// caller explicitly declined the overwrite. The importer always took the replace path, so
-    /// an import of two features with <c>OverwriteExisting = false</c> reported
-    /// <c>Success = true</c> while every pre-existing row was silently destroyed.
-    ///
-    /// The request below is the exact reported shape: the legacy flag is set to
-    /// <see langword="false"/> and <see cref="ImportRequest.LoadMode"/> is left at its default,
-    /// so the reconciliation in <see cref="ImportRequest.EffectiveLoadMode"/> is what has to
-    /// hold. Every expected value is computed from the seed statements and the fixture file:
-    /// the seeded rows keep their ordinates, properties and surrogate ids, and the two fixture
-    /// features are appended verbatim. <c>pg_class.oid</c> is the structural witness — append
-    /// streams into the live relation, so its identity must survive rather than being replaced
-    /// by a promoted staging sibling.
-    /// </summary>
     [IntegrationTest]
     public async Task ImportFileAsync_ExistingTarget_WithOverwriteFalse_DoesNotReplaceLiveRows()
     {
@@ -340,13 +317,6 @@ public sealed partial class StreamingFileImportStagingTableTests(PostgresFixture
         }
     }
 
-    /// <summary>
-    /// The discriminating control for
-    /// <see cref="ImportFileAsync_ExistingTarget_WithOverwriteFalse_DoesNotReplaceLiveRows"/>:
-    /// the same seed and the same fixture with <c>OverwriteExisting = true</c> must still
-    /// replace the live rows and promote a new relation. Without this the preservation
-    /// assertion above could be satisfied by an importer that never replaces anything.
-    /// </summary>
     [IntegrationTest]
     public async Task ImportFileAsync_ExistingTarget_WithOverwriteTrue_ReplacesLiveRows()
     {
@@ -378,14 +348,6 @@ public sealed partial class StreamingFileImportStagingTableTests(PostgresFixture
         }
     }
 
-    /// <summary>
-    /// honua-server#4006 — a replace whose load skipped an invalid feature under
-    /// <c>ContinueOnError</c>/<c>SkipInvalidGeometry</c> still promoted the staging sibling over
-    /// the live target, reporting <c>Success = true</c> even though the promoted dataset was
-    /// missing the skipped row. A replace must be complete-for-complete or a no-op: it must
-    /// never swap in a dataset that dropped input rows, and it must report the loss rather than
-    /// claiming success.
-    /// </summary>
     [IntegrationTest]
     public async Task ImportFileAsync_ReplaceWithSkippedHostileFeature_DoesNotPromotePartialDataset()
     {
@@ -489,19 +451,6 @@ public sealed partial class StreamingFileImportStagingTableTests(PostgresFixture
         }
     }
 
-    /// <summary>
-    /// honua-server#4422 — the streaming loop's only <c>finally</c> released the advisory lock;
-    /// nothing dropped the <c>&lt;table&gt;__staging</c> sibling when a Replace load THREW (as
-    /// opposed to completing with a counted failure, which
-    /// <see cref="ImportFileAsync_ReplaceWithSkippedHostileFeature_DoesNotPromotePartialDataset"/>
-    /// already covers). Strict validity mode with <c>SkipInvalidGeometry=false</c> and
-    /// <c>ContinueOnError=false</c> makes the invalid geometry throw
-    /// <see cref="InvalidOperationException"/> out of <c>InsertBatchFastAsync</c>, uncaught,
-    /// after <c>CreateStagingTableAsync</c> already created the sibling — exactly the leak the
-    /// issue reports. Every expected value here is a fixed, independently-known ground truth (no
-    /// table of any kind, staging or live, may exist for a target that was never successfully
-    /// created), not a snapshot of whatever the importer happens to leave behind.
-    /// </summary>
     [IntegrationTest]
     public async Task ImportFileAsync_ReplaceThrowsMidStream_DropsOrphanedStagingTable()
     {
@@ -1261,7 +1210,7 @@ public sealed partial class StreamingFileImportStagingTableTests(PostgresFixture
     // A self-intersecting "bowtie" polygon: the exterior ring crosses itself, so the geometry is
     // topologically invalid but structurally well-formed (closed ring, finite coordinates). Under
     // the shared validity gate (default Repair) it is fixed with ST_MakeValid-equivalent repair
-    // instead of failing the whole file the way the old GeoJSON topology preflight did (#2743).
+    // instead of failing the whole file the way the old GeoJSON topology preflight did.
     private const string SelfIntersectingPolygonGeoJson = """
         {
           "type": "FeatureCollection",
@@ -1313,7 +1262,7 @@ public sealed partial class StreamingFileImportStagingTableTests(PostgresFixture
                 TargetSchema = schema,
                 SourceSrid = 4326,
                 TargetSrid = 4326,
-                // The previously-broken default: do NOT request an overwrite.
+                // Exercise the default without requesting overwrite.
                 OverwriteExisting = false,
             });
 
@@ -1385,7 +1334,7 @@ public sealed partial class StreamingFileImportStagingTableTests(PostgresFixture
     {
         // With GeometryValidityMode=Strict, SkipInvalidGeometry=false, and ContinueOnError=false the
         // shared validity gate rejects the invalid geometry and the import fails rather than storing
-        // or repairing it. Reachable end-to-end now that the config binding honors the mode (#2743).
+        // or repairing it. Reachable end-to-end now that the config binding honors the mode.
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(StreamingFileImportStagingTableTests));
         try
         {
@@ -1471,8 +1420,7 @@ public sealed partial class StreamingFileImportStagingTableTests(PostgresFixture
             result.RepairedGeometryCount.Should().Be(0);
             result.Warnings.Should().Contain(w => w.Contains("skipped", StringComparison.OrdinalIgnoreCase));
 
-            // The invalid feature must not exist at all — previously it imported as a
-            // null-geometry row carrying its properties.
+            // Reject the invalid feature without persisting its properties or a null-geometry row.
             await using var connection = await fixture.DataSource.OpenConnectionAsync();
             await using var command = connection.CreateCommand();
             command.CommandText =
@@ -1493,7 +1441,7 @@ public sealed partial class StreamingFileImportStagingTableTests(PostgresFixture
     {
         // With GeometryValidityMode=Accept the validity gate is bypassed: the invalid geometry is
         // stored as-is (no repair, no rejection). Reachable now that the config binding honors the
-        // mode (#2743).
+        // mode.
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(StreamingFileImportStagingTableTests));
         try
         {
@@ -1548,7 +1496,7 @@ public sealed partial class StreamingFileImportStagingTableTests(PostgresFixture
         // gpkg_spatial_ref_sys) and real writers stamp that local id into every geometry blob
         // header. The import must georeference rows with the resolved EPSG code — never the local
         // id — end to end: CRS detection resolves 27700, the reader stamps it over the blob header
-        // SRID, and the insert transforms 27700 -> 4326 (#2743).
+        // SRID, and the insert transforms 27700 -> 4326.
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(StreamingFileImportStagingTableTests));
         // The filename segment is a fixed literal + GUID token and can never be rooted, so
         // Path.Combine cannot drop the temp-path segment here (cs/path-combine false positive).
@@ -1706,7 +1654,7 @@ public sealed partial class StreamingFileImportStagingTableTests(PostgresFixture
 
     private async Task EnsureImportFunctionsAsync()
     {
-        // honua-server#1568 (signature 2): this creates the literal, process-global honua schema
+        // This creates the literal, process-global honua schema
         // and import functions (search_path isolation does not scope them), so apply it under the
         // shared seed advisory lock to keep parallel [Collection("Database")] tests off the 40P01
         // deadlock path racing locks on the same global schema/pg_proc objects.

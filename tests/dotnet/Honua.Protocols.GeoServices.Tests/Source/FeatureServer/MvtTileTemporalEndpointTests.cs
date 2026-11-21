@@ -13,13 +13,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Integration tests for MVT vector tile temporal filtering introduced for ticket #379.
-/// The default test host runs as Pro edition so the time-series tile gate passes;
-/// the gate logic itself is unit-tested separately. Covers ?time= acceptance,
-/// validation of malformed values, and non-regression for tiles requested without
-/// the parameter.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.GetTile)]
@@ -104,7 +97,7 @@ public sealed class MvtTileTemporalEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/tiles/{TestLayerId}/1/0/0.mvt?time=not-a-timestamp");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -134,7 +127,7 @@ public sealed class MvtTileTemporalEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/tiles/{TestLayerId}/1/0/0.mvt?time={start},{end}");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -148,7 +141,7 @@ public sealed class MvtTileTemporalEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/tiles/9999/1/0/0.mvt?time={start},{end}");
 
-        // honua-server#2945: /tiles is not an Esri protocol surface; layer-not-found is
+        // /tiles is not an Esri protocol surface; layer-not-found is
         // a real HTTP 404 + problem+json, not the GeoServices 200-envelope.
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -161,7 +154,7 @@ public sealed class MvtTileTemporalEndpointTests : IAsyncLifetime
         // non-empty time= filters with HTTP 400; falling back to the first
         // Date/DateTime attribute would silently filter on a non-temporal
         // column. Strict opt-in matches the WMS/WMTS rejection behavior.
-        // V2 cutover (#1035 72/N): clear the resource temporal so the layer is
+        // Clear the resource temporal so the layer is
         // unambiguously non-time-aware.
         _fixture.UpdateV2ResourceMetadata(TestLayerId, clearTemporal: true);
 
@@ -171,7 +164,7 @@ public sealed class MvtTileTemporalEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/tiles/{TestLayerId}/1/0/0.mvt?time={start},{end}");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 

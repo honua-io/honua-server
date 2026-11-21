@@ -163,10 +163,9 @@ internal sealed class FeatureServerRelatedRecordsHandler(
             ImmutableArray<OrderByClause>? relatedOrderBy;
             try
             {
-                relatedOrderBy = OrderByParsing.ParseFeatureServerOrderBy(
+                relatedOrderBy = CallerOrderByFields.ParseCallerOrderBy(
                     validatedParams.OrderByFields,
-                    resolvedRelatedResource,
-                    FeatureServerOrderByFields.AllowedCoreOrderByFields);
+                    resolvedRelatedResource);
             }
             catch (InvalidOperationException ex)
             {
@@ -201,7 +200,8 @@ internal sealed class FeatureServerRelatedRecordsHandler(
 
                 if (parseResult.Expression != null)
                 {
-                    var translationResult = _filterExpressionService.Translate(parseResult.Expression, resolvedRelatedResource);
+                    var translationResult = _filterExpressionService.Translate(
+                        parseResult.Expression, resolvedRelatedResource.WithoutHiddenSchemaFields());
                     if (!translationResult.IsSuccess)
                     {
                         return StandardErrorHelpers.CreateBadRequest(httpContext,
@@ -279,7 +279,7 @@ internal sealed class FeatureServerRelatedRecordsHandler(
 
             // Build response. Per the Esri queryRelatedRecords contract, the field
             // schema / object-id field / geometry metadata are emitted once at the
-            // top level and each group carries a flat relatedRecords array (#1452).
+            // top level and each group carries a flat relatedRecords array.
             var response = new QueryRelatedRecordsResponse
             {
                 ObjectIdFieldName = grouped.ObjectIdFieldName,

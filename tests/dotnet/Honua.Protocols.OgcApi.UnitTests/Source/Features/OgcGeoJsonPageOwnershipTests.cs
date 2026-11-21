@@ -39,8 +39,7 @@ public sealed class OgcGeoJsonPageOwnershipTests
         var geometry = new OgcFeaturesGeometryServices(
             new GeometryService(Options.Create(new LimitsOptions())),
             Substitute.For<ICoordinateTransformService>(),
-            Options.Create(new LimitsOptions()),
-            NullLogger<OgcFeaturesGeometryServices>.Instance);
+            Options.Create(new LimitsOptions()));
         GeoJsonFeature Create() => encoded
             ? OgcGeoJsonFeatureBuilder.Create(EncodedGeoJsonFeature.Create(7, null, attributes), resource, AxisOrder.EastNorth, geometry)
             : OgcGeoJsonFeatureBuilder.Create(Feature.Create(7, null, attributes), resource, AxisOrder.EastNorth, geometry);
@@ -95,5 +94,22 @@ public sealed class OgcGeoJsonPageOwnershipTests
             features[0] = OgcGeoJsonFeatureBuilder.Create(99, new Dictionary<string, object?>());
             copied.Features[0].Should().BeSameAs(original);
         }
+    }
+
+    [Theory]
+    [InlineData(7)]
+    [InlineData("roads.7")]
+    public void CreateFromBuiltBase_TransfersBuiltDictionaryWithPublicConversionShape(object id)
+    {
+        var properties = new Dictionary<string, object?>(StringComparer.Ordinal) { ["name"] = "park" };
+        var featureBase = GeoJsonFeatureBase.Create(id, properties, false);
+
+        var owned = OgcGeoJsonFeatureBuilder.CreateFromBuiltBase(featureBase, geometry: null);
+        var copied = featureBase.ToOgcGeoJsonFeature();
+
+        owned.Properties.Should().BeSameAs(properties);
+        owned.Properties.Should().Equal(copied.Properties);
+        owned.Id.Should().Be(copied.Id);
+        owned.Links.Should().BeNull();
     }
 }

@@ -10,13 +10,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Helpers;
 
-/// <summary>
-/// Unit tests for the OGC temporal capability formatter introduced for ticket #379.
-/// The formatter must preserve sub-second precision from the layer extent so the
-/// timestamp advertised in WMS / WMTS capabilities (and resolved by
-/// <c>time=default</c> / <c>time=current</c>) round-trips through the inclusive
-/// Postgres comparison without dropping the row at the layer's actual maximum.
-/// </summary>
 public sealed class TemporalExtentHelpersTests
 {
     private const int LayerIndex = 0;
@@ -74,7 +67,7 @@ public sealed class TemporalExtentHelpersTests
     [Fact]
     public async Task TryResolveTemporalRangeV2Async_EndExtentNull_FallsBackToStartExtentEnd()
     {
-        // Regression for #379: when EndTimeField is configured but every row
+        // When EndTimeField is configured but every row
         // has a null end, the Postgres reader returns null for that field's
         // extent. Without the fallback, max collapses to null even though the
         // start field has valid latest values, so temporalExtent /
@@ -130,7 +123,7 @@ public sealed class TemporalExtentHelpersTests
         // helper must catch that and return null so capabilities and the
         // temporalExtent endpoint fall back to their non-time-aware
         // contract (omit time dimension, return 404) instead of escaping
-        // a 500 to the public surface (#379).
+        // a 500 to the public surface.
         var resource = BuildResourceWithIntervalTemporal();
         var reader = Substitute.For<IFeatureReader>();
         reader.GetTemporalExtentAsync(

@@ -83,22 +83,14 @@ internal sealed class CogTileResolver : ICogTileResolver
             return null;
         }
 
-        // Find the best overview level for the requested zoom
-        var overviewLevel = FindBestOverviewLevel(metadata, level);
-        if (overviewLevel == null)
+        if (ResolveTileSource(metadata, new TileIndex(level, col, row)) is not { } source)
         {
             CogLog.CogTileNotFound(_logger, registration.Id, level, row, col);
             return null;
         }
 
-        if (!TryResolveAlignedTileIndex(metadata, overviewLevel, level, row, col, out var tileIndex) ||
-            tileIndex < 0 || tileIndex >= overviewLevel.TileOffsets.Length ||
-            tileIndex >= overviewLevel.TileByteCounts.Length)
-        {
-            CogLog.CogTileNotFound(_logger, registration.Id, level, row, col);
-            return null;
-        }
-
+        var overviewLevel = source.Overview;
+        var tileIndex = source.TileIndex;
         var offset = overviewLevel.TileOffsets[tileIndex];
         var length = overviewLevel.TileByteCounts[tileIndex];
 
@@ -151,6 +143,10 @@ internal sealed class CogTileResolver : ICogTileResolver
         // The decoder's 128 MiB ceiling also accommodates codecs whose frame size is
         // unknown (ZSTD reports a window bound). Encoders require the exact sample length.
         var (decompressedData, contentType) = TileDecompressor.Decompress(tileData, metadata.Compression, layout);
+        if (source.Quadrant is { } quadrant)
+        {
+            decompressedData = CogTileOverzoom.Upsample(decompressedData, metadata, quadrant);
+        }
 
         if (format == RasterFormat.PNG && contentType == "application/octet-stream")
         {
@@ -311,7 +307,7 @@ internal sealed class CogTileResolver : ICogTileResolver
 
         // Score each overview by its ground sample distance against the requested tile geometry
         // using the shared selector so the COG and PostGIS-pyramid read paths rank levels
-        // identically (#1836).
+        // identically.
         var candidateResolutions = new (double ResolutionX, double ResolutionY)[metadata.OverviewLevels.Length];
         for (var i = 0; i < metadata.OverviewLevels.Length; i++)
         {
@@ -326,6 +322,47 @@ internal sealed class CogTileResolver : ICogTileResolver
 
         return bestIndex >= 0 ? metadata.OverviewLevels[bestIndex] : metadata.OverviewLevels[0];
     }
+
+    // An aligned tile is served as stored. A request finer than the full-resolution level reads the
+    // ancestor tile at the COG's native zoom and upsamples the covered quadrant; the codec must
+    // decode to raw samples, so JPEG COGs stay native-zoom only.
+    private static CogTileSource? ResolveTileSource(CogMetadata metadata, TileIndex tile)
+    {
+        var overview = FindBestOverviewLevel(metadata, tile.Z);
+        if (overview is not null && ResolveStoredTile(metadata, overview, tile) is { } storedIndex)
+        {
+            return new CogTileSource(overview, storedIndex, null);
+        }
+
+        if (metadata.Compression == "JPEG" || metadata.OverviewLevels.Length == 0)
+        {
+            return null;
+        }
+
+        var fullResolution = metadata.OverviewLevels.MaxBy(candidate => candidate.Width)!;
+        for (var shift = 1; shift <= tile.Z && CogTileOverzoom.CanUpsample(metadata, shift); shift++)
+        {
+            var ancestor = new TileIndex(tile.Z - shift, tile.X >> shift, tile.Y >> shift);
+            if (ResolveStoredTile(metadata, fullResolution, ancestor) is { } ancestorIndex)
+            {
+                var quadrantMask = (1 << shift) - 1;
+                var quadrant = new CogOverzoomQuadrant(shift, tile.X & quadrantMask, tile.Y & quadrantMask);
+                return new CogTileSource(fullResolution, ancestorIndex, quadrant);
+            }
+        }
+
+        return null;
+    }
+
+    private static int? ResolveStoredTile(CogMetadata metadata, CogOverviewLevel overview, TileIndex tile)
+        => TryResolveAlignedTileIndex(metadata, overview, tile.Z, tile.Y, tile.X, out var tileIndex)
+            && tileIndex >= 0
+            && tileIndex < overview.TileOffsets.Length
+            && tileIndex < overview.TileByteCounts.Length
+                ? tileIndex
+                : null;
+
+    private readonly record struct CogTileSource(CogOverviewLevel Overview, int TileIndex, CogOverzoomQuadrant? Quadrant);
 
     private static bool TryResolveAlignedTileIndex(
         CogMetadata metadata,

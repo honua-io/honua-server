@@ -82,7 +82,7 @@ internal static partial class FeatureServerEndpoints
                 [$"transportType must be {ReplicaEmbeddedTransportType} or {ReplicaUrlTransportType}."]);
         }
 
-        // honua-server#4405: `returnAttachments` was accepted and silently ignored — a client asking for
+        // `returnAttachments` was accepted and silently ignored — a client asking for
         // an attachment-carrying replica got one without attachments and no indication of it.
         // Attachment replication is not implemented for 2026.1, so the request is rejected rather than
         // quietly downgraded.
@@ -345,7 +345,7 @@ internal static partial class FeatureServerEndpoints
 
                 if (parseResult.Expression is not null)
                 {
-                    var translationResult = filterService.Translate(parseResult.Expression, layer.Resource);
+                    var translationResult = filterService.Translate(parseResult.Expression, layer.Resource.WithoutHiddenSchemaFields());
                     if (!translationResult.IsSuccess)
                     {
                         error = $"Layer {layer.PublicLayerId} where clause is invalid: {translationResult.ErrorMessage ?? "invalid filter syntax."}";

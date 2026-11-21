@@ -8,9 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene.PointCloud;
 
-/// <summary>
-/// End-to-end unit tests for the LAS -> 3D Tiles point-cloud pipeline (#1201).
-/// </summary>
 public sealed class PointCloudTilesetBuilderTests
 {
     // Treat the LAS X/Y as longitude/latitude degrees directly (a geographic
@@ -114,15 +111,10 @@ public sealed class PointCloudTilesetBuilderTests
     [UnitTest]
     public void Build_ColorDepthDecidedDatasetWide_AllTilesEncodeIdentically()
     {
-        // Regression for the per-tile colour seam (#1): the 8-bit-vs-16-bit RGB
-        // interpretation must be decided ONCE for the whole cloud, not inside
-        // each tile. Two well-separated clusters land in distinct leaves: cluster
-        // A is entirely dark (every channel <= 255) and cluster B contains a
-        // channel > 255, so the dataset is genuine 16-bit. Both clusters share a
-        // point whose raw colour is exactly 200. Under the dataset-wide decision
-        // every tile >>8-scales, so raw 200 encodes to 0 in BOTH tiles. With the
-        // old per-tile heuristic the all-dark tile would have copied 200 verbatim
-        // while the bright tile scaled it to 0 — a visible seam.
+        // Decide RGB bit depth once for the whole cloud so separate tiles use the same
+        // scaling. The dark cluster has channels <= 255; the bright cluster has a
+        // channel > 255, establishing a 16-bit dataset. Both contain a raw colour of
+        // 200, which must scale to 0 in both tiles to prevent a colour seam.
         var darkCluster = new List<LasFixtureBuilder.Point>
         {
             new(0.0001, 0.0001, 1.0, 100, 2, Red: 200, Green: 100, Blue: 50),

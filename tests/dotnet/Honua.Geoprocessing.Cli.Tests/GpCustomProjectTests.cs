@@ -9,12 +9,6 @@ using Xunit;
 
 namespace Honua.Geoprocessing.Cli.Tests;
 
-/// <summary>
-/// `honua-gp-devkit init` / `test` building blocks (#6217): the embedded honua-samples
-/// templates match their manifests (the drift anchor), the flat YAML descriptor round-trips,
-/// the scaffold adds only the descriptor (and the .NET response file), and the artifact
-/// comparison names the first difference.
-/// </summary>
 [Trait("Tier", "Fast")]
 public sealed class GpCustomProjectTests
 {
@@ -74,6 +68,33 @@ public sealed class GpCustomProjectTests
         GpCustomProjectScaffolder.VerifyEmbedded(template).Should().BeEmpty();
         GpCustomProjectScaffolder.EmbeddedFiles(template).Should().Contain("TEMPLATE-MANIFEST.json")
             .And.Contain("schema/inputs.schema.json").And.Contain("expected/golden.json").And.Contain(".vscode/launch.json").And.Contain("docker/compose.debug.yaml");
+    }
+
+    [Fact]
+    public void DotnetScaffold_UsesNet11ForBuildAndLaunchPaths()
+    {
+        var directory = Directory.CreateTempSubdirectory("gp-net11-");
+        try
+        {
+            var plan = GpCustomProjectScaffolder.Plan(GpProjectLanguage.Dotnet, "parcel-summary", null);
+            GpCustomProjectScaffolder.Apply(directory.FullName, plan);
+            var manifest = GpProjectManifest.Load(Path.Join(directory.FullName, GpProjectManifest.FileName));
+
+            manifest.AssemblyDir.Should().Be("process/bin/Debug/net11.0");
+            manifest.HarnessDll.Should().Be("tests/SummaryTool.Tests/bin/Debug/net11.0/Honua.CustomCode.Harness.dll");
+            foreach (var project in Directory.EnumerateFiles(directory.FullName, "*.csproj", SearchOption.AllDirectories))
+            {
+                var xml = System.Xml.Linq.XDocument.Load(project);
+                xml.Descendants("TargetFramework").Single().Value.Should().Be("net11.0");
+            }
+
+            var launch = File.ReadAllText(Path.Join(directory.FullName, ".vscode", "launch.json"));
+            launch.Should().Contain(manifest.AssemblyDir).And.Contain(manifest.HarnessDll);
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
     }
 
     [Fact]

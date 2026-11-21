@@ -17,9 +17,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.API;
 
-/// <summary>
-/// Comprehensive API endpoint coverage tests ensuring 100% API surface testing
-/// </summary>
 [Collection("Database")]
 public sealed class EndpointCoverageTests : IAsyncLifetime
 {
@@ -456,7 +453,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
         // Act
         var response = await _client.GetAsync("/rest/services/nonexistent/FeatureServer?f=json");
 
-        // Assert (PA-070/PA-117 #2418: GeoServices errors are HTTP 200 + {"error":{"code":404}})
+        // Assert (GeoServices errors are HTTP 200 + {"error":{"code":404}})
         await response.AssertGeoServicesErrorAsync(404);
     }
 
@@ -468,7 +465,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
         // Act
         var response = await _client.GetAsync("/rest/services/test/FeatureServer/99999?f=json");
 
-        // Assert (PA-070/PA-117 #2418: GeoServices errors are HTTP 200 + {"error":{"code":404}})
+        // Assert (GeoServices errors are HTTP 200 + {"error":{"code":404}})
         await response.AssertGeoServicesErrorAsync(404);
     }
 
@@ -480,7 +477,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
         // Act
         var response = await _client.GetAsync("/rest/services/test/FeatureServer/1/query?where=INVALID_SQL_SYNTAX&f=json");
 
-        // Assert (PA-070/PA-117 #2418: GeoServices errors are HTTP 200 + {"error":{"code":400}})
+        // Assert (GeoServices errors are HTTP 200 + {"error":{"code":400}})
         await response.AssertGeoServicesErrorAsync(400);
     }
 

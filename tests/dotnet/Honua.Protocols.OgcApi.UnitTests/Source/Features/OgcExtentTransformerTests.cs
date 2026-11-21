@@ -46,7 +46,57 @@ public sealed class OgcExtentTransformerTests
             26910,
             transformService);
 
-        transformed.Should().Be((-123.2, 37.6, -122.8, 38.1));
+        transformed.Should().Be(OgcExtentTransformer.ExpandReprojectedCrs84(-123.2, 37.6, -122.8, 38.1));
+    }
+
+    [UnitTest]
+    public async Task TryTransformExtentToCrs84Async_WebMercatorEdgePoints_StaysOutsideRoundedCoordinates()
+    {
+        // Edge storage coordinates of a 3857 point layer. The in-memory mercator transform
+        // matches the advertised box; feature output rounds to 8 decimal degrees and
+        // lands just outside that box. The reprojected margin has to contain them.
+        var transformed = await OgcExtentTransformer.TryTransformExtentToCrs84Async(
+            -8238310.24,
+            4970071.58,
+            -14226.63,
+            6711542.47,
+            3857,
+            transformService: null);
+
+        transformed.Should().NotBeNull();
+        var box = transformed!.Value;
+        var nycLon = Math.Round(-74.00600003910363, 8, MidpointRounding.AwayFromZero);
+        var nycLat = Math.Round(40.71280000583934, 8, MidpointRounding.AwayFromZero);
+        var londonLon = Math.Round(-0.12779999170513306, 8, MidpointRounding.AwayFromZero);
+        var londonLat = Math.Round(51.50739996875819, 8, MidpointRounding.AwayFromZero);
+
+        box.MinLon.Should().BeLessThanOrEqualTo(nycLon);
+        box.MinLat.Should().BeLessThanOrEqualTo(nycLat);
+        box.MaxLon.Should().BeGreaterThanOrEqualTo(londonLon);
+        box.MaxLat.Should().BeGreaterThanOrEqualTo(londonLat);
+        box.MinLon.Should().BeApproximately(
+            -74.00600003910363 - OgcExtentTransformer.ReprojectedExtentMarginDegrees,
+            1e-12);
+    }
+
+    [UnitTest]
+    public void ExpandReprojectedCrs84_LeavesAntimeridianLongitudes()
+    {
+        var expanded = OgcExtentTransformer.ExpandReprojectedCrs84(179.0, -1.0, -179.0, 1.0);
+
+        expanded.MinLon.Should().Be(179.0);
+        expanded.MaxLon.Should().Be(-179.0);
+        expanded.MinLat.Should().BeApproximately(-1.0 - OgcExtentTransformer.ReprojectedExtentMarginDegrees, 1e-15);
+        expanded.MaxLat.Should().BeApproximately(1.0 + OgcExtentTransformer.ReprojectedExtentMarginDegrees, 1e-15);
+    }
+
+    [UnitTest]
+    public async Task TryTransformExtentToCrs84Async_Wgs84_DoesNotAddMargin()
+    {
+        var transformed = await OgcExtentTransformer.TryTransformExtentToCrs84Async(
+            -1d, -2d, 3d, 4d, 4326, transformService: null);
+
+        transformed.Should().Be((-1d, -2d, 3d, 4d));
     }
 
     [UnitTest]

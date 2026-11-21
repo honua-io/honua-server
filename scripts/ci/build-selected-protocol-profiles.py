@@ -5,12 +5,18 @@ The selector stays dry-run. This script reads its JSON and compiles each
 selected profile except ``all``, which the calling workflow already built.
 Honua.Server writes those profiles under bin/protocol-<name> and
 obj/protocol-<name>, so they do not replace the default output tree.
+
+Honua.Server always compiles with analyzers. When the producer built without
+analyzers (PRODUCER_RUN_ANALYZERS=false), referenced projects are first brought
+up to date in that same mode and then reused, so a profile does not recompile
+every referenced project with analyzers turned on.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -34,7 +40,7 @@ def profiles_to_build(payload):
     return selected
 
 
-def build_command(profile):
+def dotnet_build(profile, *extra):
     return [
         "dotnet",
         "build",
@@ -44,9 +50,40 @@ def build_command(profile):
         "-maxcpucount:4",
         "-p:HonuaProtocolProfile=" + profile,
         "-p:TreatWarningsAsErrors=true",
-        "-p:RunAnalyzers=true",
         "-p:UseSharedCompilation=false",
+        *extra,
     ]
+
+
+def analyzer_build(profile):
+    return [dotnet_build(profile, "-p:RunAnalyzers=true")]
+
+
+def reference_reuse_build(profile):
+    return [
+        dotnet_build(profile, "-p:RunAnalyzers=false", "-t:ResolveProjectReferences"),
+        dotnet_build(profile, "--no-restore", "-p:RunAnalyzers=true", "-p:BuildProjectReferences=false"),
+    ]
+
+
+def profile_builder():
+    if os.environ.get("PRODUCER_RUN_ANALYZERS", "true").strip().lower() == "false":
+        return reference_reuse_build
+    return analyzer_build
+
+
+def print_commands(commands):
+    for command in commands:
+        print(" ".join(command))
+    return 0
+
+
+def run_commands(commands):
+    for command in commands:
+        completed = subprocess.run(command, cwd=ROOT, check=False)
+        if completed.returncode != 0:
+            return completed.returncode
+    return 0
 
 
 def main(argv=None):
@@ -64,15 +101,13 @@ def main(argv=None):
         print("no extra protocol profiles to build")
         return 0
 
+    build = profile_builder()
+    execute = print_commands if args.dry_run else run_commands
     for profile in selected:
-        command = build_command(profile)
         print("building protocol profile " + profile, flush=True)
-        if args.dry_run:
-            print(" ".join(command))
-            continue
-        completed = subprocess.run(command, cwd=ROOT, check=False)
-        if completed.returncode != 0:
-            return completed.returncode
+        returncode = execute(build(profile))
+        if returncode != 0:
+            return returncode
     return 0
 
 

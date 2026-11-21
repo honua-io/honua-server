@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Edit.Receipts;
 using Honua.Core.Features.Collaboration.FeatureLocks;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -67,7 +68,7 @@ internal static class FeatureServerServiceCollectionExtensions
                     serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>()
                         .Value.Connections.RequestTimeout)));
 
-        // Collaborative-editing lock enforcement (#4402). Registered with TryAdd so a host
+        // Collaborative-editing lock enforcement. Registered with TryAdd so a host
         // that also calls AddFeatureLockCollaboration shares the SAME singleton lease store
         // as the /collaboration/feature-locks endpoints — a lease handed out there and the
         // guard consulted here must see one store, or enforcement would silently no-op.
@@ -78,7 +79,7 @@ internal static class FeatureServerServiceCollectionExtensions
         services.AddScoped<FeatureServerEditsHandler>();
 
         // Disconnected-sync conflict resolution writes the resolved feature state through the same
-        // shared applyEdits pipeline as any other edit (#2430). Registering it here — rather than in
+        // shared applyEdits pipeline as any other edit. Registering it here — rather than in
         // the admin slice — keeps the admin conflict-review surface protocol-neutral: it depends on the
         // canonical IReplicaConflictResolutionApplier abstraction and reports resolutions that need a
         // write as not-supported on hosts without a replica-capable protocol adapter.

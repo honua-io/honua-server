@@ -7,9 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Rendering;
 
-/// <summary>
-/// Tests for coordinate transformation between geographic and pixel space.
-/// </summary>
 [Trait("Component", "MapServer")]
 public class CoordinateTransformerTests
 {

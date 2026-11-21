@@ -27,37 +27,32 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// honua-server#4958: the rollback surface is fenced to a declared, scoped, non-expired recovery grant.
-/// Every case here drives the real <c>POST /api/v1/admin/deploy/operations/{operationId}/rollback</c>
-/// endpoint against a real protected activation — no injected authorization result, no seam standing in
-/// for the fence — and every refusal asserts both the stable machine-readable code and that the
-/// operation did <b>not</b> transition. On the pinned candidate (886206527cc97bad1bbaa5fa6358910ebc45e9c0)
-/// each of these bodies returned HTTP 200 and settled the operation with every fence term dropped.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
 public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
 {
     private const string TargetId = "fence-target";
-    private const string Issuer = "https://recovery-fence.test";
-    private const string Audience = "recovery-fence-client";
+    private const string Issuer = AdminAuthEndpointsTests.TestOidcIssuer;
+    private const string Audience = AdminAuthEndpointsTests.TestOidcAudience;
     private const string SigningKey = "recovery-fence-cross-tenant-signing-key-32!";
 
-    // honua-server#4987: two tenant-bound platform administrators, exactly as the live reproduction
+    // Two tenant-bound platform administrators, exactly as the live reproduction
     // minted them, plus a tenant-bound admin that holds no platform role.
     private static readonly FencePrincipal TenantAPlatformAdmin = new("ops-a", "tenant-a", ["admin", "platform_admin"]);
     private static readonly FencePrincipal TenantBPlatformAdmin = new("ops-b", "tenant-b", ["admin", "platform_admin"]);
     private static readonly FencePrincipal TenantCAdmin = new("ops-c", "tenant-c", ["admin"]);
 
     private readonly FenceWorkflowOperationStore _store = new();
+    private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
     public DeployControlRecoveryFenceTests()
     {
-        _fixture = new WebAppFixture()
+        // Promotion requires a current review from an interactive admin session; explicit bearer
+        // credentials create, submit and recover operations.
+        _fixture = HumanApprovalHttpClient.Configure(new WebAppFixture(), _identityProvider)
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IDatabaseMigrationRunner>();
@@ -80,6 +75,9 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
                 builder.UseSetting("Oidc:RequireHttps", "true");
                 builder.UseSetting("Oidc:TokenValidation:SymmetricSigningKey", SigningKey);
                 builder.UseSetting("Oidc:TokenValidation:EnableTokenReplayProtection", "false");
+                builder.UseSetting("Oidc:TokenValidation:ValidateIssuer", "true");
+                builder.UseSetting("Oidc:TokenValidation:ValidateAudience", "true");
+                builder.UseSetting("Oidc:TokenValidation:ValidateIssuerSigningKey", "true");
                 builder.UseSetting("Oidc:Generic:Enabled", "true");
                 builder.UseSetting("Oidc:Generic:Authority", Issuer);
                 builder.UseSetting("Oidc:Generic:ClientId", Audience);
@@ -92,7 +90,11 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
         _client = _fixture.CreateAdminClient();
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        using var identityProvider = _identityProvider;
+        await _fixture.DisposeAsync();
+    }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/deploy/operations/{operationId}")]
@@ -100,8 +102,8 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
     {
         var activation = await CreateProtectedActivationAsync();
 
-        // The terms a caller has to quote are published, not guessed: honua-devops#191 reads them from
-        // this record. The pinned candidate published none of grantId/actor/permittedCompensation.
+        // The terms a caller has to quote are published, not guessed: callers read them from this
+        // record, so it must publish grantId/actor/permittedCompensation.
         activation.Protection.GetProperty("grantId").GetString().Should().StartWith("grant-");
         activation.Protection.GetProperty("actor").GetString().Should().NotBeNullOrWhiteSpace();
         activation.Protection.GetProperty("permittedCompensation").GetString()
@@ -258,8 +260,9 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/rollback")]
     public async Task Rollback_WithUnknownProperty_IsRefusedWithoutTransition()
     {
-        // Ask 4: the pinned candidate's binder silently dropped every one of these. `expectedCurrentRevision`
-        // is exactly the name the honua-devops#191 probe sent believing it was fencing the rollback.
+        // A binder that silently drops unknown properties would ignore every one of these.
+        // `expectedCurrentRevision` is exactly the name a caller could send believing it was fencing the
+        // rollback.
         var activation = await CreateProtectedActivationAsync();
         var before = await GetOperationAsync(activation.OperationId);
 
@@ -280,11 +283,11 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/rollback")]
     public async Task Rollback_ByAnotherTenantsPlatformAdministratorDeclaringItsOwnIdentity_IsRefusedWithoutTransition()
     {
-        // honua-server#4987 request 2: a complete fence quoting tenant-a's sealed grant while declaring
-        // tenant-b's own actor and tenant. nightly-2cc2213 returned 200 and rolled tenant-a back.
+        // A complete fence quoting tenant-a's sealed grant while declaring tenant-b's own actor and
+        // tenant must not return 200 and roll tenant-a back.
         using var tenantA = CreateBearerClient(TenantAPlatformAdmin);
         using var tenantB = CreateBearerClient(TenantBPlatformAdmin);
-        var activation = await CreateProtectedActivationAsync(tenantA);
+        var activation = await CreateProtectedActivationAsync(tenantA, TenantAPlatformAdmin.TenantId);
         activation.Protection.GetProperty("actor").GetString().Should().Be(TenantAPlatformAdmin.Subject);
         activation.Protection.GetProperty("tenantId").GetString().Should().Be(TenantAPlatformAdmin.TenantId);
         var before = await GetOperationAsync(activation.OperationId);
@@ -309,11 +312,11 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/rollback")]
     public async Task Rollback_ByAnotherTenantsPlatformAdministratorWithNoFence_IsRefusedWithoutTransition()
     {
-        // honua-server#4987 request 3: no fence at all. A platform role is no exemption from the sealed
+        // No fence at all. A platform role is no exemption from the sealed
         // binding, and silence is not a way around it.
         using var tenantA = CreateBearerClient(TenantAPlatformAdmin);
         using var tenantB = CreateBearerClient(TenantBPlatformAdmin);
-        var activation = await CreateProtectedActivationAsync(tenantA);
+        var activation = await CreateProtectedActivationAsync(tenantA, TenantAPlatformAdmin.TenantId);
         var before = await GetOperationAsync(activation.OperationId);
 
         var response = await tenantB.PostAsJsonAsync(
@@ -335,7 +338,7 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
         // The legitimate same-tenant path: the principal the grant was sealed for, quoting its own grant
         // including its tenant, is admitted.
         using var tenantA = CreateBearerClient(TenantAPlatformAdmin);
-        var activation = await CreateProtectedActivationAsync(tenantA);
+        var activation = await CreateProtectedActivationAsync(tenantA, TenantAPlatformAdmin.TenantId);
 
         var response = await tenantA.PostAsJsonAsync(
             $"/api/v1/admin/deploy/operations/{activation.OperationId}/rollback",
@@ -349,45 +352,33 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/deploy/operations/{operationId}")]
     [Endpoint("GET /api/v1/admin/deploy/operations")]
-    public async Task Reads_ByTenantBoundAdminWithoutPlatformRole_DoNotPublishTheSealedGrantIdentity()
+    public async Task Reads_ByTenantBoundAdminWithoutPlatformRole_AreRefusedWithoutTheSealedGrantIdentity()
     {
-        // honua-server#4987 secondary: a tenant-bound admin without a platform role read tenant-a's grantId,
-        // actor and tenant. It can actuate no compensation, so it is shown none of the grant's identity.
+        // Deploy reads are platform administration: a tenant-bound admin without a platform role is
+        // refused, so it never sees tenant-a's grantId, actor or tenant.
         using var tenantA = CreateBearerClient(TenantAPlatformAdmin);
         using var tenantC = CreateBearerClient(TenantCAdmin);
-        var activation = await CreateProtectedActivationAsync(tenantA);
+        var activation = await CreateProtectedActivationAsync(tenantA, TenantAPlatformAdmin.TenantId);
+        var grantId = activation.Protection.GetProperty("grantId").GetString()!;
 
-        var single = await tenantC.GetAsync($"/api/v1/admin/deploy/operations/{activation.OperationId}");
-        single.StatusCode.Should().Be(HttpStatusCode.OK, await single.Content.ReadAsStringAsync());
-        using (var document = JsonDocument.Parse(await single.Content.ReadAsStringAsync()))
+        foreach (var path in new[]
+                 {
+                     $"/api/v1/admin/deploy/operations/{activation.OperationId}",
+                     "/api/v1/admin/deploy/operations?pageSize=200",
+                 })
         {
-            AssertGrantIdentityRedacted(document.RootElement.GetProperty("protection"));
-        }
-
-        var list = await tenantC.GetAsync("/api/v1/admin/deploy/operations?pageSize=200");
-        list.StatusCode.Should().Be(HttpStatusCode.OK, await list.Content.ReadAsStringAsync());
-        using (var document = JsonDocument.Parse(await list.Content.ReadAsStringAsync()))
-        {
-            var item = document.RootElement.GetProperty("items").EnumerateArray()
-                .Single(candidate => candidate.GetProperty("operationId").GetString() == activation.OperationId);
-            AssertGrantIdentityRedacted(item.GetProperty("protection"));
+            using var response = await tenantC.GetAsync(path);
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden, body);
+            using var document = JsonDocument.Parse(body);
+            document.RootElement.GetProperty("code").GetString().Should().Be("platform_admin_required");
+            body.Should().NotContain(grantId);
         }
 
         // The sealed principal still reads the terms it has to quote back.
         var own = await GetOperationAsync(activation.OperationId, tenantA);
         own.GetProperty("protection").GetProperty("grantId").GetString()
             .Should().Be(activation.Protection.GetProperty("grantId").GetString());
-    }
-
-    private static void AssertGrantIdentityRedacted(JsonElement protection)
-    {
-        foreach (var property in new[] { "grantId", "actor", "tenantId" })
-        {
-            (protection.TryGetProperty(property, out var value) && value.ValueKind != JsonValueKind.Null)
-                .Should().BeFalse($"'{property}' is part of the sealed grant identity");
-        }
-
-        protection.GetProperty("phase").GetString().Should().NotBeNullOrWhiteSpace();
     }
 
     [Fact]
@@ -419,8 +410,8 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
     [Trait("Tier", "Fast")]
     public void Fence_DeclaredIdentityIsBoundToTheSealedGrantNotOnlyToTheCaller()
     {
-        // honua-server#4987 ask 1: every declared term but actor/tenant quotes tenant-a's grant; the body
-        // names the caller's own identity. Checking only the caller admitted it.
+        // Every declared term but actor/tenant quotes tenant-a's grant; the body names the caller's own
+        // identity. Checking only the caller would admit it.
         var operation = ProtectedRecord(actor: "ops-a", tenantId: "tenant-a");
         static RollbackDeployOperationRequest QuotedGrant(string actor, string? tenantId) => new()
         {
@@ -578,14 +569,13 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
         return operationId;
     }
 
-    private async Task<ProtectedActivation> CreateProtectedActivationAsync(HttpClient? client = null)
+    private async Task<ProtectedActivation> CreateProtectedActivationAsync(HttpClient? client = null, string? tenantId = null)
     {
-        client ??= _client;
         var candidateRevision = $"rev-candidate-{Guid.NewGuid():N}";
         var operationId = await CreateSubmittedOperationAsync(candidateRevision, client);
 
-        var promoteResponse = await client.PostAsJsonAsync(
-            $"/api/v1/admin/deploy/operations/{operationId}/promote", new { reason = "cutover" });
+        using var reviewer = await AuthenticateReviewerAsync(tenantId);
+        using var promoteResponse = await reviewer.ReviewDeployAsync(operationId, "promote");
         promoteResponse.StatusCode.Should().Be(HttpStatusCode.OK, await promoteResponse.Content.ReadAsStringAsync());
 
         var operation = await GetOperationAsync(operationId);
@@ -593,6 +583,14 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
         protection.ValueKind.Should().Be(JsonValueKind.Object, "promotion opens a protection window");
         return new ProtectedActivation(operationId, candidateRevision, protection);
     }
+
+    // The reviewer belongs to the requester's tenant because a review is bound to the operation's tenant.
+    // The sealed recovery grant still names the requester: promotion records the reviewer as approver only.
+    private Task<HumanApprovalHttpClient> AuthenticateReviewerAsync(string? tenantId) =>
+        HumanApprovalHttpClient.AuthenticateAsync(
+            _fixture,
+            _identityProvider,
+            new HumanApprovalIdentity("fence-reviewer", tenantId, ["admin", "platform_admin"]));
 
     private HttpClient CreateBearerClient(FencePrincipal principal)
     {
@@ -624,7 +622,6 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
 
     private sealed record ProtectedActivation(string OperationId, string CandidateRevision, JsonElement Protection)
     {
-        /// <summary>Every fence term quoted from what the activation actually sealed — the positive control.</summary>
         public RecoveryFenceBody SatisfiedFence() => new(
             Reason: "telemetry breach",
             TargetId: TargetId,
@@ -639,7 +636,6 @@ public sealed class DeployControlRecoveryFenceTests : IAsyncLifetime
             Compensation: Protection.GetProperty("permittedCompensation").GetString());
     }
 
-    /// <summary>Wire shape of the recovery fence, so each case corrupts exactly one term.</summary>
     public sealed record RecoveryFenceBody(
         string Reason,
         string? TargetId,

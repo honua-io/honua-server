@@ -17,13 +17,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Integration tests for FeatureServer true-curve INPUT round-trip (#1877 Parts A/B): a polyline
-/// supplied as Esri <c>curvePaths</c> (cubic-Bézier segment) on applyEdits is densified to linear
-/// vertices, stored, and surfaces as an ordinary densified <c>paths</c> polyline on query. NTS/WKB
-/// cannot represent a true curve, so the stored/queried geometry is linear (densified) — this test
-/// asserts that honest behavior, not lossless curve re-emission.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerTrueCurveTests : IAsyncLifetime
@@ -60,7 +53,7 @@ public sealed class FeatureServerTrueCurveTests : IAsyncLifetime
         var geometry = await QueryGeometryAsync(objectId);
 
         // The stored geometry is a densified linear polyline (paths), NOT a curvePaths echo:
-        // NTS/WKB cannot represent the true curve, so curves linearize at storage (#1877 Part B).
+        // NTS/WKB cannot represent the true curve, so curves linearize at storage.
         geometry.TryGetProperty("paths", out var paths).Should().BeTrue(
             "a densified true curve must surface as a linear paths polyline");
         geometry.TryGetProperty("curvePaths", out _).Should().BeFalse(

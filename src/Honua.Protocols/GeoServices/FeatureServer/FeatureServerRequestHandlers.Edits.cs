@@ -383,6 +383,11 @@ internal static partial class FeatureServerEndpoints
                 $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not bound to a storage layer."));
         }
 
+        if (FeatureServerEditRefusals.ForSourceTable(context, snapshot, publication) is { } sourceTableRefusal)
+        {
+            return (null, sourceTableRefusal);
+        }
+
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         var query = new FeatureQuery
         {
@@ -490,9 +495,9 @@ internal static partial class FeatureServerEndpoints
             return unsupportedControlError;
         }
 
-        // gdbVersion is resolved to a branch VersionContext inside the edits handler (#1272,
-        // ADR-0051): absent/DEFAULT keeps the byte-identical non-versioned path; a named version is
-        // Pro-gated and Postgres-only.
+        // gdbVersion is resolved to a branch VersionContext inside the edits handler (ADR-0051):
+        // absent/DEFAULT keeps the byte-identical non-versioned path; a named version is Pro-gated
+        // and Postgres-only.
 
         var editsHandler = ResolveEditsHandler(context);
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
@@ -658,7 +663,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         // gdbVersion (when present) flows to each per-layer ApplyEditsRequest below and is resolved
-        // to a branch VersionContext inside the edits handler (#1272, ADR-0051). Absent/DEFAULT keeps
+        // to a branch VersionContext inside the edits handler (ADR-0051). Absent/DEFAULT keeps
         // the byte-identical non-versioned path.
 
         // Group entries by layer id while preserving first-seen layer order so the response
@@ -744,7 +749,7 @@ internal static partial class FeatureServerEndpoints
                 // A real Esri FeatureServer always emits all three per-layer arrays
                 // (empty when the layer had no edits of that kind); arcpy's `da` driver
                 // raises KeyError without them. Coalesce nulls to empty arrays so the
-                // service-level response never omits updateResults/deleteResults. (#1775)
+                // service-level response never omits updateResults/deleteResults.
                 results[i] = new ServiceLayerEditResult
                 {
                     Id = entry.Id,
@@ -752,7 +757,7 @@ internal static partial class FeatureServerEndpoints
                     UpdateResults = response?.UpdateResults ?? [],
                     DeleteResults = response?.DeleteResults ?? [],
                     // Each layer commits in its own transaction; report the moment the edits handler
-                    // recorded for this layer's edits (#4105).
+                    // recorded for this layer's edits.
                     EditMoment = sharedOptions.ReturnEditMoment ? response?.EditMoment ?? ResolveEditMoment(context) : null
                 };
             }
@@ -1082,8 +1087,8 @@ internal static partial class FeatureServerEndpoints
             return unsupportedControlError;
         }
 
-        // gdbVersion is resolved to a branch VersionContext inside the edits handler (#1272,
-        // ADR-0051): absent/DEFAULT keeps the byte-identical non-versioned path.
+        // gdbVersion is resolved to a branch VersionContext inside the edits handler
+        // (ADR-0051): absent/DEFAULT keeps the byte-identical non-versioned path.
 
         var editsHandler = ResolveEditsHandler(context);
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
@@ -1782,7 +1787,7 @@ internal static partial class FeatureServerEndpoints
             request.Attachments = [attachmentsElement.GetRawText()];
         }
 
-        // Unsupported Esri controls (#4105): read them so a non-default value is rejected, not dropped.
+        // Unsupported Esri controls: read them so a non-default value is rejected, not dropped.
         if (root.TryGetProperty("async", out var asyncElement))
         {
             if (!TryParseBooleanElement(asyncElement, out var isAsync))

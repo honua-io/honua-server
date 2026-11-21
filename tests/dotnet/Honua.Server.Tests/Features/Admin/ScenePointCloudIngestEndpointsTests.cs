@@ -20,13 +20,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for the Enterprise-gated LAS/LAZ/COPC point-cloud scene
-/// ingest endpoint (#1201). Covers the HTTP-surface contract — admin
-/// authentication, the Enterprise entitlement gate, malformed/compressed-upload
-/// rejection — and the end-to-end happy path that ingests a synthetic LAS
-/// fixture and serves the resulting 3D Tiles point tileset.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
@@ -146,7 +139,7 @@ public class ScenePointCloudIngestEndpointsTests : IAsyncLifetime
     public async Task Ingest_LazCompressed_WithoutWorker_Returns400()
     {
         // The default fixture has no live point-cloud worker, so the auto-dispatch
-        // (#1854) submits the pcloud.translate plan, the runtime cannot run it, and
+        // submits the pcloud.translate plan, the runtime cannot run it, and
         // the decompression failure surfaces as a 400 problem-detail — the
         // compressed buffer is still never tiled by the managed reader.
         using var upload = BuildUpload(
@@ -162,7 +155,7 @@ public class ScenePointCloudIngestEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/scenes/ingest/pointcloud")]
     public async Task Ingest_LazCompressed_WithDecompressor_Returns201AndServesTileset()
     {
-        // With a decompressor registered (#1854), a LAZ upload is routed through
+        // With a decompressor registered, a LAZ upload is routed through
         // the worker, which returns uncompressed geographic LAS; the managed tiler
         // then tiles it inline exactly as for a natively-uploaded LAS. A fake
         // factory stands in for the out-of-tree PDAL worker so the dispatch path
@@ -361,12 +354,6 @@ public class ScenePointCloudIngestEndpointsTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Test double for <see cref="IPointCloudDecompressorFactory"/> standing in for
-    /// the out-of-tree PDAL worker: returns a fixed uncompressed-geographic LAS so
-    /// the ingest auto-dispatch path (#1854) can be exercised end-to-end through
-    /// the HTTP surface without a live worker, and records the requested source CRS.
-    /// </summary>
     private sealed class FakePointCloudDecompressorFactory(byte[] decompressedLas) : IPointCloudDecompressorFactory
     {
         private readonly byte[] _decompressedLas = decompressedLas;

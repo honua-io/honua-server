@@ -54,6 +54,14 @@ jobs:
     outputs:
       pr: ${{ steps.target.outputs.result }}
     steps:
+      - name: Use the job's own temp directory
+        timeout-minutes: 1
+        run: |
+          {
+            echo "TMPDIR=${RUNNER_TEMP}"
+            echo "TEMP=${RUNNER_TEMP}"
+            echo "TMP=${RUNNER_TEMP}"
+          } >> "${GITHUB_ENV}"
       - name: Shed superseded review event
         id: stale
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -104,6 +112,21 @@ jobs:
             // re-fires this workflow with the pull request open again.
             if (pull.state !== 'open') {
               return shed(`PR #${prNumber} is ${pull.state}; no admission can consume its Review Gate status`);
+            }
+            // Attempt 1 of PR Gate is the event review-first uses to observe or
+            // release a completed admission run, so it always continues. A later
+            // attempt does not change review evidence. Shed that attempt when the
+            // newest Review Gate status for this head is already success. A review
+            // event still arrives through the bridge and re-attests.
+            if (context.payload.workflow_run?.name === 'PR Gate'
+                && Number(context.payload.workflow_run.run_attempt) > 1) {
+              const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
+                ...context.repo, ref: pull.head.sha, per_page: 100,
+              });
+              const latest = statuses.find(status => status.context === 'Review Gate');
+              if (latest?.state === 'success') {
+                return shed(`PR #${prNumber} head already has Review Gate success; a later PR Gate attempt is not a new head`);
+              }
             }
             // Events are unordered: an old-head event can run after a newer one.
             // Always reconcile the live head instead of trusting the event head.
@@ -157,6 +180,14 @@ jobs:
       cancel-in-progress: false
       queue: max
     steps:
+      - name: Use the job's own temp directory
+        timeout-minutes: 1
+        run: |
+          {
+            echo "TMPDIR=${RUNNER_TEMP}"
+            echo "TEMP=${RUNNER_TEMP}"
+            echo "TMP=${RUNNER_TEMP}"
+          } >> "${GITHUB_ENV}"
       - name: Shed superseded review subject
         id: subject
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -191,28 +222,12 @@ jobs:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
 
-      - id: policy
-        name: Bind the immutable review-first measurement policy
-        if: steps.subject.outputs.superseded != 'true'
-        run: |
-          node scripts/ci/review-first-evidence-ledger.js policy-digest \
-            --root . \
-            --policy-sha '${{ github.workflow_sha }}' \
-            --github-output "${GITHUB_OUTPUT}"
-
       - name: Attest current PR head
         id: attest
         if: steps.subject.outputs.superseded != 'true'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        env:
-          REVIEW_FIRST_POLICY_DIGEST: ${{ steps.policy.outputs.measurement_policy_digest }}
-          REVIEW_FIRST_POLICY_SHA: ${{ steps.policy.outputs.policy_sha }}
-          REVIEW_FIRST_PRODUCER_EVENT: ${{ github.event_name }}
-          REVIEW_FIRST_PRODUCER_RUN_ATTEMPT: ${{ github.run_attempt }}
-          REVIEW_FIRST_PRODUCER_RUN_ID: ${{ github.run_id }}
         with:
           script: |
-            const fs = require('fs');
             const { evaluateCodexEvidence, isAttestingReviewer } = require('./scripts/ci/review-gate-evidence');
             const { fetchPullRequestSnapshot } = require('./scripts/ci/review-gate-snapshot');
             const {
@@ -220,10 +235,27 @@ jobs:
               selectExactAdmissionRun,
               stabilizeReviewFirstEvaluation,
             } = require('./scripts/ci/review-first-dispatch');
-            const {
-              createReviewFirstObservation,
-            } = require('./scripts/ci/review-first-evidence-ledger');
             const prNumber = Number('${{ needs.resolve.outputs.pr }}');
+
+            // A pull request that merged or closed while this attestation ran can
+            // no longer consume a Review Gate status. Re-read it before any red
+            // status, so a landed head is not stamped with a failure.
+            // A failed read keeps the red status (fail closed).
+            const shedIfClosed = async () => {
+              let live;
+              try {
+                ({ data: live } = await github.rest.pulls.get({
+                  ...context.repo, pull_number: prNumber,
+                }));
+              } catch (error) {
+                core.warning(`Could not re-read PR #${prNumber} before a red status: ${error.message}`);
+                return false;
+              }
+              if (live.state === 'open') return false;
+              core.notice(
+                `superseded: PR #${prNumber} became ${live.state} during attestation; no Review Gate status posted`);
+              return true;
+            };
 
             const evaluateCurrentReview = async () => {
               const pr = await fetchPullRequestSnapshot(
@@ -300,6 +332,7 @@ jobs:
             const description = reasons.length === 0
               ? reviewDescription
               : reasons.join('; ').slice(0, 140);
+            if (state === 'failure' && await shedIfClosed()) return;
             await github.rest.repos.createCommitStatus({
               ...context.repo, sha: head, state, context: 'Review Gate', description,
               target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/pull/${prNumber}`,
@@ -398,6 +431,7 @@ jobs:
             };
 
             const failFinalRevalidation = async description => {
+              if (await shedIfClosed()) return;
               await github.rest.repos.createCommitStatus({
                 ...context.repo, sha: head, state: 'failure', context: 'Review Gate',
                 description: description.slice(0, 140),
@@ -421,7 +455,7 @@ jobs:
 
             // Take the complete review snapshot and canonical admission state
             // together twice. Only two identical joint evaluations may reach
-            // the irreversible receipt/rerun boundary.
+            // the irreversible dispatch boundary.
             let finalState;
             try {
               finalState = await stabilizeReviewFirstEvaluation(async () => {
@@ -449,7 +483,7 @@ jobs:
               await failFinalRevalidation('Final admission snapshot is missing.');
               return;
             }
-            const { associatedPullNumbers, decision, jobs, runPage } = finalAdmission;
+            const { decision } = finalAdmission;
             if (decision.action === 'block') {
               await reportDecision(decision);
               core.setFailed(`Review-first dispatch blocked: ${decision.reason}`);
@@ -461,31 +495,6 @@ jobs:
             }
 
             if (decision.action === 'observe') {
-              const producerRunId = Number(process.env.REVIEW_FIRST_PRODUCER_RUN_ID);
-              const producerRunAttempt = Number(
-                process.env.REVIEW_FIRST_PRODUCER_RUN_ATTEMPT);
-              const observation = createReviewFirstObservation({
-                measurementPolicyDigest: process.env.REVIEW_FIRST_POLICY_DIGEST,
-                policySha: process.env.REVIEW_FIRST_POLICY_SHA,
-                producerRunId,
-                producerRunAttempt,
-                producerEvent: process.env.REVIEW_FIRST_PRODUCER_EVENT,
-                observedAt: new Date().toISOString(),
-                prNumber,
-                head,
-                associatedPullNumbers,
-                runs: runPage.workflow_runs,
-                jobs,
-                decision,
-                reviewRevalidated: true,
-                admissionRevalidated: true,
-              });
-              fs.mkdirSync('review-first-evidence', { recursive: true });
-              fs.writeFileSync(
-                'review-first-evidence/review-first-observation.json',
-                `${JSON.stringify(observation, null, 2)}\n`,
-                'utf8');
-              core.setOutput('receipt_present', 'true');
               await reportDecision(decision);
               return;
             }
@@ -512,12 +521,3 @@ jobs:
               }
               throw error;
             }
-
-      - name: Retain immutable review-first observation
-        if: always() && steps.attest.outputs.receipt_present == 'true'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: review-first-observation-v1
-          path: review-first-evidence/review-first-observation.json
-          retention-days: 30
-          if-no-files-found: error

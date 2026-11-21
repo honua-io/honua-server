@@ -34,12 +34,6 @@ public sealed class OperationalSchemaPolicyTests
         Assert.Equal(allowed, policy.IsAllowedSearchPath(searchPath));
     }
 
-    /// <summary>
-    /// A schema becomes acceptable on a connection's search path only by being configured under
-    /// <c>Database:OperationalSchemas</c>, the remedy #5391 gives operators and the one isolated
-    /// test hosts use for their fixture schema. Configuring a schema never admits the metadata
-    /// schema beside it.
-    /// </summary>
     [UnitTheory]
     [InlineData("test_fixture_0123,public", true)]
     [InlineData("test_fixture_0123", true)]

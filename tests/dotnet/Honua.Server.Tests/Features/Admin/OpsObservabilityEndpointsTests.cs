@@ -18,11 +18,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for the admin ops-health snapshot and ops-findings endpoints
-/// (ADR-0060 WS4 / epic #2457). Compile locally; the full assertions run in CI (Testcontainers).
-/// </summary>
-[Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.HealthCheck)]
 public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
@@ -433,20 +428,16 @@ public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// Regression coverage for Community deployments that retain the stock Redis connection string
-/// even though the Redis entitlement leaves <c>IConnectionMultiplexer</c> unregistered.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.HealthCheck)]
-public sealed class CommunityRedisOpsHealthEndpointsTests : IAsyncLifetime
+public sealed class CommunityOpsHealthEndpointsTests : IAsyncLifetime
 {
-    private const string AdminPassword = "community-redis-ops-health-key";
+    private const string AdminPassword = "community-ops-health-key";
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
-    public CommunityRedisOpsHealthEndpointsTests()
+    public CommunityOpsHealthEndpointsTests()
     {
         _fixture = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
@@ -456,7 +447,6 @@ public sealed class CommunityRedisOpsHealthEndpointsTests : IAsyncLifetime
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_DEV_GRANT_EDITION", "Community");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
-                builder.UseSetting("ConnectionStrings:Redis", "redis:6379");
             });
     }
 
@@ -471,7 +461,7 @@ public sealed class CommunityRedisOpsHealthEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Trait("Tier", "Fast")]
     [Endpoint("GET /api/v1/admin/observability/ops-health")]
-    public async Task GetOpsHealth_WithCommunityEditionAndRedisConfigured_DoesNotReturnServerError()
+    public async Task GetOpsHealth_WithCommunityEdition_DoesNotReturnServerError()
     {
         var response = await _client.GetAsync("/api/v1/admin/observability/ops-health");
 

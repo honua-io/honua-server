@@ -15,11 +15,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
-/// <summary>
-/// A WMS FILTER geometry with no srsName is read in the layer CRS. The stand-in reader
-/// returns the known feature only when the translated geometry parameter is EPSG:3857,
-/// so a 4326 default fails the assertion (#6184).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wms13)]
 public sealed class OgcClassicWmsFilterCrsTests : IAsyncLifetime
@@ -85,7 +80,7 @@ public sealed class OgcClassicWmsFilterCrsTests : IAsyncLifetime
         _filteredQuery.Should().NotBeNull();
         // FeatureQuery is a struct, so FeatureQuery? does not lift SqlFilter.
         // WMS FILTER stores the translated predicate on SqlFilter; its SRID
-        // parameters are the #6184 layer-CRS assertion.
+        // parameters are the layer-CRS assertion.
         FilterUsesLayerSrid(_filteredQuery.Value.SqlFilter!).Should().BeTrue(content);
     }
 

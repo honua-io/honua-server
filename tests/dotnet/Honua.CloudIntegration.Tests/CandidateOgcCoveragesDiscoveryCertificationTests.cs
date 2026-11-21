@@ -12,36 +12,12 @@ using Xunit.Abstractions;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Exact-candidate replay of OGC API Coverages discovery identity (honua-server#4564). Boots the published
-/// server image named by <c>HONUA_CANDIDATE_IMAGE</c> in <c>Production</c> against a real PostGIS, registers
-/// one public and one protected raster layer in the V1 catalog, and serves them through the server's own
-/// canonical V1-to-Metadata-v2 compilation. That compilation emits a feature resource
-/// (<c>res-layer-N</c>) and a raster resource (<c>res-image-layer-N</c>) sharing storage layer <c>N</c>, each
-/// on a service that enables OGC API Coverages: the shape that made discovery advertise <c>2400</c> twice.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The expected identities are fixed by the fixture, not read back from the server: anonymous discovery lists
-/// exactly <c>2400</c>, an administrator sees <c>2400</c> and <c>2401</c> once each, every advertised self
-/// link resolves to the same identity and title, and the protected collection and its coverage answer 401
-/// anonymously and 200 with the administrator key.
-/// </para>
-/// <para>
-/// Run it with <c>HONUA_CANDIDATE_IMAGE</c> set to the manifest-pinned image; it <c>[SkippableFact]</c>-skips
-/// without it or without Docker. Pointing it at an image built before #4567 (for example
-/// <c>ghcr.io/honua-io/honua-server:nightly-aot-9f855c0</c>) fails the unique-identity assertion, which is
-/// the negative control for the replay. A JSON receipt is written to <c>HONUA_CANDIDATE_RECEIPT_DIR</c> when
-/// it is set, and to the test output otherwise.
-/// </para>
-/// </remarks>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.CandidateCertification)]
 public sealed class CandidateOgcCoveragesDiscoveryCertificationTests
 {
     private const string CandidateImageEnvVar = "HONUA_CANDIDATE_IMAGE";
     private const string ReceiptDirectoryEnvVar = "HONUA_CANDIDATE_RECEIPT_DIR";
     private const string PostgresImage = "postgis/postgis:16-3.4";
-    private const string RedisImage = "redis:7-alpine";
     private const string DatabasePassword = "coverages_4564_pg";
     private const string AdminPassword = "Coverages4564!Candidate#Key";
     private const int ReplicaContainerPort = 8080;
@@ -50,10 +26,6 @@ public sealed class CandidateOgcCoveragesDiscoveryCertificationTests
     private const string PublicTitle = "Public Gradient";
     private const string ProtectedTitle = "Protected Gradient";
 
-    /// <summary>
-    /// V1 catalog rows only; no Metadata v2 snapshot is written, so the server serves its own compilation of
-    /// this catalog. Both layers share the <c>features</c> table and carry a 4x4 two-band Float32 raster.
-    /// </summary>
     private const string V1CatalogFixtureSql =
         """
         INSERT INTO honua.services (service_name, description, srid, supported_formats, capabilities, service_extent, metadata)
@@ -104,9 +76,8 @@ public sealed class CandidateOgcCoveragesDiscoveryCertificationTests
         var suffix = Guid.NewGuid().ToString("N")[..8];
         var network = $"honua-cov4564-{suffix}";
         var postgres = $"{network}-pg";
-        var redis = $"{network}-redis";
         var server = $"{network}-server";
-        var port = LocalSubstrateDockerFixture.GetFreeTcpPort();
+        var port = LoopbackTcpPort.GetFree();
         var baseUrl = $"http://127.0.0.1:{port.ToString(CultureInfo.InvariantCulture)}";
         var passed = false;
 
@@ -126,7 +97,6 @@ public sealed class CandidateOgcCoveragesDiscoveryCertificationTests
                 postgres,
                 "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster; " +
                 "CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS pgcrypto;");
-            await Docker.RunCheckedAsync(["run", "-d", "--name", redis, "--network", network, RedisImage]);
 
             await Docker.RunCheckedAsync(
             [
@@ -135,7 +105,6 @@ public sealed class CandidateOgcCoveragesDiscoveryCertificationTests
                 "-e", "ASPNETCORE_ENVIRONMENT=Production",
                 "-e", $"PUBLIC_BASE_URL={baseUrl}",
                 "-e", $"ConnectionStrings__DefaultConnection=Host={postgres};Database=honua;Username=postgres;Password={DatabasePassword}",
-                "-e", $"ConnectionStrings__Redis={redis}:6379",
                 "-e", $"HONUA_ADMIN_PASSWORD={AdminPassword}",
                 "-e", "HostValidation__AllowedHosts__0=127.0.0.1",
                 "-e", "HostValidation__AllowedHosts__1=localhost",
@@ -221,7 +190,7 @@ public sealed class CandidateOgcCoveragesDiscoveryCertificationTests
                 _output.WriteLine(logs + errors);
             }
 
-            foreach (var container in new[] { server, redis, postgres })
+            foreach (var container in new[] { server, postgres })
             {
                 await Docker.RunAsync(["rm", "-f", container]);
             }
@@ -230,10 +199,6 @@ public sealed class CandidateOgcCoveragesDiscoveryCertificationTests
         }
     }
 
-    /// <summary>
-    /// Asserts discovery lists exactly <paramref name="expected"/> once each and that every advertised self link
-    /// resolves to the same identity and title. Returns the advertised identifiers in response order.
-    /// </summary>
     private static async Task<string[]> AssertDiscoveryAsync(HttpClient client, string baseUrl, IReadOnlyDictionary<string, string> expected)
     {
         using var document = await GetJsonAsync(client, $"{baseUrl}/ogc/coverages/collections", HttpStatusCode.OK);

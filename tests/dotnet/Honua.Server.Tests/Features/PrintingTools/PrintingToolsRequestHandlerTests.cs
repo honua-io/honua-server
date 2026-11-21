@@ -38,11 +38,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.PrintingTools;
 
-/// <summary>
-/// Unit tests for <see cref="PrintingToolsRequestHandlers"/> helpers not covered by
-/// <see cref="LayoutTemplateRegistryTests"/> (edition gating, warnings, format/DPI resolution,
-/// and output-format constants).
-/// </summary>
 [Trait("Component", "PrintingTools")]
 public class PrintingToolsRequestHandlerTests
 {
@@ -124,10 +119,8 @@ public class PrintingToolsRequestHandlerTests
     [Protocol(TestProtocols.PrintingTools)]
     public async Task Execute_RestoredScopedApiKeySubmitter_RendersOnlyGrantedLayers(string permission, bool allowed)
     {
-        // Async print authorizes each layer against the principal restored from the job snapshot.
-        // With the default OIDC role claim type ("roles") the restored scoped key used to read as
-        // an ungoverned authenticated principal, so an auth-only, role-less layer outside its
-        // grant was rendered anyway (honua-server#6101).
+        // Async print authorizes every layer against the restored job principal. Its OIDC
+        // roles must preserve scoped-key grants so an ungranted role-less layer is denied.
         var service = new MetadataV2Service
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "service", Name = "service" },

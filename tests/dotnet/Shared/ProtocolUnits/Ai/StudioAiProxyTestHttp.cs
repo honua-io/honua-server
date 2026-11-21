@@ -7,11 +7,6 @@ using System.Text;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy.Fakes;
 
-/// <summary>
-/// A canned <see cref="HttpMessageHandler"/> that always returns the supplied body/status,
-/// capturing the outgoing request for assertions. Mirrors the fake used by
-/// <c>NlQueryPlanProviderTests</c> for the same style of provider-adapter test.
-/// </summary>
 internal sealed class StudioAiProxyMockHttpMessageHandler : HttpMessageHandler
 {
     private readonly string _responseBody;
@@ -79,11 +74,15 @@ internal sealed class StudioAiProxySequenceHttpMessageHandler : HttpMessageHandl
 internal sealed class StudioAiProxyStallingStream : Stream
 {
     private readonly byte[] _prefix;
+    private readonly TaskCompletionSource _stalled = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _position;
 
     public StudioAiProxyStallingStream(string prefix) => _prefix = Encoding.UTF8.GetBytes(prefix);
 
     public bool WasDisposed { get; private set; }
+
+    // Completes once every prefix byte has been read and the stream starts to stall.
+    public Task Stalled => _stalled.Task;
 
     public override bool CanRead => true;
     public override bool CanSeek => false;
@@ -101,6 +100,7 @@ internal sealed class StudioAiProxyStallingStream : Stream
             return count;
         }
 
+        _stalled.TrySetResult();
         await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
         return 0;
     }
@@ -122,4 +122,47 @@ internal sealed class StudioAiProxyStallingStream : Stream
     public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
     public override void SetLength(long value) => throw new NotSupportedException();
     public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+}
+
+// Fires every finite timer when the trigger completes, so a deadline test depends on an event, not on
+// wall-clock time.
+internal sealed class StudioAiProxyTriggeredTimeProvider(Task trigger) : TimeProvider
+{
+    private readonly System.Collections.Concurrent.ConcurrentQueue<TimeSpan> _dueTimes = new();
+
+    // The delays timers were created with, so a test can check the deadline it configured.
+    public IReadOnlyCollection<TimeSpan> DueTimes => _dueTimes;
+
+    public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+    {
+        _dueTimes.Enqueue(dueTime);
+        var timer = new TriggeredTimer();
+        if (dueTime != Timeout.InfiniteTimeSpan)
+        {
+            _ = trigger.ContinueWith(_ =>
+            {
+                if (!timer.IsDisposed)
+                {
+                    callback(state);
+                }
+            }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+        }
+
+        return timer;
+    }
+
+    private sealed class TriggeredTimer : ITimer
+    {
+        public bool IsDisposed { get; private set; }
+
+        public bool Change(TimeSpan dueTime, TimeSpan period) => !IsDisposed;
+
+        public void Dispose() => IsDisposed = true;
+
+        public ValueTask DisposeAsync()
+        {
+            IsDisposed = true;
+            return ValueTask.CompletedTask;
+        }
+    }
 }

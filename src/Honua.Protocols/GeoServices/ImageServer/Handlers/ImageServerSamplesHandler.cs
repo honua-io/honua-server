@@ -104,7 +104,7 @@ internal sealed class ImageServerSamplesHandler
             // multidimensionalDefinition selects a per-slice (time/StdZ/elevation coordinate) view
             // of a registered multidimensional cube. The requested dimension coordinate is resolved
             // to a Zarr slice index and the pinned cell is read through the shared Zarr subset
-            // pipeline (#1869). Layers without a servable Zarr store stay metadata-only and return
+            // pipeline. Layers without a servable Zarr store stay metadata-only and return
             // an honest 501 rather than silently sampling the dimension-collapsed raster.
             if (!ImageServerMultidimensionalDefinition.TryParse(
                     ImageServerRequestValues.GetString(values, "multidimensionalDefinition"), out var dimensionConstraints, out var multidimError))
@@ -141,6 +141,7 @@ internal sealed class ImageServerSamplesHandler
                 ?? ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null);
             var isLockRaster = mosaicRule.Method == MosaicMethod.LockRaster;
 
+            var cogSampler = new ImageServerCogSampler(context, new(snapshot, resolved.Publication, []));
             var samples = new List<SampleEntry>(Math.Min(samplePoints.Count, maxSampleCount));
             var processedPoints = 0;
             foreach (var point in samplePoints)
@@ -164,6 +165,13 @@ internal sealed class ImageServerSamplesHandler
 
                 var selectedRasters = mosaicRule.RestrictToLockedRasters(
                     await _rasterStore.QueryRastersAsync(layerId, selectionQuery, cancellationToken));
+                var cog = selectedRasters.Length == 0 ? await cogSampler.ReadAsync(new(point.X, point.Y, srid), cancellationToken).ConfigureAwait(false) : null;
+                if (cog?.Refusal is { } cogRefusal)
+                {
+                    return cogRefusal;
+                }
+
+                selectedRasters = cog?.Raster is { } cogRaster ? mosaicRule.RestrictToLockedRasters([cogRaster]) : selectedRasters;
                 if (selectedRasters.Length == 0)
                 {
                     continue;
@@ -176,7 +184,7 @@ internal sealed class ImageServerSamplesHandler
                     return StandardErrorHelpers.CreateNotImplemented(context, unsupportedMessage);
                 }
 
-                var pixelResult = selectedRasters.Length == 1
+                var pixelResult = cog?.Pixel ?? (selectedRasters.Length == 1
                     ? await _rasterStore.IdentifyAsync(layerId, selectedRasters[0].Id, point.X, point.Y, srid, cancellationToken: cancellationToken)
                     : await _rasterStore.IdentifyMosaicAsync(
                         layerId,
@@ -188,7 +196,7 @@ internal sealed class ImageServerSamplesHandler
                         rendering: null,
                         ordering: mosaicRule.ToOrdering(),
                         attributeSort: mosaicRule.ToAttributeSort(),
-                        cancellationToken: cancellationToken);
+                        cancellationToken: cancellationToken));
 
                 samples.Add(new SampleEntry
                 {

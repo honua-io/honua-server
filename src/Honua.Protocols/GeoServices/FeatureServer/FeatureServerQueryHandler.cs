@@ -19,6 +19,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
@@ -158,10 +159,9 @@ internal sealed partial class FeatureServerQueryHandler(
         var publication = resourceValidationResult.Publication!;
         var resource = resourceValidationResult.Resource!;
 
-        // Per-operation RBAC grants are consulted first (#1375); the coarse
+        // Per-operation RBAC grants are consulted first; the coarse
         // AccessPolicy seam is the fallback when no grant matches. This is the
-        // enforced read path wired to the resolver for this PR — the remaining
-        // protocol adapters are re-wired in #1376.
+        // enforced read path wired to the resolver.
         var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
             context,
             resource,
@@ -488,13 +488,13 @@ internal sealed partial class FeatureServerQueryHandler(
 
             // f=pjson is byte-identical to f=json except for indentation. TryValidateOutputFormat
             // collapses pjson to json, so recover the pretty flag from the raw requested format
-            // and indent the serialized JSON payload below (#1824).
+            // and indent the serialized JSON payload below.
             var prettyJson = string.Equals(requestedFormat?.Trim(), "pjson", StringComparison.OrdinalIgnoreCase);
 
             // returnCountOnly/returnIdsOnly/returnExtentOnly produce scalar/structural results,
             // not a GeoJSON FeatureCollection. The format validator allow-lists geojson for the
             // query operation, but these secondary modes cannot honor it — return a clean 400
-            // rather than silently downgrading to an Esri-JSON 200 (#1824).
+            // rather than silently downgrading to an Esri-JSON 200.
             if (string.Equals(format, "geojson", StringComparison.OrdinalIgnoreCase) &&
                 (validatedParams.ReturnCountOnly || validatedParams.ReturnIdsOnly || validatedParams.ReturnExtentOnly))
             {
@@ -551,7 +551,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 {
                     // f=pjson is JSON with indentation; re-indent the serialized payload rather
                     // than returning the compact Results.Json so pjson is not byte-identical to
-                    // json (#1824).
+                    // json.
                     if (prettyJson)
                     {
                         var prettyPayload = JsonReindenter.ToIndentedUtf8Bytes(
@@ -651,7 +651,7 @@ internal sealed partial class FeatureServerQueryHandler(
             var query = preparedQuery.Value;
 
             // Recover a client-requested Web Mercator alias outSR (e.g. 102100 -> 3857) so the JSON
-            // response spatialReference echoes {wkid:102100, latestWkid:3857} (#2736). When an alias
+            // response spatialReference echoes {wkid:102100, latestWkid:3857}. When an alias
             // echo applies the raw point fast path is skipped so the response flows through the
             // materialized formatter that carries the echo.
             var requestedOutSrAlias = await ResolveRequestedWebMercatorAliasAsync(validatedParams, outputSrid, cancellationToken).ConfigureAwait(false);
@@ -715,7 +715,7 @@ internal sealed partial class FeatureServerQueryHandler(
                     havingConditions = parsedHaving;
                 }
 
-                // #3372: the aggregate result set's columns are the declared statistic
+                // The aggregate result set's columns are the declared statistic
                 // aliases plus the group-by fields, so orderByFields is resolved against
                 // those declarations here rather than against the layer schema.
                 if (!GeoServicesStatisticsOrderBy.TryResolve(
@@ -801,7 +801,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
                 // f=pbf must return a protobuf-encoded count (CountResult arm of the
                 // FeatureCollectionPBuffer QueryResult oneof), mirroring the feature path;
-                // otherwise the count branch silently degrades to JSON. (#1775)
+                // otherwise the count branch silently degrades to JSON.
                 if (string.Equals(format, "pbf", StringComparison.OrdinalIgnoreCase))
                 {
                     var (countPayload, countContentType) = PbfQueryFormatter.FormatCountAsPbf(count);
@@ -844,7 +844,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
                 // f=pbf must return the ExtentCountResult arm of the FeatureCollectionPBuffer
                 // QueryResult oneof (application/x-protobuf), mirroring the count path; otherwise
-                // the extent branch silently degrades to JSON (#1824).
+                // the extent branch silently degrades to JSON.
                 if (string.Equals(format, "pbf", StringComparison.OrdinalIgnoreCase) && extentInfo is not null)
                 {
                     var (extentPayload, extentContentType) = PbfQueryFormatter.FormatExtentAsPbf(
@@ -872,7 +872,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 // f=pbf must return the ObjectIdsResult arm of the FeatureCollectionPBuffer
                 // QueryResult oneof (application/x-protobuf), mirroring the count path; the
                 // JSON streaming writer cannot emit protobuf, so force materialization for pbf
-                // and never take the streaming branch (#1824).
+                // and never take the streaming branch.
                 var idsIsPbf = string.Equals(format, "pbf", StringComparison.OrdinalIgnoreCase);
                 var idsEffectiveLimit = query.Limit ?? validatedParams.ObjectIds?.Length ?? queryLimits.DefaultRecordCount;
                 var idsUseStreaming = !idsIsPbf && (!query.Limit.HasValue || idsEffectiveLimit > StreamingThreshold);
@@ -896,7 +896,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
                 // A provider reader that cannot stream (federated ArcGIS REST) answers ids from
                 // QueryObjectIdsAsync under a hard ceiling instead of materialising every full
-                // feature with geometry (#6113). Other readers also use their ids-only path.
+                // feature with geometry. Other readers also use their ids-only path.
                 var boundedIds = await _queryExecutor.TryQueryNonStreamingObjectIdsAsync(
                     queryLayer.Service,
                     queryLayer.Resource,
@@ -965,7 +965,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
             // quantization must post-process the materialized featureSet, so route it through
             // the materialized path instead of the streaming writer. returnExceededLimitFeatures
-            // is accept-and-ignore (#1460): Honua already returns the page plus
+            // is accept-and-ignore: Honua already returns the page plus
             // exceededTransferLimit, so it does not change the streaming decision.
             var useStreaming = effectiveLimit > StreamingThreshold && !isPbf && !isFgb && !isGeobuf && !isParquet && !isArrow
                 && quantizationTransform is null
@@ -1099,7 +1099,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
                 // The raw point fast path emits a pre-serialized compact JSON payload; f=pjson
                 // needs indentation, so skip the fast path and fall through to the materialized
-                // formatter where the pretty flag is honored (#1824).
+                // formatter where the pretty flag is honored.
                 if (quantizationTransform is null &&
                     !prettyJson &&
                     requestedOutSrAlias is null &&
@@ -1148,7 +1148,7 @@ internal sealed partial class FeatureServerQueryHandler(
                     distinctScanLimit,
                     distinctFallbackCap);
                 var queryStopwatch = Stopwatch.StartNew();
-                // Pass the authenticated caller so plugin computed-field providers (#1562) can
+                // Pass the authenticated caller so plugin computed-field providers can
                 // scope derived values per-actor. Projection inside the executor is a no-op unless
                 // the Enterprise plugin SDK is licensed, enabled, and a provider is registered.
                 QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(
@@ -1336,7 +1336,7 @@ internal sealed partial class FeatureServerQueryHandler(
             // f=parquet requested on a runtime image that cannot load the native
             // ParquetSharp Arrow encoder (glibc-only; absent on Alpine/musl). Return a
             // clean 501 capability response instead of letting the native-load failure
-            // surface as an unhandled 500 (honua-server#1942).
+            // surface as an unhandled 500.
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
 
@@ -1564,8 +1564,8 @@ internal sealed partial class FeatureServerQueryHandler(
 
             if (outputSrid.HasValue && outputSrid.Value != wgs84Srid)
             {
-                // GeoParquet emits a PROJJSON `crs` for any SRID with a resolvable definition
-                // (#2844); GeoArrow does not yet carry non-4326 CRS metadata. Reject a
+                // GeoParquet emits a PROJJSON `crs` for any SRID with a resolvable definition;
+                // GeoArrow does not yet carry non-4326 CRS metadata. Reject a
                 // non-resolvable GeoParquet SRID up-front with a precise error rather than
                 // letting the shared writer throw deeper in the pipeline.
                 var isParquet = string.Equals(format, "parquet", StringComparison.OrdinalIgnoreCase);
@@ -1630,6 +1630,7 @@ internal sealed partial class FeatureServerQueryHandler(
             }
         }
 
+        var callerWhere = filterExpression;
         if (filterExpression != null && temporalExpression != null)
         {
             filterExpression = new BinaryExpression(filterExpression, BinaryOperator.And, temporalExpression);
@@ -1647,6 +1648,11 @@ internal sealed partial class FeatureServerQueryHandler(
             filterExpression = filterExpression is null
                 ? objectIdsExpression
                 : new BinaryExpression(filterExpression, BinaryOperator.And, objectIdsExpression);
+        }
+
+        if (RefuseHiddenWhereField(context, resource, callerWhere) is { } hiddenFieldRefusal)
+        {
+            return (null, null, hiddenFieldRefusal);
         }
 
         SqlFragment? sqlFilter = null;
@@ -1698,12 +1704,12 @@ internal sealed partial class FeatureServerQueryHandler(
             PublicIdAttributeName = GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource)?.Name,
             // returnZ/returnM ask the storage read to carry the higher ordinates through the canonical
             // WKB (EWKB) so the converter can emit them; without this the 2D OGC WKB read path strips
-            // Z/M before the converter's includeZ/includeM filter ever sees them (#1877).
+            // Z/M before the converter's includeZ/includeM filter ever sees them.
             IncludeZ = validatedParams.ReturnZ,
             IncludeM = validatedParams.ReturnM
         };
 
-        // Resolve gdbVersion to a branch VersionContext (#1272, ADR-0051). Absent / SDE.DEFAULT
+        // Resolve gdbVersion to a branch VersionContext (ADR-0051). Absent / SDE.DEFAULT
         // resolves to DEFAULT, where the canonical read overlay is a no-op so the query SQL stays
         // byte-identical (CITE-protected). A named version is Pro-gated and Postgres-only.
         var (versionContext, versionError) = await FeatureServerVersioning.ResolveQueryVersionAsync(
@@ -1852,6 +1858,25 @@ internal sealed partial class FeatureServerQueryHandler(
         return new DatumAreaEnvelope(west, south, east, north);
     }
 
+    // Hidden fields are left out of every public read path, so the caller's where may not name one.
+    // Only the caller's expression is checked (server-built time and object-ID predicates are exempt),
+    // and the refusal comes from translating it without the hidden fields, so a hidden field gets
+    // exactly the answer an undeclared one gets.
+    private IResult? RefuseHiddenWhereField(HttpContext context, MetadataV2Object resource, FilterExpression? callerWhere)
+    {
+        var hidden = resource.HiddenSchemaFieldNames();
+        if (callerWhere is null || hidden.Count == 0 ||
+            !FeatureQuerySecurity.CollectFieldReferences(callerWhere).Any(hidden.Contains))
+        {
+            return null;
+        }
+
+        var refusal = _filterExpressionService.Translate(callerWhere, resource.WithoutHiddenSchemaFields());
+        return StandardErrorHelpers.CreateBadRequest(context,
+            ErrorMessages.Validation.InvalidParameter,
+            [refusal.ErrorMessage ?? "Invalid filter syntax."]);
+    }
+
     // A declared objectid may be a source attribute with a separate storage key.
     private static bool ShouldUseInternalObjectIdsFastPath(MetadataV2Object resource)
         => GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource) is null;
@@ -1983,7 +2008,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 havingConditions = parsedHaving;
             }
 
-            // #3372: orderByFields on an aggregate query names statistic aliases /
+            // orderByFields on an aggregate query names statistic aliases /
             // group-by fields, not layer fields, so it is resolved against the parsed
             // declarations here (see GeoServicesStatisticsOrderBy).
             if (!GeoServicesStatisticsOrderBy.TryResolve(
@@ -2775,11 +2800,11 @@ internal sealed partial class FeatureServerQueryHandler(
         // returnExceededLimitFeatures is accepted and ignored: Honua already reports
         // exceededTransferLimit when more rows exist within the page, so the flag needs no
         // special handling. The ArcGIS Maps SDK for .NET ServiceFeatureTable.QueryFeaturesAsync
-        // always sends it, so rejecting it broke every .NET FeatureServer client (#1460).
+        // always sends it, so rejecting it broke every .NET FeatureServer client.
         //
         // returnTrueCurves is accepted as a no-op on OUTPUT. True-curve INPUT (curvePaths/
         // curveRings on applyEdits or query geometry) is densified to linear vertices by
-        // CurveGeometryConverter before storage (#1877 Part A), and NTS/WKB cannot represent a
+        // CurveGeometryConverter before storage, and NTS/WKB cannot represent a
         // true curve, so stored geometry is always linear and cannot be losslessly re-curved.
         // Honua therefore still advertises supportsTrueCurve=false and emits linearized geometry;
         // ArcGIS clients may still include the flag on otherwise ordinary feature queries.
@@ -2845,7 +2870,7 @@ internal sealed partial class FeatureServerQueryHandler(
         ImmutableArray<IReadOnlyDictionary<string, object?>> rows,
         bool exceededTransferLimit)
     {
-        // #5045: clients construct aggregate output tables from fields, including
+        // Clients construct aggregate output tables from fields, including
         // when every value is null or grouping yields no rows. Source declarations
         // determine the schema; sampling a first feature cannot provide it.
         var sourceFields = resource.SchemaFields.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
@@ -2922,11 +2947,10 @@ internal sealed partial class FeatureServerQueryHandler(
         }
     }
 
-    // Statistics rows and ordinary feature rows now share one Esri projection. This
-    // conversion was kept local because #5042 withdrew the broader formatter change as
-    // part of reverting #5027 wholesale - for Admin, Import and GP task-name parity
-    // regressions, not for anything this does. Ordinary rows need it for the same
-    // reason statistics rows did: see GeoServicesAttributeProjection.
+    // Statistics rows and ordinary feature rows share one Esri projection. The
+    // conversion is applied in this handler rather than in the shared formatter;
+    // nothing about it prevents moving it there. Ordinary rows need it for the same
+    // reason statistics rows do: see GeoServicesAttributeProjection.
     private static object? GeoServicesAttributeValue(object? value)
         => GeoServicesAttributeProjection.ToEsriValue(value);
 
@@ -3207,6 +3231,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 parsed = new ParsedHavingValue(0, text, null, null, null);
                 return true;
             case MetadataV2FieldType.DateTime:
+            case MetadataV2FieldType.TimestampOffset:
                 if (!TryParseHavingTimestamp(raw, out var timestamp))
                 {
                     error = $"having value for datetime field '{field}' must be an epoch-millisecond integer or a timestamp literal.";
@@ -3374,7 +3399,8 @@ internal sealed partial class FeatureServerQueryHandler(
         fieldType is MetadataV2FieldType.Integer
             or MetadataV2FieldType.BigInteger
             or MetadataV2FieldType.Double
-            or MetadataV2FieldType.Float;
+            or MetadataV2FieldType.Float
+            or MetadataV2FieldType.Decimal;
 
     private static bool TryParseStatisticType(string value, out StatisticType statisticType)
     {

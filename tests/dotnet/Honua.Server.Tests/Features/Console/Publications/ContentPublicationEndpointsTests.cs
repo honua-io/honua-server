@@ -17,11 +17,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Console.Publications;
 
-/// <summary>
-/// API integration tests for the authenticated content publication endpoints. Uses an
-/// in-memory store override so the HTTP + service path is exercised without a migrated
-/// Postgres schema (the Postgres store has dedicated integration coverage).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
@@ -303,7 +298,7 @@ public sealed class ContentPublicationEndpointsTests : IAsyncLifetime
     [Endpoint("PATCH /api/v1/console/publications/{publicationId}/policy")]
     public async Task UpdatePolicy_OnDefaultPolicyRoute_ChangesVisibilityAndEmbed_Returns200()
     {
-        // Regression for #1239: a publication created with a minimal default policy
+        // A publication created with a minimal default policy
         // ({"visibility":"organization"}) leaves the nested policy members (embed/share/
         // service/publicLink) absent from the JSON body, so they deserialize to null. A
         // subsequent minimal policy PATCH that only touches visibility + embed must

@@ -18,11 +18,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-/// <summary>
-/// #3361 acceptance: the terminal journey verifies the installer-provisioned credential through the
-/// canonical operations runtime. Each submission is a real Admin API round trip — the executor loops
-/// back over Kestrel into the Admin REST route under the caller's own credential.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public sealed class AdminAccessInstallerCredentialTests
@@ -95,7 +90,7 @@ public sealed class AdminAccessInstallerCredentialTests
             statusData.GetProperty("correlationId").GetString().Should().Be(effective.GetProperty("correlationId").GetString());
 
             // The host-composed projection (its catalog, approval mappers and actuators) keeps the installer
-            // checks eligible and never advertises key issuance. Serving it over /mcp is #3363's publication
+            // checks eligible and never advertises key issuance. Serving it over /mcp is the publication
             // step, so the projection is enabled here rather than in host configuration.
             var source = new PublishedOperationToolSource(
                 fixture.Services.GetRequiredService<IOperationCatalog>(),

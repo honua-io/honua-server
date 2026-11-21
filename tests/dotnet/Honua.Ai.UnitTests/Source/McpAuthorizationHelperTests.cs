@@ -20,9 +20,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Tests for MCP principal key derivation and session-binding identity selection.
-/// </summary>
 public sealed class McpAuthorizationHelperTests
 {
     [UnitTest]
@@ -233,7 +230,7 @@ public sealed class McpAuthorizationHelperTests
     [UnitTest]
     public void ResolveSessionBindingKey_RefreshedBearerWithSameAuthority_KeepsBinding()
     {
-        // honua-server#4909: a client that refreshes its access token presents a new
+        // A client that refreshes its access token presents a new
         // credential whose per-issuance metadata differs but whose authority does not.
         var original = CreateBearerContext(
             "same-subject",

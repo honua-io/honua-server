@@ -81,12 +81,6 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests(Postgr
         }
     }
 
-    /// <summary>
-    /// Issue #4600: a lost attachment is lost source data, so the run must not report a successful
-    /// migration. The copy loop still continues past the failure (the rest of the attachments are
-    /// copied), but the fidelity gate routes the run to operator review with an explicit,
-    /// attachment-scoped difference rather than a warning buried in the result.
-    /// </summary>
     [Fact]
     public async Task ImportLayerAsync_WhenAttachmentDownloadFails_CountsFailureAndBlocksSuccess()
     {
@@ -120,7 +114,7 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests(Postgr
             result.Warnings.Should().Contain(static w => w.Contains("failure", StringComparison.OrdinalIgnoreCase));
 
             // ...but a migration missing one of the source's attachments is not a successful
-            // migration (#4600). Feature counts match here, which is exactly why attachment parity
+            // migration. Feature counts match here, which is exactly why attachment parity
             // has to be reconciled on its own evidence.
             result.Success.Should().BeFalse();
             result.NeedsReview.Should().BeTrue();

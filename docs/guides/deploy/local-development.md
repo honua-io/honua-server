@@ -5,7 +5,7 @@ description: "Build Honua from source and run the local Docker Compose stack."
 ---
 # Run a local development environment
 
-Use the repo-root Docker Compose stack to run PostGIS, Redis, and Honua Server from a source build.
+Use the repo-root Docker Compose stack to run PostGIS and Honua Server from a source build.
 
 **Prerequisites:** Docker with Compose v2, Python 3.11 or later, and GitHub CLI authenticated with package-read access. Clone [honua-server](https://github.com/honua-io/honua-server) and run the following commands from its root.
 
@@ -21,7 +21,7 @@ docker compose ps
 
 The bootstrap writes random database credentials to a private `.env` file and preserves them on restart. Keep that file with the persistent volumes; editing a saved password does not rotate the database's existing credentials. Ports bind to loopback by default.
 
-The Compose stack includes development-only admin credentials, connection encryption settings, Redis control-plane configuration, and browser origins. Follow the [source quickstart](../../internal/developer/source-quickstart.md) to publish a sample layer and display a map.
+The Compose stack includes development-only admin credentials, connection encryption settings, and browser origins. Follow the [source quickstart](../../internal/developer/source-quickstart.md) to publish a sample layer and display a map.
 
 ## Verify and iterate
 
@@ -38,7 +38,7 @@ For .NET hot reload against local PostGIS, follow the [contributor setup guide](
 
 ## Troubleshoot
 
-- **A host port is occupied:** set `HONUA_HTTP_PORT`, `POSTGRES_PORT`, or `REDIS_PORT` in `.env`, then restart the stack. See the [Compose guide](docker-compose.md) for configuration.
+- **A host port is occupied:** set `HONUA_HTTP_PORT` or `POSTGRES_PORT` in `.env`, then restart the stack. See the [Compose guide](docker-compose.md) for configuration.
 - **The image build cannot restore private packages:** check GitHub CLI authentication and package-read access.
 - **A service is unhealthy:** inspect `docker compose ps` and `docker compose logs --tail 100` before retrying.
 

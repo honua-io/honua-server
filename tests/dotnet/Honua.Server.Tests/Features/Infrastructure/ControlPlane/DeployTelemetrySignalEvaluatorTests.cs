@@ -160,32 +160,6 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
     }
 
     [Fact]
-    public async Task EvaluateAsync_UsesDefaultHonuaHttpPreset_ForAzureContainerAppsTargets()
-    {
-        var capturedQueries = new ConcurrentQueue<string>();
-        var evaluator = CreateEvaluator(
-            capturedQueries,
-            responses: CreateSuccessfulResponses("25", "0.02", "130"));
-
-        var decision = await evaluator.EvaluateAsync(CreateOperation(
-            DeployTargetKind.AzureContainerApps,
-            new Dictionary<string, string>
-            {
-                ["telemetry.connection"] = "prod-prom",
-                ["telemetry.prometheus.job"] = "honua-aca"
-            },
-            createdAt: DateTimeOffset.UtcNow.AddMinutes(-5)));
-
-        decision.Should().NotBeNull();
-
-        var queries = capturedQueries.ToArray();
-        queries.Should().HaveCount(3);
-        queries[0].Should().Contain("honua_http_request_total{job=\"honua-aca\"}[5m]");
-        queries[1].Should().Contain("honua_http_request_total{job=\"honua-aca\",status_code=~\"5..\"}[5m]");
-        queries[2].Should().Contain("honua_http_request_duration_ms_bucket{job=\"honua-aca\"}[5m]");
-    }
-
-    [Fact]
     public async Task EvaluateAsync_UsesExplicitQueryOverrides_WhenProvidedAlongsidePreset()
     {
         var capturedQueries = new ConcurrentQueue<string>();
@@ -432,7 +406,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         decision.Message.Should().Contain("error rate");
     }
 
-    // ---- health-gate boundary + anti-flap (#2161) ------------------------
+    // ---- health-gate boundary + anti-flap ------------------------
 
     [Fact]
     public void Evaluate_AtExactThreshold_DoesNotRollback()
@@ -610,7 +584,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
     {
         // GP substrate deploys (telemetry.policy = gp-batch) are burstier, so with NO explicit
         // consecutive-breach param the gate defaults to the burst-tolerant streak (3) rather than
-        // the single-scrape default — one breaching scrape must NOT roll back (honua-server#2165).
+        // the single-scrape default — one breaching scrape must NOT roll back.
         var fakeProvider = new FakeProviderEvaluator("fake-metrics", new DeployTelemetryReadings
         {
             SampleCount = 50,
@@ -673,7 +647,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         decision!.RollbackRecommended.Should().BeTrue("an explicit threshold of 1 overrides the GP burst-tolerant default");
     }
 
-    // ---- synthetic /healthz/ready gate (#1849) ---------------------------
+    // ---- synthetic /healthz/ready gate ---------------------------
 
     [Fact]
     public async Task EvaluateAsync_HealthProbeUnhealthy_RecommendsRollback_WithoutQueryingMetrics()
@@ -824,7 +798,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
             NullLogger<DeployTelemetrySignalEvaluator>.Instance,
             probe);
 
-    // ---- invalid-policy bounded wait (#2161) -----------------------------
+    // ---- invalid-policy bounded wait -----------------------------
 
     [Fact]
     public async Task EvaluateAsync_InvalidPolicy_WithinGraceWindow_Waits()
@@ -879,7 +853,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         capturedQueries.Should().BeEmpty();
     }
 
-    // ---- missing/invalid evidence never satisfies a health requirement (#4617) --------------------
+    // ---- missing/invalid evidence never satisfies a health requirement --------------------
 
     [Fact]
     public void Evaluate_AbsentErrorRate_WithNoSampleFloorConfigured_WaitsRatherThanPassing()
@@ -936,7 +910,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         decision.Message.Should().Contain("error rate");
     }
 
-    // ---- bounded evidence-missing grace (#4617) ---------------------------
+    // ---- bounded evidence-missing grace ---------------------------
 
     [Fact]
     public async Task EvaluateAsync_MissingConnection_WithinEvidenceGrace_Waits()
@@ -963,7 +937,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
     [Fact]
     public async Task EvaluateAsync_MissingConnection_PastEvidenceGrace_EscalatesToRollback()
     {
-        // Provider outages/misconfiguration must not park a deploy in Reconciling forever (#4617):
+        // Provider outages/misconfiguration must not park a deploy in Reconciling forever:
         // past warmup + the configured evidence grace window this escalates to rollback.
         var capturedQueries = new ConcurrentQueue<string>();
         var evaluator = CreateEvaluator(capturedQueries);
@@ -1011,7 +985,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         decision.WaitForMoreTelemetry.Should().BeFalse();
     }
 
-    // ---- traffic-exposure anchored warmup (#4617) -------------------------
+    // ---- traffic-exposure anchored warmup -------------------------
 
     [Fact]
     public async Task EvaluateAsync_WarmupAnchorsOnTrafficExposedAt_NotOperationCreation()
@@ -1151,7 +1125,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
             healthProbe);
     }
 
-    // ---- Prometheus data-validity negatives (#4617) ------------------------
+    // ---- Prometheus data-validity negatives ------------------------
 
     [Fact]
     public async Task EvaluateAsync_PrometheusReturnsNaN_TreatsSignalAsAbsent_NotHealthy()
@@ -1256,7 +1230,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
     [Fact]
     public async Task EvaluateAsync_PrometheusReturnsStaleSample_WithoutStalenessParameter_DefaultBoundTreatsAsAbsent()
     {
-        // Freshness is enforced by default (#4617): the provider's observation timestamp (2024-03-09)
+        // Freshness is enforced by default: the provider's observation timestamp
         // is far outside the 5-minute default bound, so the healthy-looking values are not evidence.
         var capturedQueries = new ConcurrentQueue<string>();
         var evaluator = CreateEvaluator(
@@ -1289,7 +1263,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
     [InlineData("null")]
     public async Task EvaluateAsync_PrometheusSampleWithoutUsableTimestamp_TreatsAsAbsent(string timestampJson)
     {
-        // Missing freshness information is not assumed fresh (#4617).
+        // Missing freshness information is not assumed fresh.
         var capturedQueries = new ConcurrentQueue<string>();
         var response = $@"{{""status"":""success"",""data"":{{""resultType"":""vector"",""result"":[{{""metric"":{{}},""value"":[{timestampJson},""25""]}}]}}}}";
         var evaluator = CreateEvaluator(capturedQueries, responses: [response]);
@@ -1442,7 +1416,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         escalated.Message.Should().Contain("unavailable");
     }
 
-    // ---- pre-exposure deadline (#4617) -----------------------------------
+    // ---- pre-exposure deadline -----------------------------------
 
     [Fact]
     public async Task EvaluateAsync_SubmittedAndNotYetExposed_HoldsWithoutQuerying()
@@ -1491,7 +1465,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         capturedQueries.Should().BeEmpty();
     }
 
-    // ---- explicit health-only profile (#4617) ------------------------------
+    // ---- explicit health-only profile ------------------------------
 
     [Fact]
     public async Task EvaluateAsync_HealthOnlyProfile_PassesOnHealthyProbesWithoutAnyMetricsConnection()
@@ -1581,7 +1555,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         probe.Invocations.Should().Be(0, "an invalid policy is never evaluated as if it were health-only");
     }
 
-    // ---- staged candidate before cutover (#4617) ----------------------------
+    // ---- staged candidate before cutover ----------------------------
 
     private static Dictionary<string, string> StagedMetricsParameters(params (string Key, string Value)[] extra)
     {
@@ -1606,7 +1580,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 0 });
         var evaluator = CreateEvaluator(capturedQueries, healthProbe: probe, responses: CreateSuccessfulResponses("25", "0.01", "150"));
         var operation = CreateOperation(
-            DeployTargetKind.SelfHostedRolling,
+            DeployTargetKind.AwsEcs,
             StagedMetricsParameters(),
             createdAt: DateTimeOffset.UtcNow.AddMinutes(-10));
 
@@ -1625,7 +1599,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         var capturedQueries = new ConcurrentQueue<string>();
         var evaluator = CreateEvaluator(capturedQueries, responses: CreateSuccessfulResponses("25", "0.01", "150"));
         var operation = CreateOperation(
-            DeployTargetKind.SelfHostedRolling,
+            DeployTargetKind.AwsEcs,
             StagedMetricsParameters(("telemetry.exposure_deadline_seconds", "600")),
             createdAt: DateTimeOffset.UtcNow.AddMinutes(-11));
 
@@ -1646,7 +1620,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 0 });
         var evaluator = CreateEvaluator(capturedQueries, healthProbe: probe);
         var operation = CreateOperation(
-            DeployTargetKind.SelfHostedRolling,
+            DeployTargetKind.AwsEcs,
             StagedMetricsParameters(("telemetry.exposure_deadline_seconds", "600")),
             createdAt: DateTimeOffset.UtcNow.AddMinutes(-11));
 
@@ -1669,7 +1643,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 0 });
         var evaluator = CreateEvaluator(capturedQueries, healthProbe: probe);
         var operation = CreateOperation(
-            DeployTargetKind.SelfHostedRolling,
+            DeployTargetKind.AwsEcs,
             StagedMetricsParameters(),
             createdAt: DateTimeOffset.UtcNow.AddMinutes(-1));
 
@@ -1689,7 +1663,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 3 });
         var evaluator = CreateEvaluator(capturedQueries, healthProbe: probe);
         var operation = CreateOperation(
-            DeployTargetKind.SelfHostedRolling,
+            DeployTargetKind.AwsEcs,
             StagedMetricsParameters(),
             createdAt: DateTimeOffset.UtcNow.AddMinutes(-1));
 
@@ -1709,7 +1683,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
             new DeployGoldenQueryResult { Matched = false, Detail = "response body contained the forbidden marker" });
         var evaluator = CreateEvaluator(capturedQueries, healthProbe: probe);
         var operation = CreateOperation(
-            DeployTargetKind.SelfHostedRolling,
+            DeployTargetKind.AwsEcs,
             StagedMetricsParameters(
                 ("telemetry.golden_query.url", "http://127.0.0.1:18081/rest/services/parcels/FeatureServer/0/query"),
                 ("telemetry.golden_query.expected_contains", "\"features\"")),
@@ -1731,10 +1705,10 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         var parameters = StagedMetricsParameters(("telemetry.exposure_deadline_seconds", "600"));
 
         var holding = await evaluator.EvaluateStagedCandidateAsync(
-            CreateOperation(DeployTargetKind.SelfHostedRolling, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-1)),
+            CreateOperation(DeployTargetKind.AwsEcs, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-1)),
             candidateReady: true);
         var escalated = await evaluator.EvaluateStagedCandidateAsync(
-            CreateOperation(DeployTargetKind.SelfHostedRolling, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-11)),
+            CreateOperation(DeployTargetKind.AwsEcs, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-11)),
             candidateReady: true);
 
         holding!.WaitForMoreTelemetry.Should().BeTrue("a probe that cannot run is not a passing probe");
@@ -1756,10 +1730,10 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         parameters.Remove("telemetry.healthz.url");
 
         var holding = await evaluator.EvaluateStagedCandidateAsync(
-            CreateOperation(DeployTargetKind.SelfHostedRolling, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-1)),
+            CreateOperation(DeployTargetKind.AwsEcs, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-1)),
             candidateReady: true);
         var escalated = await evaluator.EvaluateStagedCandidateAsync(
-            CreateOperation(DeployTargetKind.SelfHostedRolling, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-11)),
+            CreateOperation(DeployTargetKind.AwsEcs, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-11)),
             candidateReady: true);
 
         holding!.WaitForMoreTelemetry.Should().BeTrue();
@@ -1784,7 +1758,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         parameters.Remove("telemetry.healthz.url");
 
         var decision = await evaluator.EvaluateStagedCandidateAsync(
-            CreateOperation(DeployTargetKind.SelfHostedRolling, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-11)),
+            CreateOperation(DeployTargetKind.AwsEcs, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-11)),
             candidateReady: true);
 
         decision!.RollbackRecommended.Should().BeTrue();
@@ -1808,7 +1782,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
         parameters.Remove("telemetry.healthz.url");
 
         var decision = await evaluator.EvaluateStagedCandidateAsync(
-            CreateOperation(DeployTargetKind.SelfHostedRolling, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-11)),
+            CreateOperation(DeployTargetKind.AwsEcs, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-11)),
             candidateReady: true);
 
         decision!.RollbackRecommended.Should().BeTrue();
@@ -1824,7 +1798,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
     {
         var evaluator = CreateEvaluator(new ConcurrentQueue<string>());
         var operation = CreateOperation(
-            DeployTargetKind.SelfHostedRolling,
+            DeployTargetKind.AwsEcs,
             new Dictionary<string, string>(StringComparer.Ordinal),
             createdAt: DateTimeOffset.UtcNow.AddMinutes(-1));
 
@@ -1841,7 +1815,7 @@ public sealed partial class DeployTelemetrySignalEvaluatorTests
             CreateSuccessResponse(latencyP95)
         ];
 
-    // Samples are stamped "now" by default so the 5-minute freshness bound (#4617) accepts them; pass an
+    // Samples are stamped "now" by default so the 5-minute freshness bound accepts them; pass an
     // explicit observation time to exercise stale/future samples.
     private static string CreateSuccessResponse(string value, long? observedAtUnixSeconds = null)
         => $@"{{""status"":""success"",""data"":{{""resultType"":""vector"",""result"":[{{""metric"":{{}},""value"":[{(observedAtUnixSeconds ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds()).ToString(System.Globalization.CultureInfo.InvariantCulture)},""{value}""]}}]}}}}";

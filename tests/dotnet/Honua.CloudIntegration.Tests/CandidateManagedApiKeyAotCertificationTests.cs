@@ -15,26 +15,6 @@ using Xunit.Abstractions;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Exact-candidate certification of Redis-managed API keys under Native AOT (honua-server#4571). Boots a real
-/// published Honua server image (<c>HONUA_CANDIDATE_IMAGE</c>) as <c>Production</c> against a real PostGIS and a
-/// real Redis key registry, then replays the managed-key lifecycle over HTTP: create, list and get, scoped
-/// access under the shared admin policy, wrong keys, concurrent validation, rotation and revocation under
-/// sustained use, rotation racing revocation, expiry, and a process restart that reads every record back.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The in-process test host enables reflection-based JSON serialization, so it cannot reproduce the defect;
-/// only the published native image runs with reflection disabled. The lane asserts the image declares
-/// <c>honua.runtime.compilation=native-aot</c> and that the server log never reports the reflection-disabled
-/// exception. It writes a JSON receipt (image id, repo digests, source revision, per-step statuses) to
-/// <c>HONUA_CANDIDATE_RECEIPT_DIR</c> when set, and to the test output otherwise, including on failure.
-/// </para>
-/// <para>
-/// These checks prove the server's HTTP contract only. They do not award native QGIS or ArcGIS Pro
-/// authentication passes, which remain separate desktop results.
-/// </para>
-/// </remarks>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.CandidateCertification)]
 public sealed class CandidateManagedApiKeyAotCertificationTests(ITestOutputHelper output)
 {
@@ -46,7 +26,7 @@ public sealed class CandidateManagedApiKeyAotCertificationTests(ITestOutputHelpe
     private const int RaceRounds = 10;
 
     [SkippableFact]
-    public async Task ManagedKeyLifecycle_OnProductionNativeAotCandidateWithRedis_HoldsScopeExpiryRotationRevocationAndRaces()
+    public async Task ManagedKeyLifecycle_OnProductionNativeAotCandidate_HoldsScopeExpiryRotationRevocationAndRaces()
     {
         var reference = Environment.GetEnvironmentVariable(CandidateImageEnvVar);
         Skip.If(string.IsNullOrWhiteSpace(reference), $"Set {CandidateImageEnvVar} to certify managed API keys on a candidate image.");
@@ -170,7 +150,7 @@ public sealed class CandidateManagedApiKeyAotCertificationTests(ITestOutputHelpe
         expired.CanAuthenticate.Should().BeFalse();
         await replay.ExpectAsync("rotate-expired-refused", HttpMethod.Post, $"{KeysPath}/{shortLived.Id}/rotate", bootstrap, HttpStatusCode.NotFound);
 
-        // A fresh process reads every persisted record back from Redis with the same outcomes.
+        // A fresh process reads every persisted record back from PostgreSQL with the same outcomes.
         await server.RestartAsync();
         await replay.ExpectAsync("restart-survivor-accepted", HttpMethod.Get, KeysPath, survivor.Secret, HttpStatusCode.OK);
         await replay.ExpectAsync("restart-scoped-still-refused", HttpMethod.Get, KeysPath, scoped.Secret, HttpStatusCode.Forbidden);
@@ -394,7 +374,6 @@ public sealed class CandidateManagedApiKeyAotCertificationTests(ITestOutputHelpe
         internal const string Environment = "Production";
 
         private const string PostgresImage = "postgis/postgis:18-3.6";
-        private const string RedisImage = "redis:7.2-alpine";
         private const string DatabasePassword = "managed-key-4571";
 
         private readonly string _network;
@@ -416,10 +395,9 @@ public sealed class CandidateManagedApiKeyAotCertificationTests(ITestOutputHelpe
             var suffix = Guid.NewGuid().ToString("N")[..8];
             var network = $"honua-mk-{suffix}";
             var postgres = $"{network}-pg";
-            var redis = $"{network}-redis";
             var serverName = $"{network}-server";
-            var port = LocalSubstrateDockerFixture.GetFreeTcpPort();
-            var server = new CandidateServer(network, serverName, [serverName, redis, postgres], port);
+            var port = LoopbackTcpPort.GetFree();
+            var server = new CandidateServer(network, serverName, [serverName, postgres], port);
             try
             {
                 await Docker.RunCheckedAsync(["network", "create", network]);
@@ -429,11 +407,6 @@ public sealed class CandidateManagedApiKeyAotCertificationTests(ITestOutputHelpe
                     "-e", "POSTGRES_USER=honua", "-e", $"POSTGRES_PASSWORD={DatabasePassword}", "-e", "POSTGRES_DB=honua",
                     PostgresImage
                 ]);
-                await Docker.RunCheckedAsync(
-                [
-                    "run", "-d", "--name", redis, "--network", network, RedisImage,
-                    "redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory-policy", "noeviction"
-                ]);
                 await WaitForPostgresAsync(postgres);
 
                 await Docker.RunCheckedAsync(
@@ -442,7 +415,6 @@ public sealed class CandidateManagedApiKeyAotCertificationTests(ITestOutputHelpe
                     "-p", $"127.0.0.1:{port.ToString(CultureInfo.InvariantCulture)}:8080",
                     "-e", $"ASPNETCORE_ENVIRONMENT={Environment}",
                     "-e", $"ConnectionStrings__DefaultConnection=Host={postgres};Database=honua;Username=honua;Password={DatabasePassword}",
-                    "-e", $"ConnectionStrings__Redis={redis}:6379",
                     "-e", $"HONUA_ADMIN_PASSWORD={BootstrapPassword}",
                     "-e", "HostValidation__AllowedHosts__0=127.0.0.1",
                     "-e", "HostValidation__AllowedHosts__1=localhost",

@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.TestKit.Helpers;
 using System.Globalization;
 using System.Text;
 using FluentAssertions;
@@ -18,14 +19,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Streaming-execution coverage for the GeoETL transform path (ETL scale gap). Proves the
-/// transforms no longer materialize the whole FeatureCollection in memory and no longer
-/// fail the legacy 50 MiB artifact cap: a pipeline over a &gt;50 MiB (decoded) feature set
-/// completes and its output is correct; per-feature transforms stream the input to a
-/// spilled NDJSON artifact; dedup spills its seen-key set; and the spill backing file
-/// stays bounded relative to the inline path.
-/// </summary>
 public sealed class StreamingTransformExecutorTests : IDisposable
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";
@@ -212,6 +205,7 @@ public sealed class StreamingTransformExecutorTests : IDisposable
     public async Task SpillableKeySet_BeyondInMemoryLimit_StaysExact()
     {
         // Drive the spillable key set past its in-memory cap so the on-disk path is exercised.
+        var existingSpills = PrivateScratchFileAssertions.Snapshot("honua-dedup-");
         using var keys = new SpillableKeySet(inMemoryDigestLimit: 1_000, windowLimit: 500);
 
         var firstSeen = 0;
@@ -223,6 +217,7 @@ public sealed class StreamingTransformExecutorTests : IDisposable
             }
         }
 
+        PrivateScratchFileAssertions.AssertOwnerOnly("honua-dedup-", existingSpills);
         firstSeen.Should().Be(5_000, "every distinct key is seen for the first time exactly once");
 
         // Re-adding any previously seen key must report a duplicate even after the spill.
@@ -269,12 +264,12 @@ public sealed class StreamingTransformExecutorTests : IDisposable
         (await CountAsync(inlineStream)).Should().Be(1);
     }
 
-    // ----- BH-023 regression: path traversal in stream reference is rejected -----
+    // ----- path traversal in stream reference is rejected -----
 
     [UnitTest]
     public void TryOpenRead_WithPathOutsideRoot_RejectsWithError()
     {
-        // BH-023: TryOpenRead accepted any path in the stream reference without
+        // TryOpenRead accepted any path in the stream reference without
         // validating it falls within the configured output root. An authenticated
         // caller could craft a reference pointing at e.g. /etc/passwd or server
         // config files. The outputRootDirectory parameter must reject such references.
@@ -285,8 +280,7 @@ public sealed class StreamingTransformExecutorTests : IDisposable
         try
         {
             // Build a crafted reference with a path that escapes the root via "..".
-            // The ".." segment here is deliberately adversarial test input (BH-023 regression
-            // coverage for the path-traversal guard), not a real Path.Combine argument-drop risk.
+            // The ".." segment here is deliberately adversarial input for the path-traversal guard.
             var traversalPath = Path.GetFullPath(Path.Join(root, "..", "etc", "passwd"));
             var craftedRef = FeatureStreamArtifact.BuildStreamReference(traversalPath, count: 0, bytes: 0);
 
@@ -308,7 +302,7 @@ public sealed class StreamingTransformExecutorTests : IDisposable
     [UnitTest]
     public async Task TryOpenRead_WithPathInsideRoot_Succeeds()
     {
-        // BH-023: A legitimate stream reference whose path falls within the root must
+        // A legitimate stream reference whose path falls within the root must
         // still be accepted — the guard must not over-reject.
         var sourceRef = await BuildSpilledSourceAsync(10, includeDuplicates: false);
 
@@ -361,12 +355,6 @@ public sealed class StreamingTransformExecutorTests : IDisposable
         return monitor;
     }
 
-    /// <summary>
-    /// Writes a large synthetic feature set directly to a spilled NDJSON artifact (bypassing
-    /// the in-memory inline encode), so a transform under test reads it as a real stream. Each
-    /// feature carries a "keep" flag (alternating true/false), a "gid", and a padded "pad"
-    /// attribute so the decoded payload crosses the 50 MiB cap at the configured counts.
-    /// </summary>
     private async Task<string> BuildSpilledSourceAsync(int featureCount, bool includeDuplicates)
     {
         Directory.CreateDirectory(_outputRoot);

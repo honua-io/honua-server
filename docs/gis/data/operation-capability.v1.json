@@ -7,11 +7,11 @@
     "capabilities": "docs/gis/data/feature-catalog.json"
   },
   "summary": {
-    "operationCount": 527,
+    "operationCount": 535,
     "unresolvedCount": 0,
     "capabilityCount": 23,
     "perSpec": {
-      "admin-api": 433,
+      "admin-api": 441,
       "ogc-api-coverages": 8,
       "ogc-api-features": 19,
       "ogc-api-maps": 10,
@@ -21,15 +21,15 @@
       "studio-api": 24
     },
     "perCapability": {
-      "admin.control-plane": 314,
+      "admin.control-plane": 318,
       "admin.multi-tenancy": 7,
       "alerts.evaluation": 18,
       "analytics.h3": 1,
-      "fieldops.forms": 16,
+      "fieldops.forms": 18,
       "fieldops.offline-sync": 5,
       "geocoding.forward": 4,
       "identity.mtls-client-certificate": 13,
-      "identity.oidc": 6,
+      "identity.oidc": 8,
       "import.file": 27,
       "import.geoserver": 5,
       "import.geoservices": 10,
@@ -650,6 +650,16 @@
     {
       "spec": "admin-api",
       "method": "POST",
+      "path": "/api/v1/admin/connections/object-storage/setup",
+      "operationId": "createObjectStorageConnectionSetup",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-connections-object-storage-setup"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
       "path": "/api/v1/admin/connections/test",
       "operationId": "testDraftConnection",
       "capability": "admin.control-plane",
@@ -756,6 +766,16 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "post-api-v1-admin-connections-id-layers-storagelayerid-features-refresh"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/connections/{id}/objects",
+      "operationId": "listConnectionObjects",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-connections-id-objects"
     },
     {
       "spec": "admin-api",
@@ -1140,92 +1160,112 @@
     {
       "spec": "admin-api",
       "method": "GET",
-      "path": "/api/v1/admin/forms/packages",
-      "operationId": "listFormPackages",
+      "path": "/api/v1/admin/forms",
+      "operationId": "listForms",
       "capability": "fieldops.forms",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-admin-forms-packages"
+      "catalogEntryId": "get-api-v1-admin-forms"
     },
     {
       "spec": "admin-api",
       "method": "POST",
-      "path": "/api/v1/admin/forms/packages",
-      "operationId": "createFormPackageDraft",
+      "path": "/api/v1/admin/forms",
+      "operationId": "createFormDraft",
       "capability": "fieldops.forms",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "post-api-v1-admin-forms-packages"
+      "catalogEntryId": "post-api-v1-admin-forms"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/forms/import",
+      "operationId": "importFormXlsForm",
+      "capability": "fieldops.forms",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-forms-import"
     },
     {
       "spec": "admin-api",
       "method": "GET",
-      "path": "/api/v1/admin/forms/packages/{formId}",
-      "operationId": "getCurrentFormPackage",
+      "path": "/api/v1/admin/forms/{formId}",
+      "operationId": "getCurrentForm",
       "capability": "fieldops.forms",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-admin-forms-packages-formid"
+      "catalogEntryId": "get-api-v1-admin-forms-formid"
     },
     {
       "spec": "admin-api",
       "method": "GET",
-      "path": "/api/v1/admin/forms/packages/{formId}/versions",
-      "operationId": "listFormPackageVersions",
+      "path": "/api/v1/admin/forms/{formId}/export",
+      "operationId": "exportFormXlsForm",
       "capability": "fieldops.forms",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-admin-forms-packages-formid-versions"
+      "catalogEntryId": "get-api-v1-admin-forms-formid-export"
     },
     {
       "spec": "admin-api",
       "method": "GET",
-      "path": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}",
-      "operationId": "getFormPackageVersion",
+      "path": "/api/v1/admin/forms/{formId}/versions",
+      "operationId": "listFormVersions",
       "capability": "fieldops.forms",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "get-api-v1-admin-forms-packages-formid-versions-packageversion"
+      "catalogEntryId": "get-api-v1-admin-forms-formid-versions"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/forms/{formId}/versions/{formVersion}",
+      "operationId": "getFormVersion",
+      "capability": "fieldops.forms",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-forms-formid-versions-formversion"
     },
     {
       "spec": "admin-api",
       "method": "PUT",
-      "path": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}",
-      "operationId": "updateFormPackageDraft",
+      "path": "/api/v1/admin/forms/{formId}/versions/{formVersion}",
+      "operationId": "updateFormDraft",
       "capability": "fieldops.forms",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "put-api-v1-admin-forms-packages-formid-versions-packageversion"
+      "catalogEntryId": "put-api-v1-admin-forms-formid-versions-formversion"
     },
     {
       "spec": "admin-api",
       "method": "POST",
-      "path": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/publish",
-      "operationId": "publishFormPackageVersion",
+      "path": "/api/v1/admin/forms/{formId}/versions/{formVersion}/publish",
+      "operationId": "goLiveFormDraft",
       "capability": "fieldops.forms",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "post-api-v1-admin-forms-packages-formid-versions-packageversion-publish"
+      "catalogEntryId": "post-api-v1-admin-forms-formid-versions-formversion-publish"
     },
     {
       "spec": "admin-api",
       "method": "POST",
-      "path": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/reopen",
-      "operationId": "reopenFormPackageVersion",
+      "path": "/api/v1/admin/forms/{formId}/versions/{formVersion}/reopen",
+      "operationId": "reopenFormVersion",
       "capability": "fieldops.forms",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "post-api-v1-admin-forms-packages-formid-versions-packageversion-reopen"
+      "catalogEntryId": "post-api-v1-admin-forms-formid-versions-formversion-reopen"
     },
     {
       "spec": "admin-api",
       "method": "POST",
-      "path": "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/validate",
-      "operationId": "validateFormPackageVersion",
+      "path": "/api/v1/admin/forms/{formId}/versions/{formVersion}/validate",
+      "operationId": "validateFormDraft",
       "capability": "fieldops.forms",
       "family": "Admin API",
       "maturity": "implemented",
-      "catalogEntryId": "post-api-v1-admin-forms-packages-formid-versions-packageversion-validate"
+      "catalogEntryId": "post-api-v1-admin-forms-formid-versions-formversion-validate"
     },
     {
       "spec": "admin-api",
@@ -3069,6 +3109,16 @@
     },
     {
       "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/oidc/providers/{id}/revisions",
+      "operationId": "listOidcProviderRevisions",
+      "capability": "identity.oidc",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-oidc-providers-id-revisions"
+    },
+    {
+      "spec": "admin-api",
       "method": "POST",
       "path": "/api/v1/admin/oidc/providers/{id}/test",
       "operationId": "testOidcProvider",
@@ -3076,6 +3126,16 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "post-api-v1-admin-oidc-providers-id-test"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/oidc/providers/{id}/undo",
+      "operationId": "undoOidcProviderChange",
+      "capability": "identity.oidc",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-oidc-providers-id-undo"
     },
     {
       "spec": "admin-api",
@@ -3476,6 +3536,26 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "put-api-v1-admin-rate-limits-id"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/rate-limits/{id}/revisions",
+      "operationId": "listRateLimitPolicyRevisions",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-rate-limits-id-revisions"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/rate-limits/{id}/undo",
+      "operationId": "undoRateLimitPolicyChange",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-rate-limits-id-undo"
     },
     {
       "spec": "admin-api",

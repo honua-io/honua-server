@@ -181,13 +181,13 @@ Contract details:
   key id) is refused with a 400 when it sends a key.
 - Only requests that committed rows are recorded; a fully-failed/no-op request is not
   recorded, so it can be retried fresh.
-- The store is Redis-backed when Redis is configured (durable and atomic across replicas)
-  and falls back to an in-process window otherwise. While an edit is executing, its key is
+- The store is in the system database when one is configured (durable and atomic across
+  replicas) and falls back to an in-process window otherwise. While an edit is executing, its key is
   *reserved*: a second request carrying the same key while the first is still in flight is
   rejected with error code `409` instead of executing a duplicate edit. The reserve is
-  atomic across replicas on Redis (`SET NX`) and atomic within a single process on the
-  fallback, so a multi-replica deployment without Redis keeps only the single-node
-  guarantee.
+  atomic across replicas in the system database (a conditional insert) and atomic within a
+  single process on the fallback, so a multi-replica deployment without a system database
+  keeps only the single-node guarantee.
 - A reservation is released when the request is known to have changed no rows — for example,
   an exception before write dispatch, an explicit read-only provider rejection, a
   `rollbackOnFailure` validation failure, a confirmed rollback, or a completed write that
@@ -225,7 +225,7 @@ the edits again. A bidirectional retry still assembles its download half fresh.
   record whatever the casing of the service in the path.
 - A `409` answers an identical upload that is still in flight. Its reservation lasts the configured
   `Limits:Connections:RequestTimeout` plus 30 seconds, and never less than 60 seconds. A request that
-  outlives its reservation never overwrites another request's reservation or record. The Redis or
+  outlives its reservation never overwrites another request's reservation or record. The database or
   in-process backing follows the applyEdits contract above.
 
 ### applyEdits per-feature error codes
@@ -422,6 +422,15 @@ Geometry Service request budgets:
   `Limits:Edits:MaxPayloadSize` for a signed-in caller and a quarter of it for a caller
   that is not signed in. `buffer` checks the input geometries times the number of
   distances before buffering. A request over the budget returns a 400 error.
+- Operations that node geometries add a vertex wherever two segments cross: `intersect`,
+  `difference`, `clip`, `union`, `cut`, `autoComplete`, `reshape`, `trimExtend`,
+  `generalize`, `simplify`, `relation`, and `buffer` with its `unionResults` step. Before
+  each of these runs on a geometry or pair, the segment pairs that could cross are counted,
+  up to `Limits:Geometry:MaxOverlayCandidatePairs` (default 2,000,000) for a signed-in
+  caller and a quarter of it for a caller that is not signed in. Past that count the
+  request returns a 400 error before that geometry or pair is computed. `offset` counts the
+  curves it draws around each geometry, which can cross more often than the geometry does,
+  in the same way before it joins them; `buffer` counts its input geometries.
 - Each server process runs a bounded number of Geometry Service operations at once
   (twice its processor count, between 8 and 32) and bounds the request bytes they hold
   together to one and a quarter times `Limits:Edits:MaxPayloadSize`; a signed-in request
@@ -433,7 +442,7 @@ Geometry Service request budgets:
   gets the standard retry response with `Retry-After: 1`. The service description is not
   counted.
 - Under database pressure, every Geometry Service operation from a caller that is not
-  signed in is shed with the same retry response. The service description stays available.
+  signed in is shed with a retry response whose `Retry-After` is spread over 1 to 3 seconds. The service description stays available.
 
 Known parameter-level caveats:
 
@@ -491,7 +500,7 @@ recorded here because the NAServer gaps above depend on it.
 
 | Surface | Status | Notes |
 | --- | --- | --- |
-| Network dataset (registry + editing + rebuild + promotion) | Partial (addressable registry + registry editing + transactional content edits + durable rebuild + atomic promotion/rollback + multi-node fencing) | A first-class `honua.network_datasets` registry (migration 062) makes the routing network addressable: the pgRouting provider resolves edge/vertex table names per `Routing:NetworkDatasetId`, defaulting to a seeded `default` dataset mapping to the existing `public.ways` topology (zero behaviour change). The dataset registry is **editable** through the admin API (`/api/v1/admin/network-datasets`, migration 066 adds description + audit columns): list/get/register/update/delete a dataset's source-table mapping, SRID, status, and metadata, gated by the admin authorization policy with safe schema-qualified-identifier validation on the edge/vertex table names. Migration 084 and the provider-neutral routing domain define immutable, optimistic-concurrency-protected topology generations and safely backfill the existing mapping as the sole active generation; a database-owned insert trigger atomically creates the initial generation for registrations from both old and new replicas during a rolling upgrade. Migration 086 adds a batched **edge and turn-restriction content-edit** admin surface (`/api/v1/admin/network-datasets/{id}/generations`, `POST .../generations/{generation}/edits`): allocate a `draft` generation, then submit an all-or-nothing add/update/delete batch (bounded size, `Idempotency-Key` at-most-once replay, `If-Match` optimistic concurrency) that stages edge geometry/attributes and turn restrictions in per-generation tables, validates the #2655 travel-profile cost-column allowlist and referential integrity between staged edges and restrictions, and atomically bumps the source revision and transitions the generation from `draft`/`dirty` to `dirty`. Migration 087 adds a **durable isolated shadow-topology rebuild** (`POST .../generations/{generation}/rebuild`, `GET .../rebuild/{attempt}`): a `NetworkTopologyRebuild` execution job (shared job infra, in-process worker) materializes a generation-scoped pgRouting-shaped edge/vertex shadow topology directly from the staged edits (not from `pgr_createTopology` geometry-snapping — the edits already carry explicit stable vertex references), checkpoints each stage (snapshot/build/analyze/validate/cleanup) so a restarted worker resumes cleanly, and transitions the generation `building` → `ready`/`failed`. Every rebuild-attempt mutation is fenced by a monotonic lease token (multi-node safe); an expired lease is either handed to a fresh worker or the attempt is failed and its orphan shadow tables cleaned by a self-healing reconciler. Migration 088 adds **atomic promotion/rollback** (`POST .../promote`, `POST .../rollback`, `GET .../promotions`): one Postgres transaction verifies a `ready` candidate's shadow-topology evidence (or a `retired` rollback target's artifacts still exist), atomically retires the old active generation, activates the target, and repoints `honua.network_datasets` to the target's own tables so the read-only `INetworkDatasetResolver` resolves every routing solve family from one consistent snapshot on its next read — no resolver code changes required. `Idempotency-Key`-scoped replay and an immutable promotion-history table back every call. Active/ready/building/failed/retired generations reject content edits with a sanitized 409; only this promotion path ever changes the active generation pointer. Multi-node chaos/scale coverage (simulated Redis outage, rolling-deployment overlap, remote batch-compute backends) is deferred. |
+| Network dataset (registry + editing + rebuild + promotion) | Partial (addressable registry + registry editing + transactional content edits + durable rebuild + atomic promotion/rollback + multi-node fencing) | A first-class `honua.network_datasets` registry (migration 062) makes the routing network addressable: the pgRouting provider resolves edge/vertex table names per `Routing:NetworkDatasetId`, defaulting to a seeded `default` dataset mapping to the existing `public.ways` topology (zero behaviour change). The dataset registry is **editable** through the admin API (`/api/v1/admin/network-datasets`, migration 066 adds description + audit columns): list/get/register/update/delete a dataset's source-table mapping, SRID, status, and metadata, gated by the admin authorization policy with safe schema-qualified-identifier validation on the edge/vertex table names. Migration 084 and the provider-neutral routing domain define immutable, optimistic-concurrency-protected topology generations and safely backfill the existing mapping as the sole active generation; a database-owned insert trigger atomically creates the initial generation for registrations from both old and new replicas during a rolling upgrade. Migration 086 adds a batched **edge and turn-restriction content-edit** admin surface (`/api/v1/admin/network-datasets/{id}/generations`, `POST .../generations/{generation}/edits`): allocate a `draft` generation, then submit an all-or-nothing add/update/delete batch (bounded size, `Idempotency-Key` at-most-once replay, `If-Match` optimistic concurrency) that stages edge geometry/attributes and turn restrictions in per-generation tables, validates the #2655 travel-profile cost-column allowlist and referential integrity between staged edges and restrictions, and atomically bumps the source revision and transitions the generation from `draft`/`dirty` to `dirty`. Migration 087 adds a **durable isolated shadow-topology rebuild** (`POST .../generations/{generation}/rebuild`, `GET .../rebuild/{attempt}`): a `NetworkTopologyRebuild` execution job (shared job infra, in-process worker) materializes a generation-scoped pgRouting-shaped edge/vertex shadow topology directly from the staged edits (not from `pgr_createTopology` geometry-snapping — the edits already carry explicit stable vertex references), checkpoints each stage (snapshot/build/analyze/validate/cleanup) so a restarted worker resumes cleanly, and transitions the generation `building` → `ready`/`failed`. Every rebuild-attempt mutation is fenced by a monotonic lease token (multi-node safe); an expired lease is either handed to a fresh worker or the attempt is failed and its orphan shadow tables cleaned by a self-healing reconciler. Migration 088 adds **atomic promotion/rollback** (`POST .../promote`, `POST .../rollback`, `GET .../promotions`): one Postgres transaction verifies a `ready` candidate's shadow-topology evidence (or a `retired` rollback target's artifacts still exist), atomically retires the old active generation, activates the target, and repoints `honua.network_datasets` to the target's own tables so the read-only `INetworkDatasetResolver` resolves every routing solve family from one consistent snapshot on its next read — no resolver code changes required. `Idempotency-Key`-scoped replay and an immutable promotion-history table back every call. Active/ready/building/failed/retired generations reject content edits with a sanitized 409; only this promotion path ever changes the active generation pointer. Multi-node chaos/scale coverage (simulated database outage, rolling-deployment overlap, remote batch-compute backends) is deferred. |
 
 Operators add a real profile only after adding its numeric forward/reverse columns to
 the selected edge table, then updating the registry metadata, for example:

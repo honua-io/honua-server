@@ -160,7 +160,7 @@ internal static class GeoprocessingResultPackageFactory
             // nor an arbitrary artifact URI may by themselves authorize publication.
             AppendCommittedPostgisDestination(metadata, job, reference, index, kind);
 
-            // Typed raster output descriptors (#3089) become metadata-rich artifacts.
+            // Typed raster output descriptors become metadata-rich artifacts.
             // Staged objects use the protocol-neutral authenticated content route as
             // their canonical Uri, while bounded inline descriptors keep the legacy
             // data-URI shape. Adapters verify matching store availability before

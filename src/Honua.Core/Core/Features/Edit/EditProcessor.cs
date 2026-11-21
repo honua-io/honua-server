@@ -13,8 +13,7 @@ namespace Honua.Core.Features.Edit;
 
 public sealed class EditProcessor : IEditProcessor
 {
-    // PA-018: the feature-write pipeline (validate/optimize/convert) is called separately by
-    // every protocol adapter and previously emitted no telemetry at all. Honua.Core cannot
+    // Honua.Core cannot
     // depend on Honua.ServiceDefaults (see the dependency-direction rule), so this mirrors the
     // local-ActivitySource convention already used elsewhere in this project (e.g.
     // VersionJobRunner) rather than referencing HonuaTelemetry.ActivitySource.
@@ -437,14 +436,14 @@ public sealed class EditProcessor : IEditProcessor
             // A spatial layer does not universally require geometry: a nullable geometry
             // column legitimately accepts attribute-only ("null geometry") creates, which
             // ArcGIS FeatureServer and the OGC/OData edit paths all support (see
-            // GeometryValidationTests.ApplyEdits_WithNullGeometry_SucceedsWhenAllowed and
-            // Issue #45). The prior blanket "geometry required on a spatial layer" gate
-            // (BH-014, #2423) rejected those valid attribute-only creates; NOT NULL geometry
-            // columns are enforced by the database constraint, mapped through the shared
-            // error helpers rather than a client-side pre-check.
+            // GeometryValidationTests.ApplyEdits_WithNullGeometry_SucceedsWhenAllowed).
+            // A blanket "geometry required on a spatial layer" gate would reject those
+            // valid attribute-only creates; NOT NULL geometry columns are enforced by the
+            // database constraint, mapped through the shared error helpers rather than a
+            // client-side pre-check.
             //
             // Required attributes are the same per-slot check FeatureServer runs before the
-            // batch is assembled (#6133). Geometry presence is intentionally not pre-checked.
+            // batch is assembled. Geometry presence is intentionally not pre-checked.
             var createRejection = DescribeCreateAttributeRejection(resource, feature.Attributes);
             if (createRejection is not null)
             {
@@ -765,9 +764,10 @@ public sealed class EditProcessor : IEditProcessor
         // V2 fields carry Nullable but no DefaultValue — match the v1 contract by
         // treating any non-nullable, non-geometry, non-system field as required.
         var primaryIdFieldName = resource.FindPrimaryIdField()?.Name;
+        var trackingFields = EditorTrackingFields.Names(resource.Editing).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var field in resource.SchemaFields)
         {
-            if (field.Nullable)
+            if (field.Nullable || trackingFields.Contains(field.Name))
             {
                 continue;
             }
@@ -791,10 +791,11 @@ public sealed class EditProcessor : IEditProcessor
     {
         var missing = new List<string>();
         var primaryIdFieldName = resource.FindPrimaryIdField()?.Name;
+        var trackingFields = EditorTrackingFields.Names(resource.Editing).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var field in resource.SchemaFields)
         {
-            if (field.Nullable)
+            if (field.Nullable || trackingFields.Contains(field.Name))
             {
                 continue;
             }

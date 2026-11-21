@@ -13,10 +13,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Verifies the CloudWatch deploy telemetry provider end-to-end through the multi-provider
-/// dispatcher with a faked CloudWatch metric client (no live AWS account required).
-/// </summary>
 public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
 {
     private const string ErrorRateExpression = "errors / requests";
@@ -248,7 +244,7 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
         client.Config.RegionEndpoint.Should().BeNull();
 
         // Without a pinned signing region the SDK resolves one from the ambient chain, ending in
-        // EC2 instance metadata, which hangs every request inside a container (#4998).
+        // EC2 instance metadata, which hangs every request inside a container.
         client.Config.AuthenticationRegion.Should().Be("us-east-1");
     }
 
@@ -267,7 +263,7 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
     [InlineData(-1.0)]
     public async Task EvaluateAsync_InvalidLatencyReading_IsTreatedAsAbsentNotHealthy(double invalidReading)
     {
-        // #4617: metric math over an undefined ratio can return NaN/±Inf; the gate treats it as absent.
+        // Metric math over an undefined ratio can return NaN/±Inf; the gate treats it as absent.
         var client = new FakeCloudWatchMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
         {
             [SampleExpression] = 50,
@@ -286,7 +282,7 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
     [Fact]
     public void SelectSignalValue_MultipleSeries_IsAmbiguousAndRejected()
     {
-        // #4617: a SEARCH or GROUP BY expression returns one result per series for the single query.
+        // A SEARCH or GROUP BY expression returns one result per series for the single query.
         var response = new GetMetricDataResponse
         {
             MetricDataResults =
@@ -396,7 +392,7 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
     [UnitTest]
     public async Task EvaluateAsync_ErrorCountSeriesAbsentWithSampleFloorMet_PromotesWithZeroErrors()
     {
-        // honua-server#6474: a healthy ALB target group publishes no HTTPCode_Target_5XX_Count datapoint.
+        // A healthy ALB target group publishes no HTTPCode_Target_5XX_Count datapoint.
         var client = new FakeCloudWatchMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
         {
             [SampleExpression] = 120,
@@ -538,7 +534,7 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
     public async Task EvaluateAsync_ErrorRateSeriesAbsent_StillHolds()
     {
         // The substitution is bounded to an error-count numerator: an empty ratio cannot tell no
-        // errors from no traffic, so telemetry.error_rate.query keeps the #4617 behaviour.
+        // errors from no traffic, so telemetry.error_rate.query still holds.
         var client = new FakeCloudWatchMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
         {
             [SampleExpression] = 120,
@@ -667,7 +663,6 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
 
         public int LastPeriodSeconds { get; private set; }
 
-        /// <summary>Raw responses read through the production response reader instead of a canned value.</summary>
         public Dictionary<string, GetMetricDataResponse> ResponseOverrides { get; } = new(StringComparer.Ordinal);
 
         public Task<CloudWatchSignalReading> GetExpressionReadingAsync(

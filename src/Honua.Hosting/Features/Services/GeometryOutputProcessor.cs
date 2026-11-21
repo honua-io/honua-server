@@ -13,6 +13,13 @@ internal static class GeometryOutputProcessor
     private const double EarthRadiusMeters = 6_378_137d;
 
     public static Geometry? ApplyLimits(Geometry? geometry, GeometryLimits limits)
+        => ApplyLimits(geometry, limits, static shared => (Geometry)shared.Copy());
+
+    // For a geometry the caller decoded itself and shares with no one: coordinates are rounded in place.
+    public static Geometry? ApplyLimitsInPlace(Geometry? owned, GeometryLimits limits)
+        => ApplyLimits(owned, limits, static geometry => geometry);
+
+    private static Geometry? ApplyLimits(Geometry? geometry, GeometryLimits limits, Func<Geometry, Geometry> writable)
     {
         if (geometry == null || geometry.IsEmpty)
         {
@@ -35,7 +42,7 @@ internal static class GeometryOutputProcessor
 
         if (limits.MaxCoordinatePrecision >= 0)
         {
-            processed = (Geometry)processed.Copy();
+            processed = writable(processed);
             processed.Apply(new CoordinatePrecisionFilter(limits.MaxCoordinatePrecision));
             processed.GeometryChanged();
         }
@@ -83,10 +90,20 @@ internal static class GeometryOutputProcessor
             return geometry;
         }
 
-        var processed = (Geometry)geometry.Copy();
-        processed.Apply(new CoordinateDimensionFilter(includeZ, includeM));
-        processed.GeometryChanged();
-        return processed;
+        return ApplyDimensionFilterInPlace((Geometry)geometry.Copy(), includeZ, includeM);
+    }
+
+    // Same precondition as ApplyLimitsInPlace: the caller decoded the geometry and shares it with no one.
+    public static Geometry ApplyDimensionFilterInPlace(Geometry owned, bool includeZ, bool includeM)
+    {
+        if (includeZ && includeM)
+        {
+            return owned;
+        }
+
+        owned.Apply(new CoordinateDimensionFilter(includeZ, includeM));
+        owned.GeometryChanged();
+        return owned;
     }
 
     private static double? ResolveSimplifyTolerance(Geometry geometry, double? simplifyToleranceMeters)
@@ -100,7 +117,7 @@ internal static class GeometryOutputProcessor
         {
             4326 => ConvertMetersToDegrees(simplifyToleranceMeters.Value, geometry.EnvelopeInternal),
             // Web Mercator (3857) and its aliases already carry metre units; route the alias set
-            // through the canonical classifier (#2732) instead of a local literal list.
+            // through the canonical classifier instead of a local literal list.
             _ when Honua.Core.Features.Shared.Models.SpatialReferenceExtensions.IsWebMercatorSrid(geometry.SRID)
                 => simplifyToleranceMeters.Value,
             _ => null

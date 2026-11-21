@@ -65,7 +65,7 @@ internal static partial class ImageServerSoapEndpoints
             .AllowAnonymous();
     }
 
-    private static async Task<IResult> HandlePostSoapImageServer(
+    internal static async Task<IResult> HandlePostSoapImageServer(
         string serviceId,
         HttpContext context,
         [FromServices] IImageServerLayerResolver layerResolver,
@@ -298,7 +298,7 @@ internal static partial class ImageServerSoapEndpoints
     }
 
     private static async Task<(ImageServerLayerResolution Resolution, RasterInfo[] Rasters,
-        RasterExtent? Extent, IResult? ErrorResult)> ReadServiceRastersAsync(
+        RasterExtent? Extent, IResult? ErrorResult, ImageServerCogLayer? CogLayer)> ReadServiceRastersAsync(
         SoapRasterRequestContext request,
         IImageServerLayerResolver layerResolver,
         IRasterStore rasterStore,
@@ -313,18 +313,17 @@ internal static partial class ImageServerSoapEndpoints
             cancellationToken).ConfigureAwait(false);
         if (revalidation.ErrorResult is not null)
         {
-            return (revalidation.Resolution, [], null, revalidation.ErrorResult);
+            return (revalidation.Resolution, [], null, revalidation.ErrorResult, null);
         }
 
-        var rasters = await rasterStore.ListRastersAsync(
-            revalidation.Resolution.LayerId,
-            cancellationToken).ConfigureAwait(false);
+        var (rasters, cogLayer, cogError) = await ReadRastersOrCogsAsync(
+            request with { Resolution = revalidation.Resolution }, rasterStore, cancellationToken).ConfigureAwait(false);
         if (rasters.Length == 0)
         {
-            return (revalidation.Resolution, rasters, null, CreateSoapFault(
+            return (revalidation.Resolution, rasters, null, cogError ?? CreateSoapFault(
                 "Image service has no rasters.",
                 StatusCodes.Status404NotFound,
-                request.SoapNamespace));
+                request.SoapNamespace), null);
         }
 
         var extent = ImageServerMosaicHelpers.ComputeAggregateExtent(rasters);
@@ -333,10 +332,10 @@ internal static partial class ImageServerSoapEndpoints
             return (revalidation.Resolution, rasters, null, CreateSoapFault(
                 "Image service extent is unavailable.",
                 StatusCodes.Status500InternalServerError,
-                request.SoapNamespace));
+                request.SoapNamespace), null);
         }
 
-        return (revalidation.Resolution, rasters, extent, null);
+        return (revalidation.Resolution, rasters, extent, null, cogLayer);
     }
 
     private static async Task<IResult> HandleGetFieldsAsync(
@@ -352,7 +351,7 @@ internal static partial class ImageServerSoapEndpoints
             return service.ErrorResult;
         }
 
-        // GetServiceInfo describes a registered coverage's grid (#6493), so the
+        // GetServiceInfo describes a registered coverage's grid, so the
         // catalog geometry must carry that same CRS rather than the base mosaic's.
         var coverageGrid = await ReadCoverageGridAsync(
             request.HttpContext, service.Resolution.LayerId, cancellationToken).ConfigureAwait(false);
@@ -437,11 +436,17 @@ internal static partial class ImageServerSoapEndpoints
         var coverageGrid = await ReadCoverageGridAsync(
             request.HttpContext, service.Resolution.LayerId, cancellationToken).ConfigureAwait(false);
         RasterStatistics[] statistics;
+        ServiceInfoExtras? cogExtras = null;
         if (coverageGrid is not null)
         {
             referenceRaster = ImageServerCoverageRaster.Apply(referenceRaster, coverageGrid);
             extent = coverageGrid.Extent;
             statistics = ImageServerCoverageRaster.Statistics(coverageGrid);
+        }
+        else if (service.CogLayer is { } cogLayer)
+        {
+            (statistics, var extrasFromCogs) = await ReadCogServiceInfoAsync(request, cogLayer, cancellationToken).ConfigureAwait(false);
+            cogExtras = extrasFromCogs;
         }
         else
         {
@@ -457,7 +462,7 @@ internal static partial class ImageServerSoapEndpoints
         XNamespace xsi = XmlSchemaInstanceNamespace;
         var maskedFields = await ReadCatalogMasksAsync(
             request.HttpContext, service.Resolution.LayerId, cancellationToken).ConfigureAwait(false);
-        var extras = await BuildServiceInfoExtrasAsync(
+        var extras = cogExtras ?? await BuildServiceInfoExtrasAsync(
             request.HttpContext,
             service.Resolution.LayerId,
             rasters,
@@ -702,15 +707,12 @@ internal static partial class ImageServerSoapEndpoints
             .ConfigureAwait(false);
         if (!referenceRaster.HasValue)
         {
-            return CreateSoapFault(
-                "Image service has no rasters.",
-                StatusCodes.Status404NotFound,
-                requestContext.SoapNamespace);
+            return await CreateNoRastersFaultAsync(requestContext with { Resolution = current }, cancellationToken).ConfigureAwait(false);
         }
 
         var raster = referenceRaster.Value;
         // Pro draws with Compression=LERC (and ExportImage's esriImageLERC). That is a LERC2
-        // block, not the uncompressed 8-bit BIP pixel block (#6563).
+        // block, not the uncompressed 8-bit BIP pixel block.
         var lercDraw = IsLercDraw(request);
         if (!lercDraw)
         {
@@ -1078,7 +1080,7 @@ internal static partial class ImageServerSoapEndpoints
             return true;
         }
 
-        // SOAP accepts every method the service advertises in AllowedMosaicMethods (#4063), as
+        // SOAP accepts every method the service advertises in AllowedMosaicMethods, as
         // either the advertised token or its esriMosaic* enum name, and forwards it to the shared
         // REST mosaic-rule parser.
         var requested = FindDescendantValue(element, "MosaicMethod");

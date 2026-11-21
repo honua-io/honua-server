@@ -8,10 +8,6 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Tests.Infrastructure;
 
-/// <summary>
-/// Tests for GeoServices-compatible error response format
-/// Ensures compliance with GeoServices REST error response specification
-/// </summary>
 public class ErrorResponseTests
 {
     [Fact]
@@ -97,7 +93,7 @@ public class ErrorResponseTests
     [InlineData(498, 498)]
     [InlineData(499, 499)]
     [InlineData(500, 500)]
-    [InlineData(501, 501)] // #2795: 501 passes through so not-implemented ops stay distinct from a 500 server fault
+    [InlineData(501, 501)] // 501 passes through so not-implemented ops stay distinct from a 500 server fault
     [InlineData(502, 502)]
     [InlineData(503, 503)]
     [InlineData(999, 500)] // Unknown codes default to 500

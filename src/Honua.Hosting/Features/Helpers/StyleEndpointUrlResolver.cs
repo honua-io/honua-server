@@ -4,21 +4,34 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Honua.Core.Configuration;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Helpers;
 
 // TileJSON requires absolute tile endpoints, and the canonical and deprecated style routes must emit the same document.
+// Sources served only by the owned /tiles route advertise a zoom range no wider than that route accepts:
+// MapLibre requests every level up to a source's maxzoom rather than overzooming the last served one.
+internal sealed record StyleUrlContext(string BaseUrl, HttpRequest? Request, TileLimits TileLimits)
+{
+    public static StyleUrlContext From(HttpContext context) => new(
+        BaseUrlResolver.GetBaseUrl(context),
+        context.Request,
+        context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Tiles);
+}
+
 internal static class StyleEndpointUrlResolver
 {
-    public static JsonElement Resolve(JsonElement style, string baseUrl, HttpRequest? request = null)
+    public static JsonElement Resolve(JsonElement style, StyleUrlContext urlContext)
     {
         if (style.ValueKind != JsonValueKind.Object)
         {
             return style;
         }
 
-        var resolved = Resolve(style.GetRawText(), baseUrl, request, out var changed);
+        var resolved = Resolve(style.GetRawText(), urlContext, out var changed);
         if (!changed)
         {
             return style;
@@ -28,11 +41,12 @@ internal static class StyleEndpointUrlResolver
         return document.RootElement.Clone();
     }
 
-    public static string Resolve(string styleJson, string baseUrl, HttpRequest? request = null)
-        => Resolve(styleJson, baseUrl, request, out _);
+    public static string Resolve(string styleJson, StyleUrlContext urlContext)
+        => Resolve(styleJson, urlContext, out _);
 
-    private static string Resolve(string styleJson, string baseUrl, HttpRequest? request, out bool changed)
+    private static string Resolve(string styleJson, StyleUrlContext urlContext, out bool changed)
     {
+        var (baseUrl, request, tileLimits) = urlContext;
         changed = false;
 
         JsonNode? node;
@@ -80,6 +94,11 @@ internal static class StyleEndpointUrlResolver
                         }
                     }
                 }
+
+                if (IsServedOnlyByOwnedVectorTiles(tiles, baseUrl))
+                {
+                    changed |= StyleSourceZoomRange.Narrow(sourceObject, tileLimits);
+                }
             }
         }
 
@@ -123,6 +142,25 @@ internal static class StyleEndpointUrlResolver
         }
 
         return BaseUrlResolver.PreserveToken(request, resolved);
+    }
+
+    private static bool IsServedOnlyByOwnedVectorTiles(JsonArray tiles, string baseUrl)
+    {
+        if (tiles.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var tile in tiles)
+        {
+            if (tile is not JsonValue value || !value.TryGetValue<string>(out var url) ||
+                !IsOwnedTileUrl(url, baseUrl) || !url.Split('?')[0].EndsWith("/{z}/{x}/{y}.mvt", StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static bool IsOwnedTileUrl(string url, string baseUrl)

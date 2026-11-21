@@ -11,11 +11,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Startup;
 
-/// <summary>
-/// Regression guard for #1575: the durable provider role store (e.g. PostgresRoleStore,
-/// registered earlier via AddPostgreSqlServices) must not be shadowed by the in-memory
-/// control-plane default. The default is registered with TryAdd so durable wins.
-/// </summary>
 public sealed class ControlPlaneIamDefaultsTests
 {
     [Fact]
@@ -54,7 +49,7 @@ public sealed class ControlPlaneIamDefaultsTests
     [Fact]
     public void AddInMemoryControlPlaneIamDefaults_PreservesDurableUserStoresRegisteredEarlier()
     {
-        // #3141: the durable PostgresUserStore / PostgresScimGroupStore registered by
+        // The durable PostgresUserStore / PostgresScimGroupStore registered by
         // AddPostgreSqlServices (earlier in Program.cs) must win over the in-memory
         // defaults for ALL THREE user contracts, or SCIM provisioning and the admin
         // surface would silently split across different record sets.

@@ -20,12 +20,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// The control-plane event Lambdas run the server image behind the AWS Lambda Web Adapter, which posts
-/// every EventBridge / Scheduler invocation to <c>POST /events</c> from loopback. On the aws-serverless
-/// cell (honua-release e2e-cloud-aws run 38133126673) that request was rejected by host validation and
-/// no route existed, so reconcile, backstop and scheduled ticks never ran.
-/// </summary>
 public sealed class ControlPlaneLambdaEventEndpointTests
 {
     private const string BatchEvent = """
@@ -131,7 +125,7 @@ public sealed class ControlPlaneLambdaEventEndpointTests
     [InlineData("scheduled-tick", "schema-floor")]
     public async Task DegradedHost_Returns503NotReady_SoTheEventIsRetried(string selector, string? reasonCode)
     {
-        // honua-server#5916: cp-tick and cp-backstop cold-started before migrations were applied and
+        // Cp-tick and cp-backstop cold-started before migrations were applied and
         // exited. A degraded host must answer a typed 503 instead of running the handler.
         var targets = new RecordingTargets();
         var degraded = new DegradedStartupContext();

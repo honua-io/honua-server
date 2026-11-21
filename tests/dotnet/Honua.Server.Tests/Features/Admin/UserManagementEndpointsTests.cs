@@ -17,9 +17,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for user management admin endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.IdentityManagement)]
@@ -53,7 +50,7 @@ public class UserManagementEndpointsTests : IAsyncLifetime
         _client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
 
         // Seed test users. The registered IUserStore is the durable PostgresUserStore in
-        // the fixture host (#3141) — its records live in the shared honua.managed_users
+        // the fixture host — its records live in the shared honua.managed_users
         // table, so seeding is an upsert that restores the baseline before every test.
         var store = _fixture.Services.GetRequiredService<IUserStore>();
         await SeedUserAsync(store, new ManagedUser

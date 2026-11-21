@@ -6,15 +6,13 @@ using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Hosting;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Authentication;
 
-/// <summary>
-/// Unit tests for OidcAuthenticationOptionsValidator to ensure proper validation of OIDC configuration.
-/// </summary>
-public class OidcAuthenticationOptionsValidatorTests
+public partial class OidcAuthenticationOptionsValidatorTests
 {
-    private readonly OidcAuthenticationOptionsValidator _validator = new();
+    private readonly OidcAuthenticationOptionsValidator _validator = CreateValidator(Environments.Development);
 
     [UnitTheory]
     [InlineData(null, false, true)]
@@ -1076,9 +1074,6 @@ public class OidcAuthenticationOptionsValidatorTests
 
     #region PostConfigure Auto-Population Tests
 
-    /// <summary>
-    /// Symmetric signing key used to bypass OIDC metadata discovery in tests.
-    /// </summary>
     private const string TestSigningKey = "super-secret-test-key-that-is-long-enough-for-hs256!";
 
     [UnitTest]

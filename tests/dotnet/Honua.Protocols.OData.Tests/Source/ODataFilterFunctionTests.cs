@@ -11,12 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Integration tests for OData $filter built-in functions that were previously untested:
-/// - String functions: length, indexof, trim, replace, toupper
-/// - Numeric functions: round, floor, ceiling, abs
-/// - Temporal functions: month, day, hour, minute, second
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataFilterFunctionTests : IAsyncLifetime
@@ -36,7 +30,7 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
     //   8  Salt Lake City 14  3.8
     // Asserting the full expected set (not just a per-row re-check of the same
     // predicate) is what rules out false negatives — an over-restrictive filter
-    // passed every one of these tests before (#4393).
+    // passed every one of these tests before.
     private static async Task<string[]> NamesAsync(HttpResponseMessage response)
     {
         var features = await ParseFeaturesAsync(response);
@@ -138,7 +132,7 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
     public async Task Filter_ToUpperFunction_ComparesUpperCase()
     {
         // Exactly the five Californian cities; HaveCountGreaterThan(1) allowed an
-        // over-restrictive match of any two of them (#4393).
+        // over-restrictive match of any two of them.
         using var response = await FilterAsync("toupper(state) eq 'CALIFORNIA'");
         (await NamesAsync(response)).Should().Equal(
             "Los Angeles", "Sacramento", "San Diego", "San Francisco", "San Jose");
@@ -176,7 +170,7 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
         // away from zero but double-precision halves per the C library), so it is the
         // one row whose membership is not fixed by the seed. Bracketing the answer
         // between those two sets still rules out both false positives and the false
-        // negatives the previous per-row re-check could not see (#4393).
+        // negatives the previous per-row re-check could not see.
         using var response = await FilterAsync("round(rating) eq 5");
         var names = await NamesAsync(response);
 
@@ -242,7 +236,7 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
         // event_date '2024-02-15T12:30:00Z' has month=2 (Los Angeles)
         // event_date '2024-03-10T08:45:00Z' has month=3 (Sacramento)
         // Exactly one seeded city matches; asserting features[0] alone left extra
-        // matches (a partially applied temporal predicate) undetected (#4393).
+        // matches (a partially applied temporal predicate) undetected.
         using var response = await FilterAsync("month(event_date) eq 1");
         (await NamesAsync(response)).Should().Equal("San Francisco");
     }
@@ -254,7 +248,7 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
     {
         // event_date '2024-02-15T12:30:00Z' has day=15 (Los Angeles)
         // Exactly one seeded city matches; asserting features[0] alone left extra
-        // matches (a partially applied temporal predicate) undetected (#4393).
+        // matches (a partially applied temporal predicate) undetected.
         using var response = await FilterAsync("day(event_date) eq 15");
         (await NamesAsync(response)).Should().Equal("Los Angeles");
     }
@@ -266,7 +260,7 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
     {
         // event_date '2024-02-15T12:30:00Z' has hour=12 (Los Angeles)
         // Exactly one seeded city matches; asserting features[0] alone left extra
-        // matches (a partially applied temporal predicate) undetected (#4393).
+        // matches (a partially applied temporal predicate) undetected.
         using var response = await FilterAsync("hour(event_date) eq 12");
         (await NamesAsync(response)).Should().Equal("Los Angeles");
     }
@@ -278,7 +272,7 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
     {
         // event_date '2024-02-15T12:30:00Z' has minute=30 (Los Angeles)
         // Exactly one seeded city matches; asserting features[0] alone left extra
-        // matches (a partially applied temporal predicate) undetected (#4393).
+        // matches (a partially applied temporal predicate) undetected.
         using var response = await FilterAsync("minute(event_date) eq 30");
         (await NamesAsync(response)).Should().Equal("Los Angeles");
     }
@@ -291,7 +285,7 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
         // event_date '2024-03-10T08:45:00Z' has second=0 (Sacramento)
         // event_date '2024-12-31T23:59:59Z' has second=59 (San Jose)
         // Exactly one seeded city matches; asserting features[0] alone left extra
-        // matches (a partially applied temporal predicate) undetected (#4393).
+        // matches (a partially applied temporal predicate) undetected.
         using var response = await FilterAsync("second(event_date) eq 59");
         (await NamesAsync(response)).Should().Equal("San Jose");
     }
@@ -342,7 +336,7 @@ public sealed class ODataFilterFunctionTests : IAsyncLifetime
         // Cities with name containing 'City' AND length > 10
         // Salt Lake City (14) and Virtual City (12) are the only names containing
         // "City", and both clear the length bound. The previous body had no
-        // emptiness assertion at all, so it passed on zero features (#4393).
+        // emptiness assertion at all, so it passed on zero features.
         using var response = await FilterAsync("contains(name,'City') and length(name) gt 10");
         (await NamesAsync(response)).Should().Equal("Salt Lake City", "Virtual City");
     }

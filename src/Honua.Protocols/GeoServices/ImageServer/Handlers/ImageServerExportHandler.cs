@@ -233,6 +233,22 @@ internal sealed class ImageServerExportHandler
 
             if (selectedRasters.Length == 0)
             {
+                var cogExport = await ImageServerCogExport.TryRenderAsync(
+                    context,
+                    new(new(snapshot, resolvedLayer.Publication, []), request, exportQuery),
+                    cancellationToken).ConfigureAwait(false);
+                if (cogExport?.Image is { } cogImage)
+                {
+                    ImageServerLog.ExportImageCompleted(_logger, layerId, cogImage.Data.Length);
+                    scope.SetSuccess(1);
+                    return await RespondWithImageAsync(context, new(request, cogImage), cancellationToken).ConfigureAwait(false);
+                }
+
+                if (cogExport?.Refusal is { } cogRefusal)
+                {
+                    return cogRefusal;
+                }
+
                 ImageServerLog.NoRastersFound(_logger, layerId);
 
                 // Esri answers an exportImage whose extent holds no data with an empty image, not
@@ -261,35 +277,9 @@ internal sealed class ImageServerExportHandler
 
                     if (emptyResult.Data is { Length: > 0 })
                     {
-                        if (WantsInlineImageResponse(request.F))
-                        {
-                            ImageServerLog.ExportImageCompleted(_logger, layerId, emptyResult.Data.Length);
-                            scope.SetSuccess(1);
-                            return Results.File(emptyResult.Data, emptyResult.ContentType);
-                        }
-
-                        var emptyImageUrl = await _temporaryFileService.StoreTemporaryFileAsync(
-                            emptyResult.Data,
-                            emptyResult.ContentType,
-                            TimeSpan.FromHours(1),
-                            principal: context.User,
-                            cancellationToken: cancellationToken);
-
-                        var emptyResponse = new ExportImageResponse
-                        {
-                            Href = emptyImageUrl,
-                            Width = emptyResult.Width,
-                            Height = emptyResult.Height,
-                            Extent = BuildExtent(
-                                emptyResult.Extent,
-                                request.Bbox,
-                                bboxSrid: SpatialReferenceHelpers.TryParseSrid(request.BboxSr),
-                                emptyResult.Srid),
-                        };
-
                         ImageServerLog.ExportImageCompleted(_logger, layerId, emptyResult.Data.Length);
                         scope.SetSuccess(1);
-                        return Results.Json(emptyResponse, ImageServerJsonContext.Default.ExportImageResponse);
+                        return await RespondWithImageAsync(context, new(request, emptyResult), cancellationToken).ConfigureAwait(false);
                     }
                 }
 
@@ -617,6 +607,33 @@ internal sealed class ImageServerExportHandler
         }
     }
 
+    // An image rendered without raster_data (an empty extent or composed COG tiles): inline
+    // bytes for f=image, otherwise a temporary file described by the export response.
+    private async Task<IResult> RespondWithImageAsync(HttpContext context, RenderedExport rendered, CancellationToken cancellationToken)
+    {
+        var (request, image) = rendered;
+        if (WantsInlineImageResponse(request.F))
+        {
+            return Results.File(image.Data, image.ContentType);
+        }
+
+        var imageUrl = await _temporaryFileService.StoreTemporaryFileAsync(
+            image.Data,
+            image.ContentType,
+            TimeSpan.FromHours(1),
+            principal: context.User,
+            cancellationToken: cancellationToken);
+
+        var response = new ExportImageResponse
+        {
+            Href = imageUrl,
+            Width = image.Width,
+            Height = image.Height,
+            Extent = BuildExtent(image.Extent, request.Bbox, bboxSrid: SpatialReferenceHelpers.TryParseSrid(request.BboxSr), image.Srid),
+        };
+        return Results.Json(response, ImageServerJsonContext.Default.ExportImageResponse);
+    }
+
     // Builds the export response extent. Prefers a real extent from the raster store; when
     // none is available falls back to the requested bbox (which Esri exportImage is expected
     // to echo). Returns null when neither is available so callers can omit the property rather
@@ -748,7 +765,7 @@ internal sealed class ImageServerExportHandler
                 (quality.Value < MinCompressionQuality || quality.Value > MaxCompressionQuality))
             {
                 // Pro's ExportImage sends 10000 with LERC. That is a maxZError scale, not a
-                // JPEG quality. The LERC block is lossless and does not use the value (#6563).
+                // JPEG quality. The LERC block is lossless and does not use the value.
                 if (!isLerc)
                 {
                     error = new ExportParameterParseError("compressionQuality must be between 0 and 100.");
@@ -872,7 +889,7 @@ internal sealed class ImageServerExportHandler
                 var geometryBytes = writer.Write(geometry);
 
                 // Esri clients paint the returned pixels across the requested bbox, so the image
-                // must cover the whole bbox with NoData outside the data (#4060), not just the
+                // must cover the whole bbox with NoData outside the data, not just the
                 // bbox-raster intersection stretched to size.
                 query = query with
                 {
@@ -956,6 +973,12 @@ internal sealed class ImageServerExportHandler
         if (string.IsNullOrWhiteSpace(bandIds))
         {
             return true;
+        }
+
+        if (ImageServerRequestLimits.ExceedsListLimit(bandIds, ImageServerRequestLimits.MaxBandIds))
+        {
+            error = $"bandIds may list at most {ImageServerRequestLimits.MaxBandIds} bands.";
+            return false;
         }
 
         var parts = bandIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -1122,6 +1145,8 @@ internal sealed class ImageServerExportHandler
 
     private static bool WantsInlineImageResponse(string? format)
         => string.Equals(format, InlineImageFormat, StringComparison.OrdinalIgnoreCase);
+
+    private readonly record struct RenderedExport(ExportImageRequest Request, RasterResult Image);
 
     private readonly record struct ExportParameterParseError(string Detail, bool IsNotImplemented = false);
 }

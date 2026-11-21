@@ -6,33 +6,28 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Promotion-gate coverage for the on-prem/air-gapped fix (#2543). Proves the reconciler can promote
-/// a healthy rollout on the backend's own health gate when no telemetry backend is configured
-/// (self-hosted rolling default), that cloud targets still require the telemetry gate, and that the
-/// explicit <c>manual</c> gate never auto-promotes.
-/// </summary>
 public sealed class DeployWorkflowReconcilerPromotionGateTests
 {
-    [Fact]
-    public async Task Reconcile_SelfHostedRolling_NoTelemetry_PromotesOnBackendHealthGate()
+    [UnitTest]
+    public async Task Reconcile_LocalCompose_NoTelemetry_PromotesOnBackendHealthGate()
     {
         var store = new InMemoryWorkflowOperationStore();
         var backend = new RecordingDeployBackend(
-            DeployTargetKind.SelfHostedRolling,
-            "honua-yarp-rolling",
+            DeployTargetKind.LocalCompose,
+            "honua-compose",
             observe: new DeployObservation
             {
                 Status = WorkflowOperationStatus.Reconciling,
                 PromotionRecommended = true,
                 Message = "Standby healthy and ready for cutover."
             });
-        var operation = CreateOperation(DeployTargetKind.SelfHostedRolling, "honua-yarp-rolling");
+        var operation = CreateOperation(DeployTargetKind.LocalCompose, "honua-compose");
         await store.TryCreateAsync(operation);
 
         var reconciler = CreateReconciler(store, backend);
@@ -40,8 +35,8 @@ public sealed class DeployWorkflowReconcilerPromotionGateTests
         await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
         var updated = await store.GetAsync(operation.OperationId);
 
-        backend.PromoteCalls.Should().Be(1, "with no telemetry policy the self-hosted health gate must drive the cutover");
-        // honua-server#4618: promotion opens a post-activation observation window instead of finishing
+        backend.PromoteCalls.Should().Be(1, "with no telemetry policy the backend health gate must drive the cutover");
+        // Promotion opens a post-activation observation window instead of finishing
         // immediately, so the operation stays Reconciling (non-terminal) with a Protection record.
         updated!.Status.Should().Be(WorkflowOperationStatus.Reconciling);
         updated.Deploy!.Protection.Should().NotBeNull();
@@ -78,8 +73,8 @@ public sealed class DeployWorkflowReconcilerPromotionGateTests
     {
         var store = new InMemoryWorkflowOperationStore();
         var backend = new RecordingDeployBackend(
-            DeployTargetKind.SelfHostedRolling,
-            "honua-yarp-rolling",
+            DeployTargetKind.LocalCompose,
+            "honua-compose",
             observe: new DeployObservation
             {
                 Status = WorkflowOperationStatus.Reconciling,
@@ -87,8 +82,8 @@ public sealed class DeployWorkflowReconcilerPromotionGateTests
                 Message = "Standby healthy and ready for cutover."
             });
         var operation = CreateOperation(
-            DeployTargetKind.SelfHostedRolling,
-            "honua-yarp-rolling",
+            DeployTargetKind.LocalCompose,
+            "honua-compose",
             extraParameters: new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["deployment.promotion_gate"] = "manual"

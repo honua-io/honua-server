@@ -12,18 +12,13 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps;
 
-/// <summary>
-/// Tests for OGC Maps parameter validation: format variations, CRS, dimensions, bbox, and styles.
-/// </summary>
 [Collection("Database.OgcApiTiles")]
 [Protocol(TestProtocols.OgcApiMaps)]
-public class OgcMapsParameterValidationTests : IAsyncLifetime
+// Every case only renders or reads with GET on the shared default host, so one host serves them all.
+public sealed class OgcMapsParameterValidationTests(WebAppFixture fixture) : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = fixture;
     private const int TestLayerId = 0;
-
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     #region Format Parameter
 

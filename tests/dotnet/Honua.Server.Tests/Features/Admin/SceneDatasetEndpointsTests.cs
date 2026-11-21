@@ -18,13 +18,11 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for the scene dataset registry admin endpoints (#844).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public class SceneDatasetEndpointsTests : IAsyncLifetime
+public class SceneDatasetEndpointsTests(SceneDatasetEndpointsTests.SceneHost host)
+    : IClassFixture<SceneDatasetEndpointsTests.SceneHost>
 {
     private const string AdminPassword = "scene-admin-key";
     private const string SharedAssetRoot = "/var/lib/honua/scenes/test";
@@ -35,12 +33,14 @@ public class SceneDatasetEndpointsTests : IAsyncLifetime
         PropertyNameCaseInsensitive = true,
     };
 
-    private readonly WebAppFixture _fixture;
-    private HttpClient _client = null!;
+    private readonly WebAppFixture _fixture = host.Fixture;
+    private readonly HttpClient _client = host.Client;
 
-    public SceneDatasetEndpointsTests()
+    // One host per class: every case registers scenes under its own fresh id and asserts only on
+    // those, so cases do not see each other's rows.
+    public sealed class SceneHost : IAsyncLifetime
     {
-        _fixture = new WebAppFixture()
+        internal WebAppFixture Fixture { get; } = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
             .ConfigureWebHost(builder =>
             {
@@ -48,15 +48,21 @@ public class SceneDatasetEndpointsTests : IAsyncLifetime
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
             });
-    }
 
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-        _client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
-    }
+        internal HttpClient Client { get; private set; } = null!;
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+        public async Task InitializeAsync()
+        {
+            await Fixture.InitializeAsync();
+            Client = Fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+        }
+
+        public async Task DisposeAsync()
+        {
+            Client?.Dispose();
+            await Fixture.DisposeAsync();
+        }
+    }
 
     private static string NewSceneId(string suffix) =>
         $"scene-{suffix.ToLowerInvariant()}-{Guid.NewGuid():N}".Substring(0, 32);
@@ -152,6 +158,37 @@ public class SceneDatasetEndpointsTests : IAsyncLifetime
         request.AssetRoot = "https://cdn.example.com/scene";
 
         var response = await _client.PostAsJsonAsync("/api/v1/admin/scenes", request, _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [IntegrationTheory]
+    [Endpoint("POST /api/v1/admin/scenes")]
+    [InlineData("/proc/self")]
+    [InlineData("/run/secrets")]
+    [InlineData(".")]
+    [InlineData("/var/lib/honua/scenes-elsewhere")]
+    [InlineData("/var/lib/honua/scenes")]
+    public async Task Register_AssetRootOutsideSceneDirectories_Returns400Problem(string assetRoot)
+    {
+        var request = BuildValidRequest(NewSceneId("outside-root"));
+        request.AssetRoot = assetRoot;
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/scenes", request, _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/scenes/{id}")]
+    public async Task Update_AssetRootOutsideSceneDirectories_Returns400Problem()
+    {
+        var initial = await CreateAsync(BuildValidRequest(NewSceneId("upd-root")));
+
+        var response = await _client.PutAsJsonAsync(
+            $"/api/v1/admin/scenes/{initial.DatasetId}",
+            new UpdateSceneDatasetRequest { AssetRoot = "/proc/self" },
+            _jsonOptions);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }

@@ -15,6 +15,7 @@ using Honua.Server.Features.Streaming.Conformance;
 using Honua.Server.Features.Streaming;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace Honua.Server.Startup;
 
@@ -43,7 +44,7 @@ internal static class FeatureEventsAndStreamingRegistration
         services.AddSingleton<IFeatureChangeEventStoreHealth>(sp => sp.GetRequiredService<PostgresFeatureChangeEventStore>());
         services.AddSingleton<IStreamCursorStore, PostgresStreamCursorStore>();
 
-        // Feature-stream session manager and streaming publisher (#501)
+        // Feature-stream session manager and streaming publisher
         services.AddOptions<FeatureStreamOptions>()
             .Bind(configuration.GetSection(FeatureStreamOptions.SectionName))
             .ValidateOnStart();
@@ -57,7 +58,7 @@ internal static class FeatureEventsAndStreamingRegistration
                 sp.GetRequiredService<FeatureStreamMetrics>(),
                 routabilityGuard: sp.GetRequiredService<FeatureStreamRoutabilityGuard>(),
                 serviceScopeFactory: sp.GetRequiredService<IServiceScopeFactory>()));
-        // Broker-agnostic event-bus sinks (#357). The publish path fans committed
+        // Broker-agnostic event-bus sinks. The publish path fans committed
         // feature-change events out to every registered sink through the broadcaster.
         // Sinks are off by default; the no-op sink keeps the fan-out path exercised
         // and observable. The concrete Kafka and NATS JetStream adapters below
@@ -66,7 +67,7 @@ internal static class FeatureEventsAndStreamingRegistration
             .Bind(configuration.GetSection(FeatureChangeEventSinkOptions.SectionName));
         services.AddSingleton<IFeatureChangeEventSink, NoOpFeatureChangeEventSink>();
 
-        // Kafka sink adapter (#357). Bound and validated always, but the producer
+        // Kafka sink adapter. Bound and validated always, but the producer
         // and sink are only registered when the adapter is enabled so deployments
         // without Kafka never construct a broker client. The sink publishes with an
         // idempotent producer (producer-side exactly-once) and routes failed
@@ -87,7 +88,7 @@ internal static class FeatureEventsAndStreamingRegistration
 #endif
         }
 
-        // NATS JetStream sink adapter (#357). Bound and validated always, but the
+        // NATS JetStream sink adapter. Bound and validated always, but the
         // producer and sink are only registered when the adapter is enabled so
         // deployments without NATS never open a JetStream connection. The sink
         // publishes with optional message deduplication (publish-side
@@ -109,12 +110,17 @@ internal static class FeatureEventsAndStreamingRegistration
         }
 
         services.AddSingleton<FeatureChangeEventSinkBroadcaster>();
+        // A primary provider other than PostgreSQL registers no data source, so it has no realtime tail
+        // or change log; its edits still reach the sinks.
         services.AddSingleton<IFeatureChangeEventPublisher>(sp =>
-            new FeatureStreamPublisher(
-                sp.GetRequiredService<IRealtimeWakeSignal>(),
-                sp.GetRequiredService<PostgresFeatureChangeLog>(),
+        {
+            var hasSystemDatabase = sp.GetService<NpgsqlDataSource>() is not null;
+            return new FeatureStreamPublisher(
+                hasSystemDatabase ? sp.GetRequiredService<IRealtimeWakeSignal>() : null,
+                hasSystemDatabase ? sp.GetRequiredService<PostgresFeatureChangeLog>() : null,
                 sp.GetRequiredService<ILogger<FeatureStreamPublisher>>(),
-                sp.GetRequiredService<FeatureChangeEventSinkBroadcaster>()));
+                sp.GetRequiredService<FeatureChangeEventSinkBroadcaster>());
+        });
         services.AddSingleton<FeatureMutationEventService>();
 
         // Feature-change transactional outbox: capability provider, dispatcher, health,
@@ -151,7 +157,7 @@ internal static class FeatureEventsAndStreamingRegistration
             services.AddHostedService(FeatureStreamRealtimeRelay.Create);
         }
 
-        // Controlled-conformance mutation workflow (#3038). Options are bound and validated
+        // Controlled-conformance mutation workflow. Options are bound and validated
         // unconditionally so a misconfigured source fails at startup, but the lease registry,
         // workflow, and TTL sweeper only participate when an operator has deliberately
         // provisioned a dedicated conformance source: the surface fails closed otherwise.

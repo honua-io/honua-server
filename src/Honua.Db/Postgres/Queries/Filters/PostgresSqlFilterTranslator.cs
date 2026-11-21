@@ -14,7 +14,7 @@ using Honua.Db.Postgres.Features.Infrastructure;
 
 namespace Honua.Db.Postgres.Queries.Filters;
 
-internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISqlFilterTranslator
+internal partial class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISqlFilterTranslator
 {
     // MaxExpressionDepth is inherited from SqlFilterExpressionVisitorBase.
 
@@ -295,7 +295,7 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
 
         // Geography measures metres. The planar path measures in the layer CRS's own unit, so a
         // distance the parser already normalised to metres (FES uom) is converted to that unit:
-        // 20 m on a US-foot layer is 65.6 ftUS, not 20 ftUS (#5462). Distances without a unit
+        // 20 m on a US-foot layer is 65.6 ftUS, not 20 ftUS. Distances without a unit
         // keep their native planar-in-CRS reading.
         if (!useGeography && spatial.DistanceInMeters)
         {
@@ -323,14 +323,12 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
     // Fallback used only when the translation context does not carry an explicit IsGeographic
     // flag (the primary path derives it from spatial_ref_sys). This gates ::geography-cast /
     // geodesic routing (ST_DWithin/ST_Distance over geography, geodesic Intersects), so it uses
-    // the canonical NARROW geodesic-safe bucket (#2732/#2731) rather than the broad geographic
+    // the canonical NARROW geodesic-safe bucket rather than the broad geographic
     // list: a spheroid/geography measurement is only sound for the WGS 84-compatible degree CRSes,
     // and matching the DuckDB provider's narrow gate avoids Postgres-vs-DuckDB divergence. The
-    // narrow bucket differs from the pre-#2732 6-code fallback (4326/4269/4267/4258/4619/4283):
-    // it drops 4619 (SWEREF99) and 4267 (NAD27) and adds 4617 (NAD83(CSRS)) / 4759
-    // (NAD83(NSRS2007)); the primary
-    // spatial_ref_sys-derived path still classifies 4619 correctly, so only the registry-miss
-    // fallback is affected.
+    // narrow bucket excludes 4619 (SWEREF99) and 4267 (NAD27) and includes 4617 (NAD83(CSRS)) /
+    // 4759 (NAD83(NSRS2007)); the primary spatial_ref_sys-derived path still classifies 4619
+    // correctly, so only the registry-miss fallback is affected.
     private static bool IsLikelyGeographicSrid(int srid)
         => GeographicSridClassifier.IsGeodesicDistanceSafeSrid(srid);
 
@@ -347,7 +345,7 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
                     if (geometry.Srid != context.Wkid)
                     {
                         // A geographic literal at latitude ±90 aborts ST_Transform into Web Mercator.
-                        // The shared helper clamps that band; other CRS pairs stay a bare transform (#6186).
+                        // The shared helper clamps that band; other CRS pairs stay a bare transform.
                         geometryExpression = DatumTransformSql.BuildTransformExpression(
                             geometryExpression,
                             context.Wkid,
@@ -586,11 +584,12 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
         var args = function.Arguments.Select(arg => TranslateExpression(arg, context)).ToArray();
         var argString = string.Join(", ", args);
 
-        return function.FunctionName.ToUpperInvariant() switch
+        var admitted = TranslateAdmittedFunction(function.FunctionName.ToUpperInvariant(), args, argString);
+        return admitted ?? function.FunctionName.ToUpperInvariant() switch
         {
             "UPPER" => $"UPPER({argString})",
             "LOWER" => $"LOWER({argString})",
-            "LENGTH" => $"LENGTH({argString})",
+            "LENGTH" or "LEN" => $"LENGTH({argString})",
             "CHAR_LENGTH" => $"CHAR_LENGTH({argString})",
             "CHARACTER_LENGTH" => $"CHARACTER_LENGTH({argString})",
             "TRIM" => $"TRIM({argString})",
@@ -599,7 +598,7 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
             "SUBSTRING" => TranslateSubstring(args, function.FunctionName),
             "SUBSTR" => TranslateSubstring(args, function.FunctionName),
             "REPLACE" => $"REPLACE({argString})",
-            "CONCAT" => $"CONCAT({argString})",
+            "CONCAT" => $"CONCAT({string.Join(", ", args.Select(arg => $"CAST({arg} AS text)"))})",
             "POSITION" => args.Length == 2
                 ? $"POSITION({args[0]} IN {args[1]})"
                 : throw new ArgumentException("POSITION requires two arguments"),
@@ -607,7 +606,9 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
             "CEIL" => $"CEIL({argString})",
             "CEILING" => $"CEILING({argString})",
             "FLOOR" => $"FLOOR({argString})",
-            "ROUND" => $"ROUND({argString})",
+            "ROUND" => args.Length == 2
+                ? $"ROUND(CAST({args[0]} AS numeric), CAST({args[1]} AS integer))"
+                : $"ROUND({argString})",
             "NOW" => args.Length == 0
                 ? "NOW()"
                 : throw new ArgumentException("NOW does not accept arguments"),
@@ -638,7 +639,7 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
             "MINDATETIME" => args.Length == 0 ? "'-infinity'::timestamptz" : throw new ArgumentException("MINDATETIME requires no arguments"),
             "MAXDATETIME" => args.Length == 0 ? "'infinity'::timestamptz" : throw new ArgumentException("MAXDATETIME requires no arguments"),
 
-            // Extended EXTRACT fields (#1865). The field token is fixed by the parser's
+            // Extended EXTRACT fields. The field token is fixed by the parser's
             // allowlist (never user text), so it is interpolated while the source operand
             // stays a translated, parameter-safe sub-expression.
             "EXTRACT_DOW" => TranslateExtractField("DOW", args),
@@ -700,6 +701,41 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
             // Type conversion
 
             _ => throw new NotSupportedException($"Function {function.FunctionName}")
+        };
+    }
+
+    // Functions the external source validator admits beyond the core set; null for other names.
+    private static string? TranslateAdmittedFunction(string name, string[] args, string argString)
+    {
+        return name switch
+        {
+            "LEFT" or "RIGHT" => args.Length == 2
+                ? $"{name}({args[0]}, {CastInteger(args[1])})"
+                : throw new ArgumentException("LEFT/RIGHT require two arguments"),
+            "CONTAINS" => args.Length == 2
+                ? $"(POSITION({args[1]} IN {args[0]}) > 0)"
+                : throw new ArgumentException("CONTAINS requires two arguments"),
+            "STARTSWITH" => args.Length == 2
+                ? $"STARTS_WITH({args[0]}, {args[1]})"
+                : throw new ArgumentException("STARTSWITH requires two arguments"),
+            "ENDSWITH" => args.Length == 2
+                ? $"STARTS_WITH(REVERSE({args[0]}), REVERSE({args[1]}))"
+                : throw new ArgumentException("ENDSWITH requires two arguments"),
+            "SIGN" => $"SIGN({argString})",
+            "IIF" => args.Length == 3
+                ? $"(CASE WHEN {args[0]} THEN {args[1]} ELSE {args[2]} END)"
+                : throw new ArgumentException("IIF requires three arguments"),
+            "ST_X" => TranslateSpatialFunction("ST_X", args, 1),
+            "ST_Y" => TranslateSpatialFunction("ST_Y", args, 1),
+            "ST_CONTAINS" => TranslateSpatialFunction("ST_Contains", args, 2),
+            "ST_WITHIN" => TranslateSpatialFunction("ST_Within", args, 2),
+            "ST_INTERSECTS" => TranslateSpatialFunction("ST_Intersects", args, 2),
+            "ST_DISJOINT" => TranslateSpatialFunction("ST_Disjoint", args, 2),
+            "ST_TOUCHES" => TranslateSpatialFunction("ST_Touches", args, 2),
+            "ST_CROSSES" => TranslateSpatialFunction("ST_Crosses", args, 2),
+            "ST_OVERLAPS" => TranslateSpatialFunction("ST_Overlaps", args, 2),
+            "ST_EQUALS" => TranslateSpatialFunction("ST_Equals", args, 2),
+            _ => null,
         };
     }
 
@@ -1118,12 +1154,12 @@ internal class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISq
         // FeatureQueryBuilder), so the alias must be rewritten to the real column
         // rather than emitted verbatim (a bare "updated" column does not exist).
         // The OData $deltatoken "changed since" predicate targets the "updated"
-        // alias so the delta filter resolves to the real updated_at column (#1436).
+        // alias so the delta filter resolves to the real updated_at column.
         //
         // Only map the alias when the resource does not expose it as a queryable
         // attribute (TryGetField == null); otherwise fall through to normal schema
         // resolution. This intentionally does NOT recognize the literal physical
-        // names "created_at"/"updated_at" here: per #1415 those names are resolved
+        // names "created_at"/"updated_at" here: those names are resolved
         // through the schema so a user CQL2/OData filter on a layer-defined
         // attribute field (JSONB) maps to the typed attributes path (200), and a
         // filter on an undefined field raises ArgumentException (400) instead of

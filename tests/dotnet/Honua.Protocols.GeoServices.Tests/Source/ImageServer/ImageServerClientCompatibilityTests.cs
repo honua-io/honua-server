@@ -15,10 +15,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Client-shaped ImageServer coverage over real HTTP routes with a deterministic
-/// raster store. This fills the gap between handler tests and external clients.
-/// </summary>
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
 public sealed class ImageServerClientCompatibilityTests
@@ -90,13 +86,13 @@ public sealed class ImageServerClientCompatibilityTests
             var metadataError = await client.GetInvalidFormatErrorAsync();
             var exportError = await client.ExportInvalidFormatErrorAsync();
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             metadataError.StatusCode.Should().Be(HttpStatusCode.OK);
             metadataError.Code.Should().Be(400);
             metadataError.Message.Should().Be("Bad Request");
             metadataError.Details.Should().Contain(detail => detail.Contains("Only JSON format is supported", StringComparison.Ordinal));
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             exportError.StatusCode.Should().Be(HttpStatusCode.OK);
             exportError.Code.Should().Be(400);
             exportError.Details.Should().Contain(detail => detail.Contains("Only JSON and image formats are supported", StringComparison.Ordinal));

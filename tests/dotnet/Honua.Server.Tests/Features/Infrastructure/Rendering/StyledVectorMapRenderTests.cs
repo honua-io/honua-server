@@ -15,14 +15,6 @@ using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Rendering;
 
-/// <summary>
-/// Integration coverage for honua-server#2498: the canonical <see cref="IRasterMapRenderer"/>
-/// render path (the same path the MCP <c>honua_render_map</c> tool drives) must apply a
-/// layer's bound vector style at pixel level on the default (Postgres) profile, and styled
-/// rendering must no longer throw <see cref="NotSupportedException"/> for feature layers.
-/// Layer 1 is a seeded vector (Point) collection with no raster coverage, so it exercises the
-/// styled Skia fallback rather than the raster-coverage renderer.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiMaps)]
 public sealed class StyledVectorMapRenderTests : IAsyncLifetime
@@ -106,8 +98,7 @@ public sealed class StyledVectorMapRenderTests : IAsyncLifetime
 
         await catalog.SetMapLibreStyleAsync(VectorLayerId, CircleStyle("#ff0000"));
 
-        // Before the fix this threw NotSupportedException on the Postgres path; it must now
-        // render the feature layer with its bound/style-resolved symbology.
+        // Render the Postgres feature layer using its bound and style-resolved symbology.
         var styleId = "default";
         RasterResult result = default;
         var act = async () => result = await renderer.RenderStyledMapAsync(VectorLayerId, styleId, request);

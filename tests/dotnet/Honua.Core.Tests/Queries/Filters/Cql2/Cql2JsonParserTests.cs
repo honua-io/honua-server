@@ -10,9 +10,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Core.Tests.Queries.Filters.Cql2;
 
-/// <summary>
-/// Tests for CQL2 JSON filter expression parsing.
-/// </summary>
 public class Cql2JsonParserTests
 {
     private readonly Cql2JsonParser _parser = new();
@@ -73,6 +70,19 @@ public class Cql2JsonParserTests
 
         act.Should().Throw<ArgumentException>()
             .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("""{"op":"=","args":[{"property":"name"},"\udc00 note"]}""")]
+    [InlineData("""{"op":"=","args":[{"property":"\ud800"},"value"]}""")]
+    [InlineData("""{"op":5,"args":[{"property":"name"},"value"]}""")]
+    [InlineData("""{"op":"=","args":[{"property":true},"value"]}""")]
+    public void Parse_UnreadableStringMember_ThrowsArgumentException(string json)
+    {
+        var act = () => _parser.Parse(json);
+
+        act.Should().Throw<ArgumentException>().WithMessage("Invalid CQL2-JSON payload*");
     }
 
     private static string FlatLogicalJson(string op, int operandCount)

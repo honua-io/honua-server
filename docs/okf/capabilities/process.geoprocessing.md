@@ -16,9 +16,9 @@ Submit and poll geoprocessing tasks through the Esri GeoServices GPServer surfac
 | Capability key | `process.geoprocessing` |
 | Category | Process |
 | Edition | Community |
-| Surface maturity | 18 preview |
-| Registry entries | 18 |
-| Proving tests | 255 |
+| Surface maturity | 19 preview |
+| Registry entries | 19 |
+| Proving tests | 260 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

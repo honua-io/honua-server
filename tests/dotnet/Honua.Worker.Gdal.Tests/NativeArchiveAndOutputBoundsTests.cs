@@ -15,11 +15,6 @@ using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Native source.ogr archive budgets (#5469) and vector output size admission (#5470).
-/// GDAL is not required: a fake command runner stands in for ogr2ogr, and the
-/// assertions are on the host-side guard that runs before and after that call.
-/// </summary>
 public sealed class NativeArchiveAndOutputBoundsTests : IDisposable
 {
     private const string GeoJson = """{"type":"FeatureCollection","features":[]}""";
@@ -214,6 +209,40 @@ public sealed class NativeArchiveAndOutputBoundsTests : IDisposable
 
         maxSeen.Should().BeLessThan(1024 * 1024);
         runner.Invocations.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task SourceOgr_VrtContentInDataset_IsRefusedBeforeOgrRuns()
+    {
+        // OGR sniffs content, so VRT XML under a .gml name would open as a VRT. Deflated, so the marker is
+        // visible only after extraction, not in the archive bytes the upload guard saw.
+        var vrt = Encoding.UTF8.GetBytes("<OGRVRTDataSource><OGRVRTLayer name=\"x\"><SrcDataSource>/etc/passwd</SrcDataSource></OGRVRTLayer></OGRVRTDataSource>");
+        var zip = CreateZip(CompressionLevel.Optimal, ("data/roads.gml", vrt));
+        zip.AsSpan().IndexOf("<OGRVRTDataSource"u8).Should().BeLessThan(0);
+        var runner = WriteGeoJsonOutput();
+
+        var result = await ExecuteSourceOgrAsync(runner, zip, Options());
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("roads.gml").And.Contain("<OGRVRTDataSource");
+        runner.Invocations.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task SourceOgr_VsiPathInProjectFile_StillReachesOgr()
+    {
+        // Only the dataset OGR opens is scanned; a QGIS project beside it routinely names /vsizip/ paths.
+        var project = Encoding.UTF8.GetBytes("<qgis><datasource>/vsizip/roads.zip/roads.shp</datasource></qgis>");
+        var zip = CreateZip(
+            CompressionLevel.Optimal,
+            ("roads.geojson", Encoding.UTF8.GetBytes(GeoJson)),
+            ("roads.qgs", project));
+        var runner = WriteGeoJsonOutput();
+
+        var result = await ExecuteSourceOgrAsync(runner, zip, Options());
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        runner.Invocations.Should().ContainSingle();
     }
 
     [UnitTest]

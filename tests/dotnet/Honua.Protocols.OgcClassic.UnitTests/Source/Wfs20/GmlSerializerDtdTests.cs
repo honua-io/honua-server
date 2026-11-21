@@ -8,16 +8,12 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
-/// <summary>
-/// Verifies that GmlSerializer.SerializeGeometry prohibits DTD declarations
-/// explicitly (PA-107), consistent with SecureXmlDocumentParser used elsewhere.
-/// </summary>
 public sealed class GmlSerializerDtdTests
 {
     [UnitTest]
     public void SerializeGeometry_DtdDeclaration_ThrowsXmlException()
     {
-        // PA-107: a GML fragment with an embedded DTD declaration must not be processed —
+        // a GML fragment with an embedded DTD declaration must not be processed —
         // the explicit DtdProcessing.Prohibit setting should throw before parsing the body.
         var gmlWithDtd = """
             <!DOCTYPE geometry [<!ENTITY xxe "test">]>

@@ -15,6 +15,7 @@ internal enum MigrationLifecycleStatus
 internal sealed class MigrationState
 {
     private int _status;
+    private int _transitions;
     private string? _statusMessage;
 
     public MigrationLifecycleStatus Status => (MigrationLifecycleStatus)Volatile.Read(ref _status);
@@ -27,29 +28,37 @@ internal sealed class MigrationState
 
     public string? StatusMessage => _statusMessage;
 
+    // Advances on every Mark* call, including one that repeats the current status, so a reader
+    // can tell that migration work happened even when the status reads the same afterwards.
+    public int Transitions => Volatile.Read(ref _transitions);
+
     public string? FailureMessage => IsFailed ? _statusMessage : null;
 
     public void MarkRunning(string? message = null)
     {
         _statusMessage = message;
         Volatile.Write(ref _status, (int)MigrationLifecycleStatus.Running);
+        Interlocked.Increment(ref _transitions);
     }
 
     public void MarkSucceeded(string? message = null)
     {
         _statusMessage = message;
         Volatile.Write(ref _status, (int)MigrationLifecycleStatus.Succeeded);
+        Interlocked.Increment(ref _transitions);
     }
 
     public void MarkSkipped(string? message = null)
     {
         _statusMessage = message;
         Volatile.Write(ref _status, (int)MigrationLifecycleStatus.Skipped);
+        Interlocked.Increment(ref _transitions);
     }
 
     public void MarkFailed(string? message)
     {
         _statusMessage = message;
         Volatile.Write(ref _status, (int)MigrationLifecycleStatus.Failed);
+        Interlocked.Increment(ref _transitions);
     }
 }

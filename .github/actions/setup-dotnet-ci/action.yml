@@ -18,11 +18,18 @@ inputs:
     description: 'Restore NuGet packages without saving a cache (required when the source checkout does not match github.ref)'
     required: false
     default: 'false'
+  host-package-fallback:
+    description: 'Use the runner host''s read-only NuGet fallback folder instead of the package cache archive when one is offered (managed-output consumers only)'
+    required: false
+    default: 'false'
 
 outputs:
   dotnet-sdk-version:
     description: 'Actual dotnet --version after setup and any exact producer-SDK selection'
     value: ${{ steps.sdk-identity.outputs.version }}
+  host-package-fallback-used:
+    description: 'true when NUGET_FALLBACK_PACKAGES points at the host folder and the package cache archive was skipped'
+    value: ${{ steps.nuget-fallback.outputs.used == 'true' }}
 
 runs:
   using: composite
@@ -122,8 +129,29 @@ runs:
     # branch-scoped copy of the ~1.7 GB package archive. workflow_run and manual
     # jobs that build a PR from a secondary checkout must opt into read-only mode
     # because github.ref still identifies the workflow's default-branch policy.
+    # Build-host runners export HONUA_NUGET_FALLBACK, a shared folder that only the host can
+    # write, filled from trunk's package closure (honua-iac install-nuget-fallback.sh). A
+    # generation replaces the ~1.7 GB archive download; NuGet still fetches anything missing
+    # into ~/.nuget/packages. Resolving the link pins this job to one generation. Producers do
+    # not opt in: their static web asset roots must sit under the package folder they package.
+    - name: Use host NuGet fallback folder
+      id: nuget-fallback
+      if: inputs.host-package-fallback == 'true'
+      shell: bash
+      run: |
+        folder="${HONUA_NUGET_FALLBACK:-}"
+        [[ -n "${folder}" ]] || exit 0
+        if generation="$(realpath -e "${folder}" 2>/dev/null)" && [[ -d "${generation}" && ! -w "${generation}" ]] &&
+          compgen -G "${generation}/*/*/.nupkg.metadata" > /dev/null; then
+          printf 'NUGET_FALLBACK_PACKAGES=%s\n' "${generation}" >> "${GITHUB_ENV}"
+          printf 'used=true\n' >> "${GITHUB_OUTPUT}"
+          echo "Using host NuGet fallback folder ${generation}."
+        else
+          echo "::notice::Host NuGet fallback folder ${folder} is not a read-only package generation; restoring the package cache."
+        fi
+
     - name: Cache NuGet packages (trunk read/write)
-      if: github.ref == 'refs/heads/trunk' && inputs.nuget-cache-read-only != 'true'
+      if: github.ref == 'refs/heads/trunk' && inputs.nuget-cache-read-only != 'true' && steps.nuget-fallback.outputs.used != 'true'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.nuget/packages
@@ -133,7 +161,7 @@ runs:
           ${{ github.repository }}-${{ runner.os }}-nuget-
 
     - name: Restore NuGet packages (non-trunk read-only)
-      if: github.ref != 'refs/heads/trunk' || inputs.nuget-cache-read-only == 'true'
+      if: (github.ref != 'refs/heads/trunk' || inputs.nuget-cache-read-only == 'true') && steps.nuget-fallback.outputs.used != 'true'
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.nuget/packages

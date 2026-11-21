@@ -14,7 +14,7 @@ internal sealed partial class ConsoleJobService
 {
     // Metadata keys an executor / the GP devkit may persist onto an execution-log
     // entry to carry the per-step command line. Surfaced (sanitized) as the step's
-    // Command so the console renders it once the devkit (#2128) begins recording it.
+    // Command so the console renders it once the devkit begins recording it.
     private static readonly string[] CommandMetadataKeys =
     [
         "gdal.command",
@@ -63,6 +63,11 @@ internal sealed partial class ConsoleJobService
             // logged event); the final step's end is the job's terminal time when known.
             var nextTimestamp = isLast ? job.CompletedAt : entries[i + 1].Timestamp;
             steps[i] = MapStep(job, entries[i], isLast ? null : entries[i + 1], ordinalOffset + i, workspace, artifactSummary, isLast, nextTimestamp);
+        }
+
+        if (!await IsOperatorViewAsync(context.User, job, cancellationToken).ConfigureAwait(false))
+        {
+            steps = WithholdLostAttemptWorker(steps);
         }
 
         return new ConsoleJobStepsResponse

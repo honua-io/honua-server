@@ -12,9 +12,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Tests for ImageServer error handling: invalid parameters, malformed input, error responses.
-/// </summary>
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
@@ -38,7 +35,7 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestLayerId}/ImageServer?f=xml");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Only JSON format is supported");
@@ -52,7 +49,7 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestLayerId}/ImageServer?f=html");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Only JSON format is supported");
@@ -66,7 +63,7 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestLayerId}/ImageServer/exportImage?f=xml&bbox=-180,-90,180,90");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Only JSON and image formats are supported");
@@ -80,7 +77,7 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestLayerId}/ImageServer/identify?geometry=0,0&f=xml");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("Only JSON format is supported");
@@ -94,8 +91,8 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestLayerId}/ImageServer/tile/0/0/0?format=bmp");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; the error code is in the JSON body.
-        // #4424: asserting only the transport status let a *successful* tile pass a test named
+        // GeoServices always returns HTTP 200; the error code is in the JSON body.
+        // Asserting only the transport status let a *successful* tile pass a test named
         // "...ReturnsBadRequest". The body must carry the 400.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         await response.AssertGeoServicesErrorAsync(400);
@@ -113,8 +110,8 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{NonExistentLayerId}/ImageServer?f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; the error code is in the JSON body.
-        // #4424: without the body assertion a service-info document for a non-existent layer
+        // GeoServices always returns HTTP 200; the error code is in the JSON body.
+        // Without the body assertion a service-info document for a non-existent layer
         // passed this test.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         await response.AssertGeoServicesErrorAsync(404);
@@ -128,8 +125,8 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{NonExistentLayerId}/ImageServer/exportImage?f=json&bbox=-180,-90,180,90");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; the error code is in the JSON body.
-        // #4424: without the body assertion a rendered image for a non-existent layer passed.
+        // GeoServices always returns HTTP 200; the error code is in the JSON body.
+        // Without the body assertion a rendered image for a non-existent layer passed.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         await response.AssertGeoServicesErrorAsync(404);
     }
@@ -142,8 +139,8 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{NonExistentLayerId}/ImageServer/identify?geometry=0,0&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; the error code is in the JSON body.
-        // #4424: without the body assertion an identify result for a non-existent layer passed.
+        // GeoServices always returns HTTP 200; the error code is in the JSON body.
+        // Without the body assertion an identify result for a non-existent layer passed.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         await response.AssertGeoServicesErrorAsync(404);
     }
@@ -156,8 +153,8 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{NonExistentLayerId}/ImageServer/tile/0/0/0");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; the error code is in the JSON body.
-        // #4424: the bare status assertion passed just as happily on a rendered tile, so the
+        // GeoServices always returns HTTP 200; the error code is in the JSON body.
+        // The bare status assertion passed just as happily on a rendered tile, so the
         // test could not fail. A missing layer must never yield image bytes.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         await response.AssertGeoServicesErrorAsync(404);
@@ -281,10 +278,8 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{NonExistentLayerId}/ImageServer?f=json");
 
-        // #4423: this file documents that GeoServices always answers HTTP 200 and carries the
-        // error in the body, so the `if (StatusCode != OK)` guard that used to wrap these
-        // assertions made every one of them unreachable — the test could not fail. The response
-        // must be an error, and its body must disclose no internals.
+        // GeoServices errors use HTTP 200 with an error body. Assert that body
+        // unconditionally and verify it discloses no internals.
         await response.AssertGeoServicesErrorAsync();
 
         var content = await response.Content.ReadAsStringAsync();
@@ -302,7 +297,7 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{NonExistentLayerId}/ImageServer/exportImage?f=json&bbox=-180,-90,180,90");
 
-        // #4423: same unreachable-guard fix as the sibling above.
+        // Same unreachable-guard fix as the sibling above.
         await response.AssertGeoServicesErrorAsync();
 
         var content = await response.Content.ReadAsStringAsync();

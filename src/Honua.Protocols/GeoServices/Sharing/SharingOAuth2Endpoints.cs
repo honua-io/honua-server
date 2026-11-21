@@ -141,8 +141,8 @@ internal static class SharingOAuth2Endpoints
         }
         else
         {
-            token = ReadFirst(context.Request.Query["token"]);
-            tokenTypeHint = ReadFirst(context.Request.Query["token_type_hint"]);
+            // RFC 7009 §2.1: parameters travel in the form body only, never in the URL.
+            token = tokenTypeHint = null;
         }
 
         if (string.IsNullOrWhiteSpace(token))
@@ -157,8 +157,8 @@ internal static class SharingOAuth2Endpoints
         catch (ServiceUnavailableException)
         {
             // The shared store could not confirm deletion. 200 here would leave the
-            // token valid cluster-wide while telling the holder it was revoked
-            // (honua-server#6164). 503 is retryable; the body stays generic.
+            // token valid cluster-wide while telling the holder it was revoked.
+            // 503 is retryable; the body stays generic.
             return StandardErrorHelpers.CreateServiceUnavailable(
                 context,
                 "Token revocation is temporarily unavailable.",
@@ -193,7 +193,8 @@ internal static class SharingOAuth2Endpoints
         }
         else
         {
-            token = ReadFirst(context.Request.Query["token"]);
+            // RFC 7662 §2.1: the token travels in the form body only, never in the URL.
+            token = null;
         }
 
         if (string.IsNullOrWhiteSpace(token))
@@ -257,7 +258,7 @@ internal static class SharingOAuth2Endpoints
             return StandardErrorHelpers.CreateBadRequest(context, "redirect_uri must be an absolute URI.");
         }
 
-        // Open-redirect mitigation (#1484): the redirect_uri must be registered in
+        // Open-redirect mitigation: the redirect_uri must be registered in
         // the per-deployment allow-list. A non-allow-listed redirect_uri is rejected
         // with a direct 400 and is NEVER redirected to (RFC 6749 Â§4.1.2.1) so the
         // bridge cannot be used to bounce an authorization code to a hostile host.
@@ -277,7 +278,7 @@ internal static class SharingOAuth2Endpoints
                 "unsupported_response_type", "Only response_type=code is supported.");
         }
 
-        // Hard PKCE requirement (#1484): when enabled, every authorization-code flow
+        // Hard PKCE requirement: when enabled, every authorization-code flow
         // must register a PKCE code_challenge up front so the matching code_verifier
         // is enforced at the token endpoint. Without this an intercepted code could
         // be redeemed by an attacker.
@@ -520,15 +521,10 @@ internal static class SharingOAuth2Endpoints
         }
         else
         {
-            var query = context.Request.Query;
-            grantType = ReadFirst(query["grant_type"]);
-            code = ReadFirst(query["code"]);
-            codeVerifier = ReadFirst(query["code_verifier"]);
-            redirectUri = ReadFirst(query["redirect_uri"]);
-            clientId = ReadFirst(query["client_id"]);
-            refreshToken = ReadFirst(query["refresh_token"]);
-            clientSecret = ReadFirst(query["client_secret"]);
-            scope = ReadFirst(query["scope"]);
+            // RFC 6749 §4.1.3 and §6: token request parameters travel in the form body only.
+            // The query string is never read, so codes, refresh tokens and client secrets stay
+            // out of URLs; the request then fails validation as an incomplete grant.
+            grantType = code = codeVerifier = redirectUri = clientId = refreshToken = clientSecret = scope = null;
         }
 
         // RFC 6749 Â§2.3.1: a confidential client MAY present its credentials via HTTP

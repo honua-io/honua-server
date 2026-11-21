@@ -69,7 +69,14 @@ internal sealed class ImageServerLegendHandler
             }
 
             var rasters = await _rasterStore.ListRastersAsync(layerId, cancellationToken);
-            if (rasters.Length == 0)
+            var renderingRuleValue = renderingRule ?? context.Request.Query["renderingRule"].ToString();
+            var cogs = rasters.Length == 0 ? await ReadCogStatisticsAsync(context, new(new(snapshot, resolved.Publication, []), renderingRuleValue), cancellationToken) : null;
+            if (cogs?.Refusal is { } refusal)
+            {
+                return refusal;
+            }
+
+            if (rasters.Length == 0 && cogs is null)
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
@@ -80,8 +87,7 @@ internal sealed class ImageServerLegendHandler
             // When a renderingRule supplies a Colormap, the legend reflects that colormap so
             // it matches the rendered image; otherwise fall back to the default class breaks.
             // The renderingRule arrives via the query string on GET and via the merged
-            // form/query values on POST (#1900); callers pass the resolved value in.
-            var renderingRuleValue = renderingRule ?? context.Request.Query["renderingRule"].ToString();
+            // form/query values on POST; callers pass the resolved value in.
             LegendEntry[] swatches;
             var legendType = "Stretched";
             if (TryGetColormap(renderingRuleValue, out var colormap))
@@ -91,14 +97,14 @@ internal sealed class ImageServerLegendHandler
             }
             else
             {
-                var statistics = rasters.Length == 1
+                var statistics = cogs?.Statistics ?? (rasters.Length == 1
                     ? await _rasterStore.GetStatisticsAsync(layerId, rasters[0].Id, bands: null, cancellationToken: cancellationToken)
                     : await _rasterStore.GetMosaicStatisticsAsync(
                         layerId,
                         rasters.Select(r => r.Id).ToArray(),
                         mergeStrategy,
                         bands: null,
-                        cancellationToken: cancellationToken);
+                        cancellationToken: cancellationToken));
                 swatches = BuildSwatches(statistics);
             }
 
@@ -148,6 +154,23 @@ internal sealed class ImageServerLegendHandler
                 "An error occurred while generating the legend.");
         }
     }
+
+    // A layer whose imagery is only registered COGs stretches over its COGs' band 1 statistics; a
+    // colormap legend needs none, only that the COGs exist.
+    private static async Task<ImageServerCogStatisticsResult?> ReadCogStatisticsAsync(
+        HttpContext context, CogLegendQuery query, CancellationToken cancellationToken)
+    {
+        if (!TryGetColormap(query.RenderingRule, out _))
+        {
+            return await ImageServerCogStatistics.TryComputeAsync(context, new ImageServerCogStatisticsRequest(query.Layer, [1], 1), cancellationToken).ConfigureAwait(false);
+        }
+
+        var registrations = await ImageServerCogRasters.ListCogOnlyAsync(context, query.Layer, cancellationToken).ConfigureAwait(false);
+        var refusal = ImageServerCogRasters.IsEntitled(context) ? null : ImageServerCogRasters.PaymentRequired(context);
+        return registrations.Length == 0 ? null : new ImageServerCogStatisticsResult([], [], refusal);
+    }
+
+    private sealed record CogLegendQuery(ImageServerCogLayer Layer, string? RenderingRule);
 
     // Parses a renderingRule and extracts an explicit Colormap, if present. Best-effort:
     // an absent/invalid/non-colormap rule simply returns false so the default legend is used.

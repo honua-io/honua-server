@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
+using Honua.Core.Configuration;
 using Honua.Core.Queries.Filters.Fes20;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
@@ -144,7 +145,8 @@ internal sealed partial class Wfs20Handler
                     cancellationToken);
             }
 
-            var selectedTypes = ResolveRequestedFeatureTypes(publishedTypes, requestedTypes);
+            var selectedTypes = await WithCallerMasksAsync(
+                context, ResolveRequestedFeatureTypes(publishedTypes, requestedTypes), cancellationToken).ConfigureAwait(false);
             var wfsUrl = $"{BaseUrlResolver.GetBaseUrl(context)}/wfs";
             if (selectedTypes.Length == 0)
             {
@@ -345,6 +347,11 @@ internal sealed partial class Wfs20Handler
         CancellationToken cancellationToken)
     {
         var publishedTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken);
+        if (ValidateQueryCount(context, xmlQueries, publishedTypes) is { } queryCountError)
+        {
+            return queryCountError;
+        }
+
         var unknownTypes = xmlQueries
             .SelectMany(query => Wfs20Utilities.ParseTypeNames(query.TypeNames))
             .Where(requestedType => GetUnknownRequestedFeatureTypes(publishedTypes, new[] { requestedType }).Length > 0)
@@ -362,6 +369,15 @@ internal sealed partial class Wfs20Handler
                 "typeNames");
         }
 
+        // Only the requested types are masked; published order is kept, because it orders the features and their paging.
+        var requestedXmlTypes = xmlQueries.SelectMany(query => Wfs20Utilities.ParseTypeNames(query.TypeNames)).ToArray();
+        var requestedPublicationIds = ResolveRequestedFeatureTypes(publishedTypes, requestedXmlTypes)
+            .Select(static featureType => featureType.Publication.Metadata.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        publishedTypes = await WithCallerMasksAsync(
+            context,
+            [.. publishedTypes.Where(featureType => requestedPublicationIds.Contains(featureType.Publication.Metadata.Id))],
+            cancellationToken).ConfigureAwait(false);
         var planSet = await BuildXmlQueryPlansAsync(
             publishedTypes,
             xmlQueries,
@@ -465,6 +481,25 @@ internal sealed partial class Wfs20Handler
         }
 
         return result;
+    }
+
+    // Each query reads every feature type it resolves to (a query without type names resolves to all
+    // of them), so the resolved total is bounded like map layers.
+    private static IResult? ValidateQueryCount(
+        HttpContext context,
+        IReadOnlyList<Wfs20XmlQueryParameters> xmlQueries,
+        ImmutableArray<WfsFeatureTypeDescriptor> publishedTypes)
+    {
+        var requested = xmlQueries.Sum(query =>
+            ResolveRequestedFeatureTypes(publishedTypes, Wfs20Utilities.ParseTypeNames(query.TypeNames)).Length);
+        var maxQueries = MapLayerRequestLimit.ResolveForService(context.RequestServices, publishedTypes.Length);
+        return requested <= maxQueries
+            ? null
+            : Wfs20ErrorResults.CreateBadRequest(
+                context,
+                "InvalidParameterValue",
+                $"GetFeature may name at most {maxQueries.ToString(CultureInfo.InvariantCulture)} queries or feature types.",
+                "typeNames");
     }
 
     private async Task<LayerQueryPlanSet> BuildXmlQueryPlansAsync(
@@ -590,7 +625,7 @@ internal sealed partial class Wfs20Handler
 
         // A normal KVP request may name multiple types with one shared filter. Only treat the
         // request as a multi-query continuation when a per-query value is present. This is the
-        // shape emitted by the XML multi-Query paging link (#4169).
+        // shape emitted by the XML multi-Query paging link.
         if (propertyTokens.Length < 2 && filterTokens.Length < 2)
         {
             return false;

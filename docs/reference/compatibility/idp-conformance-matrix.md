@@ -32,8 +32,8 @@ the main per-provider variable and is exercised by the conformance matrix tests.
 Each `AudienceRestriction` condition must include the configured SP entity ID among its
 `Audience` values. Alternatives within a condition are allowed; every separate condition
 must pass. Assertions are accepted only once, including concurrent submissions on the same
-node. With Redis configured, replay claims are shared across replicas and fail closed when
-Redis is unavailable. Without Redis, replay protection applies to the current node only.
+node. With a system database, replay claims are shared across replicas and fail closed when
+the database is unavailable. Without one, replay protection applies to the current node only.
 
 ### Per-provider attribute configuration
 
@@ -50,12 +50,36 @@ the attribute `Name` your IdP emits:
 The validator resolves an attribute by both its `Name` and `FriendlyName`, so either form
 works when an IdP emits both.
 
+### SP-initiated sign-in and unsolicited responses
+
+Set `Saml:IdpSingleSignOnServiceUrl` to the IdP's single sign-on endpoint (an absolute
+`https` URL) to enable `GET /saml/login`. It redirects the browser to the IdP with an
+`AuthnRequest` (HTTP-Redirect binding) and sets a short-lived, single-use correlation cookie.
+The assertion consumer service accepts a response that carries `InResponseTo` only when it
+names the request issued to that browser, and only once. Start `/saml/login` on the same host
+and path base as `Saml:AssertionConsumerServiceUrl`, because the correlation cookie is scoped
+to that host's `/saml` routes; a newer sign-in in another tab replaces the earlier one.
+
+A response without `InResponseTo` is IdP-initiated. `Saml:AllowUnsolicitedResponses` controls
+whether those are accepted. When it is unset, they are accepted only while
+`Saml:IdpSingleSignOnServiceUrl` is unset, so an IdP-initiated-only deployment keeps working
+and a deployment that offers SP-initiated sign-in refuses them by default. Startup fails when
+`Saml:AllowUnsolicitedResponses` is `false` and no sign-on URL is set, because no sign-in could
+succeed.
+
 ### Single Logout (SLO) configuration
 
 Set `Saml:SingleLogoutServiceUrl` to the SP's own `/saml/slo` endpoint to advertise a
 `SingleLogoutService` (HTTP-POST binding) in SP metadata. When the IdP front-channels a signed
 `LogoutRequest` there, Honua verifies the signature against `Saml:IdpSigningCertificate`,
-terminates the local admin session (store record + cookie), and emits a `LogoutResponse`. Set
+terminates the local admin session (store record + cookie), and emits a `LogoutResponse`.
+The IdP's request arrives cross-site, so the browser usually sends no session cookie with it.
+Honua therefore records each sign-in's `SessionIndex` in the shared store and ends the
+sessions that the request names by `NameID` and `SessionIndex`. If a request carries neither
+a session cookie nor a `SessionIndex`, Honua cannot identify a session and answers with status
+`Responder` / `PartialLogout` instead of `Success`. Each `LogoutRequest` is honoured once. A
+repeat is refused before any session ends, and only the same browser may retry after a store
+outage. Set
 `Saml:IdpSingleLogoutServiceUrl` to relay that `LogoutResponse` back to the IdP via an
 auto-submitting HTTP-POST form; leave it unset to return the `LogoutResponse` directly. Only
 signed `LogoutRequest`s are honored — unsigned or forged logout requests are rejected so they
@@ -82,6 +106,13 @@ shared record before clearing the cookie, including for other replicas.
   operator's role-mapping configuration.
 
 ## SCIM 2.0 provisioning
+
+`Scim:BearerToken` must contain at least 32 characters; use a randomly generated secret.
+SCIM authentication shares the `Authentication:FailedAttempts` source limit. A blocked
+source receives HTTP 429 with `Retry-After`, including on discovery endpoints.
+Hosted IdPs provision from egress addresses shared by many tenants, so wrong tokens
+sent from one tenant could block your provisioning. Add your IdP's published egress
+ranges to `Authentication:FailedAttempts:ExemptNetworks`; the token check still applies.
 
 `Scim:OidcIssuer` is required whenever `Scim:BearerToken` enables provisioning and must
 match the exact OIDC `iss` value for the IdP connected to this SCIM endpoint. Honua

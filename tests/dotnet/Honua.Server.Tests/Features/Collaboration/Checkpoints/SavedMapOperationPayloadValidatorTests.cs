@@ -10,11 +10,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Collaboration.Checkpoints;
 
-/// <summary>
-/// The admission validator must accept exactly what the checkpoint applier can express: anything
-/// it lets through would otherwise take a permanent op-log cursor and wedge every later
-/// checkpoint (honua-server#2999 review).
-/// </summary>
 public sealed class SavedMapOperationPayloadValidatorTests
 {
     [Theory]
@@ -68,16 +63,13 @@ public sealed class SavedMapOperationPayloadValidatorTests
     [InlineData(SavedMapOperationKind.ReorderLayers, """{"layerIds":["a","a"]}""")]
     [InlineData(SavedMapOperationKind.PatchStyle, """{"styleRef":"night"}""")]
     [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":42}""")]
-    // Whitespace-only identifiers used to pass the length-only check, take a permanent cursor, and
-    // then throw an UNMAPPED ArgumentException out of StudioCompositionBodyEditor at checkpoint
-    // time — every later checkpoint 500s while the operation is retained, then fails the
-    // continuity guard once it is pruned (honua-server#2999 review).
+    // Reject whitespace-only identifiers before assigning a permanent cursor so
+    // checkpoint application cannot fail on a retained invalid operation.
     [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":" ","styleRef":"roads"}""")]
     [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"\t","styleRef":null}""")]
     [InlineData(SavedMapOperationKind.SetLayerVisibility, """{"layerId":"  ","visible":true}""")]
     [InlineData(SavedMapOperationKind.ReorderLayers, """{"layerIds":["a"," "]}""")]
-    // A present non-string styleRef used to be admitted and then silently CLEARED the layer's
-    // style at checkpoint time, turning malformed input into a destructive edit.
+    // Reject non-string styleRef values before they can clear a layer style at checkpoint time.
     [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"parcels","styleRef":42}""")]
     [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"parcels","styleRef":{"id":"x"}}""")]
     [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"parcels","styleRef":["night"]}""")]
@@ -85,10 +77,8 @@ public sealed class SavedMapOperationPayloadValidatorTests
     [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"parcels","styleREF":"night"}""")]
     [InlineData(SavedMapOperationKind.PatchStyle, """{"layerId":"parcels","styleRef":null,"unknown":1}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """[]""")]
-    // A whole-document replacement used to pass on shape alone. These three all took a permanent
-    // cursor and then wedged every later checkpoint: a layer missing the required 'id' stops
-    // deserialization dead in ReadBody, and duplicate ids throw an unmapped ArgumentException out
-    // of the reorder applier's ToDictionary (honua-server#2999 review).
+    // Validate whole-document replacement semantics before assigning a cursor:
+    // missing layer IDs and duplicate IDs cannot be applied at checkpoint time.
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{}]}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{"id":"parcels"},{"id":"parcels"}]}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{"id":" "}]}""")]
@@ -99,8 +89,8 @@ public sealed class SavedMapOperationPayloadValidatorTests
         SavedMapOperationKind.ReplaceWebMapDocument,
         """{"widgets":[{"id":"legend","kind":"a"},{"id":"legend","kind":"b"}]}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"widgets":[{"id":" ","kind":"a"}]}""")]
-    // IReadOnlyList<double> deserializes any-length arrays, so the wire model cannot express that
-    // bbox is 4 ordinates and center is 2. Both used to take a permanent cursor and fail later.
+    // IReadOnlyList<double> accepts any array length. Explicitly require four bbox
+    // ordinates and two center ordinates before assigning a cursor.
     [InlineData(SavedMapOperationKind.SetViewport, """{"bbox":[0]}""")]
     [InlineData(SavedMapOperationKind.SetViewport, """{"bbox":[10,10,0,0]}""")]
     [InlineData(SavedMapOperationKind.SetViewport, """{"center":[1,2,3]}""")]
@@ -108,10 +98,8 @@ public sealed class SavedMapOperationPayloadValidatorTests
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"view":{"bbox":[0,1,2]}}""")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"view":{"bbox":[10,10,0,0]}}""")]
     [InlineData(SavedMapOperationKind.SetViewport, """[]""")]
-    // Same class of gap on the scalars: double? accepts any magnitude, so {"zoom":25} used to
-    // reach the unconditional success path and consume a cursor even though the shared Studio view
-    // contract (StudioCompositionViewBounds, which the MCP tool schemas also advertise) caps zoom
-    // at 24 and pitch at 85 (honua-server#2999 review).
+    // Nullable doubles allow any magnitude. Enforce StudioCompositionViewBounds
+    // (zoom <= 24, pitch <= 85), matching MCP schemas, before consuming a cursor.
     [InlineData(SavedMapOperationKind.SetViewport, """{"zoom":25}""")]
     [InlineData(SavedMapOperationKind.SetViewport, """{"zoom":-1}""")]
     [InlineData(SavedMapOperationKind.SetViewport, """{"pitch":90}""")]
@@ -165,12 +153,6 @@ public sealed class SavedMapOperationPayloadValidatorTests
         }
     }
 
-    /// <summary>
-    /// The rejection reason is returned verbatim in the append endpoint's 400, so it must be a
-    /// stable validation message. <c>JsonException.Message</c> carries CLR type names, JSON paths
-    /// and byte offsets, which the shared error-handling rule forbids leaking to clients
-    /// (honua-server#2999 review).
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [InlineData(SavedMapOperationKind.SetViewport, """{"bbox":"invalid"}""")]
@@ -194,11 +176,6 @@ public sealed class SavedMapOperationPayloadValidatorTests
             "Path:");
     }
 
-    /// <summary>
-    /// System.Text.Json ignores properties it cannot bind, so a misspelled member produced an
-    /// empty composition that passed admission and then cleared the document at checkpoint time
-    /// (honua-server#2999 review).
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [InlineData("""{"layres":[{"id":"parcels"}]}""")]
@@ -213,11 +190,6 @@ public sealed class SavedMapOperationPayloadValidatorTests
         error.Should().Contain("unrecognized member");
     }
 
-    /// <summary>
-    /// The ADR-0031 controls collection has to be admitted here as well as at the composition
-    /// tool gate: an interaction bound to <c>control:{id}</c> only resolves when the same
-    /// document-replace payload carries the control.
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [InlineData("""{"controls":{"id":"nav","kind":"navigation"}}""", "must be an array")]
@@ -365,10 +337,6 @@ public sealed class SavedMapOperationPayloadValidatorTests
         error.Should().Contain("not grid items");
     }
 
-    /// <summary>
-    /// C# <c>required</c> only demands the JSON member be present; it does not make the value
-    /// non-null or non-blank (honua-server#2999 review).
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [InlineData("""{"widgets":[{"id":"legend","kind":null}]}""")]
@@ -383,10 +351,6 @@ public sealed class SavedMapOperationPayloadValidatorTests
         error.Should().Contain("kind");
     }
 
-    /// <summary>
-    /// Deserialization is permissive at every level, not just the payload root, so a typo
-    /// inside layers/widgets/view silently applied a default (honua-server#2999 review).
-    /// </summary>
     [Theory]
     [Trait("Category", "Unit")]
     [InlineData(SavedMapOperationKind.ReplaceWebMapDocument, """{"layers":[{"id":"roads","visble":false}]}""")]

@@ -216,7 +216,7 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor, IOpera
         var method = dryRun ? _definition.DryRunMethod ?? _definition.Method : _definition.Method;
         var uri = BuildLocalUri(current, $"/api/v1/admin{path}", BuildQuery(request));
         using var message = new HttpRequestMessage(method, uri);
-        OperationLineageHeaders.Apply(message, context, _lineageAttestationStore);
+        OperationLineageHeaders.Apply(message, new OperationLoopbackHop(context, current), _lineageAttestationStore);
         message.Headers.Host = current.Request.Host.Value;
         AdminOperationLoopbackTls.PinServedCertificate(message, current);
         AdminApiKeyRecord? executionCredential = null;

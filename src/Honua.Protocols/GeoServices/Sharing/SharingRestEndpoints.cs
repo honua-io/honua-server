@@ -73,15 +73,13 @@ public static class SharingRestEndpoints
             .WithMetadata(CredentialResponseCacheMetadata.Instance)
             .WithDisplayName("ArcGIS Portal Generate Token (GET)")
             .WithName("SharingRestGenerateTokenGet")
-            .WithSummary("Issue an ArcGIS-compatible portal token via query parameters")
+            .WithSummary("Issue an ArcGIS-compatible portal token (query-string credentials refused by default)")
             .WithDescription(
-                "Issues an ArcGIS-compatible portal token using query-string parameters. " +
-                "Supported for ArcGIS client compatibility. " +
-                "POST with a form-encoded body is strongly preferred: credentials in URL " +
-                "query strings are recorded verbatim by web servers, reverse proxies, and " +
-                "load balancers. When the server enforces HTTPS (RequireHttps=true, the " +
-                "default) this endpoint rejects plaintext HTTP requests that carry " +
-                "credentials in the URL.")
+                "Refuses a password or portal token in the query string unless the deployment " +
+                "sets Authentication:PortalToken:AllowQueryStringCredentials for a legacy " +
+                "client: credentials in URL query strings are recorded verbatim by web servers, " +
+                "reverse proxies, and load balancers. Send credentials with POST and a " +
+                "form-encoded body.")
             .WithTags("GeoServices Sharing")
             .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get, HttpMethods.Post]))
             .AllowAnonymous()
@@ -296,20 +294,22 @@ public static class SharingRestEndpoints
             // and Referer headers). Direct the client to POST or HTTPS.
             var httpsMessage = credentialsInQueryString
                 ? "Credentials in URL query strings are not safe over plaintext HTTP. " +
-                  "Use POST with a form-encoded body, or enable HTTPS."
+                  "Use HTTPS and POST with a form-encoded body."
                 : "Token issuance requires a secure (HTTPS) transport.";
 
             return StandardErrorHelpers.CreateForbidden(context, httpsMessage);
         }
 
-        // Emit a warning-level audit entry when credentials arrived via the query string
-        // even over a secure channel. The password value is never included in the log line.
-        if (credentialsInQueryString)
+        if (credentialsInQueryString && (password is not null || portalToken is not null))
         {
-            PortalTokenLog.CredentialsFromQueryString(logger);
+            var refusal = RefuseQueryStringCredentials(context, settings, logger);
+            if (refusal is not null)
+            {
+                return refusal;
+            }
         }
 
-        // Federated exchange (#5491): a client signed in to the portal trades its portal token
+        // Federated exchange: a client signed in to the portal trades its portal token
         // for one scoped to this server by presenting the token with the server's URL in place
         // of a username and password.
         var exchangeRequested = !string.IsNullOrWhiteSpace(portalToken) || !string.IsNullOrWhiteSpace(serverUrl);
@@ -410,7 +410,7 @@ public static class SharingRestEndpoints
                 ExpiresAt: expiresAt,
                 // Carry the verifier's provenance so the issued token's roles are revalidated
                 // against the live claims-mapping entitlement on every restore, rather than
-                // outliving it for the token's whole lifetime (honua-server#2997 review).
+                // outliving it for the token's whole lifetime.
                 RolesRequireClaimsMappingEntitlement: verified.RolesRequireClaimsMappingEntitlement,
                 // Same for the tenant: only the verifier's OWN tenant can carry mapping
                 // provenance. When it supplied none and the ambient tenant rail is used
@@ -1107,6 +1107,25 @@ public static class SharingRestEndpoints
             string.Equals(format, "json", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(format, "pjson", StringComparison.OrdinalIgnoreCase);
 
+    // Credentials in a URL are refused unless the deployment opted in for a legacy client; an
+    // accepted query-string credential still leaves a warning-level audit entry (never the value).
+    private static IResult? RefuseQueryStringCredentials(
+        HttpContext context,
+        PortalTokenAuthenticationOptions settings,
+        ILogger logger)
+    {
+        if (!settings.AllowQueryStringCredentials)
+        {
+            PortalTokenLog.TokenIssuanceRejected(logger, "credentials in query string");
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Send credentials in a POST form body; credentials in the URL query string are not accepted.");
+        }
+
+        PortalTokenLog.CredentialsFromQueryString(logger);
+        return null;
+    }
+
     private static async Task<GenerateTokenInputs> ReadParametersAsync(HttpContext context)
     {
         string? username;
@@ -1181,7 +1200,7 @@ public static class SharingRestEndpoints
         // PortalTokenClientType.Ip does (it always binds to the connection's
         // RemoteIpAddress), so accept "requestip" as an alias of "ip" rather than
         // falling through to the referer path and rejecting the request with a
-        // misleading "referer required" error (#1912).
+        // misleading "referer required" error.
         if (string.Equals(raw, "ip", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(raw, "requestip", StringComparison.OrdinalIgnoreCase))
         {

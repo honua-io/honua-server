@@ -22,9 +22,6 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Integration tests for PostgresFeatureStore using real PostgreSQL database.
-/// </summary>
 [Collection("Database.CoreFeatureStore")]
 [Protocol(ProtocolNames.Infrastructure)]
 public class PostgresFeatureStoreTests : IAsyncLifetime
@@ -418,7 +415,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
 
         var result = await _featureStore.QueryAsync(TestLayerId, query);
 
-        // Distinct totals follow the projected tuples (#6196): TypeA and TypeB, not the
+        // Distinct totals follow the projected tuples: TypeA and TypeB, not the
         // three source rows. Continuation stays on the extra-row probe, so a full last
         // page does not report another page.
         Assert.Equal(2, result.TotalCount);
@@ -579,14 +576,6 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         Assert.False(result.HasErrors);
     }
 
-    /// <summary>
-    /// honua-server#4406: the previous body of this test carried two <em>valid</em> creates on both
-    /// paths and asserted <c>WasRolledBack == false</c> twice, so it was a happy-path create test
-    /// wearing a rollback name — a genuinely broken rollback could not have failed it. It now
-    /// includes an operation that must fail (an update of an object id that does not exist), so
-    /// the two <c>rollbackOnFailure</c> paths are distinguished by what they leave in the database:
-    /// all-or-nothing discards the sibling create, partial-commit keeps it.
-    /// </summary>
     [Fact]
     public async Task ApplyEditsAsync_WithRollbackOnFailure_DiscardsTheSiblingCreate()
     {
@@ -617,11 +606,6 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
         Assert.Empty(survivors.Items);
     }
 
-    /// <summary>
-    /// The contrasting half of <see cref="ApplyEditsAsync_WithRollbackOnFailure_DiscardsTheSiblingCreate"/>:
-    /// with <c>rollbackOnFailure=false</c> the same batch commits the create the failing update
-    /// would otherwise have discarded. Together the two tests prove the flag changes behaviour.
-    /// </summary>
     [Fact]
     public async Task ApplyEditsAsync_WithoutRollbackOnFailure_KeepsTheSiblingCreate()
     {
@@ -654,7 +638,7 @@ public class PostgresFeatureStoreTests : IAsyncLifetime
     public async Task ApplyEditsAsync_ReturnsDetailedOperationResults()
     {
         // This test verifies that the enhanced FeatureEditResult structure
-        // provides detailed operation results as required by issue #12
+        // provides detailed operation results for each requested operation
 
         // Arrange
         var feature1 = Feature.Create(0, null, ImmutableDictionary<string, object?>.Empty.Add("name", "Feature1"));

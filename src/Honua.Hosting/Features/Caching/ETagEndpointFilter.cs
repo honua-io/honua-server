@@ -154,8 +154,8 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
             }
 
             var typeInfo = serializerOptions.GetTypeInfo(value.GetType());
-            var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(value, typeInfo);
-            return etagService.ComputeETag(jsonBytes);
+            using var payload = ETagJsonPayload.Serialize(value, typeInfo);
+            return etagService.ComputeETag(payload.WrittenSpan);
         }
         catch (NotSupportedException)
         {
@@ -177,10 +177,6 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
         [LoggerMessage(EventId = 4101, Level = LogLevel.Debug,
             Message = "Generated ETag {ETag} for {Path}")]
         public static partial void ETagGenerated(ILogger logger, string path, string etag);
-
-        [LoggerMessage(EventId = 4102, Level = LogLevel.Debug,
-            Message = "Generated ETag for object {ObjectType} at {Path}")]
-        public static partial void ETagGeneratedForObject(ILogger logger, string path, string objectType);
 
         [LoggerMessage(EventId = 4103, Level = LogLevel.Debug,
             Message = "Resource not modified for {Path}, If-None-Match: {IfNoneMatch}, ETag: {ETag}")]

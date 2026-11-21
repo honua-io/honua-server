@@ -1,0 +1,232 @@
+name: Install Images
+
+# Builds the small images that customer installs run beside the server and publishes them to the
+# existing public honua-server package. Each one lives in its own docker/<image> directory:
+#   * postgres-client: psql for the Launch Stack's start-up containers;
+#   * console-web: the Compose quickstart's static Console web server;
+#   * compose-postgres: the Compose installs' PostgreSQL, PostGIS and pgRouting database.
+# Every platform of each pushed digest passes scripts/ci/trivy-release-gate.sh before any tag is
+# assigned. The weekly schedule rebuilds them on current Alpine packages, so a fixed CVE reaches
+# a new digest without a source change; installs pin a digest published by this workflow.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    branches: [trunk]
+    paths:
+      - 'docker/postgres-client/**'
+      - 'docker/console-web/**'
+      - 'docker/compose-postgres/**'
+      - '.github/workflows/install-images.yml'
+      - 'scripts/ci/trivy-release-gate.sh'
+      - 'scripts/docker/test-compose-postgres-upgrade.sh'
+  push:
+    branches: [trunk]
+    paths:
+      - 'docker/postgres-client/**'
+      - 'docker/console-web/**'
+      - 'docker/compose-postgres/**'
+      - '.github/workflows/install-images.yml'
+  schedule:
+    - cron: '30 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: install-images-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  scan:
+    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
+    name: Build and scan ${{ matrix.image.name }} (${{ matrix.platform }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+        image:
+          - name: postgres-client
+            smoke: psql --version && command -v chown && test "$(id -u)" = 65534
+          - name: console-web
+            smoke: nginx -t && test "$(id -u)" = 101
+          - name: compose-postgres
+            smoke: >-
+              postgres --version && gosu --version && test -x /usr/local/bin/honua-collation-refresh.sh &&
+              dpkg-query -W -f='${Version}' postgresql-17-postgis-3 | grep -q '^3[.]5[.]' &&
+              dpkg-query -W -f='${Version}' postgresql-17-pgrouting | grep -q '^3[.]7[.]'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Build the image for this platform
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: docker/${{ matrix.image.name }}
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: honua-install-image:scan
+          provenance: false
+          sbom: false
+      - name: Smoke what the install runs
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          SMOKE: ${{ matrix.image.smoke }}
+        run: docker run --rm --platform "$PLATFORM" --entrypoint sh honua-install-image:scan -c "$SMOKE"
+      - name: Block fixable HIGH/CRITICAL vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_PLATFORM: ${{ matrix.platform }}
+        with:
+          scan-type: image
+          image-ref: honua-install-image:scan
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+          vuln-type: os,library
+
+  database-upgrade:
+    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
+    name: Upgrade a Compose database volume from the previous base
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Build the database image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: docker/compose-postgres
+          platforms: linux/amd64
+          load: true
+          tags: honua-compose-postgres:upgrade
+          provenance: false
+          sbom: false
+      - name: Upgrade a volume created on the previous base
+        run: scripts/docker/test-compose-postgres-upgrade.sh honua-compose-postgres:upgrade
+
+  authorize-publish:
+    if: github.event_name != 'pull_request' && github.repository == 'honua-io/honua-server'
+    uses: ./.github/workflows/publish-authorization.yml
+
+  publish:
+    name: Publish gated ${{ matrix.image.name }}
+    needs: authorize-publish
+    runs-on: ubuntu-24.04
+    environment: publish-images
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - name: postgres-client
+            title: Honua PostgreSQL client
+            smoke: psql --version && command -v chown && test "$(id -u)" = 65534
+          - name: console-web
+            title: Honua Console web server
+            smoke: nginx -t && test "$(id -u)" = 101
+          - name: compose-postgres
+            title: Honua Compose database
+            smoke: >-
+              postgres --version && gosu --version && test -x /usr/local/bin/honua-collation-refresh.sh &&
+              dpkg-query -W -f='${Version}' postgresql-17-postgis-3 | grep -q '^3[.]5[.]' &&
+              dpkg-query -W -f='${Version}' postgresql-17-pgrouting | grep -q '^3[.]7[.]'
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Log in to Docker Hub
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build the image by digest
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: docker/${{ matrix.image.name }}
+          platforms: linux/amd64,linux/arm64
+          outputs: type=image,name=ghcr.io/honua-io/honua-server,push-by-digest=true,name-canonical=true,push=true
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.title=${{ matrix.image.title }}
+          annotations: index:org.opencontainers.image.revision=${{ github.sha }}
+          provenance: true
+          sbom: true
+      # The weekly rebuild takes new Alpine packages, so the exact digest is smoked before tagging.
+      - name: Smoke both platforms of the pushed digest
+        env:
+          CANDIDATE: ghcr.io/honua-io/honua-server@${{ steps.build.outputs.digest }}
+          SMOKE: ${{ matrix.image.smoke }}
+        # Each platform runs by its own manifest digest: the image store refuses a second
+        # platform pulled under the same index digest.
+        run: |
+          index="$(docker buildx imagetools inspect --raw "$CANDIDATE")"
+          for platform in linux/amd64 linux/arm64; do
+            child="$(jq -er --arg arch "${platform#linux/}" \
+              '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest]
+               | if length == 1 then .[0] else error("no single manifest for \($arch)") end' <<<"$index")"
+            docker run --rm --platform "$platform" --entrypoint sh "${CANDIDATE%@*}@${child}" -c "$SMOKE"
+          done
+      # Installs offer both CPU architectures, so each platform of the index is gated.
+      - name: Gate both platforms on fixable HIGH/CRITICAL vulnerabilities
+        env:
+          CANDIDATE: ghcr.io/honua-io/honua-server@${{ steps.build.outputs.digest }}
+          TRIVY_IMAGE: aquasec/trivy:0.68.1@sha256:a93fd67162843c0f749002af9245fe9a2e5edc41445bd71d3949c803e95ef05b
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
+        run: |
+          for platform in linux/amd64 linux/arm64; do
+            RELEASE_GATE_PLATFORM="$platform" scripts/ci/trivy-release-gate.sh "$CANDIDATE"
+          done
+      - name: Publish tags from the scanned digest
+        env:
+          CANDIDATE: ghcr.io/honua-io/honua-server@${{ steps.build.outputs.digest }}
+          IMAGE: ${{ matrix.image.name }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends skopeo
+          printf '%s\n' \
+            "ghcr.io/honua-io/honua-server:${IMAGE}-${GITHUB_SHA:0:7}-${GITHUB_RUN_ID}" \
+            "ghcr.io/honua-io/honua-server:${IMAGE}" \
+            | python3 scripts/ci/promote-verified-image.py \
+              --candidate "$CANDIDATE" \
+              --staging-tag "candidate-${IMAGE}-${GITHUB_RUN_ID}" \
+              --authfile "$HOME/.docker/config.json"
+      - name: Attest the image index
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/honua-io/honua-server
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      # Installs pull these anonymously; a newly created GHCR package can be private even when
+      # its source repository is public, which is why the existing package is reused.
+      - name: Verify the digest is anonymously pullable
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ${{ matrix.image.name }}
+        run: |
+          token=$(curl -fsS 'https://ghcr.io/token?service=ghcr.io&scope=repository:honua-io/honua-server:pull' | jq -er '.token')
+          curl -fsS -H "Authorization: Bearer $token" \
+            -H 'Accept: application/vnd.oci.image.index.v1+json' \
+            -o /dev/null "https://ghcr.io/v2/honua-io/honua-server/manifests/${DIGEST}"
+          echo "Published ${IMAGE}: ghcr.io/honua-io/honua-server@${DIGEST}" >> "$GITHUB_STEP_SUMMARY"

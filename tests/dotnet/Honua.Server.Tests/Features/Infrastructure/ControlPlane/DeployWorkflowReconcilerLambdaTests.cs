@@ -10,10 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Reconciler-level coverage for the Lambda alias rollout backend wiring,
-/// including telemetry-gated promotion and rollback paths.
-/// </summary>
 public sealed class DeployWorkflowReconcilerLambdaTests
 {
     [Fact]
@@ -131,7 +127,7 @@ public sealed class DeployWorkflowReconcilerLambdaTests
         var updated = await store.GetAsync(operation.OperationId);
 
         updated.Should().NotBeNull();
-        // honua-server#4618: a freshly-promoted operation opens a post-activation observation window
+        // A freshly-promoted operation opens a post-activation observation window
         // rather than finishing immediately, so it stays Reconciling (non-terminal) with a Protection
         // record rather than jumping straight to Succeeded.
         updated!.Status.Should().Be(WorkflowOperationStatus.Reconciling);

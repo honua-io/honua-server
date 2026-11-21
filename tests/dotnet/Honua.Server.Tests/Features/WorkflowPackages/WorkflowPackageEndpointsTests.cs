@@ -29,10 +29,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.Server.Tests.Features.WorkflowPackages;
 
-/// <summary>
-/// Integration tests for Console workflow package registry, lifecycle, publication,
-/// and job provenance endpoints (#1185).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ProcessExecution)]
@@ -69,7 +65,7 @@ public sealed partial class WorkflowPackageEndpointsTests : IAsyncLifetime
                 services.AddSingleton<IUniversalProgressStore>(_progressStore);
                 services.AddSingleton<IJobQueue>(_jobQueue);
                 // Capture the publishâ†’metadata-release bridge deterministically without requiring an
-                // active Metadata v2 snapshot in the test environment (#2176).
+                // active Metadata v2 snapshot in the test environment.
                 services.AddSingleton<IMetadataReleaseService>(_releaseService);
                 // Stand in for the PostgreSQL IWorkflowDefinitionStore that AddOrchestration composes
                 // only when the host has a system database. Without it a Schedule publication has no
@@ -230,8 +226,8 @@ public sealed partial class WorkflowPackageEndpointsTests : IAsyncLifetime
 
         // The Schedule publication's success claim is only honest if the compiled workflow
         // definition actually reached the durable store — that record is what the cron scheduler
-        // enumerates, and a host without a durable store must refuse rather than return 200
-        // (#3585). Assert the durable receipt, not just the response.
+        // enumerates, and a host without a durable store must refuse rather than return 200.
+        // Assert the durable receipt, not just the response.
         var persistedDefinition = await _definitionStore.GetAsync(
             $"workflow-package:{packageId}:v{version.Version}:pub-schedule-1185");
         persistedDefinition.Should().NotBeNull(
@@ -345,7 +341,7 @@ public sealed partial class WorkflowPackageEndpointsTests : IAsyncLifetime
         });
 
         // The publish path must bridge into the metadata-release lifecycle by emitting a
-        // Workflow-kind release-package entry that the GitOps changeset builder can promote (#2176).
+        // Workflow-kind release-package entry that the GitOps changeset builder can promote.
         _releaseService.Requests.Should().ContainSingle();
         var emitted = _releaseService.Requests[0];
         emitted.PackageId.Should().Be(packageId);
@@ -633,11 +629,6 @@ public sealed partial class WorkflowPackageEndpointsTests : IAsyncLifetime
     private static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response)
         => JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
-    /// <summary>
-    /// Records workflow release-package emissions from the publish path so the publishâ†’
-    /// metadata-release bridge can be asserted without an active Metadata v2 snapshot (#2176).
-    /// All other release-service operations are unused by these tests.
-    /// </summary>
     private sealed class RecordingMetadataReleaseService : IMetadataReleaseService
     {
         public List<CreateWorkflowReleasePackageRequest> Requests { get; } = new();

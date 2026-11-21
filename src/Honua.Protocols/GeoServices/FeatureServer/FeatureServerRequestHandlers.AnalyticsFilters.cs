@@ -144,7 +144,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         // A geometry spatial reference that cannot be resolved is a client error,
-        // matching /query (#6146). An empty or missing spatial reference still
+        // matching /query. An empty or missing spatial reference still
         // falls back to the layer SR. queryBins, queryDateBins, and queryTopFeatures
         // share this path; queryH3 does not accept a geometry spatial reference.
         if (!inputSrid.HasValue && GeometryCarriesSpatialReference(parsedGeometry.SpatialReference))
@@ -286,7 +286,7 @@ internal static partial class FeatureServerEndpoints
             return (query with { SqlFilter = addition, Where = null }, null);
         }
 
-        var translation = filterService.Translate(parseResult.Expression, resource);
+        var translation = filterService.Translate(parseResult.Expression, resource.WithoutHiddenSchemaFields());
         if (!translation.IsSuccess || translation.SqlFilter is null)
         {
             return (query, StandardErrorHelpers.CreateBadRequest(context,

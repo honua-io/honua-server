@@ -4,10 +4,12 @@
 using System.Globalization;
 using System.Linq;
 using System.Net;
+using System.Security.Cryptography;
 using Amazon.Runtime;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Logging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 
@@ -218,6 +220,13 @@ internal sealed partial class AwsBatchComputeBackend(
 
     internal const string PendingSubmissionMarkerPrefix = "aws-batch-pending:";
 
+    // The capability stays in the stored record only. AWS Batch shows container overrides to any
+    // principal allowed batch:DescribeJobs, so the job receives a single-use code instead and
+    // exchanges it for the capability when it starts.
+    internal const string JobTokenParameter = "env.HONUA_JOB_TOKEN";
+
+    internal const string RedemptionCodeParameter = "env.HONUA_JOB_REDEMPTION_CODE";
+
     internal static TimeSpan PendingDiscoveryGracePeriod => TimeSpan.FromMinutes(2);
 
     internal AwsBatchComputeBackend(
@@ -353,7 +362,8 @@ internal sealed partial class AwsBatchComputeBackend(
         { Attempt = attempt }, cancellationToken).ConfigureAwait(false);
         var prepared = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["env.HONUA_JOB_TOKEN"] = issuance.Token,
+            [JobTokenParameter] = issuance.Token,
+            [RedemptionCodeParameter] = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32)),
             ["env.HONUA_JOB_ID"] = job.OperationId,
             ["env.HONUA_JOB_ATTEMPT"] = attempt.ToString(CultureInfo.InvariantCulture),
             ["env.HONUA_JOB_START_DEADLINE"] = startDeadline.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)
@@ -380,8 +390,8 @@ internal sealed partial class AwsBatchComputeBackend(
     public async Task OnPreparationCommittedAsync(ExecutionJobRecord previous, ExecutionJobRecord prepared, CancellationToken cancellationToken)
     {
         if (previous.Audit.CustomCodeOwnerScope is not null && scopedTokenIssuer is not null &&
-            previous.Spec.Parameters.TryGetValue("env.HONUA_JOB_TOKEN", out var oldToken) &&
-            prepared.Spec.Parameters.TryGetValue("env.HONUA_JOB_TOKEN", out var newToken) &&
+            previous.Spec.Parameters.TryGetValue(JobTokenParameter, out var oldToken) &&
+            prepared.Spec.Parameters.TryGetValue(JobTokenParameter, out var newToken) &&
             !string.Equals(oldToken, newToken, StringComparison.Ordinal))
         {
             // Never revoke before the preparation CAS: a stale dispatcher must not revoke
@@ -400,7 +410,7 @@ internal sealed partial class AwsBatchComputeBackend(
 
         var parameters = job.Spec.Parameters;
         // Select the job-definition tier from the honua-iac pool by the job's ephemeral-storage
-        // need (honua-iac#70); falls back to the single batch.job_definition_arn for non-tiered
+        // need; falls back to the single batch.job_definition_arn for non-tiered
         // configs. vCPU/memory/timeout/retry stay SubmitJob overrides below.
         var jobDefinition = AwsBatchJobDefinitionTierSelector.ResolveJobDefinitionArn(parameters);
         var jobDefinitionContractVersion = ResolveJobDefinitionMaxSupportedContractVersion(jobDefinition);
@@ -416,14 +426,15 @@ internal sealed partial class AwsBatchComputeBackend(
 
         var jobQueue = GetRequiredParameter(parameters, AwsBatchParameterKeys.JobQueueArn);
         var region = GetOptionalParameter(parameters, AwsBatchParameterKeys.Region);
-        var serviceUrl = GetOptionalParameter(parameters, AwsBatchParameterKeys.ServiceUrl);
+        var serviceUrl = GetServiceUrl(parameters);
 
         Dictionary<string, string>? resolvedParameters = null;
         var environmentOverrides = BuildEnvironmentOverrides(job);
         if (job.Audit.CustomCodeOwnerScope is not null)
         {
             var expectedAttempt = checked(job.AttemptCount + 1).ToString(CultureInfo.InvariantCulture);
-            if (!parameters.TryGetValue("env.HONUA_JOB_TOKEN", out var token) || string.IsNullOrWhiteSpace(token) ||
+            if (!parameters.TryGetValue(JobTokenParameter, out var token) || string.IsNullOrWhiteSpace(token) ||
+                !parameters.TryGetValue(RedemptionCodeParameter, out var code) || string.IsNullOrWhiteSpace(code) ||
                 !parameters.TryGetValue("env.HONUA_JOB_ATTEMPT", out var attempt) || attempt != expectedAttempt ||
                 !parameters.TryGetValue("env.HONUA_JOB_ID", out var jobId) || jobId != job.OperationId)
             {
@@ -431,7 +442,7 @@ internal sealed partial class AwsBatchComputeBackend(
             }
             resolvedParameters = new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["env.HONUA_JOB_TOKEN"] = token,
+                [JobTokenParameter] = token,
                 ["env.HONUA_JOB_ID"] = jobId,
                 ["env.HONUA_JOB_ATTEMPT"] = attempt
             };
@@ -473,7 +484,7 @@ internal sealed partial class AwsBatchComputeBackend(
         {
             if (resolvedParameters is not null && scopedTokenIssuer is not null)
             {
-                await scopedTokenIssuer.RevokeAsync(resolvedParameters["env.HONUA_JOB_TOKEN"], CancellationToken.None).ConfigureAwait(false);
+                await scopedTokenIssuer.RevokeAsync(resolvedParameters[JobTokenParameter], CancellationToken.None).ConfigureAwait(false);
             }
             return new BatchComputeSubmissionResult
             {
@@ -488,7 +499,7 @@ internal sealed partial class AwsBatchComputeBackend(
             // deterministic JobName as a discovery key under the pending marker so the
             // reconciler can verify acceptance via ListJobs on the next cycle instead of
             // stamping the durable record terminal Failed.
-            Log.BatchJobSubmissionUncertain(logger, job.OperationId, jobName, ex.Message);
+            Log.BatchJobSubmissionUncertain(logger, job.OperationId, jobName, ProviderError(ex));
 
             return new BatchComputeSubmissionResult
             {
@@ -505,7 +516,7 @@ internal sealed partial class AwsBatchComputeBackend(
             // Queued retries. Pure AmazonClientException (identity/transport) is always
             // uncertain and takes the branch above, so only resolved service-level
             // rejections reach this catch.
-            Log.BatchJobSubmissionFailed(logger, job.OperationId, jobName, ex.Message);
+            Log.BatchJobSubmissionFailed(logger, job.OperationId, jobName, ProviderError(ex));
 
             return new BatchComputeSubmissionResult
             {
@@ -537,6 +548,12 @@ internal sealed partial class AwsBatchComputeBackend(
 
         var providerId = job.ProviderOperationId;
         var region = GetOptionalParameter(job.Spec.Parameters, AwsBatchParameterKeys.Region);
+        if (RefusedServiceUrl(job.Spec.Parameters) is { } refusal)
+        {
+            // No provider call can be made, so finalize instead of faulting every reconcile poll.
+            return RefusedEndpointObservation(providerId, ExecutionJobStatus.Failed, refusal);
+        }
+
         var serviceUrl = GetOptionalParameter(job.Spec.Parameters, AwsBatchParameterKeys.ServiceUrl);
 
         if (string.IsNullOrWhiteSpace(providerId))
@@ -606,7 +623,7 @@ internal sealed partial class AwsBatchComputeBackend(
             // v4, so both must be caught here; if either threw through, the reconciler's
             // generic catch would stamp the record terminal Failed even though the AWS
             // Batch job could still be running.
-            Log.BatchJobObservationFailed(logger, job.OperationId, providerId, ex.Message);
+            Log.BatchJobObservationFailed(logger, job.OperationId, providerId, ProviderError(ex));
             return new BatchComputeObservation
             {
                 Status = job.Status,
@@ -733,7 +750,7 @@ internal sealed partial class AwsBatchComputeBackend(
         }
         catch (Exception ex) when (IsProviderRequestException(ex, cancellationToken))
         {
-            Log.BatchJobObservationFailed(logger, job.OperationId, pendingJobName, ex.Message);
+            Log.BatchJobObservationFailed(logger, job.OperationId, pendingJobName, ProviderError(ex));
             return new BatchComputeObservation
             {
                 Status = job.Status,
@@ -761,6 +778,12 @@ internal sealed partial class AwsBatchComputeBackend(
 
         var providerId = job.ProviderOperationId;
         var region = GetOptionalParameter(job.Spec.Parameters, AwsBatchParameterKeys.Region);
+        if (RefusedServiceUrl(job.Spec.Parameters) is { } refusal)
+        {
+            // No provider call can be made, so finalize instead of faulting every reconcile poll.
+            return RefusedEndpointObservation(providerId, ExecutionJobStatus.Cancelled, refusal);
+        }
+
         var serviceUrl = GetOptionalParameter(job.Spec.Parameters, AwsBatchParameterKeys.ServiceUrl);
 
         if (string.IsNullOrWhiteSpace(providerId))
@@ -856,7 +879,7 @@ internal sealed partial class AwsBatchComputeBackend(
             // SDK blip during a user cancel would surface as an unhandled 500 to the
             // caller and stamp the durable record terminal Failed via the reconciler's
             // generic catch.
-            Log.BatchJobCancellationFailed(logger, job.OperationId, providerId, ex.Message);
+            Log.BatchJobCancellationFailed(logger, job.OperationId, providerId, ProviderError(ex));
             return new BatchComputeObservation
             {
                 Status = job.Status,
@@ -941,7 +964,7 @@ internal sealed partial class AwsBatchComputeBackend(
         }
         catch (Exception ex) when (IsProviderRequestException(ex, cancellationToken))
         {
-            Log.BatchJobCancellationFailed(logger, job.OperationId, pendingJobName, ex.Message);
+            Log.BatchJobCancellationFailed(logger, job.OperationId, pendingJobName, ProviderError(ex));
             return new BatchComputeObservation
             {
                 Status = job.Status,
@@ -999,7 +1022,8 @@ internal sealed partial class AwsBatchComputeBackend(
         foreach (var entry in job.Spec.Parameters)
         {
             if (entry.Key.StartsWith("batch.", StringComparison.Ordinal)
-                || !entry.Key.StartsWith("env.", StringComparison.Ordinal))
+                || !entry.Key.StartsWith("env.", StringComparison.Ordinal)
+                || string.Equals(entry.Key, JobTokenParameter, StringComparison.Ordinal))
             {
                 continue;
             }
@@ -1046,6 +1070,30 @@ internal sealed partial class AwsBatchComputeBackend(
 
         return value.Trim();
     }
+
+    // Rejected before any client is built: the SDK would otherwise sign requests for an endpoint
+    // that is plain HTTP or outside the AWS partitions.
+    private static string? GetServiceUrl(IReadOnlyDictionary<string, string> parameters)
+        => RefusedServiceUrl(parameters) is { } refusal
+            ? throw new InvalidOperationException(refusal)
+            : GetOptionalParameter(parameters, AwsBatchParameterKeys.ServiceUrl);
+
+    private static string? RefusedServiceUrl(IReadOnlyDictionary<string, string> parameters)
+        => GetOptionalParameter(parameters, AwsBatchParameterKeys.ServiceUrl) is { } serviceUrl
+            && AwsSdkBatchJobClient.ValidateServiceUrl(serviceUrl) is { } error
+                ? $"AWS Batch parameter '{AwsBatchParameterKeys.ServiceUrl}' {error}"
+                : null;
+
+    private static BatchComputeObservation RefusedEndpointObservation(string? providerId, ExecutionJobStatus status, string refusal)
+        => new()
+        {
+            Status = status,
+            ProviderOperationId = providerId,
+            PercentComplete = 100,
+            Message = refusal
+        };
+
+    private static string ProviderError(Exception ex) => ProviderErrorBodyRedactor.Redact(ex.Message);
 
     private static string? GetOptionalParameter(IReadOnlyDictionary<string, string> parameters, string key)
         => parameters.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)

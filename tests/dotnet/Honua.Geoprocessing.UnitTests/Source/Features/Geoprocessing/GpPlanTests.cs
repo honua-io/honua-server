@@ -9,14 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Unit coverage for the headless <c>honua gp plan</c> dry-run path (GP Devkit
-/// P5, issue #2126): proves the planner validates a process's params against the
-/// typed catalog schema and the shared DAG structural gate WITHOUT executing,
-/// and that the size/cost estimate warns before submit when an output is likely
-/// to blow the <see cref="GeoprocessingExecutorOptions.MaxArtifactBytes"/> cap.
-/// Fully offline — no Redis, no job store, no executor invocation.
-/// </summary>
 public sealed class GpPlanTests
 {
     private const long DefaultCap = 50L * 1024L * 1024L;
@@ -117,7 +109,7 @@ public sealed class GpPlanTests
         // The submit-time layer gate stamps authorizedDatasetLayerId onto the step and authoring
         // surfaces persist it with the plan, so a scheduled workflow's stored plan carries it.
         // Catalog validation runs BEFORE the gate, so treating this server-owned input as an
-        // unknown parameter rejected every correctly pinned workflow step (#3043 review).
+        // unknown parameter rejected every correctly pinned workflow step.
         var inputs = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["layerId"] = "7",
@@ -139,7 +131,7 @@ public sealed class GpPlanTests
         // EnrichmentJobExecutor.BuildPlan reads 'predicate' only when 'method' is absent, so
         // 'method' takes precedence per the published contract. Validating 'predicate'
         // unconditionally rejected plans the executor runs happily, and made an async submission
-        // fail where the equivalent synchronous POST /api/enrich succeeded (#3043 review).
+        // fail where the equivalent synchronous POST /api/enrich succeeded.
         var inputs = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["layerId"] = "7",
@@ -183,7 +175,7 @@ public sealed class GpPlanTests
         // narrower set (e.g. the transform.spatial-filter intersects/within set, which is a
         // one-word-different symbol in the same validator) would make the advertised
         // contains/dwithin paths unreachable — rejected at submit for a value the executor
-        // runs (#3043 review). 'distance' is supplied throughout so the dwithin case fails
+        // runs. 'distance' is supplied throughout so the dwithin case fails
         // only if the predicate itself is refused.
         foreach (var predicate in new[] { "intersects", "contains", "within", "dwithin" })
         {
@@ -210,7 +202,7 @@ public sealed class GpPlanTests
         // 'where'/'bbox' window the source.honua-layer read; EnrichmentJobExecutor's inline
         // branch parses the staged collection verbatim and applies neither. Accepting the
         // combination succeeded the job over EVERY staged feature, contradicting the
-        // catalog's layer-source-only contract (#3043 review).
+        // catalog's layer-source-only contract.
         foreach (var filter in new[] { "where", "bbox" })
         {
             var inputs = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -231,9 +223,8 @@ public sealed class GpPlanTests
     [UnitTest]
     public void Build_EnrichmentLayerSourceWithMalformedBbox_IsRejected()
     {
-        // Three ordinates and a nonnumeric ordinate both used to clear the generic
-        // text-type check and only fail later in HonuaLayerDagSource.BuildSpatialFilter as a
-        // generic source-read error rather than an actionable parameter error (#3043 review).
+        // Reject bbox values with three ordinates or nonnumeric ordinates as actionable
+        // parameter errors before source execution.
         foreach (var bbox in new[] { "-10,-10,10", "-10,-10,east,10" })
         {
             var inputs = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -257,7 +248,7 @@ public sealed class GpPlanTests
         // double.TryParse accepts "NaN"/"Infinity"/"-Infinity", so a syntax-only ordinate check
         // let these clear submission and reach BuildSpatialFilter, which builds an envelope out
         // of them — either failing deep in the provider path as a generic read error or
-        // producing a filter the caller never asked for (#3043 review).
+        // producing a filter the caller never asked for.
         foreach (var bbox in new[] { "NaN,0,1,1", "-Infinity,0,1,1", "0,0,1,Infinity" })
         {
             var inputs = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -280,7 +271,7 @@ public sealed class GpPlanTests
     {
         // RemoveEmptyEntries dropped a MISSING ordinate, so `0,,1,2,3` collapsed to four values,
         // passed validation, and the source parser read it as `0,1,2,3` — a different window
-        // than the caller supplied (#3043 review).
+        // than the caller supplied.
         foreach (var bbox in new[] { "0,,1,2,3", "0,,2,3", ",0,1,2" })
         {
             var inputs = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -301,10 +292,8 @@ public sealed class GpPlanTests
     [UnitTest]
     public void Build_EnrichmentNearestNeighborWithAggregates_IsRejected()
     {
-        // The nearest branch of EnrichmentJobExecutor.Enrich returns after AnnotateNearest
-        // without ever consulting plan.Stats, so this combination used to queue a job that
-        // succeeded while silently omitting every requested aggregate. The catalog already
-        // advertises 'aggregates' as join-methods-only (#3043 review).
+        // The nearest enrichment branch does not consume plan.Stats. Reject aggregates
+        // there because the catalog defines them for join methods only.
         foreach (var method in new[] { "nearest-neighbor", "nearest_neighbor", "nearest" })
         {
             var inputs = new Dictionary<string, string>(StringComparer.Ordinal)

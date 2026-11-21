@@ -24,10 +24,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Unit tests for <see cref="PortalTokenIssuer"/> covering binding, expiry, and
-/// claim projection behavior independent of the HTTP pipeline.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
@@ -385,7 +381,7 @@ public sealed class PortalTokenIssuerTests
             .Should().BeNull("a token revoked on one node is refused by the next request on any node");
     }
 
-    // ─── SEC-9: the token is bound to the credential it was minted from ─────────
+    // ─── the token is bound to the credential it was minted from ─────────
 
     [UnitTest]
     public async Task IssueAsync_SourceCredentialExpiresFirst_ClampsTokenLifetimeToSourceExpiry()
@@ -616,7 +612,7 @@ public sealed class PortalTokenIssuerTests
         verified.Source.Version.Should().NotContain(adminPassword);
     }
 
-    // ─── #5491 federated exchange ───────────────────────────────────────────────
+    // ─── Federated exchange ───────────────────────────────────────────────
 
     [UnitTest]
     public async Task ExchangeAsync_PresentedFromAnotherBinding_ReturnsNull_Issue5491()

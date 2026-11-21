@@ -5,10 +5,6 @@ using Xunit;
 
 namespace Honua.Tests.OutboundSecurity;
 
-/// <summary>
-/// The address table every outbound destination guard must agree on. Each row is an address and
-/// the range it belongs to.
-/// </summary>
 public static class OutboundAddressCases
 {
     public static TheoryData<string, string> Disallowed => new()
@@ -28,6 +24,10 @@ public static class OutboundAddressCases
         { "255.255.255.255", "IPv4 broadcast" },
         { "::", "IPv6 unspecified" },
         { "::1", "IPv6 loopback" },
+        { "::10.0.0.1", "IPv4-compatible private" },
+        { "::169.254.169.254", "IPv4-compatible link-local" },
+        { "::ffff:0:10.0.0.1", "IPv4-translated private" },
+        { "::ffff:0:169.254.169.254", "IPv4-translated link-local" },
         { "::ffff:10.0.0.1", "IPv4-mapped private" },
         { "::ffff:169.254.169.254", "IPv4-mapped link-local" },
         { "fc00::1", "IPv6 unique local" },
@@ -49,6 +49,8 @@ public static class OutboundAddressCases
     {
         { "8.8.8.8", "public IPv4" },
         { "93.184.216.34", "public IPv4" },
+        { "::8.8.8.8", "IPv4-compatible public" },
+        { "::ffff:0:8.8.8.8", "IPv4-translated public" },
         { "::ffff:8.8.8.8", "IPv4-mapped public" },
         { "2606:4700:4700::1111", "public IPv6" },
         { "2002:0808:0808::1", "6to4 embedding public IPv4" },

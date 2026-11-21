@@ -26,16 +26,16 @@ internal sealed class DuckDBFeatureStore :
     private readonly IFeatureCacheManager _cacheManager;
     private readonly IMetadataV2GraphProvider? _v2Provider;
     private readonly IFilterExpressionService? _filterExpressionService;
-    private readonly LayerReadSecurityResolver? _readSecurity;
+    private readonly LayerReadSecurityResolver _readSecurity;
     private readonly FeatureProviderBinding? _binding;
 
     public DuckDBFeatureStore(
         IFeatureQueryBuilder queryBuilder,
         IFeatureDataAccess dataAccess,
         IFeatureCacheManager cacheManager,
+        LayerReadSecurityResolver readSecurity,
         IMetadataV2GraphProvider? v2Provider = null,
-        IFilterExpressionService? filterExpressionService = null,
-        LayerReadSecurityResolver? readSecurity = null)
+        IFilterExpressionService? filterExpressionService = null)
         : this(queryBuilder, dataAccess, cacheManager, v2Provider, filterExpressionService, readSecurity, binding: null)
     {
     }
@@ -46,7 +46,7 @@ internal sealed class DuckDBFeatureStore :
         IFeatureCacheManager cacheManager,
         IMetadataV2GraphProvider? v2Provider,
         IFilterExpressionService? filterExpressionService,
-        LayerReadSecurityResolver? readSecurity,
+        LayerReadSecurityResolver readSecurity,
         FeatureProviderBinding? binding)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
@@ -54,7 +54,7 @@ internal sealed class DuckDBFeatureStore :
         _cacheManager = cacheManager ?? throw new ArgumentNullException(nameof(cacheManager));
         _v2Provider = v2Provider;
         _filterExpressionService = filterExpressionService;
-        _readSecurity = readSecurity;
+        _readSecurity = readSecurity ?? throw new ArgumentNullException(nameof(readSecurity));
         _binding = binding;
     }
 
@@ -303,9 +303,7 @@ internal sealed class DuckDBFeatureStore :
     #region Private helpers
 
     private Task EnsureRowAndFieldPolicyEnforceableAsync(int layerId, CancellationToken cancellationToken)
-        => _readSecurity is null
-            ? Task.CompletedTask
-            : _readSecurity.EnsureNoUnenforcedPolicyAsync(
+        => _readSecurity.EnsureNoUnenforcedPolicyAsync(
                 "DuckDB", layerId, _binding?.Resource, rejectPermanentFilter: false, cancellationToken);
 
     private async Task<FeatureQuery> ApplyPermanentFilterAsync(

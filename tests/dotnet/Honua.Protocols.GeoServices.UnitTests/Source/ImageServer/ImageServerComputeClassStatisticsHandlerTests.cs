@@ -20,12 +20,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Unit tests for <see cref="ImageServerComputeClassStatisticsHandler"/>. Exercises the class
-/// signature pipeline over synthetic per-pixel band vectors returned by a substituted raster store:
-/// per-class count, per-band mean, and the covariance signature are asserted against hand-computed
-/// values, and unsupported request combinations are explicitly rejected.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public sealed class ImageServerComputeClassStatisticsHandlerTests
 {
@@ -169,7 +163,7 @@ public sealed class ImageServerComputeClassStatisticsHandlerTests
 
         var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
 
-        // renderingRule is explicitly rejected (NotImplemented). #2795: the GeoServices error body now
+        // renderingRule is explicitly rejected (NotImplemented). The GeoServices error body
         // passes HTTP 501 through as code 501 (distinct from a 500 server fault).
         await AssertGeoServicesErrorAsync(context, result, 501);
     }

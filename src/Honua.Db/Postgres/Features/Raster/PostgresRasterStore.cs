@@ -43,7 +43,7 @@ internal sealed class PostgresRasterStore : IRasterStore
     // is serialized behind a transaction-scoped advisory lock (single-flight), so it is given
     // a dedicated, generous timeout â€” independent of the ~30s request-path command/statement
     // timeout default â€” otherwise the first cold read on a large raster times out and the
-    // statistics never persist, retrying forever instead of self-healing (#1649).
+    // statistics never persist, retrying forever instead of self-healing.
     private const int StatisticsComputeTimeoutSeconds = 300;
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
@@ -114,14 +114,14 @@ internal sealed class PostgresRasterStore : IRasterStore
         AddParameter(command, "@layerId", layerId);
         AddParameter(command, "@rasterId", rasterId);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        var rasters = await ReadUnlessRasterStorageMissingAsync(
+            connection, () => ReadRasterInfosAsync(command, cancellationToken), cancellationToken).ConfigureAwait(false) ?? [];
+        if (rasters is not [var info, ..])
         {
             PostgresRasterLog.RasterNotFound(_logger, layerId, rasterId);
             return null;
         }
 
-        var info = ReadRasterInfo(reader);
         PostgresRasterLog.RasterInfoRetrieved(_logger, layerId, rasterId, info.Width, info.Height);
         return info;
     }
@@ -203,15 +203,11 @@ internal sealed class PostgresRasterStore : IRasterStore
             AddParameter(command, name, value);
         }
 
-        var rasters = new List<RasterInfo>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rasters.Add(ReadRasterInfo(reader));
-        }
+        var rasters = await ReadUnlessRasterStorageMissingAsync(
+            connection, () => ReadRasterInfosAsync(command, cancellationToken), cancellationToken).ConfigureAwait(false) ?? [];
 
-        PostgresRasterLog.RasterListRetrieved(_logger, layerId, rasters.Count);
-        return rasters.ToArray();
+        PostgresRasterLog.RasterListRetrieved(_logger, layerId, rasters.Length);
+        return rasters;
     }
 
     public async Task<RasterCatalogPage> QueryCatalogAsync(
@@ -239,7 +235,14 @@ internal sealed class PostgresRasterStore : IRasterStore
         long totalCount;
         RasterExtent? aggregateExtent = null;
 
-        await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+        var reader = await ReadUnlessRasterStorageMissingAsync(
+            connection, () => command.ExecuteReaderAsync(cancellationToken), cancellationToken).ConfigureAwait(false);
+        if (reader is null)
+        {
+            return new RasterCatalogPage { Rasters = rasters, TotalCount = 0, PredicatePushedDown = true };
+        }
+
+        await using (reader)
         {
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
@@ -495,7 +498,7 @@ internal sealed class PostgresRasterStore : IRasterStore
     }
 
     // ----- Empty clip-extent export (Esri exportImage no-data contract) ------
-    // A populated export frames the raster onto the clip envelope (#4060). When the layer holds
+    // A populated export frames the raster onto the clip envelope. When the layer holds
     // no raster reaching that envelope there is nothing to frame, and ST_Clip's empty SRID-0
     // result cannot be warped onto the frame grid at all, so the canvas is built on its own here
     // and the band layout is copied from any raster of the layer. The result is encoded by the
@@ -537,7 +540,9 @@ internal sealed class PostgresRasterStore : IRasterStore
             LIMIT 1
             """;
         AddParameter(referenceCommand, "@layerId", layerId);
-        var referenceIdValue = await referenceCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        var referenceIdValue = await ReadUnlessRasterStorageMissingAsync(
+            connection, () => referenceCommand.ExecuteScalarAsync(cancellationToken), cancellationToken).ConfigureAwait(false);
+
         if (referenceIdValue is null || referenceIdValue == DBNull.Value)
         {
             // The layer holds no raster at all, so there is no band layout to copy and no empty
@@ -743,7 +748,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         var extraParams = new List<(string Name, object Value)>();
         var hasOutputDimensions = query.OutputWidth is > 0 && query.OutputHeight is > 0;
 
-        // When the output must cover the clip envelope (Esri exportImage bbox, #4060), steps 3 and 4
+        // When the output must cover the clip envelope (Esri exportImage bbox), steps 3 and 4
         // are replaced by the frame CTEs below, which warp the pipeline output onto a grid spanning
         // the envelope in the output SRID at the exact requested size.
         var frameClipExtent = ShouldFrameClipExtent(query, hasOutputDimensions);
@@ -1274,16 +1279,16 @@ internal sealed class PostgresRasterStore : IRasterStore
         return algorithm;
     }
 
-    // ----- Clip-extent framing (Esri exportImage bbox contract, #4060) --------
+    // ----- Clip-extent framing (Esri exportImage bbox contract) --------
     // ST_Clip+ST_Resize, and ST_Transform/ST_Resample onto a reference grid, all keep the SOURCE
-    // extent, so a bbox reaching past the raster came back as the bbox-raster intersection
+    // extent, so a bbox reaching past the raster would come back as the bbox-raster intersection
     // stretched to the requested size while every Esri client paints it across the whole bbox.
     // The frame CTEs build an OutputWidth x OutputHeight grid spanning the clip envelope in the
     // output SRID, warp the pipeline output onto it with one grid-aligned ST_Transform, and union
     // that over an all-NoData canvas carrying the same bands, so the image covers exactly the
     // requested envelope with NoData wherever the raster has no pixels.
     // The grid-aligned ST_Transform keeps the extent of its whole-pixel source, which reaches past
-    // the envelope wherever the clip edge cuts a source pixel (a bbox inside the raster, #4890), and
+    // the envelope wherever the clip edge cuts a source pixel (a bbox inside the raster), and
     // the union would widen to it. The union is therefore cropped back to the frame grid; both share
     // its alignment, so the crop removes whole pixels and the output is exactly the frame.
 
@@ -1411,7 +1416,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
 
         // Band arithmetic / terrain reshape the band(s) before the stretch so the sampled value
-        // matches the rendered output (identify parity, #1803).
+        // matches the rendered output (identify parity).
         if (rendering.BandArithmetic is { } bandArithmetic)
         {
             rasterExpr = BuildBandArithmeticExpression(rasterExpr, bandArithmetic);
@@ -1946,7 +1951,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             extraParams.Add(("@bands", bands));
         }
 
-        // Covering the clip envelope (Esri exportImage bbox, #4060) replaces the in-place
+        // Covering the clip envelope (Esri exportImage bbox) replaces the in-place
         // reprojection and resize with the frame CTEs, exactly as on the single-raster path.
         var hasOutputDimensions = query.OutputWidth is > 0 && query.OutputHeight is > 0;
         var frameClipExtent = ShouldFrameClipExtent(query, hasOutputDimensions);
@@ -1965,7 +1970,7 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         // Apply band arithmetic (renderingRule BandArithmetic) on the merged mosaic, collapsing
         // two bands into a single analytic band (e.g. NDVI) before the stretch â€” previously the
-        // mosaic path silently ignored band-math renderingRules (#1803).
+        // mosaic path silently ignored band-math renderingRules.
         if (query.BandArithmetic is { } mosaicBandArithmetic)
         {
             postMergeRasterExpr = BuildBandArithmeticExpression(postMergeRasterExpr, mosaicBandArithmetic);
@@ -2266,8 +2271,8 @@ internal sealed class PostgresRasterStore : IRasterStore
                 extraParams, cancellationToken).ConfigureAwait(false);
         }
 
-        // Resolve a contested pixel with the ordering exportImage renders for the same mosaic rule
-        // (#4064): seamline clips, nadir/attribute projections and the ordered union are shared.
+        // Resolve a contested pixel with the ordering exportImage renders for the same mosaic rule:
+        // seamline clips, nadir/attribute projections and the ordered union are shared.
         var mosaicSource = BuildMosaicSourceSelect("raster", ordering, attributeSort);
         // The contributor probe uses the same point as the merged sample. Mixed raster SRIDs
         // transform onto each aligned raster; a uniform SRID reuses the merged sample point.
@@ -2358,9 +2363,11 @@ internal sealed class PostgresRasterStore : IRasterStore
             SELECT tile_data, content_type
             FROM {_rasterTilesTable}
             WHERE raster_data_id = @rasterId AND zoom_level = @level AND tile_x = @col AND tile_y = @row
+              AND EXISTS (SELECT 1 FROM {_rasterDataTable} owner WHERE owner.id = @rasterId AND owner.layer_id = @layerId)
               AND {RasterTileProvenanceSql.AdmissionPredicate}
             """;
         AddParameter(tileCommand, "@rasterId", rasterId);
+        AddParameter(tileCommand, "@layerId", layerId);
         AddParameter(tileCommand, "@level", level);
         AddParameter(tileCommand, "@col", col);
         AddParameter(tileCommand, "@row", row);
@@ -2799,7 +2806,7 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         // Serve persisted statistics (written at import time, or backfilled below). Computing
         // ST_SummaryStats per request scans every raster pixel and takes tens of seconds on
-        // real-world datasets (#1639), so the request path must never recompute.
+        // real-world datasets, so the request path must never recompute.
         var stats = await ReadPersistedRasterStatisticsAsync(connection, transaction: null, rasterId, cancellationToken).ConfigureAwait(false);
 
         if (stats.Count == 0)
@@ -2866,7 +2873,7 @@ internal sealed class PostgresRasterStore : IRasterStore
     }
 
     // =============================================================================
-    // Statistics persistence (compute-once-then-persist backfill, #1639)
+    // Statistics persistence (compute-once-then-persist backfill)
     // =============================================================================
 
     private async Task<List<RasterStatistics>> BackfillRasterStatisticsAsync(
@@ -2889,7 +2896,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         try
         {
             // Grant this single-flight transaction the dedicated compute budget so a
-            // county-scale ST_SummaryStats can finish and persist instead of timing out (#1649).
+            // county-scale ST_SummaryStats can finish and persist instead of timing out.
             await ApplyStatisticsComputeBudgetAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
 
             // Compute and persist in a single statement (mirrors the import-time
@@ -2947,7 +2954,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         await AcquireBackfillLockAsync(connection, transaction, LayerStatisticsLockNamespace, layerId, cancellationToken).ConfigureAwait(false);
 
         // Grant this single-flight transaction the dedicated compute budget so a large-mosaic
-        // ST_SummaryStats can finish and persist instead of timing out (#1649).
+        // ST_SummaryStats can finish and persist instead of timing out.
         await ApplyStatisticsComputeBudgetAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
 
         List<RasterStatistics> persisted;
@@ -3321,32 +3328,38 @@ internal sealed class PostgresRasterStore : IRasterStore
             """;
         AddParameter(command, "@layerId", layerId);
 
+        var rasters = await ReadUnlessRasterStorageMissingAsync(
+            connection, () => ReadRasterInfosAsync(command, cancellationToken), cancellationToken).ConfigureAwait(false) ?? [];
+        if (rasters is not [var info, ..])
+        {
+            PostgresRasterLog.RasterListRetrieved(_logger, layerId, 0);
+            return null;
+        }
+
+        PostgresRasterLog.RasterInfoRetrieved(_logger, layerId, info.Id, info.Width, info.Height);
+        return info;
+    }
+
+    // Raster storage is optional (see PostgresRasterStorageProbe): on a feature-only install
+    // a lookup returns default, read as "no rasters", and callers answer their existing
+    // not-found. A missing table while postgis_raster IS installed still fails.
+    private static async Task<T?> ReadUnlessRasterStorageMissingAsync<T>(
+        DbConnection connection,
+        Func<Task<T>> read,
+        CancellationToken cancellationToken)
+    {
         try
         {
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                PostgresRasterLog.RasterListRetrieved(_logger, layerId, 0);
-                return null;
-            }
-
-            var info = ReadRasterInfo(reader);
-            PostgresRasterLog.RasterInfoRetrieved(_logger, layerId, info.Id, info.Width, info.Height);
-            return info;
+            return await read().ConfigureAwait(false);
         }
         catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UndefinedTable)
         {
-            // Raster provisioning is optional. Feature-only deployments have no
-            // raster tables; catalog discovery must treat that as no raster data.
-            // Preserve failures when raster is installed but its schema is broken.
-            await using var extensionCommand = connection.CreateCommand();
-            extensionCommand.CommandText = "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_extension WHERE extname = 'postgis_raster')";
-            if (await extensionCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is false)
+            if (await PostgresRasterStorageProbe.IsInstalledAsync(connection, cancellationToken).ConfigureAwait(false))
             {
-                return null;
+                throw;
             }
 
-            throw;
+            return default;
         }
     }
 
@@ -4560,6 +4573,15 @@ internal sealed class PostgresRasterStore : IRasterStore
             """;
         AddParameter(command, "@layerId", layerId);
 
+        var rasters = await ReadUnlessRasterStorageMissingAsync(
+            connection, () => ReadRasterInfosAsync(command, cancellationToken), cancellationToken).ConfigureAwait(false) ?? [];
+
+        PostgresRasterLog.RasterListRetrieved(_logger, layerId, rasters.Length);
+        return rasters;
+    }
+
+    private static async Task<RasterInfo[]> ReadRasterInfosAsync(DbCommand command, CancellationToken cancellationToken)
+    {
         var rasters = new List<RasterInfo>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -4567,7 +4589,6 @@ internal sealed class PostgresRasterStore : IRasterStore
             rasters.Add(ReadRasterInfo(reader));
         }
 
-        PostgresRasterLog.RasterListRetrieved(_logger, layerId, rasters.Count);
         return rasters.ToArray();
     }
 
@@ -4647,7 +4668,8 @@ internal sealed class PostgresRasterStore : IRasterStore
             """;
         AddParameter(command, "@rasterId", rasterId);
 
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        var result = await ReadUnlessRasterStorageMissingAsync(
+            connection, () => command.ExecuteScalarAsync(cancellationToken), cancellationToken).ConfigureAwait(false);
         return result is null or DBNull ? null : Convert.ToInt32(result, CultureInfo.InvariantCulture);
     }
 
@@ -4813,7 +4835,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         RasterMosaicOrdering ordering,
         RasterMosaicAttributeSort? attributeSort)
     {
-        // esriMosaicSeamline (#1804): clip each raster to its persisted seamline (cutline) before
+        // esriMosaicSeamline: clip each raster to its persisted seamline (cutline) before
         // the union so a contested pixel is resolved by the per-raster seamline geometry rather
         // than ordering alone. A raster without a seamline row contributes its full pixels
         // (COALESCE to the raw clip expression). Other orderings read the raster column directly.
@@ -4849,7 +4871,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             ? $",\n                       {sort.Column} AS {sort.Column}"
             : string.Empty;
 
-        // esriMosaicNadir (#1870): the union's ORDER BY references an off_nadir column, so project
+        // esriMosaicNadir: the union's ORDER BY references an off_nadir column, so project
         // the off-nadir angle from the per-raster sensor metadata into the source CTE. The angle
         // lives in the exterior_orientation JSONB payload (offNadirAngle / off_nadir_angle); a LEFT
         // JOIN keeps rasters without a sensor row (their off_nadir is NULL and ranks last). The
@@ -4895,8 +4917,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         RasterMosaicOrdering ordering = RasterMosaicOrdering.AcquisitionNewest,
         RasterMosaicAttributeSort? attributeSort = null)
         // Every mosaic query in this store unions the rows of its `source` CTE. Layers may mix
-        // native resolutions or grid origins, so each input is put on one shared grid first
-        // (honua-server#4792); aligned inputs pass through unchanged.
+        // native resolutions or grid origins, so each input is put on one shared grid first;
+        // aligned inputs pass through unchanged.
         => RasterMosaicSql.CreateMosaicAggregateExpression(mergeStrategy, ordering, attributeSort, alignToSourceCte: "source");
 
     private static async Task<byte[]> ReadExportDataAsync(DbDataReader reader, int dataOrdinal, CancellationToken cancellationToken)

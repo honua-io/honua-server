@@ -17,30 +17,6 @@ using NSubstitute;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
-/// <summary>
-/// Regression for honua-server#4792: every mosaic operation unions the layer's rasters, and
-/// PostGIS <c>ST_Union</c> rejects inputs that do not share one pixel grid
-/// (<c>rt_raster_from_two_rasters: The two rasters provided do not have the same alignment</c>).
-/// A layer that mixes native resolutions or grid origins therefore failed service statistics,
-/// histograms, exportImage, identify and the clipped analysis paths.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Nested fixture (exact expectations): <c>coarse</c> is 2x2 at 1.0 over x[0,2] y[0,2], value 20,
-/// acquired first; <c>fine</c> is 2x2 at 0.5 over x[1,2] y[1,2], value 5, acquired later. The fine
-/// raster has the smaller pixel area, so it is the reference grid; the coarse raster lands on it
-/// as a 4x4 block of 20 (every fine grid line falls on a coarse pixel edge, so nearest-neighbour
-/// is exact). The newest-wins union is therefore 16 pixels at 0.5: four of 5 (the fine raster's
-/// quadrant x[1,2] y[1,2]) and twelve of 20, so min 5, max 20, mean (4*5 + 12*20) / 16 = 16.25.
-/// </para>
-/// <para>
-/// Off-grid fixture: two disjoint 2x2 rasters at 1.0 whose origins are half a pixel apart, the
-/// issue's "origins off a common grid" shape. Pixel counts are not asserted there: which boundary
-/// pixel a half-pixel snap keeps is GDAL's nearest-neighbour edge rule, not a Honua contract. What
-/// is asserted is that no fill value reaches the mosaic — each raster still reports its own value
-/// and the range stays [20, 40].
-/// </para>
-/// </remarks>
 [Collection("Database")]
 public sealed partial class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixture)
 {
@@ -317,7 +293,7 @@ public sealed partial class PostgresRasterStoreUnalignedMosaicTests(PostgresFixt
         });
     }
 
-    // #6561: the named raster is the one whose sample the union kept. At the overlap the
+    // The named raster is the one whose sample the union kept. At the overlap the
     // newer fine raster wins; outside its footprint the older coarse raster wins, including
     // when Oldest is asked to prefer it where both cover the point.
     [IntegrationTest]
@@ -505,7 +481,7 @@ public sealed partial class PostgresRasterStoreUnalignedMosaicTests(PostgresFixt
         try
         {
             // Two aligned 2x2 rasters side by side: every input already shares the reference
-            // grid, so the union and its statistics are exactly the pre-#4792 result.
+            // grid, so the alignment step leaves the union and its statistics unchanged.
             var west = await InsertConstantRasterAsync(schemaName, "west", 0, 2, 1.0, 10, Day(1));
             var east = await InsertConstantRasterAsync(schemaName, "east", 2, 2, 1.0, 30, Day(2));
             var store = CreateStore(schemaName);

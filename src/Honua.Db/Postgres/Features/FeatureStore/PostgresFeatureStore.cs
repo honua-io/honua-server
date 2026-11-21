@@ -160,7 +160,7 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
         {
             // No enforced row-visibility filter and no field-level masking apply — take the
             // optimized by-id read path. When either applies we fall through to the select
-            // builder so the enforced filter and column masking (#1940) are honored.
+            // builder so the enforced filter and column masking are honored.
             return await _dataAccess.GetFeatureAsync(layerId, featureId, cancellationToken);
         }
 
@@ -193,6 +193,7 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
         return feature with
         {
             ReadStateToken = FeatureStateToken.Compute(feature),
+            EditValidationAttributes = feature.Attributes,
             Attributes = feature.Attributes.RemoveRange(feature.Attributes.Keys.Where(masked.Contains))
         };
     }
@@ -865,11 +866,20 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
 
         if (isKnnQuery)
         {
-            var knnSelectQuery = buildSelect(layerId, query, geometryStorageType);
-            var knnFeatures = await executeSelect(knnSelectQuery, query, layerId, cancellationToken);
-            return knnFeatures.Length == 0
+            // A page cut short of the nearest count reads one probe row so the more-results flag is exact.
+            var probe = query.NearestNeighborCountExceedsLimit();
+            var knnQuery = probe ? query with { Limit = query.Limit + 1 } : query;
+            var knnSelectQuery = buildSelect(layerId, knnQuery, geometryStorageType);
+            var knnFeatures = await executeSelect(knnSelectQuery, knnQuery, layerId, cancellationToken);
+            var hasMoreNearest = probe && knnFeatures.Length > query.Limit;
+            if (hasMoreNearest)
+            {
+                knnFeatures = knnFeatures.RemoveAt(knnFeatures.Length - 1);
+            }
+
+            return knnFeatures.Length == 0 && !hasMoreNearest
                 ? QueryResult<T>.Empty()
-                : QueryResult<T>.Create(knnFeatures.Length, knnFeatures, false);
+                : QueryResult<T>.Create(knnFeatures.Length, knnFeatures, hasMoreNearest);
         }
 
         // PERFORMANCE OPTIMIZATION: Use single query with window function instead of separate count + select

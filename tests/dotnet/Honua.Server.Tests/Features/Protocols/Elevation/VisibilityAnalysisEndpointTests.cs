@@ -14,13 +14,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Elevation;
 
-/// <summary>
-/// Endpoint-level integration tests for the Pro-tier 3D visibility analysis
-/// endpoints (line-of-sight and viewshed). The fixture is provisioned with a Pro
-/// license so the <c>analytics.line-of-sight</c> / <c>analytics.viewshed</c>
-/// entitlements are active; without these the endpoints return 402 before any
-/// analysis runs.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Elevation)]
 public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
@@ -140,7 +133,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/line-of-sight")]
     public async Task PostLineOfSight_EndpointOutsideCoverage_ReturnsNotFoundAndNotVisible()
     {
-        // Regression: an observer/target ground sample that resolves to no-data
+        // An observer/target ground sample that resolves to no-data
         // (outside coverage) must not be coerced to 0.0 and reported visible.
         // The service now fails the request rather than fabricating sea-level
         // terrain, so the endpoint maps it to a 404 and never claims visibility.
@@ -239,7 +232,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
     }
 
-    // ---- Ridge/occlusion terrain (honua-server#2945) ----
+    // ---- Ridge/occlusion terrain ----
     //
     // The tests above only seed FLAT terrain, so "visible" is trivially true for every
     // sample regardless of whether occlusion logic is correct (Core.Tests already covers
@@ -257,13 +250,6 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     private const double RidgeFloorElevationMeters = 10;
     private const double RidgeRimElevationMeters = 3000;
 
-    /// <summary>
-    /// Observer offset used by the "raised above the ring" viewshed test. The rim is a square
-    /// frame, so the worst-case crossing on a diagonal ray is at 2000 * sqrt(2) ~= 2828 m; a
-    /// sight line from this height to a sample at 4034 m (the nearest diagonal sample beyond
-    /// the 4000 m assertion threshold) still passes ~5990 m above sea level there, well clear
-    /// of the 3000 m rim.
-    /// </summary>
     private const double ObserverAboveRidgeHeightMeters = 20000;
 
     [IntegrationTest]
@@ -376,7 +362,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/viewshed")]
     public async Task PostViewshed_ObserverRaisedAboveRidgeRing_RestoresLongRangeVisibility()
     {
-        // honua-release#100: the ridge test above proves occlusion with a ground-level
+        // The ridge test above proves occlusion with a ground-level
         // observer, and the flat test proves the trivial all-visible case, but nothing
         // proved that observerHeight actually feeds the occlusion math at the endpoint — a
         // viewshed that ignored the observer offset entirely would pass both. Same terrain,
@@ -424,7 +410,7 @@ public sealed class VisibilityAnalysisEndpointTests : IAsyncLifetime
     [Endpoint("POST /elevation/{datasetId}/viewshed")]
     public async Task PostViewshed_SampleGrid_MatchesRequestedRayFanAndRadius()
     {
-        // honua-release#100: the existing viewshed tests assert visibility verdicts but never
+        // The existing viewshed tests assert visibility verdicts but never
         // the sampling contract itself — that the response really is rayCount evenly-spaced
         // rays of samplesPerRay points, all inside the requested radius and positioned on the
         // ray they claim. A service that returned an arbitrary point cloud, or silently

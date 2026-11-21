@@ -19,31 +19,34 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Spec;
 
-/// <summary>
-/// Integration tests for gRPC <c>geospatial.v1.SpecService</c> exercised through
-/// the full ASP.NET Core pipeline via <see cref="TestWebApplicationFactory"/>.
-/// Uses gRPC-Web transport (HTTP/1.1) since the in-memory test server does not
-/// support HTTP/2. Proves the gRPC apply/plan/cancel surface ships end-to-end.
-/// </summary>
 [Protocol(TestProtocols.Grpc)]
-public sealed class GrpcSpecServiceIntegrationTests : IDisposable
+public sealed class GrpcSpecServiceIntegrationTests(GrpcSpecServiceIntegrationTests.ProHost host)
+    : IClassFixture<GrpcSpecServiceIntegrationTests.ProHost>
 {
     private const string AdminApiKey = "grpc-spec-integration-admin-key";
-    private readonly WebApplicationFactory<Program> _factory;
-    private readonly GrpcChannel _channel;
-    private readonly Proto.SpecService.SpecServiceClient _client;
+    private readonly Proto.SpecService.SpecServiceClient _client = host.Client;
 
-    public GrpcSpecServiceIntegrationTests()
+    // One Pro-licensed server for the class. Its artifact cache is in memory and lives as long as
+    // the host, so every case that applies with ReadWrite uses a node id of its own (the id is part
+    // of the content hash) and still sees a cache miss and a Succeeded node.
+    public sealed class ProHost : IDisposable
     {
-        _factory = CreateLicensedFactory(HonuaEdition.Pro);
-        _channel = CreateChannel(_factory);
-        _client = new Proto.SpecService.SpecServiceClient(_channel);
-    }
+        private readonly WebApplicationFactory<Program> _factory = CreateLicensedFactory(HonuaEdition.Pro);
+        private readonly GrpcChannel _channel;
 
-    public void Dispose()
-    {
-        _channel.Dispose();
-        _factory.Dispose();
+        public ProHost()
+        {
+            _channel = CreateChannel(_factory);
+            Client = new Proto.SpecService.SpecServiceClient(_channel);
+        }
+
+        public Proto.SpecService.SpecServiceClient Client { get; }
+
+        public void Dispose()
+        {
+            _channel.Dispose();
+            _factory.Dispose();
+        }
     }
 
     [IntegrationTest]
@@ -70,7 +73,7 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
     {
         var request = new Proto.ApplySpecRequest
         {
-            Document = BuildDocument("node-a"),
+            Document = BuildDocument(UniqueNodeId("terminal-events")),
             CacheMode = Proto.SpecCacheMode.ReadWrite,
             MaxConcurrency = 1
         };
@@ -98,7 +101,7 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
         // metadata (ResponseHeadersAsync) before the first event frame.
         var request = new Proto.ApplySpecRequest
         {
-            Document = BuildDocument("node-a"),
+            Document = BuildDocument(UniqueNodeId("apply-token")),
             CacheMode = Proto.SpecCacheMode.ReadWrite,
             MaxConcurrency = 1
         };
@@ -431,10 +434,8 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
     [Endpoint("POST /geospatial.v1.SpecService/PlanSpec")]
     public async Task PlanSpec_UnknownNumericKind_RaisesInvalidArgument()
     {
-        // Protobuf does not constrain enum values on the wire — a future
-        // client (or a forward-rolled one) can send any int32. The transport
-        // mapping must whitelist defined values rather than silently coerce
-        // an undefined one into the default arm, which used to leak Compute.
+        // Protobuf accepts arbitrary int32 enum values on the wire. Transport mapping
+        // must allow only defined values instead of coercing an undefined value to Compute.
         var document = new Proto.CanonicalSpecDocument
         {
             GrammarVersion = "grammar/1.0",
@@ -583,13 +584,11 @@ public sealed class GrpcSpecServiceIntegrationTests : IDisposable
         ex.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
     }
 
-    /// <summary>
-    /// Wraps a spec fragment in the <c>ParameterValue.string_value</c> branch. Geospatial.Grpc
-    /// 0.2.0-alpha.1 retyped <c>CanonicalSpecNode.inputs</c> / <c>.parameters</c> from
-    /// <c>map&lt;string, string&gt;</c> to <c>map&lt;string, ParameterValue&gt;</c>.
-    /// </summary>
     private static Proto.ParameterValue StringParameter(string value)
         => new() { StringValue = value };
+
+    private static string UniqueNodeId(string purpose)
+        => $"{purpose}-{Guid.NewGuid():N}";
 
     private static Proto.CanonicalSpecDocument BuildDocument(string nodeId)
     {

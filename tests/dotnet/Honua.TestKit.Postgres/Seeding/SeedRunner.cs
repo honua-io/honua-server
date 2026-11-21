@@ -11,18 +11,8 @@ using YamlDotNet.Serialization.NamingConventions;
 
 namespace Honua.TestKit.Seeding;
 
-/// <summary>
-/// Extension methods for applying shared YAML seed data in tests.
-/// </summary>
 public static class SeedExtensions
 {
-    /// <summary>
-    /// Apply a YAML seed file to a schema.
-    /// </summary>
-    /// <param name="fixture">PostgreSQL fixture</param>
-    /// <param name="seedPath">Path to the YAML seed file</param>
-    /// <param name="schemaName">Schema to apply the seed to</param>
-    /// <param name="profile">Optional profile name to filter collections</param>
     public static Task ApplySeedAsync(
         this PostgresFixture fixture,
         string seedPath,
@@ -32,13 +22,6 @@ public static class SeedExtensions
         return SeedRunner.ApplyAsync(fixture.DataSource, seedPath, schemaName, profile);
     }
 
-    /// <summary>
-    /// Create a schema and apply a YAML seed file to it.
-    /// </summary>
-    /// <param name="fixture">PostgreSQL fixture</param>
-    /// <param name="testClassName">Test class name used for schema naming</param>
-    /// <param name="seedPath">Path to the YAML seed file</param>
-    /// <param name="profile">Optional profile name to filter collections</param>
     public static async Task<string> CreateSeededSchemaAsync(
         this PostgresFixture fixture,
         string testClassName,
@@ -58,15 +41,9 @@ internal static class SeedRunner
     private static readonly Regex _typeRegex = new("^[A-Za-z0-9_(),\\s\\[\\]]+$", RegexOptions.CultureInvariant);
     private const int MaxConcurrencyRetryAttempts = 3;
 
-    /// <summary>
-    /// Advisory-lock key serializing all schema-mutating test setup. Shared with
-    /// <see cref="PostgresFixture.RunUnderSchemaMutationLockAsync"/> so seeds and raw DbUp
-    /// migrations serialize on one lock rather than deadlocking on the global
-    /// <c>pg_catalog</c> under parallel test execution (honua-server#1568).
-    /// </summary>
     internal const long SeedApplicationLockKey = 7_893_641_160_553_452_791;
 
-    // honua-server#1359: the serially-seeded Database collections pay a per-test seed
+    // The serially-seeded Database collections pay a per-test seed
     // cost. Re-reading and re-parsing the seed YAML from disk on every isolated-schema
     // creation is pure, deterministic work whose result (an init-only SeedDefinition) is
     // immutable once loaded, so memoize it keyed by absolute path + last-write time.
@@ -192,7 +169,7 @@ internal static class SeedRunner
         => ex.SqlState is PostgresErrorCodes.SerializationFailure or PostgresErrorCodes.DeadlockDetected
            || IsConcurrentSchemaCreationRace(ex);
 
-    // honua-server#1568 (CREATE SCHEMA race variant): under parallel collection seeding,
+    // CREATE SCHEMA race: under parallel collection seeding,
     // two setups racing `CREATE SCHEMA IF NOT EXISTS honua` can both pass the catalog
     // existence check and then collide on the `pg_namespace` unique index, surfacing as
     // 23505 (unique_violation) on pg_namespace_nspname_index rather than 40001/40P01.

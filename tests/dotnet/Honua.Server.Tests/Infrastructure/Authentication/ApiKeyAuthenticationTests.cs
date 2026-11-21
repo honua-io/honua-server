@@ -27,9 +27,6 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Integration tests for API key authentication with development bypass functionality
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin, TestProtocols.Health, TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
@@ -63,9 +60,6 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         await _fixture.DisposeAsync();
     }
 
-    /// <summary>
-    /// Helper method to configure WebApplicationFactory with proper test environment settings.
-    /// </summary>
     private WebApplicationFactory<Program> CreateTestFactory(
         string environmentName,
         Action<IWebHostBuilder> configure)
@@ -272,7 +266,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     [Fact]
     public void AdminEndpoint_StagingEnvironment_DevAuthSet_StartupValidationRejects()
     {
-        // SECURITY REGRESSION GUARD (honua-server#1144):
+        // SECURITY REGRESSION GUARD:
         // The dev-auth bypass must NEVER be configurable in Staging. Startup
         // configuration validation (ConfigurationValidationService) is the
         // first line of defence — setting HONUA_DEV_AUTH=true in a
@@ -296,7 +290,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     [Fact]
     public void AdminEndpoint_CustomEnvironment_DevAuthSet_StartupValidationRejects()
     {
-        // SECURITY REGRESSION GUARD (honua-server#1144):
+        // SECURITY REGRESSION GUARD:
         // Custom/unknown environment names (e.g. QA, Preview) must default to
         // enforcing authentication. The dev-auth bypass cannot be configured
         // in any environment other than Development or Test.
@@ -317,7 +311,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     [Fact]
     public void AdminEndpoint_DevelopmentEnvironment_DevAuthSet_StartupValidationRejects()
     {
-        // SECURITY REGRESSION GUARD (honua-server#1144):
+        // SECURITY REGRESSION GUARD:
         // The bypass is restricted to the Test environment. In Development,
         // HONUA_DEV_AUTH=true is REJECTED at startup — operators must
         // configure HONUA_ADMIN_PASSWORD for development access instead.
@@ -507,7 +501,8 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         Assert.Equal(401, (int)response.StatusCode);
         Assert.True(response.Headers.TryGetValues("WWW-Authenticate", out var challengeHeaders));
         Assert.Contains(challengeHeaders, value => value.Contains("ApiKey", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(challengeHeaders, value => value.Contains("Basic", StringComparison.OrdinalIgnoreCase));
+        // Basic is not offered on a transport where Basic credentials are refused.
+        Assert.DoesNotContain(challengeHeaders, value => value.Contains("Basic", StringComparison.OrdinalIgnoreCase));
         var content = await response.Content.ReadAsStringAsync();
         Assert.Contains("requires HTTPS", content);
     }
@@ -661,7 +656,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
 
         // Assert - Should require authentication by default. FeatureServer is a GeoServices
         // REST path, so an auth failure is emitted as the Esri contract: HTTP 200 +
-        // {"error":{"code":401|499}} (#2418, PA-167). The helper still fails on a
+        // {"error":{"code":401|499}}. The helper still fails on a
         // success-shaped body, so it keeps catching a real "unauthenticated read allowed" leak.
         await response.AssertGeoServicesErrorAsync(new[] { 401, 499 });
         _output.WriteLine($"FeatureServer endpoint requires auth by default: {response.StatusCode}");

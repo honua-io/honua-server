@@ -14,10 +14,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Integration tests for limits enforcement across all protocols.
-/// Tests Issue #63 - Shared limits configuration implementation.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database.CoreFeatureStore")]
 public sealed class LimitsEnforcementTests : IAsyncLifetime
@@ -98,7 +94,7 @@ public sealed class LimitsEnforcementTests : IAsyncLifetime
 
     #region Query Limits Enforcement
 
-    // honua-server#1825: a resultRecordCount above maxRecordCount is silently capped to
+    // A resultRecordCount above maxRecordCount is silently capped to
     // maxRecordCount (the page is returned with exceededTransferLimit:true) rather than
     // rejected with a 400, matching ArcGIS. Under/at the limit return the page normally;
     // over the limit clamps. Offsets are still hard-rejected (see QueryGet_OffsetLimit).
@@ -124,7 +120,7 @@ public sealed class LimitsEnforcementTests : IAsyncLifetime
         queryResponse.Should().NotBeNull();
     }
 
-    // honua-server#1825: as with GET, an over-maximum resultRecordCount on POST query is
+    // As with GET, an over-maximum resultRecordCount on POST query is
     // clamped to maxRecordCount and the page returned, not rejected with a 400.
     [Theory]
     [Operation(Operations.Query)]

@@ -45,6 +45,7 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="NSubstitute" />
     <PackageReference Include="Xunit.SkippableFact" />
     <PackageReference Include="Testcontainers" />
     <!-- LocalSubstrate migration-gate lane: a real Postgres via Testcontainers to
@@ -53,9 +54,6 @@
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Npgsql" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
-    <!-- LocalSubstrate serving lane: a real embedded-YARP reverse proxy fronts the rolling cutover so
-         the continuous request loop proves zero downtime through the atomic destination swap. -->
-    <PackageReference Include="Yarp.ReverseProxy" />
     <PackageReference Include="Microsoft.Extensions.Http" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
@@ -80,6 +78,13 @@
          internal and made visible via InternalsVisibleTo on those assemblies. -->
     <ProjectReference Include="..\..\..\src\Honua.Jobs\Honua.Jobs.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Db\Postgres\Honua.Postgres.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The Compose executor lane drives deploy submissions through the same in-process human review
+         host the server unit tests use. -->
+    <Compile Include="..\Honua.Server.Tests\Features\Infrastructure\ControlPlane\OperationHumanApprovalTestHost.cs"
+             Link="Shared\OperationHumanApprovalTestHost.cs" />
   </ItemGroup>
 
   <ItemGroup>

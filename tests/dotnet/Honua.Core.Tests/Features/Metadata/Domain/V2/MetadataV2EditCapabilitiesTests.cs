@@ -9,10 +9,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 
-/// <summary>
-/// Covers the shared edit-capability resolver the Esri GeoServices and OGC API Features write
-/// surfaces both consult (honua-server#4073, honua-server#4707).
-/// </summary>
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class MetadataV2EditCapabilitiesTests
 {
@@ -69,9 +65,8 @@ public sealed class MetadataV2EditCapabilitiesTests
     [Operation(Operations.Create)]
     public void Supports_DefaultPublishCapabilities_RejectsCreate()
     {
-        // ["Query","Extract"] is what PostgreSqlLayerPublishingService stamps on every
-        // publication it creates, and it is exactly the set that used to let an OGC API
-        // Features insert through unannounced (#4707).
+        // PostgreSqlLayerPublishingService stamps Query and Extract capabilities on
+        // publications; this capability set must not authorize inserts.
         var service = new MetadataV2Service();
         var publication = new MetadataV2Layer { Capabilities = ["Query", "Extract"] };
 

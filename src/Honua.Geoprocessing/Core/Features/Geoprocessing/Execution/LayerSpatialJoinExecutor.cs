@@ -4,6 +4,8 @@
 using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -41,13 +43,14 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
         var stats = StatisticsSupport.ParseOutStatistics(inputs.GetOrDefault("outStatistics", string.Empty));
         StatisticsSupport.EnsureNoOutputCollisions(stats, [.. carryFields, JoinCountAttribute]);
 
-        // Resolve the second (join) layer through the same source.honua-layer connector
-        // that streamed the target layer. Only the join layer id windows this read; the
-        // shared analytics where/bbox filters apply to the target layer. Bounded by the
-        // SAME admission limits as the target layer (#4629): a two-layer op that only
-        // bounded one side would let the unbounded side alone destabilize the worker.
+        // Request the join layer in the target layer's SRID so cross-SRID joins evaluate in a common CRS.
+        var targetSrid = await ResolveTargetSridAsync(context, cancellationToken).ConfigureAwait(false);
         var joinLayerId = RequireLayerId(inputs, "joinLayerId");
-        var joinRequest = new DagSourceRequest { LayerId = joinLayerId };
+        var joinRequest = new DagSourceRequest
+        {
+            LayerId = joinLayerId,
+            OutputSrid = targetSrid,
+        };
         var joinFeatures = await ReadLayerAsync(
                 context.LayerSource,
                 joinRequest,
@@ -68,9 +71,9 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
 
         // The join itself is a Cartesian product: two per-layer-admitted but broadly
         // overlapping layers can still evaluate far more candidate pairs and carry far more
-        // matched values than either input's feature count implies (honua-server#3075). The
+        // matched values than either input's feature count implies. The
         // enrichment.enrich executor already charges this same shared budget; this executor
-        // was the one two-layer op still passing budget: null (#4629).
+        // was the one two-layer op still passing budget: null.
         var budget = new SpatialJoinSupport.MatchBudget(SpatialJoinSupport.DefaultMaxCarriedMatchValues);
 
         var output = new List<IFeature>(context.Features.Count);
@@ -79,12 +82,44 @@ internal sealed class LayerSpatialJoinExecutor : LayerSourcedFeatureExecutor
             cancellationToken.ThrowIfCancellationRequested();
             // The token also goes INTO the join: a single target against a broadly
             // overlapping dataset can spend a long time in the candidate loop, so checking
-            // only between targets left a dismissed job running (honua-server#3075).
+            // only between targets left a dismissed job running.
             output.Add(SpatialJoinSupport.Join(
-                target, index, predicate, distance, carryFields, stats, budget, cancellationToken));
+                target, index, predicate, distance, carryFields, stats, budget, targetSrid, cancellationToken));
         }
 
         return output;
+    }
+
+    private static async Task<int?> ResolveTargetSridAsync(
+        LayerOpContext context,
+        CancellationToken cancellationToken)
+    {
+        if (context.Request.OutputSrid is > 0)
+        {
+            return context.Request.OutputSrid;
+        }
+
+        var fromFeature = context.Features
+            .Select(feature => feature.Geometry)
+            .FirstOrDefault(geometry => geometry is { IsEmpty: false, SRID: > 0 })
+            ?.SRID;
+        if (fromFeature is > 0)
+        {
+            return fromFeature;
+        }
+
+        var metadata = context.Services.GetService<IMetadataV2GraphProvider>();
+        if (metadata is not null && context.Request.LayerId is { } layerId)
+        {
+            var snapshot = await metadata.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var storageSrid = snapshot.ResolveStorageSrid(layerId);
+            if (storageSrid is > 0)
+            {
+                return storageSrid;
+            }
+        }
+
+        return null;
     }
 
     // Wire vocabulary for this process is JOIN-SUBJECT: `contains` is the

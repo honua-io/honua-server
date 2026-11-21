@@ -15,18 +15,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Regression coverage for startup database-migration handling.
-///
-/// The published server image runs in the Test environment, where Program skips the
-/// infrastructure composition root so a fixture/harness can swap the data providers.
-/// That composition root is the only site that registers a provider-specific
-/// <see cref="IDatabaseMigrationRunner"/>, so a standalone container booted that way has a
-/// connection string but no runner. Startup must skip migrations gracefully (matching how
-/// the PostGIS preflight check treats its provider-specific checker) instead of crashing on
-/// an unresolved GetRequiredService, which exited the container with code 139 and broke the
-/// honua-console live-integration nightly.
-/// </summary>
 public sealed class DatabaseMigrationStartupTests
 {
     [Theory]
@@ -92,9 +80,8 @@ public sealed class DatabaseMigrationStartupTests
             builder.ConfigureTestServices(services => services.RemoveAll<IDatabaseMigrationRunner>());
         });
 
-        // Building the host (via the first client) runs Program's startup migration routine.
-        // Before the fix this threw InvalidOperationException because no IDatabaseMigrationRunner
-        // was registered, aborting boot — CreateClient would have thrown here.
+        // Creating the first client builds the host and runs startup migrations.
+        // Without an IDatabaseMigrationRunner, startup skips migrations and remains ready.
         using var client = factory.CreateClient();
 
         var migrationState = factory.Services.GetRequiredService<MigrationState>();

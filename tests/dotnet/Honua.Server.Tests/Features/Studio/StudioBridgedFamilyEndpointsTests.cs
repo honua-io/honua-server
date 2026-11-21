@@ -29,13 +29,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Studio;
 
-/// <summary>
-/// ADR-0069 (honua-server#3004) round-trip coverage for the bridged <c>form</c> and
-/// <c>analysis</c> families: content created through the native APIs is enumerable and openable
-/// through the Studio lifecycle, and drafts/versions saved through the lifecycle are visible
-/// through the native APIs with family semantics (form JSON kinds, ruleIds, publish gate;
-/// analysis artifact/job links) intact.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Studio)]
 [Operation(Operations.StudioLifecycle)]
@@ -258,7 +251,7 @@ public sealed class StudioBridgedFamilyEndpointsTests : IAsyncLifetime
         saved.VersionNumber.Should().Be(1);
 
         // The lifecycle item id doubles as the native form id for lifecycle-created packages.
-        var nativeResponse = await _client.GetAsync($"/api/v1/admin/forms/packages/{saved.ItemId:D}");
+        var nativeResponse = await _client.GetAsync($"/api/v1/admin/forms/{saved.ItemId:D}");
         nativeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var native = await ReadNativeJsonAsync(nativeResponse, FormPackageJsonContext.Default.FormPackageVersion);
         native.Status.Should().Be(FormPackageStatus.Draft);
@@ -373,14 +366,14 @@ public sealed class StudioBridgedFamilyEndpointsTests : IAsyncLifetime
             JsonSerializer.Serialize(document, FormPackageJsonContext.Default.FormPackageDocument),
             Encoding.UTF8,
             "application/json");
-        using var response = await _client.PostAsync("/api/v1/admin/forms/packages", content);
+        using var response = await _client.PostAsync("/api/v1/admin/forms", content);
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         return await ReadNativeJsonAsync(response, FormPackageJsonContext.Default.FormPackageVersion);
     }
 
     private async Task<FormPackageVersion> GetNativeFormVersionAsync(string formId, int version)
     {
-        var response = await _client.GetAsync($"/api/v1/admin/forms/packages/{formId}/versions/{version}");
+        var response = await _client.GetAsync($"/api/v1/admin/forms/{formId}/versions/{version}");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         return await ReadNativeJsonAsync(response, FormPackageJsonContext.Default.FormPackageVersion);
     }

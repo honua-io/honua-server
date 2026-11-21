@@ -9,12 +9,7 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Import;
 
-/// <summary>
-/// Drives the post-publish catalog reconciler over an inventory + published Metadata v2 resource
-/// pair and asserts each acceptance finding code emits when the published catalog entry diverges
-/// from the captured source service definition (issue #1248).
-/// </summary>
-public sealed class MigrationCatalogReconcilerTests
+public sealed partial class MigrationCatalogReconcilerTests
 {
     [Trait("Tier", "Fast")]
     [Theory]

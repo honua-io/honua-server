@@ -9,13 +9,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Unit tests for <see cref="GeoServicesTemporalQueryBuilder"/>. Per honua's documented
-/// temporal-animation contract (docs/gis/temporal-animation-api.md), a non-empty
-/// <c>time</c> parameter supplied against a layer that is not time-enabled is REJECTED
-/// with an <see cref="ArgumentException"/> (HTTP 400) — an intentional, documented
-/// divergence from Esri's lenient "ignore time" behavior (issue #1444).
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class GeoServicesTemporalQueryBuilderTests
 {
@@ -23,7 +16,7 @@ public sealed class GeoServicesTemporalQueryBuilderTests
     [Operation(Operations.Query)]
     public void BuildTemporalExpression_NonTimeEnabledLayer_RejectsTimeWithArgumentException()
     {
-        // Per honua's documented temporal-animation contract (#1444), a non-empty time=
+        // Per honua's documented temporal-animation contract, a non-empty time=
         // filter against a non-time-enabled layer is rejected with an ArgumentException
         // (mapped to HTTP 400) rather than silently ignored.
         var resource = BuildNonTemporalResource();
@@ -117,7 +110,7 @@ public sealed class GeoServicesTemporalQueryBuilderTests
         bool hasStart,
         bool hasEnd)
     {
-        // The ArcGIS API for Python sends a layer's timeInfo.timeExtent as a JSON array (#4782).
+        // The ArcGIS API for Python sends a layer's timeInfo.timeExtent as a JSON array.
         // 1672527600000 ms is 2022-12-31T23:00:00Z (2023-01-01T00:00:00Z = 1672531200000, less
         // one hour) and 1728950400000 ms is 2024-10-15T00:00:00Z (2024-01-01 = 1704067200000,
         // plus 288 days).

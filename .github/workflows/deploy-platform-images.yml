@@ -2,7 +2,7 @@ name: Build & Publish Platform Images
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*.*.*"]
   schedule:
     - cron: "30 3 * * 1"
   workflow_dispatch:
@@ -43,11 +43,14 @@ jobs:
     if: ${{ github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.scan_only != true) }}
     uses: ./.github/workflows/publish-authorization.yml
     with:
-      tag-patterns: 'v*'
+      tag-patterns: 'v*.*.*'
 
   build-and-push:
     name: Build & Push ${{ matrix.image_name }} (${{ matrix.arch }})
     if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/trunk' || inputs.scan_only == true
+    # Only a publishing run (PUBLISH_IMAGES) enters the environment; scheduled and scan_only
+    # runs publish nothing and read no registry credentials, so they run without one.
+    environment: ${{ (github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.scan_only != true)) && 'publish-images' || '' }}
     runs-on: ${{ matrix.runner }}
     # 180, matching nightly-container-build.yml: a COLD native-AOT build (the amd64 Lambda AOT
     # leg included) does not fit in 140 minutes once boundary verification, SBOM, two Trivy
@@ -137,30 +140,6 @@ jobs:
             runner: ubuntu-24.04
             provenance: mode=max
             sbom: true
-          - image_key: functions-jit
-            image_name: Functions Development JIT Image
-            dockerfile: docker/Dockerfile.functions
-            tag_suffix: -functions-jit
-            cache_scope: honua-functions-jit
-            sarif_output: trivy-results-functions
-            sarif_category: trivy-functions
-            arch: amd64
-            platform: linux/amd64
-            runner: ubuntu-24.04
-            provenance: true
-            sbom: true
-          - image_key: functions-aot
-            image_name: Functions AOT Image
-            dockerfile: docker/Dockerfile.functions.aot
-            tag_suffix: -functions-aot
-            cache_scope: honua-functions-aot
-            sarif_output: trivy-results-functions-aot
-            sarif_category: trivy-functions-aot
-            arch: amd64
-            platform: linux/amd64
-            runner: ubuntu-24.04
-            provenance: mode=max
-            sbom: true
     permissions:
       contents: read
       packages: write
@@ -168,15 +147,15 @@ jobs:
       id-token: write
     steps:
       # GitHub compares strings without case, so this job's if also admits a branch named TRUNK.
-      # A publishing run must be on trunk or a v* tag exactly, the test publish-authorization.yml makes.
+      # A publishing run must be on trunk or a v*.*.* tag exactly, the test publish-authorization.yml makes.
       - name: Refuse publication from any other ref
         if: env.PUBLISH_IMAGES == 'true'
         run: |
           case "${GITHUB_REF}" in
             refs/heads/trunk) exit 0 ;;
-            refs/tags/v*) [[ "${GITHUB_REF#refs/tags/}" != */* ]] && exit 0 ;;
+            refs/tags/v*.*.*) [[ "${GITHUB_REF#refs/tags/}" != */* ]] && exit 0 ;;
           esac
-          echo "::error::Publishing runs only from trunk or a v* tag; ${GITHUB_REF} is neither."
+          echo "::error::Publishing runs only from trunk or a v*.*.* tag; ${GITHUB_REF} is neither."
           exit 1
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -392,7 +371,7 @@ jobs:
           set -euo pipefail
           docker pull "$CANDIDATE"
           attestation_args=()
-          if [[ "${{ matrix.image_key }}" == "lambda-aot" || "${{ matrix.image_key }}" == "functions-aot" ]]; then
+          if [[ "${{ matrix.image_key }}" == "lambda-aot" ]]; then
             sudo apt-get update
             sudo apt-get install -y --no-install-recommends skopeo
             docker buildx imagetools inspect "$CANDIDATE"
@@ -642,6 +621,7 @@ jobs:
     name: Publish ${{ matrix.image_name }} Manifest
     if: ${{ github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || (github.ref == 'refs/heads/trunk' && inputs.scan_only != true)) && needs.build-and-push.result == 'success' }}
     needs: [authorize-publish, build-and-push]
+    environment: publish-images
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
@@ -670,14 +650,6 @@ jobs:
           # reachable under its explicit `-lambda-aot-arm64` tag.
           - image_name: Lambda AOT Image
             tag_suffix: -lambda-aot
-            source_arches: "amd64"
-            publish_aot_alias: true
-          - image_name: Functions Development JIT Image
-            tag_suffix: -functions-jit
-            source_arches: "amd64"
-            publish_aot_alias: false
-          - image_name: Functions AOT Image
-            tag_suffix: -functions-aot
             source_arches: "amd64"
             publish_aot_alias: true
     permissions:

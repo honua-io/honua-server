@@ -11,11 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Endpoint tests for three FeatureServer query capabilities flagged by the Esri SDK
-/// certification matrix: <c>returnExtentOnly</c>, point + <c>distance</c>/<c>units</c>
-/// spatial buffering, and the <c>sqlFormat</c> parameter.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database")]
 public sealed class FeatureServerQueryGapsTests : IClassFixture<WebAppFixture>
@@ -61,7 +56,7 @@ public sealed class FeatureServerQueryGapsTests : IClassFixture<WebAppFixture>
         extent.Ymax.Should().BeApproximately(37.8, 0.01);
     }
 
-    // returnExceededLimitFeatures is accept-and-ignore (#1460): the ArcGIS Maps SDK for .NET
+    // returnExceededLimitFeatures is accept-and-ignore: the ArcGIS Maps SDK for .NET
     // always sends it (often serialized as false from a default DTO), and Honua already returns
     // the truncated page plus exceededTransferLimit=true. Both the default and an explicit false
     // must therefore return the same page; altering this re-breaks every .NET FeatureServer client.
@@ -133,7 +128,7 @@ public sealed class FeatureServerQueryGapsTests : IClassFixture<WebAppFixture>
         y.Should().Be(Math.Truncate(y), "quantized coordinates are integers");
     }
 
-    // #5438: a desktop client's draw request (envelope filter, outSR with its coordinate
+    // A desktop client's draw request (envelope filter, outSR with its coordinate
     // grid, view-mode lowerLeft quantization). The client reads the featureSet front to
     // back, so the transform must precede features; the decoded points must land on the
     // seeded coordinates.
@@ -324,7 +319,7 @@ public sealed class FeatureServerQueryGapsTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=json&sqlFormat=bogus");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("sqlFormat");

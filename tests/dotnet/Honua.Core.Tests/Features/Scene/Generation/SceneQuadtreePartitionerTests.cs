@@ -7,9 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Scene.Generation;
 
-/// <summary>
-/// Unit tests for the deterministic quadtree LOD partitioner (#1200).
-/// </summary>
 public sealed class SceneQuadtreePartitionerTests
 {
     private static readonly double[] Bounds = [-122.5, 37.7, -122.4, 37.8];
@@ -72,12 +69,8 @@ public sealed class SceneQuadtreePartitionerTests
     [UnitTest]
     public void Partition_InteriorSampleCountZero_InteriorNodesCarryNoContent()
     {
-        // Regression: InteriorSampleCount = 0 is documented to DISABLE interior
-        // content (the tileset then carries only leaf geometry). Previously the
-        // sampleCount<=0 case fell through to "return the full member set", so
-        // every interior node carried the entire dataset beneath it — O(features x
-        // depth) total emitted geometry and a root tile equal to the whole layer.
-        // The grid is large enough to force subdivision so interior nodes exist.
+        // InteriorSampleCount = 0 disables interior content, leaving leaf geometry
+        // only. Use a grid large enough to force subdivision and create interior nodes.
         var features = MakePointGrid(40, 40); // 1600 features.
         var options = new SceneLodOptions { MaxFeaturesPerTile = 100, MaxDepth = 8, InteriorSampleCount = 0 };
 

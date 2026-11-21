@@ -5,49 +5,49 @@ description: "The authoritative snapshot of Honua's OGC CITE conformance runs."
 ---
 # CITE Status — Authoritative Snapshot
 
-Last reviewed: 2026-11-06
+Last reviewed: 2026-11-20
 Owner: Honua Server platform
 
 This page is the single fixed-path answer to "what is the current OGC CITE
 pass rate for each protocol on `trunk`?" It exists so that number has one address.
 
-Every row is backed by a run of the CITE Evidence Report workflow, which runs
-weekly and fails if any suite regresses or this page goes stale.
+Every row is backed by a run of the CITE Evidence Report workflow. It runs for
+release candidates and on manual dispatch (it has no weekly schedule), and it
+fails if any suite regresses or this page goes stale.
 
 ## Current Per-Protocol Status
 
 Every row is backed by
-[CITE Evidence Report run 42244093539](https://github.com/honua-io/honua-server/actions/runs/42244093539)
-and its `cite-conformance-evidence-31` bundle, built from `trunk` source commit
-`b48fdf0ba5692b4da7e7fd0c9756d632d149ab34` and started 2026-11-06. It reports
+[CITE Evidence Report run 44766846845](https://github.com/honua-io/honua-server/actions/runs/44766846845)
+and its `cite-conformance-evidence-33` bundle, built from `trunk` source commit
+`207c709fc988f269e2ef7c2dea462f32b96c4b0a` and started 2026-11-20. It reports
 1138 passed, 0 failed, 0 skipped, and 0 CantTell across 14 suites
 (`allPassed=true`). OGC API Features includes the complete Part 2 CRS class.
-The run's conclusion is red only because its last step found this page older
-than the 14-day freshness window; every suite step and the bundle build passed.
+Every suite step, the bundle build and the run itself passed.
 
 These numbers certify the source commit above; reviewing this page does not
 rerun the suites against later trunk commits. The August 28 WFS 2.0 `basic`
 result of 166/167 predates [the atomic multi-layer transaction repair in
 #3817](https://github.com/honua-io/honua-server/pull/3817), trunk commit
 `dd7d14506c27faea5ce22c338d76353c7eaa34f4`. That repair is an ancestor of
-`b48fdf0b`, whose November 6 bundle records 167/167 for the same profile.
+`207c709f`, whose November 20 bundle records 167/167 for the same profile.
 
 | Suite | Profile | Passed / Total | Pass Rate | Last Evidence Run |
 |---|---|---:|---:|---|
-| OGC API Features 1.0 | `default` | 137 / 137 | 100% | [2026-11-06](https://github.com/honua-io/honua-server/actions/runs/42244093539) |
-| OGC API Tiles 1.0 | `default` | 16 / 16 | 100% | [2026-11-06](https://github.com/honua-io/honua-server/actions/runs/42244093539) |
-| GeoPackage 1.2 | `applicable` | 31 / 31 | 100% | [2026-11-06](https://github.com/honua-io/honua-server/actions/runs/42244093539) |
-| GML 3.2 | `applicable` | 17 / 17 | 100% | [2026-11-06](https://github.com/honua-io/honua-server/actions/runs/42244093539) |
-| KML 2.2 | `applicable` | 42 / 42 | 100% | [2026-11-06](https://github.com/honua-io/honua-server/actions/runs/42244093539) |
-| WFS 1.0 | `basic` | 162 / 162 | 100% | [2026-11-06](https://github.com/honua-io/honua-server/actions/runs/42244093539) |
-| WFS 1.1 | `basic` | 39 / 39 | 100% | [2026-11-06](https://github.com/honua-io/honua-server/actions/runs/42244093539) |
-| WFS 2.0 | `basic` | 167 / 167 | 100% | [2026-11-06](https://github.com/honua-io/honua-server/actions/runs/42244093539) |
-| WFS 2.0 Transactional | `transactional` | 25 / 25 | 100% | [2026-11-06](https://github.com/honua-io/honua-server/actions/runs/42244093539) |
-| WCS 2.0 | `core` | 82 / 82 | 100% | [2026-11-06](https://github.com/honua-io/honua-server/actions/runs/42244093539) |
-| WPS 2.0 | `basic-async` | 21 / 21 | 100% | [2026-11-06](https://github.com/honua-io/honua-server/actions/runs/42244093539) |
-| WMS 1.1.1 | `default` | 126 / 126 | 100% | [2026-11-06](https://github.com/honua-io/honua-server/actions/runs/42244093539) |
-| WMS 1.3 | `default` | 213 / 213 | 100% | [2026-11-06](https://github.com/honua-io/honua-server/actions/runs/42244093539) |
-| WMTS 1.0 | `default` | 60 / 60 | 100% | [2026-11-06](https://github.com/honua-io/honua-server/actions/runs/42244093539) |
+| OGC API Features 1.0 | `default` | 137 / 137 | 100% | [2026-11-20](https://github.com/honua-io/honua-server/actions/runs/44766846845) |
+| OGC API Tiles 1.0 | `default` | 16 / 16 | 100% | [2026-11-20](https://github.com/honua-io/honua-server/actions/runs/44766846845) |
+| GeoPackage 1.2 | `applicable` | 31 / 31 | 100% | [2026-11-20](https://github.com/honua-io/honua-server/actions/runs/44766846845) |
+| GML 3.2 | `applicable` | 17 / 17 | 100% | [2026-11-20](https://github.com/honua-io/honua-server/actions/runs/44766846845) |
+| KML 2.2 | `applicable` | 42 / 42 | 100% | [2026-11-20](https://github.com/honua-io/honua-server/actions/runs/44766846845) |
+| WFS 1.0 | `basic` | 162 / 162 | 100% | [2026-11-20](https://github.com/honua-io/honua-server/actions/runs/44766846845) |
+| WFS 1.1 | `basic` | 39 / 39 | 100% | [2026-11-20](https://github.com/honua-io/honua-server/actions/runs/44766846845) |
+| WFS 2.0 | `basic` | 167 / 167 | 100% | [2026-11-20](https://github.com/honua-io/honua-server/actions/runs/44766846845) |
+| WFS 2.0 Transactional | `transactional` | 25 / 25 | 100% | [2026-11-20](https://github.com/honua-io/honua-server/actions/runs/44766846845) |
+| WCS 2.0 | `core` | 82 / 82 | 100% | [2026-11-20](https://github.com/honua-io/honua-server/actions/runs/44766846845) |
+| WPS 2.0 | `basic-async` | 21 / 21 | 100% | [2026-11-20](https://github.com/honua-io/honua-server/actions/runs/44766846845) |
+| WMS 1.1.1 | `default` | 126 / 126 | 100% | [2026-11-20](https://github.com/honua-io/honua-server/actions/runs/44766846845) |
+| WMS 1.3 | `default` | 213 / 213 | 100% | [2026-11-20](https://github.com/honua-io/honua-server/actions/runs/44766846845) |
+| WMTS 1.0 | `default` | 60 / 60 | 100% | [2026-11-20](https://github.com/honua-io/honua-server/actions/runs/44766846845) |
 
 The WFS 2.0 transactional leg (`cite-wfs20-transactional-results`) measures
 TransactionalWFS independently from the `basic` leg; LockFeature is not

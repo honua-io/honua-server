@@ -15,13 +15,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Security proof for the custom-code geoprocessing scoped-job token issuer (Phase 0
-/// auth spine). Each invariant — narrow-only attenuation, non-forgeable tenant,
-/// read-only-unless-write, job-binding, revocation, and expiry — is exercised
-/// against the real issuer so the hydrated principal can never out-grant the
-/// submitter or reach another tenant.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
@@ -232,11 +225,9 @@ public sealed class ScopedJobTokenIssuerTests
     [UnitTest]
     public async Task IssueAsync_GrantBasedWriteSubmitter_TokenCarriesTheGrantedWrite()
     {
-        // #2192: the submitter's write authority comes purely from a layer-scoped
-        // write:{service}/{layer} permission GRANT — they hold NO data-editor role.
-        // Before the fix the issuer ignored grants, so this token was under-scoped
-        // (the write was dropped). Now the mint intersects against the owner's grants
-        // too, and the in-scope write is carried.
+        // The submitter has a layer-scoped write:{service}/{layer} grant and no
+        // data-editor role. Token minting must intersect the owner’s grants and
+        // retain this in-scope write authority.
         var issuer = CreateIssuer();
 
         var issuance = await issuer.IssueAsync(

@@ -1,11 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 //
-// Regression coverage for #1298: Esri clients (ArcGIS Pro, ArcGIS Python SDK)
-// hydrate service/layer metadata by POSTing {"f":"json"} to the REST resource
-// roots. Honua previously returned 405 on those POSTs, breaking SDK hydration.
-// These tests assert each metadata root now accepts POST and returns the same
-// payload as the GET form.
+// Esri clients (ArcGIS Pro, ArcGIS Python SDK) hydrate service/layer metadata
+// by POSTing {"f":"json"} to the REST resource roots; a 405 on those POSTs
+// breaks SDK hydration. These tests assert each metadata root accepts POST
+// and returns the same payload as the GET form.
 
 using System.Net;
 using System.Net.Http;
@@ -27,10 +26,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices;
 
-/// <summary>
-/// Verifies the GeoServices metadata endpoints accept POST (Esri SDK hydration
-/// path) and return metadata identical to the GET form.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database")]
 public sealed class MetadataPostTests : IClassFixture<WebAppFixture>

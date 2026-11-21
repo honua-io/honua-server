@@ -15,7 +15,6 @@ using Xunit.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>Production PDAL executor, real LAS fixtures, and an independent binary reader.</summary>
 [Trait("Category", "PdalExecutionProof")]
 public sealed class PdalExecutionProofTests(ITestOutputHelper testOutput) : IDisposable
 {
@@ -121,7 +120,7 @@ public sealed class PdalExecutionProofTests(ITestOutputHelper testOutput) : IDis
         var output = GdalCli.DecodeDataUri(context.Artifacts[0]);
         Encoding.ASCII.GetString(output, 0, 4).Should().Be("LASF");
         (output[104] & 0x80).Should().Be(0, "the artifact must be uncompressed LAS");
-        // #4460 forwards only scale/offset, not source header metadata or point format.
+        // Only scale/offset is forwarded, excluding source header metadata and point format.
         // Pinned PDAL writes LAS 1.4 / format 7, retaining RGB/GPS in its modern layout.
         output[104].Should().Be(7, "the pinned writer normalizes point format 3 to format 7");
         output[24].Should().Be(1);

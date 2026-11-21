@@ -36,8 +36,7 @@ public static class CapabilityKeyCatalog
         new("admin.multi-tenancy", "Multi-Tenant Operation", Categories.Internal,
             HonuaEdition.Enterprise, "Internal to Honua's own hosted operation; not part of the customer-deployable surface and not offered to licensees. Honua deployments are single-tenant. This has no path to general availability as a customer capability: the Fair Core License prohibits providing Honua to third parties as a hosted or managed service, so a licensee can never be the party operating it. Cross-tenant disclosure remains a full-severity security defect regardless.", Status: InternalStatus),
 
-        // Operator ruling (2026-09-03, honua-release#266 / #264) supersedes the earlier
-        // sync.offline GA promotion for release 2026.1: offline sync is Preview in 2026.1.
+        // Offline sync is Preview in release 2026.1 by operator ruling.
         new(FeatureCatalog.FieldOpsOfflineSyncKey, "Offline/Field Sync", FeatureCatalog.Categories.FieldOps,
             HonuaEdition.Pro, "Use disconnected field sync, form offline policy discovery, GeoServices replica delta sync delivered as Esri JSON, and FieldCollection cursor/change exchange.", Status: PreviewStatus),
     ];
@@ -127,10 +126,7 @@ public static class CapabilityKeyCatalog
 
         // Jobs
         new("jobs.durable-runtime", "Durable Job Runtime", Categories.Jobs,
-            HonuaEdition.Community, "The durable job substrate behind imports, tile operations, geoprocessing and workflow orchestration. Advertised as jobs.runner on the honua.capability_manifest.v1 wire and named by typed dependency-unavailable refusals, so a client receiving one can resolve the id. The runtime itself is Community; durable persistence across restarts and nodes requires Redis, which caching.redis gates.")
-        {
-            Requires = [FeatureCatalog.RedisCacheKey],
-        },
+            HonuaEdition.Community, "The durable job substrate behind imports, tile operations, geoprocessing and workflow orchestration. Advertised as jobs.runner on the honua.capability_manifest.v1 wire and named by typed dependency-unavailable refusals, so a client receiving one can resolve the id. The runtime is Community and persists jobs in the PostgreSQL system database, so they survive restarts and move between nodes."),
 
         // Discovery
         new("discovery.capability-manifest", "Capability Manifest", Categories.Discovery,
@@ -140,10 +136,7 @@ public static class CapabilityKeyCatalog
         new("admin.control-plane", "Admin Control Plane", Categories.ControlPlane,
             HonuaEdition.Community, "General administrative CRUD surfaces (connections, metadata, services, users, roles, configuration) with no dedicated entitlement of their own. Isolation between administrative scopes remains mandatory."),
         new("operations.proposals", "Governed Operation Proposals", Categories.ControlPlane,
-            HonuaEdition.Community, "The governed operation proposal and approval control plane behind approval-gated honua_admin_* tools, /api/v1/admin/proposals and Studio drafts. Advertised as operations.proposals on the honua.capability_manifest.v1 wire. The control plane itself is Community; proposals persist in the Redis-backed durable store, so a host without Redis (or without the caching.redis entitlement) advertises the governed tools but refuses proposal-requiring calls with a typed capability-unavailable receipt.")
-        {
-            Requires = [FeatureCatalog.RedisCacheKey],
-        },
+            HonuaEdition.Community, "The governed operation proposal and approval control plane behind approval-gated honua_admin_* tools, /api/v1/admin/proposals and Studio drafts. Advertised as operations.proposals on the honua.capability_manifest.v1 wire. The control plane is Community and persists proposals in the PostgreSQL system database; a host without one advertises the governed tools but refuses proposal-requiring calls with a typed capability-unavailable receipt."),
 
         // Ops
         new("ops.health", "Health Checks", Categories.Ops,
@@ -171,9 +164,9 @@ public static class CapabilityKeyCatalog
 
         // Field ops
         new("fieldops.forms", "Field Collection Forms", FeatureCatalog.Categories.FieldOps,
-            HonuaEdition.Community, "Read and submit online form packages. Disconnected/offline sync is Pro-gated separately by fieldops.offline-sync."),
+            HonuaEdition.Community, "Read and submit online Forms. Disconnected/offline sync is Pro-gated separately by fieldops.offline-sync."),
 
-        // Geocoding — Community (#2981). Forward and reverse single-address geocoding are the
+        // Geocoding — Community. Forward and reverse single-address geocoding are the
         // demo/adoption showcase path; batch geocoding (geocoding.batch) remains an Enterprise
         // FeatureCatalog entitlement, gated over both HTTP and the MCP honua_geocode_addresses
         // tool. See ADR-0024.
@@ -182,11 +175,10 @@ public static class CapabilityKeyCatalog
         new("geocoding.reverse", "Reverse Geocoding", FeatureCatalog.Categories.Geocoding,
             HonuaEdition.Community, "Convert coordinates to a nearest-address match using configured providers."),
 
-        // Identity: identity.saml and identity.scim moved to FeatureCatalog entitlements
-        // (both Enterprise, per ADR-0024's Identity Governance tier) in #2978 — they
-        // previously shipped here ungated, catalog drift from the ADR that let any
-        // SAML-speaking IdP bypass SSO tiering. They flow back into All via the
-        // FeatureCatalog union below.
+        // Identity: identity.saml and identity.scim are FeatureCatalog entitlements
+        // (both Enterprise, per ADR-0024's Identity Governance tier), not entries
+        // here: listing them here ungated would let any SAML-speaking IdP bypass SSO
+        // tiering. They flow back into All via the FeatureCatalog union below.
 
         // Styling
         new("styling.ogc-api-styles", "OGC API Styles", FeatureCatalog.Categories.Styling,

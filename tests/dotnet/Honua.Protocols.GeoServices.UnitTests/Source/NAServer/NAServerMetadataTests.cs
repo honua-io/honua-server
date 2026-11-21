@@ -10,10 +10,8 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.NAServer;
 
-/// <summary>Checks routing metadata against the supported canonical and REST utility contracts.</summary>
 public sealed class NAServerMetadataTests
 {
-    /// <summary>Esri's published FindRoutes parameter names, which arcpy.nax matches on.</summary>
     private static readonly string[] GeoServicesFindRoutesParameters =
     [
         "Stops", "Measurement_Units", "Travel_Mode",
@@ -84,7 +82,7 @@ public sealed class NAServerMetadataTests
         // arcpy.nax does not call NAServer/Route/solve. It resolves Esri's ready-to-use
         // routing tool on the utility service and refuses the stand-alone binding when it
         // is absent: "Portal .../NAServer/FindRoutes is not configured with the 'Route'
-        // web tool" (#5192). The parameter names are matched on, so they are pinned.
+        // web tool". The parameter names are matched on, so they are pinned.
         NAServerMetadata.IsUtilityTask(NAServerMetadata.FindRoutesTask).Should().BeTrue();
 
         var info = NAServerMetadata.BuildUtilityTaskInfo(NAServerMetadata.FindRoutesTask);

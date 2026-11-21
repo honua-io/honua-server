@@ -8,12 +8,6 @@ using Honua.Worker.Gdal.Execution;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Unit coverage for <see cref="GdalVectorEnvelopeReader"/> — the cheap GeoJSON extent
-/// read that feeds the rasterize <c>-tr</c> output bound (#2793). Proves the axis-aligned
-/// envelope is recovered across geometry nesting and that unparseable / position-free
-/// payloads report "no envelope" so the executor admits and falls back to the input caps.
-/// </summary>
 public sealed class GdalVectorEnvelopeReaderTests
 {
     private static bool TryRead(string json, out GdalVectorEnvelopeReader.Envelope envelope)
@@ -104,7 +98,7 @@ public sealed class GdalVectorEnvelopeReaderTests
     [UnitTest]
     public void TryReadEnvelope_AttributeNamedCoordinatesOrBbox_DoesNotWidenEnvelope()
     {
-        // Codex review P2 (#2826): feature attributes named "coordinates"/"bbox" live under
+        // Feature attributes named "coordinates"/"bbox" live under
         // "properties" and must not contribute to the envelope — only geometry members count.
         const string json =
             "{\"type\":\"Feature\","

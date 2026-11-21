@@ -17,12 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Unit coverage for <see cref="ImageServerTileCacheKey"/> proving the durable tile-cache key
-/// varies with every render-affecting dimension the WMTS matrix-set feature introduced (#2665):
-/// tile matrix set, style, output format, time, tenant/auth identity, and layer identity. A
-/// collision on any of these would serve the wrong bytes across gridsets, styles, tenants, or times.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerTileCacheKeyTests
 {
@@ -120,7 +114,7 @@ public class ImageServerTileCacheKeyTests
     [UnitTest]
     public void Build_VariesByTimeExtentStart()
     {
-        // #4061: an Esri start,end extent shares its end with an instant request, so the start bound
+        // An Esri start,end extent shares its end with an instant request, so the start bound
         // must partition the key or the two windows would serve each other's cached tiles.
         var end = DateTimeOffset.Parse("2020-06-01T00:00:00Z", CultureInfo.InvariantCulture);
         var start = DateTimeOffset.Parse("2020-01-01T00:00:00Z", CultureInfo.InvariantCulture);

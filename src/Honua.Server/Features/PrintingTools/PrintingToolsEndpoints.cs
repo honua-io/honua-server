@@ -46,7 +46,7 @@ internal static partial class PrintingToolsEndpoints
             .WithTags("PrintingTools");
 
         // Synchronous execute
-        // PUBLIC by design (#1144): GeoServices Esri-style Export Web Map Task POST
+        // PUBLIC by design: GeoServices Esri-style Export Web Map Task POST
         // mirrors the GET form. The handler enforces edition gating via
         // LicenseGate and resolves the caller principal through HttpContext.User
         // for per-feature access checks. Marked AllowAnonymous so the audit
@@ -70,7 +70,7 @@ internal static partial class PrintingToolsEndpoints
             .WithTags("PrintingTools");
 
         // Async submit job (POST + GET per GP contract)
-        // PUBLIC by design (#1144): mirrors the GET submitJob and is bound by
+        // PUBLIC by design: mirrors the GET submitJob and is bound by
         // the same edition gating + per-feature access checks the handler runs
         // against HttpContext.User. Marked AllowAnonymous so the audit guard
         // records the intentional decision.
@@ -690,6 +690,16 @@ internal static partial class PrintingToolsEndpoints
             (context.User.Identity?.IsAuthenticated == true && context.User.IsInRole("admin")))
             return true;
         var owner = ResolveOwner(context.User);
+        return owner is not null && string.Equals(progress.RequestedBy, owner, StringComparison.Ordinal);
+    }
+
+    // Cancelling is a write: reading a job is not enough. An anonymous job carries no submitter
+    // identity to match, so only an administrator may cancel it.
+    private static bool CanCancelJob(PrintProgress progress, HttpContext context)
+    {
+        if (context.User.Identity?.IsAuthenticated == true && context.User.IsInRole("admin"))
+            return true;
+        var owner = progress.AnonymousSubmission == false ? ResolveOwner(context.User) : null;
         return owner is not null && string.Equals(progress.RequestedBy, owner, StringComparison.Ordinal);
     }
 

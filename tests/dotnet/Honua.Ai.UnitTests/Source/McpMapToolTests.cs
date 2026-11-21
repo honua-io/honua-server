@@ -44,12 +44,6 @@ using Newtonsoft.Json.Schema;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Focused coverage for the catalog-discovery, feature-query, and map-render MCP
-/// tools. These run through the JSON-RPC dispatcher while substituting the
-/// canonical metadata / feature-query / raster-render services, so they validate
-/// the MCP adapter behavior without a database or renderer dependency.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpMapToolTests
 {
@@ -647,7 +641,7 @@ public sealed class McpMapToolTests
     {
         // A Web-Mercator-scale bbox under the geographic default bboxSrid=4326 silently
         // matches nothing; the tool must warn about the likely CRS mismatch and flag the
-        // zero-result summary rather than returning an unexplained empty page (#2808).
+        // zero-result summary rather than returning an unexplained empty page.
         var reader = Substitute.For<IFeatureReader>();
         reader.QueryAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(new QueryResult<Feature>
@@ -1233,7 +1227,7 @@ public sealed class McpMapToolTests
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_QueryFeatures_ByServiceName_ResolvesAndReturnsSchemaValidContent()
     {
-        // #2578 contract: the tool addresses a layer by service NAME (not just id),
+        // The tool addresses a layer by service NAME (not just id),
         // mirroring the GeoServices catalog. The structuredContent must still
         // validate against the advertised outputSchema and echo the canonical
         // serviceId so the agent can chain a subsequent call deterministically.
@@ -1282,7 +1276,7 @@ public sealed class McpMapToolTests
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_RenderMap_ByServiceName_ResolvesAndReturnsSchemaValidContent()
     {
-        // #2578 contract: render addressing by service NAME must resolve and emit
+        // Render addressing by service NAME must resolve and emit
         // structuredContent that validates against the advertised outputSchema.
         var pngBytes = Encoding.ASCII.GetBytes("PNGDATA");
         var renderer = Substitute.For<IRasterMapRenderer>();
@@ -1326,7 +1320,7 @@ public sealed class McpMapToolTests
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_RenderMap_InvalidArguments_ReturnsSchemaValidToolError()
     {
-        // #2578 error-shape contract: an invalid render call must surface a
+        // Error-shape contract: an invalid render call must surface a
         // structured tool error (isError=true) whose envelope still validates
         // against the tool's advertised outputSchema (the oneOf error branch),
         // never leaking a protocol error or an unvalidatable payload.
@@ -1354,7 +1348,7 @@ public sealed class McpMapToolTests
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_RenderMap_NativeRenderingRuntimeUnavailable_ReturnsFailedPreconditionCapabilityError()
     {
-        // honua-server#2770: when the deployed (serverless/AOT) image cannot load the
+        // When the deployed (serverless/AOT) image cannot load the
         // native SkiaSharp rasterizer, the render seam raises
         // RasterRenderingUnavailableException. The MCP adapter must surface an actionable
         // failed_precondition capability error naming the missing rendering capability —

@@ -205,7 +205,7 @@ internal static partial class RasterImportEndpoints
         // ST_FromGDALRaster accepts one binary parameter and therefore creates both a managed
         // byte[] and an Npgsql parameter copy. Keep this legacy direct path under a hard safety
         // ceiling even when the general synchronous-import limit is configured higher. Larger
-        // rasters belong on the durable staged-import pipeline (#3098).
+        // rasters belong on the durable staged-import pipeline.
         var configuredSyncLimit = context.RequestServices
             .GetRequiredService<IOptions<LimitsOptions>>()
             .Value.Imports.MaxSyncImportSize;
@@ -274,6 +274,12 @@ internal static partial class RasterImportEndpoints
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (RasterStorageUnavailableException)
+        {
+            // The service has logged it; the message names the operator action, not internals.
+            await AdminResponseWriter.WriteErrorAsync(
+                context, RasterStorageUnavailableException.CapabilityMessage, StatusCodes.Status503ServiceUnavailable);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidDataException or NotSupportedException or FileNotFoundException)
         {

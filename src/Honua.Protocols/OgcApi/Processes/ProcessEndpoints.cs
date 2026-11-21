@@ -88,7 +88,7 @@ internal static class ProcessEndpoints
             .Produces<OgcProcessError>(StatusCodes.Status404NotFound)
             .ExcludeFromDescription();
 
-        // HANDLER-AUTHORIZED (#1144): the handler calls
+        // HANDLER-AUTHORIZED: the handler calls
         // IGeoprocessingJobService.EnsureCallerAuthorizedAsync for Process+Execute
         // before reading the body so unauthenticated callers get 401 ahead of
         // 400. Marked AllowAnonymous so the audit architecture guard records
@@ -548,6 +548,11 @@ internal static class ProcessEndpoints
                     idempotencyKeyError!);
             }
 
+            if (definition != null && idempotencyKey != null)
+            {
+                analysisPlan = analysisPlan! with { PlanId = ProtocolPlanId.Create(OgcPlanIdPrefix(definition), idempotencyKey) };
+            }
+
             var submissionCatalog = definition != null
                 && OgcProcessesCiteEchoFixture.IsDefinition(definition)
                     ? processCatalog
@@ -586,7 +591,7 @@ internal static class ProcessEndpoints
                         ? await JobEndpoints.BuildRawResultsResponseAsync(
                                 terminal.Job ?? jobRecord, context, terminal.ResultPackage!)
                             .ConfigureAwait(false)
-                        : await JobEndpoints.BuildValueResultsResponseAsync(
+                        : await JobEndpoints.BuildSyncDocumentResultsResponseAsync(
                                 terminal.Job ?? jobRecord, context, terminal.ResultPackage!)
                             .ConfigureAwait(false),
                     GeoprocessingTerminalResultOutcome.Failed => JobEndpoints.BuildJobFailedResult(
@@ -634,7 +639,7 @@ internal static class ProcessEndpoints
         {
             // Log the operation the denied check actually evaluated (e.g.
             // ExecuteMutatingProcess) so a mutating-tier 403 is distinguishable from a
-            // baseline Execute denial rather than always reading as Execute (#2798).
+            // baseline Execute denial rather than always reading as Execute.
             OgcProcessesLog.AuthorizationDenied(
                 logger,
                 (authEx.ResourceType ?? OperatorResourceType.Process).ToString(),
@@ -895,16 +900,16 @@ internal static class ProcessEndpoints
             }
         }
 
-        var slug = processDefinition.ProcessId.Replace(".", "-", StringComparison.Ordinal);
+        var prefix = OgcPlanIdPrefix(processDefinition);
         plan = new AnalysisPlan
         {
-            PlanId = $"ogc-{slug}-{Guid.NewGuid():N}",
+            PlanId = ProtocolPlanId.Create(prefix, idempotencyKey: null),
             IntentId = $"ogc-process:{processDefinition.ProcessId}",
             Steps =
             [
                 new AnalysisPlanStep
                 {
-                    StepId = $"ogc-{slug}",
+                    StepId = prefix,
                     Kind = AnalysisPlanStepKind.Geoprocess,
                     ProcessId = processDefinition.ProcessId,
                     Inputs = inputs
@@ -915,6 +920,9 @@ internal static class ProcessEndpoints
 
         return true;
     }
+
+    private static string OgcPlanIdPrefix(ProcessDefinition definition)
+        => $"ogc-{definition.ProcessId.Replace(".", "-", StringComparison.Ordinal)}";
 
     private static int? TryReadInputSrid(ImmutableDictionary<string, JsonElement> inputs)
     {

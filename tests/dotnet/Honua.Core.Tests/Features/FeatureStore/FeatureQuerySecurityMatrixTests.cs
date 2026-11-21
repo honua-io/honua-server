@@ -8,11 +8,6 @@ using Honua.Core.Queries.Filters;
 
 namespace Honua.Core.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Shared security-seam matrix: every read shape must reject a masked field when it is
-/// used as a predicate, grouping key, aggregate input, or sort key. Provider adapters
-/// resolve the mask once and call this same validator before building their SQL.
-/// </summary>
 public sealed class FeatureQuerySecurityMatrixTests
 {
     public static IEnumerable<object[]> MaskedQueryCases()
@@ -25,7 +20,7 @@ public sealed class FeatureQuerySecurityMatrixTests
         }];
         // OGC CQL2 is translated before it reaches the shared provider seam. These
         // JSONB accessor shapes cover filter and per-field queryable predicates on
-        // storage-backed OGC Features resources (#4154).
+        // storage-backed OGC Features resources.
         yield return ["OGC CQL2 text filter", new FeatureQuery
         {
             SqlFilter = new SqlFragment("\"attributes\" ->> 'secret' LIKE @p0", ["1%"])
@@ -163,6 +158,24 @@ public sealed class FeatureQuerySecurityMatrixTests
             });
 
         act.Should().Throw<ArgumentException>().WithMessage("*secret*");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void CollectFieldReferencesReturnsEveryFieldWhateverConsumesIt()
+    {
+        var negatedLike = new UnaryExpression(
+            UnaryOperator.Not,
+            new BinaryExpression(new PropertyReference("pattern"), BinaryOperator.Like, new Literal("x%", LiteralType.Text)));
+        var membership = new BinaryExpression(
+            new PropertyReference("member"),
+            BinaryOperator.In,
+            new ValueList([new FunctionCall("upper", [new PropertyReference("argument")])]));
+
+        var fields = FeatureQuerySecurity.CollectFieldReferences(
+            new BinaryExpression(negatedLike, BinaryOperator.And, membership));
+
+        fields.Should().BeEquivalentTo("pattern", "member", "argument");
     }
 
     [Trait("Tier", "Fast")]

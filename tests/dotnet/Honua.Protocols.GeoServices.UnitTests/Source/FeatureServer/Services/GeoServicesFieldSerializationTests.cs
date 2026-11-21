@@ -20,11 +20,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Esri GeoServices f=json serialization-compatibility regression tests:
-/// (1) esriFieldTypeString fields must report a positive <c>length</c>;
-/// (2) esriFieldTypeDate values must serialize as epoch-millisecond integers (not ISO strings).
-/// </summary>
 public sealed class GeoServicesFieldSerializationTests
 {
     private const int DefaultStringLength = 256;
@@ -417,7 +412,7 @@ public sealed class GeoServicesFieldSerializationTests
         }
     }
 
-    // ----- Bug 3: array-valued columns must agree with esriFieldTypeString (#5171) -----
+    // ----- Bug 3: array-valued columns must agree with esriFieldTypeString -----
 
     [UnitTheory]
     [InlineData("[\"red\",\"blue\"]")]
@@ -556,7 +551,7 @@ public sealed class GeoServicesFieldSerializationTests
         property.GetRawText().Should().Be(rawJson);
     }
 
-    // ----- Bug 4: the query response must describe a field as the layer resource does (#5197) -----
+    // ----- Bug 4: the query response must describe a field as the layer resource does -----
 
     [UnitTest]
     public async Task Json_QueryFieldBlock_AgreesWithTheLayerResource()
@@ -598,7 +593,7 @@ public sealed class GeoServicesFieldSerializationTests
                 "the query response and the layer resource must agree on {0}'s length", field.Name);
         }
 
-        // The two that used to differ, stated explicitly so a regression is unambiguous.
+        // Check both field representations explicitly.
         queried["tags"].SqlType.Should().Be("sqlTypeNVarchar");
         queried["tags"].Length.Should().Be(DefaultStringLength);
         queried[FieldNames.ObjectId].SqlType.Should().Be("sqlTypeInteger");

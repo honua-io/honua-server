@@ -18,28 +18,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer;
 
-/// <summary>
-/// #4423: HTTP-level authorization proof for the VersionManagementServer lifecycle handlers.
-/// <para>
-/// Every VMS route is <c>.AllowAnonymous()</c> at the framework level, so the handler-internal
-/// ownership policy is the only control. Before this file, <c>VersionAccessPolicyTests</c> proved
-/// <c>VersionAccessPolicy.CanManageVersion</c> in isolation and every VMS endpoint test ran
-/// under the F1 development-authentication bypass, which returns an <c>admin</c> principal before
-/// any credential is read. Under that bypass <c>isAdmin</c> is always <see langword="true"/>, so
-/// the non-owner denial branches (BH3-002/003/004, BH6-001) were never executed through
-/// <c>HandleDelete</c>, <c>HandleAlter</c>, <c>HandleReconcile</c>, <c>HandlePost</c> or
-/// <c>HandleInspectConflicts</c>, and nothing proved those handlers call the policy at all.
-/// </para>
-/// <para>
-/// These tests run with <c>HONUA_DEV_AUTH=false</c> and two genuinely non-admin portal
-/// credentials that differ only in principal name. Both hold the service-scoped data-editor role,
-/// so both clear the service write gate — the positive control below proves that by having the
-/// non-owner successfully create and manage a version of its own. What the non-owner cannot do is
-/// touch a version it does not own, and the assertions go past the status: after every denied
-/// attempt the owner re-reads the version and finds its name, access, description and status
-/// unchanged, i.e. the denial produced no mutation.
-/// </para>
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.VersionManagementServer)]
 public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
@@ -47,7 +25,6 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
     private const string ServiceBase =
         "/rest/services/" + WebAppFixture.TestServiceId + "/VersionManagementServer";
 
-    /// <summary>The service-scoped data-editor role (<c>RbacOptions.DataEditorServicePrefix</c>).</summary>
     private const string EditorRole = "data-editor:" + WebAppFixture.TestServiceId;
 
     // The data-editor role for the renamed branch-versioning publication.
@@ -58,7 +35,6 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
 
     private const string Referer = "https://vms-authorization-proof.example/";
 
-    /// <summary>Esri's <c>TokenRequired</c> error code, returned to an unauthenticated caller.</summary>
     private const int GeoServicesTokenRequired = 499;
 
     private readonly WebAppFixture _fixture = new();
@@ -71,7 +47,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         _fixture.WithTestLicense(HonuaEdition.Enterprise);
         _fixture.ConfigureWebHost(builder =>
         {
-            // Displace the F1 development-authentication bypass: without this every request is an
+            // Displace the development-authentication bypass: without this every request is an
             // admin and the ownership branch under test is unreachable.
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
@@ -84,10 +60,6 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    /// <summary>
-    /// A non-owner, non-admin, service-write-authorized principal is refused by all five
-    /// lifecycle handlers, and the owner's version is unchanged afterwards.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]
     [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/delete")]
@@ -125,7 +97,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         using (var delete = await PostFormAsync(
             _nonOwnerToken, $"{ServiceBase}/versions/{guid}/delete", ("f", "json")))
         {
-            await AssertDeniedAsync(delete, "delete");
+            await AssertDeniedAsync(delete, "delete", HttpStatusCode.NotFound);
         }
 
         using (var alter = await PostFormAsync(
@@ -136,26 +108,26 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
             ("accessPermission", "public"),
             ("f", "json")))
         {
-            await AssertDeniedAsync(alter, "alter");
+            await AssertDeniedAsync(alter, "alter", HttpStatusCode.NotFound);
         }
 
         using (var reconcile = await PostFormAsync(
             _nonOwnerToken, $"{ServiceBase}/versions/{guid}/reconcile", ("f", "json")))
         {
-            await AssertDeniedAsync(reconcile, "reconcile");
+            await AssertDeniedAsync(reconcile, "reconcile", HttpStatusCode.NotFound);
         }
 
         using (var post = await PostFormAsync(
             _nonOwnerToken, $"{ServiceBase}/versions/{guid}/post", ("f", "json")))
         {
-            await AssertDeniedAsync(post, "post");
+            await AssertDeniedAsync(post, "post", HttpStatusCode.NotFound);
         }
 
         using (var inspect = await GetAsync(
             _nonOwnerToken, $"{ServiceBase}/versions/{guid}/inspectConflicts?f=json"))
         {
             var body = await inspect.Content.ReadAsStringAsync();
-            await AssertDeniedAsync(inspect, "inspectConflicts");
+            await AssertDeniedAsync(inspect, "inspectConflicts", HttpStatusCode.NotFound);
 
             // inspectConflicts is the read-shaped member of the set: prove it disclosed no
             // conflict projection of a version the caller may not manage.
@@ -180,10 +152,6 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
             "a denied delete/reconcile/post must leave the version active");
     }
 
-    /// <summary>
-    /// A private version is not disclosed to a non-owner by the list or info surfaces, and the
-    /// owner still sees it — the visibility half of the same policy.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]
     [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer/versions")]
@@ -205,7 +173,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         using var info = await GetAsync(_nonOwnerToken, $"{ServiceBase}/versions/{guid}?f=json");
         var infoBody = await info.Content.ReadAsStringAsync();
 
-        // BH3-002 deliberately answers 404, not 403, so a non-owner cannot confirm the version
+        // The endpoint deliberately answers 404, not 403, so a non-owner cannot confirm the version
         // exists. Either way the record itself must not be in the body.
         await info.AssertGeoServicesErrorAsync((int)HttpStatusCode.NotFound);
         infoBody.Should().NotContain("alice.private_visibility");
@@ -318,13 +286,6 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         return document.RootElement.GetProperty("count").GetInt32();
     }
 
-    /// <summary>
-    /// #5036: a read session follows the read rule, not the lifecycle rule. A client starts one on
-    /// DEFAULT to open the workspace and on each version it creates or switches to, so a non-owner,
-    /// non-admin reader opens and closes read sessions on DEFAULT and on another owner's public
-    /// version, while another owner's private version stays undisclosed (404, no acknowledgement).
-    /// Edit sessions are not part of that exchange and stay owner-or-admin only.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]
     [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}")]
@@ -401,10 +362,6 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// With the development bypass off, an unauthenticated caller reaches no VMS lifecycle
-    /// operation and learns nothing about the versions that exist.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]
     [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/create")]
@@ -566,10 +523,13 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
             .NotContain(refusedName).And.NotContain($"admin.{refusedName}");
     }
 
-    private static async Task AssertDeniedAsync(HttpResponseMessage response, string operation)
+    // Another owner's private version is refused as not found, exactly like an unknown GUID, so
+    // the refusal does not confirm it exists; a version the caller can see is refused as forbidden.
+    private static async Task AssertDeniedAsync(
+        HttpResponseMessage response, string operation, HttpStatusCode expected = HttpStatusCode.Forbidden)
     {
         var body = await response.Content.ReadAsStringAsync();
-        await response.AssertGeoServicesErrorAsync((int)HttpStatusCode.Forbidden);
+        await response.AssertGeoServicesErrorAsync((int)expected);
 
         // A denial must not carry a success-shaped acknowledgement for the operation.
         body.Should().NotContain(
@@ -595,6 +555,45 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/alter")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/startEditing")]
+    public async Task ManagementOnHiddenPrivateVersion_AnswersLikeAnUnknownGuid_VisibleVersionStaysForbidden()
+    {
+        var hidden = (await CreateVersionAsync(_ownerToken, "alice.hidden_oracle", "hidden")).GetProperty("versionGuid").GetString()!;
+        var visible = (await CreateVersionAsync(_ownerToken, "alice.visible_protected", "visible", "protected"))
+            .GetProperty("versionGuid").GetString()!;
+        var unknown = Guid.NewGuid().ToString(hidden.StartsWith('{') ? "B" : "D").ToUpperInvariant();
+
+        foreach (var operation in new[] { "alter", "startEditing" })
+        {
+            var hiddenAnswer = await ManagementAnswerAsync(hidden, operation);
+            var unknownAnswer = await ManagementAnswerAsync(unknown, operation);
+            hiddenAnswer.Status.Should().Be(unknownAnswer.Status, operation);
+            hiddenAnswer.Code.Should().Be(404, operation);
+            hiddenAnswer.Message.Replace(hidden, "<guid>", StringComparison.OrdinalIgnoreCase).Should().Be(
+                unknownAnswer.Message.Replace(unknown, "<guid>", StringComparison.OrdinalIgnoreCase),
+                "{0} must not distinguish another owner's private version from an unknown one", operation);
+
+            (await ManagementAnswerAsync(visible, operation)).Code.Should().Be(403, "a protected version is visible, so {0} is forbidden", operation);
+        }
+
+        (await ReadVersionAsync(_ownerToken, hidden)).GetProperty("description").GetString().Should().Be("hidden");
+    }
+
+    private async Task<(HttpStatusCode Status, int Code, string Message)> ManagementAnswerAsync(string guid, string operation)
+    {
+        using var response = await PostFormAsync(
+            _nonOwnerToken, $"{ServiceBase}/versions/{guid}/{operation}", ("description", "probe"), ("f", "json"));
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+        document.RootElement.TryGetProperty("error", out var error).Should().BeTrue("{0} must be refused: {1}", operation, body);
+        // details[0] carries the explanation; later entries are per-response correlation data.
+        var detail = error.GetProperty("details")[0].GetString()!;
+        return (response.StatusCode, error.GetProperty("code").GetInt32(), $"{error.GetProperty("message").GetString()} {detail}");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
     [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/delete")]
     public async Task DeleteByName_NonOwnerAndAnonymousDenied_OwnerDeletesOnlyOwnVersion()
     {
@@ -603,7 +602,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         using (var denied = await PostFormAsync(_nonOwnerToken, $"{ServiceBase}/delete",
             ("versionName", "alice.same_delete_name"), ("f", "json")))
         {
-            await AssertDeniedAsync(denied, "delete by name");
+            await AssertDeniedAsync(denied, "delete by name", HttpStatusCode.NotFound);
         }
 
         using (var anonymous = await PostFormAsync(null, $"{ServiceBase}/delete",

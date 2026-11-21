@@ -15,13 +15,6 @@ using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Fake-runner coverage for the native-profile raster.* executors:
-/// <see cref="GdalRasterClipJobExecutor"/>, <see cref="GdalRasterReprojectCatalogJobExecutor"/>,
-/// <see cref="GdalRasterStatisticsJobExecutor"/>, and
-/// <see cref="GdalRasterZonalStatisticsJobExecutor"/>. Each test pins routing,
-/// argument projection, guardrails, and the canonical artifact contract.
-/// </summary>
 public sealed class GdalRasterExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-raster-test";
@@ -436,18 +429,6 @@ public sealed class GdalRasterExecutorTests
     // raster.zonal-statistics
     // -------------------------------------------------------------------------
 
-    /// <summary>
-    /// Proves the <c>gdalinfo</c> aggregate <em>parser</em>, not the statistic
-    /// (honua-server#4400).
-    /// </summary>
-    /// <remarks>
-    /// The count/mean/min/max/sum asserted below are parsed out of
-    /// <c>ZonalGdalinfoFixture</c>, a hand-authored <c>gdalinfo</c> stdout string this test
-    /// itself provides through <c>FakeGdalCommandRunner</c>. Nothing computes a zonal statistic
-    /// here. The executed receipt for <c>raster.zonal-statistics</c> is
-    /// <c>RasterExecutionProofTests</c>, which runs the production executor against the pinned
-    /// GDAL image with hand-derived aggregates.
-    /// </remarks>
     [UnitTest]
     public async Task ZonalStatistics_OneZone_ParsesGdalinfoAggregatesIntoPerZoneScalar()
     {
@@ -714,12 +695,12 @@ public sealed class GdalRasterExecutorTests
             // Explicit raster CRS-conversion idiom, routed by the same
             // GdalRasterReprojectCatalogJobExecutor that handles raster.reproject.
             "conversion.raster-reproject",
-            // Raster analysis tool pack (#2141): resample / IDW + kriging interpolation
+            // Raster analysis tool pack: resample / IDW + kriging interpolation
             // / mosaic. Kriging is routed here too (the executor fails it fast with a
             // flagged-unsupported message rather than the dispatcher rejecting it).
             "raster.resample", "raster.interpolate-idw",
             "raster.interpolate-kriging", "raster.mosaic",
-            // Raster analysis & terrain GP tool pack (#2239 / #2240). map-algebra /
+            // Raster analysis & terrain GP tool pack. map-algebra /
             // spectral-index / reclassify compile to gdal_calc.py; euclidean distance
             // runs gdal_proximity.py (allocation is routed here too but fails fast as
             // flagged-unsupported); contour / viewshed / polygonize / rasterize run
@@ -730,7 +711,7 @@ public sealed class GdalRasterExecutorTests
             "conversion.polygonize", "conversion.rasterize",
             // Internal multidimensional-coverage metadata scan (ADR-0039 Path B).
             "coverage.multidim.metadata",
-            // LAZ/COPC decompress + reproject (#1854).
+            // LAZ/COPC decompress + reproject.
             "pcloud.translate",
             // Existing native-routed ids must still be present.
             "gdal.gdalwarp", "gdal.ogr2ogr",

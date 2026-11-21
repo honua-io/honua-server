@@ -8,31 +8,20 @@ using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
 
-/// <summary>
-/// Integration tests for Security Headers Middleware ensuring proper security headers
-/// are applied to all responses per MVP security requirements.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Comprehensive)]
 [Operation(Operations.Security)]
-public class SecurityHeadersMiddlewareTests : IAsyncLifetime
+// Every case sends its own request headers to the shared default host and reads the response
+// headers, so one host serves them all.
+public sealed class SecurityHeadersMiddlewareTests : IClassFixture<WebAppFixture>
 {
     private readonly ITestOutputHelper _output;
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
 
-    public SecurityHeadersMiddlewareTests(ITestOutputHelper output)
+    public SecurityHeadersMiddlewareTests(WebAppFixture fixture, ITestOutputHelper output)
     {
+        _fixture = fixture;
         _output = output;
-    }
-
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-    }
-
-    public async Task DisposeAsync()
-    {
-        await _fixture.DisposeAsync();
     }
 
     [IntegrationTest]

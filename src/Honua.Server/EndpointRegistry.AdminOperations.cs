@@ -9,7 +9,7 @@ public static partial class EndpointRegistry
     // initializer; this keeps `All` independent of cross-file static-init order.
     private static IReadOnlyList<EndpointDefinition> AdminOperationEndpoints =>
     [
-        // v1 admin operational monitoring endpoints (#512)
+        // v1 admin operational monitoring endpoints
         new("GET", "/api/v1/admin/operations/cache/health"),
         new("GET", "/api/v1/admin/operations/cache/statistics"),
         new("POST", "/api/v1/admin/operations/cache/invalidate"),
@@ -17,7 +17,7 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/admin/operations/streaming/alerts"),
         new("DELETE", "/api/v1/admin/operations/streaming/subscribers/{subscriberId}"),
 
-        // v1 feature-change streaming endpoints (#501)
+        // v1 feature-change streaming endpoints
         new("GET", "/api/v1/streaming/features"),
         new("GET", "/api/v1/streaming/features/capabilities"),
         new("GET", "/api/v1/streaming/jobs"),
@@ -25,7 +25,7 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/admin/streaming/features/sessions"),
         new("DELETE", "/api/v1/admin/streaming/features/sessions/{sessionId}"),
 
-        // v1 controlled-conformance mutation endpoints (#3038)
+        // v1 controlled-conformance mutation endpoints
         new("POST", "/api/v1/streaming/conformance/runs"),
         new("POST", "/api/v1/streaming/conformance/runs/{runId}/mutations"),
         new("DELETE", "/api/v1/streaming/conformance/runs/{runId}"),
@@ -41,7 +41,7 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/admin/operations/type/{operationType}"),
         new("GET", "/api/v1/admin/feature-events/replay"),
 
-        // Console durable job observability endpoints (#1170)
+        // Console durable job observability endpoints
         new("GET", "/api/v1/admin/jobs"),
         new("GET", "/api/v1/admin/jobs/{jobId}"),
         new("GET", "/api/v1/admin/jobs/{jobId}/logs"),
@@ -52,7 +52,7 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/jobs/{jobId}/cancel"),
         new("POST", "/api/v1/admin/jobs/{jobId}/retry"),
 
-        // Console Share export jobs and traffic endpoints (#1216)
+        // Console Share export jobs and traffic endpoints
         new("GET", "/api/v1/admin/share/exports"),
         new("POST", "/api/v1/admin/share/exports"),
         new("GET", "/api/v1/admin/share/exports/{exportId}"),
@@ -68,40 +68,42 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/share/traffic"),
         new("GET", "/api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/share/traffic/series"),
 
-        // Mobile runtime auth and diagnostics endpoints (#924)
+        // Mobile runtime auth and diagnostics endpoints
         new("POST", "/api/mobile/exceptions"),
 
-        // FieldCollection mobile sync endpoints (#894)
+        // FieldCollection mobile sync endpoints
         new("GET", "/api/v1/fieldcollection/generation"),
         new("GET", "/api/v1/fieldcollection/sync-cursor"),
         new("POST", "/api/v1/fieldcollection/sync-cursor"),
         new("GET", "/api/v1/fieldcollection/changes"),
         new("POST", "/api/v1/fieldcollection/changes"),
 
-        // Forms package lifecycle, offline policy, and submissions (#1184)
-        new("GET", "/api/v1/admin/forms/packages"),
-        new("POST", "/api/v1/admin/forms/packages"),
-        new("GET", "/api/v1/admin/forms/packages/{formId}"),
-        new("GET", "/api/v1/admin/forms/packages/{formId}/versions"),
-        new("GET", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}"),
-        new("PUT", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}"),
-        new("POST", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/validate"),
-        new("POST", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/publish"),
-        new("POST", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/reopen"),
-        new("GET", "/api/v1/forms/packages/{formId}"),
-        new("GET", "/api/v1/forms/packages/{formId}/versions/{packageVersion}"),
-        new("GET", "/api/v1/forms/packages/{formId}/offline-policy"),
-        new("GET", "/api/v1/forms/packages/{formId}/compatibility"),
-        new("POST", "/api/v1/forms/packages/{formId}/submissions"),
+        // Forms package lifecycle, offline policy, and submissions
+        new("GET", "/api/v1/admin/forms"),
+        new("POST", "/api/v1/admin/forms"),
+        new("POST", "/api/v1/admin/forms/import"),
+        new("GET", "/api/v1/admin/forms/{formId}/export"),
+        new("GET", "/api/v1/admin/forms/{formId}"),
+        new("GET", "/api/v1/admin/forms/{formId}/versions"),
+        new("GET", "/api/v1/admin/forms/{formId}/versions/{formVersion}"),
+        new("PUT", "/api/v1/admin/forms/{formId}/versions/{formVersion}"),
+        new("POST", "/api/v1/admin/forms/{formId}/versions/{formVersion}/validate"),
+        new("POST", "/api/v1/admin/forms/{formId}/versions/{formVersion}/publish"),
+        new("POST", "/api/v1/admin/forms/{formId}/versions/{formVersion}/reopen"),
+        new("GET", "/api/v1/forms/{formId}"),
+        new("GET", "/api/v1/forms/{formId}/versions/{formVersion}"),
+        new("GET", "/api/v1/forms/{formId}/offline-policy"),
+        new("GET", "/api/v1/forms/{formId}/compatibility"),
+        new("POST", "/api/v1/forms/{formId}/submissions"),
 
-        // Back-office field data review & QA (#1159)
+        // Back-office field data review & QA
         new("GET", "/api/v1/admin/field-workflows/submissions"),
         new("GET", "/api/v1/admin/field-workflows/submissions/{submissionId}"),
         new("POST", "/api/v1/admin/field-workflows/submissions/{submissionId}/assignment"),
         new("POST", "/api/v1/admin/field-workflows/submissions/{submissionId}/decision"),
         new("POST", "/api/v1/admin/field-workflows/submissions/{submissionId}/comments"),
 
-        // Back-office field export packages (#1160)
+        // Back-office field export packages
         new("POST", "/api/v1/admin/field-workflows/exports"),
         new("GET", "/api/v1/admin/field-workflows/exports"),
 
@@ -115,7 +117,7 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/admin/observability/errors"),
         new("GET", "/api/v1/admin/observability/telemetry"),
         new("GET", "/api/v1/admin/observability/migrations"),
-        // Console Operate event viewer (#1168) — alerts, audit, unified events, logs, investigations.
+        // Console Operate event viewer — alerts, audit, unified events, logs, investigations.
         new("GET", "/api/v1/admin/observability/alerts"),
         new("GET", "/api/v1/admin/observability/alerts/{eventId}"),
         new("POST", "/api/v1/admin/observability/alerts/{eventId}/acknowledge"),

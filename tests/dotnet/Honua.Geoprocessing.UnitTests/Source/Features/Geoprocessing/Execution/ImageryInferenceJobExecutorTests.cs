@@ -29,16 +29,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Delegated imagery/ML inference lane coverage (#2241). These tests drive the
-/// production <see cref="ImageryInferenceJobExecutor"/> with the REAL
-/// <see cref="HttpImageryInferenceClient"/> adapter over a stubbed HTTP handler
-/// (no live cloud), pinning the acceptance contract: configured-backend happy
-/// paths for raster and feature outputs (georeferencing preserved byte-for-byte),
-/// the clear not-configured / recognized-but-unsupported-provider failures (no
-/// silent stub, no fake result), sanitized backend-error surfaces (no endpoint,
-/// no credentials), and secret-reference API key resolution.
-/// </summary>
 public sealed class ImageryInferenceJobExecutorTests
 {
     // A real, minimally-valid GeoTIFF fixture scene: 64x64 pixels at 10m, origin
@@ -131,15 +121,6 @@ public sealed class ImageryInferenceJobExecutorTests
         result.ErrorMessage.Should().Contain("vertex");
     }
 
-    /// <summary>
-    /// Proves the artifact <em>pass-through</em>, not inference (honua-server#4400).
-    /// </summary>
-    /// <remarks>
-    /// <c>ClassifiedGeoTiff</c> is this test's own fixture, served back by a stub HTTP handler;
-    /// no inference backend runs. What is proven is that the executor publishes the backend's
-    /// bytes unmodified, which is a real contract — but it is not a receipt that any model
-    /// produced them.
-    /// </remarks>
     [UnitTest]
     public async Task ExecuteAsync_RasterOutput_PublishesTheBackendResponseBytesUnmodified()
     {
@@ -659,7 +640,7 @@ public sealed class ImageryInferenceJobExecutorTests
     [UnitTest]
     public async Task ExecuteAsync_ExcessivelyCoarseOutput_IsRejectedNotWavedThrough()
     {
-        // Codex's worked example: a 640-unit source and a 1x1 result with a
+        // A 640-unit source and a 1x1 result with a
         // 1000-unit pixel differ by 360 units, which a whole-output-pixel
         // tolerance would have accepted as "extent preserved".
         var coarse = BuildGeoTiff(
@@ -752,7 +733,7 @@ public sealed class ImageryInferenceJobExecutorTests
     [UnitTest]
     public async Task ExecuteAsync_InRangeButOffFootprintDetections_AreRejected()
     {
-        // Codex's example: [10, 20] is numerically valid lon/lat, so a global
+        // [10, 20] is numerically valid lon/lat, so a global
         // bounds test accepts it — but the source is an EPSG:32610 (UTM 10N)
         // scene, whose zone spans roughly -129..-117 longitude. Publishing this
         // would place the detection on another continent.
@@ -997,7 +978,7 @@ public sealed class ImageryInferenceJobExecutorTests
     {
         // The same CRS spelled five ways — the four identifier forms the process
         // contract names, plus a lowercase authority. Tightening the declared-CRS
-        // check to exact identifier matching (#3053) must not start refusing a
+        // check to exact identifier matching must not start refusing a
         // backend that spells WGS 84 differently from the one form the first test
         // used.
         string[] spellings =
@@ -1028,8 +1009,8 @@ public sealed class ImageryInferenceJobExecutorTests
     [UnitTest]
     public async Task ExecuteAsync_FeaturePayloadDeclaringContrivedNearMissCrs_IsRejected()
     {
-        // Before #3053 the guard accepted any name CONTAINING "4326" or "CRS84",
-        // so these cleared it while naming a different CRS (or none at all).
+        // A guard that accepts any name CONTAINING "4326" or "CRS84" would let these
+        // through while they name a different CRS (or none at all).
         string[] nearMisses = ["EPSG:43260", "EPSG:14326", "NOT_CRS84", "CRS84_LOCAL", "my-4326-grid"];
 
         for (var i = 0; i < nearMisses.Length; i++)
@@ -1396,13 +1377,6 @@ public sealed class ImageryInferenceJobExecutorTests
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
 
-    /// <summary>
-    /// Builds a minimal but structurally valid classic little-endian TIFF. When
-    /// <paramref name="georeferenced"/> is true it also carries the GeoTIFF model
-    /// tags (ModelPixelScale 33550, ModelTiepoint 33922) and a GeoKeyDirectory
-    /// (34735) declaring the projected CRS, so the executor's real IFD parse has
-    /// genuine structure to validate rather than a magic-byte stub.
-    /// </summary>
     private static byte[] BuildGeoTiff(
         int width,
         int height,
@@ -1504,11 +1478,6 @@ public sealed class ImageryInferenceJobExecutorTests
         return buffer;
     }
 
-    /// <summary>
-    /// Builds a GeoTIFF that georeferences via ModelTransformation (34264) rather
-    /// than ModelPixelScale + ModelTiepoint, so axis signs and the off-diagonal
-    /// rotation/shear terms can be exercised directly.
-    /// </summary>
     private static byte[] BuildMatrixGeoTiff(
         int width,
         int height,
@@ -1574,12 +1543,6 @@ public sealed class ImageryInferenceJobExecutorTests
         return buffer;
     }
 
-    /// <summary>
-    /// Builds a georeferenced GeoTIFF whose pixels are split across TWO strips, so
-    /// the all-segments storage validation can be exercised.
-    /// <paramref name="truncateAfterFirstStrip"/> drops the second strip's bytes
-    /// while leaving both declared in the tags.
-    /// </summary>
     private static byte[] BuildMultiStripGeoTiff(
         int width,
         int height,
@@ -1724,10 +1687,6 @@ public sealed class ImageryInferenceJobExecutorTests
             => Task.FromResult(payload.LongLength);
     }
 
-    /// <summary>
-    /// Deterministic HTTP stub standing in for the cloud inference endpoint;
-    /// captures the outgoing body and Authorization header for assertions.
-    /// </summary>
     private sealed class StubHttpHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _responder;
@@ -1751,7 +1710,6 @@ public sealed class ImageryInferenceJobExecutorTests
         }
     }
 
-    /// <summary>Simple mutable holder for the published artifact URI.</summary>
     private sealed class CapturedArtifact(string? value)
     {
         public string? Value { get; set; } = value;

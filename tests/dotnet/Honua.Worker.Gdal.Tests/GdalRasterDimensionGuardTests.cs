@@ -8,13 +8,6 @@ using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Unit coverage for <see cref="GdalRasterDimensionGuard"/> — the pre-processing
-/// pixel-dimension admission control (#2766). Exercises the cheap TIFF-header
-/// dimension read AND the pure cap evaluation directly, with NO GDAL binary, so
-/// the decompression-bomb reject is proven to happen from a header read before any
-/// full-raster allocation.
-/// </summary>
 public sealed class GdalRasterDimensionGuardTests
 {
     private static GdalWorkerOptions Options() => new();
@@ -270,7 +263,7 @@ public sealed class GdalRasterDimensionGuardTests
         GdalRasterDimensionGuard.TryAdmit(normal, Options(), out _).Should().BeTrue();
     }
 
-    // --- positive raster-format allowlist (#2784) ------------------------------
+    // --- positive raster-format allowlist ------------------------------
 
     private static byte[] Jp2CodestreamMagic() => [0xFF, 0x4F, 0xFF, 0x51, 0x00, 0x2F, 0x00, 0x00];
 
@@ -341,7 +334,7 @@ public sealed class GdalRasterDimensionGuardTests
     [UnitTest]
     public void TryAdmit_StillAdmitsAllowlistedFormats()
     {
-        // Regression: the allowlist must not disturb the dimension-guarded formats.
+        // The allowlist must not disturb the dimension-guarded formats.
         GdalRasterDimensionGuard.TryAdmit(TiffHeaderBuilder.Classic(512, 512, 3, 8), Options(), out _).Should().BeTrue();
         GdalRasterDimensionGuard.TryAdmit(TiffHeaderBuilder.Png(256, 256, colourType: 6), Options(), out _).Should().BeTrue();
         GdalRasterDimensionGuard.TryAdmit(TiffHeaderBuilder.Jpeg(800, 600, 3), Options(), out _).Should().BeTrue();
@@ -359,7 +352,7 @@ public sealed class GdalRasterDimensionGuardTests
         GdalRasterDimensionGuard.TryAdmit(Jp2CodestreamMagic(), options, out var error).Should().BeTrue(error);
     }
 
-    // --- GeoTIFF ModelPixelScale read (resample -tr extent, #2793) -------------
+    // --- GeoTIFF ModelPixelScale read (resample -tr extent) -------------
 
     [UnitTest]
     public void ReadGeoTiffPixelScale_ReadsModelPixelScale_FromClassicTiff()

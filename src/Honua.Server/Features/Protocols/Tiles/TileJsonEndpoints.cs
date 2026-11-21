@@ -6,6 +6,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Tiles;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
@@ -52,7 +53,7 @@ internal static class TileJsonEndpoints
     {
         // Tiles is not an Esri protocol surface: unlike GeoServices /rest, layer-not-found
         // must be a real HTTP 404 with a problem+json body, not a 200-wrapped GeoServices
-        // error envelope (honua-server#2945).
+        // error envelope.
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
             context,
             layerId,
@@ -73,9 +74,7 @@ internal static class TileJsonEndpoints
         var maxZoom = Math.Max(minZoom, tileLimits.MaxTileZoom);
 
         var extent = await ResolveExtentAsync(resource, extentLayerId, featureReader, cancellationToken);
-        var bounds = extent.HasValue
-            ? new[] { extent.Value.MinX, extent.Value.MinY, extent.Value.MaxX, extent.Value.MaxY }
-            : null;
+        var bounds = extent.HasValue ? ToTileBounds(extent.Value, maxZoom) : null;
 
         var center = bounds == null
             ? null
@@ -121,6 +120,16 @@ internal static class TileJsonEndpoints
     internal static int ResolvePublicTileLayerId(MetadataV2Layer publication, int routeLayerId)
         => publication.LayerIndex ?? routeLayerId;
 
+    // A single point (or a line along one axis) would advertise zero-width bounds; widen it to
+    // one finest-zoom tile, as the OGC Tiles and WMTS discovery documents do. TileJSON clients
+    // need west < east, so a dateline-crossing extent advertises the full longitude range.
+    private static double[] ToTileBounds(FeatureExtent extent, int maxZoom)
+    {
+        var (west, south, east, north) = TileExtent.ExpandDegenerateAxes(
+            (extent.MinX, extent.MinY, extent.MaxX, extent.MaxY), maxZoom);
+        return west > east ? [-180, south, 180, north] : [west, south, east, north];
+    }
+
     private static async Task<FeatureExtent?> ResolveExtentAsync(
         MetadataV2Object resource,
         int layerId,
@@ -158,7 +167,7 @@ internal static class TileJsonEndpoints
     {
         var fields = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var geometryField = resource.FindPrimaryGeometryField();
-        foreach (var field in resource.SchemaFields)
+        foreach (var field in resource.VisibleSchemaFields())
         {
             if (geometryField is not null &&
                 string.Equals(field.Name, geometryField.Name, StringComparison.OrdinalIgnoreCase))

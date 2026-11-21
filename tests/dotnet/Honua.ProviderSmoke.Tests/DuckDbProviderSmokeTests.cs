@@ -3,12 +3,6 @@
 
 namespace Honua.ProviderSmoke.Tests;
 
-/// <summary>
-/// Interface-level HTTP-stack smoke coverage for the DuckDB provider (honua-server#2947).
-/// Boots a real ASP.NET Core host with <c>DataSource:Provider=duckdb</c> against a
-/// standalone, file-backed DuckDB database. See <see cref="PrimaryProviderSmokeTestsBase"/>
-/// for the shared assertions.
-/// </summary>
 [Trait("Provider", "DuckDb")]
 public sealed class DuckDbProviderSmokeTests : PrimaryProviderSmokeTestsBase, IClassFixture<DuckDbProviderWebAppFixture>
 {
@@ -21,7 +15,6 @@ public sealed class DuckDbProviderSmokeTests : PrimaryProviderSmokeTestsBase, IC
 
     protected override HttpClient Client => _fixture.Client;
 
-    // The bbox and raster-tile smoke cases live in PrimaryProviderSmokeTestsBase since
-    // the honua-server#2965 EWKB converter fix landed; they run here against DuckDB and
-    // against MySQL through the shared base.
+    // The bbox and raster-tile smoke cases live in PrimaryProviderSmokeTestsBase; they
+    // run here against DuckDB and against MySQL through the shared base.
 }

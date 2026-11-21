@@ -205,8 +205,7 @@ public sealed class OgcFeaturesGeometryServicesTests
         => new(
             new Honua.Infrastructure.Services.GeometryService(Options.Create(new LimitsOptions())),
             new IdentityCoordinateTransformService(),
-            Options.Create(new LimitsOptions()),
-            NullLogger<OgcFeaturesGeometryServices>.Instance);
+            Options.Create(new LimitsOptions()));
 
     private sealed class IdentityCoordinateTransformService : ICoordinateTransformService
     {

@@ -122,7 +122,7 @@ internal sealed class CapabilityManifestService(
             : BuildCapabilities(policyContext, operationCapabilities);
         capabilities = StampRollbackTargets(capabilities, operationCapabilities, policyContext);
         capabilities = [.. capabilities, BuildBackgroundImportCapability(policyContext)];
-        capabilities = [.. capabilities, BuildObjectStoreImportCapability(policyContext)];
+        capabilities = [.. capabilities, await BuildObjectStoreImportCapabilityAsync(policyContext, cancellationToken).ConfigureAwait(false)];
         capabilities = [.. capabilities, .. BuildFileFormatCapabilities(policyContext, request.Principal)];
         capabilities = ApplyCompiledProtocolProfile(capabilities);
         var packages = options.ManifestFromRegistry
@@ -278,13 +278,13 @@ internal sealed class CapabilityManifestService(
         {
             // serverVersion stays the mutable release version. The immutable deployment
             // identity is a separate field so evidence consumers can bind a retained
-            // artifact to exact code/image content (#3038, REQ-004).
+            // artifact to exact code/image content (REQ-004).
             //
             // Read through the SAME normalizer the streaming capability surface uses, rather
             // than the raw InformationalVersion: with SourceLink or SemVer build metadata
-            // (`1.0.0+<sha>`) the two documents advertised different serverVersion values for
-            // one running server, and this one mixed immutable build identity back into the
-            // field the change documents as mutable (honua-server#3038 review).
+            // (`1.0.0+<sha>`) the raw value would differ between the two documents for one
+            // running server and mix immutable build identity back into a field documented as
+            // mutable.
             ServerVersion = identity.ReleaseVersion,
             ApiVersion = "v1",
             MetadataApiVersion = MetadataV2Constants.ApiVersion,
@@ -522,7 +522,7 @@ internal sealed class CapabilityManifestService(
             Capability("upload.file", "upload", context, entitlementKey: "import.file", policyCapability: "metadata.write"),
             Capability("edit.features", "edit", context, entitlementKey: FeatureCatalog.FeatureServerEditsKey, policyCapability: "features.edit"),
 
-            // Collaborative-editing leases (#4402). Enforcement ships on every feature-write
+            // Collaborative-editing leases. Enforcement ships on every feature-write
             // path, so `supported` is true unconditionally; `available` follows whether the
             // deployment supplied an IFeatureLockAuthorizer, because the shipped one denies
             // every claim and an "available" lease nobody can take is the exact over-claim
@@ -538,11 +538,18 @@ internal sealed class CapabilityManifestService(
                     ? null
                     : CapabilityReasonCodes.DependencyUnavailable,
                 requiresAuthentication: true),
+            // Console catalog, share and open-data state survives a restart only in the system database.
+            // Anonymous: public share pages read it before anyone signs in.
+            Capability("console.content.persistent", "console", context,
+                configured: runtimeInventory.HasDurableConsoleContent,
+                unavailableReasonOverride: runtimeInventory.HasDurableConsoleContent
+                    ? null
+                    : CapabilityReasonCodes.DependencyUnavailable),
             Capability("edit.geoservices-version-tokens", "edit", context,
                 maturity: CapabilityMaturity.Planned,
                 supported: false),
             // Branch versioning (VMS) — built-experimental, gated OFF the GA surface by
-            // default (#2480 / ADR-0058). Mirrors the registry descriptor order
+            // default (ADR-0058). Mirrors the registry descriptor order
             // (CapabilityRegistry.BuildManifestCapabilityDescriptors) so the hand-curated and
             // registry-derived Capabilities[] stay byte-identical.
             Capability("versioning.branch", "versioning", context,
@@ -724,6 +731,11 @@ internal sealed class CapabilityManifestService(
                 Configured = runtimeInventory.HasSharedFeatureLockStore && runtimeInventory.FeatureLockAuthorizerConfigured,
                 UnavailableReason = runtimeInventory.HasSharedFeatureLockStore ? null : CapabilityReasonCodes.DependencyUnavailable,
                 RequiresAuthentication = true,
+            },
+            ["console.content.persistent"] = new()
+            {
+                Configured = runtimeInventory.HasDurableConsoleContent,
+                UnavailableReason = runtimeInventory.HasDurableConsoleContent ? null : CapabilityReasonCodes.DependencyUnavailable,
             },
             ["versioning.branch"] = new() { EntitlementKey = FeatureCatalog.BranchVersioningKey },
             ["operate.status"] = new() { RequiresAuthentication = true },
@@ -952,7 +964,7 @@ internal sealed class CapabilityManifestService(
             [
                 Transport("rest-http", supported: true, available: true),
                 // The three protocol surfaces advertise their rolled-up wire-contract
-                // version (ADR-0058 / honua-release#32). The version constant is owned by
+                // version (ADR-0058). The version constant is owned by
                 // the protocol assembly that owns the surface, so the manifest cannot drift
                 // from the surface it describes.
 #if HONUA_EXCLUDE_GEOSERVICES
@@ -1366,13 +1378,17 @@ internal sealed class CapabilityManifestService(
         };
     }
 
-    private CapabilityManifestCapability BuildObjectStoreImportCapability(CapabilityPolicyContext context)
+    private async Task<CapabilityManifestCapability> BuildObjectStoreImportCapabilityAsync(
+        CapabilityPolicyContext context,
+        CancellationToken cancellationToken)
     {
+        var configured = options.ObjectStoreImport is { } availability
+            && await availability.IsConfiguredAsync(cancellationToken).ConfigureAwait(false);
         var capability = Capability(
             ObjectStoreImportCapabilityId,
             "import",
             context,
-            configured: options.ObjectStoreConfigured,
+            configured: configured,
             entitlementKey: "import.file",
             policyCapability: "metadata.write");
         return capability with { Schemes = ["s3"] };
@@ -1643,7 +1659,7 @@ internal static class CapabilityReasonCodes
     public const string EnvironmentUnavailable = "environment-unavailable";
     public const string WorkspaceScopeRequired = "workspace-scope-required";
 
-    // A missing optional Redis reads as degraded, not as an available capability whose operations return 503.
+    // A missing required dependency reads as degraded, not as an available capability whose operations return 503.
     public const string DependencyUnavailable = Core.Features.Capabilities.CapabilityUnavailableCodes.ErrorCode;
 }
 

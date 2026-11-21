@@ -41,8 +41,7 @@ internal sealed partial class InMemoryCollaborationSessionService
         _provider = realtime?.Provider;
         _relay = realtime?.Relay;
         // Advertised capabilities must match what the endpoints will actually accept: when the
-        // deployment fails edits closed, the stream must not claim operations are available
-        // (honua-server#2999 review).
+        // deployment fails edits closed, the stream must not claim operations are available.
         _capabilities = realtime?.Capabilities;
     }
 
@@ -653,8 +652,8 @@ internal sealed partial class InMemoryCollaborationSessionService
 
             // Presence frames are disposable, but a committed operation (or a not-yet-delivered
             // resync notice) falling off the bounded outbox would permanently desync the client:
-            // later operations keep arriving while a cursor range silently vanishes
-            // (honua-server#2999). Turn any such eviction into an explicit resync-required error
+            // later operations keep arriving while a cursor range silently vanishes.
+            // Turn any such eviction into an explicit resync-required error
             // so the client replays the op log from its last known cursor.
             var operationEvicted = false;
             while (state.Outbox.Count >= MaxOutboxDepth)
@@ -666,7 +665,7 @@ internal sealed partial class InMemoryCollaborationSessionService
             // notice — which necessarily draws a HIGHER sequence — has to follow it. Queuing the
             // notice first would hand the client S+1 before S, and the monotonic v1 reducer
             // would discard `ev` itself; for a cursor/selection/presence frame that loss is not
-            // recoverable by replaying the operation log (honua-server#2999 review).
+            // recoverable by replaying the operation log.
             state.Outbox.Enqueue(ev);
 
             if (operationEvicted)

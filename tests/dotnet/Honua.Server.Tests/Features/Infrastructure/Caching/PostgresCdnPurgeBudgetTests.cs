@@ -32,16 +32,17 @@ public sealed class PostgresCdnPurgeBudgetTests(DatabaseFixtureAdapter database)
         var first = new PostgresCdnPurgeBudget(harness.Database, NullLogger<PostgresCdnPurgeBudget>.Instance, monitor);
         var second = new PostgresCdnPurgeBudget(harness.Database, NullLogger<PostgresCdnPurgeBudget>.Instance, monitor);
         options.PurgeBudget.MonthlyEditSubmissions = 1;
-        Assert.Equal(CdnPurgeBudgetDecision.Admitted, (await first.TryAdmitEditAsync(1, 0)).Decision);
+        Assert.Equal(CdnPurgeBudgetDecision.Admitted, (await first.TryAdmitEditAsync(1, 0.25m)).Decision);
         Assert.Equal(CdnPurgeBudgetDecision.Exceeded, (await second.ReadCurrentMonthAsync())!.Value.Decision);
 
         options.PurgeBudget.MonthlyEditSubmissions = 3;
         Assert.Equal(CdnPurgeBudgetDecision.Admitted, (await second.ReadCurrentMonthAsync())!.Value.Decision);
-        Assert.Equal(CdnPurgeBudgetDecision.Admitted, (await second.TryAdmitEditAsync(3, 0)).Decision);
+        Assert.Equal(CdnPurgeBudgetDecision.Admitted, (await second.TryAdmitEditAsync(3, 0.25m)).Decision);
         options.PurgeBudget.MonthlyEditSubmissions = 0;
         Assert.Equal(CdnPurgeBudgetDecision.Admitted, (await second.ReadCurrentMonthAsync())!.Value.Decision);
         options.PurgeBudget.MonthlyEditSubmissions = 2;
         Assert.Equal(CdnPurgeBudgetDecision.Exceeded, (await first.ReadCurrentMonthAsync())!.Value.Decision);
         Assert.Equal(CdnPurgeBudgetDecision.Exceeded, (await first.TryAdmitEditAsync(2, 0)).Decision);
+        Assert.Equal(new CdnPurgeAdmission(CdnPurgeBudgetDecision.Exceeded, 2, 0.5m), await first.TryAdmitEditAsync(1, 0.25m));
     }
 }

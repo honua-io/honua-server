@@ -11,10 +11,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.NAServer;
 
-/// <summary>
-/// Focused unit tests for the NAServer parameter translation and result mapping
-/// helpers — no HTTP host or database required.
-/// </summary>
 [Protocol(TestProtocols.NAServer)]
 public sealed class NAServerTranslationUnitTests
 {
@@ -114,7 +110,7 @@ public sealed class NAServerTranslationUnitTests
     [Operation(Operations.Directions)]
     public void MapRoute_Directions_NameTheirRouteAndSummarizeIt()
     {
-        // #4035: a three-vertex route whose extent is xmin -157.86, ymin 21.29, xmax -157.84,
+        // A three-vertex route whose extent is xmin -157.86, ymin 21.29, xmax -157.84,
         // ymax 21.31 (read off the coordinates below), with totals 2500 m / 9.5 min.
         var result = new RouteSolveResult(
             "{\"type\":\"LineString\",\"coordinates\":[[-157.85,21.30],[-157.86,21.31],[-157.84,21.29]]}",
@@ -164,7 +160,7 @@ public sealed class NAServerTranslationUnitTests
     [Operation(Operations.Directions)]
     public void MapClosestFacility_Directions_OneNamedSetPerRoute()
     {
-        // #4035: two ranked routes with distinct steps must produce two direction sets, each
+        // Two ranked routes with distinct steps must produce two direction sets, each
         // named after its own route, not one unnamed set holding both routes' steps.
         var result = new ClosestFacilitySolveResult(
         [
@@ -327,7 +323,7 @@ public sealed class NAServerTranslationUnitTests
         requestWithInSr.InSrid.Should().Be(4326);
     }
 
-    // #4025: lon/lat (0,0) and (0.01,0.01) projected to EPSG:3857 with the spherical Mercator
+    // Lon/lat (0,0) and (0.01,0.01) projected to EPSG:3857 with the spherical Mercator
     // formulas x = R*lon, y = R*ln(tan(pi/4 + lat/2)), R = 6378137.
     private const string WebMercatorFeatureSet = """
         {

@@ -117,7 +117,7 @@ internal sealed partial class FeatureQueryBuilder
     // exception: when Limit is set but no ORDER BY is appended the database returns an arbitrary
     // heap/plan order, while the next page (which injects ORDER BY objectid because it has an
     // Offset) is drawn from a different ordering, silently skipping and duplicating rows across
-    // the page boundary (#2070). Mirrors the sibling MySQL provider, which has no LIKE carve-out.
+    // the page boundary. Mirrors the sibling MySQL provider, which has no LIKE carve-out.
     private static bool RequiresStablePageOrder(FeatureQuery query)
         => query.Offset.HasValue ||
            query.SpatialFilter.HasValue ||

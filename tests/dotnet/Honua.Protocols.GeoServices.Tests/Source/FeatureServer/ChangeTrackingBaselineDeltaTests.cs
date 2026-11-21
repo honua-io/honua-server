@@ -15,12 +15,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Integration tests for FeatureServer incremental change tracking (#1876): the change-log delta path
-/// must report a feature added since a generation as an add on a sync from that generation, and must
-/// NOT re-report it on the next sync from the advanced generation (snapshot-once-then-delta). Also
-/// verifies migration 059 seeds a baseline so pre-change-tracking data is discoverable from gen 0.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class ChangeTrackingBaselineDeltaTests : IAsyncLifetime
@@ -85,9 +79,9 @@ public sealed class ChangeTrackingBaselineDeltaTests : IAsyncLifetime
             new Honua.Core.Features.FeatureStore.Domain.FeatureQuery { Limit = 1 },
             CancellationToken.None);
 
-        // #4405: this used to `return` when the layer was empty, so a fixture that stopped
-        // seeding turned the whole contract into a silent pass. The seeded layer is a
-        // precondition of the test, not an optional input — assert it.
+        // The seeded layer is a precondition of the test, not an optional input — assert it.
+        // Returning early on an empty layer would turn the whole contract into a silent pass
+        // as soon as a fixture stopped seeding.
         seeded.Items.Should().NotBeEmpty(
             "the test layer must be seeded for a gen-0 baseline scan to prove anything");
 

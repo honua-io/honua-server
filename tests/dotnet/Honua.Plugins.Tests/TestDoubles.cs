@@ -9,7 +9,6 @@ using Honua.Plugins.Abstractions;
 
 namespace Honua.Plugins.Tests;
 
-/// <summary>Shared fakes and builders for the plugin SDK tests.</summary>
 internal static class TestData
 {
     public static Feature Transformer(double voltage, long id = 0)
@@ -26,7 +25,6 @@ internal static class TestData
         => new(EditKind.Create, requestIndex, ObjectId: null, feature);
 }
 
-/// <summary>Records audit events for assertions.</summary>
 internal sealed class RecordingAuditLog : IAuditLog
 {
     public List<AuditEvent> Events { get; } = [];
@@ -38,7 +36,6 @@ internal sealed class RecordingAuditLog : IAuditLog
     }
 }
 
-/// <summary>Validator that always rejects and counts invocations. Ordered first by id.</summary>
 [Plugin("aaa-rejecting", "1.0.0")]
 internal sealed class RejectingValidator : IFeatureValidator
 {
@@ -52,7 +49,6 @@ internal sealed class RejectingValidator : IFeatureValidator
     }
 }
 
-/// <summary>Validator that always succeeds and counts invocations. Ordered second by id.</summary>
 [Plugin("zzz-counting", "1.0.0")]
 internal sealed class CountingValidator : IFeatureValidator
 {
@@ -66,7 +62,6 @@ internal sealed class CountingValidator : IFeatureValidator
     }
 }
 
-/// <summary>After-hook that throws on every after-edit invocation, counting attempts.</summary>
 [Plugin("faulting-after-hook", "1.0.0")]
 internal sealed class FaultingAfterHook : IEditHook
 {
@@ -82,11 +77,6 @@ internal sealed class FaultingAfterHook : IEditHook
     }
 }
 
-/// <summary>
-/// Minimal read-only <see cref="IFeatureReader"/> stub shared by the data-store test doubles. It
-/// answers reads with empties and never throws; the data-store tests assert registration/resolution
-/// through the provider registry, not query execution.
-/// </summary>
 internal sealed class StubFeatureReader : IFeatureReader
 {
     public static StubFeatureReader Instance { get; } = new();
@@ -131,12 +121,6 @@ internal sealed class StubFeatureReader : IFeatureReader
         => Task.FromResult(ImmutableArray<IReadOnlyDictionary<string, object?>>.Empty);
 }
 
-/// <summary>
-/// Read-only vector data-store plugin (issue #2856): a <c>[Plugin]</c> implementing the Core
-/// <see cref="IFeatureDataProvider"/> seam, declaring the <see cref="PluginCapability.DataStore"/>
-/// capability. Proves a third party can contribute a read-only source that the existing provider
-/// registry/router resolve by name.
-/// </summary>
 [Plugin("sample-vector-source", "1.0.0",
     Description = "Read-only in-memory vector source.",
     Capabilities = PluginCapability.DataStore)]
@@ -153,7 +137,6 @@ internal sealed class ReadOnlyVectorSourcePlugin : IFeatureDataProvider
     public IFeatureWriter? Writer => null;
 }
 
-/// <summary>Data-store plugin that omits the required <see cref="PluginCapability.DataStore"/> flag.</summary>
 [Plugin("uncapped-source", "1.0.0")]
 internal sealed class UncappedDataStorePlugin : IFeatureDataProvider
 {
@@ -166,7 +149,6 @@ internal sealed class UncappedDataStorePlugin : IFeatureDataProvider
     public IFeatureWriter? Writer => null;
 }
 
-/// <summary>Output-format plugin that omits the required <see cref="PluginCapability.OutputFormats"/> flag.</summary>
 [Plugin("uncapped-format", "1.0.0")]
 internal sealed class UncappedOutputFormatPlugin : IFeatureOutputFormat
 {
@@ -181,7 +163,6 @@ internal sealed class UncappedOutputFormatPlugin : IFeatureOutputFormat
         => ValueTask.FromResult(0L);
 }
 
-/// <summary>Output-format plugin that illegally claims a reserved built-in wire token (<c>csv</c>).</summary>
 [Plugin("reserved-format-collision", "1.0.0", Capabilities = PluginCapability.OutputFormats)]
 internal sealed class ReservedTokenOutputFormatPlugin : IFeatureOutputFormat
 {
@@ -196,7 +177,6 @@ internal sealed class ReservedTokenOutputFormatPlugin : IFeatureOutputFormat
         => ValueTask.FromResult(0L);
 }
 
-/// <summary>Edit hook that records before/after invocations and can reject the batch.</summary>
 [Plugin("hook", "1.0.0")]
 internal sealed class RecordingEditHook(bool rejectBatch = false) : IEditHook
 {

@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 CRASH = ROOT / "scripts/qualification/gp-store-crash.sh"
 HARNESS = ROOT / "scripts/qualification/gp-lifecycle-harness.sh"
+JOB_STORE = ROOT / "scripts/qualification/gp-job-store.sh"
 
 
 def functions(path, *names):
@@ -46,13 +47,12 @@ run_output_write_failure || result=$?
 set -uo pipefail
 scenario_name=output-write-failure; scenario_finding=""; scenario_cleanup_failure=""
 runtime_taint=""; scenario_evidence_file="$PWD/evidence"; native_payload='{}'
-unset HONUA_GP_QUALIFICATION_BARRIER_ROOT HONUA_GP_WORKER_REDIS
+unset HONUA_GP_QUALIFICATION_BARRIER_ROOT
 if [[ "$INITIAL" == custom ]]; then
-  export HONUA_GP_QUALIFICATION_BARRIER_ROOT=/caller HONUA_GP_WORKER_REDIS=caller:6379
+  export HONUA_GP_QUALIFICATION_BARRIER_ROOT=/caller
 fi
 environment_state() {
-  printf '%s\n' "${HONUA_GP_QUALIFICATION_BARRIER_ROOT+x}:${HONUA_GP_QUALIFICATION_BARRIER_ROOT-}" \
-    "${HONUA_GP_WORKER_REDIS+x}:${HONUA_GP_WORKER_REDIS-}"
+  printf '%s\n' "${HONUA_GP_QUALIFICATION_BARRIER_ROOT+x}:${HONUA_GP_QUALIFICATION_BARRIER_ROOT-}"
 }
 environment_state > before
 compose() {
@@ -196,7 +196,7 @@ else [[ "$result" != 0 ]] || exit 73; fi
                                EXPECTED=expected)
 
     def test_write_failure_requires_real_store_stack_and_empty_retry(self):
-        script = functions(CRASH, "observe_store_write_retry") + r'''
+        script = f"source {JOB_STORE}\n" + functions(CRASH, "observe_store_write_retry") + r'''
 set -uo pipefail
 job=job-1; scenario=output-write-failure; receipt_root="$PWD"; object_root="$PWD/store"
 scenario_evidence_file="$PWD/evidence.json"; outage_started=timestamp

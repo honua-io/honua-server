@@ -6,24 +6,6 @@ using System.Text.Json;
 
 namespace Honua.ProviderSmoke.Tests;
 
-/// <summary>
-/// Interface-level HTTP-stack smoke coverage for the MySql/MariaDB provider
-/// (honua-server#2947). Boots a real ASP.NET Core host with
-/// <c>DataSource:Provider=mysql</c> against a Testcontainers <c>mysql:8</c> instance. See
-/// <see cref="PrimaryProviderSmokeTestsBase"/> for the shared read assertions, including
-/// the bbox and raster-tile cases that were skipped here until the honua-server#2965
-/// EWKB/plain-WKB converter fix landed.
-/// </summary>
-/// <remarks>
-/// MySQL/MariaDB is a read/query-only provider by design (docs/reference/configuration/
-/// data-sources): <c>MySqlFeatureStore.Writer</c> is <see langword="null"/>, its
-/// capabilities are <c>FeatureProviderCapabilities.ReadOnlyMySql</c>, and DI registers a
-/// <c>ReadOnlyFeatureWriter</c> that rejects every write with
-/// <see cref="NotSupportedException"/>. The edit round-trip test here therefore proves the
-/// documented rejection posture — a clean 405 MethodNotAllowed through the shared
-/// exception mapping (Esri-style: HTTP 200 with an <c>error.code</c> body), never the
-/// generic 500 — and that a rejected edit batch leaves the seeded data untouched.
-/// </remarks>
 [Trait("Provider", "MySql")]
 public sealed class MySqlProviderSmokeTests : PrimaryProviderSmokeTestsBase, IClassFixture<MySqlProviderWebAppFixture>
 {
@@ -78,7 +60,7 @@ public sealed class MySqlProviderSmokeTests : PrimaryProviderSmokeTestsBase, ICl
         var response = await Client.SendAsync(request);
 
         // GeoServices REST errors are signalled Esri-style: HTTP 200 with an
-        // {"error":{"code":...}} body (PA-070/PA-117). The read-only provider's
+        // {"error":{"code":...}} body. The read-only provider's
         // NotSupportedException maps through the shared exception mapping to the 405
         // MethodNotAllowed body code — the documented rejection — never the generic 500
         // InternalServerError code.
@@ -161,13 +143,8 @@ public sealed class MySqlProviderSmokeTests : PrimaryProviderSmokeTestsBase, ICl
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task FeatureServer_ApplyEdits_RetriedAfterReadOnlyRejection_Repeats405InsteadOfConflict()
     {
-        // honua-server#3052: the read-only rejection is raised as NotSupportedException AFTER the
-        // handler has reserved the Idempotency-Key. Before the fix nothing released that
-        // reservation, so a client retrying inside the ~60s reservation window found no replay
-        // value, lost TryReserveAsync, and was answered with the idempotency conflict instead of a
-        // repeat of the documented 405. This is the most visible instance of the leak because on a
-        // read/query-only provider EVERY keyed edit fails, so EVERY keyed retry degraded to a
-        // conflict.
+        // A read-only provider rejects edits after reserving the idempotency key. Release
+        // the reservation so keyed retries receive the documented 405 response.
         var payload = /*lang=json,strict*/ """
             {
               "adds": [

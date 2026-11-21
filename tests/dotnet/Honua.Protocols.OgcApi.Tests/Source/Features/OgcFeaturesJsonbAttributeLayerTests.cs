@@ -13,14 +13,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
-/// <summary>
-/// Regression for honua-server#1238: querying a JSONB-attribute-backed layer (mobile
-/// offline demo layer 68910) via OGC API Features <c>/items</c> must succeed only because
-/// the storage binding declares <c>attributesColumn=attributes</c>. Without that accessor
-/// the storage-mapped reader projects bare columns against the shared <c>features</c> table
-/// (which has none) and Postgres raises 42703 — surfacing as an OGC 500. This test
-/// reproduces the broken drift, then proves the seed/bridge fix resolves it.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiFeatures)]
 [Operation(Operations.Query)]
@@ -38,7 +30,7 @@ public sealed class OgcFeaturesJsonbAttributeLayerTests : IAsyncLifetime
         var seedPath = RepositoryPaths.Resolve("tests", "seed", "mobile-offline-demo-v1.sql");
         var seedSql = await File.ReadAllTextAsync(seedPath);
 
-        // honua-server#1568 (signature 2): the seed runs ALTER/INSERT DDL against the literal,
+        // The seed runs ALTER/INSERT DDL against the literal,
         // process-global honua schema, which the per-test search_path isolation does not scope.
         // Apply it under the shared seed advisory lock so parallel [Collection("Database")] tests
         // do not deadlock (40P01) racing ACCESS EXCLUSIVE locks on the same global honua.* objects.
@@ -67,7 +59,7 @@ public sealed class OgcFeaturesJsonbAttributeLayerTests : IAsyncLifetime
             "without the JSONB accessor the reader projects bare columns and Postgres "
             + "rejects the query with 42703 (the honua-server#1238 failure)");
 
-        // The fix: with the accessor, declared fields resolve as attributes->>'field'.
+        // Declared fields resolve through the accessor as attributes->>'field'.
         await MobileOfflineDemoGraphPublisher.PublishAsync(Provider, includeAttributesAccessor: true);
 
         var fixedResponse = await _fixture.Client.GetAsync(requestUri);
@@ -80,14 +72,6 @@ public sealed class OgcFeaturesJsonbAttributeLayerTests : IAsyncLifetime
             "the v1 seed inserts three deterministic offline-site features");
     }
 
-    /// <summary>
-    /// Regression for honua-server#1238 follow-up (post-merge Codex P1): layers 68910 (3 point
-    /// features) and 68920 (2 polygon features) both live in the shared <c>features</c> table,
-    /// discriminated by <c>layer_id</c>. A query for one layer must return only that layer's
-    /// rows — never the other layer's features stored in the same table. We assert isolation via
-    /// both the OGC API Features <c>/items</c> and the GeoServices FeatureServer <c>/query</c>
-    /// surfaces, since both adapt through the storage-mapped reader.
-    /// </summary>
     [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/68910/items")]
     public async Task GetItems_SharedFeaturesTable_IsolatesByLayerDiscriminator()

@@ -40,9 +40,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests for GeoServer import endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
@@ -317,7 +314,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
             cancelResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
             // Delivery after cancellation must neither invoke import nor replace its status.
-            await ProcessDequeuedJobAsync(fixture, jobId).WaitAsync(TimeSpan.FromSeconds(20));
+            await ProcessCancelledDequeuedJobAsync(fixture, jobId).WaitAsync(TimeSpan.FromSeconds(20));
             using var response = await client.GetAsync($"/api/v1/admin/import/geoserver/jobs/{jobId}");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var cancelled = await response.Content.ReadFromJsonAsync<JsonDocument>();
@@ -337,7 +334,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/operations/{operationId}/cancel")]
     public async Task CancelJob_AfterDequeueBeforeRequestRead_PreservesCancelledWithoutImporting(bool universalCancel)
     {
-        var underlying = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
+        var underlying = new UniversalProgressStore();
         var store = Substitute.For<IUniversalProgressStore>();
         var snapshotRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -380,13 +377,13 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
             var manager = fixture.Services.GetRequiredService<GeoServerImportJobManager>();
             Interlocked.Exchange(ref armed, 1);
             // Drive exactly the dequeue -> first-read boundary without scheduler delays.
-            processing = ProcessDequeuedJobAsync(fixture, jobId);
+            processing = ProcessCancelledDequeuedJobAsync(fixture, jobId);
             await snapshotRead.Task.WaitAsync(TimeSpan.FromSeconds(20));
             var cancelPath = universalCancel
                 ? $"/api/v1/admin/operations/{jobId}/cancel"
                 : $"/api/v1/admin/import/geoserver/jobs/{jobId}/cancel";
             var cancel = await fixture.Client.PostAsync(cancelPath, null);
-            cancel.StatusCode.Should().Be(HttpStatusCode.OK);
+            cancel.StatusCode.Should().Be(HttpStatusCode.OK, await cancel.Content.ReadAsStringAsync());
             releaseRead.SetResult();
             await processing.WaitAsync(TimeSpan.FromSeconds(20));
             using var response = await fixture.Client.GetAsync($"/api/v1/admin/import/geoserver/jobs/{jobId}");
@@ -410,7 +407,7 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/geoserver/jobs/{jobId}/cancel")]
     public async Task CancelJob_RejectsStaleWorkerProgressAndTerminalWrites()
     {
-        var store = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
+        var store = new UniversalProgressStore();
         var environment = Substitute.For<IHostEnvironment>();
         environment.EnvironmentName.Returns("Development");
         var manager = new GeoServerImportJobManager(store, NullLogger<GeoServerImportJobManager>.Instance);
@@ -444,11 +441,20 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
             services.Remove(worker);
         });
 
-    private static async Task ProcessDequeuedJobAsync(WebAppFixture fixture, string jobId)
+    // A cancelled import may report itself by throwing, which the job service records as cancelled;
+    // callers assert the durable outcome instead.
+    private static async Task ProcessCancelledDequeuedJobAsync(WebAppFixture fixture, string jobId)
     {
         var worker = ActivatorUtilities.CreateInstance<GeoServerImportJobExecutor>(fixture.Services);
         var job = await fixture.Services.GetRequiredService<IExecutionJobStore>().GetAsync(jobId);
-        await worker.ExecuteAsync(job!, Substitute.For<IJobExecutionContext>(), CancellationToken.None);
+        try
+        {
+            await worker.ExecuteAsync(job!, Substitute.For<IJobExecutionContext>(), CancellationToken.None);
+        }
+        catch (OperationCanceledException cancelled)
+        {
+            cancelled.Message.Should().Be("The import was cancelled before it started.");
+        }
     }
 
     private async Task<string> GetJobIdAsync(HttpResponseMessage response)

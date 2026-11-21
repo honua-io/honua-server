@@ -47,7 +47,6 @@ public sealed class ServicePublishTransportAuthorizationTests : IAsyncLifetime
     private readonly IGeoprocessingJobService _jobService;
     private readonly MutableApprovalEvaluator _approvalEvaluator = new();
     private readonly WebAppFixture _fixture;
-    private readonly RedisFixture _redis = new();
     private string _adminReadKey = null!;
     private string _adminWriteKey = null!;
 
@@ -139,10 +138,8 @@ public sealed class ServicePublishTransportAuthorizationTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        await _redis.InitializeAsync();
         _fixture.ConfigureWebHost(builder =>
         {
-            builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
             builder.UseSetting("Public:BaseUrl", "http://localhost");
             builder.UseSetting("Licensing:DevGrantEdition", "Pro");
         });
@@ -165,7 +162,6 @@ public sealed class ServicePublishTransportAuthorizationTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _fixture.DisposeAsync();
-        await _redis.DisposeAsync();
     }
 
     [IntegrationTest]
@@ -300,7 +296,7 @@ public sealed class ServicePublishTransportAuthorizationTests : IAsyncLifetime
     {
         await _publishing.Received(1).PublishLayerAsync(
             Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
-        await _graphProvider.Received(1).GetCurrentAsync(Arg.Any<CancellationToken>());
+        await _graphProvider.Received().GetCurrentAsync(Arg.Any<CancellationToken>());
     }
 
     private async Task AssertZeroActuationAsync()

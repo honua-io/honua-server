@@ -15,6 +15,10 @@ public sealed class ExternalPostgisWhereValidationTests
     [InlineData("active = true -- comment")]
     [InlineData("active = true /* comment */")]
     [InlineData("active = true OR delete FROM features")]
+    [InlineData("nextval('counter') > 0")]
+    [InlineData("pg_sleep(1) IS NULL")]
+    [InlineData("name = $$external$$")]
+    [InlineData("key IN (SELECT key FROM features)")]
     public void Validate_UnsafePostgisWhere_IsRejected(string where)
     {
         var (violations, _) = ProcessPlanValidator.Validate(Plan(where), new BuiltInProcessCatalog());

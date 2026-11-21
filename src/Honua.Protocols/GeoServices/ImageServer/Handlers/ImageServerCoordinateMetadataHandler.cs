@@ -24,6 +24,9 @@ internal sealed class ImageServerCoordinateMetadataHandler
 {
     private const double WebMercatorEarthRadius = 6378137d;
 
+    private static readonly string TooManyPointsError =
+        $"geometries cannot contain more than {ImageServerRequestLimits.MaxInputPoints.ToString(CultureInfo.InvariantCulture)} points.";
+
     private readonly IRasterStore _rasterStore;
     private readonly IImageServerCatalogReader _catalogReader;
     private readonly ILogger<ImageServerCoordinateMetadataHandler> _logger;
@@ -124,6 +127,11 @@ internal sealed class ImageServerCoordinateMetadataHandler
                 return StandardErrorHelpers.CreateBadRequest(context, pointError ?? "Invalid geometries.");
             }
 
+            if (inputPoints.Count > ImageServerRequestLimits.MaxInputPoints)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, TooManyPointsError);
+            }
+
             if (!TryResolveRasterId(values, out var rasterId, out var rasterIdError))
             {
                 ImageServerLog.InvalidIdentifyParameters(_logger, layerId, rasterIdError ?? "Invalid rasterId.");
@@ -139,23 +147,22 @@ internal sealed class ImageServerCoordinateMetadataHandler
                 return StandardErrorHelpers.CreateNotFound(context, "Raster not found.");
             }
 
-            var requestSrid = ReadRequestSpatialReference(values);
-            var pixelPoints = new List<PixelLocationPoint>(inputPoints.Count);
-            foreach (var point in inputPoints)
+            var mapPoints = await TransformToRasterSridAsync(
+                inputPoints,
+                ReadRequestSpatialReference(values),
+                raster.Value.Srid,
+                cancellationToken).ConfigureAwait(false);
+            if (mapPoints is null)
             {
-                var mapPoint = await TransformToRasterSridAsync(
-                    point,
-                    requestSrid,
-                    raster.Value.Srid,
-                    cancellationToken).ConfigureAwait(false);
-                if (mapPoint is null)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        "Input geometries could not be transformed into the raster spatial reference.");
-                }
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "Input geometries could not be transformed into the raster spatial reference.");
+            }
 
-                if (!TryMapToPixel(raster.Value, mapPoint.Value.X, mapPoint.Value.Y, out var column, out var row))
+            var pixelPoints = new List<PixelLocationPoint>(mapPoints.Length);
+            foreach (var mapPoint in mapPoints)
+            {
+                if (!TryMapToPixel(raster.Value, mapPoint.X, mapPoint.Y, out var column, out var row))
                 {
                     return StandardErrorHelpers.CreateBadRequest(
                         context,
@@ -263,33 +270,46 @@ internal sealed class ImageServerCoordinateMetadataHandler
         return page.AggregateExtent;
     }
 
-    private async ValueTask<MapPoint?> TransformToRasterSridAsync(
-        MapPoint point,
+    // Points are transformed in one batch per source spatial reference, not one round trip each.
+    private async ValueTask<MapPoint[]?> TransformToRasterSridAsync(
+        IReadOnlyList<MapPoint> points,
         int? requestSrid,
         int? rasterSrid,
         CancellationToken cancellationToken)
     {
-        var sourceSrid = point.Srid ?? requestSrid;
-        if (!sourceSrid.HasValue || !rasterSrid.HasValue || sourceSrid.Value == rasterSrid.Value)
+        var result = points.ToArray();
+        if (!rasterSrid.HasValue)
         {
-            return point;
+            return result;
         }
 
-        if (_transformService is null)
+        foreach (var group in Enumerable.Range(0, result.Length).GroupBy(index => result[index].Srid ?? requestSrid))
         {
-            return null;
+            if (group.Key is not { } sourceSrid || sourceSrid == rasterSrid.Value)
+            {
+                continue;
+            }
+
+            if (_transformService is null)
+            {
+                return null;
+            }
+
+            var indexes = group.ToArray();
+            var xs = indexes.Select(index => result[index].X).ToArray();
+            var ys = indexes.Select(index => result[index].Y).ToArray();
+            if (!await _transformService.TransformPointsAsync(xs, ys, sourceSrid, rasterSrid.Value, cancellationToken).ConfigureAwait(false))
+            {
+                return null;
+            }
+
+            for (var k = 0; k < indexes.Length; k++)
+            {
+                result[indexes[k]] = new MapPoint(xs[k], ys[k], rasterSrid);
+            }
         }
 
-        var transformed = await _transformService.TransformPointAsync(
-            point.X,
-            point.Y,
-            sourceSrid.Value,
-            rasterSrid.Value,
-            cancellationToken).ConfigureAwait(false);
-
-        return transformed.HasValue
-            ? new MapPoint(transformed.Value.X, transformed.Value.Y, rasterSrid)
-            : null;
+        return result;
     }
 
     private static bool TryReadInputPoints(
@@ -556,7 +576,7 @@ internal sealed class ImageServerCoordinateMetadataHandler
     {
         // Web Mercator (EPSG:3857) is conformal: an axis-aligned extent inverse-projects to an
         // axis-aligned lon/lat quadrangle, so inverse-project the corners and use the same
-        // spherical-cap area formula as geographic extents (#2734).
+        // spherical-cap area formula as geographic extents.
         if (extent.Srid is int srid && SpatialReferenceExtensions.NormalizeWebMercatorSrid(srid) == 3857)
         {
             var (minLon, minLat) = WebMercatorMath.WebMercatorToLonLat(extent.XMin, extent.YMin);
@@ -567,9 +587,9 @@ internal sealed class ImageServerCoordinateMetadataHandler
         // Geographic extents (WGS 84, NAD83, the other confirmed geographic SRIDs, and any
         // unlisted EPSG 4000–4999 geographic-block code such as EPSG:4301/4314/4322) are already
         // lon/lat degrees. The geographic determination is resolved by the caller through the
-        // registry-backed IGeographicSridClassifier (#2794), which classifies arbitrary codes from
+        // registry-backed IGeographicSridClassifier, which classifies arbitrary codes from
         // live spatial_ref_sys WKT and falls back to the static broad-list-plus-range heuristic
-        // (#2732) so these codes are not mis-measured as degrees-squared-as-metres in the planar
+        // so these codes are not mis-measured as degrees-squared-as-metres in the planar
         // branch below.
         if (isGeographicForMeasurement)
         {

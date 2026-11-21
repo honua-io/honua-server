@@ -20,14 +20,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Branch-versioning async reconcile/post hardening tests (#1553). Proves the durable (service,version)
-/// lock serializes concurrent reconcile/post (surfacing a clear lock-contended signal), that the async
-/// job runner makes reconcile/post pollable end to end, and that the durable conflict records survive a
-/// "restart" so a re-run is idempotent/resumable. Uses a real PostGIS schema; the lock is the single-node
-/// in-process implementation (production substitutes the Redis-backed lock without changing behavior).
-/// The DEFAULT path is never exercised by these branch-version-only flows.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.TestQuality)]
 public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
@@ -48,12 +40,12 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        // honua-server#1568 residual: serialize the raw CREATE SCHEMA on the shared schema-mutation
+        // Serialize the raw CREATE SCHEMA on the shared schema-mutation
         // advisory lock (symmetric with the locked migration set below) so this per-test namespace DDL
         // does not race a concurrent collection's locked DROP SCHEMA ... CASCADE and deadlock (40P01).
         await _fixture.CreateSchemaUnderLockAsync(_schema);
 
-        // honua-server#1568 follow-up: serialize the embedded migration set (it mutates the literal,
+        // Serialize the embedded migration set (it mutates the literal,
         // process-global honua schema, which per-test search_path isolation does NOT scope) under the
         // shared seed advisory lock so this upgrade does not race locked seeders on the shared catalog
         // and deadlock (40P01) the parallel [Collection("Database")] run.
@@ -62,7 +54,7 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
             Assembly.GetAssembly(typeof(Program))!);
         result.Successful.Should().BeTrue(result.Error?.ToString());
 
-        // #2020: route the literal honua.layers INSERT through the shared schema-mutation advisory
+        // Route the literal honua.layers INSERT through the shared schema-mutation advisory
         // lock so it serializes with parallel-collection seeders instead of racing the catalog (40P01).
         await _fixture.ApplyGlobalSeedSqlAsync($"""
             INSERT INTO honua.layers (layer_id, layer_name, table_schema, table_name, geometry_type, srid)
@@ -73,7 +65,7 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        // #2020: serialize the CASCADE drop on the shared advisory lock (catalog churn).
+        // Serialize the CASCADE drop on the shared advisory lock (catalog churn).
         await _fixture.DropSchemaAsync(_schema);
     }
 
@@ -163,7 +155,7 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
     [Fact]
     public async Task AsyncReconcileJob_HostShuttingDown_TerminatesAsFailedWithShutdownMessage()
     {
-        // PA-030: the detached background job must observe IHostApplicationLifetime and
+        // the detached background job must observe IHostApplicationLifetime and
         // record a clear terminal state (not sit unobserved past process teardown) when the
         // host shuts down mid-run. A lifetime whose ApplicationStopping is already
         // cancelled simulates the job starting just as shutdown begins.
@@ -252,11 +244,6 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
         return services.BuildServiceProvider();
     }
 
-    /// <summary>
-    /// Minimal <see cref="Microsoft.Extensions.Hosting.IHostApplicationLifetime"/> test double whose
-    /// <see cref="ApplicationStopping"/> is already cancelled, simulating a background job that starts
-    /// just as the host begins a graceful shutdown.
-    /// </summary>
     private sealed class AlreadyStoppingApplicationLifetime : Microsoft.Extensions.Hosting.IHostApplicationLifetime
     {
         private readonly CancellationTokenSource _stoppingCts = new(0);

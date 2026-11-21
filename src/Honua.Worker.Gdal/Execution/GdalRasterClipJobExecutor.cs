@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Logging;
@@ -115,7 +116,7 @@ internal sealed partial class GdalRasterClipJobExecutor(
 
             // Bound the DECLARED pixel footprint before invoking GDAL so a
             // compressible GeoTIFF declaring enormous dimensions cannot force a
-            // decompression-bomb allocation (#2766).
+            // decompression-bomb allocation.
             if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
                 return JobExecutionResult.Failed($"Invalid raster input: {dimensionError}");
@@ -205,21 +206,59 @@ internal sealed partial class GdalRasterClipJobExecutor(
     private static bool IsAreaGeometry(Geometry geometry)
         => geometry is Polygon or MultiPolygon;
 
-    internal static string WriteCutlineGeoJson(Geometry boundary)
+    internal static string WriteCutlineGeoJson(Geometry boundary, string? crsName = null)
     {
-        var geometryJson = new GeoJsonWriter().Write(boundary);
-        var sb = new StringBuilder(geometryJson.Length + 256);
-        sb.Append("{\"type\":\"FeatureCollection\"");
-        if (boundary.SRID > 0)
+        ArgumentNullException.ThrowIfNull(boundary);
+
+        string? normalizedCrs = null;
+        if (!string.IsNullOrWhiteSpace(crsName))
         {
-            sb.Append(",\"crs\":{\"type\":\"name\",\"properties\":{\"name\":\"EPSG:");
-            sb.Append(boundary.SRID.ToString(CultureInfo.InvariantCulture));
-            sb.Append("\"}}");
+            if (!GdalSrsToken.IsValid(crsName))
+            {
+                throw new ArgumentException($"Invalid cutline CRS token '{crsName}'.", nameof(crsName));
+            }
+
+            normalizedCrs = GdalSrsToken.Normalize(crsName);
         }
-        sb.Append(",\"features\":[{\"type\":\"Feature\",\"properties\":{},\"geometry\":");
-        sb.Append(geometryJson);
-        sb.Append("}]}");
-        return sb.ToString();
+        else if (boundary.SRID > 0)
+        {
+            normalizedCrs = $"EPSG:{boundary.SRID.ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        var geometryJson = new GeoJsonWriter().Write(boundary);
+        using var geometryDocument = JsonDocument.Parse(geometryJson);
+        using var stream = new MemoryStream(geometryJson.Length + 256);
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("type", "FeatureCollection");
+            if (normalizedCrs is not null)
+            {
+                writer.WritePropertyName("crs");
+                writer.WriteStartObject();
+                writer.WriteString("type", "name");
+                writer.WritePropertyName("properties");
+                writer.WriteStartObject();
+                writer.WriteString("name", normalizedCrs);
+                writer.WriteEndObject();
+                writer.WriteEndObject();
+            }
+
+            writer.WritePropertyName("features");
+            writer.WriteStartArray();
+            writer.WriteStartObject();
+            writer.WriteString("type", "Feature");
+            writer.WritePropertyName("properties");
+            writer.WriteStartObject();
+            writer.WriteEndObject();
+            writer.WritePropertyName("geometry");
+            geometryDocument.RootElement.WriteTo(writer);
+            writer.WriteEndObject();
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
     }
 
     private static partial class Log
@@ -239,10 +278,6 @@ internal sealed partial class GdalRasterClipJobExecutor(
         [LoggerMessage(9253, LogLevel.Error,
             "GDAL raster clip executor timed out job {OperationId} after {Timeout}")]
         public static partial void ToolTimedOut(ILogger logger, string operationId, TimeSpan timeout);
-
-        [LoggerMessage(9255, LogLevel.Information,
-            "GDAL raster clip executor completed job {OperationId}: bytes={Bytes}")]
-        public static partial void ClipCompleted(ILogger logger, string operationId, long bytes);
 
         [LoggerMessage(9256, LogLevel.Warning,
             "GDAL raster clip executor could not parse boundary WKB for job {OperationId}")]

@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Console.Abstractions;
 using Honua.Core.Features.Console.Domain;
+using Honua.Core.Features.Publishing.Content;
 using Honua.Server.Features.Console.Models;
 using Honua.Infrastructure.Models;
 using Honua.TestKit;
@@ -16,9 +17,6 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Console;
 
-/// <summary>
-/// Integration tests for the Console Share access public-link and embed API (#1215).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.RoleManagement)]
@@ -233,6 +231,23 @@ public sealed class ConsoleShareEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("expiresAt", body, StringComparison.Ordinal);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/content/{id}/share/link")]
+    public async Task MintPublicLink_AlwaysExpires()
+    {
+        var item = await CreateItemAsync("share-link-lifetime", ConsoleVisibility.Personal, title: "Expiring public link");
+        await SetAccessTierAsync(item.Id, ConsoleShareAccessTier.PublicLink);
+
+        var token = await MintPublicLinkAsync(item.Id, expiresAt: null);
+        var overlong = await _adminClient.PostAsJsonAsync(
+            $"/api/v1/console/content/{item.Id}/share/link",
+            new MintPublicLinkRequest { ExpiresAt = _clock.GetUtcNow().AddDays(400) },
+            JsonOptions);
+
+        Assert.Equal(_clock.GetUtcNow() + PublicLinkLifetime.Default, token.ExpiresAt);
+        Assert.Equal(HttpStatusCode.BadRequest, overlong.StatusCode);
     }
 
     [IntegrationTest]

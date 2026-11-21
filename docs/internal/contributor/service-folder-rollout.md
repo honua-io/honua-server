@@ -59,3 +59,9 @@ or public leaf. Explicit folder discovery tools, SDK and Console authoring follo
 GeoServices import auto-publishing preserves a single source folder by default. Explicit root
 or existing-folder mappings and reviewed target plans follow the
 [GeoServices import target rules](../../reference/admin-api/imports-and-jobs.md#geoservices-arcgis-migration-import).
+
+### Pending proposal freshness
+
+Folder approvals preserve the exact catalog `If-Match` sealed when the proposal was created. Any catalog revision, including an unrelated folder change or service publication, invalidates the pending proposal. Approval never silently rebases the reviewed mutation onto a newer catalog. Refresh the catalog and submit a fresh proposal with its current ETag.
+
+An HTTP 200 approval response records the human decision; inspect the returned proposal status to determine whether execution succeeded. A stale proposal becomes `Failed` with a catalog-change reason and does not apply its mutation. The requester can poll the original operation handle to read the same terminal status and reason. A replacement proposal has its own handle and does not change the original failure. Requester authorization changes continue to produce an authorization refusal.

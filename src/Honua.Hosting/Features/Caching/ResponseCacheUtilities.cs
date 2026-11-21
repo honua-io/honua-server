@@ -208,7 +208,7 @@ internal static class ResponseCacheUtilities
         var accept = request.Headers.Accept.ToString();
         var prefer = request.Headers["Prefer"].ToString();
         var tenant = TenantScopeHelpers.ResolveRequestTenantId(request.HttpContext) ?? "<none>";
-        // Same fingerprint the output cache varies on (#1983). Anonymous metadata
+        // Same fingerprint the output cache varies on. Anonymous metadata
         // and query bodies that differ by edition must not share an entry.
         var license = ResolveLicenseKey(request);
         var testSchema = ResolveTestSchemaKey(request);

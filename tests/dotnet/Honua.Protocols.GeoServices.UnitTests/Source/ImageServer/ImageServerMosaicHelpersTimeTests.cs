@@ -8,11 +8,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Unit tests for the ImageServer <c>time</c> parser (#4061). Esri clients send epoch-millisecond
-/// instants and <c>start,end</c> extents (the forms the service advertises in
-/// <c>timeInfo.timeExtent</c>); every ImageServer operation shares this parser.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public sealed class ImageServerMosaicHelpersTimeTests
 {
@@ -56,7 +51,7 @@ public sealed class ImageServerMosaicHelpersTimeTests
     [UnitTest]
     public void TryParseTime_BracketedEpochMillisecondExtent_ReturnsStartAndEnd()
     {
-        // The ArcGIS API for Python sends timeInfo.timeExtent as a JSON array (#4782).
+        // The ArcGIS API for Python sends timeInfo.timeExtent as a JSON array.
         ImageServerMosaicHelpers.TryParseTime($"[{Jan10Ms}, {Jan20Ms}]", out var timestamp, out var timeStart, out var error)
             .Should().BeTrue(error ?? string.Empty);
 

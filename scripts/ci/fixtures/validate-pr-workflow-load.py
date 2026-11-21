@@ -14,7 +14,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = ROOT / ".github/workflows"
 HEAVY = (
-    "codeql.yml", "compose-release-lifecycle.yml", "geoarrow-interop-fixture.yml",
+    "codeql.yml", "compose-release-lifecycle.yml", "export-portolan-check.yml", "geoarrow-interop-fixture.yml",
     "geoparquet-interop.yml",
     "serving-image-boundary.yml", "worker-gdal-image.yml",
 )
@@ -191,7 +191,7 @@ class PullRequestLoadTests(unittest.TestCase):
 
     def test_gate_heavy_jobs_refuse_drafts(self):
         jobs = workflow("pr-gate.yml")["jobs"]
-        heavy = ["pr-gate", "fast-tests", "ci-router-validation", "n1-reader-compatibility"]
+        heavy = ["pr-gate", "fast-tests", "fast-server-tests", "ci-router-validation", "n1-reader-compatibility"]
         if "server-test-producer" in jobs:
             heavy.append("server-test-producer")
         draft = {"event_name": "pull_request", "event": {"pull_request": {"draft": True}}}
@@ -207,8 +207,18 @@ class PullRequestLoadTests(unittest.TestCase):
                 if "if" in jobs[key]:
                     self.assertEqual(jobs[key]["if"], DRAFT_GUARD)
                 else:
-                    self.assertEqual(jobs[key]["needs"], "runner-select")
-        for key in ("affected-shards-select", "affected-shard", "affected-shards"):
+                    needs = jobs[key]["needs"]
+                    needs = [needs] if isinstance(needs, str) else needs
+                    self.assertIn("runner-select", needs)
+                    for dependency in needs:
+                        if dependency == "runner-select":
+                            continue
+                        upstream = jobs[dependency]
+                        if "if" in upstream:
+                            self.assertEqual(upstream["if"], DRAFT_GUARD)
+                        else:
+                            self.assertEqual(upstream["needs"], "runner-select")
+        for key in ("affected-shards-select", "affected-shard", "affected-shard-held", "affected-shards"):
             self.assertIn("!github.event.pull_request.draft", jobs[key]["if"])
         self.assertEqual(jobs["required"]["if"], "always()")
         self.assertIn("!github.event.pull_request.draft", jobs["runner-select"].get("if", ""))
@@ -216,7 +226,7 @@ class PullRequestLoadTests(unittest.TestCase):
     def test_required_aggregate_admits_drafts_and_fails_closed_for_ready_prs(self):
         jobs = workflow("pr-gate.yml")["jobs"]
         required = jobs["required"]
-        dependencies = {"pr-gate", "fast-tests", "format", "ci-router-validation", "affected-shards"}
+        dependencies = {"pr-gate", "fast-tests", "fast-server-tests", "format", "ci-router-validation", "affected-shards"}
         if "server-test-producer" in jobs:
             dependencies.add("server-test-producer")
         self.assertEqual(set(required["needs"]), dependencies)
@@ -384,6 +394,25 @@ class PullRequestLoadTests(unittest.TestCase):
         self.assertFalse(evaluate(condition, event, {"needs": needs}))
         needs["detect"]["outputs"]["selected"] = '["fixture"]'
         self.assertFalse(evaluate(condition, event, {"needs": needs, "cancelled": True}))
+        self.assertNotIn("matrix.", condition)
+
+    def test_pull_request_detection_drops_lambda_after_the_policy_case(self):
+        steps = workflow("serving-image-boundary.yml")["jobs"]["detect"]["steps"]
+        run = next(step["run"] for step in steps if "chosen=()" in step.get("run", ""))
+        start = run.index("chosen=()")
+        fragment = run[start:run.index("emit", start)]
+        fragment = fragment.replace("${{ github.event_name }}", "$EVENT_NAME")
+        self.assertIn('docker/Dockerfile.lambda.aot', run)
+        for event_name, expected in (
+            ("pull_request", "generic\n"),
+            ("workflow_dispatch", "generic\nlambda\n"),
+            ("push", "generic\nlambda\n"),
+        ):
+            completed = subprocess.run(
+                ["bash", "-c", "generic=true\nlambda=true\n" + fragment + "printf '%s\\n' \"${chosen[@]}\""],
+                check=True, capture_output=True, text=True, env={**os.environ, "EVENT_NAME": event_name},
+            )
+            self.assertEqual(completed.stdout, expected, event_name)
 
     def test_auto_merge_control_admits_draft_cleanup_only(self):
         condition = workflow("auto-merge-ready.yml")["jobs"]["enable"]["if"]

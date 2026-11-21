@@ -33,7 +33,7 @@ internal static class StudioPackageEndpoints
 
     public static void MapStudioPackageEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        // honua-server#3001: RequireStudioLifecycleAuthorization() admits admin unconditionally
+        // RequireStudioLifecycleAuthorization() admits admin unconditionally
         // (unchanged) and, once Studio:EndUserAuthorization:Enabled is on, any authenticated
         // principal -- per-resource ownership and the elevated-operation (publish-request,
         // rollback) operator-grant check are then enforced per handler via
@@ -119,7 +119,7 @@ internal static class StudioPackageEndpoints
             .WithDisplayName("Create Studio Rollback Request")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
-        // honua-server#3023: the draft routes intentionally rely on the group-level
+        // The draft routes intentionally rely on the group-level
         // RequireStudioLifecycleAuthorization() gate (admin unconditionally; any authenticated
         // principal once Studio:EndUserAuthorization:Enabled is on) instead of the former
         // route-level RequireAdminAuthorization(). Draft creation must not be implicitly
@@ -128,7 +128,7 @@ internal static class StudioPackageEndpoints
         // for non-admins) before the request body is parsed. With the flag off this is exactly
         // the prior admin-only posture.
         //
-        // ADR-0076 (#3255): both routes are deterministic draft-creation entry points. They
+        // ADR-0076: both routes are deterministic draft-creation entry points. They
         // take structured composition input, perform no model inference, and delegate every
         // validation rule to the shared draft factories in Honua.Core. The route paths are
         // unchanged so existing clients keep resolving.
@@ -187,7 +187,7 @@ internal static class StudioPackageEndpoints
 
         try
         {
-            // honua-server#3001: widening the /studio group also widened this export route --
+            // Widening the /studio group also widened this export route --
             // rendering by item id with no ownership check would let any authenticated non-admin
             // export another principal's private map/dashboard/report by id. Decision (documented
             // here and in docs/internal/admin-api/studio-package-lifecycle.md#authorization): a
@@ -472,7 +472,7 @@ internal static class StudioPackageEndpoints
         try
         {
             StudioContentItemPointers? existingPointers = null;
-            // honua-server#3001: creating a draft under an existing content item must be
+            // Creating a draft under an existing content item must be
             // authorized against that item's recorded owner, not treated as a brand-new
             // (ownerless) resource.
             if (request.ItemId is { } existingItemId)
@@ -594,7 +594,7 @@ internal static class StudioPackageEndpoints
                     WorkspaceId = NormalizeOptionalQueryValue(workspaceId),
                     OwnerId = NormalizeOptionalQueryValue(effectiveOwner),
                     // Tenant scoping is forced from the request's resolved tenant, never from a
-                    // client parameter (honua-server#4905).
+                    // client parameter.
                     Tenant = authorization.CreateTenantScopeFilter(context.User),
                     SearchTerm = NormalizeOptionalQueryValue(q),
                     Cursor = cursor,
@@ -1145,7 +1145,7 @@ internal static class StudioPackageEndpoints
                     WorkspaceId = NormalizeOptionalQueryValue(workspaceId),
                     OwnerId = NormalizeOptionalQueryValue(effectiveOwner),
                     // Tenant scoping is forced from the request's resolved tenant, never from a
-                    // client parameter (honua-server#4905).
+                    // client parameter.
                     Tenant = authorization.CreateTenantScopeFilter(context.User),
                     States = states,
                     SearchTerm = NormalizeOptionalQueryValue(q),
@@ -1404,13 +1404,13 @@ internal static class StudioPackageEndpoints
             var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
             var versions = await service.ListVersionsAsync(itemId, context.RequestAborted).ConfigureAwait(false);
 
-            // PR #3018 review, round 6, item 1: version.OwnerId is an immutable snapshot of
-            // the draft owner that created that specific version and may differ from the
-            // content item's owner. Authorizing once against the item would therefore expose
-            // another owner's unpublished version in a mixed-owner history. Apply the exact
-            // same owner-or-published check as HandleGetVersion to every returned version.
-            // Preserve the previous fail-closed response when no version is visible, while
-            // returning only the authorized subset when the history contains a mix.
+            // version.OwnerId is an immutable snapshot of the draft owner that created that
+            // specific version and may differ from the content item's owner. Authorizing
+            // once against the item would therefore expose another owner's unpublished
+            // version in a mixed-owner history. Apply the exact same owner-or-published
+            // check as HandleGetVersion to every returned version. Keep the fail-closed
+            // response when no version is visible, while returning only the authorized
+            // subset when the history contains a mix.
             var visibleVersions = new List<StudioContentVersion>(versions.Count);
             IResult? firstDenial = null;
             foreach (var version in versions)
@@ -1422,7 +1422,7 @@ internal static class StudioPackageEndpoints
                     isPubliclyReadable: pointers?.PublishedVersionId == version.VersionId).ConfigureAwait(false);
                 if (authResult is null)
                 {
-                    // The canonical hash input (honua-server#5449) is a single-version read: an
+                    // The canonical hash input is a single-version read: an
                     // enumeration would otherwise carry every envelope twice.
                     visibleVersions.Add(version with { ContentHashInput = null });
                 }
@@ -1509,13 +1509,13 @@ internal static class StudioPackageEndpoints
 
         try
         {
-            // PR #3018 review, round 5, item 2: both requested versions must be individually
-            // authorized. A version's OwnerId only snapshots who created *that* version (for
-            // example the draft owner at save-as-version time) and can diverge from another
-            // version under the same item id -- a caller who owns leftVersionId cannot be
-            // assumed to also be entitled to read an arbitrary rightVersionId. Comparisons are
-            // never treated as publicly readable (honua-server#3001), even when one side is the
-            // published version, since the diff itself can expose unpublished draft content.
+            // Both requested versions must be individually authorized. A version's OwnerId
+            // only snapshots who created *that* version (for example the draft owner at
+            // save-as-version time) and can diverge from another version under the same item
+            // id -- a caller who owns leftVersionId cannot be assumed to also be entitled to
+            // read an arbitrary rightVersionId. Comparisons are never treated as publicly
+            // readable, even when one side is the published version, since the diff itself can
+            // expose unpublished draft content.
             var left = await service.GetVersionAsync(itemId, request.LeftVersionId, context.RequestAborted).ConfigureAwait(false);
             if (left is null)
             {
@@ -1602,13 +1602,13 @@ internal static class StudioPackageEndpoints
                     "Studio content version was not found.").ConfigureAwait(false);
             }
 
-            // PR #3018 review, round 5, item 1: publish-request moves the ITEM's
-            // PublishedVersionId pointer, so authorization must be against the item's immutable
-            // owner_id -- not targetVersion.OwnerId, which only snapshots who created that
-            // particular version and can diverge from the item's recorded owner (for example a
-            // version saved from a draft reopened by someone else). Authorizing on the version's
-            // owner would let a caller who merely owns the target version (plus an "own"-sentinel
-            // publish grant) move the published pointer of an item someone else actually owns.
+            // Publish-request moves the ITEM's PublishedVersionId pointer, so authorization must
+            // be against the item's immutable owner_id -- not targetVersion.OwnerId, which only
+            // snapshots who created that particular version and can diverge from the item's
+            // recorded owner (for example a version saved from a draft reopened by someone else).
+            // Authorizing on the version's owner would let a caller who merely owns the target
+            // version (plus an "own"-sentinel publish grant) move the published pointer of an
+            // item someone else actually owns.
             var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
             if (pointers is null)
             {
@@ -1833,11 +1833,11 @@ internal static class StudioPackageEndpoints
                     "Studio content version was not found.").ConfigureAwait(false);
             }
 
-            // PR #3018 review, round 5, item 1: rollback moves the ITEM's current/published
-            // pointer (see request.Target), so authorization must be against the item's
-            // immutable owner_id -- not targetVersion.OwnerId, which only snapshots who created
-            // that particular version and can diverge from the item's recorded owner. See the
-            // identical rationale on HandleCreatePublishRequest.
+            // Rollback moves the ITEM's current/published pointer (see request.Target), so
+            // authorization must be against the item's immutable owner_id -- not
+            // targetVersion.OwnerId, which only snapshots who created that particular version
+            // and can diverge from the item's recorded owner. See the identical rationale on
+            // HandleCreatePublishRequest.
             var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
             if (pointers is null)
             {
@@ -1964,7 +1964,7 @@ internal static class StudioPackageEndpoints
             return null;
         }
 
-        // A cross-tenant target is answered as a lookup miss (honua-server#4905): a 403 would
+        // A cross-tenant target is answered as a lookup miss: a 403 would
         // confirm that another tenant's item/version/draft id exists. The machine-readable code
         // is still carried so a client can distinguish it from an ordinary 404.
         if (string.Equals(decision.Code, StudioAuthorizationService.CrossTenantDeniedCode, StringComparison.Ordinal))
@@ -2028,7 +2028,7 @@ internal static class StudioPackageEndpoints
     private static IResult Conflict(HttpContext context, string detail)
         => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status409Conflict, "Conflict", detail);
 
-    // honua-server#5733: a Redis-off host composes draft state (volatile outside Production) but
+    // A host without a durable proposal store composes draft state (volatile outside Production) but
     // not the governed proposal control plane. A mutation that needs it -- publish-request's
     // separate-principal approval, or any mutation on a fail-closed Production store -- refuses
     // with the shared typed capability-unavailable problem, never a 409 or 500 that drops the

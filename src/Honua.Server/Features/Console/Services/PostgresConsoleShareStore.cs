@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Console.Abstractions;
 using Honua.Core.Features.Console.Domain;
+using Honua.Core.Features.Publishing.Content;
 using Honua.Infrastructure.Security;
 using Honua.Server.Features.Infrastructure.Configuration;
 
@@ -225,7 +226,7 @@ internal sealed class PostgresConsoleShareStore(ConsoleStateStorage storage, ISe
     };
 
     private static bool IsExpired(StoredConsolePublicLink link, DateTimeOffset now)
-        => link.IsExpired || (link.ExpiresAt is { } expiry && expiry <= now);
+        => link.IsExpired || PublicLinkLifetime.HasEnded(link.ExpiresAt, link.CreatedAt, now);
 
     private static string Hash(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
 

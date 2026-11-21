@@ -246,7 +246,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
     {
         // OGC NumberMatchedPolicy=OmitWhenExpensive uses this IPagedFeatureReader
         // path. The security seam must run before the LIMIT+1 probe can evaluate an
-        // OGC filter over a masked value (#4166, #4154).
+        // OGC filter over a masked value.
         var resource = CreateResource();
         var rlsSource = Substitute.For<IRowLevelSecurityFilterSource>();
         rlsSource.ResolveAsync(resource, Arg.Any<CancellationToken>())
@@ -306,7 +306,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
     {
         // Esri/PostgreSQL treat an empty string as a non-NULL value. The storage-mapped
         // reader must not wrap a text/string column in NULLIF(..., '') when translating an
-        // IS NOT NULL filter, or empty-string rows would be silently dropped (#1703).
+        // IS NOT NULL filter, or empty-string rows would be silently dropped.
         var rewritten = PostgresStorageMappedFeatureReader.RewriteAttributeTextAccessExpressions(
             "\"attributes\" ->> 'uniquedesignation' IS NOT NULL",
             field =>
@@ -340,7 +340,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
     {
         // Projected-storage layer (EPSG:3857). A bare ::geography cast requires lon/lat and would
         // throw at execution (500); the predicate must reproject both operands to WGS84 geography
-        // via ST_Transform(...,4326)::geography so ST_Distance returns metres (#2740).
+        // via ST_Transform(...,4326)::geography so ST_Distance returns metres.
         // Seed the filter-geometry parameter ($1) so the distance parameter realistically becomes $2.
         var parameters = new List<object?> { new byte[] { 1, 2, 3, 4 } };
 
@@ -461,6 +461,37 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         parameters[0].Should().Be(0d);
         sql.Should().Contain("ORDER BY COUNT(NULLIF((\"objectid\")::text, '')::numeric) DESC");
         sql.Should().Contain("LIMIT $2 OFFSET $3");
+    }
+
+    [UnitTheory]
+    [InlineData(10, 6)]
+    [InlineData(3, 3)]
+    [InlineData(5, 5)]
+    public void AppendPagination_ProbedNearestPageIsBoundedByThePageLimit(int nearestCount, int expectedLimit)
+        => AppendNearestPagination(nearestCount, probeArgument: true).Should().Equal(expectedLimit);
+
+    [UnitTest]
+    public void AppendPagination_UnprobedNearestPageStopsAtThePageLimit()
+        => AppendNearestPagination(10, probeArgument: false).Should().Equal(5);
+
+    private static IReadOnlyList<object?> AppendNearestPagination(int nearestCount, object probeArgument)
+    {
+        var sqlBuilderType = typeof(PostgresStorageMappedFeatureReader).GetNestedType(
+            "SqlBuilder",
+            BindingFlags.NonPublic);
+        var sqlBuilder = Activator.CreateInstance(sqlBuilderType!);
+        var query = new FeatureQuery
+        {
+            Limit = 5,
+            SpatialFilter = SpatialFilter.CreateKnnFilter([1, 2, 3], nearestCount)
+        };
+
+        typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("AppendPagination", BindingFlags.NonPublic | BindingFlags.Static)!
+            .Invoke(null, [sqlBuilder, query, probeArgument]);
+
+        sqlBuilder!.ToString().Should().Be(" LIMIT $1");
+        return (IReadOnlyList<object?>)sqlBuilderType!.GetProperty("Parameters")!.GetValue(sqlBuilder)!;
     }
 
     [UnitTheory]
@@ -604,10 +635,10 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
     public void BuildEncodedBinarySelect_WithPrefixedSchemaFieldAndJsonbColumn_AliasesInsteadOfThrowing()
     {
         // A STAC extension queryable such as `eo:cloud_cover` is a declared, filterable field
-        // whose name is not a bare SQL identifier. Admitting it to the projection (so it stops
-        // being silently dropped) made the FlatGeobuf/Geobuf builder alias it, and that alias
-        // site validated the name as a PostGIS identifier -- turning a missing field into an
-        // InvalidOperationException and an HTTP 500 (review finding on honua-server#3489).
+        // whose name is not a bare SQL identifier. It is admitted to the projection (so it is
+        // not silently dropped), and the FlatGeobuf/Geobuf builder aliases it. That alias site
+        // must not validate the name as a PostGIS identifier, which would turn the field into
+        // an InvalidOperationException and an HTTP 500.
         var resource = CreatePrefixedFieldResource();
         var reader = CreateReader(resource, attributesColumn: "attributes");
         var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(

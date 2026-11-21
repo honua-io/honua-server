@@ -8,9 +8,6 @@ using SkiaSharp;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Rendering;
 
-/// <summary>
-/// Tests for projecting data-driven MapLibre style layers onto discrete legend classes.
-/// </summary>
 [Trait("Component", "MapServer")]
 public class LegendClassifierTests
 {
@@ -18,7 +15,7 @@ public class LegendClassifierTests
         => StyleTranslator.ParseStyleLayers(json).Single();
 
     // A legend swatch is resolved without a map viewport, so it carries no render zoom; these
-    // classes are attribute-driven, not zoom-driven, so paint resolves identically (honua-server#2873).
+    // classes are attribute-driven, not zoom-driven, so paint resolves identically.
     private static readonly RenderZoom _noZoom =
         RenderZoom.NotDerivable("legend classification resolves no zoom expression");
 
@@ -35,6 +32,33 @@ public class LegendClassifierTests
         result.Classes[0].Label.Should().Be("lakes");
         result.IsDataDriven.Should().BeFalse();
         result.UnrepresentableReason.Should().BeNull();
+    }
+
+    private const string ZoningByKind = """
+        {
+          "id": "zoning", "type": "fill",
+          "paint": { "fill-color": ["match", ["get", "kind"], "residential", "#00ff00", "#cccccc"] }
+        }
+        """;
+
+    [UnitTest]
+    public void Classify_WithheldClassField_ReturnsOnlyTheLayerFallback()
+    {
+        var result = LegendClassifier.Classify(
+            ParseLayer(ZoningByKind), new HashSet<string>(["KIND"], StringComparer.OrdinalIgnoreCase));
+
+        result.Classes.Should().ContainSingle().Which.Label.Should().Be("Default");
+        result.Classes[0].Properties.Should().BeEmpty();
+        result.IsDataDriven.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Classify_OtherFieldWithheld_KeepsTheClasses()
+    {
+        var result = LegendClassifier.Classify(
+            ParseLayer(ZoningByKind), new HashSet<string>(["owner"], StringComparer.OrdinalIgnoreCase));
+
+        result.Classes.Select(c => c.Label).Should().Equal("residential", "Other");
     }
 
     [UnitTest]
@@ -151,9 +175,9 @@ public class LegendClassifierTests
 
         var result = LegendClassifier.Classify(layer);
 
-        // #2870 made the shared evaluator blend colours instead of coercing the stops to 0f,
-        // so a ramp is now representable: sampling it at its own stops yields entries whose
-        // swatches are exactly the colours GetMap paints for those attribute values.
+        // The shared evaluator blends colours instead of coercing the stops to 0f, so a ramp
+        // is representable: sampling it at its own stops yields entries whose swatches are
+        // exactly the colours GetMap paints for those attribute values.
         result.UnrepresentableReason.Should().BeNull();
         result.IsDataDriven.Should().BeTrue();
         result.Field.Should().Be("density");

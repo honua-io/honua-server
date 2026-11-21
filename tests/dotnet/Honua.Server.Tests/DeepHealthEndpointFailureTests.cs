@@ -25,6 +25,11 @@ namespace Honua.Server.Tests;
 public sealed class DeepHealthEndpointFailureTests(TestWebApplicationFactory factory)
     : IClassFixture<TestWebApplicationFactory>
 {
+    private const int ConcurrentCallers = 8;
+    private static readonly TimeSpan CallWaitLimit = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan CallPollInterval = TimeSpan.FromMilliseconds(20);
+    private static readonly TimeSpan JoinGrace = TimeSpan.FromMilliseconds(200);
+
     [IntegrationTest]
     [Operation(Operations.ReadinessCheck)]
     [Endpoint("GET /healthz/deep")]
@@ -92,6 +97,36 @@ public sealed class DeepHealthEndpointFailureTests(TestWebApplicationFactory fac
 
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(1));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ReadinessCheck)]
+    [Endpoint("GET /healthz/deep")]
+    public async Task DeepHealthEndpoint_ConcurrentCallers_ShareOneDependencyCheck()
+    {
+        var checker = Substitute.For<IDatabaseHealthChecker>();
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        checker.IsDatabaseHealthyAsync(Arg.Any<CancellationToken>()).Returns(release.Task);
+        using var host = Configure(checker, HealthyCatalog());
+        using var client = host.CreateClient();
+
+        var requests = Enumerable.Range(0, ConcurrentCallers).Select(_ => client.GetAsync("/healthz/deep")).ToArray();
+        await WaitForCallAsync(checker);
+        release.SetResult(true);
+        var responses = await Task.WhenAll(requests);
+        try
+        {
+            responses.Should().AllSatisfy(response => response.StatusCode.Should().Be(HttpStatusCode.OK));
+            // Requests that arrive after the release start a fresh check, so only sharing is asserted.
+            DatabaseChecks(checker).Should().BeLessThan(ConcurrentCallers);
+        }
+        finally
+        {
+            foreach (var response in responses)
+            {
+                response.Dispose();
+            }
+        }
     }
 
     [IntegrationTest]
@@ -249,6 +284,22 @@ public sealed class DeepHealthEndpointFailureTests(TestWebApplicationFactory fac
             services.AddSingleton(checker);
             services.AddSingleton(catalog);
         }));
+
+    private static int DatabaseChecks(IDatabaseHealthChecker checker)
+        => checker.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(IDatabaseHealthChecker.IsDatabaseHealthyAsync));
+
+    // The first check starts; the other callers get a short grace period to join it.
+    private static async Task WaitForCallAsync(IDatabaseHealthChecker checker)
+    {
+        var deadline = DateTime.UtcNow + CallWaitLimit;
+        while (DatabaseChecks(checker) == 0 && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(CallPollInterval);
+        }
+
+        DatabaseChecks(checker).Should().BePositive("the probe must have started its dependency check");
+        await Task.Delay(JoinGrace);
+    }
 
     private static IMetadataV2GraphProvider HealthyCatalog()
     {

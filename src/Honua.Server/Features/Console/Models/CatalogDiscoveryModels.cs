@@ -5,13 +5,13 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Server.Features.Console.Models;
 
-// Wire DTOs for the Console catalog discovery-endpoints registry read API
-// (honua-server#1279). These shapes mirror the consumer contract defined in
+// Wire DTOs for the Console catalog discovery-endpoints registry read API.
+// These shapes mirror the consumer contract defined in
 // honua-console's Honua.Console.Contracts/CatalogDiscoveryShims.cs
 // (IHonuaCatalogDiscoveryClient) so the live binding activates the moment this
 // API publishes. This surface is DISTINCT from the singular content catalog
-// (/api/v1/console/content, #1162): it describes *which discovery dialects the
-// server publishes to consumers* (Esri catalog, OGC API Records, OData, STAC,
+// (/api/v1/console/content): it describes *which discovery dialects the
+// server publishes to consumers* (GeoServices catalog, OGC API Records, OData, STAC,
 // DCAT), not the content items themselves.
 
 public static class CatalogDialects
@@ -83,11 +83,11 @@ public sealed record CatalogEndpoint
 
 public sealed record CatalogDiscoveryRegistry
 {
-    [JsonPropertyName("workspaceId")]
-    public required string WorkspaceId { get; init; }
+    [JsonPropertyName("environmentId")]
+    public required string EnvironmentId { get; init; }
 
-    [JsonPropertyName("workspaceName")]
-    public string? WorkspaceName { get; init; }
+    [JsonPropertyName("environmentName")]
+    public string? EnvironmentName { get; init; }
 
     [JsonPropertyName("publicHost")]
     public string? PublicHost { get; init; }

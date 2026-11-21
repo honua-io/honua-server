@@ -22,30 +22,6 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 
 // CERT-* identifiers follow docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md so
 // release consumers can compare envelopes across client lanes.
-/// <remarks>
-/// <para>
-/// This is the CLI lane's automated OData proof. It mirrors the BI lane's
-/// manual <c>bi-powerbi-odata.cert.json</c> envelope but is driven by an
-/// actual library client (not curl), so it can detect client-side
-/// regressions in metadata parsing, LINQ-to-URI translation, and response
-/// deserialization that protocol-only smokes cannot.
-/// </para>
-/// <para>
-/// Every test routes through
-/// <see cref="CertificationEvidenceCollector.RecordAsync(string, Func{CertContext, Task})"/>,
-/// which auto-classifies failures: <see cref="Xunit.Sdk.XunitException"/>
-/// (i.e. an assertion miss after the client successfully round-trips) is
-/// tagged <c>[server-regression]</c>; any other exception type — typically a
-/// transport or parser fault from <see cref="DataServiceContext"/> — is
-/// tagged <c>[client-incompat]</c>.
-/// </para>
-/// <para>
-/// All read-only cases use a per-class <see cref="WebAppFixture"/> seeded with
-/// <c>tests/seed/odata.yaml</c>. The lone write probe (<c>CERT-AUTH-01</c>)
-/// is intentionally unauthenticated and only verifies the 401 response,
-/// so the test schema is not mutated.
-/// </para>
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataClientCertificationTests : IClassFixture<ODataClientCertificationFixture>
@@ -340,12 +316,6 @@ public sealed class ODataClientCertificationFixture : IAsyncLifetime
 
     public CertificationEvidenceCollector Evidence { get; }
 
-    /// <summary>
-    /// Authenticated HttpClient (X-API-Key header) used by every read-path
-    /// CERT case. Required because the fixture disables HONUA_DEV_AUTH so
-    /// CERT-AUTH-01's unauthenticated write probe surfaces a real 401, which
-    /// in turn means anonymous reads also receive 401.
-    /// </summary>
     public HttpClient AdminClient => _adminClient
         ?? throw new InvalidOperationException("AdminClient is only available after InitializeAsync.");
 

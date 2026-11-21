@@ -31,7 +31,7 @@ internal sealed class ManagedBufferAggregateExecutor(
         // A linear/metric buffer distance is only meaningful against a projected (metric) CRS:
         // buffering geographic degrees by a metre distance silently produces wrong geometry.
         // When the caller declares the input CRS via 'sourceCrs' and it is geographic, reject a
-        // non-zero linear buffer up front instead of returning a meters-as-degrees result (#2808).
+        // non-zero linear buffer up front instead of returning a meters-as-degrees result.
         RejectLinearBufferOnGeographicCrs(inputs, distance);
         var dissolve = ReadBool(inputs, "dissolve", defaultValue: true);
         var groupByFields = ReadGroupByFields(inputs);

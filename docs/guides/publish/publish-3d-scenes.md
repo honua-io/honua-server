@@ -16,6 +16,8 @@ Honua serves OGC 3D Tiles through `/scenes/{sceneId}/...` so CesiumJS resolves e
 
 **Edition and lifecycle:** Existing serving, discovery, elevation and generation from feature layers remain Community. Specialised CityGML/BIM and point-cloud ingest and I3S remain Enterprise. 3D is Experimental in 2026.1; this guide is for evaluation, with no production commitment. See [commercial boundaries](../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261).
 
+The scene routes are off by default and return `404` until you enable their experimental capabilities (at least `scene.catalog` and `serve.3d-tiles-scene`); see [enable the 3D surfaces](../../reference/protocols/3d-tiles-and-scenes.md#enable-the-3d-surfaces).
+
 ## Steps
 
 ### 1. Generate a tileset from a PostGIS layer
@@ -47,7 +49,7 @@ Returns `201 Created` with `tilesetUrl`, `featureCount`, and any `warnings`. The
 }
 ```
 
-`heightField` must be a numeric field; `unit` is `meters` (default), `feet`, or `usSurveyFeet`. The configuration also surfaces to clients as an `extrusionInfo` block on the FeatureServer layer metadata (`GET /rest/services/{serviceId}/FeatureServer/{layerId}`), and the generation pipeline consumes it to produce extruded GLB tiles. Misconfiguration returns `422` with stable codes such as `EXTRUSION_HEIGHT_FIELD_NOT_FOUND`.
+`heightField` must be a numeric field; `unit` is `meters` (default), `feet`, or `usSurveyFeet`. The configuration also surfaces to clients as an `extrusionInfo` block on the FeatureServer layer metadata (`GET /rest/services/{serviceId}/FeatureServer/{layerId}`), and the generation pipeline consumes it to produce extruded GLB tiles. Misconfiguration returns `422` with stable codes such as `EXTRUSION_HEIGHT_FIELD_NOT_FOUND`. A later PUT without `extrusion` keeps the stored block; send a new block to change it. FeatureServer omits `extrusionInfo` when the height or base field is hidden.
 
 ### 3. Host an existing tileset (alternative to generation)
 
@@ -69,7 +71,7 @@ Externally produced tilesets register through the scene dataset registry (`POST 
 }
 ```
 
-`AssetRoot` is the directory containing `tileset.json`; omit `AccessPolicy` for a public scene. Republishing is idempotent — overwrite the files and the ETag updates on the next request. Manage registry records with `GET|POST /api/v1/admin/scenes` and `GET|PUT|DELETE /api/v1/admin/scenes/{id}`.
+`AssetRoot` is the directory containing `tileset.json`; omit `AccessPolicy` for a public scene. Republishing is idempotent — overwrite the files and the ETag updates on the next request. Manage registry records with `GET|POST /api/v1/admin/scenes` and `GET|PUT|DELETE /api/v1/admin/scenes/{datasetId}`. The path takes the record's `datasetId` GUID, not its `id` (the scene id); a scene id in the path returns `404`. `DELETE` deactivates the record.
 
 ### 4. Render in CesiumJS
 
@@ -96,10 +98,22 @@ Open `http://localhost:8080/scenes/downtown-buildings/tileset.json` in a browser
 
 Nested assets resolve under the same prefix, for example `GET /scenes/downtown-buildings/tile_0000.glb`.
 
+## Scene output storage
+
+The packaged quickstart and production Compose configurations write generated scenes to
+`/var/lib/honua/storage/scenes-generated` on the persistent storage volume. For a custom
+container deployment, set `SceneGeneration__OutputRoot` to a writable persistent mount
+and grant the server user write permission. The default relative directory is unsuitable
+for a read-only container filesystem.
+
+`SCENE_OUTPUT_UNWRITABLE` (500) means local scene output could not be written. Check
+`SceneGeneration:OutputRoot`, mount permissions and free space before trying again.
+The response omits filesystem paths and underlying exception details.
+
 ## Troubleshoot
 
 - **`SCENE_FEATURE_LIMIT_EXCEEDED` (400)** — the layer exceeds `SceneGeneration:MaxFeatureCount`; raise the cap or pass a smaller `maxFeatureCount` with a filtered source layer.
-- **`SCENE_REGISTRATION_CONFLICT` (409)** — the `sceneId` or display name collides with an existing (active or inactive) registration; pick a new id or delete the old record via `DELETE /api/v1/admin/scenes/{id}`.
+- **`SCENE_REGISTRATION_CONFLICT` (409)** — the `sceneId` or display name collides with an existing (active or inactive) registration; pick a new id and name. `DELETE /api/v1/admin/scenes/{datasetId}` only deactivates a record, so it keeps its id and name.
 - **Output is flat at Z=0** — the layer has no Z values and no `extrusion` block; configure step 2 and regenerate.
 - **`401` on protected scene assets** — the access-envelope token is missing, expired, or bound to another scene; re-issue the envelope and refresh before `expiresAt`.
 - **Non-convex polygons render with imperfect fills** — v1 uses fan triangulation; geometry is deterministic but complex rings may need preprocessing.

@@ -72,6 +72,10 @@ jobs:
   select-candidate:
     name: Select certified trunk candidate
     runs-on: ubuntu-24.04
+    # The release App key is an environment secret of bot-app, which deploys only from
+    # trunk, so a branch workflow cannot read it. Only a trunk run hands off; tag and
+    # branch-proof runs run outside the environment.
+    environment: ${{ github.ref_type == 'branch' && github.ref_name == 'trunk' && 'bot-app' || '' }}
     timeout-minutes: 30
     permissions:
       # The Actions token only reads here: run lists, check runs and the tag lookup.
@@ -218,7 +222,7 @@ jobs:
           [ "${HAS_APP_ID}" = true ] || missing+=(HONUA_RELEASE_APP_ID)
           [ "${HAS_APP_PRIVATE_KEY}" = true ] || missing+=(HONUA_RELEASE_APP_PRIVATE_KEY)
           if [ "${#missing[@]}" -ne 0 ]; then
-            echo "::error::Nightly candidate hand-off needs the honua-release GitHub App, but repository secret(s) ${missing[*]} are not set. Setup: create a GitHub App on the honua-io org with repository permissions Contents: write, Workflows: write and Actions: write; install it on honua-server only; then add its App ID as HONUA_RELEASE_APP_ID and its private key (PEM) as HONUA_RELEASE_APP_PRIVATE_KEY in honua-server's Actions secrets. See honua-io/honua-server#6613. The Actions token is not used as a fallback: it cannot create this tag."
+            echo "::error::Nightly candidate hand-off needs the honua-release GitHub App, but secret(s) ${missing[*]} are not set in the trunk-only bot-app environment. Setup: create a GitHub App on the honua-io org with repository permissions Contents: write, Workflows: write and Actions: write; install it on honua-server only; then add its App ID as HONUA_RELEASE_APP_ID and its private key (PEM) as HONUA_RELEASE_APP_PRIVATE_KEY as secrets of honua-server's bot-app environment. See honua-io/honua-server#6613. The Actions token is not used as a fallback: it cannot create this tag."
             exit 1
           fi
 
@@ -899,148 +903,6 @@ jobs:
           subject-digest: ${{ steps.manifest.outputs.subject_digest }}
           push-to-registry: true
 
-  verify-functions-aot:
-    name: Build & Boundary-Verify Azure Functions AOT
-    # Export a single-platform OCI candidate so BuildKit SBOM/provenance survive.
-    # Verify its immutable digest before assigning nightly tags. Branch dispatch
-    # produces candidate evidence only; channel tags remain trunk-owned.
-    concurrency:
-      group: nightly-publish-${{ needs.select-candidate.outputs.sha }}-functions
-      cancel-in-progress: false
-    runs-on: ubuntu-24.04
-    # 180, matching the other native-AOT ceilings: a cold build does not fit in
-    # 90 minutes and a timeout is self-perpetuating (see build-lambda-aot).
-    timeout-minutes: 180
-    needs: select-candidate
-    if: needs.select-candidate.outputs.mode != 'redirect' && needs.select-candidate.outputs.imaged != '1'
-    permissions:
-      attestations: write
-      contents: read
-      id-token: write
-      packages: write
-    steps:
-      - name: Refuse a candidate that is not this run's commit
-        # Provenance binds to github.sha; a build of any other sha is unpinnable.
-        env:
-          CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
-        run: |
-          if [ "${CANDIDATE_SHA}" != "${GITHUB_SHA}" ]; then
-            echo "::error::candidate ${CANDIDATE_SHA} is not this run's commit ${GITHUB_SHA}: labels would name ${CANDIDATE_SHA} while the build provenance names ${GITHUB_SHA}. Dispatch this workflow on trunk (it re-dispatches itself at refs/tags/nightly-candidate-<sha7>) or directly at that tag."
-            exit 1
-          fi
-
-      - name: Checkout certified candidate
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.select-candidate.outputs.sha }}
-
-      # The candidate can be older than this workflow revision, whose steps call
-      # the verifier and promoter with its own flags (the registry-attestation
-      # requirement arrived with #5367). Run those two self-contained scripts
-      # from github.sha; the build context, Dockerfiles and the GeoParquet
-      # smoke's compose/seed stay the candidate's own.
-      - name: Stage this workflow revision's image verification tooling
-        run: |
-          set -euo pipefail
-          git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
-          mkdir -p "${RUNNER_TEMP}/nightly-tooling"
-          git archive "${GITHUB_SHA}" scripts/ci/verify-serving-image-boundary.py scripts/ci/promote-verified-image.py scripts/ci/immutable-container-tags.py \
-            | tar -x -C "${RUNNER_TEMP}/nightly-tooling"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
-
-      - name: Log in to GHCR for build cache
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
-        with:
-          registry: ${{ env.REGISTRY_GHCR }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
-        with:
-          images: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
-          tags: |
-            type=raw,value=nightly-functions-aot
-            type=raw,value=nightly-functions-aot-${{ needs.select-candidate.outputs.sha7 }}
-          labels: |
-            org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
-            org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
-          annotations: |
-            org.opencontainers.image.revision=${{ needs.select-candidate.outputs.sha }}
-            org.opencontainers.image.version=${{ needs.select-candidate.outputs.version }}
-
-      - name: Build nightly Azure Functions AOT serving image
-        id: functions_candidate
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
-        with:
-          context: .
-          file: docker/Dockerfile.functions.aot
-          build-args: |
-            VERSION=${{ needs.select-candidate.outputs.version }}
-            HONUA_GIT_SHA=${{ needs.select-candidate.outputs.sha }}
-          platforms: linux/amd64
-          outputs: type=image,name=${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }},push-by-digest=true,name-canonical=true,push=true
-          labels: ${{ steps.meta.outputs.labels }}
-          annotations: ${{ steps.meta.outputs.annotations }}
-          secrets: |
-            github_actor=${{ github.actor }}
-            github_token=${{ github.token }}
-          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-functions-aot-amd64
-          # ignore-error: a failed cache export must not fail an otherwise
-          # successful build; the cache is an accelerator, not evidence.
-          cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-functions-aot-amd64,mode=max,ignore-error=true
-          provenance: mode=max
-          sbom: true
-
-      - name: Verify nightly Azure Functions AOT serving-image contents
-        shell: bash
-        working-directory: ${{ runner.temp }}/nightly-tooling
-        env:
-          CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.functions_candidate.outputs.digest }}
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends skopeo
-          docker buildx imagetools inspect "$CANDIDATE"
-          docker pull "$CANDIDATE"
-          python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE" \
-            --require-attestations --attestation-report "${RUNNER_TEMP}/functions-attestations-amd64.json"
-
-      - name: Attest nightly Functions AOT candidate
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-name: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
-          subject-digest: ${{ steps.functions_candidate.outputs.digest }}
-          push-to-registry: true
-
-      - name: Publish verified nightly Functions AOT tags
-        if: needs.select-candidate.outputs.publish == 'true'
-        shell: bash
-        working-directory: ${{ runner.temp }}/nightly-tooling
-        env:
-          CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.functions_candidate.outputs.digest }}
-          TAGS: ${{ steps.meta.outputs.tags }}
-          CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
-          RELEASE_VERSION: ${{ needs.select-candidate.outputs.version }}
-        run: |
-          set -euo pipefail
-          printf '%s\n' "$TAGS" | python3 scripts/ci/immutable-container-tags.py \
-            --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION" \
-            | python3 scripts/ci/promote-verified-image.py \
-            --candidate "$CANDIDATE" \
-            --staging-tag "boundary-candidate-nightly-functions-aot-${{ github.run_id }}-${{ github.run_attempt }}" \
-            --authfile "$HOME/.docker/config.json"
-
-      - name: Upload Functions immutable attestation references
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: functions-attestations-amd64
-          path: ${{ runner.temp }}/functions-attestations-amd64.json
-          if-no-files-found: error
-
   build-jit:
     if: needs.select-candidate.outputs.publish == 'true'
     name: Build & Push JIT (${{ matrix.arch }}${{ matrix.store_suffix }})
@@ -1250,7 +1112,14 @@ jobs:
           for tag in $TAGS; do
             repository="${tag%:*}"
             tag_name="${tag##*:}"
-            destinations="$(printf '%s\n' "$tag" | python3 scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION")"
+            # The AOT index is the default image: each AOT tag and its bare alias come
+            # from one create, so the attested nightly-aot-<sha7> digest is nightly-<sha7> too.
+            case "$tag_name" in
+              nightly-aot|trunk-aot) default_tag="${repository}:${tag_name%-aot}" ;;
+              nightly-aot-*) default_tag="${repository}:nightly-${tag_name#nightly-aot-}" ;;
+              *) echo "Unexpected AOT manifest tag: $tag" >&2; exit 1 ;;
+            esac
+            destinations="$(printf '%s\n' "$tag" "$default_tag" | python3 scripts/ci/immutable-container-tags.py --sha "$CANDIDATE_SHA" --release-version "$RELEASE_VERSION")"
             [ -n "$destinations" ] || continue
             tag_args=()
             while IFS= read -r destination; do tag_args+=(-t "$destination"); done <<< "$destinations"
@@ -1280,7 +1149,7 @@ jobs:
     runs-on: ubuntu-24.04
     environment: publish-images
     timeout-minutes: 30
-    needs: [select-candidate, manifest-jit]
+    needs: [select-candidate, manifest-aot]
     if: needs.select-candidate.outputs.publish == 'true'
     permissions:
       contents: read
@@ -1302,7 +1171,7 @@ jobs:
           persist-credentials: false
       - name: Verify source and serving image binding
         env:
-          SERVER_IMAGE: ${{ needs.manifest-jit.outputs.image }}
+          SERVER_IMAGE: ${{ needs.manifest-aot.outputs.image }}
         run: |
           [[ "$SERVER_IMAGE" =~ @sha256:[a-f0-9]{64}$ ]]
       # Log in to Docker Hub before anything pulls from it: the QEMU and Buildx setup (binfmt and
@@ -1323,7 +1192,7 @@ jobs:
       - name: Verify serving index revision matches the candidate source
         env:
           CANDIDATE_SHA: ${{ needs.select-candidate.outputs.sha }}
-          SERVER_IMAGE: ${{ needs.manifest-jit.outputs.image }}
+          SERVER_IMAGE: ${{ needs.manifest-aot.outputs.image }}
         run: |
           docker buildx imagetools inspect "$SERVER_IMAGE" --format '{{json .Manifest}}' \
             | jq -e --arg sha "$CANDIDATE_SHA" '.annotations["org.opencontainers.image.revision"] == $sha'
@@ -1343,7 +1212,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile.compose-executor
-          build-args: HONUA_SERVER_IMAGE=${{ needs.manifest-jit.outputs.image }}
+          build-args: HONUA_SERVER_IMAGE=${{ needs.manifest-aot.outputs.image }}
           platforms: linux/amd64,linux/arm64
           outputs: type=image,name=ghcr.io/honua-io/honua-server,push-by-digest=true,name-canonical=true,push=true
           labels: |
@@ -1361,10 +1230,11 @@ jobs:
       # The customer quickstart pins this executor, so it gets the release gate the serving
       # images get: no tag and no quickstart until its digest has no HIGH/CRITICAL finding
       # with an upstream fix (see scripts/ci/trivy-release-gate.sh). The scan reads the
-      # runner's platform (linux/amd64); both platforms copy the same docker and compose
-      # release. An executor published before this gate is scanned again when its candidate
-      # is rerun. A failure holds the nightly candidate until the CLI pin is bumped or an
-      # exception is recorded in .trivyignore-release.
+      # runner's platform (linux/amd64); both platforms copy the same docker release and
+      # compile the same pinned Compose source. An executor published before this gate is
+      # scanned again when its candidate is rerun. A failure holds the nightly candidate
+      # until the CLI or Compose source pin is bumped or an exception is recorded in
+      # .trivyignore-release.
       - name: Gate executor on fixable HIGH/CRITICAL vulnerabilities
         env:
           CANDIDATE: ghcr.io/honua-io/honua-server@${{ steps.executor.outputs.digest }}
@@ -1417,9 +1287,31 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.console-token.outputs.token }}
         run: python3 scripts/docker/fetch_quickstart_console.py --output artifacts/console.zip
+      # The quickstart also pulls third-party images (database, Console web, build bases), listed
+      # by scripts/docker/shipped_images.py. A tag can move after review, so every one must be
+      # pinned by digest, and each gets the release gate before the quickstart is packaged. The
+      # database and Console web images are Honua's (.github/workflows/install-images.yml); a
+      # finding there is fixed by re-pinning the weekly rebuild's digest.
+      - name: Require digest pins for third-party install images
+        run: python3 scripts/docker/shipped_images.py
+      - name: Gate third-party and Honua install images on fixable HIGH/CRITICAL vulnerabilities
+        timeout-minutes: 10
+        env:
+          TRIVY_IMAGE: aquasec/trivy:0.68.1@sha256:a93fd67162843c0f749002af9245fe9a2e5edc41445bd71d3949c803e95ef05b
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
+        run: |
+          images="$(python3 scripts/docker/shipped_images.py --list)"
+          status=0
+          for image in $images; do
+            if ! scripts/ci/trivy-release-gate.sh "$image"; then
+              echo "::error::$image has fixable HIGH/CRITICAL findings"
+              status=1
+            fi
+          done
+          exit "$status"
       - name: Package immutable customer quickstart
         env:
-          SERVER_IMAGE: ${{ needs.manifest-jit.outputs.image }}
+          SERVER_IMAGE: ${{ needs.manifest-aot.outputs.image }}
           EXECUTOR_IMAGE: ghcr.io/honua-io/honua-server@${{ steps.executor.outputs.digest }}
           CANDIDATE_SHA7: ${{ needs.select-candidate.outputs.sha7 }}
         run: |
@@ -1503,10 +1395,10 @@ jobs:
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
             docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
-            type=raw,value=nightly${{ matrix.store_suffix }}
-            type=raw,value=nightly-${{ needs.mirror-base-images.outputs.build_date }}${{ matrix.store_suffix }}
-            type=raw,value=nightly-${{ needs.select-candidate.outputs.sha7 }}${{ matrix.store_suffix }}
-            type=raw,value=trunk${{ matrix.store_suffix }}
+            type=raw,value=nightly${{ matrix.store_suffix }},enable=${{ matrix.store_suffix != '' }}
+            type=raw,value=nightly-${{ needs.mirror-base-images.outputs.build_date }}${{ matrix.store_suffix }},enable=${{ matrix.store_suffix != '' }}
+            type=raw,value=nightly-${{ needs.select-candidate.outputs.sha7 }}${{ matrix.store_suffix }},enable=${{ matrix.store_suffix != '' }}
+            type=raw,value=trunk${{ matrix.store_suffix }},enable=${{ matrix.store_suffix != '' }}
             type=raw,value=nightly-jit${{ matrix.store_suffix }}
             type=raw,value=nightly-jit-${{ needs.mirror-base-images.outputs.build_date }}${{ matrix.store_suffix }}
             type=raw,value=nightly-jit-${{ needs.select-candidate.outputs.sha7 }}${{ matrix.store_suffix }}
@@ -1541,7 +1433,7 @@ jobs:
           done
           if [ -z "${{ matrix.store_suffix }}" ]; then
             subject_name="${REGISTRY_GHCR}/${IMAGE_NAME_GHCR}"
-            subject_ref="${subject_name}:nightly-${{ needs.select-candidate.outputs.sha7 }}"
+            subject_ref="${subject_name}:nightly-jit-${{ needs.select-candidate.outputs.sha7 }}"
             subject_digest="$(docker buildx imagetools inspect "$subject_ref" --format '{{.Manifest.Digest}}')"
             echo "image=${subject_name}@${subject_digest}" >> "$GITHUB_OUTPUT"
             echo "subject_name=$subject_name" >> "$GITHUB_OUTPUT"

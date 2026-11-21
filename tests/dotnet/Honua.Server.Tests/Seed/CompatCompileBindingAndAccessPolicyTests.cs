@@ -11,22 +11,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Seed;
 
-/// <summary>
-/// Regression tests for the Metadata v2 compat-compiler
-/// (<c>honua.seed_metadata_v2_compat_snapshot()</c>) that exercise the SQL seed
-/// directly against a fresh PostGIS database and assert the compiled snapshot.
-///
-/// Covers honua-server#1345 (access policy must be carried through so a protected
-/// service stays protected after compile) and honua-server#1312 (shared-features
-/// storage bindings must carry layerDiscriminatorColumn/geometryColumn/attributesColumn
-/// so reads are constrained to a single layer and project geometry).
-/// </summary>
-/// <remarks>
-/// Uses the shared <see cref="PostgresFixture"/> sidecar (honua-server#3988) instead of a
-/// dedicated Testcontainer: the seed SQL writes to the literal, process-global <c>honua</c>
-/// schema, which per-test <c>search_path</c> isolation does not protect, so the test still
-/// gets its own dedicated database via <see cref="PostgresFixture.CreateIsolatedDatabaseAsync"/>.
-/// </remarks>
 [Collection("Database.CoreEndpoints")]
 [Protocol(TestProtocols.Infrastructure)]
 public sealed class CompatCompileBindingAndAccessPolicyTests : IAsyncLifetime
@@ -145,7 +129,7 @@ public sealed class CompatCompileBindingAndAccessPolicyTests : IAsyncLifetime
         using var document = JsonDocument.Parse(snapshot);
         var root = document.RootElement;
 
-        // honua-server#1345 — the compiled service for a non-anonymous service must
+        // The compiled service for a non-anonymous service must
         // NOT be anonymous. A regression (drop to allowAnonymous=true) would let an
         // unauthenticated client read a protected service.
         var protectedService = root.GetProperty("services")
@@ -172,7 +156,7 @@ public sealed class CompatCompileBindingAndAccessPolicyTests : IAsyncLifetime
                 .Should().BeFalse("protected layer resources must stay non-anonymous after compile (#1345)");
         }
 
-        // honua-server#1312 — shared-`features` storage bindings must carry the
+        // Shared-`features` storage bindings must carry the
         // discriminator + geometry + attributes columns so reads are constrained
         // to a single layer and geometry resolves.
         var sharedBindings = root.GetProperty("storageBindings")
@@ -191,7 +175,7 @@ public sealed class CompatCompileBindingAndAccessPolicyTests : IAsyncLifetime
             options.GetProperty("attributesColumn").GetString().Should().Be("attributes");
         }
 
-        // honua-server#2638 — the ImageServer sidecar must retain the source layer's
+        // The ImageServer sidecar must retain the source layer's
         // integer storage handle. Without it, service discovery succeeds but ImageServer
         // resolution fails with "ImageServer is not enabled".
         var imageBindings = root.GetProperty("storageBindings")

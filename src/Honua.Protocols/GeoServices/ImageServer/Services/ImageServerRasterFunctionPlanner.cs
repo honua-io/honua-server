@@ -614,10 +614,17 @@ internal sealed class ImageServerRasterFunctionPlanner
             return RenderingRuleMapping.Invalid("ExtractBand BandIds must be a non-empty array of 0-based band indices.");
         }
 
+        if (element.GetArrayLength() > ImageServerRequestLimits.MaxBandIds)
+        {
+            return RenderingRuleMapping.Invalid(
+                $"ExtractBand BandIds may list at most {ImageServerRequestLimits.MaxBandIds} bands.");
+        }
+
         var bands = new List<int>(element.GetArrayLength());
         foreach (var entry in element.EnumerateArray())
         {
-            if (entry.ValueKind != JsonValueKind.Number || !entry.TryGetInt32(out var zeroBased) || zeroBased < 0)
+            // int.MaxValue has no 1-based store band: shifting it would wrap negative.
+            if (entry.ValueKind != JsonValueKind.Number || !entry.TryGetInt32(out var zeroBased) || zeroBased is < 0 or int.MaxValue)
             {
                 return RenderingRuleMapping.Invalid("ExtractBand BandIds entries must be non-negative integers.");
             }

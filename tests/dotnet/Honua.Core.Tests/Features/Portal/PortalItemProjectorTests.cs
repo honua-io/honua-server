@@ -19,11 +19,6 @@ using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
 namespace Honua.Core.Tests.Features.Portal;
 
-/// <summary>
-/// Unit tests for the RBAC-aware Metadata v2 → ArcGIS Portal item projector.
-/// Covers service-type mapping, item URL emission (including behind-proxy base
-/// URLs), access-tier derivation, and the RBAC visibility rule.
-/// </summary>
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class PortalItemProjectorTests
 {
@@ -298,7 +293,7 @@ public sealed class PortalItemProjectorTests
     public void ProjectVisibleItems_RegistryMarksConstructUnservable_OmitsItem()
     {
         // The facade serve decision is sourced from the shared capability
-        // registry (#1382). A registry whose feature-service descriptor is not
+        // registry. A registry whose feature-service descriptor is not
         // servable must omit the item even though the protocol→item-type table
         // still recognises FeatureServer — proving the verdict comes from the
         // registry, not the private mapping table.
@@ -319,8 +314,7 @@ public sealed class PortalItemProjectorTests
     [Operation(Operations.Metadata)]
     public void ProjectVisibleItems_BuiltInRegistry_ServesAllFacadeServiceTypes()
     {
-        // Behaviour-preservation guard: every Esri service construct the private
-        // table used to accept is served by the built-in registry descriptors.
+        // Built-in registry descriptors must serve every supported Esri service construct.
         var registry = new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors);
         registry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.FacadeFeatureService).CanServe.Should().BeTrue();
         registry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.FacadeMapService).CanServe.Should().BeTrue();
@@ -430,12 +424,6 @@ public sealed class PortalItemProjectorTests
         return new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType: "Test"));
     }
 
-    /// <summary>
-    /// Faithful test double for the host's access-policy evaluator. Reproduces the
-    /// deny-wins composition of the production <c>AccessPolicyEvaluator</c>
-    /// (anonymous flag → authenticated → role membership) so the projector's RBAC
-    /// behaviour is exercised end to end without referencing Honua.Hosting.
-    /// </summary>
     private sealed class FakePortalReadAuthorizer : IPortalResourceReadAuthorizer
     {
         public AccessDecision Evaluate(ClaimsPrincipal principal, MetadataV2Object? resource, MetadataV2Service service,

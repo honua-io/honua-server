@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Restore-only project: the runtime image restores it in locked mode into the shared
+    NuGet cache (/opt/nuget/packages), so a common user tool builds with no network restore.
+    The RuntimeIdentifier pulls the linux-x64 native GDAL runtime asset into the cache too.
+    Not part of Honua.CustomCode.slnx; it has no code.
+  -->
+  <PropertyGroup>
+    <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NetTopologySuite" />
+    <PackageReference Include="NetTopologySuite.IO.GeoJSON" />
+    <PackageReference Include="Honua.Sdk" />
+    <PackageReference Include="MaxRev.Gdal.Core" />
+    <PackageReference Include="MaxRev.Gdal.LinuxRuntime.Minimal" />
+  </ItemGroup>
+
+</Project>

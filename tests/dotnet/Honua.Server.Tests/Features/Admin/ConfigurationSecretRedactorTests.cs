@@ -7,19 +7,13 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Verifies the admin configuration-discovery value redactor is deny-by-default: it masks credentials
-/// embedded in generically named fields (ConnectionString/DefaultConnection/Endpoint/Username) and any
-/// value that looks credential-bearing regardless of property name (honua-server#2804), while leaving
-/// innocuous values readable.
-/// </summary>
 public sealed class ConfigurationSecretRedactorTests
 {
     [UnitTest]
     public void Redact_ConnectionStringPropertyWithEmbeddedPassword_IsMasked()
     {
-        // Property name is NOT on the legacy password/secret/key/token denylist, yet the value leaks a
-        // password — this is the exact leak reported in honua-server#2804.
+        // Property name is NOT on the legacy password/secret/key/token denylist, yet the value carries
+        // a password and must be masked.
         const string connectionString =
             "Host=db.internal;Port=5432;Database=honua;Username=honua;Password=sup3r-s3cret!";
 

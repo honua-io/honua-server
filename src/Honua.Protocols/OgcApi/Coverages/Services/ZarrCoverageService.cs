@@ -18,7 +18,7 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.Ogc.Api.Coverages.Services;
 
-internal sealed class ZarrCoverageService
+internal sealed partial class ZarrCoverageService
 {
     internal const string CoverageJsonContentType = "application/prs.coverage+json";
 
@@ -27,7 +27,7 @@ internal sealed class ZarrCoverageService
     private static readonly ImmutableHashSet<string> SupportedQueryParameters =
         ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "f", "subset", "properties", "datetime", "token");
 
-    private static readonly string[] AcceptableMediaTypes = [CoverageJsonContentType, MediaTypes.Json];
+    private static readonly string[] AcceptableMediaTypes = [CoverageJsonContentType, MediaTypes.Json, GeoTiffContentType];
 
     private readonly IZarrStore _zarrStore;
     private readonly ZarrSubsetReader _subsetReader;
@@ -86,6 +86,8 @@ internal sealed class ZarrCoverageService
 
         var primary = ResolvePrimaryArray(metadata);
         var georeferenced = metadata.Srid > 0;
+        var domainSet = georeferenced ? CreateGeoTiffDomainSet(metadata, primary) : null;
+        AddGeoTiffCoverageLink(links, basePath, domainSet);
         var epsgUri = CreateEpsgUri(metadata.Srid);
 
         var crs = ImmutableArray.CreateBuilder<string>();
@@ -110,6 +112,8 @@ internal sealed class ZarrCoverageService
             StorageCrs = georeferenced ? epsgUri : null,
             Grid = CreateGrid(metadata, primary, georeferenced),
             Domain = CreateDomain(metadata, primary, georeferenced),
+            DomainSet = domainSet,
+            RangeType = domainSet is null ? null : CreateGeoTiffRangeType(primary),
             DefaultFields = metadata.Arrays.Select(static array => array.Name).ToImmutableArray()
         };
     }
@@ -161,19 +165,24 @@ internal sealed class ZarrCoverageService
         ArgumentNullException.ThrowIfNull(registration);
         var metadata = RequireMetadata(registration);
 
+        var format = NegotiateFormat(context, f);
+        if (format.Error is not null)
+        {
+            return format.Error;
+        }
+
+        if (format.Format == ZarrCoverageFormat.GeoTiff)
+        {
+            return await GetGeoTiffCoverageAsync(context, new ZarrCoverageTarget(collectionId, registration), cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         var unsupportedParameter = context.Request.Query.Keys.FirstOrDefault(parameter => !SupportedQueryParameters.Contains(parameter));
         if (unsupportedParameter is not null)
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
                 $"Parameter '{unsupportedParameter}' is not supported for Zarr-backed coverage collections. Use properties and subset=dim(low:high) grid-index subsetting.");
-        }
-
-        if (!TryNegotiateFormat(context, f, out var formatError, out var notAcceptable))
-        {
-            return notAcceptable
-                ? StandardErrorHelpers.CreateNotAcceptable(context, formatError!)
-                : StandardErrorHelpers.CreateBadRequest(context, formatError!);
         }
 
         if (!TryResolveVariable(context, out var variable, out var variableError))
@@ -196,45 +205,14 @@ internal sealed class ZarrCoverageService
             return StandardErrorHelpers.CreateBadRequest(context, planError!);
         }
 
-        var rangeReader = _rangeReaders.FirstOrDefault(reader => reader.Provider == registration.Provider);
-        if (rangeReader is null)
+        var read = await ReadSubsetAsync(context, (new ZarrCoverageTarget(collectionId, registration), plan!.Request), cancellationToken)
+            .ConfigureAwait(false);
+        if (read.Error is not null)
         {
-            ZarrCoverageLog.RangeReaderMissing(_logger, collectionId, registration.Provider.ToString());
-            return StandardErrorHelpers.CreateInternalServerError(
-                context,
-                "The storage backend for this coverage collection is not configured.");
+            return read.Error;
         }
 
-        ZarrSubsetResult result;
-        try
-        {
-            result = await _subsetReader.ReadSubsetAsync(
-                    rangeReader,
-                    registration.Bucket,
-                    registration.RootPath,
-                    metadata,
-                    plan!.Request,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
-        {
-            // Subset reader validation messages are client-safe (codec, dtype, bounds, caps).
-            ZarrCoverageLog.SubsetRejected(_logger, collectionId, ex.Message);
-            return StandardErrorHelpers.CreateBadRequest(context, ex.Message);
-        }
-        catch (InvalidDataException ex)
-        {
-            ZarrCoverageLog.SubsetReadFailed(_logger, ex, collectionId);
-            return StandardErrorHelpers.CreateInternalServerError(
-                context,
-                "The Zarr store backing this coverage collection returned invalid data.");
-        }
-
+        var result = read.Result!;
         var (axes, xAxis, yAxis) = BuildAxes(metadata, plan!);
         byte[] payload;
         try
@@ -250,6 +228,50 @@ internal sealed class ZarrCoverageService
         WriteCoverageHeaders(context, metadata, plan!);
         ZarrCoverageLog.CoverageServed(_logger, collectionId, result.Variable, payload.Length);
         return Results.Bytes(payload, CoverageJsonContentType);
+    }
+
+    private async Task<ZarrSubsetRead> ReadSubsetAsync(
+        HttpContext context,
+        (ZarrCoverageTarget Target, ZarrSubsetRequest Request) read,
+        CancellationToken cancellationToken)
+    {
+        var (target, request) = read;
+        var registration = target.Registration;
+        var rangeReader = _rangeReaders.FirstOrDefault(reader => reader.Provider == registration.Provider);
+        if (rangeReader is null)
+        {
+            ZarrCoverageLog.RangeReaderMissing(_logger, target.CollectionId, registration.Provider.ToString());
+            return new ZarrSubsetRead(null, StandardErrorHelpers.CreateInternalServerError(
+                context,
+                "The storage backend for this coverage collection is not configured."));
+        }
+
+        try
+        {
+            var result = await _subsetReader
+                .ReadSubsetAsync(rangeReader, registration.Bucket, registration.RootPath, RequireMetadata(registration), request, cancellationToken)
+                .ConfigureAwait(false);
+            return new ZarrSubsetRead(result, null);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or InvalidDataException)
+        {
+            return new ZarrSubsetRead(null, MapSubsetReadFailure(context, target.CollectionId, ex));
+        }
+    }
+
+    private IResult MapSubsetReadFailure(HttpContext context, string collectionId, Exception exception)
+    {
+        if (exception is InvalidDataException)
+        {
+            ZarrCoverageLog.SubsetReadFailed(_logger, exception, collectionId);
+            return StandardErrorHelpers.CreateInternalServerError(
+                context,
+                "The Zarr store backing this coverage collection returned invalid data.");
+        }
+
+        // Subset reader validation messages are client-safe (codec, dtype, bounds, caps).
+        ZarrCoverageLog.SubsetRejected(_logger, collectionId, exception.Message);
+        return StandardErrorHelpers.CreateBadRequest(context, exception.Message);
     }
 
     private static ZarrStoreMetadata RequireMetadata(ZarrRegistration registration)
@@ -342,36 +364,37 @@ internal sealed class ZarrCoverageService
         return new CoverageDomain { Axes = builder.ToImmutable() };
     }
 
-    private static bool TryNegotiateFormat(HttpContext context, string? f, out string? error, out bool notAcceptable)
+    private static ZarrFormatChoice NegotiateFormat(HttpContext context, string? f)
     {
-        error = null;
-        notAcceptable = false;
-
         if (!string.IsNullOrWhiteSpace(f))
         {
-            switch (f.Trim().ToLowerInvariant())
+            return f.Trim().ToLowerInvariant() switch
             {
-                case "covjson":
-                case "coveragejson":
-                case "json":
-                case CoverageJsonContentType:
-                    return true;
-                default:
-                    error = $"Unsupported coverage format '{f}' for a Zarr-backed collection. Zarr-backed collections currently serve CoverageJSON; use f=covjson.";
-                    return false;
-            }
+                "covjson" or "coveragejson" or "json" or CoverageJsonContentType => ZarrFormatChoice.CoverageJson,
+                "geotiff" or "tiff" or "tif" or GeoTiffContentType or "image/tiff; application=geotiff" or "image/tiff;application=geotiff"
+                    => ZarrFormatChoice.GeoTiff,
+                _ => new ZarrFormatChoice(ZarrCoverageFormat.CoverageJson, StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    $"Unsupported coverage format '{f}' for a Zarr-backed collection. Use f=covjson or f=geotiff."))
+            };
         }
 
         var acceptHeader = context.Request.Headers.Accept;
-        if (!StringValues.IsNullOrEmpty(acceptHeader) &&
-            !ContentNegotiationHelpers.TrySelectBestMediaType(AcceptableMediaTypes, acceptHeader, out _))
+        if (StringValues.IsNullOrEmpty(acceptHeader))
         {
-            error = "Zarr-backed coverage collections serve application/prs.coverage+json.";
-            notAcceptable = true;
-            return false;
+            return ZarrFormatChoice.CoverageJson;
         }
 
-        return true;
+        if (!ContentNegotiationHelpers.TrySelectBestMediaType(AcceptableMediaTypes, acceptHeader, out var selected))
+        {
+            return new ZarrFormatChoice(ZarrCoverageFormat.CoverageJson, StandardErrorHelpers.CreateNotAcceptable(
+                context,
+                "Zarr-backed coverage collections serve application/prs.coverage+json or image/tiff; application=geotiff."));
+        }
+
+        return string.Equals(selected, GeoTiffContentType, StringComparison.OrdinalIgnoreCase)
+            ? ZarrFormatChoice.GeoTiff
+            : ZarrFormatChoice.CoverageJson;
     }
 
     private static bool TryResolveVariable(HttpContext context, out string? variable, out string? error)
@@ -470,7 +493,7 @@ internal sealed class ZarrCoverageService
             {
                 // A subset targeting a declared additional coordinate axis
                 // (vertical/elevation/named) is resolved from coordinate values to a
-                // grid-index slice through the shared coordinate-axis indexer (#1872).
+                // grid-index slice through the shared coordinate-axis indexer.
                 if (TryMatchCoordinateAxis(metadata, segment, out var axis))
                 {
                     if (!TryResolveCoordinateSubset(axis!, segment, out var resolved, out error))

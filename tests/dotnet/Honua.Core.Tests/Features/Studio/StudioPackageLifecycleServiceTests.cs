@@ -127,7 +127,7 @@ public sealed partial class StudioPackageLifecycleServiceTests
         // Callers that apply an edit and then version it (the live-collaboration checkpoint) must
         // be able to bind the version to the generation their edit produced: this method re-reads
         // the draft, so a concurrent update landing in between would otherwise be versioned in
-        // place of the caller's edit — silently dropping it (honua-server#2999 review).
+        // place of the caller's edit — silently dropping it.
         var service = BuildServiceProvider().GetRequiredService<IStudioPackageLifecycleService>();
         var draft = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
         {
@@ -309,10 +309,10 @@ public sealed partial class StudioPackageLifecycleServiceTests
     [UnitTest]
     public async Task CreateDraft_WithNullCollections_CoalescesToEmptyWithoutError()
     {
-        // Regression: honua-server#2351 — a client sending an explicit JSON null for
-        // bindings/dependencies/provenance must be treated identically to omitting them
-        // (empty), not persisted as a null collection that later triggers a spurious
-        // ArgumentNullException ("source") on the otherwise-successful path.
+        // A client sending an explicit JSON null for bindings/dependencies/provenance
+        // must be treated identically to omitting them (empty), not persisted as a null
+        // collection that later triggers a spurious ArgumentNullException ("source") on
+        // the otherwise-successful path.
         var provider = BuildServiceProvider();
         var service = provider.GetRequiredService<IStudioPackageLifecycleService>();
 
@@ -709,9 +709,9 @@ public sealed partial class StudioPackageLifecycleServiceTests
     [UnitTest]
     public async Task DeleteDraft_WithNoSavedVersion_RemovesOrphanFromContentItemList()
     {
-        // Regression for honua-server#3003 PR review: a draft-only item, deleted before any
-        // version is ever saved, must not linger as an unopenable orphan in
-        // GET /content-items (no draft, no version, nothing to show or open).
+        // A draft-only item, deleted before any version is ever saved, must not linger as
+        // an unopenable orphan in GET /content-items (no draft, no version, nothing to show
+        // or open).
         var service = BuildServiceProvider().GetRequiredService<IStudioPackageLifecycleService>();
         var draft = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
         {
@@ -831,7 +831,7 @@ public sealed partial class StudioPackageLifecycleServiceTests
             () => service.GetVersionAsync(itemId, versionId));
     }
 
-    // honua-server#3980: the in-memory store must apply the approval's expected current version
+    // The in-memory store must apply the approval's expected current version
     // as a compare-and-set inside the same lock that moves the published pointer.
     [UnitTest]
     public async Task CreatePublicationRequest_CurrentPointerMovedAfterValidation_ThrowsPointerConflict()
@@ -931,7 +931,7 @@ public sealed partial class StudioPackageLifecycleServiceTests
         Assert.Null(otherPointers!.PublishedVersionId);
     }
 
-    // honua-server#5825: a form (or analysis) publish goes to the family bridge. A native
+    // A form (or analysis) publish goes to the family bridge. A native
     // Studio item that already owns the route must not reject that request.
     [UnitTest]
     public async Task CreatePublicationRequest_BridgedFamily_PublishesDespiteNativeRouteOwner()
@@ -984,7 +984,7 @@ public sealed partial class StudioPackageLifecycleServiceTests
         Assert.False(bridgedPointers!.GovernsStudioRoutes);
     }
 
-    // honua-server#5825: a bridge registered for Form does not waive route ownership for a Form
+    // A bridge registered for Form does not waive route ownership for a Form
     // that still lives in the inner Studio store. Approval-gated hosts reject that proposal
     // here, rather than accepting it and failing when the inner store actuates.
     [UnitTest]
@@ -1359,10 +1359,6 @@ public sealed partial class StudioPackageLifecycleServiceTests
         }
     }
 
-    /// <summary>
-    /// One bridged item. GetVersion and GetPointers resolve it; Publish records the request
-    /// instead of writing the inner Studio store.
-    /// </summary>
     private sealed class SingleItemFamilyBridge : IStudioFamilyPersistenceBridge
     {
         private StudioContentVersion? _version;

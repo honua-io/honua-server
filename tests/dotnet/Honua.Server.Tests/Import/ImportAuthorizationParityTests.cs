@@ -29,7 +29,6 @@ using NSubstitute.ClearExtensions;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>Real HTTP transport parity for both adapters over the file-import mutation.</summary>
 [Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.Mcp)]
@@ -164,9 +163,8 @@ public sealed class ImportAuthorizationParityTests : IAsyncLifetime
                     Arg.Any<ImportRequest>(),
                     Arg.Any<CancellationToken>());
                 _effects.Should().ContainSingle();
-                _effects[0].OverwriteExisting.Should().Be(
-                    testCase.Surface == ImportSurface.McpInline,
-                    "MCP's forced overwrite and REST's caller option cannot change authority");
+                _effects[0].OverwriteExisting.Should().BeFalse(
+                    "agent ingest is create-only and REST's caller option cannot change authority");
             }
             else
             {

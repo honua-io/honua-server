@@ -12,13 +12,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Integration tests for the temporal extent endpoint introduced for ticket #379.
-/// Discovery is opt-in: layers without explicit Metadata V2 temporal metadata
-/// configuration must not surface a temporal extent even if they have a Date /
-/// DateTime column. The happy path therefore configures temporal metadata via the
-/// admin metadata updater before issuing the request.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
@@ -73,7 +66,7 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/9999/temporalExtent?f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -85,7 +78,7 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/nonexistent/FeatureServer/{WebAppFixture.TestLayerId}/temporalExtent?f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -97,7 +90,7 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/temporalExtent?f=xml");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -109,7 +102,7 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/temporalExtent?where=1=1&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -131,7 +124,7 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/temporalExtent?f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -171,20 +164,16 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_NonTimeAwareLayer_WithTime_ReturnsBadRequest()
     {
-        // The temporal-animation contract requires query?time= to reject
-        // non-time-aware layers with HTTP 400 (docs/gis/temporal-animation-api.md
-        // "Empty-range and non-time-aware behavior" table). The previous
-        // GeoServicesTemporalQueryBuilder fell back to the first Date /
-        // DateTime attribute when TimeInfo was absent, silently filtering on
-        // a non-temporal column instead of rejecting the request — same gap
-        // the MVT path used to have.
+        // The temporal-animation contract rejects query?time= on non-time-aware layers
+        // with HTTP 400; see docs/gis/temporal-animation-api.md,
+        // Empty-range and non-time-aware behavior.
         await ClearLayerTemporalAsync();
 
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query"
             + "?time=2024-06-15T12:00:00Z&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -234,12 +223,12 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/temporalExtent")]
     public async Task TemporalExtent_EpochMillisStoredValues_ReturnsExtent()
     {
-        // Regression for honua-io/honua-server#1910 symptom 2: a time field whose JSONB
-        // value is stored as epoch-milliseconds (a JSON number, as Esri applyEdits posts
-        // it) must NOT 500 with Postgres 22008 "date/time field value out of range". The
-        // MIN/MAX temporal-extent cast has to detect numeric epoch-ms and convert via
-        // to_timestamp, mirroring the WHERE/filter path. Insert a row whose `timestamp`
-        // attribute is a raw epoch-ms number alongside the ISO-string seed rows.
+        // A time field whose JSONB value is stored as epoch-milliseconds (a JSON number,
+        // as Esri applyEdits posts it) must NOT 500 with Postgres 22008 "date/time field
+        // value out of range". The MIN/MAX temporal-extent cast has to detect numeric
+        // epoch-ms and convert via to_timestamp, mirroring the WHERE/filter path. Insert
+        // a row whose `timestamp` attribute is a raw epoch-ms number alongside the
+        // ISO-string seed rows.
         await ConfigureLayerAsTimeAwareAsync();
 
         var epochMs = new DateTimeOffset(2023, 1, 2, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();

@@ -11,9 +11,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Unit tests for GPServer parameter translation (GP types ↔ canonical opaque inputs).
-/// </summary>
 [Protocol(TestProtocols.GPServer)]
 public sealed class GPServerParameterTranslationTests
 {
@@ -236,7 +233,7 @@ public sealed class GPServerParameterTranslationTests
         // Esri's GP framework matches value lists case-insensitively, so the
         // adapter does too — but a value the adapter accepted must stay
         // EXECUTABLE. Canonical validators and executors compare ordinally, so
-        // the accepted choice is rewritten to its catalog spelling (#3053).
+        // the accepted choice is rewritten to its catalog spelling.
         var definition = ChoiceDefinition();
         var input = new Dictionary<string, string>
         {

@@ -40,6 +40,7 @@ internal sealed partial class DeployWorkflowService
     private readonly IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>? _tenantOptions;
     private readonly IOptions<RestoreCellOptions>? _restoreOptions;
     private readonly IOperationProposalStore? _proposalStore;
+    private readonly OperationHumanApprovalAuthority? _humanApprovalAuthority;
 
     public DeployWorkflowService(
         IDeployTargetRegistry targetRegistry,
@@ -50,12 +51,14 @@ internal sealed partial class DeployWorkflowService
         IOptionsMonitor<ControlPlaneOptions>? controlPlaneOptions = null,
         IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>? tenantOptions = null,
         IOptions<RestoreCellOptions>? restoreOptions = null,
-        IOperationProposalStore? proposalStore = null)
+        IOperationProposalStore? proposalStore = null,
+        OperationHumanApprovalAuthority? humanApprovalAuthority = null)
     {
         _controlPlaneOptions = controlPlaneOptions;
         _tenantOptions = tenantOptions;
         _restoreOptions = restoreOptions;
         _proposalStore = proposalStore;
+        _humanApprovalAuthority = humanApprovalAuthority;
         _targetRegistry = targetRegistry;
         _workflowStore = workflowStores.FirstOrDefault();
         _backends = backends.ToDictionary(
@@ -181,7 +184,7 @@ internal sealed partial class DeployWorkflowService
             };
         }
 
-        // Validate the telemetry and promotion gates before any mutation (#4617): an invalid,
+        // Validate the telemetry and promotion gates before any mutation: an invalid,
         // silently-ignored or unresolvable gate configuration blocks submission here instead of
         // being discovered by the reconciler after the candidate is already receiving traffic.
         foreach (var gateBlock in new[] { DescribeTelemetryGateBlock(spec), DeployPromotionPolicy.Validate(spec) }.OfType<string>())
@@ -193,7 +196,13 @@ internal sealed partial class DeployWorkflowService
             };
         }
 
-        plan = await ApplyProbeUrlValidationAsync(plan, spec, cancellationToken).ConfigureAwait(false);
+        plan = await ApplyProbeUrlValidationAsync(
+                plan,
+                spec,
+                _controlPlaneOptions?.CurrentValue.AllowPrivateNetworkProbes == true,
+                cancellationToken)
+            .ConfigureAwait(false);
+        plan = ApplyTargetIdentityOverrideBlock(plan, target, parameterOverrides);
 
         return new DeployWorkflowPlanResult(target, spec, plan, capabilities, canonicalApproval);
     }
@@ -202,9 +211,11 @@ internal sealed partial class DeployWorkflowService
     private static async Task<DeployPlan> ApplyProbeUrlValidationAsync(
         DeployPlan plan,
         DeployOperationSpec spec,
+        bool allowPrivateNetworkProbes,
         CancellationToken cancellationToken)
     {
-        var (blocks, warnings) = await DescribeProbeUrlFindingsAsync(spec, cancellationToken).ConfigureAwait(false);
+        var (blocks, warnings) = await DescribeProbeUrlFindingsAsync(spec, allowPrivateNetworkProbes, cancellationToken)
+            .ConfigureAwait(false);
         if (blocks.Count == 0 && warnings.Count == 0)
         {
             return plan;
@@ -220,6 +231,7 @@ internal sealed partial class DeployWorkflowService
 
     private static async Task<(List<string> Blocks, List<string> Warnings)> DescribeProbeUrlFindingsAsync(
         DeployOperationSpec spec,
+        bool allowPrivateNetworkProbes,
         CancellationToken cancellationToken)
     {
         var blocks = new List<string>();
@@ -241,7 +253,9 @@ internal sealed partial class DeployWorkflowService
                 continue;
             }
 
-            var validation = await DeployProbeUrlPolicy.ValidateAsync(url, cancellationToken).ConfigureAwait(false);
+            var validation = await DeployProbeUrlPolicy
+                .ValidateAsync(url, allowPrivateNetworkProbes, cancellationToken)
+                .ConfigureAwait(false);
             if (validation.IsValid)
             {
                 continue;
@@ -288,7 +302,7 @@ internal sealed partial class DeployWorkflowService
         }
 
         // CloudWatch and Azure Monitor query a fixed 300-second window and never read a sample's observation
-        // time, so an explicit staleness bound on them would be silently ignored (#4617).
+        // time, so an explicit staleness bound on them would be silently ignored.
         if (spec.Parameters.TryGetValue(MaxStalenessParameterKey, out var staleness) &&
             !string.IsNullOrWhiteSpace(staleness) &&
             FixedWindowTelemetryProviders.Contains(connection.Provider?.Trim() ?? string.Empty))
@@ -299,7 +313,7 @@ internal sealed partial class DeployWorkflowService
         }
 
         // Only the fixed-window cloud providers read an error-count numerator and report a series that
-        // matched nothing (honua-server#6474). Elsewhere the numerator would never be read and the gate
+        // matched nothing. Elsewhere the numerator would never be read and the gate
         // would hold until the evidence grace expired; Prometheus expresses the same intent with
         // "or vector(0)" in telemetry.error_rate.query, as the built-in presets do.
         if (!string.IsNullOrWhiteSpace(policy.ErrorCountQuery) &&
@@ -440,8 +454,10 @@ internal sealed partial class DeployWorkflowService
             Audit = new OperationAuditInfo
             {
                 RequestedBy = requestedBy,
+                RequestedByActorId = Honua.Infrastructure.Security.CanonicalSecurityActor.Resolve(principal) is { IsDurablyRevalidatable: true } actor
+                    ? actor.ActorId : null,
                 ApprovedBy = planningResult.Target.TargetKind == DeployTargetKind.LocalCompose ? approvedBy : null,
-                // honua-server#4958: the tenant binding is captured from the validated identity here,
+                // The tenant binding is captured from the validated identity here,
                 // so the protection window sealed at activation can bind recovery to the same pair.
                 TenantId = Honua.Server.Features.Admin.PlatformDeployAuthority.ResolveTenantId(principal, _tenantOptions?.Value),
                 Reason = reason,
@@ -602,6 +618,15 @@ internal sealed partial class DeployWorkflowService
             return operation;
         }
 
+        DeployHumanApproval? manualApproval = null;
+        if (approvedProposal is null && (operation.Deploy.RequiresApproval
+            || operation.Deploy.TargetKind == DeployTargetKind.LocalCompose
+            || operation.Status == WorkflowOperationStatus.AwaitingApproval))
+        {
+            manualApproval = await VerifyManualApprovalAsync(operation, "submit", requestedBy, cancellationToken).ConfigureAwait(false);
+            requestedBy = manualApproval.ActorId;
+        }
+
         if (operation.BlockingReasons.Count > 0)
         {
             throw new ResourceConflictException(
@@ -610,7 +635,7 @@ internal sealed partial class DeployWorkflowService
 
         // The persisted blocking reasons describe the connections as they were at plan time. A reload or
         // restart can remove a connection or change its provider before submission, so check the gate again
-        // against the current configuration before anything is claimed or mutated (#4617).
+        // against the current configuration before anything is claimed or mutated.
         if (DescribeTelemetryGateBlock(operation.Deploy) is { } gateBlock)
         {
             throw new ResourceConflictException(
@@ -618,8 +643,12 @@ internal sealed partial class DeployWorkflowService
         }
 
         // A probe host can resolve differently at submit time than it did at plan time (for example
-        // after an approval wait), so the probe destination rule is re-applied before any mutation (#4988).
-        var (probeBlocks, _) = await DescribeProbeUrlFindingsAsync(operation.Deploy, cancellationToken).ConfigureAwait(false);
+        // after an approval wait), so the probe destination rule is re-applied before any mutation.
+        var (probeBlocks, _) = await DescribeProbeUrlFindingsAsync(
+                operation.Deploy,
+                _controlPlaneOptions?.CurrentValue.AllowPrivateNetworkProbes == true,
+                cancellationToken)
+            .ConfigureAwait(false);
         if (probeBlocks.Count > 0)
         {
             throw new ResourceConflictException(
@@ -634,14 +663,20 @@ internal sealed partial class DeployWorkflowService
                 $"No deploy backend is registered for target '{operation.Deploy.TargetId}' ({operation.Deploy.Backend}).");
         }
 
-        var audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason);
+        var audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason) with
+        {
+            DeployHumanApproval = manualApproval ?? operation.Audit.DeployHumanApproval
+        };
+        if (approvedProposal is not null || operation.Deploy.RequiresApproval || operation.Status == WorkflowOperationStatus.AwaitingApproval)
+            audit = audit with { ApprovedBy = requestedBy };
         if (operation.Deploy.TargetKind == DeployTargetKind.LocalCompose)
         {
             if (string.IsNullOrWhiteSpace(requestedBy) ||
-                (approvedProposal is null && string.Equals(requestedBy, operation.Audit.RequestedBy, StringComparison.OrdinalIgnoreCase)))
+                (approvedProposal is null && (operation.Audit.RequestedByActorId is null
+                    || string.Equals(requestedBy, operation.Audit.RequestedByActorId, StringComparison.Ordinal))))
             {
                 throw new ResourceConflictException(
-                    "Separation of duties: a different principal must submit this Compose operation.");
+                    "Separation of duties: a different identified principal must submit this Compose operation; older plans must be recreated.");
             }
 
             audit = audit with { ApprovedBy = requestedBy };
@@ -760,6 +795,10 @@ internal sealed partial class DeployWorkflowService
             : null;
         if (admission is not null) cancellationToken = admission.Token;
 
+        await using var promotionLease = await RestoreDeployAdmission.AcquireWorkflowAsync(
+            _workflowStore!, operationId, cancellationToken).ConfigureAwait(false);
+        cancellationToken = promotionLease.Token;
+
         var operation = await _workflowStore!.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
         if (operation == null)
         {
@@ -779,6 +818,10 @@ internal sealed partial class DeployWorkflowService
         {
             return new DeployPromotionResult(DeployPromotionOutcome.PreconditionFailed, operation, preconditionDetail);
         }
+
+        var approval = await VerifyManualApprovalAsync(operation, "promote", requestedBy, cancellationToken).ConfigureAwait(false);
+        requestedBy = approval.ActorId;
+        operation = operation with { Audit = operation.Audit with { DeployHumanApproval = approval } };
 
         var target = await _targetRegistry.GetAsync(operation.Deploy.TargetId, cancellationToken).ConfigureAwait(false);
         var backend = target == null ? null : ResolveBackend(target);
@@ -830,6 +873,17 @@ internal sealed partial class DeployWorkflowService
             return new DeployPromotionResult(DeployPromotionOutcome.Promoted, saved, null);
         }
 
+        var pending = operation with
+        {
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CurrentPhase = "Manual promotion submitted; awaiting provider observation.",
+            Audit = MergePromotionAudit(operation.Audit, requestedBy, reason),
+            Deploy = operation.Deploy with { ManualPromotionPending = true }
+        };
+        if (!await _workflowStore.TrySetAsync(pending, cancellationToken: cancellationToken).ConfigureAwait(false))
+            throw new ResourceConflictException("Deploy operation changed while promotion was being authorized.");
+        operation = pending with { Version = operation.Version + 1 };
+
         DeployObservation observation;
         try
         {
@@ -837,7 +891,15 @@ internal sealed partial class DeployWorkflowService
         }
         catch (DeployAdmissionBlockedException ex)
         {
-            return new DeployPromotionResult(DeployPromotionOutcome.PreconditionFailed, operation, ex.Message);
+            var cleared = operation with
+            {
+                UpdatedAt = DateTimeOffset.UtcNow,
+                CurrentPhase = "Manual promotion blocked by deployment admission policy.",
+                Deploy = operation.Deploy with { ManualPromotionPending = false }
+            };
+            await _workflowStore.TrySetAsync(cleared, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var latest = await _workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false) ?? cleared;
+            return new DeployPromotionResult(DeployPromotionOutcome.PreconditionFailed, latest, ex.Message);
         }
         catch (OperationCanceledException)
         {
@@ -856,11 +918,12 @@ internal sealed partial class DeployWorkflowService
                 CompletedAt = DateTimeOffset.UtcNow,
                 CurrentPhase = "Manual promotion failed at the deploy backend.",
                 ErrorMessage = $"Manual promotion failed ({ex.GetType().Name}).",
-                Audit = MergePromotionAudit(operation.Audit, requestedBy, reason)
+                Audit = operation.Audit
             };
 
-            await _workflowStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
-            return new DeployPromotionResult(DeployPromotionOutcome.Promoted, failed, null);
+            await _workflowStore.TrySetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var savedFailure = await _workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            return new DeployPromotionResult(DeployPromotionOutcome.Promoted, savedFailure, null);
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -885,18 +948,20 @@ internal sealed partial class DeployWorkflowService
                 CurrentRevision = string.IsNullOrWhiteSpace(operation.Deploy.CurrentRevision)
                     ? observation.ObservedRevision ?? operation.Deploy.CurrentRevision
                     : operation.Deploy.CurrentRevision,
-                TrafficExposedAt = operation.Deploy.TrafficExposedAt
+                TrafficExposedAt = operation.Deploy.TrafficExposedAt,
+                ManualPromotionPending = false
             },
-            Audit = MergePromotionAudit(operation.Audit, requestedBy, reason)
+            Audit = operation.Audit
         };
 
-        // honua-server#4618: a manual promote bypasses the reconcile loop (it drives the backend
+        // A manual promote bypasses the reconcile loop (it drives the backend
         // directly, above), so it must open the same post-activation observation window the reconciler
         // opens for an automatic promotion — otherwise a forced cutover would skip straight to a
         // terminal Succeeded with no recovery window at all.
         updated = DeployWorkflowReconciler.BeginPostActivationObservationIfPromoted(updated);
 
-        await _workflowStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await _workflowStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+        updated = await _workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false) ?? updated;
         Log.DeployManuallyPromoted(
             _logger,
             operation.OperationId,
@@ -916,27 +981,30 @@ internal sealed partial class DeployWorkflowService
                ICheckpointedDeployBackend.CutoverPhase);
 
     private static string? DescribePromotionPrecondition(WorkflowOperationRecord operation)
-        => operation.Status switch
-        {
-            WorkflowOperationStatus.Reconciling when operation.Deploy?.Protection != null =>
-                "The deploy operation has already been promoted.",
-            WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling => null,
-            WorkflowOperationStatus.Planned or WorkflowOperationStatus.AwaitingApproval =>
-                "The deploy operation must be submitted before it can be promoted.",
-            WorkflowOperationStatus.RollbackRequested =>
-                "The deploy operation is rolling back and cannot be promoted.",
-            WorkflowOperationStatus.Succeeded =>
-                "The deploy operation has already been promoted.",
-            WorkflowOperationStatus.RolledBack or WorkflowOperationStatus.Failed
-                or WorkflowOperationStatus.ManualInterventionRequired =>
-                $"The deploy operation is already in a terminal state ({operation.Status}) and cannot be promoted.",
-            _ => $"The deploy operation cannot be promoted from status {operation.Status}."
-        };
+        => operation.Deploy?.ManualPromotionPending == true
+            ? "The previous manual promotion must be observed before another promotion can be requested."
+            : operation.Status switch
+            {
+                WorkflowOperationStatus.Reconciling when operation.Deploy?.Protection != null =>
+                    "The deploy operation has already been promoted.",
+                WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling => null,
+                WorkflowOperationStatus.Planned or WorkflowOperationStatus.AwaitingApproval =>
+                    "The deploy operation must be submitted before it can be promoted.",
+                WorkflowOperationStatus.RollbackRequested =>
+                    "The deploy operation is rolling back and cannot be promoted.",
+                WorkflowOperationStatus.Succeeded =>
+                    "The deploy operation has already been promoted.",
+                WorkflowOperationStatus.RolledBack or WorkflowOperationStatus.Failed
+                    or WorkflowOperationStatus.ManualInterventionRequired =>
+                    $"The deploy operation is already in a terminal state ({operation.Status}) and cannot be promoted.",
+                _ => $"The deploy operation cannot be promoted from status {operation.Status}."
+            };
 
     private static OperationAuditInfo MergePromotionAudit(OperationAuditInfo audit, string? requestedBy, string? reason)
         => audit with
         {
             RequestedBy = audit.RequestedBy ?? requestedBy,
+            ApprovedBy = requestedBy,
             Reason = string.IsNullOrWhiteSpace(reason)
                 ? audit.Reason
                 : string.IsNullOrWhiteSpace(audit.Reason)
@@ -1069,7 +1137,7 @@ internal sealed partial class DeployWorkflowService
                     await MarkRollbackSubmissionRetryableAsync(rollbackClaim, ex).ConfigureAwait(false);
                     throw;
                 }
-                // honua-server#4618: an out-of-band rollback (manual, or coordinated-release-driven via
+                // An out-of-band rollback (manual, or coordinated-release-driven via
                 // CoordinatedContainerStepExecutor) bypasses the reconciler's own rollback signaling, so
                 // it must keep Deploy.Protection's phase consistent with reality itself — otherwise a
                 // record promoted into an observation window would show "observing" forever even after

@@ -243,62 +243,13 @@ internal static class OgcFeaturesUtilities
         => OgcQueryablesUtilities.TryResolveTemporalFieldsV2(
             resource, out startFieldName, out startPropertyType, out endFieldName, out endPropertyType);
 
-    public static async Task InvalidateLayerCacheAsync(
-        HttpContext context,
-        int layerId,
-        CancellationToken cancellationToken)
-    {
-        var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
-        if (cacheInvalidator != null)
-        {
-            await cacheInvalidator.InvalidateLayerAsync(null, layerId, cancellationToken);
-        }
-    }
-
     public static ImmutableArray<Link> BuildFeatureLinks(
         HttpRequest request,
         string collectionId,
         string featureId,
         string outputFormat,
         string? responseCrsUri = null)
-    {
-        var baseUrl = BaseUrlResolver.GetBaseUrl(request);
-        var collectionSegment = Uri.EscapeDataString(collectionId);
-        var featureSegment = Uri.EscapeDataString(featureId);
-        var basePath = $"{baseUrl}/ogc/features/collections/{collectionSegment}/items/{featureSegment}";
-        var selfHref = BuildFeatureRepresentationUrl(request, basePath, outputFormat, responseCrsUri);
-
-        var links = new List<Link>
-        {
-            Link.Create(
-                href: selfHref,
-                rel: RelationTypes.Self,
-                type: outputFormat,
-                title: "Feature")
-        };
-
-        foreach (var format in FeatureFormats)
-        {
-            if (string.Equals(format.MediaType, outputFormat, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            links.Add(Link.Create(
-                href: BuildFeatureRepresentationUrl(request, basePath, format.MediaType, responseCrsUri),
-                rel: RelationTypes.Alternate,
-                type: format.MediaType,
-                title: format.Title));
-        }
-
-        links.Add(Link.Create(
-            href: $"{baseUrl}/ogc/features/collections/{collectionSegment}",
-            rel: RelationTypes.Collection,
-            type: MediaTypes.Json,
-            title: "Collection"));
-
-        return links.ToImmutableArray();
-    }
+        => OgcFeatureLinkTemplate.Create(request, new(collectionId, outputFormat, responseCrsUri)).Build(featureId);
 
     public static string BuildFeatureSelfUrl(
         HttpRequest request,
@@ -307,35 +258,5 @@ internal static class OgcFeaturesUtilities
     {
         var baseUrl = BaseUrlResolver.GetBaseUrl(request);
         return $"{baseUrl}/ogc/features/collections/{Uri.EscapeDataString(collectionId)}/items/{Uri.EscapeDataString(featureId)}";
-    }
-
-    private static string BuildFeatureRepresentationUrl(
-        HttpRequest request,
-        string basePath,
-        string outputFormat,
-        string? responseCrsUri)
-    {
-        var queryParameters = new List<string>();
-
-        if (request.Query.TryGetValue("crs", out var crsValue) && !string.IsNullOrWhiteSpace(crsValue))
-        {
-            queryParameters.Add($"crs={Uri.EscapeDataString(crsValue.ToString())}");
-        }
-        else if (!string.IsNullOrWhiteSpace(responseCrsUri))
-        {
-            queryParameters.Add($"crs={Uri.EscapeDataString(responseCrsUri)}");
-        }
-
-        var formatQueryValue = FeatureFormats
-            .FirstOrDefault(format => string.Equals(format.MediaType, outputFormat, StringComparison.OrdinalIgnoreCase))
-            .QueryValue;
-        if (!string.IsNullOrWhiteSpace(formatQueryValue))
-        {
-            queryParameters.Add($"f={Uri.EscapeDataString(formatQueryValue)}");
-        }
-
-        return queryParameters.Count == 0
-            ? basePath
-            : $"{basePath}?{string.Join("&", queryParameters)}";
     }
 }

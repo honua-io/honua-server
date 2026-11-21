@@ -25,7 +25,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.Sharing;
 
-/// <summary>Exercises real group sharing against persisted FeatureServer data and canonical denial paths.</summary>
 [Collection("Database")]
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
@@ -295,6 +294,48 @@ public sealed class PortalCanonicalGroupSharingTests : IAsyncLifetime
         using var allowed = await PostAsync(client, $"/sharing/rest/community/groups/{group}/addUsers?token={tenantA}", ("users", "bob"));
         (await DocumentAsync(allowed)).GetProperty("members").EnumerateArray()
             .Select(member => member.GetString()).Should().Contain("bob");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/community/groups/{groupId}/addUsers")]
+    [Endpoint("POST /sharing/rest/content/items/{itemId}/share")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task TenantGroup_ForeignTenantAdminAndSameNamedMember_CannotJoinShareOrRead()
+    {
+        using var client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("Referer", Referer));
+        var owner = await IssueAsync("alice", "publisher", "tenant-a");
+        var member = await IssueAsync("bob", "org_user", "tenant-a");
+        var bystander = await IssueAsync("mallory", "org_user", "tenant-a");
+        var foreignAdmin = await IssueAsync("root", "admin", "tenant-b");
+        var foreignMember = await IssueAsync("bob", "org_user", "tenant-b");
+        var group = await CreateGroupAsync(client, owner);
+        using (var add = await PostAsync(client, $"/sharing/rest/community/groups/{group}/addUsers?token={owner}", ("users", "bob")))
+        {
+            add.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        // An administrator of another tenant can neither add a member nor grant the group.
+        using (var refused = await PostAsync(client, $"/sharing/rest/community/groups/{group}/addUsers?token={foreignAdmin}", ("users", "mallory")))
+        {
+            await refused.AssertGeoServicesErrorAsync(404);
+        }
+        using (var foreignShare = await PostAsync(client, $"/sharing/rest/content/items/{ItemId}/share?token={foreignAdmin}", ("groups", group)))
+        {
+            (await DocumentAsync(foreignShare)).GetProperty("notSharedWith").EnumerateArray()
+                .Select(value => value.GetString()).Should().Contain(group);
+        }
+        await AssertQueryDeniedAsync(client, member);
+
+        // Once the owner shares, the member reads; the same username in another tenant and a
+        // tenant user the foreign administrator tried to add do not.
+        using (var share = await PostAsync(client, $"/sharing/rest/content/items/{ItemId}/share?token={owner}", ("groups", group)))
+        {
+            (await DocumentAsync(share)).GetProperty("notSharedWith").GetArrayLength().Should().Be(0);
+        }
+        await AssertQueryMatchesSqlAsync(client, member);
+        await AssertQueryDeniedAsync(client, foreignMember);
+        await AssertQueryDeniedAsync(client, bystander);
     }
 
     private async Task AssertMemberWriteDeniedAndSqlUnchangedAsync(HttpClient client, string token)

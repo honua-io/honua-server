@@ -4,6 +4,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Claims;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -29,13 +30,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
-/// <summary>
-/// Owner decision 10 (2026-10-10): a Production host composed from the shipped
-/// <c>appsettings.Production.json</c> lets an administrative key execute typed operations through
-/// the built-in rule, without operator-authored rules, while a layer write key still hits the
-/// fail-closed default. Reproduces the honua-release run 38066103745 denial of
-/// <c>service.publish</c> for an <c>admin:write</c> key.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]
@@ -126,7 +120,29 @@ public sealed class ProductionOperationPolicyHostTests
             .ToArray();
         changes.Should().Contain(static descriptor => descriptor.OperationId.StartsWith("admin.", StringComparison.Ordinal));
 
+        var (direct, unmappable) = await AuditAgentPolicyAndMappersAsync(
+            pdp,
+            changes,
+            OperationDescriptorPublication.CountMappings(
+                scope.ServiceProvider.GetServices<IOperationApprovalRequestMapper>()));
+
+        direct.Should().BeEmpty("an agent's change is a proposal unless explicitly approved for agents");
+        unmappable.Should().BeEmpty("every agent-gated operation must have exactly one durable replay mapper so it can be filed as a proposal");
+        var publish = changes.Single(static descriptor => descriptor.OperationId == ServicePublishOperation.OperationId);
+        (await pdp.EvaluateAsync(
+                publish,
+                new OperationRequest { OperationId = publish.OperationId },
+                new OperationPolicyContext { Roles = [OperationPolicyBuiltInRules.FullAdministratorRole] }))
+            .Kind.Should().Be(PolicyDecisionKind.Allow, "a human administrator keeps the built-in allow");
+    }
+
+    private static async Task<(List<string> Direct, List<string> Unmappable)> AuditAgentPolicyAndMappersAsync(
+        IOperationPolicyDecisionPoint pdp,
+        IReadOnlyList<IOperationDescriptor> changes,
+        IReadOnlyDictionary<string, int> mapperCounts)
+    {
         var direct = new List<string>();
+        var unmappable = new List<string>();
         foreach (var descriptor in changes)
         {
             var decision = await pdp.EvaluateAsync(
@@ -141,15 +157,51 @@ public sealed class ProductionOperationPolicyHostTests
             {
                 direct.Add($"{descriptor.OperationId}: {decision.Kind}");
             }
+            else if (decision.Kind == PolicyDecisionKind.RequireApproval &&
+                     !descriptor.IsCompatibilityOnly &&
+                     (!mapperCounts.TryGetValue(descriptor.OperationId, out var count) || count != 1))
+            {
+                unmappable.Add($"{descriptor.OperationId}: mappers={count}");
+            }
         }
 
-        direct.Should().BeEmpty("an agent's change is a proposal unless explicitly approved for agents");
-        var publish = changes.Single(static descriptor => descriptor.OperationId == ServicePublishOperation.OperationId);
-        (await pdp.EvaluateAsync(
-                publish,
-                new OperationRequest { OperationId = publish.OperationId },
-                new OperationPolicyContext { Roles = [OperationPolicyBuiltInRules.FullAdministratorRole] }))
-            .Kind.Should().Be(PolicyDecisionKind.Allow, "a human administrator keeps the built-in allow");
+        return (direct, unmappable);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/operations/{id}/submit")]
+    public async Task ProductionHost_AgentKeySubmittingMetadataPrevalidate_FilesApprovalProposal()
+    {
+        using var factory = CreateProductionFactory(new Dictionary<string, string?>());
+        var keys = factory.Services.GetRequiredService<IAdminApiKeyStore>();
+        var agentKey = await keys.CreateAsync(
+            "policy-agent-prevalidate",
+            ["agent", "admin:write"],
+            null,
+            "test",
+            CancellationToken.None);
+
+        using var client = factory.CreateClient();
+        using var submit = new HttpRequestMessage(HttpMethod.Post, "/api/v1/operations/admin.metadata.prevalidate/submit")
+        {
+            Content = JsonContent.Create(new
+            {
+                parameters = new Dictionary<string, string>
+                {
+                    ["releasePackageId"] = Guid.NewGuid().ToString("D"),
+                    ["targetEnvironment"] = "staging",
+                },
+            }),
+        };
+        submit.Headers.Add("X-API-Key", agentKey.Key);
+
+        using var response = await client.SendAsync(submit);
+        var body = await response.Content.ReadAsStringAsync();
+        response.IsSuccessStatusCode.Should().BeTrue("agent submission should file a proposal instead of failing: {0}", body);
+        using var json = JsonDocument.Parse(body);
+        var data = json.RootElement.GetProperty("data");
+        data.GetProperty("status").GetString().Should().Be("RequiresApproval");
+        data.GetProperty("proposalId").GetString().Should().NotBeNullOrWhiteSpace();
     }
 
     private static async Task<PolicyDecision> EvaluateAsKeyAsync(IServiceProvider services, string apiKey)

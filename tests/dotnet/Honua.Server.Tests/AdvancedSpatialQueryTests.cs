@@ -12,10 +12,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Integration tests for advanced spatial query patterns (Issue #99).
-/// Tests distance-based queries (ST_DWithin, ST_Distance) and K-Nearest Neighbor (KNN) queries.
-/// </summary>
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database.CoreSpatial")]
 public sealed class AdvancedSpatialQueryTests : IClassFixture<WebAppFixture>
@@ -31,9 +27,6 @@ public sealed class AdvancedSpatialQueryTests : IClassFixture<WebAppFixture>
 
     #region Distance-Based Query Tests (WithinDistance)
 
-    /// <summary>
-    /// Tests that queries with withinDistance return features within the specified distance
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -64,9 +57,6 @@ public sealed class AdvancedSpatialQueryTests : IClassFixture<WebAppFixture>
         queryResponse!.Features.Should().NotBeNull();
     }
 
-    /// <summary>
-    /// Tests that distance-based queries work with POST requests
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -100,9 +90,6 @@ public sealed class AdvancedSpatialQueryTests : IClassFixture<WebAppFixture>
         queryResponse!.Features.Should().NotBeNull();
     }
 
-    /// <summary>
-    /// Tests distance queries with kilometers as the unit
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -132,9 +119,6 @@ public sealed class AdvancedSpatialQueryTests : IClassFixture<WebAppFixture>
         queryResponse!.Features.Should().NotBeNull();
     }
 
-    /// <summary>
-    /// Tests distance queries with miles as the unit
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -164,9 +148,6 @@ public sealed class AdvancedSpatialQueryTests : IClassFixture<WebAppFixture>
         queryResponse!.Features.Should().NotBeNull();
     }
 
-    /// <summary>
-    /// Tests that missing distance parameter returns 400 error for distance-based queries
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -190,9 +171,6 @@ public sealed class AdvancedSpatialQueryTests : IClassFixture<WebAppFixture>
 
     #region Distance-Based Query Tests (BeyondDistance)
 
-    /// <summary>
-    /// Tests that queries with beyondDistance return features beyond the specified distance
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -226,9 +204,6 @@ public sealed class AdvancedSpatialQueryTests : IClassFixture<WebAppFixture>
 
     #region K-Nearest Neighbor (KNN) Query Tests
 
-    /// <summary>
-    /// Tests that nearestCount parameter returns the specified number of closest features
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -258,9 +233,6 @@ public sealed class AdvancedSpatialQueryTests : IClassFixture<WebAppFixture>
         queryResponse.Features.Length.Should().BeLessThanOrEqualTo(nearestCount);
     }
 
-    /// <summary>
-    /// Tests KNN query with returnDistance=true includes distance in results
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -292,9 +264,6 @@ public sealed class AdvancedSpatialQueryTests : IClassFixture<WebAppFixture>
         queryResponse.Features[0].Attributes.Should().ContainKey("distance");
     }
 
-    /// <summary>
-    /// Tests KNN query via POST request
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -328,9 +297,6 @@ public sealed class AdvancedSpatialQueryTests : IClassFixture<WebAppFixture>
         queryResponse.Features.Length.Should().BeLessThanOrEqualTo(5);
     }
 
-    /// <summary>
-    /// Tests that KNN query without geometry returns 400 error
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -353,9 +319,6 @@ public sealed class AdvancedSpatialQueryTests : IClassFixture<WebAppFixture>
 
     #region Combined Filter Tests
 
-    /// <summary>
-    /// Tests combining distance-based spatial query with WHERE clause attribute filter
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -386,9 +349,37 @@ public sealed class AdvancedSpatialQueryTests : IClassFixture<WebAppFixture>
         queryResponse!.Features.Should().NotBeNull();
     }
 
-    /// <summary>
-    /// Tests combining KNN query with pagination
-    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_NearestCountAboveRecordCount_PagesWithinTheCount()
+    {
+        var nearest = await QueryNearestAsync("&nearestCount=10");
+        var capped = await QueryNearestAsync("&nearestCount=10&resultRecordCount=2");
+
+        capped.Features!.Length.Should().Be(Math.Min(nearest.Features!.Length, 2));
+        capped.ExceededTransferLimit.Should().Be(nearest.Features!.Length > 2);
+
+        var nearestThree = await QueryNearestAsync("&nearestCount=3");
+        var lastPage = await QueryNearestAsync("&nearestCount=3&resultRecordCount=2&resultOffset=2");
+        lastPage.Features!.Length.Should().Be(Math.Max(0, nearestThree.Features!.Length - 2));
+        lastPage.ExceededTransferLimit.Should().BeFalse();
+    }
+
+    private async Task<QueryResponse> QueryNearestAsync(string parameters)
+    {
+        var pointGeometry = @"{""x"":-122.4194,""y"":37.7749}";
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
+            $"?geometry={Uri.EscapeDataString(pointGeometry)}{parameters}&f=json");
+        response.Be200Ok();
+
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            await response.Content.ReadAsStringAsync(), FeatureServerJsonContext.Default.QueryResponse);
+        queryResponse.Should().NotBeNull();
+        return queryResponse!;
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -420,9 +411,6 @@ public sealed class AdvancedSpatialQueryTests : IClassFixture<WebAppFixture>
 
     #region GeoJSON Format Tests
 
-    /// <summary>
-    /// Tests that distance-based queries return proper GeoJSON format
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -453,9 +441,6 @@ public sealed class AdvancedSpatialQueryTests : IClassFixture<WebAppFixture>
         geoJsonResponse.Features.Should().NotBeNull();
     }
 
-    /// <summary>
-    /// Tests that KNN queries return proper GeoJSON format
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -489,9 +474,6 @@ public sealed class AdvancedSpatialQueryTests : IClassFixture<WebAppFixture>
 
     #region Unit Support Tests
 
-    /// <summary>
-    /// Tests that simple unit names (meters, feet, km, miles) are properly supported
-    /// </summary>
     [Theory]
     [Trait("Category", "Integration")]
     [InlineData("meters", 10000)]
@@ -529,11 +511,6 @@ public sealed class AdvancedSpatialQueryTests : IClassFixture<WebAppFixture>
         queryResponse!.Features.Should().NotBeNull();
     }
 
-    /// <summary>
-    /// esriSpatialRelIndexIntersects is the index-accelerated form of
-    /// esriSpatialRelIntersects and must be accepted (GeoServices REST conformance,
-    /// honua-server#1772) rather than rejected with HTTP 400.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]

@@ -9,12 +9,6 @@ public class LimitsOptions
     [Range(1, 1000000)]
     public int MaxFeatures { get; set; } = 10000;
 
-    [Range(1, 600)]
-    public int MaxQueryTimeoutSeconds { get; set; } = 60;
-
-    [Range(1, 1000)]
-    public int MaxConcurrentRequests { get; set; } = 100;
-
     [Range(1, long.MaxValue)]
     public long MaxUploadSizeBytes { get; set; } = 100 * 1024 * 1024; // 100MB
 
@@ -73,9 +67,6 @@ public class ElevationLimits
 
 public class QueryLimits
 {
-    [Range(1, 10000)]
-    public int MaxComplexity { get; set; } = 1000;
-
     [Range(1, 100)]
     public int MaxSpatialOperations { get; set; } = 10;
 
@@ -84,9 +75,6 @@ public class QueryLimits
 
     [Range(1, 50)]
     public int MaxFilterDepth { get; set; } = 10;
-
-    [Range(1, 1000)]
-    public int MaxFilterConditions { get; set; } = 100;
 
     [Range(0, 1000000)]
     public int MaxOffset { get; set; } = 1000000;
@@ -122,6 +110,12 @@ public class GeometryLimits
     [Range(1, 15)]
     public int MaxCoordinatePrecision { get; set; } = 8;
 
+    // Segment pairs that may cross, counted before a Geometry Service operation nodes geometries
+    // (overlay, union, cut, trim, generalization, repair, relation, offset); a quarter of it for
+    // callers that are not signed in.
+    [Range(1000d, 50000000d)]
+    public long MaxOverlayCandidatePairs { get; set; } = 2000000;
+
     public double? SimplifyTolerance { get; set; }
 }
 
@@ -148,12 +142,11 @@ public class AttachmentLimits
     [Range(1, long.MaxValue)]
     public long MaxTotalAttachmentSize { get; set; } = 52428800; // 50MB
 
-    // honua-server#5017: text notes, CSV tallies and JSON payloads are ordinary field attachments.
+    // Text notes, CSV tallies and JSON payloads are ordinary field attachments.
     // FileUploadSecurity still scans .txt/.csv/.json uploads for script content after this check;
     // that scan is keyed on the file extension, not on the declared MIME type.
     public string AllowedMimeTypes { get; set; } = "image/*,application/pdf,text/plain,text/csv,application/json";
 }
-
 
 public class ConnectionLimits
 {
@@ -190,6 +183,11 @@ public class ConnectionLimits
     public int ConnectionAcquisitionTimeoutSeconds { get; set; } = 5;
 
     public bool AdaptiveConcurrencyEnabled { get; set; }
+
+    // Refuse anonymous expensive reads with a retryable 503 while the query gate is under
+    // pressure. Turn off only where queueing is wanted instead, for example behind an edge that
+    // already admits traffic, or in a fixed-admission benchmark.
+    public bool AnonymousPressureAdmissionEnabled { get; set; } = true;
 
     [Range(1, 1000)]
     public int AdaptiveConcurrencyMinQueries { get; set; } = 1;

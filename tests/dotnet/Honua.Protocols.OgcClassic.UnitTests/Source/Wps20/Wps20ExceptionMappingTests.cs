@@ -58,6 +58,45 @@ public sealed class Wps20ExceptionMappingTests
         context.Response.ContentType.Should().Contain("xml");
     }
 
+    [UnitTest]
+    public async Task Execute_NonJobCallableProcess_ReturnsNoSuchProcess404()
+    {
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        var catalog = new BuiltInProcessCatalog();
+
+        await using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
+        await using var scope = services.CreateAsyncScope();
+        var context = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
+        context.Request.Method = HttpMethods.Post;
+        context.Request.ContentType = "application/xml";
+        var xml = """
+            <wps:Execute xmlns:wps="http://www.opengis.net/wps/2.0" xmlns:ows="http://www.opengis.net/ows/2.0"
+                         service="WPS" version="2.0.0" response="document" mode="async">
+              <ows:Identifier>source.postgis</ows:Identifier>
+            </wps:Execute>
+            """;
+        context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(xml));
+        context.Response.Body = new MemoryStream();
+
+        var options = Substitute.For<IOptionsMonitor<Wps20Options>>();
+        options.CurrentValue.Returns(new Wps20Options());
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+        using var echo = new Wps20ConformanceEcho(options, environment);
+
+        var result = await Wps20Endpoint.DispatchAsync(
+            context,
+            catalog,
+            jobs,
+            echo,
+            NullLogger<Wps20Endpoint.Wps20EndpointLog>.Instance);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        var body = await ReadBodyAsync(context);
+        body.Should().Contain("exceptionCode=\"NoSuchProcess\"");
+    }
+
     private static async Task<DefaultHttpContext> DispatchAsync(IGeoprocessingJobService jobs, string jobId)
     {
         await using var services = new ServiceCollection().AddLogging().BuildServiceProvider();

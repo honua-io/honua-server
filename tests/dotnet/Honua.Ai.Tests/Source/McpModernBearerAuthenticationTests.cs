@@ -13,6 +13,7 @@ using Honua.Infrastructure.Security;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Cors.Infrastructure;
@@ -26,18 +27,28 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 [Operation(Operations.Security)]
-public sealed class McpModernBearerAuthenticationTests : IAsyncLifetime
+public sealed class McpModernBearerAuthenticationTests(McpModernBearerAuthenticationTests.ReplayProtectedHost host)
+    : IClassFixture<McpModernBearerAuthenticationTests.ReplayProtectedHost>
 {
     private static readonly Claim[] Authority =
     [
         new("tid", "tenant-a"), new("roles", "admin"), new("scope", "honua.mcp.full")
     ];
-    private readonly WebAppFixture _fixture = CreateReplayProtectedFixture().ConfigureServices(services =>
-        services.PostConfigure<CorsOptions>(options => options.AddPolicy(HttpCorsPolicyNames.Production,
-            policy => policy.WithOrigins("https://approved.example"))));
+    private readonly WebAppFixture _fixture = host.Fixture;
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    // One replay-protected host serves every case. Each case mints its own tokens (a fresh jti unless
+    // the case pins one), so the replay record of one case never admits or refuses another's token.
+    // The zero-skew expiry case needs a different setting and keeps its own host.
+    public sealed class ReplayProtectedHost : IAsyncLifetime
+    {
+        internal WebAppFixture Fixture { get; } = CreateReplayProtectedFixture().ConfigureServices(services =>
+            services.PostConfigure<CorsOptions>(options => options.AddPolicy(HttpCorsPolicyNames.Production,
+                policy => policy.WithOrigins("https://approved.example"))));
+
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
 
     [IntegrationTheory]
     [InlineData("modern", "modern")]
@@ -235,12 +246,24 @@ public sealed class McpModernBearerAuthenticationTests : IAsyncLifetime
         await fixture.InitializeAsync();
         try
         {
-            var token = CreateToken("expiring-owner", lifetime: TimeSpan.FromSeconds(30), additionalClaims: Authority);
-            using var first = BuildModernDiscovery(token);
-            using var admitted = await fixture.Client.SendAsync(first);
+            using (var warmRequest = BuildModernDiscovery(CreateToken("warm-owner", additionalClaims: Authority)))
+            using (var warm = await fixture.Client.SendAsync(warmRequest))
+            {
+                warm.StatusCode.Should().Be(HttpStatusCode.OK, "the warm-up keeps startup cost off the expiring token");
+            }
+
+            var started = await ExpiringCredentials.IssueForSetupAsync(
+                ExpiringCredentials.Expiring,
+                lifetime => Task.FromResult(CreateExpiringToken(lifetime)),
+                async issued =>
+                {
+                    using var first = BuildModernDiscovery(issued.Token);
+                    return await fixture.Client.SendAsync(first);
+                });
+            using var admitted = started.Result;
             admitted.StatusCode.Should().Be(HttpStatusCode.OK);
-            await WaitUntilPastAsync(new JsonWebToken(token).ValidTo);
-            using var retry = BuildModernDiscovery(token);
+            await WaitUntilPastAsync(started.Credential.ExpiresAt.UtcDateTime);
+            using var retry = BuildModernDiscovery(started.Credential.Token);
             using var expired = await fixture.Client.SendAsync(retry);
             expired.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         }
@@ -273,6 +296,12 @@ public sealed class McpModernBearerAuthenticationTests : IAsyncLifetime
         var result = document.RootElement.GetProperty("result");
         result.GetProperty("resultType").GetString().Should().Be("complete");
         return result.Clone();
+    }
+
+    private static ExpiringCredential CreateExpiringToken(TimeSpan lifetime)
+    {
+        var token = CreateToken("expiring-owner", lifetime: lifetime, additionalClaims: Authority);
+        return new ExpiringCredential(token, new DateTimeOffset(new JsonWebToken(token).ValidTo, TimeSpan.Zero));
     }
 
     private static async Task WaitUntilPastAsync(DateTime expiresUtc)

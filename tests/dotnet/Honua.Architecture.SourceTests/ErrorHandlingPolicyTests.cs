@@ -10,20 +10,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Architecture guards for the audit finding (#1144): the server lacked an
-/// explicit error-handling policy test. This suite asserts three invariants:
-/// <list type="bullet">
-///   <item><description>The global exception middleware exists and is wired in <c>Program.cs</c>.</description></item>
-///   <item><description>Every endpoint file either funnels errors through that middleware,
-///     uses one of the project's error-formatting helpers, or includes its own
-///     <c>try/catch</c>. Endpoint files that do none of those are flagged because
-///     they would surface raw exceptions to clients.</description></item>
-///   <item><description>No file under <c>src/Honua.Server</c> uses <c>throw new Exception(...)</c>
-///     or has an empty <c>catch (Exception) { }</c> — both are anti-patterns that
-///     obscure failure modes.</description></item>
-/// </list>
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class ErrorHandlingPolicyTests
 {
@@ -33,12 +19,6 @@ public sealed class ErrorHandlingPolicyTests
         "src/Honua.Hosting/Features/Middleware/GlobalExceptionMiddleware.cs";
     private const string ProgramRelativePath = "src/Honua.Server/Program.cs";
 
-    /// <summary>
-    /// Markers that indicate an endpoint file has *some* error-handling
-    /// scaffolding above and beyond the global middleware. The presence of
-    /// any one of these is enough to satisfy the policy; the test is a smoke
-    /// detector, not a code-quality grader.
-    /// </summary>
     private static readonly string[] ErrorHandlingMarkers =
     {
         "try",
@@ -58,12 +38,6 @@ public sealed class ErrorHandlingPolicyTests
         "ErrorResponse",
     };
 
-    /// <summary>
-    /// Empty endpoint shells (purely a <c>MapXxx</c> wiring file that
-    /// forwards to a service) get a pass on the per-file scaffolding check.
-    /// These are documented exceptions, not loopholes — the global middleware
-    /// is sufficient when the file holds no inline logic.
-    /// </summary>
     private static readonly HashSet<string> EndpointFilesWithoutInlineErrorHandling = new(System.StringComparer.Ordinal)
     {
         // Pure route-table partials and dispatcher files whose handlers live
@@ -75,6 +49,11 @@ public sealed class ErrorHandlingPolicyTests
         // Cancellation helpers delegate error shaping to TryReconcileDurableCancelAsync
         // in the main partial; this file only bridges successful results.
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "OperationsProgressEndpoints.CancellationResults.cs"),
+        // Admission partition resolution only: no handler; the session-limit refusal is shaped in FeatureStreamEndpoints.
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Streaming", "FeatureStreamEndpoints.Admission.cs"),
+        // Pure route wiring. FormXlsFormService shapes every import and export failure
+        // (400 query and workbook diagnostics, 404 unpublished package, 422 export diagnostics) as admin problem details.
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Forms", "FormXlsFormEndpoints.cs"),
         // Error shaping uses the alert-admin surface's ApiResponse failure envelope
         // (Results.Json + 400), which the marker scan does not recognize; failures
         // beyond request validation are handled by the global exception middleware.
@@ -221,8 +200,7 @@ public sealed class ErrorHandlingPolicyTests
         // exception type in parens at all — valid C#, and functionally
         // identical to `catch (Exception) { }`) is just as silent but does not
         // match the typed-catch alternative, so it is matched as a second
-        // alternative below (PA-068 slipped past this test in exactly this
-        // form before it was hardened).
+        // alternative below.
         var pattern = new Regex(
             @"catch\s*\(\s*Exception(?:\s+\w+)?\s*\)\s*(?:when\s*\([^)]*\)\s*)?\{\s*\}|catch\s*\{\s*\}",
             RegexOptions.CultureInvariant);

@@ -3,6 +3,7 @@
 
 using DuckDB.NET.Data;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Db.DuckDB.Features.FeatureStore;
 using Honua.Db.DuckDB.Features.FeatureStore.Services;
 using Honua.Db.DuckDB.Features.Infrastructure;
@@ -10,11 +11,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.DuckDB.Tests;
 
-/// <summary>
-/// Covers how attribute column names reach DuckDB SQL: names that come from automatic
-/// column discovery are checked against the shared feature-field name contract, and every
-/// attribute identifier is emitted through the provider's quoting helper.
-/// </summary>
 public sealed class DuckDBAttributeColumnQuotingTests : IAsyncLifetime
 {
     private const int LayerId = 0;
@@ -193,7 +189,8 @@ public sealed class DuckDBAttributeColumnQuotingTests : IAsyncLifetime
                 registry,
                 null,
                 NullLogger<DuckDBFeatureDataAccess>.Instance),
-            new DuckDBFeatureCacheManager(registry));
+            new DuckDBFeatureCacheManager(registry),
+            new LayerReadSecurityResolver(null, null, null, null));
     }
 
     private static async Task ExecuteAsync(DuckDBConnection connection, string sql)
@@ -203,10 +200,6 @@ public sealed class DuckDBAttributeColumnQuotingTests : IAsyncLifetime
         await cmd.ExecuteNonQueryAsync();
     }
 
-    /// <summary>
-    /// Opens a fresh DuckDB connection to the temp-file database for each call,
-    /// ensuring the spatial extension is loaded on each connection.
-    /// </summary>
     private sealed class FileDuckDBConnectionProvider(
         string connectionString,
         DuckDBSpatialBootstrap spatialBootstrap)

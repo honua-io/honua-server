@@ -6,8 +6,8 @@ description: "By default Honua runs geoprocessing (GP) jobs on the local / Kuber
 # Routing geoprocessing jobs to AWS Batch
 
 By default Honua runs geoprocessing (GP) jobs on the **local / Kubernetes Job**
-baseline workload (`geoprocessing-local`). To run GP jobs on **AWS Batch**
-instead — using the Fargate job-definition pool provisioned by the
+baseline workload (`geoprocessing-local`). To enable **AWS Batch** as a GP
+execution workload — using the Fargate job-definition pool provisioned by the
 [honua-iac](https://github.com/honua-io/honua-iac) serverless substrate — you supply the
 substrate ARNs to the `geoprocessing-aws-batch` execution workload that already
 ships (gated off) in `appsettings.json`.
@@ -24,9 +24,11 @@ server itself runs; the standalone GDAL worker cannot write to it yet.
 
 1. A GP job is submitted (GPServer REST, OGC API Processes, or gRPC).
 2. `GeoprocessingJobService` resolves the GP execution workload from
-   `ControlPlane:ExecutionWorkloads`. If a **fully-configured** AWS Batch
-   workload is present it is preferred over the local baseline; otherwise the
-   job falls back to `geoprocessing-local`.
+   `ControlPlane:ExecutionWorkloads` and the required runtime profile. On ECS
+   and other long-lived hosts, managed jobs prefer the local baseline when it
+   is present. Native jobs prefer a compatible remote workload. Serverless
+   managed jobs require a compatible remote workload; the local baseline is
+   not eligible there. Activating Batch alone does not move every GP job to it.
 3. The workload's `Parameters` are merged onto the job's
    `ExecutionJobSpec.Parameters`, and the job is handed to the
    `honua-aws-batch` backend (`AwsBatchComputeBackend`).
@@ -58,7 +60,7 @@ proposal gateway or HTTP surface. It never submits jobs to AWS Batch, so the job
 `batch:SubmitJob`. It does need what the server uses to run and report the job: the database
 connection (`ConnectionStrings__DefaultConnection`, the same system database the server uses) and
 network access to that database. Without the database connection it refuses to start, because
-nobody could see the result. It does not need Redis to claim, run or report the job.
+nobody could see the result.
 
 ### Large layer publishes
 
@@ -85,9 +87,8 @@ connection-encryption key material. Advancing only the API image is insufficient
 Use immutable images and a versioned job definition when qualifying the rollout.
 
 A Lambda host without a compatible remote durable runner returns the existing
-typed 503 (`durable-runner-required`) for large publishes, including Redis-off
-deployments. A long-lived host retains the local durable runner or its in-process
-fallback. Tables at or below the threshold retain synchronous publication.
+typed 503 (`durable-runner-required`) for large publishes. A long-lived host
+retains the local durable runner or its in-process fallback. Tables at or below the threshold retain synchronous publication.
 
 ## The activation gate
 
@@ -187,10 +188,22 @@ explicit `telemetry.rollback.consecutive_breaches` still overrides the default.
 
 ### appsettings override
 
+JSON override files merge `ExecutionWorkloads` by array index with the image
+defaults. Keep the local baseline at index `0` and configure AWS Batch at index
+`1`, as in this example. A single Batch entry at index `0` replaces the local
+baseline and leaves the default Batch entry at index `1`.
+
 ```json
 {
   "ControlPlane": {
     "ExecutionWorkloads": [
+      {
+        "WorkloadId": "geoprocessing-local",
+        "Kind": "Geoprocessing",
+        "TargetKind": "KubernetesJob",
+        "Backend": "local",
+        "WorkloadName": "Geoprocessing (local baseline)"
+      },
       {
         "WorkloadId": "geoprocessing-aws-batch",
         "Kind": "Geoprocessing",
@@ -246,12 +259,15 @@ when an entry pairs a built-in backend with another target kind (for example
 
 ## Verifying it routed
 
-Submit a GP job and confirm the job's spec:
+Submit a GP job eligible for the configured remote runtime profile and confirm
+the job's spec. Managed jobs on ECS keep using the local baseline when it is
+present:
 
 - `Spec.Backend == "honua-aws-batch"`
 - `Spec.TargetKind == AwsBatch`
 - `Spec.Parameters` contains `batch.job_queue_arn` and the tier ARNs
 
 A misconfigured workload (e.g. queue ARN present but no job-definition ARN)
-stays gated off and the job runs locally — check startup logs and the resolved
-`Spec.Backend` to confirm which path was taken.
+stays gated off. Long-lived hosts can fall back to the local baseline; a
+serverless managed submission without a compatible remote workload is refused.
+Check startup logs and the resolved `Spec.Backend` to confirm which path was taken.

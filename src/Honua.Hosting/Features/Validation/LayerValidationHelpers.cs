@@ -139,16 +139,15 @@ internal static partial class LayerValidationHelpers
             return new MetadataV2ValidationResult(false, null, null, null, error);
         }
 
-        // Per-operation RBAC grants are consulted first (#1376) via the shared
-        // seam; the coarse AccessPolicy is the no-grant fallback. This central
-        // validator is the enforcement point for OData / OGC API Features / WFS /
-        // tiles / STAC layer reads & mutations, so wiring it here re-routes those
-        // adapters through the resolver consistently.
+        // Per-operation RBAC grants are consulted first via the shared seam; the coarse
+        // AccessPolicy is the no-grant fallback. This central validator is the enforcement
+        // point for OData / OGC API Features / WFS / tiles / STAC layer reads & mutations,
+        // so wiring it here re-routes those adapters through the resolver consistently.
         // /tiles' ProblemJson opt-in must also govern authorization failures, not just
         // not-found: AccessPolicyHelpers.RequireResourceAccessAsync formats denials via
         // StandardErrorHelpers, which the path-classified StandardErrorResponseFormatter
-        // would otherwise wrap as a GeoServices 200-envelope for /tiles (honua-server#2945
-        // review). Evaluate the decision directly and format it as problem+json here.
+        // would otherwise wrap as a GeoServices 200-envelope for /tiles. Evaluate the
+        // decision directly and format it as problem+json here.
         var accessError = protocol == ValidationProtocol.ProblemJson
             ? await RequireResourceAccessAsProblemJsonAsync(context, resource!, service, scope, effectiveToken).ConfigureAwait(false)
             : await AccessPolicyHelpers.RequireResourceAccessAsync(
@@ -311,9 +310,6 @@ internal static partial class LayerValidationHelpers
         var collectionId = publication.ServiceLocalId ?? publication.Path ?? resource?.Metadata.Name;
         return string.IsNullOrWhiteSpace(collectionId) ? resource?.Metadata.Id : collectionId;
     }
-
-    internal static int QueryCacheLayerId(MetadataV2Layer publication, int storageLayerId)
-        => publication.LayerIndex ?? storageLayerId;
 
     internal static MetadataV2Layer? SelectMatchingCollectionPublication(
         IEnumerable<MetadataV2Layer> publications,
@@ -668,28 +664,6 @@ internal static partial class LayerValidationHelpers
         return byLayer.ToDictionary(kv => kv.Key, kv => kv.Value.Service);
     }
 
-    public static async Task<MetadataV2Service?> ResolvePrimaryServiceV2Async(
-        HttpContext context,
-        int layerId,
-        string? requiredProtocol = null,
-        CancellationToken cancellationToken = default)
-    {
-        var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
-        var (_, _, service) = ResolveV2Triple(context, snapshot, layerId, requiredProtocol);
-        return service;
-    }
-
-    public static async Task<string?> ResolvePrimaryServiceNameV2Async(
-        HttpContext context,
-        int layerId,
-        string? requiredProtocol = null,
-        CancellationToken cancellationToken = default)
-    {
-        var service = await ResolvePrimaryServiceV2Async(context, layerId, requiredProtocol, cancellationToken)
-            .ConfigureAwait(false);
-        return service?.Metadata.Name;
-    }
-
     public static async Task<string?> ResolvePrimaryServiceNameByProtocolV2Async(
         HttpContext context,
         int layerId,
@@ -888,8 +862,7 @@ internal static partial class LayerValidationHelpers
         // data-editor on the canonical service.
         var canonicalError = await EnforceCanonicalServiceWriteAccessAsync(
             context,
-            validation,
-            operation,
+            (validation, operation),
             cancellationToken).ConfigureAwait(false);
         if (canonicalError != null)
         {
@@ -903,9 +876,9 @@ internal static partial class LayerValidationHelpers
 
         // Declared capabilities are an editing contract, not advisory text. The Esri
         // GeoServices edits handler already refuses an edit kind the publication never
-        // declared (#4073); this surface did not, so a layer published with the default
+        // declared; this surface did not, so a layer published with the default
         // ["Query","Extract"] capabilities accepted OGC API Features writes it never
-        // advertised (#4707). Both surfaces now resolve capabilities the same way.
+        // advertised. Both surfaces now resolve capabilities the same way.
         var capabilityError = ValidateDeclaredEditCapability(context, validation, operation);
         if (capabilityError != null)
         {
@@ -919,7 +892,7 @@ internal static partial class LayerValidationHelpers
 
         // Storage-routing contract: refuse a mutation the managed feature writer cannot
         // land where the serving protocols read, instead of acknowledging a write that is
-        // never readable back (#4707).
+        // never readable back.
         var routingError = await ValidateWriteRoutingAsync(
             context, validation, cancellationToken).ConfigureAwait(false);
         if (routingError != null)
@@ -1046,79 +1019,90 @@ internal static partial class LayerValidationHelpers
             context,
             "This collection is published over an external source table, which this server cannot write through.",
             [
-                $"Features are served from '{mapping.QualifiedName}'; the managed feature writer cannot modify it.",
+                // Generic on purpose: the storage schema and table are internal and never returned to a caller.
+                "The managed feature writer cannot modify the table this collection is served from.",
                 "Edit the source table directly and refresh the published layer, or republish the data into the managed feature store."
             ]);
     }
 
     // A write through a non-primary publication also requires data-editor authorization on the canonical service.
-    private static async Task<IResult?> EnforceCanonicalServiceWriteAccessAsync(
+    internal static async Task<IResult?> EnforceCanonicalServiceWriteAccessAsync(
         HttpContext context,
-        MetadataV2ValidationResult validation,
-        AuthorizationOperation? operation,
+        (MetadataV2ValidationResult Validation, AuthorizationOperation? Operation) write,
         CancellationToken cancellationToken)
     {
+        var (validation, operation) = write;
         if (!validation.IsValid || validation.Resource is null || validation.Publication is null)
         {
             return null;
         }
 
-        // If the matched publication IS the canonical primary, no extra check needed.
-        if (validation.Publication.IsPrimary)
+        var decision = await EvaluateCanonicalServiceWriteAccessAsync(
+            context,
+            (new CanonicalWriteSource(validation.Publication, validation.Resource, validation.Snapshot), operation),
+            cancellationToken).ConfigureAwait(false);
+        return AccessPolicyHelpers.CreateAccessDeniedResult(context, decision);
+    }
+
+    // Every protocol uses the same canonical write decision and translates it to its own errors.
+    internal static async Task<AccessDecision> EvaluateCanonicalServiceWriteAccessAsync(
+        HttpContext context,
+        (CanonicalWriteSource Source, AuthorizationOperation? Operation) write,
+        CancellationToken cancellationToken)
+    {
+        var (source, operation) = write;
+        var canonical = await ResolveCanonicalWriteServiceAsync(context, source, cancellationToken).ConfigureAwait(false);
+        return canonical is { } target
+            ? await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
+                context, source.Resource, target.Service, operation, cancellationToken).ConfigureAwait(false)
+            : AccessDecision.Allowed();
+    }
+
+    // The canonical service whose data-editor grant a write through a non-primary publication must also hold.
+    // Null when the publication is itself primary or the resource has no visible primary publication.
+    internal static async Task<CanonicalWriteService?> ResolveCanonicalWriteServiceAsync(
+        HttpContext context,
+        CanonicalWriteSource source,
+        CancellationToken cancellationToken)
+    {
+        if (source.Publication.IsPrimary)
         {
             return null;
         }
 
-        var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
-        MetadataV2Layer? canonical = null;
+        // Callers pass the snapshot they validated against so both lookups see one metadata version.
+        var snapshot = source.Snapshot ?? await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
         // Not converted to `.FirstOrDefault(...)`: the predicate needs two intermediate
         // values computed per candidate (the resolved resource and the resolved service),
-        // reused across the equality and visibility checks — inlining them into a single
-        // LINQ predicate would duplicate the lookups or require a less readable local
-        // function.
+        // reused across the equality and visibility checks.
         foreach (var pub in snapshot.Graph.Publications.Where(pub => pub.IsPrimary && snapshot.IsRoutable(pub)))
         {
             var pubResource = snapshot.ResolveResource(pub);
-            if (pubResource is null) continue;
-            if (string.Equals(pubResource.Metadata.Id, validation.Resource.Metadata.Id, StringComparison.OrdinalIgnoreCase))
+            if (pubResource is null ||
+                !string.Equals(pubResource.Metadata.Id, source.Resource.Metadata.Id, StringComparison.OrdinalIgnoreCase))
             {
-                var pubService = snapshot.Index.ServicesById.TryGetValue(pub.ServiceId, out var resolvedPubService)
-                    ? resolvedPubService
-                    : null;
-                if (!TenantScopeHelpers.IsPublicationVisible(context, pub, pubResource, pubService))
-                {
-                    continue;
-                }
-                canonical = pub;
-                break;
+                continue;
+            }
+
+            var pubService = snapshot.Index.ServicesById.TryGetValue(pub.ServiceId, out var resolvedPubService)
+                ? resolvedPubService
+                : null;
+            if (TenantScopeHelpers.IsPublicationVisible(context, pub, pubResource, pubService))
+            {
+                return new CanonicalWriteService(pubService);
             }
         }
 
-        if (canonical is null)
-        {
-            // No primary publication declared — nothing to enforce.
-            return null;
-        }
-
-        MetadataV2Service? canonicalService = snapshot.Index.ServicesById.TryGetValue(canonical.ServiceId, out var cs)
-            ? cs
-            : null;
-
-        // Re-evaluate data-editor authorization against the canonical service, preserving
-        // the per-operation narrowing (BH3-001/BH3-014) when the caller supplied an operation.
-        return operation is { } op
-            ? await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
-                context,
-                validation.Resource,
-                canonicalService,
-                op,
-                cancellationToken).ConfigureAwait(false)
-            : await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
-                context,
-                validation.Resource,
-                canonicalService,
-                cancellationToken).ConfigureAwait(false);
+        // No primary publication declared — nothing to enforce.
+        return null;
     }
+
+    internal readonly record struct CanonicalWriteSource(
+        MetadataV2Layer Publication,
+        MetadataV2Object Resource,
+        MetadataV2GraphSnapshot? Snapshot = null);
+
+    internal readonly record struct CanonicalWriteService(MetadataV2Service? Service);
 
     public static async Task<MetadataV2ValidationResult> ValidateLayerWriteAccessV2Async(
         HttpContext context,
@@ -1168,8 +1152,7 @@ internal static partial class LayerValidationHelpers
 
         var canonicalError = await EnforceCanonicalServiceWriteAccessAsync(
             context,
-            validation,
-            operation,
+            (validation, operation),
             cancellationToken).ConfigureAwait(false);
         if (canonicalError != null)
         {
@@ -1197,86 +1180,4 @@ internal static partial class LayerValidationHelpers
 
         return validation;
     }
-
-    public static async Task<MetadataV2ServiceValidationResult> ValidateServiceWithAccessV2Async(
-        HttpContext context,
-        string serviceName,
-        string? requiredProtocol = null,
-        AccessScope scope = AccessScope.Read,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(serviceName))
-        {
-            return new MetadataV2ServiceValidationResult(
-                false, null, [], [],
-                StandardErrorHelpers.CreateBadRequest(context, "Service name is required."));
-        }
-
-        var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
-
-        // Prefer a protocol match; otherwise fall back to name match.
-        MetadataV2Service? service = null;
-        if (!string.IsNullOrWhiteSpace(requiredProtocol))
-        {
-            service = snapshot.Graph.Services.FirstOrDefault(s =>
-                MetadataV2ServiceProtocols.IsProtocolEnabled(s, requiredProtocol) &&
-                string.Equals(s.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase));
-        }
-        service ??= snapshot.Index.ServicesByName.TryGetValue(serviceName, out var s) ? s : null;
-
-        if (service is null || !TenantScopeHelpers.IsTenantVisible(context, resource: null, service))
-        {
-            return new MetadataV2ServiceValidationResult(
-                false, null, [], [],
-                StandardErrorHelpers.CreateNotFound(context, $"Service '{serviceName}' not found."));
-        }
-
-        if (!string.IsNullOrWhiteSpace(requiredProtocol) &&
-            !MetadataV2ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
-        {
-            return new MetadataV2ServiceValidationResult(
-                false, service, [], [],
-                StandardErrorHelpers.CreateNotFound(
-                    context, $"{requiredProtocol} is not enabled for service '{serviceName}'."));
-        }
-
-        var serviceAccessError = await AccessPolicyHelpers.RequireServiceAccessAsync(
-            context, service, AccessPolicyHelpers.DefaultOperationForScope(scope), cancellationToken).ConfigureAwait(false);
-        if (serviceAccessError != null)
-        {
-            return new MetadataV2ServiceValidationResult(false, service, [], [], serviceAccessError);
-        }
-
-        var publications = snapshot.PublicationsForService(service.Metadata.Id);
-        var visiblePublications = new List<MetadataV2Layer>(publications.Count);
-        var resources = new List<MetadataV2Object>(publications.Count);
-        foreach (var pub in publications)
-        {
-            var resource = snapshot.ResolveResource(pub);
-            if (!snapshot.IsRoutable(pub))
-            {
-                continue;
-            }
-            if (!TenantScopeHelpers.IsPublicationVisible(context, pub, resource!, service))
-            {
-                continue;
-            }
-            // Drop resources the caller can't read; capability documents normally hide them.
-            if (!AccessPolicyHelpers.IsResourceAccessible(context, resource!, service, scope))
-            {
-                continue;
-            }
-            visiblePublications.Add(pub);
-            resources.Add(resource!);
-        }
-
-        return new MetadataV2ServiceValidationResult(true, service, visiblePublications, resources, null);
-    }
 }
-
-internal readonly record struct MetadataV2ServiceValidationResult(
-    bool IsValid,
-    MetadataV2Service? Service,
-    IReadOnlyList<MetadataV2Layer> Publications,
-    IReadOnlyList<MetadataV2Object> AccessibleResources,
-    IResult? ErrorResult);

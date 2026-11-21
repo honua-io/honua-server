@@ -65,7 +65,7 @@ internal abstract class BaseGeocodeProvider : IGeocodeProvider
             stopwatch.Stop();
 
             // No ILogger is threaded through this abstract base (none of the five
-            // concrete providers currently accept one; PA-067/PA-201), so the
+            // concrete providers currently accept one), so the
             // exception detail is surfaced in the returned health record itself —
             // that is the only diagnostic signal available to callers here.
             return new GeocodeProviderHealth(
@@ -157,17 +157,6 @@ internal abstract class BaseGeocodeProvider : IGeocodeProvider
     protected virtual int ValidateMaxResults(int maxResults)
     {
         return Math.Clamp(maxResults, 1, Capabilities.MaxResultsPerRequest);
-    }
-
-    protected static double NormalizeScore(double rawScore, double minScore = 0.0, double maxScore = 1.0)
-    {
-        if (maxScore <= minScore)
-        {
-            return 0.0;
-        }
-
-        var normalized = (rawScore - minScore) / (maxScore - minScore);
-        return Math.Clamp(normalized * 100.0, 0.0, 100.0);
     }
 
     protected Dictionary<string, string?> BuildAttributes(

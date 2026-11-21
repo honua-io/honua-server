@@ -14,14 +14,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Integration tests for the optional server-initiated <c>GET /mcp</c> SSE stream
-/// with <c>Mcp:ServerInitiatedStreamEnabled=true</c> (opt-in; off by default per
-/// #2537). Proves the stream opens for a valid session and — the core #2537
-/// regression — that tearing the stream down never invalidates the session, so a
-/// spec-compliant SDK client behind a non-streaming ingress keeps working on the
-/// same <c>Mcp-Session-Id</c>.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpServerInitiatedStreamTests : IAsyncLifetime
@@ -99,9 +91,9 @@ public sealed class McpServerInitiatedStreamTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
     public async Task GetStreamTeardown_LeavesSessionUsable_ToolsListStill200()
     {
-        // The #2537 regression: initialize → open the standalone GET stream →
-        // close it → the same session must still accept POSTs. Before the fix a
-        // stream teardown destroyed the session and every later POST 404'd.
+        // Initialize → open the standalone GET stream → close it → the same session
+        // must still accept POSTs. A stream teardown must not destroy the session
+        // and make every later POST 404.
         var sessionId = await InitializeAndGetSessionIdAsync();
 
         using (var streamRequest = new HttpRequestMessage(HttpMethod.Get, "/mcp"))

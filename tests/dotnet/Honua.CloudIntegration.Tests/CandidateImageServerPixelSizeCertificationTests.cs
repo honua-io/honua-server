@@ -12,44 +12,12 @@ using Xunit.Abstractions;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Exact-candidate replay of ImageServer mosaic native pixel size (honua-server#4562). Boots the published
-/// server image named by <c>HONUA_CANDIDATE_IMAGE</c> in <c>Production</c> against a real PostGIS, registers
-/// the Production raster trigger from the issue, and reads <c>GET /rest/services/{id}/ImageServer?f=json</c>.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Layer <c>2400</c> is the trigger: two coextensive 4x4 EPSG:4326 rasters at different acquisition dates,
-/// upper-left (-122.44, 37.78), scale (0.01, -0.01), two 32BF bands. Before #4563 the mosaic width rounded
-/// from four to five columns and the service advertised <c>pixelSizeX=0.008000000000001251</c>. Layer
-/// <c>2402</c> is the per-axis control: two 0.03 x 0.007-degree rasters, the second offset by one cell, so the
-/// axes differ and the union extent is nonintegral in decimal degrees. The rasters stay grid-aligned: an
-/// unaligned (mixed-resolution) mosaic fails service info with a 500 on every image before pixel size is
-/// reached, tracked as honua-server#4792; <c>ImageServerMosaicPixelSizeTests</c> covers the mixed-resolution
-/// pixel size contract until then.
-/// </para>
-/// <para>
-/// The expected sizes are computed independently of the server: PostGIS reads each stored raster's
-/// <c>ST_ScaleX</c>/<c>ST_ScaleY</c>, the per-axis minimum is taken, and it must equal the fixture constants
-/// before the metadata is compared to it. Extent, band count, pixel type and spatial reference are checked
-/// against the fixture as well.
-/// </para>
-/// <para>
-/// Run it with <c>HONUA_CANDIDATE_IMAGE</c> set to the manifest-pinned image; it <c>[SkippableFact]</c>-skips
-/// without it or without Docker. Pointing it at an image built before #4563 (for example
-/// <c>ghcr.io/honua-io/honua-server:nightly-aot-9f855c0</c>, the Production source named in the issue) fails
-/// the <c>pixelSizeX</c> assertion, which is the negative control for the replay. The JSON receipt records the
-/// observed metadata before any assertion runs, so a failing image still leaves one; it is written to
-/// <c>HONUA_CANDIDATE_RECEIPT_DIR</c> when set, and to the test output otherwise.
-/// </para>
-/// </remarks>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.CandidateCertification)]
 public sealed class CandidateImageServerPixelSizeCertificationTests
 {
     private const string CandidateImageEnvVar = "HONUA_CANDIDATE_IMAGE";
     private const string ReceiptDirectoryEnvVar = "HONUA_CANDIDATE_RECEIPT_DIR";
     private const string PostgresImage = "postgis/postgis:16-3.4";
-    private const string RedisImage = "redis:7-alpine";
     private const string DatabasePassword = "pixelsize_4562_pg";
     private const string AdminPassword = "PixelSize4562!Candidate#Key";
     private const int ReplicaContainerPort = 8080;
@@ -61,10 +29,6 @@ public sealed class CandidateImageServerPixelSizeCertificationTests
         new(2402, "Anisotropic Offset Mosaic", PixelSizeX: 0.03, PixelSizeY: 0.007, XMin: -122.44, YMin: 37.752, XMax: -122.29, YMax: 37.78)
     ];
 
-    /// <summary>
-    /// V1 catalog rows only; the server serves its own compilation of this catalog. Each layer is published by
-    /// its own anonymous service and carries two 4x4 two-band Float32 rasters with distinct acquisition dates.
-    /// </summary>
     private const string V1CatalogFixtureSql =
         """
         INSERT INTO honua.services (service_name, description, srid, supported_formats, capabilities, service_extent, metadata)
@@ -120,9 +84,8 @@ public sealed class CandidateImageServerPixelSizeCertificationTests
         var suffix = Guid.NewGuid().ToString("N")[..8];
         var network = $"honua-px4562-{suffix}";
         var postgres = $"{network}-pg";
-        var redis = $"{network}-redis";
         var server = $"{network}-server";
-        var port = LocalSubstrateDockerFixture.GetFreeTcpPort();
+        var port = LoopbackTcpPort.GetFree();
         var baseUrl = $"http://127.0.0.1:{port.ToString(CultureInfo.InvariantCulture)}";
         var passed = false;
 
@@ -140,7 +103,6 @@ public sealed class CandidateImageServerPixelSizeCertificationTests
                 postgres,
                 "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster; " +
                 "CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS pgcrypto;");
-            await Docker.RunCheckedAsync(["run", "-d", "--name", redis, "--network", network, RedisImage]);
 
             await Docker.RunCheckedAsync(
             [
@@ -149,7 +111,6 @@ public sealed class CandidateImageServerPixelSizeCertificationTests
                 "-e", "ASPNETCORE_ENVIRONMENT=Production",
                 "-e", $"PUBLIC_BASE_URL={baseUrl}",
                 "-e", $"ConnectionStrings__DefaultConnection=Host={postgres};Database=honua;Username=postgres;Password={DatabasePassword}",
-                "-e", $"ConnectionStrings__Redis={redis}:6379",
                 "-e", $"HONUA_ADMIN_PASSWORD={AdminPassword}",
                 "-e", "HostValidation__AllowedHosts__0=127.0.0.1",
                 "-e", "HostValidation__AllowedHosts__1=localhost",
@@ -182,7 +143,6 @@ public sealed class CandidateImageServerPixelSizeCertificationTests
                 observations.Add(await ObserveLayerAsync(client, baseUrl, postgres, layer));
             }
 
-            // Receipt first: a pre-fix image fails below and must still leave the values it advertised.
             await WriteReceiptAsync(image, observations);
 
             foreach (var observation in observations)
@@ -200,7 +160,7 @@ public sealed class CandidateImageServerPixelSizeCertificationTests
                 _output.WriteLine(logs + errors);
             }
 
-            foreach (var container in new[] { server, redis, postgres })
+            foreach (var container in new[] { server, postgres })
             {
                 await Docker.RunAsync(["rm", "-f", container]);
             }

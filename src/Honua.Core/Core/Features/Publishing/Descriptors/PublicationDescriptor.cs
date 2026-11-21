@@ -1,20 +1,14 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Publishing.Descriptors;
 
+// One Export version as Honua models it. It is stored only as its STAC collection document (ExportCollectionDocument).
 public sealed record PublicationDescriptor
 {
-    public const string SchemaUri = "https://honua.io/schemas/publication-descriptor.v1.schema.json";
-    public const string CurrentVersion = "1.0";
-
-    [JsonPropertyName("$schema")]
-    public string Schema { get; init; } = SchemaUri;
-
-    public string DescriptorVersion { get; init; } = CurrentVersion;
-
     public required string PublicationId { get; init; }
 
     public required string Version { get; init; }
@@ -41,8 +35,6 @@ public sealed record PublicationDescriptor
     public required PublicationArtifacts Artifacts { get; init; }
 
     public required PublicationValidation Validation { get; init; }
-
-    public required PublicationLinks Links { get; init; }
 }
 
 public sealed record PublicationSourceLayer(string Service, string Layer)
@@ -133,17 +125,33 @@ public sealed record PublicationValidationCheck(string Name, string Status)
     public string? Detail { get; init; }
 }
 
-public sealed record PublicationLinks(string Stac)
+public sealed record PublishedPublication(string PublicationId, string Version, string CaptureId, string DescriptorKey, string PointerKey)
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? Self { get; init; }
+    public PublicExportDeliveryStatus? Public { get; init; }
 }
 
-public sealed record PublishedPublication(string PublicationId, string Version, string CaptureId, string DescriptorKey, string PointerKey);
+public sealed record PublicExportDeliveryStatus(string Status)
+{
+    public const string Promoted = "promoted";
+    public const string PromotedUnreadable = "promoted_unreadable";
+    public const string StaysSignedIn = "stays_signed_in";
+    public const string NotConfigured = "not_configured";
 
-public sealed record PublicationPointer(string PublicationId, string Version, string Descriptor, DateTimeOffset SwitchedAt);
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CollectionUrl { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CatalogUrl { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Reason { get; init; }
+}
+
+public sealed record PublicationPointer(string PublicationId, string Version, string Collection, DateTimeOffset SwitchedAt);
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]
 [JsonSerializable(typeof(PublicationDescriptor))]
 [JsonSerializable(typeof(PublicationPointer))]
+[JsonSerializable(typeof(JsonObject))]
 public sealed partial class PublicationDescriptorJsonContext : JsonSerializerContext;

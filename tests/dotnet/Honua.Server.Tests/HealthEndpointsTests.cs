@@ -7,7 +7,6 @@ using FluentAssertions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Realtime;
 using Honua.Infrastructure.Events;
-using Honua.Server.Tests.Features.Streaming;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -16,10 +15,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Tests for health check endpoints (/healthz/live, /healthz/ready)
-/// Validates Kubernetes-compatible health checks with PostgreSQL connectivity
-/// </summary>
 [Protocol(TestProtocols.Health)]
 [Collection("Performance")]
 public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFactory>
@@ -258,6 +253,28 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
         content.Should().Contain("#");
     }
 
+    // A Prometheus Operator ServiceMonitor can send only an Authorization header.
+    [IntegrationTheory]
+    [Operation(Operations.HealthCheck)]
+    [Endpoint("GET /metrics")]
+    [InlineData("ApiKey", HttpStatusCode.OK)]
+    [InlineData("Bearer", HttpStatusCode.Unauthorized)]
+    public async Task PrometheusMetricsEndpoint_AuthorizationHeaderScheme_DecidesAccess(string scheme, HttpStatusCode expected)
+    {
+        var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+        });
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", $"{scheme} {AdminPassword}");
+
+        var response = await client.GetAsync("/metrics");
+
+        response.StatusCode.Should().Be(expected);
+    }
+
     [IntegrationTest]
     [Operation(Operations.HealthCheck)]
     [Endpoint("GET /healthz/metrics")]
@@ -367,9 +384,6 @@ public sealed class HealthEndpointsTests : IClassFixture<TestWebApplicationFacto
 
 }
 
-/// <summary>
-/// Mock implementation that always returns healthy
-/// </summary>
 internal sealed class MockHealthyDatabaseChecker : IDatabaseHealthChecker
 {
     public Task<bool> IsDatabaseHealthyAsync(CancellationToken cancellationToken = default)
@@ -378,9 +392,6 @@ internal sealed class MockHealthyDatabaseChecker : IDatabaseHealthChecker
     }
 }
 
-/// <summary>
-/// Mock implementation that always returns unhealthy
-/// </summary>
 internal sealed class MockUnhealthyDatabaseChecker : IDatabaseHealthChecker
 {
     public Task<bool> IsDatabaseHealthyAsync(CancellationToken cancellationToken = default)

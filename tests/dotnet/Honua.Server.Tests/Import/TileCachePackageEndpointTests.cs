@@ -19,11 +19,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests for the Esri tile-cache package import + serving binding (#1269).
-/// Imports a synthetic Compact Cache V2 (.tpkx) package and then serves the imported
-/// tile + TileJSON descriptor through the public tile endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
@@ -94,7 +89,7 @@ public sealed class TileCachePackageEndpointTests : IAsyncLifetime
         content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
 
         // The tileset id names a published layer the test client can read, so its tiles
-        // serve under that layer's read policy (SEC-15).
+        // serve under that layer's read policy.
         var tilesetId = await PublishedLayerResourceIdAsync();
         var importResponse = await _client.PostAsync(
             $"/api/v1/admin/import/tile-package?tilesetId={Uri.EscapeDataString(tilesetId)}&fileName=served.tpkx", content);

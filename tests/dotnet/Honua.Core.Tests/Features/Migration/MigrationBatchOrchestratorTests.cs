@@ -14,11 +14,6 @@ using Xunit;
 
 namespace Honua.Core.Tests.Features.Migration;
 
-/// <summary>
-/// Unit tests for <see cref="MigrationBatchOrchestrator"/> (issue #1253): ordering
-/// from dependency edges, sequential child queueing, status roll-up, resumability
-/// (skip succeeded / restart from failed), and relationship-apply wiring (#1256).
-/// </summary>
 public sealed class MigrationBatchOrchestratorTests
 {
     [Trait("Tier", "Fast")]
@@ -187,7 +182,7 @@ public sealed class MigrationBatchOrchestratorTests
         final.Status.Should().Be(MigrationBatchRunStatus.Succeeded);
     }
 
-    // ---- #4600: service-level fidelity verdict --------------------------------------------------
+    // ---- Service-level fidelity verdict --------------------------------------------------
     // Expected verdicts come from the acceptance criteria, not from current output: a service
     // migration is full fidelity only when every layer is full fidelity and every requested
     // relationship reached the target; a deferred relationship, an apply that never ran, or a layer
@@ -267,7 +262,7 @@ public sealed class MigrationBatchOrchestratorTests
         var final = await catalog.GetAsync(batch.BatchId);
         final!.Status.Should().Be(MigrationBatchRunStatus.NeedsReview);
         final.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
-        // The unreadable manifest also means no construct was accounted for before apply (#4600 AC1).
+        // The unreadable manifest also means no construct was accounted for before apply.
         final.FidelityDifferences.Select(d => (d.Code, d.Severity)).Should().Equal(
             (MigrationFidelityDifferenceCodes.ConstructAccountingNotExecuted, MigrationFidelityDifferenceSeverities.Unverified),
             (MigrationFidelityDifferenceCodes.RelationshipApplyNotExecuted, MigrationFidelityDifferenceSeverities.Blocking));
@@ -311,7 +306,7 @@ public sealed class MigrationBatchOrchestratorTests
         children = await catalog.GetChildrenAsync(batch.BatchId);
 
         // The review-routed origin layer published its data, so its dependent must still be queued;
-        // before #4600 it stayed pending forever and the batch never finished.
+        // otherwise it stays pending forever and the batch never finishes.
         children[1].Status.Should().Be(MigrationBatchChildStatus.Running);
         children[1].JobId.Should().NotBeNull();
         await jobManager.CompleteJobAsync(children[1].JobId!, GeoservicesImportStatus.Completed, 101, MigrationFidelityVerdicts.FullFidelity);
@@ -351,7 +346,7 @@ public sealed class MigrationBatchOrchestratorTests
     [Fact]
     public async Task AdvanceAsync_WhenTheQueuedJobIdNeverReachedTheChildRow_DoesNotQueueASecondImportOfTheLayer()
     {
-        // #4600 AC5 (idempotent job identity): a crash can land after the child's import job is queued
+        // Idempotent job identity: a crash can land after the child's import job is queued
         // but before its id is written to the child row, so the child still reads Pending. The worker
         // has meanwhile picked the job up. Advancing again must recognise that job, not queue a second
         // import of the same layer into the same table under a new id.
@@ -406,7 +401,7 @@ public sealed class MigrationBatchOrchestratorTests
         (await catalog.GetChildrenAsync(second.BatchId))[0].JobId.Should().Be(jobManager.Queue[2]);
     }
 
-    // ---- #4600 AC1: pre-apply construct accounting ---------------------------------------------------
+    // ---- Pre-apply construct accounting ---------------------------------------------------
     // A service migration is full fidelity only when every layer the source scan discovered is selected.
     // The expected differences follow from the manifests below: layer 2 is discovered but never selected.
 
@@ -487,11 +482,6 @@ public sealed class MigrationBatchOrchestratorTests
         (await catalog.GetManifestBodyAsync(batch.BatchId)).Should().NotBeNull();
     }
 
-    /// <summary>
-    /// A scanned FeatureServer manifest that discovers the two layers <see cref="NewRequest"/> selects, plus
-    /// <paramref name="extraLayerIds"/>, with every construct automated so accounting a full selection
-    /// contributes no difference of its own.
-    /// </summary>
     private static string DiscoveredManifestBody(params string[] extraLayerIds)
     {
         string[] layerIds = ["resource:x:layer:0", "resource:x:layer:1", .. extraLayerIds];
@@ -817,9 +807,6 @@ public sealed class MigrationBatchOrchestratorTests
             return Task.FromResult<MigrationBatchRunRecord?>(updated);
         }
 
-        /// <summary>
-        /// Simulates the child-row write that a crash lost after the child's import job was queued.
-        /// </summary>
         public void ResetChildToPending(string batchId, int ordinal)
         {
             var children = _children[batchId];

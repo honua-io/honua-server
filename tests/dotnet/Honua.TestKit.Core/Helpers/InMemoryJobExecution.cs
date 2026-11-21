@@ -95,12 +95,6 @@ public sealed class InMemoryExecutionJobStore : IExecutionJobStore, IBoundedExec
         }
     }
 
-    /// <summary>
-    /// This store models leases as always owned by the caller (see the lease methods above), so a
-    /// lease-fenced finalize is exactly a <see cref="TrySetAsync"/>. Without this override the
-    /// interface default fails closed and every partition-leased job (deploy workflows, metadata
-    /// releases, tile-cache lifecycle) would requeue forever instead of finalizing.
-    /// </summary>
     public Task<bool> TrySetIfLeaseOwnedAsync(
         ExecutionJobRecord job,
         OwnedJobLease lease,
@@ -126,7 +120,7 @@ public sealed class InMemoryExecutionJobStore : IExecutionJobStore, IBoundedExec
         {
             var query = _jobs.Values
                 .Where(job => !kind.HasValue || job.Spec.Kind == kind.Value);
-            // BH7-009: apply 2x overfetch budget when a limit is supplied, because
+            // apply 2x overfetch budget when a limit is supplied, because
             // authorization filters may discard some records.
             if (limit.HasValue)
             {
@@ -139,11 +133,6 @@ public sealed class InMemoryExecutionJobStore : IExecutionJobStore, IBoundedExec
     }
 }
 
-/// <summary>
-/// Functional in-memory <see cref="IJobQueue"/> for integration tests: a FIFO of operation ids with
-/// real enqueue/remove/requeue/depth semantics so durable-operation endpoint tests can assert queue
-/// removal on cancel. Pairs with <see cref="InMemoryExecutionJobStore"/>.
-/// </summary>
 [System.Diagnostics.CodeAnalysis.SuppressMessage(
     "Naming",
     "CA1711:Identifiers should not have incorrect suffix",

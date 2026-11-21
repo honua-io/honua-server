@@ -14,12 +14,6 @@ internal static partial class LayerStyleLog
     public static partial void UnsupportedRendererType(ILogger logger, string rendererType, int layerId);
 
     [LoggerMessage(
-        EventId = 6401,
-        Level = LogLevel.Warning,
-        Message = "Failed to resolve optional drawingInfo for layer {LayerId}. Returning metadata without drawingInfo.")]
-    public static partial void OptionalDrawingInfoUnavailable(ILogger logger, int layerId, Exception exception);
-
-    [LoggerMessage(
         EventId = 6402,
         Level = LogLevel.Debug,
         Message = "Applied {Theme} theme transform for layer {LayerId}.")]
@@ -30,6 +24,12 @@ internal static partial class LayerStyleLog
         Level = LogLevel.Debug,
         Message = "Theme transform for layer {LayerId} skipped property '{Property}' due to malformed color '{Color}'.")]
     public static partial void ThemeColorParseFailure(ILogger logger, int layerId, string property, string color);
+
+    [LoggerMessage(
+        EventId = 6401,
+        Level = LogLevel.Warning,
+        Message = "Storage layer {LayerId} has a saved presentation but resolves to more than one resource or none, so the style write did not retire it; the saved presentation still overrides the new style.")]
+    public static partial void SavedPresentationNotRetired(ILogger logger, int layerId);
 
     [LoggerMessage(
         EventId = 6405,

@@ -11,11 +11,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Infrastructure;
 
-/// <summary>
-/// Provider-aware tests for the degraded-start classifier (#1632): verifies real Npgsql exception
-/// types are correctly bucketed as transient (connectivity) vs. fatal (misconfiguration), and that
-/// the degraded-start context arms recovery without crashing the process.
-/// </summary>
 [Protocol(TestProtocols.Health)]
 public sealed class StartupDatabaseResilienceNpgsqlTests
 {
@@ -35,7 +30,7 @@ public sealed class StartupDatabaseResilienceNpgsqlTests
     [Operation(Operations.HealthCheck)]
     public void IsTransientConnectivityError_WithTooManyConnections_ReturnsTrue()
     {
-        // SQLSTATE 53300 (too_many_connections) is the exact pool/slot-exhaustion failure from #1632.
+        // SQLSTATE 53300 (too_many_connections) is the exact pool/slot-exhaustion failure under connection exhaustion.
         var exception = BuildPostgresException("53300");
         StartupDatabaseResilience.IsTransientConnectivityError(exception).Should().BeTrue();
     }

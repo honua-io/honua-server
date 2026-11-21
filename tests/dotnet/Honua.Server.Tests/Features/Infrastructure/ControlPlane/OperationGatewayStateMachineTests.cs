@@ -20,23 +20,9 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Regression coverage for the OperationGateway state-machine gaps identified in
-/// BH6-032 and BH6-033.
-///
-/// BH6-032: <see cref="OperationGateway"/> ExecuteDirectAsync silently returned
-/// <see cref="OperationGatewayOutcome.Executed"/> when no <see cref="IOperationExecutor"/>
-/// was registered for the requested <see cref="OperationClass"/>, causing Community/Pro
-/// editions to silently do nothing for MetadataRelease and Seed operations.
-///
-/// BH6-033: <see cref="OperationGateway"/> ApplyApprovedProposalAsync left the proposal
-/// in the non-terminal <see cref="OperationProposalStatus.Submitted"/> state when no
-/// executor was registered for the operation class, preventing the reconciler from
-/// ever advancing the proposal.
-/// </summary>
 public sealed partial class OperationGatewayStateMachineTests
 {
-    // ── BH6-032: ExecuteDirectAsync with unregistered operation class ─────────
+    // ── ExecuteDirectAsync with unregistered operation class ─────────
 
     [Theory]
     [InlineData(OperationClass.MetadataRelease)]
@@ -62,7 +48,7 @@ public sealed partial class OperationGatewayStateMachineTests
         // Act
         var result = await sut2.RouteAsync(request);
 
-        // Assert: must NOT claim Executed (BH6-032) — nothing ran
+        // Assert: must NOT claim Executed — nothing ran
         result.Outcome.Should().Be(OperationGatewayOutcome.NotSupported,
             "a kind with no registered executor must not be claimed as Executed");
         result.ExecutionOperationId.Should().BeNull("no operation was performed");
@@ -93,7 +79,7 @@ public sealed partial class OperationGatewayStateMachineTests
         result.ExecutionOperationId.Should().Be(DeployExecutor.OperationId);
     }
 
-    // ── BH6-033: ApplyApprovedProposalAsync with unregistered operation class ─
+    // ── ApplyApprovedProposalAsync with unregistered operation class ─
 
     [Theory]
     [InlineData(OperationClass.MetadataRelease)]
@@ -109,7 +95,7 @@ public sealed partial class OperationGatewayStateMachineTests
         // Act
         var result = await sut.ApplyApprovedProposalAsync("p-no-executor", new OperationProposalApprovalContext { ApprovedBy = "admin", TenantId = string.Empty });
 
-        // Assert BH6-033: must transition to terminal Failed, not stay Submitted
+        // Assert: must transition to terminal Failed, not stay Submitted
         result.Should().NotBeNull();
         result!.Status.Should().Be(OperationProposalStatus.Failed,
             "a proposal whose operation class has no registered executor must fail terminally, " +
@@ -181,8 +167,7 @@ public sealed partial class OperationGatewayStateMachineTests
     [Fact]
     public async Task ApplyApprovedProposal_WhenExecutorThrows_ReachesTerminalFailed()
     {
-        // Executor exceptions must also yield terminal Failed (pre-existing behaviour;
-        // confirmed to still hold after the BH6-033 fix).
+        // Executor exceptions must also yield terminal Failed.
         var proposal = CreateProposal("p-throws", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval);
         var store = new InMemoryProposalStore(proposal);
         var sut = BuildGateway(store: store, executor: new ThrowingExecutor());
@@ -397,9 +382,6 @@ public sealed partial class OperationGatewayStateMachineTests
         return CanonicalOperationGatewayTestComposition.Build(store, resolvedLadder, executors, configure);
     }
 
-    /// <summary>
-    /// Executor that handles only <see cref="OperationClass.Deploy"/> and records a fixed operation ID.
-    /// </summary>
     private sealed class DeployExecutor : IOperationExecutor
     {
         public const string OperationId = "deploy-op-id";
@@ -418,7 +400,6 @@ public sealed partial class OperationGatewayStateMachineTests
             => Task.FromResult<string?>(OperationId);
     }
 
-    /// <summary>Executor that always throws on Execute.</summary>
     private sealed class ThrowingExecutor : IOperationExecutor
     {
         public OperationClass OperationClass => OperationClass.Deploy;
@@ -523,10 +504,6 @@ public sealed partial class OperationGatewayStateMachineTests
         }
     }
 
-    /// <summary>
-    /// Thread-safe in-memory proposal store with CAS semantics, shared with
-    /// <see cref="OperationGatewayApprovalConcurrencyTests"/>.
-    /// </summary>
     private sealed class InMemoryProposalStore(OperationProposal? initialProposal = null) : IOperationProposalStore
     {
         private OperationProposal? _proposal = initialProposal;

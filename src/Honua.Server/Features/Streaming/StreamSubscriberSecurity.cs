@@ -1,11 +1,14 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Queries.Filters;
 
 namespace Honua.Server.Features.Streaming;
 
-// The policy snapshot is replaced as a whole, so a change applies to frames matched after the refresh.
+// The policy snapshot is replaced as a whole for matching and delivery.
 internal sealed class StreamSubscriberSecurity
 {
     private PolicyState _state;
@@ -25,6 +28,32 @@ internal sealed class StreamSubscriberSecurity
             deniedExactRoutes ?? new HashSet<(string Service, int Layer)>());
     }
 
+    // Readable layers whose row policy for this subscriber cannot be applied to stream events.
+    // Read only at subscribe time: a refresh replaces the routes but not this set.
+    public IReadOnlySet<int> UnstreamablePolicyLayers { get; init; } = new HashSet<int>();
+
+    // A readable layer whose row policy cannot be evaluated on stream events (an area
+    // restriction, for example) is denied rather than filtered. A subscription that names such
+    // a layer, with no other readable route for it, would only ever be silent, so it is refused.
+    public string? DescribeUnstreamableLayer(IReadOnlyList<int>? explicitLayerIds)
+    {
+        if (explicitLayerIds is null || UnstreamablePolicyLayers.Count == 0)
+        {
+            return null;
+        }
+
+        var routes = Volatile.Read(ref _state).ExactRoutes.Keys;
+        foreach (var layerId in explicitLayerIds)
+        {
+            if (UnstreamablePolicyLayers.Contains(layerId) && !routes.Any(route => route.Layer == layerId))
+            {
+                return $"Layer {layerId} has a read restriction that feature streams cannot apply (for example, a row-level security area), so the stream would deliver no changes. Read the layer with a feature query instead.";
+            }
+        }
+
+        return null;
+    }
+
     public bool HasRowPredicates => Volatile.Read(ref _state).HasRowPredicates;
 
     public bool IsRefreshable => Volatile.Read(ref _refresh) is not null;
@@ -32,20 +61,61 @@ internal sealed class StreamSubscriberSecurity
     public bool Allows(FeatureStreamEnvelope envelope)
     {
         var policy = Volatile.Read(ref _state).Resolve(envelope);
-        if (policy is null)
+        return policy is not null && AllowsRow(policy, envelope.Attributes);
+    }
+
+    private static bool AllowsRow(StreamLayerReadPolicy policy, IReadOnlyDictionary<string, JsonElement>? attributes)
+    {
+        if (!policy.SupportsStreaming)
+        {
+            return false;
+        }
+
+        if (policy.RequiredFields.Any(field => attributes?.ContainsKey(field) != true))
         {
             return false;
         }
 
         foreach (var predicate in policy.Predicates)
         {
-            if (envelope.Attributes is null || !InMemoryFilterEvaluator.Evaluate(predicate, envelope.Attributes))
+            if (attributes is null || !InMemoryFilterEvaluator.Evaluate(predicate, attributes))
             {
                 return false;
             }
         }
 
         return true;
+    }
+
+    // A client predicate may only read fields the subscriber can read on the event's route. A
+    // route with no current policy is not readable at all, so it counts as masked.
+    public bool MasksAny(FeatureStreamEnvelope envelope, IReadOnlyList<string> fields)
+    {
+        var policy = Volatile.Read(ref _state).Resolve(envelope);
+        return policy is null || FirstMaskedField(policy, fields) is not null;
+    }
+
+    public string? FindMaskedField(IReadOnlyList<string> fields)
+        => Volatile.Read(ref _state).ExactRoutes.Values
+            .Select(policy => FirstMaskedField(policy, fields))
+            .FirstOrDefault(static field => field is not null);
+
+    private static string? FirstMaskedField(StreamLayerReadPolicy policy, IReadOnlyList<string> fields)
+    {
+        if (policy.MaskedFields.Count == 0)
+        {
+            return null;
+        }
+
+        for (var index = 0; index < fields.Count; index++)
+        {
+            if (policy.MaskedFields.Contains(fields[index]))
+            {
+                return fields[index];
+            }
+        }
+
+        return null;
     }
 
     public FeatureStreamEnvelope Project(FeatureStreamEnvelope envelope)
@@ -59,6 +129,11 @@ internal sealed class StreamSubscriberSecurity
             return envelope with { Attributes = null, ChangedAttributes = null };
         }
 
+        return Project(envelope, policy);
+    }
+
+    private static FeatureStreamEnvelope Project(FeatureStreamEnvelope envelope, StreamLayerReadPolicy policy)
+    {
         if (policy.MaskedFields.Count == 0)
         {
             return envelope;
@@ -66,11 +141,38 @@ internal sealed class StreamSubscriberSecurity
 
         return envelope with
         {
+            AuthorizationAttributes = envelope.AuthorizationAttributes ?? envelope.Attributes,
             Attributes = envelope.Attributes?.Where(pair => !policy.MaskedFields.Contains(pair.Key))
                 .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.Ordinal),
             ChangedAttributes = envelope.ChangedAttributes?.Where(pair => !policy.MaskedFields.Contains(pair.Key))
                 .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.Ordinal)
         };
+    }
+
+    public FeatureStreamEnvelope? PrepareDelivery(FeatureStreamEnvelope envelope, IReadOnlyList<string> filterFields)
+    {
+        var policy = Volatile.Read(ref _state).Resolve(envelope);
+        if (policy is null ||
+            (!string.Equals(envelope.Operation, "delete", StringComparison.OrdinalIgnoreCase) &&
+             FirstMaskedField(policy, filterFields) is not null))
+        {
+            return null;
+        }
+
+        var attributes = envelope.AuthorizationAttributes ?? envelope.Attributes;
+        try
+        {
+            if (!AllowsRow(policy, attributes))
+            {
+                return null;
+            }
+        }
+        catch (Exception exception) when (exception is UnevaluableLikePatternException or RegexMatchTimeoutException)
+        {
+            return null;
+        }
+
+        return Project(envelope, policy);
     }
 
     // The refresh source runs on the tick, never on each event.
@@ -180,4 +282,11 @@ internal enum StreamSubscriberSecurityRefreshOutcome
 
 internal sealed record StreamLayerReadPolicy(
     IReadOnlyList<FilterExpression> Predicates,
-    HashSet<string> MaskedFields);
+    HashSet<string> MaskedFields)
+{
+    public IReadOnlyList<string> RequiredFields { get; } = Predicates
+        .SelectMany(FeatureQuerySecurity.CollectFieldReferences).Distinct(StringComparer.Ordinal).ToArray();
+
+    public bool SupportsStreaming { get; } = Predicates.All(static predicate =>
+        InMemoryFilterEvaluator.TryValidateStreamingExpression(predicate, out _));
+}

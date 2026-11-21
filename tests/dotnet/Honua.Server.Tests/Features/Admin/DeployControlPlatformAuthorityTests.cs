@@ -35,11 +35,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Deploy and platform-release creation authority with multi-tenancy enabled (#4842).
-/// Every case drives the real MCP tool, reader and REST handler; only the admin policy
-/// (which a tenant-scoped admin holds) and the downstream stores/gateway are seams.
-/// </summary>
 [Trait("Tier", "Fast")]
 [Trait("Category", "Unit")]
 public sealed class DeployControlPlatformAuthorityTests
@@ -111,7 +106,7 @@ public sealed class DeployControlPlatformAuthorityTests
     {
         var harness = McpHarness.Create(scenario);
 
-        // A tenant-bound key must learn platform_admin_required, never the declared release (#5654).
+        // A tenant-bound key must learn platform_admin_required, never the declared release.
         var act = () => harness.InvokeAsync(
             ProposePlatformReleaseConvergenceTool.ToolName, """{"targetVersion":"1999.1-rc.1"}""");
 
@@ -204,7 +199,7 @@ public sealed class DeployControlPlatformAuthorityTests
         [TenantAdmin, ApprovedTenantCredential]);
 
     // /api/v1/operations/{id}/submit, MCP and approval replay reach the rollback executors
-    // without the REST wrappers' platform check, so the executor must enforce it (#5625).
+    // without the REST wrappers' platform check, so the executor must enforce it.
     [Theory]
     [MemberData(nameof(CanonicalRollbackDeniedCases))]
     public async Task CanonicalRollbackExecutor_TenantBoundAdmin_IsDeniedBeforeWorkflowAccess(

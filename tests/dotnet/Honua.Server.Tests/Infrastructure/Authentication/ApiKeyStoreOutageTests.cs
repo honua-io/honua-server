@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Infrastructure.Models;
-using Honua.Infrastructure.Redis;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -133,14 +132,11 @@ public sealed class ApiKeyStoreOutageTests
     }
 
     [UnitTest]
-    public void CompletedReader_MapsToServiceUnavailable_OtherInvalidOperationStays500()
+    public void InvalidOperation_MapsTo500_IdentityModelConfigurationTo401()
     {
-        var completed = ExceptionMapper.Map(
-            new InvalidOperationException(RedisClientFault.CompletedReaderMessage));
         var other = ExceptionMapper.Map(new InvalidOperationException("changed on every attempt"));
         var identityModel = ExceptionMapper.Map(new InvalidOperationException("IDX20803: unable to obtain configuration"));
 
-        Assert.Equal(StatusCodes.Status503ServiceUnavailable, completed.StatusCode);
         Assert.Equal(StatusCodes.Status500InternalServerError, other.StatusCode);
         Assert.Equal(StatusCodes.Status401Unauthorized, identityModel.StatusCode);
     }
@@ -169,10 +165,6 @@ public sealed class ApiKeyStoreOutageTests
             CreatedBy: "test"));
     }
 
-    /// <summary>
-    /// Returns the scripted result for each <see cref="IAdminApiKeyStore.ValidateAsync"/> call.
-    /// An exception factory faults that call. Other store methods are unused.
-    /// </summary>
     private sealed class ScriptedStore : IAdminApiKeyStore
     {
         private readonly Queue<Func<AdminApiKeyValidationResult?>> _results = new();

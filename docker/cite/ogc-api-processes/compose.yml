@@ -16,8 +16,8 @@ services:
       # Exact opt-in for the suite-owned echo fixture. Registration also requires
       # Test environment and HONUA_REGISTER_TEST_INFRASTRUCTURE=true.
       OgcProcesses__CertificationProfile: ogcapi-processes10
-      # The suite-owned profile needs the durable Redis job store. Test hosts may
-      # opt into Pro entitlements explicitly; Production ignores this override.
+      # Test hosts may opt into Pro entitlements explicitly; Production ignores
+      # this override.
       Licensing__DevGrantEdition: Pro
       # The pinned ETS submits its independent async scenarios as a burst. Keep
       # canonical admission enabled, but give this isolated single-client harness
@@ -34,13 +34,10 @@ services:
       HostValidation__AllowedHosts__1: localhost
       ConnectionStrings__DefaultConnection: Server=postgres;Port=5432;Database=honua_cite_processes;User Id=postgres;Password=cite_password;
       ConnectionStrings__honua: Server=postgres;Port=5432;Database=honua_cite_processes;User Id=postgres;Password=cite_password;
-      ConnectionStrings__Redis: redis:6379
       Security__ConnectionEncryption__MasterKey: test-master-key-that-is-at-least-32-characters-long-for-security
       Security__ConnectionEncryption__Salt: dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     networks:
       - cite-processes-network
@@ -61,17 +58,6 @@ services:
       - cite-processes-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d honua_cite_processes"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-
-  redis:
-    image: redis:7.4-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
-    command: redis-server --appendonly no
-    networks:
-      - cite-processes-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 12

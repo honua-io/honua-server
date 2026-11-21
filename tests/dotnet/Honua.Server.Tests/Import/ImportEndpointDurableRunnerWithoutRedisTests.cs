@@ -56,7 +56,6 @@ public sealed class ImportEndpointDurableRunnerWithoutRedisTests(DatabaseFixture
             var configuration = fixture.GetService<IConfiguration>();
             configuration.GetConnectionString(RedisConnectionStringName).Should().BeNullOrEmpty();
             configuration[AspireRedisConnectionStringKey].Should().BeNullOrEmpty();
-            fixture.Services.GetService<StackExchange.Redis.IConnectionMultiplexer>().Should().BeNull();
 
             fixture.GetService<IBackgroundImportRunnerInfo>()
                 .Should().BeOfType<BackgroundImportRunnerDecision>()

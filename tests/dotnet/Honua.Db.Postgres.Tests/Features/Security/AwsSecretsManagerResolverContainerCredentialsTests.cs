@@ -12,13 +12,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Postgres.Tests.Features.Security;
 
-/// <summary>
-/// Container-credentials provider coverage for <see cref="AwsSecretsManagerResolver"/>. EKS Pod
-/// Identity exposes credentials at <c>AWS_CONTAINER_CREDENTIALS_FULL_URI</c> and only accepts the
-/// projected token from <c>AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE</c> as the <c>Authorization</c>
-/// header; without it the resolver used to fall back to the node role (honua-release run 38145777594).
-/// A real loopback HTTP listener stands in for the Pod Identity / ECS agent.
-/// </summary>
 [Collection("Security")]
 public sealed class AwsSecretsManagerResolverContainerCredentialsTests : IDisposable
 {
@@ -394,11 +387,6 @@ public sealed class AwsSecretsManagerResolverContainerCredentialsTests : IDispos
            // Inside the resolver's one-minute refresh window, so every resolution refetches.
            + (expiration ?? DateTimeOffset.UtcNow.AddSeconds(30)).ToString("o", CultureInfo.InvariantCulture) + "\"}";
 
-    /// <summary>
-    /// Wires the resolver: the Secrets Manager client is stubbed (and records which access key signed
-    /// each call); the metadata client reaches the loopback fake agent over real HTTP and stubs the
-    /// fixed link-local ECS and IMDS addresses so no test ever leaves the machine.
-    /// </summary>
     private sealed class ResolverHarness : IDisposable
     {
         private readonly HttpClient _secretsClient;
@@ -477,10 +465,6 @@ public sealed class AwsSecretsManagerResolverContainerCredentialsTests : IDispos
             => Task.FromResult(handler(request));
     }
 
-    /// <summary>
-    /// Minimal HTTP/1.1 credentials agent on a loopback socket, behaving like the EKS Pod Identity
-    /// agent: it records the <c>Authorization</c> header and rejects requests that carry none.
-    /// </summary>
     private sealed class FakeCredentialsAgent : IDisposable
     {
         private readonly TcpListener _listener = new(IPAddress.Loopback, 0);

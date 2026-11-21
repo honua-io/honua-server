@@ -19,12 +19,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
 
-/// <summary>
-/// Orchestration tests for <see cref="StudioAiProxyService"/>: provider/default resolution, request
-/// validation, capability descriptors, and — because <see cref="IStudioAiProxyAdapter"/> is a plugged-in
-/// contract — the defense-in-depth backstop that guarantees exactly one terminal event (and a
-/// correctly populated <see cref="StudioAiProxyCallSummary"/>) even when a fake adapter misbehaves.
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed partial class StudioAiProxyServiceTests
 {
@@ -58,7 +52,7 @@ public sealed partial class StudioAiProxyServiceTests
     [UnitTest]
     public async Task GetCapabilitiesAsync_AnthropicProviderWithoutApiKeyOrEnvFallback_ReportsUnconfigured()
     {
-        // honua-server#3010 review: exercises the REAL AnthropicStudioAiProxyAdapter (not the fake)
+        // Exercises the REAL AnthropicStudioAiProxyAdapter (not the fake)
         // so this proves the service + adapter together, not just a mocked contract.
         var config = ConfigWithOneAnthropicProvider("claude", isDefault: true);
         config.Providers["claude"].ApiKey = string.Empty;
@@ -439,7 +433,8 @@ public sealed partial class StudioAiProxyServiceTests
                 ReleaseId = "release-9",
                 EndpointIdentity = "candidate-proxy",
                 ActionId = "deploy",
-                RunNonce = "nonce"
+                RunNonce = "nonce",
+                RequestedBy = "apikey:api-key:00000000-0000-0000-0000-000000000007"
             },
             Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "deploy" }]
         };
@@ -616,7 +611,8 @@ public sealed partial class StudioAiProxyServiceTests
             ReleaseId = "release-9",
             EndpointIdentity = "candidate-proxy",
             ActionId = "compose-map",
-            RunNonce = "nonce"
+            RunNonce = "nonce",
+            RequestedBy = "apikey:api-key:00000000-0000-0000-0000-000000000007"
         },
         Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }]
     };

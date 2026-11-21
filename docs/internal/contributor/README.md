@@ -1,12 +1,12 @@
 # Contributor Documentation
 
-This section is for people **building or extending** Honua (core contributors, agents, and external devs).
+This section is for Honua Geo developers and their agents. Honua Server does not accept outside code contributions; see [CONTRIBUTING.md](../../../CONTRIBUTING.md).
 
 ## Getting Started
 
 - **Agent Guidelines** — see `AGENTS.md` in the repository root
 - [Development Setup](development/getting-started.md) — prerequisites, installation, and first run
-- [Contributing Guide](development/contributing.md) — code style, architecture rules, PR process
+- [Development guide](development/contributing.md) — code style, architecture rules, PR process
 - [Local Helm Testing](development/k3d-helm.md) — handoff to the `honua-helm` repository
 
 ## Architecture
@@ -19,6 +19,7 @@ This section is for people **building or extending** Honua (core contributors, a
 - [Package and Module Governance](package-and-module-governance.md) — central package versions and optional module boundaries
 - [Honua Manifesto](HONUA_MANIFESTO.md) — core principles
 - [Configuration and secret management](architecture/configuration-and-secrets.md)
+- [Feature-change read horizon rollout](feature-change-horizon-rollout.md) — reader compatibility and writer activation prerequisites
 - [Local pre-PR validation](local-pre-pr-validation.md) and the [I3S SceneServer smoke](i3s-sceneserver-smoke.md)
 - [Imported editing metadata](imported-editing-metadata.md), [dense mosaic statistics admission](raster-statistics-allocation-budget.md), [service folder rollout](service-folder-rollout.md)
 - Metadata v2 architecture artifacts:

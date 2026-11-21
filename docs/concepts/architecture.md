@@ -45,7 +45,6 @@ flowchart LR
     mysql["MySQL / MariaDB — read-only"]
   end
 
-  redis["Redis — optional<br/>shared cache"]
   files["File storage<br/>local · S3 · Azure Blob"]
 
   geoservices --> adapters
@@ -59,14 +58,12 @@ flowchart LR
   pipeline --> oracle
   pipeline --> mysql
 
-  pipeline -.-> redis
   pipeline -.-> files
 ```
 
-Dashed edges are optional infrastructure. Without a shared cache, response caching
-uses per-node memory. PostgreSQL stores background jobs, workflow definitions and
-runs, schedule and trigger cursors, and governed operation proposals and approvals;
-these capabilities remain available without Redis.
+Dashed edges are optional infrastructure. Response caching uses per-node memory.
+PostgreSQL stores background jobs, workflow definitions and runs, schedule and
+trigger cursors, and governed operation proposals and approvals.
 
 Every protocol endpoint is a thin adapter over the same canonical query, edit, metadata, and rendering pipeline. Publish a layer once and it is served simultaneously through every protocol its service enables — see [Data model](data-model.md) and the [protocol matrix](protocols.md).
 
@@ -115,7 +112,7 @@ Where that worker runs is the batch-compute backend, selected per workload under
 | `honua-azure-batch` | An Azure Batch task | Azure |
 
 The job queue, execution-job store, log store, and result-package store are tables in the system
-PostgreSQL database, so **any deployment with its database runs jobs**; Redis is not involved. A
+PostgreSQL database, so **any deployment with its database runs jobs**. A
 worker that runs outside the server process (the GDAL worker, or a job launched on Kubernetes or a
 cloud batch service) needs the same database connection as the server.
 
@@ -133,11 +130,11 @@ and the [ops control plane section](../guides/deploy/cloud-deployments.md#ops-co
 
 The same image runs in three shapes.
 
-**Single container.** One process, one host, local file storage; Redis optional.
+**Single container.** One process, one host, local file storage.
 Docker Compose evaluation stacks and air-gapped single-host installs. Not zero-downtime.
 
 **Stateless replicas behind an edge.** The production shape: several identical containers sharing one
-PostGIS, one Redis, and one file store, behind an ALB, ingress, or Application Gateway. No session
+PostGIS and one file store, behind an ALB, ingress, or Application Gateway. No session
 affinity is needed. That edge terminates TLS *and*, on most targets, carries out rollouts — Honua's
 deploy API shifts weights or swaps revisions through it:
 
@@ -146,18 +143,9 @@ deploy API shifts weights or swaps revisions through it:
 | Kubernetes + Argo Rollouts | `honua-kubernetes-argo-rollouts` | Canary analysis |
 | AWS ECS/Fargate | `honua-aws-ecs-alb` | ALB weighted target groups |
 | AWS Lambda | `honua-gitops-aws-lambda` | Alias weighted versions |
-| Azure Container Apps | `honua-azure-container-apps-revision` | Revision traffic split |
-| Azure Functions | `honua-gitops-azure-functions` | Staging slot swap |
 
-GitOps passthrough variants (`honua-gitops-kubernetes`, `honua-gitops-aws-ecs`,
-`honua-gitops-azure-container-apps`) hand off to your GitOps repository instead of acting directly;
+GitOps passthrough variants (`honua-gitops-kubernetes`, `honua-gitops-aws-ecs`) hand off to your GitOps repository instead of acting directly;
 they report `rollbackSupported: false`, because Honua cannot revert a workload it does not drive.
-
-**Self-hosted rolling.** For on-prem and air-gapped hosts with no platform control plane, the server
-embeds a YARP reverse proxy (`ControlPlane:SelfHosted`, off by default). It runs the active and
-standby replicas on loopback ports, health-gates the standby, and swaps the proxy destination at
-cutover — the same canary-and-rollback contract as the cloud backends, with no cloud. Backend:
-`honua-yarp-rolling`.
 
 Rollback is capability-gated, not assumed: the `deploy.rollback` capability is advertised only when a
 configured target's backend implements a real revert. See
@@ -170,7 +158,7 @@ diagrams are in [Architecture diagrams](architecture-diagrams.md#10-deployment-a
 
 ## Scaling
 
-Server instances are stateless: catalog and job state live in PostGIS, shared cache and governed operation state in Redis, and files in the configured file store. To scale, run more containers behind a load balancer and point them at the same PostgreSQL, Redis, and file storage. The same image runs single-node evaluation stacks and multi-node production deployments.
+Server instances are stateless: catalog, job and governed operation state live in PostGIS, caches in each instance's memory, and files in the configured file store. To scale, run more containers behind a load balancer and point them at the same PostgreSQL and file storage. The same image runs single-node evaluation stacks and multi-node production deployments.
 
 ## Observability and security
 
@@ -186,6 +174,6 @@ See [Authentication](../guides/secure/authentication.md) and [TLS and mTLS](../g
 - [Protocols](protocols.md) — the full protocol-to-endpoint matrix
 - [Data model](data-model.md) — connections, layers, services, and styles
 - [Docker Compose deployment](../guides/deploy/docker-compose.md) and [Kubernetes](../guides/deploy/kubernetes.md)
-- [Cloud deployment patterns](../guides/deploy/cloud-deployments.md) — ECS/Fargate, Lambda, Container Apps, Functions, EKS/AKS
+- [Cloud deployment patterns](../guides/deploy/cloud-deployments.md) — ECS/Fargate, Lambda, EKS/AKS
 - [Upgrade and roll back](../guides/deploy/upgrade-and-rollback.md) — canary gates, rollback taxonomy
 - [Operations](../guides/deploy/backup-and-restore.md) — jobs, workflows, monitoring

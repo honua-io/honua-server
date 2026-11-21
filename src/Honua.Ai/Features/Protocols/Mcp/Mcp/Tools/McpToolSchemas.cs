@@ -32,6 +32,7 @@ internal static class McpToolSchemas
     private const string CancelJobArgumentSchemaJson = """
         {
           "type": "object",
+          "additionalProperties": false,
           "required": ["jobId"],
           "properties": {
             "jobId": {
@@ -52,11 +53,12 @@ internal static class McpToolSchemas
     private const string PublishServiceArgumentSchemaJson = """
         {
           "type": "object",
+          "additionalProperties": false,
           "required": ["connectionId", "schema", "table", "layerName"],
           "properties": {
             "connectionId": {
               "type": "string",
-              "description": "Connection ID from honua_admin_connections_list."
+              "description": "Connection id from honua_admin_connections_list."
             },
             "schema": {
               "type": "string",
@@ -71,50 +73,54 @@ internal static class McpToolSchemas
             "layerName": {
               "type": "string",
               "minLength": 1,
-              "description": "Caller-supplied layer display name."
+              "description": "Caller-supplied name."
             },
             "serviceName": {
               "type": "string",
-              "description": "Target service; omitted: canonical default service."
+              "description": "Target service. Omit for the default."
             },
             "namespace": {
               "type": "string",
-              "description": "Resolved tenant; omit: unscoped."
+              "description": "Tenant. Omit when unscoped."
             },
             "folderId": {
               "type": ["string", "null"],
               "minLength": 1,
-              "description": "Null: Root. Omit: preserve membership."
+              "description": "Null is root. Omit to keep membership."
             },
             "publicName": {
               "type": "string",
               "minLength": 1,
-              "description": "Immutable public leaf; distinct from ID/title."
+              "description": "Immutable public name."
             },
             "description": {
               "type": "string",
-              "description": "Optional layer description."
+              "description": "Layer description."
             },
             "geometryColumn": {
               "type": "string",
-              "description": "Geometry column to publish if multiple exist."
+              "description": "Geometry column."
             },
             "geometryType": {
               "type": "string",
-              "description": "Geometry type override (e.g. Point, Polygon) if not inferable."
+              "description": "Geometry type, such as Point or Polygon."
             },
             "srid": {
               "type": "integer",
-              "description": "Published layer spatial reference ID."
+              "description": "Spatial reference id."
             },
             "primaryKey": {
               "type": "string",
-              "description": "Primary key column if none detected."
+              "description": "Primary key column."
+            },
+            "exactTypes": {
+              "type": "boolean",
+              "description": "Exact decimal and offset types."
             },
             "fields": {
               "type": "array",
               "items": { "type": "string" },
-              "description": "Attribute columns to publish; omitted: all."
+              "description": "Columns to publish. Omit for all."
             }
           }
         }
@@ -136,7 +142,7 @@ internal static class McpToolSchemas
           "properties": {
             "sourceId": {
               "type": "string",
-              "description": "Completed job ID from honua_execute_plan (honua://jobs/{id}); promotes its result artifact to a hosted layer."
+              "description": "Completed job ID from honua_execute_plan (honua://jobs/{id}); promotes its result artifact to a Layer in a Service."
             },
             "artifactId": {
               "type": "string",
@@ -171,7 +177,7 @@ internal static class McpToolSchemas
     // The geospatial-mcp create_map_package / create_app_package schemas mark NO
     // field required and set additionalProperties:true, so a standard-conformant
     // client composes a map/app from any subset of the composition selectors. The
-    // live schemas mirror that exactly. Since ADR-0076 (#3255) they no longer
+    // live schemas mirror that exactly. Under ADR-0076 they do not
     // publish the Honua prompt/provider/model extension inputs: draft creation is
     // deterministic, so there is nothing for a prompt to drive. sourceBindings
     // items stay open (as in the standard) because the canonical SourceBinding
@@ -245,6 +251,7 @@ internal static class McpToolSchemas
     private const string PlanAnalysisArgumentSchemaJson = """
         {
           "type": "object",
+          "additionalProperties": false,
           "required": ["intent"],
           "properties": {
             "intent": {
@@ -263,6 +270,7 @@ internal static class McpToolSchemas
     private const string PackageReviewArgumentSchemaJson = """
         {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "contractVersion": {
               "type": "string",
@@ -319,6 +327,7 @@ internal static class McpToolSchemas
     private const string IngestDatasetArgumentSchemaJson = """
         {
           "type": "object",
+          "additionalProperties": false,
           "required": ["format", "data", "datasetName"],
           "properties": {
             "format": {
@@ -436,6 +445,7 @@ internal static class McpToolSchemas
             $$"""
             {
               "type": "object",
+              "additionalProperties": false,
               "required": ["plan"],
               "properties": {
                 "plan": {
@@ -466,7 +476,7 @@ internal static class McpToolSchemas
                           "inputs": {
                             "type": "object",
                             "additionalProperties": { "type": "string" },
-                            "description": "Process inputs keyed by parameter name, as string-encoded values specified by the process catalog entry for this step's processId. Consult honua://catalog/processes for each parameter's name, value type, whether it is required, and how the value must be encoded (for example base64 WKB, a data URI FeatureCollection, an SRID, or a layer id)."
+                            "description": "Process inputs keyed by parameter name, as string-encoded values. honua://catalog/processes lists each processId's parameters with type, whether required, and encoding (e.g. base64 WKB, data URI FeatureCollection, SRID, layer id)."
                           },
                           "dependsOn": {
                             "type": "array",

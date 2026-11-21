@@ -52,11 +52,9 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures")]
     public async Task QueryTopFeatures_WithReturnCountOnly_ReturnsCountNotFeatures()
     {
-        // The ArcGIS API for Python issues returnCountOnly=true as the first step of
-        // query_top_features paging and reads `count`. queryTopFeatures previously
-        // returned a FeatureSet regardless, leaving the paginator with a null total
-        // (fetched >= None -> TypeError). It must honor returnCountOnly: return the
-        // top-feature count and no `features`, with exceededTransferLimit always present.
+        // ArcGIS API for Python query_top_features paging requests returnCountOnly=true
+        // and reads count. Return the top-feature count without features, and always
+        // include exceededTransferLimit.
         var topFilter = JsonSerializer.Serialize(new
         {
             groupByFields = "category",
@@ -91,7 +89,7 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures")]
     public async Task QueryTopFeatures_WithPbf_ReturnsProtobuf()
     {
-        // Regression (#1824): queryTopFeatures rejected f=pbf ("Supported formats: json,
+        // QueryTopFeatures rejected f=pbf ("Supported formats: json,
         // pjson"). ArcGIS supports pbf here, so it must return application/x-protobuf.
         var topFilter = JsonSerializer.Serialize(new
         {
@@ -118,7 +116,7 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryTopFeatures?f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -133,7 +131,7 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryTopFeatures?topFilter=not-json&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -152,7 +150,7 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/nonexistent/FeatureServer/0/queryTopFeatures?topFilter={Uri.EscapeDataString(topFilter)}&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -165,7 +163,7 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
         // A restrictive allowlist returned 400 ("Unknown query parameter:
         // returnIdsOnly"), making the operation unusable from the real Esri client.
         // It must honor returnIdsOnly: return the objectId-set form
-        // ({ objectIdFieldName, objectIds }) and no FeatureSet (#1906).
+        // ({ objectIdFieldName, objectIds }) and no FeatureSet.
         var topFilter = JsonSerializer.Serialize(new
         {
             groupByFields = "category",
@@ -199,7 +197,7 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
     public async Task QueryTopFeatures_WithReturnGeometryFalse_OmitsGeometry()
     {
         // returnGeometry=false is a standard query flag the Esri clients pass; it must
-        // be accepted (not 400) and must omit geometry from each feature (#1906).
+        // be accepted (not 400) and must omit geometry from each feature.
         var topFilter = JsonSerializer.Serialize(new
         {
             groupByFields = "category",
@@ -230,7 +228,7 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
     public async Task QueryTopFeatures_WithOutSr_ReturnsRequestedSpatialReference()
     {
         // outSR is a standard query param; it must be accepted (not 400) and the
-        // response spatialReference must reflect the requested WKID (#1906).
+        // response spatialReference must reflect the requested WKID.
         var topFilter = JsonSerializer.Serialize(new
         {
             groupByFields = "category",
@@ -258,7 +256,7 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
     public async Task QueryTopFeatures_WithPaging_AcceptsResultOffsetAndRecordCount()
     {
         // resultOffset/resultRecordCount are standard paging params; they must be
-        // accepted (not 400) and bound the returned page (#1906).
+        // accepted (not 400) and bound the returned page.
         var topFilter = JsonSerializer.Serialize(new
         {
             groupByFields = "category",
@@ -284,10 +282,47 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
     [IntegrationTest]
     [Operation(Operations.QueryTopFeatures)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures")]
+    public async Task QueryTopFeatures_PageShorterThanTheTopSet_ReportsExceededTransferLimit()
+    {
+        var all = await GetTopFeaturesAsync(string.Empty);
+        all.GetProperty("features").GetArrayLength().Should().BeGreaterThan(1, "the fixture holds several top features");
+
+        var page = await GetTopFeaturesAsync("&resultRecordCount=1");
+
+        page.GetProperty("features").GetArrayLength().Should().Be(1);
+        page.GetProperty("exceededTransferLimit").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryTopFeatures)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures")]
+    public async Task QueryTopFeatures_OffsetAboveTheMaximum_ReturnsAnError()
+    {
+        var root = await GetTopFeaturesAsync($"&resultOffset={int.MaxValue}");
+
+        root.TryGetProperty("error", out var error).Should().BeTrue();
+        error.GetRawText().Should().Contain("resultOffset cannot exceed");
+        root.TryGetProperty("features", out _).Should().BeFalse();
+    }
+
+    private async Task<JsonElement> GetTopFeaturesAsync(string parameters)
+    {
+        var topFilter = JsonSerializer.Serialize(new { groupByFields = "category", topCount = 2, orderByFields = "objectid desc" });
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryTopFeatures?topFilter={Uri.EscapeDataString(topFilter)}{parameters}&f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return document.RootElement.Clone();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryTopFeatures)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures")]
     public async Task QueryTopFeatures_UnknownParameter_ReturnsBadRequest()
     {
         // Genuinely-unknown params must still be rejected with 400; only the standard
-        // query family was added to the allowlist (#1906).
+        // query family was added to the allowlist.
         var topFilter = JsonSerializer.Serialize(new
         {
             groupByFields = "category",
@@ -298,7 +333,7 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryTopFeatures?topFilter={Uri.EscapeDataString(topFilter)}&bogusParam=1&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 

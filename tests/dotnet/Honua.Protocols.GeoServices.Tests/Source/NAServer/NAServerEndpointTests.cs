@@ -13,13 +13,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.NAServer;
 
-/// <summary>
-/// Integration tests for the GeoServices NAServer route / service-area solve
-/// adapters. The pgRouting test image does not ship the <c>pgrouting</c> extension,
-/// so these tests register a deterministic in-process <see cref="IRoutingProvider"/>
-/// (see <see cref="TestRoutingProvider"/>) to exercise the full
-/// adapter → provider → Esri response path without a live topology.
-/// </summary>
 [Collection("Database.GeoServicesCatalog")]
 [Protocol(TestProtocols.NAServer)]
 public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsFixture>
@@ -58,7 +51,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
         attributes.GetProperty("Total_Length").GetDouble().Should().BeGreaterThan(0);
         attributes.GetProperty("Total_TravelTime").GetDouble().Should().BeGreaterThan(0);
 
-        // #4035: Esri clients attach a direction set to the route whose Name equals its
+        // Esri clients attach a direction set to the route whose Name equals its
         // routeName; an unnamed set becomes a phantom second route result.
         var direction = root.GetProperty("directions").EnumerateArray().Should().ContainSingle().Subject;
         direction.GetProperty("routeId").GetInt32().Should().Be(1);
@@ -221,7 +214,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
         var response = await _fixture.Client.PostAsync("/rest/services/Routing/NAServer/Route/solve", payload);
 
         // Invalid input maps to the GeoServices error envelope, not a 500.
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -246,7 +239,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
                 payload);
 
             // Capability gate fires before solving: standard Esri error, not a solved result.
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var error = document.RootElement.GetProperty("error");
@@ -279,7 +272,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
             var response = await fixture.Client.PostAsync("/rest/services/Routing/NAServer/Route/solve", payload);
 
             // Capability gate fires before solving: standard Esri error, not a solved route.
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var error = document.RootElement.GetProperty("error");
@@ -336,7 +329,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     [Endpoint("POST /rest/services/{serviceId}/NAServer/Route/solve")]
     public async Task RouteSolve_StopsFeatureSetSpatialReference_ReachesProviderAsInputSrid()
     {
-        // #4025: an Esri client declares Web Mercator stops on the FeatureSet and sends no inSR. The
+        // An Esri client declares Web Mercator stops on the FeatureSet and sends no inSR. The
         // canonical request must carry EPSG:3857 with the ordinates untouched, not the WGS84 fallback.
         RouteSolveRequest? captured = null;
         var provider = new TestRoutingProvider(
@@ -381,7 +374,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     [Endpoint("POST /rest/services/{serviceId}/NAServer/Route/solve")]
     public async Task RouteSolve_InSrConflictingWithFeatureSetSpatialReference_Returns400WithoutSolving()
     {
-        // #4025: a declared FeatureSet reference and a different inSR cannot both describe the same
+        // A declared FeatureSet reference and a different inSR cannot both describe the same
         // ordinates; the adapter must reject the request instead of solving one guess.
         RouteSolveRequest? captured = null;
         var provider = new TestRoutingProvider(
@@ -452,7 +445,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
                 "/rest/services/Routing/NAServer/ServiceArea/solveServiceArea",
                 payload);
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var error = document.RootElement.GetProperty("error");
@@ -515,7 +508,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
 
             var response = await fixture.Client.PostAsync("/rest/services/Routing/NAServer/Route/solve", payload);
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var error = document.RootElement.GetProperty("error");
@@ -545,7 +538,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
 
         var response = await _fixture.Client.PostAsync("/rest/services/Routing/NAServer/Route/solve", payload);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var error = document.RootElement.GetProperty("error");
@@ -598,7 +591,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
             "/rest/services/Routing/NAServer/ServiceArea/solveServiceArea",
             payload);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("error").GetProperty("details").EnumerateArray()
@@ -679,7 +672,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
                 "/rest/services/Routing/NAServer/ClosestFacility/solveClosestFacility",
                 payload);
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             document.RootElement.GetProperty("error").GetProperty("details").EnumerateArray()
@@ -796,7 +789,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
                 "/rest/services/Routing/NAServer/ODCostMatrix/solveODCostMatrix",
                 payload);
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             document.RootElement.GetProperty("error").GetProperty("details").EnumerateArray()
@@ -926,7 +919,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
             payload);
 
         // An unsupported problem type is rejected at parse time with a 400.
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var error = document.RootElement.GetProperty("error");
@@ -1001,7 +994,7 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
                 "/rest/services/Routing/NAServer/LocationAllocation/solveLocationAllocation",
                 payload);
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             document.RootElement.GetProperty("error").GetProperty("details").EnumerateArray()
@@ -1014,12 +1007,6 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     }
 }
 
-/// <summary>
-/// Per-class wrapper fixture that builds a single <see cref="WebAppFixture"/> with the
-/// deterministic <see cref="TestRoutingProvider"/> registered, so the shared-fixture tests
-/// in <see cref="NAServerEndpointTests"/> initialize the host once per class instead of once
-/// per test method. <see cref="WebAppFixture"/> is sealed, so it is wrapped rather than subclassed.
-/// </summary>
 public sealed class NAServerEndpointTestsFixture : IAsyncLifetime
 {
     public WebAppFixture App { get; } = new WebAppFixture()

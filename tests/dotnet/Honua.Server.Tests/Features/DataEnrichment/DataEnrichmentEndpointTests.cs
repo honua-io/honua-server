@@ -15,20 +15,13 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.DataEnrichment;
 
-/// <summary>
-/// Endpoint-level integration tests for the data-enrichment API (#374). The
-/// fixture registers an enrichment dataset that points at the seed join layer
-/// (layer 1) so the spatial-join enrichment runs against a real PostGIS database,
-/// and runs as Pro edition so the entitlement gate passes (the gate denial path is
-/// covered separately).
-/// </summary>
 [Collection("Database")]
 [Protocol(ProtocolNames.DataEnrichment)]
 public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
 {
     private const string DatasetKey = "test-boundaries";
 
-    // Containment fixture object ids (honua-server#3069), outside the seeded ranges.
+    // Containment fixture object ids, outside the seeded ranges.
     private const int PointInsideObjectId = 7701;
     private const int PointOutsideObjectId = 7702;
     private const int PolygonContainerObjectId = 7703;
@@ -135,11 +128,11 @@ public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/enrich")]
     public async Task Enrich_PointInPolygonMethod_MatchesOnlySourcePointsInsideTheDatasetPolygon()
     {
-        // honua-server#3069: this assertion used to be "HTTP 200 and type ==
-        // FeatureCollection", which passed while the SQL path evaluated
-        // ST_Contains(sourcePoint, datasetPolygon) — always false — so synchronous
-        // point-in-polygon silently returned zero matches for every caller. The
-        // containment direction is now proven by the match counts themselves.
+        // Asserting only "HTTP 200 and type == FeatureCollection" would pass while
+        // the SQL path evaluated ST_Contains(sourcePoint, datasetPolygon) — always
+        // false — and synchronous point-in-polygon silently returned zero matches
+        // for every caller. The containment direction is proven by the match counts
+        // themselves.
         await SeedContainmentFixtureAsync();
 
         var payload = JsonSerializer.Serialize(new
@@ -178,7 +171,7 @@ public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/enrich")]
     public async Task Enrich_WithinMethod_MatchesDatasetFeaturesInsideTheSourcePolygon()
     {
-        // The inverse containment direction (honua-server#3069): `within` is
+        // The inverse containment direction: `within` is
         // dataset-subject too, so it matches dataset features that sit inside the
         // caller's source geometry. Asserting both directions with the same fixture
         // proves the operands are not simply symmetric.
@@ -315,12 +308,6 @@ public sealed class DataEnrichmentEndpointTests : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// Verifies the synchronous over-limit guard (#2282): when the source selection
-/// exceeds the configured analytics input cap, the sync endpoint returns 413 and
-/// points callers at the async batch path. Configures a cap of 1 so the seed layer
-/// trips the guard.
-/// </summary>
 [Collection("Database")]
 [Protocol(ProtocolNames.DataEnrichment)]
 public sealed class DataEnrichmentSyncLimitTests : IAsyncLifetime

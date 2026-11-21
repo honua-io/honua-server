@@ -128,7 +128,7 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
         query.OutputFormat.Should().Be(RasterFormat.TIFF);
         query.ClipRegion.Should().NotBeNull();
 
-        // #4424: the requested bbox is the whole raster footprint, so the covered extent is
+        // The requested bbox is the whole raster footprint, so the covered extent is
         // the footprint — but it is now DERIVED from the clip the handler passed down, and the
         // payload is derived from that extent. A handler that dropped `bbox` on the floor, or
         // clipped to the wrong window, produces different bytes and a different Content-Bbox.
@@ -378,11 +378,8 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
                 var width = query.OutputWidth ?? 64;
                 var height = query.OutputHeight ?? 64;
 
-                // #4424: the exported extent and payload are DERIVED from the request, not
-                // hard-coded. Previously the mock returned the same constant extent and the
-                // same four bytes whatever was asked for, so `Content-Bbox` contained
-                // "-122.5" for any bbox on the planet and a regression in which `bbox` was
-                // parsed but never applied passed every Coverages test.
+                // The exported extent and payload derive from the request so bbox assertions
+                // can detect ignored spatial filters.
                 var extent = ClippedExtent(query, srid);
                 return Task.FromResult(new RasterResult
                 {
@@ -398,9 +395,6 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
             });
     }
 
-    /// <summary>
-    /// The native extent of the fixture raster, in CRS84.
-    /// </summary>
     internal static readonly RasterExtent NativeExtent = new()
     {
         XMin = -122.5,
@@ -410,12 +404,6 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
         Srid = 4326
     };
 
-    /// <summary>
-    /// The extent a correct export would cover: the requested clip envelope intersected with
-    /// the raster footprint, or the whole footprint when no clip was requested. A handler that
-    /// parsed <c>bbox</c> but never applied it returns the native extent and so fails any
-    /// assertion derived from the requested one.
-    /// </summary>
     internal static RasterExtent ClippedExtent(RasterQuery query, int srid)
     {
         var extent = NativeExtent;
@@ -465,13 +453,6 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
         };
     }
 
-    /// <summary>
-    /// A synthetic raster payload: the real format signature followed by the little-endian
-    /// encoding of the covered extent and the output grid size. There is no encoder in this
-    /// repository, so the bytes cannot be a real GeoTIFF — but they are a pure function of the
-    /// answer, which is what makes a byte-equality assertion falsifiable. A wrong bbox, a
-    /// wrong output size or a wrong SRID all change the payload.
-    /// </summary>
     internal static byte[] SyntheticRasterBytes(RasterFormat format, RasterExtent extent, int width, int height)
     {
         var signature = format == RasterFormat.PNG

@@ -1,38 +1,30 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Linq;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.AttributeRules;
 using Honua.Core.Features.Edit;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Tests.Features.Edit;
 
 public sealed class EditingParityConformanceMatrixTests
 {
-    /// <summary>Supported / partial / unsupported parity status of a matrix row.</summary>
     public enum ParityStatus
     {
-        /// <summary>Capability is fully implemented and executed by the matrix.</summary>
         Supported,
 
-        /// <summary>Capability is partially implemented; tracked for completion in the receipt.</summary>
         Partial,
 
-        /// <summary>Capability is not implemented.</summary>
         Unsupported
     }
 
-    /// <summary>A single conformance row tying a capability to its asserted edit-path behavior.</summary>
-    /// <param name="Capability">Stable capability key.</param>
-    /// <param name="Status">The capability's parity status.</param>
-    /// <param name="Verify">Executable assertion for supported rows; a no-op for non-supported rows.</param>
     public sealed record MatrixRow(string Capability, ParityStatus Status, Action Verify);
 
-    /// <summary>Supplies the supported capability keys for the executable matrix theory.</summary>
-    /// <returns>The supported capability keys.</returns>
     public static TheoryData<string> SupportedCapabilities()
     {
         var data = new TheoryData<string>();
@@ -67,6 +59,7 @@ public sealed class EditingParityConformanceMatrixTests
         matrix.Should().Contain(r => r.Capability.StartsWith("contingent.", StringComparison.Ordinal));
         matrix.Should().Contain(r => r.Capability.StartsWith("attributeRule.", StringComparison.Ordinal));
         matrix.Should().Contain(r => r.Capability.StartsWith("versionManagement.", StringComparison.Ordinal));
+        matrix.Should().Contain(r => r.Capability.StartsWith("editGate.", StringComparison.Ordinal));
     }
 
     private static IReadOnlyList<MatrixRow> BuildMatrix()
@@ -76,7 +69,7 @@ public sealed class EditingParityConformanceMatrixTests
 
         return
         [
-            // ---- Owner-based edit policy (#2132) ----
+            // ---- Owner-based edit policy ----
             new("owner.match.allow", ParityStatus.Supported, () =>
                 OwnerEditPolicyEvaluator.Evaluate(
                     ownerPolicy, AttributeRuleEditEvent.Update, "alice",
@@ -94,7 +87,7 @@ public sealed class EditingParityConformanceMatrixTests
                     ownerPolicy, AttributeRuleEditEvent.Insert, null,
                     EditPrincipal.Anonymous).IsAllowed.Should().BeFalse()),
 
-            // ---- Contingent values (#2133) ----
+            // ---- Contingent values ----
             new("contingent.valid.accept", ParityStatus.Supported, () =>
                 ContingentValueValidator.Validate(
                     contingentResource, Attributes(("color", "red"), ("size", "S")))
@@ -108,7 +101,9 @@ public sealed class EditingParityConformanceMatrixTests
                     contingentResource, Attributes(("size", "S")))
                     .IsValid.Should().BeFalse()),
 
-            // ---- Attribute-rule depth (#2134) ----
+            .. EditGateRows(contingentResource),
+
+            // ---- Attribute-rule depth ----
             new("attributeRule.immediateVsBatch", ParityStatus.Supported, () =>
                 AttributeRuleEngine.Apply(
                     BatchRuleResource(), Attributes(("qty", 4)), AttributeRuleEditEvent.Insert)
@@ -126,12 +121,32 @@ public sealed class EditingParityConformanceMatrixTests
                     UnsupportedArcadeResource(), Attributes(("qty", 1)), AttributeRuleEditEvent.Insert)
                     .IsValid.Should().BeTrue()),
 
-            // ---- VersionManagementServer reconcile shapes (#2135) — partial, tracked in receipt ----
+            // ---- VersionManagementServer reconcile shapes — partial, tracked in receipt ----
             new("versionManagement.reconcile.byObject", ParityStatus.Partial, static () => { }),
             new("versionManagement.reconcile.withPost", ParityStatus.Partial, static () => { }),
             new("versionManagement.resolveConflicts.shape", ParityStatus.Partial, static () => { }),
         ];
     }
+
+    // OGC API Features and gRPC edits share this gate with GeoServices applyEdits.
+    private static MatrixRow[] EditGateRows(MetadataV2Object contingentResource) =>
+    [
+        new("editGate.contingent.rejectsRow", ParityStatus.Supported, () =>
+            FeatureEditGate.ValidateContingentValues(
+                contingentResource, CreateBatch(Attributes(("color", "red"), ("size", "L"))))
+                .Should().ContainSingle().Which.Kind.Should().Be(FeatureEditOperationKind.Create)),
+        new("editGate.contingent.partialUpdateUsesEffectiveRow", ParityStatus.Supported, () =>
+            FeatureEditGate.ValidateContingentValues(
+                contingentResource,
+                UpdateBatch(Attributes(("size", "S"))),
+                _ => Attributes(("color", "red"), ("size", "S")))
+                .Should().BeEmpty()),
+        new("editGate.pluginRejection.failsBatch", ParityStatus.Supported, () =>
+            FeatureEditGate.RejectedResult(
+                CreateBatch(Attributes(("color", "red"))),
+                [new FeatureEditHookRejection(FeatureEditOperationKind.Create, 0, "rejected by plugin")])
+                .CreateResults.Should().ContainSingle().Which.ErrorMessage.Should().Be("rejected by plugin")),
+    ];
 
     private static MetadataV2Object ContingentResource() => new()
     {
@@ -198,6 +213,12 @@ public sealed class EditingParityConformanceMatrixTests
         };
 
     private static JsonElement JsonElementOf(string json) => JsonElement.Parse(json);
+
+    private static FeatureEditBatch CreateBatch(Dictionary<string, object?> attributes)
+        => FeatureEditBatch.Create(creates: [Feature.Create(0, null, attributes.ToImmutableDictionary())]);
+
+    private static FeatureEditBatch UpdateBatch(Dictionary<string, object?> attributes)
+        => FeatureEditBatch.Create(updates: [Feature.Create(7, null, attributes.ToImmutableDictionary())]);
 
     private static Dictionary<string, object?> Attributes(params (string Key, object? Value)[] pairs)
     {

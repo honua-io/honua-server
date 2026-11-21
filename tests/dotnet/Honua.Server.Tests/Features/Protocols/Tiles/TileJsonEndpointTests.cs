@@ -75,7 +75,7 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
 
         var response = await _fixture.Client.GetAsync($"/tiles/{WebAppFixture.TestLayerId}/tile.json");
 
-        // honua-server#2945: /tiles is not an Esri protocol surface, so a real HTTP 404
+        // /tiles is not an Esri protocol surface, so a real HTTP 404
         // + problem+json body is expected here (AssertGeoServicesErrorAsync tolerates a
         // genuine >=400 status, so this also documents the exact shape below).
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -88,7 +88,7 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
     [Endpoint("GET /tiles/{layerId}/tile.json")]
     public async Task GetTileJson_NonExistentLayer_ReturnsRealNotFoundWithProblemJson()
     {
-        // Regression test for honua-server#2945: unknown layer must be a real HTTP 404
+        // An unknown layer must be a real HTTP 404
         // with an RFC 7807 problem+json body, not a 200-wrapped GeoServices error.
         var response = await _fixture.Client.GetAsync("/tiles/999999/tile.json");
 
@@ -185,6 +185,32 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
         root.GetProperty("version").GetInt32().Should().Be(8);
         root.GetProperty("sources").ValueKind.Should().Be(JsonValueKind.Object);
         root.GetProperty("layers").GetArrayLength().Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /tiles/{layerId}/tile.json")]
+    [Endpoint("GET /api/styles/{publicationId}.json")]
+    [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]
+    public async Task GetStyle_OwnedTileSource_AdvertisesTileRouteZoomRange()
+    {
+        // MapLibre requests every level up to a source's maxzoom, so the served source range must
+        // equal the range the /tiles route serves (and TileJSON advertises).
+        using var tileJson = JsonDocument.Parse(await _fixture.Client.GetStringAsync($"/tiles/{WebAppFixture.TestLayerId}/tile.json"));
+        var minZoom = tileJson.RootElement.GetProperty("minzoom").GetInt32();
+        var maxZoom = tileJson.RootElement.GetProperty("maxzoom").GetInt32();
+        maxZoom.Should().BeLessThan(22, "the default tile limit is narrower than the stored style's 22");
+
+        using var style = JsonDocument.Parse(await _fixture.Client.GetStringAsync($"/api/styles/{Uri.EscapeDataString(StylePublicationId)}.json"));
+        var source = style.RootElement.GetProperty("sources").GetProperty($"layer-{WebAppFixture.TestLayerId}");
+        source.GetProperty("maxzoom").GetInt32().Should().Be(maxZoom);
+        source.GetProperty("minzoom").GetInt32().Should().Be(minZoom);
+
+        using var beyond = await _fixture.Client.GetAsync($"/tiles/{WebAppFixture.TestLayerId}/{maxZoom + 1}/0/0.mvt");
+        beyond.Content.Headers.ContentType?.MediaType.Should().NotBe("application/vnd.mapbox-vector-tile",
+            "the route refuses levels above its limit, which is why the style must not advertise them");
+        (await beyond.Content.ReadAsStringAsync()).Should().Contain($"Zoom level {maxZoom + 1} is outside supported range",
+            "the refusal must be the zoom-range check, not a routing or layer miss");
     }
 
     [IntegrationTest]

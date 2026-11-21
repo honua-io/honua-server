@@ -10,6 +10,14 @@
       worker-only code paths.
     -->
     <PublishAot>false</PublishAot>
+    <!--
+      The worker image restores from this project's packages.lock.json in locked mode, and CI
+      does too, so the image only gets package contents whose hashes are recorded here. After
+      changing a package version or project reference in its closure, regenerate the lock:
+      dotnet restore src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj -p:RestoreForceEvaluate=true -p:RestoreLockedMode=false
+    -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <RootNamespace>Honua.Worker.Gdal</RootNamespace>

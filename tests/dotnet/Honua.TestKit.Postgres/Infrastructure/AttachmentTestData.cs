@@ -8,22 +8,10 @@ using Npgsql;
 
 namespace Honua.TestKit.Infrastructure;
 
-/// <summary>
-/// Helper methods for seeding attachment test data.
-/// </summary>
 public static class AttachmentTestData
 {
-    /// <summary>
-    /// Exact bytes seeded as <c>test1.txt</c> (attachment id 1). Exposed so download tests
-    /// can assert the served bytes rather than only that the response was non-empty
-    /// (honua-server#4404).
-    /// </summary>
     public static ReadOnlySpan<byte> SeededTextFileBytes => "Test file content"u8;
 
-    /// <summary>
-    /// Exact bytes seeded as <c>test2.jpg</c> (attachment id 2) — a minimal JPEG SOI/EOI
-    /// marker pair, so a binary body can be byte-compared without a text codepath.
-    /// </summary>
     public static ReadOnlySpan<byte> SeededImageFileBytes => [0xFF, 0xD8, 0xFF, 0xD9];
 
     public static async Task SeedAsync(PostgresFixture fixture, ICloudFileStorage fileStorage, int layerId, long featureId, string schemaName = "honua")
@@ -65,7 +53,7 @@ public static class AttachmentTestData
             throw new InvalidOperationException("Failed to seed attachment file test2.jpg");
         }
 
-        // #2020: serialize the fixture attachments DELETE + INSERT + setval seed under the
+        // Serialize the fixture attachments DELETE + INSERT + setval seed under the
         // schema-mutation advisory lock (multi-statement, parameterized, sequence reset). The
         // file-cleanup compensation stays OUTSIDE the lock action so it runs only after the lock
         // helper has exhausted its bounded 40P01/40001 retries — a transient deadlock retries the
@@ -152,7 +140,7 @@ public static class AttachmentTestData
             }
         }
 
-        // #2020: route the fixture attachments DELETE through the schema-mutation advisory
+        // Route the fixture attachments DELETE through the schema-mutation advisory
         // lock (parameterized overload). The preceding SELECT is read-only and stays unlocked.
         await fixture.ApplyGlobalSeedSqlAsync(
             $"""

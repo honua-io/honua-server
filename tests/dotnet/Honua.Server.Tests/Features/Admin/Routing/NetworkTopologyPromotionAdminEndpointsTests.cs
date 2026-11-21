@@ -15,12 +15,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin.Routing;
 
-/// <summary>
-/// Integration tests for the atomic network-topology promotion/rollback admin endpoints
-/// (#2719). Covers the full allocate -&gt; edit -&gt; rebuild -&gt; promote lifecycle, evidence/
-/// precondition rejections, idempotent replay, a concurrency race proving only one
-/// candidate wins, and rollback to a retired generation.
-/// </summary>
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.OperationsProgress)]
@@ -69,7 +63,7 @@ public class NetworkTopologyPromotionAdminEndpointsTests
         await using (var createTable = connection.CreateCommand())
         {
             // Both tables must physically exist (not just the well-known pgRouting demo
-            // names) so the promotion/rollback artifact-existence check (#2719), which runs
+            // names) so the promotion/rollback artifact-existence check, which runs
             // `to_regclass` against whichever generation is being (re)activated, sees a real
             // relation for the dataset's own initial active generation — exercised directly
             // by the rollback-to-retired-generation test below.

@@ -11,6 +11,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Security;
 using Honua.Infrastructure.Security;
 using NetTopologySuite.Features;
 using Microsoft.Extensions.DependencyInjection;
@@ -107,7 +108,8 @@ internal sealed record DurableFeatureStream
             var workspace = workspaces is null || descriptor.WorkspaceId is null ? null
                 : await workspaces.GetAsync(descriptor.WorkspaceId, cancellationToken).ConfigureAwait(false);
             var owner = authorizedJob.Audit.SubmitterSecurityContext;
-            var workspaceOwner = owner?.WorkspaceOwnerId ?? authorizedJob.Audit.RequestedBy;
+            // Without a submitter snapshot the stored requester alone does not establish the owner.
+            var workspaceOwner = owner is null ? null : owner.WorkspaceOwnerId ?? authorizedJob.Audit.RequestedBy;
             if (artifact is null || workspace is null || artifact.WorkspaceId != workspace.WorkspaceId
                 || artifact.State != ArtifactLifecycleState.Available || artifact.Uri != reference
                 || !artifact.Metadata.TryGetValue(WorkspaceStreamProvenance.Published, out var marker) || marker != "v1"
@@ -142,8 +144,7 @@ internal sealed record DurableFeatureStream
 
         await using var source = await store.OpenReadAsync(descriptor.ObjectKey, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException("The shared feature stream is unavailable.");
-        await using var verified = new FileStream(Path.Combine(Path.GetTempPath(), Path.GetRandomFileName()),
-            FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 65536, FileOptions.Asynchronous | FileOptions.DeleteOnClose);
+        await using var verified = PrivateTempFile.CreateScratch("honua-feature-stream-", null, 65536);
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var buffer = new byte[65536];
         long total = 0;

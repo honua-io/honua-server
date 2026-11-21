@@ -9,6 +9,7 @@ using Honua.Core.Features.Styling.Domain;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.Infrastructure.Rendering;
 
 namespace Honua.Ai.Protocols.Mcp.MapTools;
 
@@ -153,6 +154,24 @@ internal sealed class GetStyleTool : IMcpTool
         return styles[0].StyleId;
     }
 
+    // The stylesheet without rules, layers or classes that read a field withheld from this caller.
+    private static async Task<string?> ResolveVisibleStylesheetAsync(
+        HttpContext httpContext, StyleCatalogRecord record, OgcStyleEncoding encoding)
+    {
+        var projection = httpContext.RequestServices.GetService<IOgcStyleProjection>();
+        var cancellationToken = httpContext.RequestAborted;
+        // Canonical MapLibre style is stored on the record; other encodings
+        // are derived by the projection, which is not composed here.
+        var sheet = projection is not null
+            ? await projection.GetStylesheetAsync(record.StyleId, encoding, cancellationToken).ConfigureAwait(false)
+            : encoding == OgcStyleEncoding.MapboxStyle && record.MapLibreStyleJson is { } stored
+                ? new OgcStylesheet(stored, "application/vnd.mapbox.style+json", encoding)
+                : null;
+        return sheet is null
+            ? null
+            : await StyleDocumentWithheldFields.WithoutWithheldStylesheetAsync(httpContext, record.StyleId, sheet).ConfigureAwait(false);
+    }
+
     private static async Task<McpGetStyleOutput> BuildStyleOutputAsync(
         HttpContext httpContext,
         StyleCatalogRecord record,
@@ -160,26 +179,14 @@ internal sealed class GetStyleTool : IMcpTool
         bool includeStylesheet,
         CancellationToken cancellationToken)
     {
-        var projection = httpContext.RequestServices.GetService<IOgcStyleProjection>();
-
         var encodings = new List<McpStyleEncodingRef>(SupportedEncodings.Length);
         foreach (var (encoding, wire, mediaType) in SupportedEncodings)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             string? inlineBody = null;
             if (includeStylesheet && encoding == selected)
             {
-                if (projection is not null)
-                {
-                    var sheet = await projection.GetStylesheetAsync(record.StyleId, encoding, cancellationToken)
-                        .ConfigureAwait(false);
-                    inlineBody = sheet?.Content;
-                }
-                else if (encoding == OgcStyleEncoding.MapboxStyle)
-                {
-                    // Canonical MapLibre style is stored on the record; other encodings
-                    // are derived by the projection, which is not composed here.
-                    inlineBody = record.MapLibreStyleJson;
-                }
+                inlineBody = await ResolveVisibleStylesheetAsync(httpContext, record, encoding).ConfigureAwait(false);
             }
 
             encodings.Add(new McpStyleEncodingRef

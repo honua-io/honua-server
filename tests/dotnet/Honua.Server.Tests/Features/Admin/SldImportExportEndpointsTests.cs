@@ -15,9 +15,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for the admin SLD import/export endpoints (ticket 375).
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public sealed class SldImportExportEndpointsTests : IAsyncLifetime
@@ -325,7 +322,7 @@ public sealed class SldImportExportEndpointsTests : IAsyncLifetime
 
     private async Task StoreMapLibreStyleAsync(string styleJson)
     {
-        // #2020: route the global honua.layers UPDATE through the schema-mutation advisory lock
+        // Route the global honua.layers UPDATE through the schema-mutation advisory lock
         // (RunUnderSchemaMutationLockAsync preserves the row-count assertion below).
         await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
         {

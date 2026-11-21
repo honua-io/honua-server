@@ -10,19 +10,11 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Tests.Features.Capabilities;
 
-/// <summary>
-/// Unit coverage for the #2335 (B3) manifest derivation seam: the
-/// <c>honua.capability_manifest.v1</c> surface's <c>Capabilities[]</c> and
-/// <c>Packages.Families[]</c> are derived by iterating the unified capability registry
-/// through <see cref="CapabilityGateResolver"/>. These tests pin the registry roster
-/// the manifest projects and the gate-resolver omit mechanism the manifest applies —
-/// the Server-side wire equivalence is proven by the manifest endpoint golden test.
-/// </summary>
 public sealed class CapabilityManifestRegistryProjectionTests
 {
     private static readonly CapabilityRegistry Registry = new CapabilityRegistry();
 
-    // The frozen #1186 manifest roster, in the exact order the manifest serializes it.
+    // The frozen manifest roster, in the exact order the manifest serializes it.
     // Mirrors CapabilityManifestService's hand-curated list; the registry-derived path
     // must reproduce this order and set.
     private static readonly string[] ExpectedManifestCapabilityIds =
@@ -72,6 +64,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "edit.features",
         "collaboration.feature-locks",
         "collaboration.feature-locks.cross-node",
+        "console.content.persistent",
         "edit.geoservices-version-tokens",
         "versioning.branch",
         "operate.status",
@@ -108,7 +101,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         manifestIds.Should().Equal(ExpectedManifestCapabilityIds);
     }
 
-    // T10 (#2346): the built-experimental manifest capabilities flipped to
+    // T10: the built-experimental manifest capabilities flipped to
     // Experimental. With the default (flag-off) context these resolve
     // experimental-disabled, so the registry-derived manifest omits them.
     private static readonly string[] ExperimentalManifestCapabilityIds =
@@ -121,17 +114,16 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "scene.catalog",
         "scene.bim-ingest",
         "scene.pointcloud-ingest",
-        // temporal.* promoted to Implemented (GA) in #2429 — no longer omitted.
+        // temporal.* is Implemented (GA), so it is not omitted.
         // sync.offline is Preview in 2026.1 and remains in the manifest projection when the
         // deployment-wide Preview gate is enabled.
         // Realtime feature streams are Experimental: they deliver from the PostgreSQL event log.
         "realtime.feature-streams",
         // alerts.geofence is Preview in 2026.1 and is projected through PreviewCapabilityIds.
-        // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
+        // versioning.branch (VMS REST surface) is gated Preview.
         "versioning.branch",
-        // security.mtls was promoted to Implemented (GA) in #2431, then DEMOTED back to
-        // experimental in #2958 (release-safety follow-up): the always-on client-certificate
-        // scheme/RBAC layer interposed on admin requests regardless of bearer-token validity.
+        // security.mtls is experimental: the always-on client-certificate scheme/RBAC layer
+        // interposes on admin requests regardless of bearer-token validity.
         "security.mtls",
     ];
 
@@ -169,7 +161,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         }
     }
 
-    // Declared 2026.1 implementation gaps (#4402): present in the manifest roster on
+    // Declared 2026.1 implementation gaps: present in the manifest roster on
     // purpose so a client can read the gap off `capabilities[]`, but never served.
     private static readonly string[] KnownGapManifestCapabilityIds =
     [

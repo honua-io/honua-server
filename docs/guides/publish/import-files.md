@@ -134,8 +134,9 @@ requiring a direct database load.
 Operators can set `Import__Limits__MaxVertices`, `Import__Limits__MaxRings`, and
 `Import__Limits__MaxWkbSize` (bytes) to positive values for their deployment's
 resource budget. An error identifies the exceeded bound; review the source
-geometry and deployment limits before retrying. The upload `/import/limits`
-endpoint reports file limits, not these per-feature geometry bounds.
+geometry and deployment limits before retrying. `GET /api/v1/admin/import/limits`
+reports the effective bounds as `maxVertices`, `maxRings`, and `maxWkbSize`,
+alongside the file limits.
 
 ## Source fields
 
@@ -153,7 +154,7 @@ and the published layer's primary identifier can be different fields.
 | GeoJSON | `.geojson`, `.json` | Assumed WGS 84 per the GeoJSON spec. |
 | Esri JSON | `.esrijson` | An ArcGIS feature set (attributes and Esri geometry). CRS read from `spatialReference` (`latestWkid`, then `wkid`); without it, `sourceSrid` is required. |
 | Shapefile | `.zip` | Must be a zip containing `.shp`/`.dbf`/`.shx`/`.prj`; a raw `.shp` upload is rejected. CRS read from `.prj`, including ESRI-style projected definitions with no EPSG code (State Plane, national grids, Transverse Mercator, Lambert and Albers projections), which are matched to the EPSG CRS with the same projection parameters, unit and datum. A definition whose datum is not recognised is not matched; supply `sourceSrid`. |
-| GeoPackage | `.gpkg` | CRS read from the GeoPackage metadata. A GeoPackage with several feature layers needs `sourceLayer` set to one layer's table name; without it the import fails with a message listing the layers. |
+| GeoPackage | `.gpkg` | CRS read from the GeoPackage metadata. Metadata and feature layers must be ordinary SQLite tables. A GeoPackage with several feature layers needs `sourceLayer` set to one layer's table name; without it the import fails with a message listing the layers. |
 | GPX | `.gpx` | WGS 84 by definition. |
 | KML / KMZ | `.kml`, `.kmz` | WGS 84 by definition. |
 | GML | `.gml` | Supply `sourceSrid` when the import reports `import.source_srid_required`. |
@@ -169,9 +170,16 @@ and their Multi forms) and target SRID in PostGIS constraints. Table discovery a
 publication use those facts for FeatureServer geometry metadata, OGC Features
 collection `geometryType` and `storageCrs`, and MCP layer catalog/description metadata.
 Null geometries do not change the inferred family. Mixed imports remain generic
-`GEOMETRY`; the publication validator rejects mixed geometry rather than advertising
-a single type. Existing typed attribute columns and the complete properties document
-remain available. Older imports gain these constraints when reimported; republish
+`GEOMETRY`. Publishing a mixed table without a `geometryType` fails validation with
+`mixed-geometry` rather than advertising a single type. Name one type (`Point`,
+`LineString` or `Polygon`; the Multi form selects the same family) and that family's
+rows publish as their own layer through a `<table>__honua_pt`, `__honua_ln` or
+`__honua_pg` view in the source schema. Validation then reports `mixed-geometry` as a
+warning with the row count that will publish, and the layer declares the Multi form
+when any of its rows is multi-part. Publish once per type to expose every family. A
+replace import of the table keeps these views and recreates them over the new rows;
+the views need permission to create a view in the source schema. Existing typed
+attribute columns and the complete properties document remain available. Older imports gain these constraints when reimported; republish
 existing layers to refresh their catalog geometry metadata.
 
 ### GeoParquet input contract

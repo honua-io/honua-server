@@ -10,10 +10,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Infrastructure.Validation;
 
-/// <summary>
-/// Unit tests for ValidationErrorHelpers ensuring consistent error response
-/// formatting across all protocols.
-/// </summary>
 public class ValidationErrorHelpersTests
 {
     [Fact]
@@ -284,7 +280,7 @@ public class ValidationErrorHelpersTests
 
         await result.ExecuteAsync(context);
 
-        // PA-070/PA-117 (#2418): GeoServices errors are transported as HTTP 200;
+        // GeoServices errors are transported as HTTP 200;
         // the error is signalled exclusively through the JSON body envelope.
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         context.Response.Body.Position = 0;
@@ -304,7 +300,7 @@ public class ValidationErrorHelpersTests
 
         await result.ExecuteAsync(context);
 
-        // PA-070/PA-117 (#2418): GeoServices errors are transported as HTTP 200;
+        // GeoServices errors are transported as HTTP 200;
         // the error is signalled exclusively through the JSON body envelope
         // (error.code = 405 below). The Allow header is still emitted.
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);

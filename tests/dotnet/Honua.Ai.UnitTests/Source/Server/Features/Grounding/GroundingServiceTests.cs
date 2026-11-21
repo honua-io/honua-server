@@ -20,14 +20,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Grounding;
 
-/// <summary>
-/// End-to-end unit tests for <see cref="GroundingService"/>. The engine and
-/// authorization filter are stubbed so each test pins one orchestration
-/// concern — banding/capping, authorization filtering, parameter-gap probing,
-/// clarification envelope wiring, layer catalog outage handling (unregistered
-/// catalog falls back to empty datasets; injected catalog failures surface
-/// <see cref="GroundingErrorKind.CatalogUnavailable"/>), and error translation.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class GroundingServiceTests
 {
@@ -176,7 +168,7 @@ public sealed class GroundingServiceTests
     [UnitTest]
     public async Task GroundAsync_AuthorizationRunsBeforeShortlistCap_SoDeniedTopHitsDoNotHideAllowedCandidates()
     {
-        // Regression: ApplyBandsAndCap must run after the authorization filter,
+        // ApplyBandsAndCap must run after the authorization filter,
         // or denied top hits consume the MaxCandidatesPerKind budget and hide
         // an authorized candidate ranked just below the cap.
         _options.MaxCandidatesPerKind = 2;
@@ -561,7 +553,7 @@ public sealed class GroundingServiceTests
     [UnitTest]
     public async Task GroundAsync_MultipleParameterAnswers_EmitsDeterministicAssumptionOrder()
     {
-        // Regression: two semantically identical clarification payloads whose
+        // Two semantically identical clarification payloads whose
         // param.* answers differ only in key insertion order must produce the
         // same `provenance.assumptions` sequence, preserving the grounding
         // slice's documented stability guarantee.
@@ -767,7 +759,7 @@ public sealed class GroundingServiceTests
     [UnitTest]
     public async Task GroundAsync_ProcessSelectionAnswer_EmptyRefreshedRanking_Throws()
     {
-        // Regression: if the refreshed ranking is empty (for example because
+        // If the refreshed ranking is empty (for example because
         // the caller changed the goal and no process now matches), a pinned
         // process id must not be silently ignored — the docs advertise an
         // invalid_argument error on stale pins.
@@ -800,7 +792,7 @@ public sealed class GroundingServiceTests
     [UnitTest]
     public async Task GroundAsync_ProcessSelectionAnswer_PinnedCandidateBelowShortlistCap_PromotedNotRejected()
     {
-        // Regression: pin application must run against the post-authorization
+        // Pin application must run against the post-authorization
         // ranking, not the post-cap ranking. A still-authorized candidate
         // that has fallen just below MaxCandidatesPerKind must be promoted
         // to the front rather than rejected as invalid_argument because the
@@ -843,9 +835,6 @@ public sealed class GroundingServiceTests
     [UnitTest]
     public async Task GroundAsync_DatasetSelectionAnswer_PinnedCandidateBelowShortlistCap_PromotedNotRejected()
     {
-        // Regression for the dataset side of the same finding: a pinned
-        // dataset that is still authorized but ranks below the shortlist
-        // cap must be promoted instead of trimmed-then-rejected.
         _options.MaxCandidatesPerKind = 2;
         _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
         _engine.ScoreServices(Arg.Any<GroundingRequest>(), Arg.Any<IReadOnlyList<ServiceCandidate>>())
@@ -966,12 +955,9 @@ public sealed class GroundingServiceTests
     [UnitTest]
     public async Task GroundAsync_PublishWithoutSource_AnsweringOnlyPublishTarget_StillRequestsSource()
     {
-        // Regression for Finding #2 (codex_local): previously, answering
-        // publish.target without any explicit inputs or high-confidence
-        // datasets terminated with draftIntent.publishing == null AND a null
-        // clarification — the caller could not escape. With the publish.source
-        // finding, the follow-up pass keeps asking for the source until it is
-        // pinned.
+        // After publish.target is answered without explicit inputs or high-confidence
+        // datasets, keep asking for publish.source until it is pinned so the caller
+        // always has a clarification to answer.
         _engine.Classify(Arg.Any<GroundingRequest>()).Returns(new WorkflowFamilyClassification
         {
             Value = WorkflowFamily.PublishData,
@@ -1048,7 +1034,7 @@ public sealed class GroundingServiceTests
     [UnitTest]
     public async Task GroundAsync_PublishSourceAnswer_ServiceCandidateId_StillRequestsSource()
     {
-        // Regression: a `publish.source` answer that names a service
+        // A `publish.source` answer that names a service
         // catalog id cannot be drafted — PublishSourceKind has no
         // FeatureService value. Instead of producing a publish intent
         // mislabeled as FeatureLayer, the service must drop the answer,
@@ -1103,7 +1089,7 @@ public sealed class GroundingServiceTests
     [UnitTest]
     public async Task GroundAsync_PublishExplicitInputs_ServiceCandidateId_StillRequestsSource()
     {
-        // Regression: an `ExplicitInputs` pin that names a service catalog
+        // An `ExplicitInputs` pin that names a service catalog
         // id must not bypass the `publish.source` clarification — the
         // drafter cannot label a service id as FeatureLayer. The evaluator
         // must keep asking for a source and the drafter must omit the
@@ -1197,7 +1183,7 @@ public sealed class GroundingServiceTests
     [UnitTest]
     public async Task GroundAsync_SingleDominantDataset_AutoResolvesBindingWithoutClarification()
     {
-        // #1949: a cold LLM caller asking for an obvious single-candidate
+        // A cold LLM caller asking for an obvious single-candidate
         // match must NOT receive a clarification — the dominant catalog
         // candidate is auto-bound and recorded as an inspectable assumption.
         _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);

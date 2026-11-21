@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
@@ -126,7 +127,7 @@ public sealed class LayerValidationHelpersV2Tests
     {
         // The deployed pipeline gives a request without a valid credential the default
         // "public" tenant, which cannot see tenant-a's layer. The receipt candidate answered
-        // 404 "Layer 10 not found" there (honua-server#4778).
+        // 404 "Layer 10 not found" there.
         var context = BuildTenantScopedContext(requestTenant: "public", authenticatedTenant: null);
 
         var result = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
@@ -206,6 +207,113 @@ public sealed class LayerValidationHelpersV2Tests
         context.Response.Headers.WWWAuthenticate.ToString().Should().Be(
             "Bearer",
             "the challenge names the credential family the caller attempted");
+    }
+
+    [UnitTest]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ResolveCanonicalWriteService_SecondaryPublication_ReturnsThePrimaryService()
+    {
+        var (context, graph) = BuildCanonicalContext();
+        var secondary = graph.Publications.Single(publication => publication.Metadata.Id == "pub-secondary");
+
+        var canonical = await LayerValidationHelpers.ResolveCanonicalWriteServiceAsync(
+            context, new LayerValidationHelpers.CanonicalWriteSource(secondary, graph.Resources[0]), CancellationToken.None);
+
+        canonical.Should().NotBeNull("a write through a secondary publication must also clear the canonical service");
+        canonical!.Value.Service!.Metadata.Id.Should().Be("svc-primary");
+    }
+
+    [UnitTest]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ResolveCanonicalWriteService_PrimaryPublication_ReturnsNull()
+    {
+        var (context, graph) = BuildCanonicalContext();
+        var primary = graph.Publications.Single(publication => publication.Metadata.Id == "pub-primary");
+
+        var canonical = await LayerValidationHelpers.ResolveCanonicalWriteServiceAsync(
+            context, new LayerValidationHelpers.CanonicalWriteSource(primary, graph.Resources[0]), CancellationToken.None);
+
+        canonical.Should().BeNull("the canonical publication's own service check already covers it");
+    }
+
+    [UnitTest]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ResolveCanonicalWriteService_NoPrimaryPublication_ReturnsNull()
+    {
+        var (context, graph) = BuildContext(allowAnonymous: true);
+
+        var canonical = await LayerValidationHelpers.ResolveCanonicalWriteServiceAsync(
+            context, new LayerValidationHelpers.CanonicalWriteSource(graph.Publications[0], graph.Resources[0]), CancellationToken.None);
+
+        canonical.Should().BeNull("a resource without a primary publication has no canonical service to enforce");
+    }
+
+    [Theory]
+    [InlineData(null, "challenge")]
+    [InlineData("reader", "forbidden")]
+    [InlineData("editor", "allowed")]
+    [InlineData("anonymous", "allowed")]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task EvaluateCanonicalServiceWriteAccess_UsesCanonicalPolicy(
+        string? role, string expected)
+    {
+        var (context, graph) = BuildCanonicalContext(new AccessPolicy
+        {
+            AllowAnonymousWrite = role == "anonymous",
+            AllowedWriteRoles = ["editor"]
+        });
+        if (role is not null and not "anonymous")
+        {
+            context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, role)], "Test"));
+        }
+
+        var secondary = graph.Publications.Single(publication => publication.Metadata.Id == "pub-secondary");
+        var decision = await LayerValidationHelpers.EvaluateCanonicalServiceWriteAccessAsync(
+            context,
+            (new LayerValidationHelpers.CanonicalWriteSource(secondary, graph.Resources[0]),
+                Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Insert),
+            CancellationToken.None);
+
+        decision.IsAllowed.Should().Be(expected == "allowed");
+        decision.RequiresAuthentication.Should().Be(expected == "challenge");
+    }
+
+    private static (HttpContext Context, MetadataV2Graph Graph) BuildCanonicalContext(AccessPolicy? canonicalPolicy = null)
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddService("svc-primary", "primary-service", protocols: [ServiceProtocols.OgcFeatures])
+            .AddService("svc-secondary", "secondary-service", protocols: [ServiceProtocols.OgcFeatures])
+            .AddResource("res-shared", "shared-resource")
+            .AddPublication(
+                "pub-primary",
+                "svc-primary",
+                "res-shared",
+                layerIndex: 0,
+                serviceLocalId: "shared",
+                isPrimary: true)
+            .AddPublication(
+                "pub-secondary",
+                "svc-secondary",
+                "res-shared",
+                layerIndex: 0,
+                serviceLocalId: "shared")
+            .Build();
+
+        graph = graph with
+        {
+            Services = graph.Services.Select(service => service.Metadata.Id == "svc-primary"
+                ? service with { AccessPolicy = canonicalPolicy }
+                : service).ToImmutableArray()
+        };
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
+        services.AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph));
+        var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
+        context.User = new ClaimsPrincipal(new ClaimsIdentity());
+        return (context, graph);
     }
 
     private static HttpContext BuildTenantScopedContext(string requestTenant, string? authenticatedTenant)

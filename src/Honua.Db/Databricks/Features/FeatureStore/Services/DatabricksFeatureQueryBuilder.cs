@@ -335,13 +335,17 @@ internal static class DatabricksFeatureQueryBuilder
     private static string RebindParameters(SqlFragment fragment, List<DatabricksSqlParameter> parameters)
     {
         var sql = fragment.Sql;
+        var first = parameters.Count;
+        // Highest marker first, so replacing :p1 cannot rewrite the prefix of :p10.
+        for (var i = fragment.Parameters.Count - 1; i >= 0; i--)
+        {
+            sql = sql.Replace($":p{i}", $":f{first + i}", StringComparison.Ordinal);
+        }
+
         for (var i = 0; i < fragment.Parameters.Count; i++)
         {
-            var name = $"f{parameters.Count}";
-            // Replace the translator's positional :pN marker with the statement-scoped :fN marker.
-            sql = sql.Replace($":p{i}", $":{name}", StringComparison.Ordinal);
             var (rendered, type) = RenderParameter(fragment.Parameters[i]);
-            parameters.Add(new DatabricksSqlParameter(name, rendered, type));
+            parameters.Add(new DatabricksSqlParameter($"f{first + i}", rendered, type));
         }
 
         return sql;
@@ -434,7 +438,7 @@ internal static class DatabricksFeatureQueryBuilder
     }
 
     // Esri spatialRel is evaluated from the filter geometry: Within and Contains lead with the
-    // filter operand (issue #2068). Symmetric relationships lead with the feature geometry.
+    // filter operand. Symmetric relationships lead with the feature geometry.
     // Function names come from DatabricksSqlFilterTranslator's operator table.
     private static string FormatEnvelopePredicate(SpatialRelationship relationship, string feature, string filter)
         => relationship switch

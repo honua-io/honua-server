@@ -57,14 +57,6 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IAdoNetDatabaseCon
         LoggerMessage.Define<string>(LogLevel.Error, new EventId(8, nameof(_logSecureConnectionResolutionFailed)),
             "Failed to resolve secure connection '{ConnectionName}' and Database:SecureConnection:AllowFallback is disabled — failing closed");
 
-    private static readonly Action<ILogger, string, Exception?> _logConnectionHealthTestFailure =
-        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(5, nameof(_logConnectionHealthTestFailure)),
-            "Failed to test secure connection health for '{ConnectionName}'");
-
-    private static readonly Action<ILogger, Exception?> _logRetrieveConnectionsFailure =
-        LoggerMessage.Define(LogLevel.Warning, new EventId(6, nameof(_logRetrieveConnectionsFailure)),
-            "Failed to retrieve available secure connections");
-
     private static readonly Action<ILogger, Exception?> _logSecureConnectionAcquisitionTimedOut =
         LoggerMessage.Define(LogLevel.Warning, new EventId(7, nameof(_logSecureConnectionAcquisitionTimedOut)),
             "Secure connection acquisition timed out — server is under heavy load");
@@ -249,43 +241,6 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IAdoNetDatabaseCon
     {
         // Delegate to default provider for retry logic
         await _defaultProvider.ExecuteWithDeadlockRetryAsync(operation, cancellationToken);
-    }
-
-    public async Task<bool> IsSecureConnectionHealthyAsync(CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(_namedConnectionToUse))
-        {
-            // No secure connection configured - always healthy
-            return true;
-        }
-
-        try
-        {
-            return await _secureResolver.TestConnectionHealthAsync(_namedConnectionToUse, cancellationToken);
-        }
-        // Intentionally generic: this is a connection-health probe, so any failure means
-        // "unhealthy" rather than an exception the caller should handle.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            _logConnectionHealthTestFailure(_logger, _namedConnectionToUse, ex);
-            return false;
-        }
-    }
-
-    public async Task<string[]> GetAvailableSecureConnectionsAsync(CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var connections = await _secureResolver.GetAvailableConnectionsAsync(cancellationToken);
-            return connections.ToArray();
-        }
-        // Intentionally generic: best-effort discovery; log and degrade to "no available
-        // connections" rather than failing the caller over a resolver-side listing error.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            _logRetrieveConnectionsFailure(_logger, ex);
-            return Array.Empty<string>();
-        }
     }
 
     public void Dispose()

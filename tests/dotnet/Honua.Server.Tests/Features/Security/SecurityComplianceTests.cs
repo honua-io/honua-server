@@ -17,9 +17,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Security;
 
-/// <summary>
-/// Comprehensive security compliance tests covering OWASP Top 10 and enterprise security requirements
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Comprehensive)]
 [Operation(Operations.Security)]
@@ -106,7 +103,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
     public async Task Authentication_AdminOpenApiWithoutApiKey_ShouldReturn200()
     {
         // The admin OpenAPI document is public documentation (the bundled
-        // admin-api.json snapshot) and is intentionally anonymous (#1635);
+        // admin-api.json snapshot) and is intentionally anonymous;
         // the admin operations it documents remain authenticated.
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/openapi.json");
 
@@ -159,7 +156,7 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
             content.Should().NotContain("pg_user", "SQL injection should not return system information");
             content.Should().NotContain("SQLSTATE", "raw SQL errors must not leak to clients");
 
-            // Post-#2418 a rejected GeoServices query is signalled as HTTP 200 +
+            // A rejected GeoServices query is signalled as HTTP 200 +
             // {"error":{"code":400}} (or a legacy 400); a safe query returns HTTP 200 with
             // a normal result set. Both are acceptable — silent execution of the injection
             // is what the content assertions above guard against.

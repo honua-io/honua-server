@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -13,16 +14,12 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Infrastructure.Middleware;
 
-/// <summary>
-/// Unit tests for <see cref="AuditingFeatureWriter"/> — the shared edit-pipeline
-/// decorator that emits destructive-write audit events for every protocol
-/// adapter (#507).
-/// </summary>
 public sealed class AuditingFeatureWriterTests
 {
     private readonly CapturingAuditLog _auditLog = new();
     private readonly StubFeatureWriter _inner = new();
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly AuditPolicyOptions _policy = new();
     private readonly AuditingFeatureWriter _writer;
 
     public AuditingFeatureWriterTests()
@@ -33,7 +30,7 @@ public sealed class AuditingFeatureWriterTests
             authenticationType: "Test"));
         httpContext.Connection.RemoteIpAddress = System.Net.IPAddress.Loopback;
         _httpContextAccessor = new HttpContextAccessor { HttpContext = httpContext };
-        _writer = new AuditingFeatureWriter(_inner, _auditLog, _httpContextAccessor);
+        _writer = new AuditingFeatureWriter(_inner, _auditLog, new FeatureWriteAuditScope(_httpContextAccessor, () => _policy));
     }
 
     [Fact]
@@ -129,6 +126,82 @@ public sealed class AuditingFeatureWriterTests
         _auditLog.Events.Should().BeEmpty();
     }
 
+    [UnitTest]
+    public async Task CreateAndUpdate_WithSingleWriteAuditOn_RecordEachWrite()
+    {
+        _policy.RecordSingleFeatureWrites = true;
+
+        await _writer.CreateAsync(2, NewFeature(id: 17));
+        await _writer.UpdateAsync(2, NewFeature(id: 18));
+
+        _auditLog.Events.Select(static e => e.Action).Should().Equal("feature.create", "feature.update");
+        _auditLog.Events.Should().OnlyContain(static e => e.Outcome == AuditOutcome.Success
+            && e.ResourceId == "2"
+            && e.Actor == "operator@example.com");
+        _auditLog.Events[0].Details.Should().Be("{\"objectId\":17}");
+    }
+
+    [UnitTest]
+    public async Task SingleWrites_WithSingleWriteAuditOn_WhenInnerThrows_RecordFailureAndRethrow()
+    {
+        _policy.RecordSingleFeatureWrites = true;
+        _inner.ThrowOnWrite = true;
+
+        var update = async () => await _writer.UpdateAsync(5, NewFeature(id: 9));
+        var create = async () => await _writer.CreateAsync(5, NewFeature());
+
+        await update.Should().ThrowAsync<InvalidOperationException>();
+        await create.Should().ThrowAsync<InvalidOperationException>();
+        _auditLog.Events.Select(static e => e.Action).Should().Equal("feature.update", "feature.create");
+        _auditLog.Events.Should().OnlyContain(static e => e.Outcome == AuditOutcome.Failure);
+    }
+
+    [UnitTest]
+    public async Task Create_WithSingleWriteAuditOn_RecordsEvenWhenTheCallerCancelsAfterTheWrite()
+    {
+        _policy.RecordSingleFeatureWrites = true;
+        using var cancellation = new CancellationTokenSource();
+        _inner.AfterWrite = cancellation.Cancel;
+
+        await _writer.CreateAsync(2, NewFeature(id: 4), cancellation.Token);
+
+        _auditLog.Events.Should().ContainSingle().Which.Action.Should().Be("feature.create");
+        _auditLog.Tokens.Should().ContainSingle().Which.CanBeCanceled.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task SingleCreateBatch_WithSingleWriteAuditOn_RecordsEdit()
+    {
+        _policy.RecordSingleFeatureWrites = true;
+        _inner.EditResult = FeatureEditResult.Success(createdCount: 1, updatedCount: 0, deletedCount: 0);
+
+        await _writer.ApplyEditsAsync(layerId: 4, FeatureEditBatch.Create(creates: ImmutableArray.Create(NewFeature())));
+        await _writer.ApplyEditsAsync(layerId: 4, FeatureEditBatch.Create());
+
+        var evt = _auditLog.Events.Should().ContainSingle().Subject;
+        evt.Action.Should().Be("feature.edit");
+        evt.Details.Should().Contain("\"created\":1");
+    }
+
+    [UnitTest]
+    public async Task TransactionalSingleUpdate_WithSingleWriteAuditOn_RecordsEditOnCommit()
+    {
+        _policy.RecordSingleFeatureWrites = true;
+        _inner.EditResult = FeatureEditResult.Success(createdCount: 0, updatedCount: 1, deletedCount: 0);
+        var batch = FeatureEditBatch.Create(updates: ImmutableArray.Create(NewFeature(id: 3)));
+
+        await using (var transaction = await _writer.BeginTransactionAsync())
+        {
+            await transaction.ApplyEditsAsync(layerId: 6, batch);
+            _auditLog.Events.Should().BeEmpty();
+            await transaction.CommitAsync();
+        }
+
+        var evt = _auditLog.Events.Should().ContainSingle().Subject;
+        evt.Action.Should().Be("feature.edit");
+        evt.Outcome.Should().Be(AuditOutcome.Success);
+    }
+
     [Fact]
     public async Task Transaction_DisposeWithoutCompletion_EmitsBulkFailureOnce()
     {
@@ -185,9 +258,9 @@ public sealed class AuditingFeatureWriterTests
         _auditLog.Events.Should().ContainSingle().Which.Outcome.Should().Be(expectedAudit);
     }
 
-    private static Feature NewFeature() => new()
+    private static Feature NewFeature(long id = 0) => new()
     {
-        Id = 0,
+        Id = id,
         Geometry = null,
         Attributes = ImmutableDictionary<string, object?>.Empty,
     };
@@ -203,14 +276,28 @@ public sealed class AuditingFeatureWriterTests
 
         public bool ThrowOnDelete { get; set; }
 
+        public bool ThrowOnWrite { get; set; }
+
         public FeatureEditResult EditResult { get; set; } =
             FeatureEditResult.Success(0, 0, 0);
 
+        public Action? AfterWrite { get; set; }
+
         public Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
-            => Task.FromResult(feature);
+        {
+            if (ThrowOnWrite)
+            {
+                return Task.FromException<Feature>(new InvalidOperationException("create failed"));
+            }
+
+            AfterWrite?.Invoke();
+            return Task.FromResult(feature);
+        }
 
         public Task<Feature> UpdateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
-            => Task.FromResult(feature);
+            => ThrowOnWrite
+                ? Task.FromException<Feature>(new InvalidOperationException("update failed"))
+                : Task.FromResult(feature);
 
         public Task<bool> DeleteAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
         {
@@ -282,9 +369,12 @@ public sealed class AuditingFeatureWriterTests
     {
         public List<AuditEvent> Events { get; } = new();
 
+        public List<CancellationToken> Tokens { get; } = new();
+
         public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
         {
             Events.Add(auditEvent);
+            Tokens.Add(cancellationToken);
             return Task.FromResult<string?>("audit-test");
         }
     }

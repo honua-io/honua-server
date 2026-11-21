@@ -8,12 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-/// <summary>
-/// Dedicated coverage for <see cref="DeployTelemetryPolicy.Parse"/> (#2161). The parser turns deploy
-/// spec parameters into a provider-neutral telemetry gate policy; before this suite it had no direct
-/// tests. Exercises the malformed / missing-threshold / preset-and-override combinations that decide
-/// whether the gate is valid (settles the deploy) or invalid (parks/escalates it).
-/// </summary>
 public sealed class DeployTelemetryPolicyTests
 {
     [Fact]
@@ -33,7 +27,7 @@ public sealed class DeployTelemetryPolicyTests
     [Fact]
     public void Parse_WithTelemetryParametersButNoConnection_ProducesInvalidPolicy()
     {
-        // #4617: this used to return null, silently dropping the operator's telemetry configuration.
+        // Parsing to null here would silently drop the operator's telemetry configuration.
         var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
         {
             ["telemetry.prometheus.job"] = "honua-prod"
@@ -47,8 +41,8 @@ public sealed class DeployTelemetryPolicyTests
     [Fact]
     public void Parse_WithConnectionAndUnsupportedPreset_ProducesInvalidPolicy()
     {
-        // #4617: an unknown preset with no query used to yield null, so the connection the operator
-        // configured was silently ignored and the deploy ran ungated.
+        // Reject an unknown preset without a query rather than ignoring the configured
+        // connection and running deployment without a gate.
         var policy = DeployTelemetryPolicy.Parse(CreateSpec(
             new Dictionary<string, string>
             {
@@ -102,7 +96,7 @@ public sealed class DeployTelemetryPolicyTests
             ["telemetry.error_rate.threshold"] = "0.05"
         }));
 
-        // #4617: an explicit override no longer hides an unsupported preset name — silently ignoring
+        // An explicit override does not hide an unsupported preset name — silently ignoring
         // the preset the operator asked for is itself a rejected configuration.
         policy.Should().NotBeNull();
         policy!.IsValid.Should().BeFalse("an unsupported preset is rejected even alongside explicit query overrides");
@@ -113,7 +107,7 @@ public sealed class DeployTelemetryPolicyTests
     public void Parse_UnsupportedPresetWithoutOverride_ProducesInvalidPolicy()
     {
         // An unsupported preset synthesizes no queries, so telemetry.prometheus.job has nothing to feed.
-        // #4617: this used to short-circuit to null (ungated deploy); it is now a rejected policy.
+        // It must be a rejected policy, not a short-circuit to null (an ungated deploy).
         var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
         {
             ["telemetry.connection"] = "prod-prom",
@@ -154,7 +148,7 @@ public sealed class DeployTelemetryPolicyTests
     public void Parse_ZeroNegativeMalformedOrUnboundedWarmup_IsRejected(string rawValue)
     {
         // A zero/negative warmup must not produce an instant or negative warmup window, and an unusable
-        // value must not be silently replaced by the preset default either (#4617): it is rejected.
+        // value must not be silently replaced by the preset default either: it is rejected.
         var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
         {
             ["telemetry.connection"] = "prod-prom",
@@ -172,7 +166,7 @@ public sealed class DeployTelemetryPolicyTests
     public void Parse_GpBatchPreset_ProducesValidPolicyWithLongerWarmup()
     {
         // The serverless-GP substrate preset bakes longer (5m) than the standard 2m HTTP preset
-        // because GP per-job metrics are sparse/bursty (honua-server#2165).
+        // because GP per-job metrics are sparse/bursty.
         var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
         {
             ["telemetry.connection"] = "prod-prom",
@@ -189,7 +183,7 @@ public sealed class DeployTelemetryPolicyTests
     [Fact]
     public void Parse_HealthProbe_AugmentsMetricGate_WithDefaults()
     {
-        // The synthetic /healthz/ready gate (#1849) is provider-independent and layers onto the metric
+        // The synthetic /healthz/ready gate is provider-independent and layers onto the metric
         // gate. With a Kubernetes target the default honua-http preset still synthesizes the metric
         // queries; the probe URL is parsed alongside them with its documented defaults.
         var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
@@ -237,8 +231,7 @@ public sealed class DeployTelemetryPolicyTests
     [Fact]
     public void Parse_HealthProbeNonPositiveOrMalformedOverrides_AreRejected()
     {
-        // #4617: these used to fall back to defaults silently, so the probe ran with settings the
-        // operator never chose. Each unusable value is now named in the validation error.
+        // Name each unusable value in the validation error rather than substituting defaults.
         var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
         {
             ["telemetry.connection"] = "prod-prom",
@@ -536,7 +529,7 @@ public sealed class DeployTelemetryPolicyTests
     [InlineData("999999")]
     public void Parse_WithInvalidOrUnboundedEvidenceGraceSeconds_IsRejected(string rawValue)
     {
-        // A misconfigured grace must never disable or unbound the evidence deadline (#4617), and it is
+        // A misconfigured grace must never disable or unbound the evidence deadline, and it is
         // not silently replaced by the default either: the deploy is rejected at plan time.
         var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
         {
@@ -553,7 +546,7 @@ public sealed class DeployTelemetryPolicyTests
     [Fact]
     public void Parse_WithoutMaxStalenessParameter_AppliesFiveMinuteFreshnessBound()
     {
-        // #4617: freshness is always enforced; an unconfigured policy gets the default bound rather
+        // Freshness is always enforced; an unconfigured policy gets the default bound rather
         // than accepting samples of any age.
         var policy = DeployTelemetryPolicy.Parse(CreateSpec(new Dictionary<string, string>
         {
@@ -623,7 +616,7 @@ public sealed class DeployTelemetryPolicyTests
         policy!.MaximumEvidenceStaleness.Should().Be(TimeSpan.FromSeconds(120));
     }
 
-    // ---- target/revision identity while traffic is split (#4617) ----------
+    // ---- target/revision identity while traffic is split ----------
 
     [Theory]
     [InlineData("deployment.canary_weight_percentage", "10")]

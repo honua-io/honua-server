@@ -12,9 +12,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for admin style suggestion endpoint.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public sealed class StyleSuggestionEndpointsTests : IAsyncLifetime
@@ -69,7 +66,7 @@ public sealed class StyleSuggestionEndpointsTests : IAsyncLifetime
         response.Be404NotFound();
     }
 
-    // --- Depth pack (#2983): styling.auto-suggest contract assertions ---
+    // --- Depth pack: styling.auto-suggest contract assertions ---
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]

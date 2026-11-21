@@ -13,7 +13,6 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Tiles.PMTiles;
 using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
-using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -27,28 +26,38 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Tile)]
-public sealed class PMTilesPublishEndpointTests(DatabaseFixtureAdapter database) : IAsyncLifetime
+public sealed class PMTilesPublishEndpointTests(PMTilesPublishEndpointTests.TileHost host) : IClassFixture<PMTilesPublishEndpointTests.TileHost>
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
-    private HttpClient _client = null!;
+    private readonly WebAppFixture _fixture = host.Fixture;
+    private readonly HttpClient _client = host.Client;
 
-    public async Task InitializeAsync()
+    // One host per class: every case starts its own jobs and reads them back by id, and the job
+    // lists are only checked for the case's own jobs, so cases share the host and its job substrate.
+    public sealed class TileHost : IAsyncLifetime
     {
-        await database.DataSource.ClearJobSubstrateAsync();
-        // The shared test host otherwise authenticates every caller as an admin API key,
-        // which hides a restricted source-layer denial.
-        _fixture.ConfigureWebHost(builder =>
+        internal WebAppFixture Fixture { get; } = new WebAppFixture().WithProductionJobSubstrate();
+
+        internal HttpClient Client { get; private set; } = null!;
+
+        public async Task InitializeAsync()
         {
-            builder.UseSetting("HONUA_DEV_AUTH", "false");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-        });
-        await _fixture.InitializeAsync();
-        _client = _fixture.CreateAdminClient();
-    }
+            // The shared test host otherwise authenticates every caller as an admin API key,
+            // which hides a restricted source-layer denial.
+            Fixture.ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            });
+            await Fixture.InitializeAsync();
+            await Fixture.Postgres.DataSource.ClearJobSubstrateAsync();
+            Client = Fixture.CreateAdminClient();
+        }
 
-    public async Task DisposeAsync()
-    {
-        await _fixture.DisposeAsync();
+        public async Task DisposeAsync()
+        {
+            Client?.Dispose();
+            await Fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -173,18 +182,6 @@ public sealed class PMTilesPublishEndpointTests(DatabaseFixtureAdapter database)
         bytes[..7].Should().BeEquivalentTo("PMTiles"u8.ToArray(), "PMTiles archive header should appear at offset 0");
     }
 
-    /// <summary>
-    /// Range coverage for an <em>interior</em> tile window, not the seven-byte magic prefix
-    /// (honua-server#4397).
-    /// </summary>
-    /// <remarks>
-    /// The existing 206 test requests bytes 0-6 and asserts they spell "PMTiles", which proves the
-    /// route honours <c>Range</c> but says nothing about whether a range landing on real tile data
-    /// returns the right bytes — the thing every PMTiles client actually does. This walks the
-    /// served archive's header and root directory to compute one tile's absolute byte window, then
-    /// asks for exactly that window over HTTP and compares the returned bytes with that tile's
-    /// bytes in the whole-archive download.
-    /// </remarks>
     [IntegrationTest]
     [Endpoint("GET /api/v1/tiles/pmtiles/{*artifactId}")]
     public async Task PMTilesProxy_InteriorTileRange_ReturnsExactlyThatTilesBytes()
@@ -236,11 +233,6 @@ public sealed class PMTilesPublishEndpointTests(DatabaseFixtureAdapter database)
         payload.Should().NotBeEmpty();
     }
 
-    /// <summary>
-    /// The archive the proxy serves must be the archive on disk, byte for byte — otherwise a
-    /// client that range-reads it computes offsets against something the server never sent
-    /// (honua-server#4397).
-    /// </summary>
     [IntegrationTest]
     [Endpoint("GET /api/v1/tiles/pmtiles/{*artifactId}")]
     public async Task PMTilesProxy_ServedArchive_IsReadableAsAWholePMTilesArchive()

@@ -9,10 +9,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Infrastructure.Hosting;
 
-/// <summary>
-/// A host that starts stopping inside a Lambda sandbox must end the process, or Lambda keeps
-/// routing invocations to a process whose port is closed (honua-server#6558).
-/// </summary>
 public sealed class LambdaHostStopExitGuardTests
 {
     [UnitTest]

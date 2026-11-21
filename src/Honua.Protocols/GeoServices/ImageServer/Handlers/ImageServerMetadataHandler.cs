@@ -80,6 +80,15 @@ internal sealed class ImageServerMetadataHandler
 
             // Get raster information
             var rasters = await _rasterStore.ListRastersAsync(layerId, cancellationToken);
+            var cogs = await ImageServerCogRasters.ResolveAsync(
+                context, new(snapshot, resolved.Publication, rasters), cancellationToken).ConfigureAwait(false);
+            if (cogs.Refusal is { } refusal)
+            {
+                return refusal;
+            }
+
+            rasters = cogs.Rasters;
+
             if (rasters.Length == 0)
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
@@ -100,10 +109,10 @@ internal sealed class ImageServerMetadataHandler
             // Get raster statistics for the layer mosaic. Bounded: a cold-cache backfill
             // over a large mosaic (many rasters, high resolution) can take far longer
             // than this request's own host-level deadline, which would otherwise hang
-            // the whole metadata response instead of just omitting statistics (#2991).
+            // the whole metadata response instead of just omitting statistics.
             var rasterIds = rasters.Select(r => r.Id).ToArray();
             var schemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
-            var statistics = await ImageServerStatisticsBudget.ResolveAsync(
+            RasterStatistics[] statistics = cogs.FromCogs ? [] : await ImageServerStatisticsBudget.ResolveAsync(
                 context.RequestServices.GetRequiredService<IServiceScopeFactory>(),
                 ImageServerStatisticsBudget.CreateStatisticsOperationKey(
                     schemaName, layerId, rasterIds, mergeStrategy),
@@ -123,7 +132,7 @@ internal sealed class ImageServerMetadataHandler
                 cancellationToken);
 
             // A registered multidimensional coverage is the raster the slices come from.
-            // Describe that grid instead of a co-registered base raster (#6493).
+            // Describe that grid instead of a co-registered base raster.
             var coverageGrid = await _multidimensionalInfoBuilder
                 .DescribeGridAsync(layerId, cancellationToken)
                 .ConfigureAwait(false);
@@ -146,9 +155,9 @@ internal sealed class ImageServerMetadataHandler
             // Maps SDK for .NET native runtime reads while loading an
             // ImageServiceRaster; advertising a cache (singleFusedMapCache:true /
             // tileInfo) makes that native parser treat the dynamic service as cached
-            // and reject the exportImage config (#1456). Enabling the flag emits the
+            // and reject the exportImage config. Enabling the flag emits the
             // static WebMercatorQuad tileInfo that L.esri.tiledMapLayer requires while
-            // leaving the default (#1456-safe) dynamic contract untouched (#1648).
+            // leaving the default dynamic contract untouched.
             var tileMetadataOptions = context.RequestServices
                 .GetRequiredService<IOptions<ImageServerTileMetadataOptions>>().Value;
             var advertiseTileCache = tileMetadataOptions.Enabled;
@@ -171,21 +180,21 @@ internal sealed class ImageServerMetadataHandler
                 Extent = BuildExtent(extent.Value),
                 // The native .NET ImageServiceRaster.LoadAsync reads fullExtent /
                 // initialExtent (not the legacy `extent`) and the storageInfo block;
-                // without them it fails "Failed to read configuration data" (#1456).
+                // without them it fails "Failed to read configuration data".
                 FullExtent = BuildExtent(extent.Value),
                 InitialExtent = BuildExtent(extent.Value),
                 // A real dynamic (non-fused-cache) Esri ImageServer omits storageInfo
                 // entirely (verified against a public Esri ImageServer). Emitting it
                 // makes the ArcGIS Maps SDK for .NET native runtime treat the service
                 // as cached and reject the config; honua serves dynamic imagery via
-                // exportImage, so omit storageInfo and the root block size (#1456).
+                // exportImage, so omit storageInfo and the root block size.
                 StorageInfo = null,
                 BlockWidth = null,
                 BlockHeight = null,
                 SpatialReference = CreateSpatialReference(extent.Value.Srid ?? referenceRaster.Srid),
                 // A coverage grid replaces the base mosaic. Its geotransform is the
                 // cell size; the base rasters' transforms would keep advertising the
-                // co-registered raster (#6493).
+                // co-registered raster.
                 PixelSizeX = CalculatePixelSize(coverageGrid is null ? rasters : [referenceRaster], extent.Value),
                 PixelSizeY = CalculatePixelSize(coverageGrid is null ? rasters : [referenceRaster], extent.Value, isHeight: true),
                 BandCount = referenceRaster.BandCount,
@@ -195,7 +204,7 @@ internal sealed class ImageServerMetadataHandler
                 // ArcGIS Pro will not draw outside these. Zero is the Esri "no limit" sentinel
                 // (SOAP GetServiceInfo already advertises it). Omitting the scales, or publishing
                 // a positive minPixelSize, leaves the layer in the contents pane with a legend
-                // and no pixels (#6563).
+                // and no pixels.
                 MinScale = 0,
                 MaxScale = 0,
                 CopyrightText = resolved.Description ?? "",
@@ -204,7 +213,7 @@ internal sealed class ImageServerMetadataHandler
                 MaxValues = statistics.Select(s => s.MaxValue ?? 0).ToArray(),
                 MeanValues = statistics.Select(s => s.MeanValue ?? 0).ToArray(),
                 StdvValues = statistics.Select(s => s.StandardDeviation ?? 0).ToArray(),
-                Capabilities = "Catalog,Image,Metadata,Mensuration,Pixels,Statistics",
+                Capabilities = cogs.FromCogs ? ImageServerCogRasters.Capabilities : "Catalog,Image,Metadata,Mensuration,Pixels,Statistics",
                 MensurationCapabilities = "Basic",
                 MaxImageHeight = MaxImageHeight,
                 MaxImageWidth = MaxImageWidth,
@@ -212,8 +221,8 @@ internal sealed class ImageServerMetadataHandler
                 SingleFusedMapCache = advertiseTileCache,
                 CacheType = null,
                 TileInfo = tileInfo,
-                HasHistograms = true,
-                // Capability fields describe what the request pipeline executes (#4063): raster
+                HasHistograms = !cogs.FromCogs,
+                // Capability fields describe what the request pipeline executes: raster
                 // functions run through renderingRule, the mosaic methods are exactly those the
                 // mosaic-rule parser executes, and a rule-less request composites newest
                 // acquisition first under the resource merge strategy.

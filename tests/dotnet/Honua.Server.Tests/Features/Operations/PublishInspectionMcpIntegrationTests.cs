@@ -16,9 +16,9 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 
 // The read-only Publish inspection tools run through MCP tools/call with admin authority and
 // refuse a caller without it; the loopback dispatch returns the endpoint's own payload.
-[Collection(RedisFixture.CollectionName)]
+[Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.Mcp)]
-public sealed class PublishInspectionMcpIntegrationTests(RedisFixture redis)
+public sealed class PublishInspectionMcpIntegrationTests
 {
     [IntegrationTheory]
     [InlineData("honua_admin_import_formats")]
@@ -31,7 +31,6 @@ public sealed class PublishInspectionMcpIntegrationTests(RedisFixture redis)
             .UseKestrel()
             .ConfigureWebHost(builder =>
             {
-                builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");

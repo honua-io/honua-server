@@ -17,13 +17,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
-/// <summary>
-/// Issue #1015 slice 5: <see cref="PostgresMigrationRunCatalog"/> persists run
-/// records, enforces sticky-terminal-status semantics, and pages the list view
-/// most-recent first. These tests use the shared Testcontainers Postgres
-/// fixture and exercise the real SQL (no mocks) so the JSONB evidence-pack
-/// column and DISTINCT-status filter are validated end-to-end.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresMigrationRunCatalogTests(PostgresFixture fixture)
 {
@@ -201,14 +194,9 @@ public sealed class PostgresMigrationRunCatalogTests(PostgresFixture fixture)
     private PostgresMigrationRunCatalog CreateCatalog()
         => new(fixture.DataSource, NullLogger<PostgresMigrationRunCatalog>.Instance);
 
-    /// <summary>
-    /// The 031 migration creates honua.migration_runs; tests apply the same
-    /// schema directly so they do not depend on the migration runner. The
-    /// table is shared across the container (run id is per-test).
-    /// </summary>
     private async Task EnsureMigrationRunsTableAsync()
     {
-        // honua-server#1568 (signature 2): this DDL creates/ALTERs the literal, process-global
+        // This DDL creates/ALTERs the literal, process-global
         // honua.migration_runs table (search_path isolation does not scope it), so apply it under
         // the shared seed advisory lock to keep parallel [Collection("Database")] tests off the
         // 40P01 deadlock path racing ACCESS EXCLUSIVE catalog locks on the same global object.
@@ -242,7 +230,7 @@ public sealed class PostgresMigrationRunCatalogTests(PostgresFixture fixture)
                 ON honua.migration_runs (source_kind);
             """);
 
-        // honua-server#1568: honua.migration_runs is process-global (not search_path scoped) and
+        // Honua.migration_runs is process-global (not search_path scoped) and
         // ListAsync_PagesMostRecentFirst asserts over the whole table, so clear it up front. The
         // class is one xUnit collection (its tests do not run concurrently with each other), and
         // this keeps the suite correct against a reused/persistent database (HONUA_TEST_DB_URL)

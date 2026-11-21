@@ -7,32 +7,27 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Console;
 
-/// <summary>
-/// Unit tests for <see cref="ConfigCatalogDiscoveryRegistryStore"/> (honua-server#1279,
-/// #1283 follow-up): an unconfigured store fabricates nothing, and configured seeds are
-/// projected verbatim. The store no longer ships hard-coded synthetic dialect endpoints.
-/// </summary>
 public sealed class ConfigCatalogDiscoveryRegistryStoreTests
 {
     [UnitTest]
-    public async Task GetRegistry_WhenUnconfigured_ReturnsNullForEveryWorkspace()
+    public async Task GetRegistry_WhenUnconfigured_ReturnsNullForEveryEnvironment()
     {
         // No seeds supplied: an unconfigured deployment must publish no discovery
         // endpoints rather than fabricated sample data (no-fabrication principle).
         var store = new ConfigCatalogDiscoveryRegistryStore();
 
         Assert.Null(await store.GetRegistryAsync("default"));
-        Assert.Null(await store.GetRegistryAsync("any-workspace"));
+        Assert.Null(await store.GetRegistryAsync("any-environment"));
         Assert.Null(await store.GetEndpointAsync("default", "ogc"));
         Assert.Null(await store.GetItemAsync("default", "esri", "parcels"));
     }
 
     [UnitTest]
-    public async Task GetRegistry_WithEmptySeedList_ReturnsNoWorkspaces()
+    public async Task GetRegistry_WithEmptySeedList_ReturnsNoEnvironments()
     {
         // An explicit empty seed list is still "configured but with nothing" — no
         // synthetic fallback may slip in.
-        var store = new ConfigCatalogDiscoveryRegistryStore(Array.Empty<CatalogDiscoveryWorkspaceSeed>());
+        var store = new ConfigCatalogDiscoveryRegistryStore(Array.Empty<CatalogDiscoveryEnvironmentSeed>());
 
         Assert.Null(await store.GetRegistryAsync("default"));
     }
@@ -45,10 +40,10 @@ public sealed class ConfigCatalogDiscoveryRegistryStoreTests
         const string recordsCollectionsUrl = "/ogc/records/collections";
         var store = new ConfigCatalogDiscoveryRegistryStore(new[]
         {
-            new CatalogDiscoveryWorkspaceSeed
+            new CatalogDiscoveryEnvironmentSeed
             {
-                WorkspaceId = "ws",
-                WorkspaceName = "Workspace",
+                EnvironmentId = "ws",
+                EnvironmentName = "Environment",
                 PublicHost = "https://example.test",
                 Endpoints =
                 [

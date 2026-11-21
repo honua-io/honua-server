@@ -18,7 +18,7 @@ public sealed class GeoServicesSqlParser
     //
     // The first group are the canonical ANSI fields mapped 1:1 to existing single-argument
     // functions (YEAR(d), MONTH(d), ...). The second group are additional Postgres-supported
-    // fields (#1865) that have no equivalent single-arg function, so they are emitted as a
+    // fields that have no equivalent single-arg function, so they are emitted as a
     // distinct EXTRACT_<FIELD> FunctionCall the translator re-emits as EXTRACT(<FIELD> FROM x).
     // Every entry here is a fixed SQL keyword chosen by the parser, never user text, so the
     // field token can be interpolated by the translator while operands stay parameterized.
@@ -32,9 +32,9 @@ public sealed class GeoServicesSqlParser
         "SECOND"
     };
 
-    // Additional EXTRACT fields (beyond YEAR..SECOND) that Postgres supports and that we accept
-    // as of #1865. Each is emitted as FunctionCall("EXTRACT_<FIELD>", [source]); the translator
-    // owns the (allowlisted) field -> SQL mapping.
+    // Additional EXTRACT fields (beyond YEAR..SECOND) that Postgres supports and that we accept.
+    // Each is emitted as FunctionCall("EXTRACT_<FIELD>", [source]); the translator owns the
+    // (allowlisted) field -> SQL mapping.
     private static readonly HashSet<string> _extendedExtractFields = new(StringComparer.OrdinalIgnoreCase)
     {
         "DOW",
@@ -85,7 +85,9 @@ public sealed class GeoServicesSqlParser
         "ST_DISTANCE", "ST_LENGTH", "ST_AREA", "ST_X", "ST_Y",
     };
 
-    public FilterExpression Parse(string whereClause)
+    public FilterExpression Parse(string whereClause) => Parse(whereClause, null);
+
+    public FilterExpression Parse(string whereClause, Func<string, object>? parseNumber)
     {
         if (string.IsNullOrWhiteSpace(whereClause))
         {
@@ -93,7 +95,7 @@ public sealed class GeoServicesSqlParser
         }
 
         _tokens.Clear();
-        _tokens.AddRange(new Lexer(whereClause).Tokenize());
+        _tokens.AddRange(new Lexer(whereClause, parseNumber).Tokenize());
         _current = 0;
         _expressionDepth = 0;
 
@@ -811,16 +813,13 @@ public sealed class GeoServicesSqlParser
 
         // A bare date (e.g. `2024-01-01`) is unambiguous; a date+time without an offset
         // (e.g. `2024-01-01T12:00:00`) is not, so AssumeUniversal folds it to UTC below
-        // (see PA-026 note) instead of requiring callers to supply an explicit offset.
+        // instead of requiring callers to supply an explicit offset.
         if (DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var timestamp))
         {
             // Mirror ArcGIS Server behaviour: bare datetime literals without a timezone
             // offset (whether in #...# or quoted form, with or without the TIMESTAMP keyword)
             // are accepted and treated as UTC. AssumeUniversal above already applied this.
-            // Rejecting them broke legacy ArcGIS client queries (honua-server#PA-026).
-            // The `explicitTimestampKeyword` branch was already accepted; now the bare form
-            // is too (a `hasOffsetIndicator` check that used to gate a reject-if-missing
-            // branch was removed by PA-026; it is intentionally not restored here). Callers
+            // Callers
             // that need strict timezone enforcement should apply their own validation before
             // reaching the parser.
 
@@ -955,6 +954,7 @@ public sealed class GeoServicesSqlParser
     private sealed class Lexer
     {
         private readonly string _source;
+        private readonly Func<string, object>? _parseNumber;
         private readonly List<Token> _tokens = [];
         private int _start;
         private int _current;
@@ -984,9 +984,10 @@ public sealed class GeoServicesSqlParser
             ["END"] = TokenType.End
         };
 
-        public Lexer(string source)
+        public Lexer(string source, Func<string, object>? parseNumber)
         {
             _source = source ?? string.Empty;
+            _parseNumber = parseNumber;
         }
 
         public List<Token> Tokenize()
@@ -1158,24 +1159,16 @@ public sealed class GeoServicesSqlParser
                 if (Peek() == '\'')
                 {
                     Advance();
-                    if (Peek() == '\'')
+                    if (Peek() != '\'')
                     {
-                        Advance();
-                        builder.Append('\'');
-                        continue;
+                        AddToken(TokenType.String, builder.ToString());
+                        return;
                     }
-
-                    AddToken(TokenType.String, builder.ToString());
-                    return;
                 }
 
-                // Bound the literal size so an unbounded single-quoted payload cannot
-                // pin a large StringBuilder in memory before the closing quote arrives.
-                if (builder.Length >= FilterParserGuard.MaxStringLiteralLength)
-                {
-                    FilterParserGuard.EnsureStringLiteralLength(builder.Length + 1, "GeoServicesSQL string literal");
-                }
-
+                // Bound every decoded character, escaped quotes included, so a single-quoted
+                // payload cannot grow past the literal cap before the closing quote arrives.
+                FilterParserGuard.EnsureStringLiteralLength(builder.Length + 1, "GeoServicesSQL string literal");
                 builder.Append(Advance());
             }
 
@@ -1249,7 +1242,7 @@ public sealed class GeoServicesSqlParser
                 {
                     throw new ArgumentException($"Numeric literal '{text}' is not a finite number.");
                 }
-                AddToken(TokenType.Number, doubleValue);
+                AddToken(TokenType.Number, _parseNumber?.Invoke(text) ?? doubleValue);
                 return;
             }
 

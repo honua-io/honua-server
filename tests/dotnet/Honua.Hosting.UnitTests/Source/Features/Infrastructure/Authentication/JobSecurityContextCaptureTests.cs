@@ -12,13 +12,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Authentication;
 
-/// <summary>
-/// Contract tests for the durable submitter-identity snapshot that carries row-level security
-/// and field masking onto the background job worker (honua-server#3068), plus live role
-/// membership replacement on deferred authorization (honua-server#3081). If capture, restore,
-/// or membership replacement loses a restricting claim, a restricted caller can silently get
-/// broader job output.
-/// </summary>
 public sealed class JobSecurityContextCaptureTests
 {
     [UnitTest]
@@ -530,7 +523,7 @@ public sealed class JobSecurityContextCaptureTests
         // the role pass itself hit the ceiling and dropped roles. A dropped role that owns an
         // RLS or field-mask policy WIDENS access — RowLevelSecurityFilterSource returns no
         // filter when no policy matches and FieldMaskSource returns an empty mask — so roles
-        // are exempt from the budget entirely (honua-server#3068 review).
+        // are exempt from the budget entirely.
         var claims = new List<(string Type, string Value)>();
         for (var i = 0; i < 400; i++)
         {
@@ -590,7 +583,7 @@ public sealed class JobSecurityContextCaptureTests
         // The API-key handler stamps its scope-governance marker as ClaimTypes.Role, while the
         // snapshot records the configured OIDC role claim type ("roles" by default). The restored
         // identity must still answer IsInRole for the marker and read as scope-governed, or a
-        // scoped key resumed on a deferred lane bypasses its grants (honua-server#6101).
+        // scoped key resumed on a deferred lane bypasses its grants.
         var principal = ScopedApiKeyPrincipal(marker, "read:svcA/layer1");
         var options = new RbacOptions { RoleClaimType = "roles" };
 
@@ -624,8 +617,8 @@ public sealed class JobSecurityContextCaptureTests
     [UnitTest]
     public void Restore_LegacySnapshotWithScopedMarkerUnderStandardRoleType_FailsClosedToGoverned()
     {
-        // Snapshots persisted before the fix hold the marker under ClaimTypes.Role with
-        // RoleClaimType "roles". They must restore as governed, not as an ungoverned principal.
+        // Legacy snapshots with the marker under ClaimTypes.Role and RoleClaimType
+        // roles must restore as governed principals.
         var legacySnapshot = new JobSecurityContext(
             "scoped-api-key",
             TenantId: null,
@@ -707,7 +700,7 @@ public sealed class JobSecurityContextCaptureTests
         // principal presenting enough other claims to push them past the budget would restore
         // as UNGOVERNED — and an approval resume or a triggered firing would then apply the
         // captured roles to operations the original token never delegated. Dropping them
-        // removes a restriction, which the budget must never do (honua-server#3046 review).
+        // removes a restriction, which the budget must never do.
         var claims = new List<(string Type, string Value)>();
         for (var i = 0; i < 400; i++)
         {

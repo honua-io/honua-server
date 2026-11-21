@@ -19,25 +19,11 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Integration tests for OAuth 2.1 scope narrowing on the <c>/mcp</c> transport
-/// (honua-server#2851). Building on the bearer-token acceptance of #2850, these prove that a
-/// validated token's scopes are intersected with the canonical operator grant model — scopes
-/// can only ever narrow, never widen, what the principal's grants already permit.
-/// </summary>
-/// <remarks>
-/// Every token minted here carries the <c>admin</c> role, so the operator grant check always
-/// <em>passes</em> (admin bypass). That isolates the scope decision: a denial can only come
-/// from scope narrowing, which is exactly the invariant #2851 requires — narrowing cannot be
-/// escalated even for a caller whose grants would allow the operation. The suite exercises the
-/// full ASP.NET Core pipeline with a configured OIDC authority (a symmetric-key generic
-/// provider) and the dev-auth bypass disabled, so authorization is decided purely by the
-/// token's scopes.
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 [Operation(Operations.Security)]
-public sealed class McpScopeAuthorizationTests : IAsyncLifetime
+public sealed class McpScopeAuthorizationTests(McpScopeAuthorizationTests.ScopeHost host)
+    : IClassFixture<McpScopeAuthorizationTests.ScopeHost>
 {
     private const string JsonMediaType = "application/json";
     private const string Issuer = "https://idp.example.com";
@@ -49,34 +35,33 @@ public sealed class McpScopeAuthorizationTests : IAsyncLifetime
     private const string DiscoverToolCall =
         """{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"honua_list_capabilities","arguments":{}}}""";
 
-    private readonly WebAppFixture _fixture = new WebAppFixture()
-        .UseSeed("tests/seed/server.yaml")
-        .ConfigureWebHost(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.UseSetting("HONUA_DEV_AUTH", "false");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-admin-key");
-            builder.UseSetting("Oidc:Enabled", "true");
-            builder.UseSetting("Oidc:RequireHttps", "true");
-            builder.UseSetting("Oidc:TokenValidation:SymmetricSigningKey", SigningKey);
-            builder.UseSetting("Oidc:TokenValidation:EnableTokenReplayProtection", "false");
-            builder.UseSetting("Oidc:Generic:Enabled", "true");
-            builder.UseSetting("Oidc:Generic:Authority", Issuer);
-            builder.UseSetting("Oidc:Generic:ClientId", Audience);
-            builder.UseSetting("Oidc:Generic:DisplayName", "Test IdP");
-        });
+    private readonly WebAppFixture _fixture = host.Fixture;
+    private readonly HttpClient _client = host.Fixture.Client;
 
-    private HttpClient _client = null!;
-
-    public async Task InitializeAsync()
+    // Every case mints its own token and the artifact cases store a temporary file of their own, so one
+    // host serves them all.
+    public sealed class ScopeHost : IAsyncLifetime
     {
-        await _fixture.InitializeAsync();
-        _client = _fixture.Client;
-    }
+        internal WebAppFixture Fixture { get; } = new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-admin-key");
+                builder.UseSetting("Oidc:Enabled", "true");
+                builder.UseSetting("Oidc:RequireHttps", "true");
+                builder.UseSetting("Oidc:TokenValidation:SymmetricSigningKey", SigningKey);
+                builder.UseSetting("Oidc:TokenValidation:EnableTokenReplayProtection", "false");
+                builder.UseSetting("Oidc:Generic:Enabled", "true");
+                builder.UseSetting("Oidc:Generic:Authority", Issuer);
+                builder.UseSetting("Oidc:Generic:ClientId", Audience);
+                builder.UseSetting("Oidc:Generic:DisplayName", "Test IdP");
+            });
 
-    public async Task DisposeAsync()
-    {
-        await _fixture.DisposeAsync();
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
     }
 
     [IntegrationTest]

@@ -44,5 +44,13 @@ internal sealed class GrpcApplyEditsReceipts : GrpcEditReceipts<Proto.ApplyEdits
         }
     }
 
+    protected override byte[] EncodeLocal(Proto.ApplyEditsResponse response, string? fingerprint)
+        => EncodeReceipt(response);
+
+    protected override DurableEditReceipt DecodeLocal(ReadOnlyMemory<byte> receipt)
+        => receipt.Length == 1 && receipt.Span[0] == 0x01
+            ? new(new Proto.ApplyEditsResponse(), ReceiptOutcome.Recorded)
+            : DecodeDurable(receipt);
+
     protected override DurableEditReceipt DecodeDurable(ReadOnlyMemory<byte> receipt) => DecodeReceipt(receipt.Span);
 }

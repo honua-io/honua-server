@@ -82,3 +82,19 @@ rejected("missing server credential", WORKFLOW, SERVER.replace('        HONUA_AD
 rejected("client-server credential mismatch", WORKFLOW.replace('HONUA_API_KEY: "ci-admin-password"', 'HONUA_API_KEY: "different-admin"'))
 rejected("test-environment substitution", WORKFLOW, SERVER.replace('ASPNETCORE_ENVIRONMENT: "Development"', 'ASPNETCORE_ENVIRONMENT: "Test"'))
 print("PASS: MCP server-auth environment regression (7 checks)")
+
+SDK_NODE = "22.23.3"
+HEAP = "NODE_OPTIONS: --max-old-space-size=4096"
+build = re.search(
+    r"(?ms)^    - name: Build the selected SDK source for the MCP file peer\n(.*?)(?=^    - |\Z)",
+    MCP,
+)
+assert build and HEAP in build[0], "MCP SDK build must keep the 4 GiB V8 heap"
+for job_name in ("mcp-certification", "mcp-llm-smoke"):
+    job = named_job(WORKFLOW, job_name)
+    assert f"node-version: '{SDK_NODE}'" in job, f"{job_name} must build the SDK on Node {SDK_NODE}"
+focused = (ROOT / ".github/workflows/mcp-certification-focused.yml").read_text(encoding="utf-8")
+assert f"node-version: '{SDK_NODE}'" in named_job(focused, "certification"), (
+    "focused MCP certification must build the SDK on Node " + SDK_NODE
+)
+print("PASS: MCP SDK build uses Node 22.23.3 and a 4 GiB heap")

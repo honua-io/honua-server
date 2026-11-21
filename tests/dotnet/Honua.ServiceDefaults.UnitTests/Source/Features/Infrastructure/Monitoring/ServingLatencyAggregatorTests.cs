@@ -8,10 +8,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Unit tests for the in-process serving-latency rolling-window aggregation
-/// (<see cref="ServingLatencyAggregator"/>).
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class ServingLatencyAggregatorTests
 {
@@ -142,7 +138,7 @@ public sealed class ServingLatencyAggregatorTests
     {
         // A replica that served traffic and then went quiet is not a freshly reset process.
         // Dropping the protocol entirely would make the diagnostic report the two identically,
-        // which is exactly the confusion #3909 is about.
+        // which prevents confusing worker latency with request latency.
         long now = 0;
         var aggregator = new ServingLatencyAggregator(
             TimeSpan.FromSeconds(60),
@@ -182,7 +178,7 @@ public sealed class ServingLatencyAggregatorTests
     [Operation(Operations.TestInfrastructure)]
     public void GetSnapshot_ErrorRate_IsWindowed_ErrorsAgeOut()
     {
-        // #2809: the error rate is a WINDOWED signal (the source ProductionMetricsCollector now reads),
+        // The error rate is a WINDOWED signal (the source ProductionMetricsCollector now reads),
         // not a lifetime ratio. A burst of errors must decay out of the window as it slides past them.
         long now = 0;
         var aggregator = new ServingLatencyAggregator(TimeSpan.FromSeconds(60), samplesPerProtocol: 128, timestampProvider: () => now);
@@ -212,7 +208,7 @@ public sealed class ServingLatencyAggregatorTests
     [Operation(Operations.TestInfrastructure)]
     public void GetSnapshot_PopulatesMergeableDistribution()
     {
-        // #2809: each snapshot carries a mergeable distribution so cluster percentiles can be recomputed
+        // Each snapshot carries a mergeable distribution so cluster percentiles can be recomputed
         // from summed per-replica distributions instead of a mean of percentiles.
         long now = 1_000 * TicksPerSecond;
         var aggregator = new ServingLatencyAggregator(TimeSpan.FromMinutes(5), samplesPerProtocol: 256, timestampProvider: () => now);

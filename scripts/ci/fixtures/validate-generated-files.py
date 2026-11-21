@@ -8,6 +8,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import textwrap
 from types import SimpleNamespace
 import unittest
 
@@ -30,9 +31,23 @@ def create_fake_pull_api(base):
         'fi\n'
         'if [[ "$1 $2 $3 $4" == "api --method POST repos/honua-io/honua-server/pulls" ]]; then\n'
         f'  echo 42 > {gh_state}\n'
-        '  echo "https://example.invalid/pull/42"\n'
+        '  echo 42\n'
         '  exit 0\n'
         'fi\n'
+        'if [[ "$1 $2" == "api repos/honua-io/honua-server/pulls/42" ]]; then\n'
+        '  if [[ -n "${FAKE_PR_HEAD:-}" ]]; then echo "$FAKE_PR_HEAD"; else\n'
+        '    git ls-remote origin refs/heads/automation/regenerate-generated-files | cut -f1\n'
+        '  fi\n'
+        '  if [[ -n "${FAKE_ADVANCE_REF:-}" ]]; then\n'
+        '    git --git-dir "$FAKE_REMOTE" update-ref "$FAKE_ADVANCE_REF" "$FAKE_ADVANCE_SHA"\n'
+        '  fi\n'
+        '  exit 0\n'
+        'fi\n'
+        'if [[ "$1 $2 $3 $4" == "api --method PATCH repos/honua-io/honua-server/pulls/42" && "$5 $6" == "-f state=closed" ]]; then\n'
+        f'  rm {gh_state}\n'
+        '  exit 0\n'
+        'fi\n'
+        'case "$*" in "api --method POST repos/honua-io/honua-server/issues/42/labels "*|"api --method PATCH repos/honua-io/honua-server/pulls/42 -f body="*) exit 0;; esac\n'
         'echo "unexpected gh invocation: $*" >&2\n'
         'exit 1\n'
     )
@@ -41,6 +56,35 @@ def create_fake_pull_api(base):
 
 
 class GeneratedGraphFreshness(unittest.TestCase):
+    def test_docs_inventory_generation_supports_legacy_heads_without_hiding_errors(self):
+        source = (ROOT / '.github/workflows/docs-link-gate.yml').read_text()
+        step = source.split('- name: Regenerate trunk-owned documentation for validation', 1)[1]
+        block = textwrap.dedent(step.split('run: |\n', 1)[1].split('\n      #', 1)[0])
+        for generator, template, broken, expected in (
+                (False, False, False, 0), (True, True, False, 0),
+                (False, True, False, 1), (True, False, False, 1),
+                (True, True, True, 7)):
+            with self.subTest(generator=generator, template=template, broken=broken):
+                with tempfile.TemporaryDirectory() as directory:
+                    repo = Path(directory)
+                    scripts = repo / 'scripts/ci'
+                    scripts.mkdir(parents=True)
+                    if generator:
+                        (scripts / 'generate-workflow-inventory.py').write_text(
+                            'from pathlib import Path\n'
+                            + ('raise SystemExit(7)\n' if broken else
+                               'Path("inventory-ran").touch()\n'))
+                    if template:
+                        (scripts / 'workflow-inventory.template.md').write_text('template')
+                    (scripts / 'generate-capability-concepts.py').write_text(
+                        'from pathlib import Path\nPath("concepts-ran").touch()\n')
+                    result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', block],
+                                            cwd=repo, text=True, capture_output=True)
+                    self.assertEqual(result.returncode, expected, result.stderr)
+                    self.assertEqual((repo / 'concepts-ran').exists(), expected == 0)
+                    self.assertEqual((repo / 'inventory-ran').exists(),
+                                     generator and template and not broken)
+
     def test_graph_callers_declare_the_canonical_yaml_reader(self):
         for path, name, command in (
                 ('.github/workflows/generated-files-on-trunk.yml', 'Regenerate repository projections',
@@ -203,6 +247,12 @@ class GeneratedFilesContracts(unittest.TestCase):
         self.assertLess(generation, action.index('- name: Run .NET Tests (Architecture)'))
         self.assertIn('regenerate-generated-files.sh --configuration Release --no-build --no-restore', action)
         self.assertNotIn('continue-on-error:', action)
+        preparation = action.index('python3 scripts/ci/check-submitted-generated-files.py --base HEAD^1 --prepare')
+        self.assertLess(preparation, generation)
+        submitted = action.index('python3 scripts/ci/check-submitted-generated-files.py --base HEAD^1', generation)
+        self.assertLess(generation, submitted)
+        self.assertLess(submitted, action.index('bash scripts/ci/report-generated-file-drift.sh'))
+        self.assertIn("git rev-parse --verify 'HEAD^2^{commit}' >/dev/null", action)
         matrix = (ROOT / '.github/workflows/capability-matrix-aggregation.yml').read_text()
         self.assertIn('run: python3 scripts/ci/generate-capability-matrix.py', matrix)
         self.assertIn('report-generated-file-drift.sh docs/gis/data/capability-matrix.v1.json', matrix)
@@ -226,6 +276,30 @@ class GeneratedFilesContracts(unittest.TestCase):
         self.assertIn('generate-admin-operation-parity-exports.sh "$@" --no-build --no-restore', generator)
         self.assertIn('generate-geoservices-parity.sh "$@" --no-build --no-restore', generator)
 
+    def test_operation_join_uses_fresh_catalog_in_required_pr_architecture(self):
+        action = (ROOT / '.github/actions/lean-gate/action.yml').read_text()
+        refresh = action.index('- name: Regenerate projections and report advisory drift')
+        join = action.index('- name: Validate operation-capability join against fresh catalog')
+        architecture = action.index('- name: Run .NET Tests (Architecture)')
+        self.assertLess(refresh, join)
+        self.assertLess(join, architecture)
+        refresh_block = action[refresh:join]
+        join_block = action[join:].split('    # Server.Tests', 1)[0]
+        guard = next(line.strip() for line in refresh_block.splitlines() if line.strip().startswith('if:'))
+        self.assertIn(guard, join_block)
+        self.assertIn('python3 scripts/ci/generate-operation-capability.test.py', join_block)
+        self.assertIn('python3 scripts/ci/generate-operation-capability.py --check', join_block)
+        self.assertNotIn('continue-on-error:', join_block)
+        matrix = (ROOT / '.github/workflows/capability-matrix-aggregation.yml').read_text()
+        for name in ('Test the operation-capability join', 'Drift check operation-capability.v1.json'):
+            block = matrix.split('- name: ' + name, 1)[1].split('- name:', 1)[0]
+            self.assertIn("if: github.event_name != 'pull_request'", block)
+        parity = action.split('- name: Regenerate admin parity exports', 1)[1]
+        self.assertLess(parity.index('generate-admin-operation-parity-exports.sh'),
+                        parity.index('- name: Run .NET Tests (Server Fast Tier)'))
+        emitter = (ROOT / 'scripts/ci/generate-admin-operation-parity-exports.sh').read_text()
+        self.assertIn('AdminParityExports_EmitWhenExplicitlyRequested', emitter)
+
     def test_trunk_roster_consumers_regenerate_before_the_strict_roster_test(self):
         # PRs may not commit the roster (check-generated-file-ownership.py), so
         # every trunk run that executes McpToolRosterDriftTests must project it
@@ -245,6 +319,10 @@ class GeneratedFilesContracts(unittest.TestCase):
         step = contract[contract.index(generate):].split('\n      - name:', 1)[0]
         self.assertNotIn('if:', step)
         self.assertIn('bash scripts/ci/generate-mcp-tool-roster.sh --configuration Release', step)
+        parity = 'bash scripts/ci/generate-admin-operation-parity-exports.sh --configuration Release'
+        roster = 'bash scripts/ci/generate-mcp-tool-roster.sh --configuration Release'
+        self.assertIn(parity, step)
+        self.assertLess(step.index(parity), step.index(roster))
         self.assertLess(contract.index(generate),
                         contract.index('- name: Invoke every advertised tool and audit its inputs and discovery'))
 
@@ -334,129 +412,14 @@ class GeneratedFilesContracts(unittest.TestCase):
             run('git', 'push', 'origin', 'trunk')
             trunk_before = run('git', '--git-dir', str(remote), 'rev-parse', 'refs/heads/trunk').stdout.strip()
 
-            # No diff: no commit, no branch push, no gh call at all.
-            noop = run('bash', 'scripts/ci/publish-generated-files.sh')
-            self.assertIn('up to date', noop.stdout)
-            self.assertFalse(gh_calls.exists())
-            self.assertEqual(run('git', 'rev-parse', 'HEAD').stdout.strip(), trunk_before)
+            fixture = SimpleNamespace(
+                repo=repo, remote=remote, base=base, paths=paths, env=env,
+                gh_calls=gh_calls, trunk_before=trunk_before, fake_bin=fake_bin)
+            self.assert_initial_publication_and_refresh(run, fixture)
+            self.assert_clean_reconciliation(run, SimpleNamespace(
+                remote=remote, base=base, env=env, gh_calls=gh_calls, trunk_before=trunk_before))
 
-            # A real diff: commits on the fixed branch, pushes only that branch
-            # (never trunk), and opens a PR since none is open yet.
-            (repo / paths[0]).write_text('{"fresh": true}\n')
-            first = run('bash', 'scripts/ci/publish-generated-files.sh')
-            self.assertNotIn('Updated existing', first.stdout)
-
-            # The branch push landed, trunk did not move.
-            branch_sha = run('git', '--git-dir', str(remote), 'rev-parse',
-                              'refs/heads/automation/regenerate-generated-files').stdout.strip()
-            self.assertEqual(
-                run('git', '--git-dir', str(remote), 'rev-parse', 'refs/heads/trunk').stdout.strip(),
-                trunk_before,
-            )
-            commit_identity = run('git', 'show', '--format=%an <%ae>|%cn <%ce>', '--no-patch', branch_sha).stdout.strip()
-            bot_identity = 'Mike McDougall <mike@honua.io>'
-            self.assertEqual(commit_identity, f'{bot_identity}|{bot_identity}')
-            self.assertEqual(
-                run('git', 'diff-tree', '--no-commit-id', '--name-only', '-r', branch_sha).stdout.strip(),
-                paths[0],
-            )
-            gh_call_lines = gh_calls.read_text().splitlines()
-            list_call = next(line for line in gh_call_lines if line.startswith('api repos/'))
-            self.assertIn('pulls?state=open&base=trunk&head=honua-io:automation/regenerate-generated-files',
-                          list_call)
-            create_call = next(line for line in gh_call_lines if line.startswith('api --method POST'))
-            self.assertIn('-f base=trunk', create_call)
-            self.assertIn('-f head=automation/regenerate-generated-files', create_call)
-            self.assertIn('Refs #3213', create_call)
-
-            self.assertIn(f'Generated-From: {trunk_before}',
-                          run('git', 'log', '-1', '--format=%B', branch_sha).stdout)
-
-            # A second publish with the same drift (e.g. the automation PR's
-            # own eventual merge re-triggering the workflow with byte-identical
-            # output) finds the already-open PR and updates the branch instead
-            # of creating a duplicate.
-            gh_calls.unlink()
-            # Simulate the next run's fresh `actions/checkout` of trunk, which
-            # never moved: the previous publish advanced only the local branch
-            # this checkout happened to be on, not remote trunk.
-            run('git', 'reset', '--hard', trunk_before)
-            (repo / paths[0]).write_text('{"fresh": true}\n')
-            second = run('bash', 'scripts/ci/publish-generated-files.sh')
-            self.assertIn('Updated existing generated-files PR #42', second.stdout)
-            self.assertNotIn('--method POST', gh_calls.read_text())
-            self.assertEqual(
-                run('git', '--git-dir', str(remote), 'rev-parse', 'refs/heads/trunk').stdout.strip(),
-                trunk_before,
-            )
-
-            # Advance trunk independently, then replay the old triggering SHA as
-            # a rerun. Its fresh validation may pass, but publication must
-            # preserve the existing automation branch and make no PR calls.
-            run('git', 'reset', '--hard', trunk_before)
-            (repo / 'authored.txt').write_text('new source\n')
-            run('git', 'add', 'authored.txt')
-            run('git', '-c', 'user.name=Mike McDougall', '-c', 'user.email=mike@honua.io',
-                'commit', '-m', 'advance trunk')
-            run('git', 'push', 'origin', 'HEAD:trunk')
-            run('git', 'reset', '--hard', trunk_before)
-            (repo / paths[0]).write_text('{"stale": true}\n')
-            branch_before = run('git', '--git-dir', str(remote), 'rev-parse',
-                                'refs/heads/automation/regenerate-generated-files').stdout
-            gh_calls.unlink()
-            env['GITHUB_OUTPUT'] = str(base / 'publication-output')
-            output = base / 'publication-output'
-            branch_head = lambda: run('git', '--git-dir', str(remote), 'rev-parse',
-                                      'refs/heads/automation/regenerate-generated-files').stdout
-            env['GITHUB_RUN_ATTEMPT'] = '2'
-            stale = run('bash', 'scripts/ci/publish-generated-files.sh')
-            self.assertFalse(output.exists())
-            self.assertIn('No stale projections published', stale.stdout)
-            self.assertFalse(gh_calls.exists())
-            self.assertEqual(branch_before, branch_head())
-            self.assertEqual(run('git', 'rev-parse', 'HEAD').stdout.strip(), trunk_before)
-
-            # A local run (no attempt number) with drift refuses the same way.
-            env.pop('GITHUB_RUN_ATTEMPT')
-            local = run('bash', 'scripts/ci/publish-generated-files.sh')
-            self.assertFalse(output.exists())
-            self.assertIn('No stale projections published', local.stdout)
-            self.assertFalse(gh_calls.exists())
-            self.assertEqual(branch_before, branch_head())
-
-            # A first-attempt dispatch on another ref never validated trunk.
-            env['GITHUB_RUN_ATTEMPT'] = '1'
-            env['GITHUB_REF'] = 'refs/heads/feature'
-            feature = run('bash', 'scripts/ci/publish-generated-files.sh')
-            self.assertFalse(output.exists())
-            self.assertIn('No stale projections published', feature.stdout)
-            self.assertFalse(gh_calls.exists())
-            self.assertEqual(branch_before, branch_head())
-
-            # A clean first attempt on trunk behind a moved trunk publishes nothing.
-            env['GITHUB_REF'] = 'refs/heads/trunk'
-            run('git', 'reset', '--hard', trunk_before)
-            clean_behind = run('bash', 'scripts/ci/publish-generated-files.sh')
-            self.assertIn('nothing to publish', clean_behind.stdout)
-            self.assertFalse(output.exists())
-            self.assertFalse(gh_calls.exists())
-            self.assertEqual(branch_before, branch_head())
-
-            # A first attempt on trunk with drift publishes on its validated
-            # source even though trunk has moved since its trigger.
-            (repo / paths[0]).write_text('{"behind": true}\n')
-            behind = run('bash', 'scripts/ci/publish-generated-files.sh')
-            self.assertIn('Publishing on the validated source', behind.stdout)
-            self.assertIn('Updated existing generated-files PR #42', behind.stdout)
-            self.assertEqual(output.read_text(), 'published=true\n')
-            behind_sha = branch_head().strip()
-            self.assertEqual(run('git', 'rev-parse', f'{behind_sha}^').stdout.strip(), trunk_before)
-            self.assertIn(f'Generated-From: {trunk_before}',
-                          run('git', 'log', '-1', '--format=%B', behind_sha).stdout)
-            self.assertNotEqual(run('git', '--git-dir', str(remote), 'rev-parse',
-                                    'refs/heads/trunk').stdout.strip(), trunk_before)
-            gh_calls.unlink()
-            output.unlink()
+            output, branch_head, behind_sha = self.assert_stale_publication_attempts(run, fixture)
 
             fixture = SimpleNamespace(
                 repo=repo, remote=remote, base=base, paths=paths, env=env,
@@ -466,6 +429,223 @@ class GeneratedFilesContracts(unittest.TestCase):
             self.assert_trunk_carries_candidate_changes(run, fixture)
             self.assert_newer_publication_survives_old_attempt(run, fixture)
             self.assert_racing_and_unreachable_origins_fail_closed(run, fixture)
+
+    def assert_initial_publication_and_refresh(self, run, fixture):
+        repo, remote, base = fixture.repo, fixture.remote, fixture.base
+        paths, env = fixture.paths, fixture.env
+        gh_calls, trunk_before = fixture.gh_calls, fixture.trunk_before
+        # No diff: no commit, no branch push, no gh call at all.
+        noop = run('bash', 'scripts/ci/publish-generated-files.sh')
+        self.assertIn('up to date', noop.stdout)
+        self.assertFalse(gh_calls.exists())
+        self.assertEqual(run('git', 'rev-parse', 'HEAD').stdout.strip(), trunk_before)
+
+        # A real diff: commits on the fixed branch, pushes only that branch
+        # (never trunk), and opens a PR since none is open yet.
+        (repo / paths[0]).write_text('{"fresh": true}\n')
+        first = run('bash', 'scripts/ci/publish-generated-files.sh')
+        self.assertNotIn('Updated existing', first.stdout)
+
+        self.assert_initial_publication_identity(run, fixture)
+
+        # A second publish with the same drift (e.g. the automation PR's
+        # own eventual merge re-triggering the workflow with byte-identical
+        # output) finds the already-open PR and updates the branch instead
+        # of creating a duplicate.
+        gh_calls.unlink()
+        # Simulate the next run's fresh `actions/checkout` of trunk, which
+        # never moved: the previous publish advanced only the local branch
+        # this checkout happened to be on, not remote trunk.
+        run('git', 'reset', '--hard', trunk_before)
+        (repo / paths[0]).write_text('{"fresh": true}\n')
+        second = run('bash', 'scripts/ci/publish-generated-files.sh')
+        self.assertIn('Updated existing generated-files PR #42', second.stdout)
+        self.assertNotIn('--method POST repos/honua-io/honua-server/pulls ', gh_calls.read_text())
+        self.assert_bundle_exception_applied(gh_calls.read_text())
+        self.assertEqual(
+            run('git', '--git-dir', str(remote), 'rev-parse', 'refs/heads/trunk').stdout.strip(),
+            trunk_before,
+        )
+
+
+    def assert_initial_publication_identity(self, run, fixture):
+        remote, paths = fixture.remote, fixture.paths
+        gh_calls, trunk_before = fixture.gh_calls, fixture.trunk_before
+        # The branch push landed, trunk did not move.
+        branch_sha = run('git', '--git-dir', str(remote), 'rev-parse',
+                          'refs/heads/automation/regenerate-generated-files').stdout.strip()
+        self.assertEqual(
+            run('git', '--git-dir', str(remote), 'rev-parse', 'refs/heads/trunk').stdout.strip(),
+            trunk_before,
+        )
+        commit_identity = run('git', 'show', '--format=%an <%ae>|%cn <%ce>', '--no-patch', branch_sha).stdout.strip()
+        bot_identity = 'Mike McDougall <mike@honua.io>'
+        self.assertEqual(commit_identity, f'{bot_identity}|{bot_identity}')
+        self.assertEqual(
+            run('git', 'diff-tree', '--no-commit-id', '--name-only', '-r', branch_sha).stdout.strip(),
+            paths[0],
+        )
+        gh_call_lines = gh_calls.read_text().splitlines()
+        list_call = next(line for line in gh_call_lines if line.startswith('api repos/'))
+        self.assertIn('pulls?state=open&base=trunk&head=honua-io:automation/regenerate-generated-files',
+                      list_call)
+        create_call = next(line for line in gh_call_lines if line.startswith('api --method POST'))
+        self.assertIn('-f base=trunk', create_call)
+        self.assertIn('-f head=automation/regenerate-generated-files', create_call)
+        self.assertIn('Refs #3213', create_call)
+        self.assert_bundle_exception_applied(gh_calls.read_text())
+
+        self.assertIn(f'Generated-From: {trunk_before}',
+                      run('git', 'log', '-1', '--format=%B', branch_sha).stdout)
+
+
+    def assert_bundle_exception_applied(self, calls):
+        # The automation PAT is a user, not a Bot, so Repository hygiene's
+        # bundle rule needs the label plus the exact body line. The body edit
+        # comes after the label: its `edited` event re-runs hygiene with both.
+        label = calls.index('api --method POST repos/honua-io/honua-server/issues/42/labels -f labels[]=bundle-exception')
+        edit = calls.index('api --method PATCH repos/honua-io/honua-server/pulls/42 -f body=')
+        self.assertLess(label, edit)
+        self.assertRegex(calls[edit:], r'(?m)^Bundle-exception: blocking red — \S')
+
+    def assert_stale_publication_attempts(self, run, fixture):
+        repo, remote, base = fixture.repo, fixture.remote, fixture.base
+        paths, env = fixture.paths, fixture.env
+        gh_calls, trunk_before = fixture.gh_calls, fixture.trunk_before
+        # Advance trunk independently, then replay the old triggering SHA as
+        # a rerun. Its fresh validation may pass, but publication must
+        # preserve the existing automation branch and make no PR calls.
+        run('git', 'reset', '--hard', trunk_before)
+        (repo / 'authored.txt').write_text('new source\n')
+        run('git', 'add', 'authored.txt')
+        run('git', '-c', 'user.name=Mike McDougall', '-c', 'user.email=mike@honua.io',
+            'commit', '-m', 'advance trunk')
+        run('git', 'push', 'origin', 'HEAD:trunk')
+        run('git', 'reset', '--hard', trunk_before)
+        (repo / paths[0]).write_text('{"stale": true}\n')
+        branch_before = run('git', '--git-dir', str(remote), 'rev-parse',
+                            'refs/heads/automation/regenerate-generated-files').stdout
+        gh_calls.unlink()
+        env['GITHUB_OUTPUT'] = str(base / 'publication-output')
+        output = base / 'publication-output'
+        branch_head = lambda: run('git', '--git-dir', str(remote), 'rev-parse',
+                                  'refs/heads/automation/regenerate-generated-files').stdout
+        env['GITHUB_RUN_ATTEMPT'] = '2'
+        stale = run('bash', 'scripts/ci/publish-generated-files.sh')
+        self.assertFalse(output.exists())
+        self.assertIn('No stale projections published', stale.stdout)
+        self.assertFalse(gh_calls.exists())
+        self.assertEqual(branch_before, branch_head())
+        self.assertEqual(run('git', 'rev-parse', 'HEAD').stdout.strip(), trunk_before)
+
+        fixture.branch_before, fixture.branch_head, fixture.output = branch_before, branch_head, output
+        self.assert_local_and_feature_attempts(run, fixture)
+
+        return self.assert_first_attempt_behind_trunk(run, fixture)
+
+    def assert_first_attempt_behind_trunk(self, run, fixture):
+        repo, remote, paths = fixture.repo, fixture.remote, fixture.paths
+        env, gh_calls, trunk_before = fixture.env, fixture.gh_calls, fixture.trunk_before
+        branch_before, branch_head, output = fixture.branch_before, fixture.branch_head, fixture.output
+        # A clean first attempt on trunk behind a moved trunk publishes nothing.
+        env['GITHUB_REF'] = 'refs/heads/trunk'
+        run('git', 'reset', '--hard', trunk_before)
+        clean_behind = run('bash', 'scripts/ci/publish-generated-files.sh')
+        self.assertIn('nothing to publish', clean_behind.stdout)
+        self.assertFalse(output.exists())
+        self.assertFalse(gh_calls.exists())
+        self.assertEqual(branch_before, branch_head())
+
+        # A first attempt on trunk with drift publishes on its validated
+        # source even though trunk has moved since its trigger.
+        (repo / paths[0]).write_text('{"behind": true}\n')
+        behind = run('bash', 'scripts/ci/publish-generated-files.sh')
+        self.assertIn('Publishing on the validated source', behind.stdout)
+        self.assertIn('Updated existing generated-files PR #42', behind.stdout)
+        self.assertEqual(output.read_text(), 'published=true\n')
+        behind_sha = branch_head().strip()
+        self.assertEqual(run('git', 'rev-parse', f'{behind_sha}^').stdout.strip(), trunk_before)
+        self.assertIn(f'Generated-From: {trunk_before}',
+                      run('git', 'log', '-1', '--format=%B', behind_sha).stdout)
+        self.assertNotEqual(run('git', '--git-dir', str(remote), 'rev-parse',
+                                'refs/heads/trunk').stdout.strip(), trunk_before)
+        gh_calls.unlink()
+        output.unlink()
+
+        return output, branch_head, behind_sha
+
+    def assert_local_and_feature_attempts(self, run, fixture):
+        env, gh_calls = fixture.env, fixture.gh_calls
+        branch_before, branch_head, output = fixture.branch_before, fixture.branch_head, fixture.output
+        # A local run (no attempt number) with drift refuses the same way.
+        env.pop('GITHUB_RUN_ATTEMPT')
+        local = run('bash', 'scripts/ci/publish-generated-files.sh')
+        self.assertFalse(output.exists())
+        self.assertIn('No stale projections published', local.stdout)
+        self.assertFalse(gh_calls.exists())
+        self.assertEqual(branch_before, branch_head())
+
+        # A first-attempt dispatch on another ref never validated trunk.
+        env['GITHUB_RUN_ATTEMPT'] = '1'
+        env['GITHUB_REF'] = 'refs/heads/feature'
+        feature = run('bash', 'scripts/ci/publish-generated-files.sh')
+        self.assertFalse(output.exists())
+        self.assertIn('No stale projections published', feature.stdout)
+        self.assertFalse(gh_calls.exists())
+        self.assertEqual(branch_before, branch_head())
+
+
+    def assert_clean_reconciliation(self, run, fixture):
+        remote, base = fixture.remote, fixture.base
+        env, gh_calls, trunk_before = fixture.env, fixture.gh_calls, fixture.trunk_before
+        # Fresh, clean validation closes only the matching obsolete PR;
+        # it neither pushes nor records a publication proof. A different
+        # REST head must be preserved even if the Git branch is unchanged.
+        run('git', 'reset', '--hard', trunk_before)
+        clean_branch = run('git', '--git-dir', str(remote), 'rev-parse',
+                           'refs/heads/automation/regenerate-generated-files').stdout.strip()
+        env['GITHUB_OUTPUT'] = str(base / 'publication-output')
+        env['FAKE_PR_HEAD'] = '0' * 40
+        gh_calls.unlink()
+        changed_head = run('bash', 'scripts/ci/publish-generated-files.sh')
+        self.assertIn('preserving generated-files PR', changed_head.stdout)
+        self.assertNotIn('--method PATCH', gh_calls.read_text())
+        env.pop('FAKE_PR_HEAD')
+        self.assert_clean_reconciliation_races(run, fixture, clean_branch)
+        gh_calls.unlink()
+        clean = run('bash', 'scripts/ci/publish-generated-files.sh')
+        self.assertIn('Closed obsolete generated-files PR #42', clean.stdout)
+        self.assertIn('--method PATCH repos/honua-io/honua-server/pulls/42 -f state=closed',
+                      gh_calls.read_text())
+        self.assertFalse((base / 'publication-output').exists())
+        self.assertEqual(run('git', '--git-dir', str(remote), 'rev-parse',
+                             'refs/heads/automation/regenerate-generated-files').stdout.strip(),
+                         clean_branch)
+        gh_calls.unlink()
+        no_pr = run('bash', 'scripts/ci/publish-generated-files.sh')
+        self.assertIn('up to date', no_pr.stdout)
+        self.assertNotIn('--method PATCH', gh_calls.read_text())
+        # Restore the fake open PR for the stale-run scenarios below.
+        (base / 'gh-pr-number').write_text('42\n')
+
+    def assert_clean_reconciliation_races(self, run, fixture, clean_branch):
+        remote, env, gh_calls = fixture.remote, fixture.env, fixture.gh_calls
+        trunk_before = fixture.trunk_before
+        # Move real remote refs after REST has read the matching PR head.
+        # Both a new trunk and a new publication must prevent closing it.
+        env['FAKE_REMOTE'] = str(remote)
+        for ref, advanced, restore in (
+                ('refs/heads/trunk', clean_branch, trunk_before),
+                ('refs/heads/automation/regenerate-generated-files', trunk_before, clean_branch)):
+            env['FAKE_ADVANCE_REF'] = ref
+            env['FAKE_ADVANCE_SHA'] = advanced
+            gh_calls.unlink()
+            raced_clean = run('bash', 'scripts/ci/publish-generated-files.sh')
+            self.assertIn('preserving generated-files PR', raced_clean.stdout)
+            self.assertNotIn('--method PATCH', gh_calls.read_text())
+            run('git', '--git-dir', str(remote), 'update-ref', ref, restore)
+        for key in ('FAKE_REMOTE', 'FAKE_ADVANCE_REF', 'FAKE_ADVANCE_SHA'):
+            env.pop(key)
 
     def assert_trunk_carries_candidate_changes(self, run, fixture):
         repo, paths = fixture.repo, fixture.paths

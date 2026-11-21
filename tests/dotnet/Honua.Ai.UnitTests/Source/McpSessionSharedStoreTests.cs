@@ -14,14 +14,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Cross-instance MCP session semantics (honua-release#531, journey stage 1.5):
-/// two <see cref="McpSessionManager"/> instances sharing one
-/// <see cref="IMcpSessionStore"/> behave as two server replicas behind a
-/// non-sticky router. The invariant under test: a session negotiated on any
-/// instance is honoured by every instance, or refused (HTTP 404 at the
-/// transport), never silently downgraded.
-/// </summary>
 public sealed partial class McpSessionSharedStoreTests
 {
     private static readonly TimeSpan IdleTimeout = TimeSpan.FromMinutes(30);
@@ -43,6 +35,23 @@ public sealed partial class McpSessionSharedStoreTests
             .Should().Be(McpSessionValidation.Valid);
         b.GetWorkflowView(id!).Should().Be("setup", "the view negotiated on A must survive the hop to B");
         b.SupportsElicitation(id!).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task LogLevelSetOnA_GovernsNotificationsSentFromB()
+    {
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var store = new FakeSharedSessionStore(time);
+        var a = NewManager(store, time);
+        var b = NewManager(store, time);
+        var id = await a.TryCreateSessionAsync("sub:alice", false, "setup", CancellationToken.None);
+
+        (await b.GetLogLevelAsync(id!, CancellationToken.None)).Should().BeNull("no logging/setLevel yet");
+        (await a.SetLogLevelAsync(id!, "error", CancellationToken.None)).Should().BeTrue();
+
+        (await b.GetLogLevelAsync(id!, CancellationToken.None)).Should().Be("error",
+            "the job bridge may run on a different task from the one that answered logging/setLevel");
+        (await b.SetLogLevelAsync("unknown-session", "error", CancellationToken.None)).Should().BeFalse();
     }
 
     [UnitTest]

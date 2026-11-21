@@ -206,7 +206,8 @@ observe-mode candidate directly:
    occurrence at any indentation, so a job- or step-level `env:` override that
    would silently shadow the declared value is rejected rather than hidden.
 2. The existing release GitHub App credentials are referenced as
-   `HONUA_RELEASE_APP_ID` + `HONUA_RELEASE_APP_PRIVATE_KEY`. Each token is
+   `HONUA_RELEASE_APP_ID` + `HONUA_RELEASE_APP_PRIVATE_KEY`, environment secrets
+   of the trunk-only `bot-app` environment that the `validate` job enters. Each token is
    down-scoped to owner `honua-io`, repository `honua-server`, and exactly
    Contents write plus Pull requests write; no other permission is requested. The workflow
    `GITHUB_TOKEN` keeps `contents: read` in every mode, and the App token is

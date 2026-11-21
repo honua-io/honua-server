@@ -20,7 +20,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NSubstitute;
-using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -143,7 +142,7 @@ public sealed class ExecutionWorkerProfileTests
         var services = builder.Services;
         ComposeServingControlPlane(services, builder.Configuration, builder.Environment);
 
-        // The serving composition the worker used to inherit: proves the assertions below bite.
+        // Serving composition is the negative fixture for the worker-profile assertions.
         HostedImplementations(services).Should().Contain(
         [
             typeof(ExecutionJobReconcilerBackgroundService),
@@ -455,12 +454,6 @@ public sealed class ExecutionWorkerProfileTests
     // Process exit: the composed worker host runs to completion through disposal
     // ---------------------------------------------------------------------
 
-    /// <summary>
-    /// e2e-cloud-aws run 38107383082: after the worker finished its job (EventId 9496) and the host
-    /// stopped, Program.cs resolved <see cref="ExecutionWorkerExitState"/> from the disposed root
-    /// provider, so the clean exit became an unhandled <see cref="ObjectDisposedException"/> and a
-    /// nonzero exit AWS Batch records as a failed attempt.
-    /// </summary>
     [Theory]
     [InlineData("succeeded")]
     [InlineData("deterministic-failure")]
@@ -610,7 +603,6 @@ public sealed class ExecutionWorkerProfileTests
         return (exitCode, stopped);
     }
 
-    /// <summary>A real host composed with the worker profile, as Program.cs builds it.</summary>
     private static IHost WorkerHost(IExecutionJobStore store, IJobExecutor executor)
     {
         var builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings
@@ -630,10 +622,9 @@ public sealed class ExecutionWorkerProfileTests
         IConfiguration configuration,
         IHostEnvironment environment)
     {
-        // Mirrors the serving composition of Program.cs on a host with a system database and an
-        // entitled Redis, with the real registration extensions where they exist. Nothing here
-        // opens a connection: no hosted service is started.
-        services.AddSingleton(Substitute.For<IConnectionMultiplexer>());
+        // Mirrors the serving composition of Program.cs on a host with a system database, with
+        // the real registration extensions where they exist. Nothing here opens a connection: no
+        // hosted service is started.
         services.AddSingleton(_ => NpgsqlDataSource.Create("Host=localhost;Database=unused"));
         services.TryAddPostgresExecutionJobStore(configuration).Should().BeTrue();
         services.AddSingleton(Substitute.For<IUniversalProgressStore>());
@@ -644,9 +635,6 @@ public sealed class ExecutionWorkerProfileTests
         services.AddSingleton(Substitute.For<IProcessCatalog>());
         services.AddSingleton(Substitute.For<IGeoprocessingResultPackageStore>());
         services.AddSingleton(Substitute.For<IOperatorApprovalEvaluator>());
-        services.AddSingleton(Substitute.For<IContainerRuntimeClient>());
-        services.AddSingleton(Substitute.For<IProxyStateSwapper>());
-        services.AddSingleton(Substitute.For<ILocalReplicaHealthProbe>());
         services.AddHonuaLicensing(configuration, environment);
         Honua.Infrastructure.SharedCaching.SharedCacheExtensions.AddSharedCachePolicy(services, configuration);
         services.AddJobOrchestration();
@@ -690,7 +678,6 @@ public sealed class ExecutionWorkerProfileTests
             .AddInMemoryCollection(values.Select(static pair => new KeyValuePair<string, string?>(pair.Key, pair.Value)))
             .Build();
 
-    /// <summary>The record after the serving host submitted attempt 1 to AWS Batch.</summary>
     private static ExecutionJobRecord SubmittedRemoteJob(string operationId = OperationId)
     {
         var now = DateTimeOffset.UtcNow;
@@ -809,7 +796,6 @@ public sealed class ExecutionWorkerProfileTests
             }
         }
 
-        /// <summary>Applies a concurrent write just before the next terminal CAS lands.</summary>
         public void InterleaveBeforeNextTerminalWrite(Func<ExecutionJobRecord, ExecutionJobRecord> write)
         {
             lock (_gate)

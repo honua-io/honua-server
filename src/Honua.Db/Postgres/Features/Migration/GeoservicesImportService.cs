@@ -88,7 +88,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         await using var cmd = connection.CreateCommand();
         // Derived like PostgreSQL's own implicit names. A plain "<table>_geom_idx" is truncated to 63
         // bytes, which for a 63-byte table name is the table's own name, so IF NOT EXISTS silently
-        // skipped the index (#4600).
+        // skipped the index.
         cmd.CommandText = $"CREATE INDEX IF NOT EXISTS {SqlIdentifier.QuoteIdentifier(PostgresDerivedRelationNames.Build(tableName, "geom", "idx"))} ON {SqlIdentifier.QuoteIdentifier(schemaName)}.{SqlIdentifier.QuoteIdentifier(tableName)} USING GIST (geom)";
         await cmd.ExecuteNonQueryAsync(cancellationToken);
 
@@ -164,13 +164,11 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         await ImportTableOwnership.AssertExistingOwnedAsync(connection, schemaName, stagingTable, cancellationToken);
         var schema = SqlIdentifier.QuoteIdentifier(schemaName);
         var target = SqlIdentifier.QuoteIdentifier(tableName);
-        await using (var swap = connection.CreateCommand())
-        {
-            swap.CommandText =
-                (targetExists ? $"DROP TABLE {schema}.{target} RESTRICT; " : string.Empty)
-                + $"ALTER TABLE {schema}.{SqlIdentifier.QuoteIdentifier(stagingTable)} RENAME TO {target};";
-            await swap.ExecuteNonQueryAsync(cancellationToken);
-        }
+        await GeometryFamilyViews.ReplaceAsync(
+            new GeometryFamilyViews.TableScope { Connection = connection, Schema = schemaName, Table = tableName },
+            (targetExists ? $"DROP TABLE {schema}.{target} RESTRICT; " : string.Empty)
+                + $"ALTER TABLE {schema}.{SqlIdentifier.QuoteIdentifier(stagingTable)} RENAME TO {target};",
+            cancellationToken);
 
         // The rename keeps the staging-derived primary-key and sequence names. Give them the names a
         // first import of the target creates, unless another relation already holds that name.

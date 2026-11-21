@@ -10,6 +10,39 @@ This guide covers migration for the Honua control-plane/admin API only.
 This guide covers the Honua control-plane (admin) API only. For SDK support windows and
 release-channel expectations, see [Server + SDK compatibility](../concepts/ecosystem.md).
 
+## Forms routes and operation names
+
+Forms authoring routes move from `/api/v1/admin/forms/packages` to
+`/api/v1/admin/forms`; runtime routes move from `/api/v1/forms/packages` to
+`/api/v1/forms`. Append the same Form ID, Version and action suffixes to the new
+base. Version path parameters are named `formVersion` instead of `packageVersion`.
+There are no aliases for the retired routes or operation names.
+
+Regenerate SDKs from the matching server contract and update Console and direct
+HTTP callers together. The persisted `honua.form-package.v1` document schema and
+its wire fields retain their current names; this route change does not migrate
+stored documents.
+
+| Previous operation | Operation |
+| --- | --- |
+| `ListFormPackages` | `ListForms` |
+| `CreateFormPackageDraft` | `CreateFormDraft` |
+| `GetCurrentFormPackage` | `GetCurrentForm` |
+| `ListFormPackageVersions` | `ListFormVersions` |
+| `GetFormPackageVersion` | `GetFormVersion` |
+| `UpdateFormPackageDraft` | `UpdateFormDraft` |
+| `ValidateFormPackageDraft` | `ValidateFormDraft` |
+| `PublishFormPackageDraft` | `GoLiveFormDraft` |
+| `ReopenFormPackageVersion` | `ReopenFormVersion` |
+| `GetPublishedFormPackage` | `GetReleasedForm` |
+| `GetPublishedFormPackageVersion` | `GetReleasedFormVersion` |
+| `GetFormPackageCompatibility` | `GetFormCompatibility` |
+| `SubmitFormPackage` | `SubmitForm` |
+
+The curated admin snapshot uses lower-camel-case operation IDs. Its validation
+and publish operations become `validateFormDraft` and `goLiveFormDraft`.
+`GetFormOfflinePolicy` keeps its name.
+
 ## rc.2 Layer selectors
 
 Regenerate clients against the matching rc.2 admin contract. Global metadata and Connection routes accept `storageLayerId`; Service-scoped routes accept `serviceLayerIndex` with the Service. Publishing receipts expose `storageLayerId`, while a resolved native publish operation can also report its Service-local `serviceLayerIndex`. These numbers can differ; do not substitute one for the other.
@@ -70,6 +103,22 @@ capacity. These admin operations are removed with no replacement:
 
 Clients that call these operations should stop calling them and regenerate from the
 current admin contract.
+
+## Tile operation response names
+
+Responses from `/api/v1/admin/tile-operations/jobs` and its job, cancel and retry
+routes use camelCase property names (`jobId`, `status`, `publishedArtifact`,
+`archiveFileId`), like the other admin APIs. Earlier rc.2 builds sent PascalCase
+names (`JobId`, `Status`). `status` is still the numeric `OperationStatus` value.
+In `publishedArtifact`, `urlStrategy` and `storageProvider` are enum names such
+as `PublicUrl` and `Local`, which the server already sent; the contract now
+records them as strings.
+
+The generic progress routes under `/api/v1/admin/operations` keep PascalCase
+names for the same job record. Clients that read tile jobs through
+`/api/v1/admin/tile-operations/jobs` should switch to the camelCase names and
+regenerate from the current admin contract. The `@honua/sdk-js` PMTiles
+lifecycle client already reads the camelCase names.
 
 ## Import scan result types
 

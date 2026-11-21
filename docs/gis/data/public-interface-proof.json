@@ -112,18 +112,18 @@
       "displayName": "Saved-map collaboration and feature-lock API",
       "surfaceKind": "http-route-family",
       "protocol": "Portal Collaboration HTTP",
-      "canonicalIdentifier": "/api/v1/saved-maps/{mapId}/collaboration/sessions/join",
+      "canonicalIdentifier": "/api/v1/maps/{mapId}/collaboration/sessions/join",
       "parentSurfaceId": null,
       "endpointPrefixes": [],
       "endpointExactMatches": [
-        "/api/v1/saved-maps/{mapId}/collaboration/sessions/join",
-        "/api/v1/saved-maps/{mapId}/collaboration/sessions/leave",
-        "/api/v1/saved-maps/{mapId}/collaboration/sessions/stream",
-        "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/claim",
-        "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/renew",
-        "/api/v1/saved-maps/{mapId}/collaboration/feature-locks/release",
-        "/api/v1/saved-maps/{mapId}/collaboration/operations",
-        "/api/v1/saved-maps/{mapId}/collaboration/checkpoints"
+        "/api/v1/maps/{mapId}/collaboration/sessions/join",
+        "/api/v1/maps/{mapId}/collaboration/sessions/leave",
+        "/api/v1/maps/{mapId}/collaboration/sessions/stream",
+        "/api/v1/maps/{mapId}/collaboration/feature-locks/claim",
+        "/api/v1/maps/{mapId}/collaboration/feature-locks/renew",
+        "/api/v1/maps/{mapId}/collaboration/feature-locks/release",
+        "/api/v1/maps/{mapId}/collaboration/operations",
+        "/api/v1/maps/{mapId}/collaboration/checkpoints"
       ],
       "endpointContains": [],
       "operationKeys": [],
@@ -3803,6 +3803,34 @@
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": "#4597"
+        }
+      ]
+    },
+    {
+      "surfaceId": "attachment-signed-downloads",
+      "displayName": "Signed attachment download links",
+      "surfaceKind": "http-route-family",
+      "protocol": "HTTP",
+      "canonicalIdentifier": "/api/v1/attachments/downloads/{token}",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/attachments/downloads/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus gRPC-Web GetAttachmentUrl integration test that downloads through the signed link for local file storage, and token unit tests (expiry, tampering, foreign key ring)",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/GrpcIntegrationTests.Attachments.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/AttachmentDownloadLinksTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented"
         }
       ]
     },

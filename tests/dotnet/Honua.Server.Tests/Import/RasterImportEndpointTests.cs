@@ -17,9 +17,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Import;
 
-/// <summary>
-/// Integration tests for raster import endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
@@ -222,8 +219,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("Import failed.");
-        body.Should().NotContain("world file");
+        body.Should().Contain("require a world file");
     }
 
     [IntegrationTest]
@@ -251,8 +247,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("Import failed.");
-        body.Should().NotContain("world file");
+        body.Should().Contain("require a world file");
     }
 
     [IntegrationTest]
@@ -399,11 +394,7 @@ public class RasterImportEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/raster")]
     public async Task ImportRaster_WhenImportServiceThrows_ReturnsSanitizedError()
     {
-        var rasterImportService = Substitute.For<IRasterImportService>();
-        rasterImportService.DetectFormat("test.tif").Returns(SupportedRasterFormat.GeoTiff);
-        rasterImportService.GetSupportedExtensions().Returns([".tif"]);
-        rasterImportService.ImportAsync(Arg.Any<RasterImportRequest>(), Arg.Any<IProgress<RasterImportProgress>?>(), Arg.Any<CancellationToken>())
-            .Returns<Task<RasterImportResult>>(_ => throw new InvalidDataException("sensitive raster parser detail"));
+        var rasterImportService = CreateGeoTiffImportServiceThrowing(new InvalidDataException("sensitive raster parser detail"));
 
         var fixture = new WebAppFixture()
             .ConfigureServices(services =>
@@ -433,6 +424,46 @@ public class RasterImportEndpointTests : IAsyncLifetime
             var body = await response.Content.ReadAsStringAsync();
             body.Should().Contain("Raster import request is invalid.");
             body.Should().NotContain("sensitive raster parser detail");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/raster")]
+    public async Task ImportRaster_WithoutRasterStorage_Returns503WithOperatorAction()
+    {
+        var rasterImportService = CreateGeoTiffImportServiceThrowing(new RasterStorageUnavailableException());
+
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IRasterImportService>();
+                services.AddSingleton(rasterImportService);
+            });
+
+        await fixture.InitializeAsync();
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            using var fileContent = new ByteArrayContent(CreateMinimalGeoTiffBytes());
+            using var layerId = new StringContent("1");
+            using var name = new StringContent("test-raster");
+            fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+            {
+                Name = "file",
+                FileName = "test.tif"
+            };
+            content.Add(fileContent);
+            content.Add(layerId, "layerId");
+            content.Add(name, "name");
+
+            using var response = await fixture.Client.PostAsync("/api/v1/admin/import/raster", content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("postgis_raster");
         }
         finally
         {
@@ -546,12 +577,16 @@ public class RasterImportEndpointTests : IAsyncLifetime
     // Test data helpers
     // =============================================================================
 
-    /// <summary>
-    /// Creates a minimal valid TIFF header (little-endian, classic TIFF).
-    /// This is not a complete GeoTIFF but has the correct magic bytes for header validation.
-    /// PostGIS will reject it on actual ingest since it's incomplete, which tests the
-    /// error path for corrupt files.
-    /// </summary>
+    private static IRasterImportService CreateGeoTiffImportServiceThrowing(Exception failure)
+    {
+        var rasterImportService = Substitute.For<IRasterImportService>();
+        rasterImportService.DetectFormat("test.tif").Returns(SupportedRasterFormat.GeoTiff);
+        rasterImportService.GetSupportedExtensions().Returns([".tif"]);
+        rasterImportService.ImportAsync(Arg.Any<RasterImportRequest>(), Arg.Any<IProgress<RasterImportProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns<Task<RasterImportResult>>(_ => throw failure);
+        return rasterImportService;
+    }
+
     private static byte[] CreateMinimalGeoTiffBytes()
     {
         // TIFF little-endian header: "II" + version 42
@@ -564,9 +599,6 @@ public class RasterImportEndpointTests : IAsyncLifetime
         ];
     }
 
-    /// <summary>
-    /// Creates minimal PNG file bytes (valid PNG header).
-    /// </summary>
     private static byte[] CreateMinimalPngBytes()
     {
         return

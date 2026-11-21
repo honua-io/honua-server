@@ -16,11 +16,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Db.MySql.Tests;
 
-/// <summary>
-/// Unit tests for MySQL/MariaDB SQL query generation. Verifies backtick-quoted
-/// identifiers, named parameter binding, spatial filter translation, and the
-/// NotSupportedException contract for out-of-scope operations.
-/// </summary>
 public class MySqlFeatureQueryBuilderTests
 {
     private const int LayerId = 1;
@@ -462,7 +457,7 @@ public class MySqlFeatureQueryBuilderTests
         // OGC tile viewport bbox) on a point layer must use the MBR predicate alone: MBR vs
         // point is the exact envelope-window semantic, and MySQL geographic SRSes treat a
         // pole-touching whole-hemisphere envelope ring as invalid so ST_Intersects would
-        // silently match zero rows (honua-server#2983).
+        // silently match zero rows.
         var mapping = new MySqlLayerMapping
         {
             LayerId = 2,
@@ -568,7 +563,7 @@ public class MySqlFeatureQueryBuilderTests
     {
         // Esri esriSpatialRelWithin = filter geometry is within feature geometry, so the filter
         // geometry must be the FIRST operand: ST_Within(filter, feature). Leading with the
-        // feature column inverts the relationship and returns the wrong set (#2068, #2730).
+        // feature column inverts the relationship and returns the wrong set.
         var query = new FeatureQuery
         {
             SpatialFilter = SpatialFilter.Create(
@@ -588,7 +583,7 @@ public class MySqlFeatureQueryBuilderTests
     public void BuildSelectQuery_ContainsFilter_LeadsWithFilterGeometry()
     {
         // Esri esriSpatialRelContains = filter geometry contains feature geometry: the filter
-        // geometry must be the FIRST operand, ST_Contains(filter, feature) (#2068, #2730).
+        // geometry must be the FIRST operand, ST_Contains(filter, feature).
         var query = new FeatureQuery
         {
             SpatialFilter = SpatialFilter.Create(
@@ -1253,9 +1248,6 @@ public class MySqlFeatureQueryBuilderTests
     [Fact]
     public void BuildSelectQuery_WithLimitAndOffset_EmitsLimitBeforeOffset()
     {
-        // Combined LIMIT and OFFSET is the canonical paged-read shape; verify the parameter
-        // order so the regression that introduced the bare-OFFSET path (now using a sentinel
-        // LIMIT for offset-only) cannot reappear.
         var query = new FeatureQuery { Limit = 10, Offset = 20 };
 
         var result = _builder.BuildSelectQuery(LayerId, query);
@@ -1333,11 +1325,6 @@ public class MySqlFeatureQueryBuilderTests
         Assert.DoesNotContain("axis-order", result.Sql, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// BH4-024: Permanent row-visibility filter must be included in the generated WHERE clause.
-    /// The enforced filter is applied before any caller-supplied SqlFilter so it cannot be
-    /// bypassed.
-    /// </summary>
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
     public void BuildSelectQuery_WithEnforcedSqlFilter_IncludesFilterInWhereClause()

@@ -12,7 +12,9 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[2]
-PASSWORD_KEYS = ("POSTGRES_PASSWORD", "MINIO_ROOT_PASSWORD")
+PASSWORD_KEYS = ("POSTGRES_PASSWORD", "MINIO_ROOT_PASSWORD", "HONUA_ADMIN_PASSWORD")
+# Documented sample values that must never be accepted as an install's credentials.
+PUBLISHED_SAMPLE_VALUES = frozenset({"quickstart-admin-password"})
 AUDIT_KEY = "AuditLog__ChainVerification__Key"
 
 
@@ -36,7 +38,8 @@ def initialize(env_file):
                 valid = False
             if not valid:
                 raise ValueError(f"{key} must be base64 encoding at least 32 bytes; migrate existing credentials explicitly")
-        elif value is not None and (len(value) < 24 or not re.fullmatch(r"[A-Za-z0-9_-]+", value)):
+        elif value is not None and (len(value) < 24 or not re.fullmatch(r"[A-Za-z0-9_-]+", value)
+                                    or value in PUBLISHED_SAMPLE_VALUES):
             raise ValueError(f"{key} must contain at least 24 letters, digits, underscores or hyphens; migrate existing credentials explicitly")
         if not match:
             if value is None:

@@ -184,6 +184,12 @@ internal sealed partial class DeployWorkflowReconciler(
             }
             else
             {
+                if (operation.Deploy.ManualPromotionPending && operation.Status != WorkflowOperationStatus.RollbackRequested)
+                {
+                    await ObserveManualPromotionAsync(operation, backend, reconciliationCancellation.Token).ConfigureAwait(false);
+                    return;
+                }
+
                 if (backend is ICheckpointedDeployBackend checkpointed &&
                     checkpointed.RequiresCheckpoint(operation) &&
                     operation.Status != WorkflowOperationStatus.RollbackRequested &&
@@ -226,8 +232,8 @@ internal sealed partial class DeployWorkflowReconciler(
                     // promotion; only a triggered rollback or the window's own deadline may end it
                     // (below), never the backend's routine "nothing left to observe" verdict. Without
                     // this, a backend whose ObserveAsync simply re-reports Succeeded once cutover is
-                    // done would terminate the operation before the window elapses, exactly the
-                    // "terminal operations stop reconciling after success" bug this closes. Scoped to the
+                    // done would end the operation before the window elapses, and it would stop being
+                    // reconciled while the window is still open. Scoped to the
                     // PREVIOUSLY-persisted status being Reconciling (not, say, RollbackRequested from an
                     // out-of-band rollback such as DeployWorkflowService.RequestRollbackAsync): once a
                     // rollback is already underway this must never mask its real settlement status.
@@ -248,7 +254,7 @@ internal sealed partial class DeployWorkflowReconciler(
 
                 updated = ApplyRollbackObservationTimeout(operation, updated, observation);
 
-                // Uniform catch-all (honua-server#4618): some backends (Argo Rollouts, GitOps) decide
+                // Uniform catch-all: some backends (Argo Rollouts, GitOps) decide
                 // "fully promoted" entirely inside ObserveAsync and report Succeeded directly, never
                 // going through AdvanceOrPromoteAsync above. Gating this on Status transitioning to
                 // Succeeded rather than on the promotion branch means every backend's success path opens
@@ -405,27 +411,28 @@ internal sealed partial class DeployWorkflowReconciler(
             var checkpointStaged = backend is ICheckpointedDeployBackend checkpointed &&
                 checkpointed.RequiresCheckpoint(current) && current.Deploy?.TrafficExposedAt is null;
             // When a progressive canary ramp is configured the current step must finish its
-            // bake window before the telemetry gate is evaluated. Holding here keeps each step
-            // independent of the operation-wide warmup window and preserves single-step behavior
-            // (the default) when no ramp is configured. A backend-recommended rollback bypasses
-            // the hold so provider-detected failures still settle promptly.
+            // bake window before advancing to the next step, while rollback health/telemetry
+            // signals still run so a degrading canary rolls back promptly instead of baking bad traffic.
+            WorkflowOperationRecord? rampBakeHold = null;
             if (!checkpointStaged && string.IsNullOrWhiteSpace(rollbackReason) && current.Deploy?.Protection == null &&
                 current.CurrentPhase != ICheckpointedDeployBackend.RampPhase)
             {
-                var rampBakeHold = GetCanaryRampBakeHold(current);
+                rampBakeHold = GetCanaryRampBakeHold(current);
                 if (rampBakeHold != null)
                 {
-                    return rampBakeHold;
+                    current = current with { Deploy = rampBakeHold.Deploy };
                 }
             }
 
+            var isBakingCanaryRamp = rampBakeHold != null;
+
             // Which signal must be satisfied before an auto-promotion (cutover) fires. Cloud targets
-            // default to the telemetry gate; self-hosted rolling defaults to its own health gate so
-            // on-prem/air-gapped deploys (no metrics substrate) are not structurally unable to promote.
+            // default to the telemetry gate; local Compose defaults to its own health gate so a
+            // host with no metrics substrate is not structurally unable to promote.
             var promotionGate = DeployPromotionPolicy.Resolve(current.Deploy);
 
             // A backend that stages the candidate without traffic gives the metrics gate nothing to measure
-            // before cutover (#4617): until exposure only the pre-cutover checks run, and the full gate runs
+            // before cutover: until exposure only the pre-cutover checks run, and the full gate runs
             // from cutover inside the post-activation observation window.
             var stagedBeforeExposure = (stagesCandidateWithoutTraffic || checkpointStaged) &&
                 current.Deploy is { TrafficExposedAt: null, Protection: null } &&
@@ -457,7 +464,7 @@ internal sealed partial class DeployWorkflowReconciler(
                     current = current with
                     {
                         // A pre-exposure hold keeps Submitted: Reconciling means the candidate is serving,
-                        // and the traffic-exposure stamp keys off that distinction (#4617).
+                        // and the traffic-exposure stamp keys off that distinction.
                         Status = current.Status == WorkflowOperationStatus.Submitted
                             ? WorkflowOperationStatus.Submitted
                             : WorkflowOperationStatus.Reconciling,
@@ -476,7 +483,7 @@ internal sealed partial class DeployWorkflowReconciler(
                     };
                 }
 
-                // An open observation window must not commit on missing evidence (#4617): record that the
+                // An open observation window must not commit on missing evidence: record that the
                 // gate is still waiting so the window holds past its deadline until the gate passes or the
                 // evaluator's own evidence bound escalates to rollback.
                 if (current.Deploy?.Protection is { Phase: DeployProtectionPhase.Observing } observing)
@@ -496,7 +503,8 @@ internal sealed partial class DeployWorkflowReconciler(
                 // A configured telemetry gate must clear (not rollback, not still waiting) before
                 // promotion — unless the operator pinned the manual gate, in which case only the admin
                 // promote endpoint may cut over.
-                if (!telemetryDecision.RollbackRecommended &&
+                if (!isBakingCanaryRamp &&
+                    !telemetryDecision.RollbackRecommended &&
                     !telemetryDecision.WaitForMoreTelemetry &&
                     promotionRecommended &&
                     (current.Status == WorkflowOperationStatus.Reconciling ||
@@ -508,12 +516,13 @@ internal sealed partial class DeployWorkflowReconciler(
                 }
             }
             else if (
-                // Health-gate-only promotion (#2543): no telemetry policy is configured, so there is no
+                // Health-gate-only promotion: no telemetry policy is configured, so there is no
                 // metrics decision to clear. When the operator's promotion gate is health-only, the
                 // backend's own health gate (it set PromotionRecommended after health-probing the new
                 // revision) is authoritative and drives the cutover. Cloud targets default to the
                 // telemetry gate and keep holding until telemetry is wired or an operator forces
                 // promotion; a backend-recommended rollback still short-circuits promotion.
+                !isBakingCanaryRamp &&
                 promotionGate == DeployPromotionGateMode.Health &&
                 string.IsNullOrWhiteSpace(rollbackReason) &&
                 promotionRecommended &&
@@ -523,6 +532,18 @@ internal sealed partial class DeployWorkflowReconciler(
                 current.Deploy?.Protection == null)
             {
                 current = await AdvanceOrPromoteAsync(current, backend, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (isBakingCanaryRamp && string.IsNullOrWhiteSpace(rollbackReason))
+            {
+                return current with
+                {
+                    Status = rampBakeHold!.Status,
+                    UpdatedAt = rampBakeHold.UpdatedAt,
+                    CompletedAt = null,
+                    CurrentPhase = rampBakeHold.CurrentPhase,
+                    ErrorMessage = null
+                };
             }
         }
 
@@ -541,7 +562,7 @@ internal sealed partial class DeployWorkflowReconciler(
         var rollbackObservation = await backend.RollbackAsync(current, cancellationToken).ConfigureAwait(false);
         var updatedAt = DateTimeOffset.UtcNow;
 
-        // Failure-of-failure handling (#2161): a rollback that itself fails must not silently park the
+        // Failure-of-failure handling: a rollback that itself fails must not silently park the
         // deploy, but it must also not page an operator on the FIRST transient provider blip. The
         // backends signal two distinct failure shapes from RollbackAsync, and they require different
         // responses:
@@ -555,8 +576,7 @@ internal sealed partial class DeployWorkflowReconciler(
         //     retry" message on a throttle or other transient AWS error. The rollback did not take,
         //     but the next reconcile cycle can re-drive it. A single throttle must NOT abort self-
         //     healing. Retry on a bounded budget (RollbackRetryBudget attempts), then escalate so a
-        //     persistently-failing rollback still pages loudly rather than looping forever (the
-        //     original #2161 bug).
+        //     persistently-failing rollback still pages loudly rather than looping forever.
         //
         // Progress statuses (RollbackRequested/RolledBack) fall through to the success path below.
         var rollbackTerminallyFailed = rollbackObservation.Status
@@ -701,8 +721,8 @@ internal sealed partial class DeployWorkflowReconciler(
         if (observation.Status == WorkflowOperationStatus.RolledBack)
         {
             // The rollback requested on an earlier cycle (by the reconciler or out of band) has settled:
-            // the previous revision is fully recovered, so the protection window closes here too
-            // (honua-server#4989), not only when RollbackAsync itself reports RolledBack.
+            // the previous revision is fully recovered, so the protection window closes here too,
+            // not only when RollbackAsync itself reports RolledBack.
             return current with { Deploy = WithoutProtection(WithoutRollbackAttempts(current.Deploy)) };
         }
 
@@ -731,7 +751,7 @@ internal sealed partial class DeployWorkflowReconciler(
             Status = WorkflowOperationStatus.ManualInterventionRequired,
             UpdatedAt = now,
             CompletedAt = now,
-            Deploy = deploy,
+            Deploy = WithProtectionPhase(deploy, DeployProtectionPhase.Unavailable, "rollback-observation-timeout"),
             CurrentPhase = $"Automatic rollback could not prove the requested prior revision within the {timeout.TotalSeconds:0}-second observation timeout and requires manual intervention. {detail}",
             ErrorMessage = $"Automatic rollback evidence remained incomplete after the {timeout.TotalSeconds:0}-second observation timeout: {detail}"
         };
@@ -766,7 +786,7 @@ internal sealed partial class DeployWorkflowReconciler(
             PolicyDigest = policyDigest,
             ApprovalScope = promoted.Audit.ApprovalPolicyRef,
             Phase = DeployProtectionPhase.Observing,
-            // honua-server#4958: seal the recovery grant at the moment of exposure. Everything a
+            // Seal the recovery grant at the moment of exposure. Everything a
             // fenced rollback has to quote is fixed here and never re-derived from the request.
             GrantId = ComputeRecoveryGrantId(promoted.OperationId, deploy.TargetId, previousRevision, deploy.DesiredRevision, policyDigest, now),
             Actor = promoted.Audit.RequestedBy,
@@ -814,7 +834,7 @@ internal sealed partial class DeployWorkflowReconciler(
             };
         }
 
-        // The window elapsed while the telemetry gate is still waiting for evidence (#4617). Committing
+        // The window elapsed while the telemetry gate is still waiting for evidence. Committing
         // now would be a missing-data success path, so hold uncommitted; the evaluator's evidence bound
         // turns sustained absence into a rollback on a later cycle.
         if (string.Equals(protection.ReasonCode, TelemetryEvidencePendingReasonCode, StringComparison.Ordinal))
@@ -968,8 +988,8 @@ internal sealed partial class DeployWorkflowReconciler(
             int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var budget) &&
             budget > 0)
         {
-            // Clamp so a misconfiguration can never re-create the unbounded-retry loop the original
-            // #2161 escalation fixed — a persistently-failing rollback always escalates eventually.
+            // Clamp so a misconfiguration can never create an unbounded retry loop — a
+            // persistently-failing rollback always escalates eventually.
             return Math.Min(budget, MaximumRollbackRetryBudget);
         }
 

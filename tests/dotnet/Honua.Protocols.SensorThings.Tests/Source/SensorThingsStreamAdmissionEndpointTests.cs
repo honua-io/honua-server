@@ -14,12 +14,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
-/// <summary>
-/// End-to-end admission for <c>GET /sta/v1.1/ObservationsStream</c> (#4198). The host is
-/// configured with small caps (2 per principal, 3 per tenant, 4 per node) so every limit is
-/// reachable with real credentials, and each refusal is checked for its status, Retry-After
-/// hint and problem body, and for never opening a stream.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.SensorThings)]
 public sealed class SensorThingsStreamAdmissionEndpointTests : IAsyncLifetime
@@ -80,7 +74,7 @@ public sealed class SensorThingsStreamAdmissionEndpointTests : IAsyncLifetime
             .Which.Message.Should().Contain("429");
 
         // A different principal in the same tenant is still admitted: the saturated
-        // credential cannot lock other subscribers out (the #4198 defect).
+        // credential cannot lock other subscribers out.
         using var otherPrincipalStream = await OpenStreamAsync(
             _fixture.Client, await PortalRouteAsync("sta-admission-1", "tenant-a", ct), ct, Referer);
 

@@ -119,7 +119,7 @@ public sealed class DistributedReplicaStoreTests
     [Operation(Operations.TestInfrastructure)]
     public async Task SetGetRemove_IndependentReplicasInParallel_DoNotThrowAndLeaveNoReplica()
     {
-        // #4405: each task uses its own replica id, so there is no contention. Renamed to say
+        // Each task uses its own replica id, so there is no contention. Renamed to say
         // what it proves — 40 independent sequences interleave without throwing or leaking —
         // and paired with SetGetRemove_ContendingOnOneReplicaId_... below, which is the
         // contended case the old name promised.
@@ -147,12 +147,6 @@ public sealed class DistributedReplicaStoreTests
         }));
     }
 
-    /// <summary>
-    /// The contended case: many writers and removers on <em>one</em> replica id. The store must
-    /// stay internally consistent — every read returns either the fully-written record or
-    /// nothing, never a torn one — exactly one <c>RemoveAsync</c> may report success, and the
-    /// key must be absent once the storm settles (honua-server#4405).
-    /// </summary>
     [UnitTest]
     [Operation(Operations.ExtractChanges)]
     public async Task SetGetRemove_ContendingOnOneReplicaId_StaysConsistentAndRemovesExactlyOnce()

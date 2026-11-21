@@ -12,10 +12,6 @@ using Xunit;
 
 namespace Honua.Core.Tests.Features.Federation;
 
-/// <summary>
-/// Unit tests for the pure federation query planner (issue #341). The planner runs offline,
-/// so these tests exercise the push-down / local-refinement decisions with no remote source.
-/// </summary>
 public sealed class FederationQueryPlannerTests
 {
     private readonly IFederationQueryPlanner _planner = BuildPlanner();

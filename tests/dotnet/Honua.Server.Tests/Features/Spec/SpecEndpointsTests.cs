@@ -19,11 +19,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Spec;
 
-/// <summary>
-/// End-to-end coverage of the <c>/v1/spec/*</c> HTTP surface. Proves the SSE
-/// event shape, plan structure, artifact retrieval, and error envelopes — the
-/// operator-facing evidence for ticket #789's acceptance criteria.
-/// </summary>
 [Protocol(TestProtocols.Spec)]
 public sealed class SpecEndpointsTests : IClassFixture<SpecEndpointsTests.Fixture>
 {
@@ -512,10 +507,7 @@ public sealed class SpecEndpointsTests : IClassFixture<SpecEndpointsTests.Fixtur
     [Endpoint("POST /v1/spec/plan")]
     public async Task Plan_BlankNodeId_Returns400WithInvalidNodeId()
     {
-        // Blank ids previously planned and applied, emitting blank `nodeId`
-        // values in the event stream. The resolver now rejects them with a
-        // stable `invalid-node-id` diagnostic that surfaces at the REST
-        // boundary.
+        // Blank node IDs must produce a stable invalid-node-id diagnostic at the REST boundary.
         using var client = _fixture.Application.CreateClient();
 
         var document = BuildDocument(ComputeNode(""));
@@ -532,10 +524,8 @@ public sealed class SpecEndpointsTests : IClassFixture<SpecEndpointsTests.Fixtur
     [Endpoint("POST /v1/spec/plan")]
     public async Task Plan_NullNodesCollection_Returns400WithInvalidRequestBody()
     {
-        // The DTO default is an empty list, but System.Text.Json preserves an
-        // explicit null. Previously the transport swallowed it and the
-        // downstream enumeration tripped a NullReferenceException — today the
-        // boundary validates and maps to the documented 400 contract.
+        // System.Text.Json preserves explicit null despite an empty-list DTO default.
+        // The boundary must validate it and return the documented HTTP 400.
         using var client = _fixture.Application.CreateClient();
 
         var document = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -837,7 +827,7 @@ public sealed class SpecEndpointsTests : IClassFixture<SpecEndpointsTests.Fixtur
         Assert.Equal(contentHash, doc.RootElement.GetProperty("contentHash").GetString());
     }
 
-    // ---- AI-operations guardrail ladder (#1631) -------------------------
+    // ---- AI-operations guardrail ladder -------------------------
 
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
@@ -940,21 +930,12 @@ public sealed class SpecEndpointsTests : IClassFixture<SpecEndpointsTests.Fixtur
         });
     }
 
-    /// <summary>
-    /// The <c>/v1/spec/*</c> endpoints are admin-gated (#1984). Enable the
-    /// Test-only development auth bypass — the same posture the shared
-    /// integration fixtures use — so these endpoint tests authenticate without
-    /// attaching an API key at every call site.
-    /// </summary>
     private static void ApplySpecAuthBypass(IWebHostBuilder builder)
     {
         builder.UseSetting("HONUA_DEV_AUTH", "true");
         builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "true");
     }
 
-    /// <summary>
-    /// Creates the default admin-authorized test host for the spec surface.
-    /// </summary>
     private static WebApplicationFactory<Program> CreateFactory()
         => new TestWebApplicationFactory().WithWebHostBuilder(ApplySpecAuthBypass);
 

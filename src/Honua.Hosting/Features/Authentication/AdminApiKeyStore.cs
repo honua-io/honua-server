@@ -3,7 +3,6 @@
 
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Hosting;
@@ -61,7 +60,8 @@ internal sealed record AdminApiKeyRecord(
     // Optional request restrictions (null = unrestricted). Omitted from JSON when null so a
     // record without restrictions serializes as it did before they existed.
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? AllowedReferrers = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? AllowedIpRanges = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? AllowedIpRanges = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] byte[]? KeySalt = null);
 
 internal sealed record AdminApiKeyRestrictions(
     IReadOnlyList<string>? AllowedReferrers,
@@ -114,11 +114,12 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
 
         var now = _timeProvider.GetUtcNow();
         var generated = GenerateKeyMaterial();
+        var (hash, salt) = AdminApiKeyHashing.HashSalted(generated);
         var record = new AdminApiKeyRecord(
             Guid.NewGuid(),
             name,
             CreateDisplayPrefix(generated),
-            HashKey(generated),
+            hash,
             NormalizePermissions(permissions),
             now,
             now,
@@ -128,7 +129,8 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
             RevokedAt: null,
             createdBy,
             AdminApiKeyRestrictions.Normalize(restrictions?.AllowedReferrers),
-            AdminApiKeyRestrictions.Normalize(restrictions?.AllowedIpRanges));
+            AdminApiKeyRestrictions.Normalize(restrictions?.AllowedIpRanges),
+            salt);
 
         if (!_keys.TryAdd(record.Id, record))
         {
@@ -162,10 +164,12 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
             }
 
             var generated = GenerateKeyMaterial();
+            var (hash, salt) = AdminApiKeyHashing.HashSalted(generated);
             var updated = existing with
             {
                 KeyPrefix = CreateDisplayPrefix(generated),
-                KeyHash = HashKey(generated),
+                KeyHash = hash,
+                KeySalt = salt,
                 UpdatedAt = now,
                 RotatedAt = now,
                 LastUsedAt = null,
@@ -245,7 +249,6 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
             return Task.FromResult<AdminApiKeyValidationResult?>(null);
         }
 
-        var providedHash = HashKey(keyMaterial);
         var now = _timeProvider.GetUtcNow();
 
         // codeql[cs/linq/missed-select]: retries a contended key update and returns the first winning record
@@ -255,7 +258,7 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
             while (record is not null &&
                 record.RevokedAt is null &&
                 (!record.ExpiresAt.HasValue || record.ExpiresAt.Value > now) &&
-                CryptographicOperations.FixedTimeEquals(providedHash, record.KeyHash))
+                AdminApiKeyHashing.Verify(keyMaterial, record.KeyHash, record.KeySalt))
             {
                 var updated = record with
                 {
@@ -303,11 +306,12 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
         }
 
         var now = _timeProvider.GetUtcNow();
+        var (hash, salt) = AdminApiKeyHashing.HashSalted(keyMaterial);
         var record = new AdminApiKeyRecord(
             Guid.NewGuid(),
             name,
             CreateDisplayPrefix(keyMaterial),
-            HashKey(keyMaterial),
+            hash,
             NormalizePermissions(permissions),
             now,
             now,
@@ -317,7 +321,8 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
             RevokedAt: null,
             createdBy,
             AdminApiKeyRestrictions.Normalize(restrictions?.AllowedReferrers),
-            AdminApiKeyRestrictions.Normalize(restrictions?.AllowedIpRanges));
+            AdminApiKeyRestrictions.Normalize(restrictions?.AllowedIpRanges),
+            salt);
 
         if (!_keys.TryAdd(record.Id, record))
         {
@@ -343,6 +348,4 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
         var length = Math.Min(DisplayPrefixLength, keyMaterial.Length);
         return keyMaterial[..length];
     }
-
-    private static byte[] HashKey(string keyMaterial) => SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial));
 }

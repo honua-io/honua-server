@@ -19,20 +19,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests;
 
-/// <summary>
-/// Tests for database migration functionality using DbUp.
-/// </summary>
-/// <remarks>
-/// These tests run raw DbUp migrations and seeds that target the hard-coded
-/// <c>honua</c>/<c>honua_data</c> schemas and take catalog-wide DDL locks. The
-/// <c>Database.*</c> collections run in parallel against a single shared PostGIS
-/// database and rely on per-test <c>search_path</c> schema isolation. That isolation
-/// does NOT protect fixed-name schemas or catalog locks, so these migration/seed tests
-/// otherwise collide with sibling collections that also create/populate the
-/// <c>honua</c> schema (intermittent count-assertion failures and <c>40P01</c>
-/// deadlocks). Each instance therefore provisions its own dedicated, uniquely-named
-/// database so its schema, DDL locks, and seed data are fully private.
-/// </remarks>
 [Protocol(TestProtocols.TestQuality)]
 [Collection("Database.CoreFeatureStore")]
 public sealed class DatabaseMigrationTests : IAsyncLifetime
@@ -196,11 +182,11 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
     [InlineData("expand", true)]
     [InlineData("opted-out", false)]
     [InlineData("contract", false)]
-    [InlineData("reviewed-index-removal", true)]
+    [InlineData("reviewed-index-removal", false)]
     public async Task CanonicalRunner_RollbackAcrossNewerDeclaredMigration_StartsOnlyWhenItVerifiesExpand(
         string kind, bool rollbackStarts)
     {
-        // #6477: this image is the N-1 reader. A newer image applied one more migration and recorded
+        // This image is the N-1 reader. A newer image applied one more migration and recorded
         // its forward-compatibility declaration; image-only rollback keeps that database.
         var assembly = typeof(Program).Assembly;
         var runner = new PostgresDatabaseMigrationRunner(
@@ -239,8 +225,9 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         };
         if (kind == "reviewed-index-removal")
         {
-            // 183 applies the same reviewed script during the canonical upgrade.
+            // The current image supports feature writes after applying the contract migration.
             await AssertReviewedFeatureIndexesAsync(connection, removed: true);
+            await AssertFeatureReadWriteAfterIndexRemovalAsync(connection);
         }
 
         command.CommandText = sql + "\nINSERT INTO public.schema_versions (scriptname, applied) VALUES (@script, now());";
@@ -277,10 +264,6 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         if (rollbackStarts)
         {
             await skippedMigrationsStartup.Should().NotThrowAsync();
-            if (kind == "reviewed-index-removal")
-            {
-                await AssertFeatureReadWriteAfterIndexRemovalAsync(connection);
-            }
         }
         else
         {
@@ -304,7 +287,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             WHERE layer_id = 990775 AND objectid = 99077501;
             """;
         (await command.ExecuteScalarAsync()).Should().Be("after",
-            "the prepared reader must retain feature import, edit and query behavior after removing optional indexes");
+            "the current reader must retain feature import, edit and query behavior after removing optional indexes");
     }
 
     [IntegrationTheory]
@@ -961,7 +944,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
 
         // Ingest allocates @iot.ids from these sequences: dropping them must fail the floor
         // through the strict physical-family floor, not surface as a NOT NULL violation on
-        // the first insert (#4199). Migration 127 validates the complete family, including
+        // the first insert. Migration 127 validates the complete family, including
         // the original sequences introduced by 116; its diagnosis must name both defects.
         await using (var drop = connection.CreateCommand())
         {

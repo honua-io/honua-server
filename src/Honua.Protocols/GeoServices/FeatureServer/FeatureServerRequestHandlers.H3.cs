@@ -212,30 +212,10 @@ internal static partial class FeatureServerEndpoints
         }
 
         var where = GetValueString(values, "where");
-        SqlFragment? sqlFilter = null;
-        if (!string.IsNullOrWhiteSpace(where))
+        var (sqlFilter, whereError) = TranslateCallerWhere(context, resource, where);
+        if (whereError != null)
         {
-            var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-            var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, where);
-            if (!parseResult.IsSuccess)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    ErrorMessages.Validation.InvalidParameter,
-                    [parseResult.ErrorMessage ?? "Invalid filter syntax."]);
-            }
-
-            if (parseResult.Expression != null)
-            {
-                var translationResult = filterService.Translate(parseResult.Expression, resource);
-                if (!translationResult.IsSuccess)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context,
-                        ErrorMessages.Validation.InvalidParameter,
-                        [translationResult.ErrorMessage ?? "Invalid filter syntax."]);
-                }
-
-                sqlFilter = translationResult.SqlFilter;
-            }
+            return whereError;
         }
 
         var featureQuery = new FeatureQuery
@@ -408,7 +388,7 @@ internal static partial class FeatureServerEndpoints
         activity?.SetTag("h3.resolution", resolution);
 
         // Validate layer access before checking server capabilities. /tiles is not an Esri
-        // protocol surface (honua-server#2945): layer-not-found must be a real HTTP 404 with
+        // protocol surface: layer-not-found must be a real HTTP 404 with
         // a problem+json body, not the GeoServices 200-envelope path-based classification
         // would otherwise apply to any /tiles/* route.
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
@@ -460,30 +440,10 @@ internal static partial class FeatureServerEndpoints
         }
 
         var where = GetValueString(queryValues, "where");
-        SqlFragment? sqlFilter = null;
-        if (!string.IsNullOrWhiteSpace(where))
+        var (sqlFilter, whereError) = TranslateCallerWhere(context, resource, where);
+        if (whereError != null)
         {
-            var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-            var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, where);
-            if (!parseResult.IsSuccess)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    ErrorMessages.Validation.InvalidParameter,
-                    [parseResult.ErrorMessage ?? "Invalid filter syntax."]);
-            }
-
-            if (parseResult.Expression != null)
-            {
-                var translationResult = filterService.Translate(parseResult.Expression, resource);
-                if (!translationResult.IsSuccess)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context,
-                        ErrorMessages.Validation.InvalidParameter,
-                        [translationResult.ErrorMessage ?? "Invalid filter syntax."]);
-                }
-
-                sqlFilter = translationResult.SqlFilter;
-            }
+            return whereError;
         }
 
         var query = new FeatureQuery

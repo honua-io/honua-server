@@ -25,7 +25,7 @@ FeatureChangeEvents__Webhook__Secret=$WEBHOOK_HMAC_SECRET
 FeatureChangeEvents__Webhook__MaxAttempts=5
 ```
 
-The URL must be HTTPS, carry no embedded credentials, and resolve to a public address — private/loopback targets are rejected at startup. Retries use exponential backoff (`InitialBackoffMs`/`MaxBackoffMs`/`RequestTimeoutSeconds` tune it).
+The URL must be HTTPS, carry no embedded credentials, and resolve to a public address. Startup validation rejects malformed URLs, embedded credentials, localhost names and private or reserved IP literals. Delivery resolves hostnames and rejects private, loopback or unresolvable destinations. Retries use exponential backoff (`InitialBackoffMs`/`MaxBackoffMs`/`RequestTimeoutSeconds` tune it). Events go out in order. If an event still fails after the last attempt with a server error, `408`, `429`, a redirect (redirects are never followed) or a connection error, the server keeps it and tries again, waiting twice as long after each failed round, up to 5 minutes. If your endpoint answers with any other `4xx`, the server logs the event id (warning `9109`) and moves on to the next event. Re-read skipped events from `GET /api/v1/admin/feature-events/replay`.
 
 ### 2. Verify webhook signatures in your receiver
 
@@ -49,7 +49,7 @@ Connect a WebSocket to `GET /api/v1/streaming/features`, then send JSON control 
 {"type":"subscribe","subscriptionId":"alpha","layerId":0,"bbox":[-158,21,-157,22],"filter":"status = 'active'","cursor":"features:1234"}
 ```
 
-One socket carries many subscriptions; the server answers with `status`, `heartbeat`, `error`, and `feature-change` frames, and `cursor` triggers replay of missed events before live delivery. Change frames include a numeric `cursor` for ordering and a namespaced `resumeCursor` such as `features:1234`; send `resumeCursor` back in a query or control frame to resume. Bare numeric inputs trigger the legacy cursor-epoch reset. Unfiltered all-layer streams require admin access; everyone else subscribes to explicit service or layer scopes.
+One socket carries many subscriptions; the server answers with `status`, `heartbeat`, `error`, and `feature-change` frames, and `cursor` triggers replay of missed events before live delivery. Change frames include a numeric `cursor` for ordering and a namespaced `resumeCursor` such as `features:1234`; send `resumeCursor` back in a query or control frame to resume. Bare numeric inputs trigger the legacy cursor-epoch reset. Unfiltered all-layer streams require admin access; everyone else subscribes to explicit service or layer scopes. On WebSocket a non-admin connection without query scopes still opens, but it starts with no subscription, and a `subscribe` frame that names no `serviceId`, `layerId` or `layers` is refused with `{"type":"error","code":"invalid-subscription","message":"Unfiltered all-layer feature streams require admin access."}` on the open socket rather than an HTTP status.
 
 ### 5. Start from a baseline (snapshot-then-delta)
 
@@ -122,7 +122,7 @@ The workflow is three requests, and the third belongs in a `finally` block:
 
 > Use the [API explorer](../../reference/openapi-and-explorer.md) for `GET /api/v1/admin/feature-events/replay?limit=100`.
 
-Page with `cursor` (and optional `from`/`to` ISO 8601 bounds, `limit` 1–1000): process each event idempotently, persist the returned `nextCursor`, repeat while `hasMore=true`. Events are read from the PostgreSQL change log, which every edit writes in its own transaction. A cursor stays resumable for `Realtime__Retention__features` (default 24 hours) and at most `Realtime__ResumeMaxEvents` (default 10000) events behind the newest change.
+Page with `cursor` (and optional `from`/`to` ISO 8601 bounds, `limit` 1–1000): process each event idempotently, persist the returned `NextCursor`, repeat while `HasMore=true` (this admin payload uses PascalCase property names: `Events`, `NextCursor`, `HasMore`). Events are read from the PostgreSQL change log, which every edit writes in its own transaction. Admin replay reads the retained change rows after the supplied numeric cursor; it does not enforce the live stream resume window. Live SSE and WebSocket subscriptions apply `Realtime__Retention__features` (default 24 hours) and `Realtime__ResumeMaxEvents` (default 10000) when deciding whether to resume or require a new snapshot. Admin recovery cannot retrieve change rows that have been pruned.
 
 ### 8. Manage live sessions (admin)
 
@@ -136,16 +136,23 @@ Page with `cursor` (and optional `from`/`to` ISO 8601 bounds, `limit` 1–1000):
 connections per effective tenant on each server process. All principals in a tenant
 share that tenant's limit. When tenancy is disabled or there is no effective tenant,
 the limit applies per authenticated principal, using the same scheme- and
-issuer-qualified identity as other security boundaries. Anonymous connections share
-one partition. Changing `clientLabel`, transport, or subscription count does not
+issuer-qualified identity as other security boundaries. Anonymous connections are
+limited per client address by `FeatureStreaming__MaxAnonymousSessionsPerClient`
+(default 64; an IPv6 /64 counts as one client), and all anonymous clients together
+share one `MaxConcurrentSessions` allowance, separate from any tenant's. Client
+addresses come from forwarded-header processing: behind a proxy, configure it so
+the server sees the viewer, or many viewers share one address and its allowance.
+`FeatureStreaming__MaxNodeSessions` (default 2048) caps every partition together on
+one node. Changing `clientLabel`, transport, or subscription count does not
 create additional capacity.
 
 A full partition receives HTTP `503` and a problem document describing the session
 limit before the SSE stream or WebSocket handshake opens. Disconnecting a session
-returns capacity only to its own partition. The cap does not impose a second global
-limit, and it is not a distributed cluster quota. The streaming health check retains
+returns capacity only to its own partition. The node cap is per server process;
+none of these limits is a distributed cluster quota. The streaming health check retains
 the total active-session count and reports saturation using the largest partition,
-without exposing tenant or principal identifiers.
+the anonymous total and the node total, without exposing tenant, principal or client
+identifiers.
 
 ## Verify
 
@@ -166,12 +173,15 @@ Then insert a feature in another terminal ([Edit features](edit-features.md)) an
 
 | Symptom | Fix |
 |---|---|
+| `404` with `type: honua:capability-experimental-disabled` on `/api/v1/streaming/*` or, for admin callers, `/api/v1/admin/streaming/features/sessions` | The experimental capability is off (the default). Set `Capabilities:Experimental:realtime.feature-streams:Enabled=true` and restart. |
 | `403` before the stream connects | Community edition fails closed; streaming needs Pro or Enterprise. Capabilities reports `enabled=false`. |
-| `401` on an unfiltered stream | All-layer streams require admin. Subscribe with explicit `layers=` / `serviceId=` scopes instead. |
+| `401` or `403` on an unfiltered stream | All-layer streams require admin: anonymous callers get `401`, signed-in non-admins `403`. Subscribe with explicit `layers=` / `serviceId=` scopes instead. |
+| `invalid-subscription` error frame on a WebSocket | A non-admin WebSocket opens without query scopes, but an unscoped `subscribe` frame is refused on the socket (no HTTP `401`/`403`). Add `serviceId`, `layerId` or `layers` to the frame. |
 | `503` on connect | The tenant or principal has exhausted `FeatureStreaming__MaxConcurrentSessions`; free sessions in that partition or raise the configured cap applied to every partition. Other tenants and principals retain their own admission capacity. |
-| Webhook never fires | The URL must be HTTPS and publicly resolvable — private, loopback, or unresolvable addresses are rejected. Check startup logs and your receiver's signature validation. |
+| Webhook never fires | The URL must be HTTPS and publicly resolvable — private, loopback, or unresolvable addresses are rejected. Check startup validation and delivery logs, DNS resolution and your receiver's signature validation. |
 | Duplicate events | Expected: delivery is at-least-once (and once per matching subscription). Dedupe on `eventId` (or `(subscriptionId, eventId)` for multi-subscription sockets). |
 | `400` on `mode=snapshot` | Snapshot subscriptions need an explicit layer scope so the baseline read stays bounded. Add `layers=` (or `layerId` on the control frame). |
+| `400` naming a masked field | A `filter` or `datetime` that reads a field hidden from you by a field mask is refused, as it is on a feature query. Remove that field from the filter. If the mask is added while the subscription is open, events stop arriving until you resubscribe without it. |
 | `deploymentRevision` is `null` | The deployment carries no verifiable revision. Set `Deployment__ImageDigest` (preferred) or `Deployment__Revision`/`HONUA_GIT_SHA`. Malformed values are rejected rather than echoed. The same value is published as `serverRevision` for clients that read that name. |
 | `403` from `/streaming/conformance/runs` | This deployment provisions no conformance source. Set `FeatureStreaming__Conformance__Enabled` and point `ServiceId`/`LayerId` at a dedicated source. |
 | `503` from `/streaming/conformance/runs` | Either the configured conformance source does not resolve to a writable layer carrying the marker field, or the deployment reports no immutable revision (evidence could not be bound to it). |

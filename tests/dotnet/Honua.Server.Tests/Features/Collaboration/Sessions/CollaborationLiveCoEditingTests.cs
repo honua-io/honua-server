@@ -24,30 +24,38 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Collaboration.Sessions;
 
-/// <summary>
-/// End-to-end live co-editing coverage for honua-server#2999 against the REAL
-/// Studio-lifecycle-backed collaboration authorizer (no fixture authorizer override): two
-/// WebSocket clients join a Studio map draft's session, edits submitted through the op-log REST
-/// append are echoed to every participant as server-ordered v1 <c>operation-appended</c>
-/// envelopes, late joiners receive snapshot + tail, stale resume cursors surface the typed
-/// <c>resync-required</c> error, checkpoints produce immutable Studio content versions whose
-/// envelope reflects the ops (AC-2), and session authorization honors the Studio identity model
-/// (AC-3). These envelope-contract assertions stand in for the SDK collaboration contract tests
-/// until the honua-sdk-js WebSocket adapter lands.
-/// </summary>
 [Protocol(Honua.TestKit.Constants.ProtocolNames.Streaming)]
 [Operation(Honua.TestKit.Constants.Operations.Streaming)]
-public sealed class CollaborationLiveCoEditingTests
+public sealed class CollaborationLiveCoEditingTests(CollaborationLiveCoEditingTests.SharedHosts hosts)
+    : IClassFixture<CollaborationLiveCoEditingTests.SharedHosts>
 {
     private const string AdminPassword = "collaboration-coedit-test-key";
 
+    // Cases with the default settings, with or without the restart-durable operation log, share
+    // one application each. Every case creates its own draft, and session, log and checkpoint
+    // state is keyed by map, so a case never reads another case's map. Cases that change
+    // settings, decorate the log or supply a Studio store keep their own application.
+    // Each application starts on first use.
+    public sealed class SharedHosts : IDisposable
+    {
+        public WebApplicationFactory<Program> Durable { get; } = CreateFactory(restartDurableOperationLog: true);
+
+        public WebApplicationFactory<Program> Default { get; } = CreateFactory();
+
+        public void Dispose()
+        {
+            Durable.Dispose();
+            Default.Dispose();
+        }
+    }
+
     [IntegrationTest]
-    [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/sessions/stream")]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    [Endpoint("GET /api/v1/maps/{mapId}/collaboration/sessions/stream")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task CoEdit_TwoClientsConverge_AndCheckpointProducesStudioVersion()
     {
-        using var factory = CreateFactory(restartDurableOperationLog: true);
+        var factory = hosts.Durable;
         using var client = CreateAdminClient(factory);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -58,13 +66,13 @@ public sealed class CollaborationLiveCoEditingTests
         var wsClient = factory.Server.CreateWebSocketClient();
         wsClient.ConfigureRequest = request => request.Headers["X-API-Key"] = AdminPassword;
         using var alice = await wsClient.ConnectAsync(
-            new Uri($"ws://localhost/api/v1/saved-maps/{mapId}/collaboration/sessions/stream?displayName=Alice"),
+            new Uri($"ws://localhost/api/v1/maps/{mapId}/collaboration/sessions/stream?displayName=Alice"),
             cts.Token);
         var aliceStatus = await ReceiveJsonAsync(alice, cts.Token);
         var aliceSnapshot = await ReceiveJsonAsync(alice, cts.Token);
 
         using var bob = await wsClient.ConnectAsync(
-            new Uri($"ws://localhost/api/v1/saved-maps/{mapId}/collaboration/sessions/stream?displayName=Bob"),
+            new Uri($"ws://localhost/api/v1/maps/{mapId}/collaboration/sessions/stream?displayName=Bob"),
             cts.Token);
         _ = await ReceiveJsonAsync(bob, cts.Token);
         _ = await ReceiveJsonAsync(bob, cts.Token);
@@ -123,7 +131,7 @@ public sealed class CollaborationLiveCoEditingTests
         // immutable Studio content version through the canonical lifecycle service.
         using var checkpointContent = new StringContent("""{"changeNote":"live checkpoint"}""", Encoding.UTF8, "application/json");
         using var checkpointResponse = await client.PostAsync(
-            $"/api/v1/saved-maps/{mapId}/collaboration/checkpoints",
+            $"/api/v1/maps/{mapId}/collaboration/checkpoints",
             checkpointContent);
         checkpointResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var checkpoint = (await ReadJsonAsync(checkpointResponse)).GetProperty("data");
@@ -147,10 +155,10 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/sessions/stream")]
+    [Endpoint("GET /api/v1/maps/{mapId}/collaboration/sessions/stream")]
     public async Task Stream_LateJoinerAndStaleResume_GetSnapshotTailAndResyncRequired()
     {
-        using var factory = CreateFactory();
+        var factory = hosts.Default;
         using var client = CreateAdminClient(factory);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -170,7 +178,7 @@ public sealed class CollaborationLiveCoEditingTests
 
         // Late joiner without a resume cursor: snapshot + full retained tail (REQ-004).
         using var lateJoiner = await wsClient.ConnectAsync(
-            new Uri($"ws://localhost/api/v1/saved-maps/{mapId}/collaboration/sessions/stream?displayName=Late"),
+            new Uri($"ws://localhost/api/v1/maps/{mapId}/collaboration/sessions/stream?displayName=Late"),
             cts.Token);
         _ = await ReceiveJsonAsync(lateJoiner, cts.Token);
         var snapshotEnvelope = await ReceiveJsonAsync(lateJoiner, cts.Token);
@@ -187,7 +195,7 @@ public sealed class CollaborationLiveCoEditingTests
         // the client reloads the durable document, so the snapshot must still hand back every
         // retained operation rather than advertising the head with an empty tail).
         using var staleResume = await wsClient.ConnectAsync(
-            new Uri($"ws://localhost/api/v1/saved-maps/{mapId}/collaboration/sessions/stream?displayName=Stale&resumeFrom=999"),
+            new Uri($"ws://localhost/api/v1/maps/{mapId}/collaboration/sessions/stream?displayName=Stale&resumeFrom=999"),
             cts.Token);
         _ = await ReceiveJsonAsync(staleResume, cts.Token);
         var error = await ReceiveJsonAsync(staleResume, cts.Token);
@@ -205,10 +213,10 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/sessions/join")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/sessions/join")]
     public async Task Join_StudioIdentityModel_OwnerAllowed_NonOwnerAndUnresolvableDenied()
     {
-        // End-user authorization on (honua-server#3001): two genuinely non-admin scoped API keys.
+        // End-user authorization on: two genuinely non-admin scoped API keys.
         using var factory = CreateFactory(endUserAuthorization: true);
         var apiKeyStore = factory.Services.GetRequiredService<IAdminApiKeyStore>();
         var aliceKey = await apiKeyStore.CreateAsync("alice", ["studio:enduser"], null, null, CancellationToken.None);
@@ -224,14 +232,14 @@ public sealed class CollaborationLiveCoEditingTests
         // The owner joins (AC-3: same identity model as the Studio lifecycle surface).
         using var ownerJoinContent = new StringContent("""{"displayName":"Alice"}""", Encoding.UTF8, "application/json");
         using var ownerJoin = await aliceClient.PostAsync(
-            $"/api/v1/saved-maps/{mapId}/collaboration/sessions/join",
+            $"/api/v1/maps/{mapId}/collaboration/sessions/join",
             ownerJoinContent);
         ownerJoin.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // A non-owner, non-admin principal is denied.
         using var nonOwnerJoinContent = new StringContent("""{"displayName":"Bob"}""", Encoding.UTF8, "application/json");
         using var nonOwnerJoin = await bobClient.PostAsync(
-            $"/api/v1/saved-maps/{mapId}/collaboration/sessions/join",
+            $"/api/v1/maps/{mapId}/collaboration/sessions/join",
             nonOwnerJoinContent);
         nonOwnerJoin.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
@@ -239,7 +247,7 @@ public sealed class CollaborationLiveCoEditingTests
         // for an authenticated owner-capable principal.
         using var unresolvableJoinContent = new StringContent("""{"displayName":"Alice"}""", Encoding.UTF8, "application/json");
         using var unresolvableJoin = await aliceClient.PostAsync(
-            $"/api/v1/saved-maps/{Guid.NewGuid():D}/collaboration/sessions/join",
+            $"/api/v1/maps/{Guid.NewGuid():D}/collaboration/sessions/join",
             unresolvableJoinContent);
         unresolvableJoin.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
@@ -251,7 +259,7 @@ public sealed class CollaborationLiveCoEditingTests
         using var stolenLeaveContent = new StringContent(
             $$"""{"sessionId":"{{ownerSessionId}}"}""", Encoding.UTF8, "application/json");
         using var stolenLeave = await bobClient.PostAsync(
-            $"/api/v1/saved-maps/{mapId}/collaboration/sessions/leave", stolenLeaveContent);
+            $"/api/v1/maps/{mapId}/collaboration/sessions/leave", stolenLeaveContent);
         stolenLeave.StatusCode.Should().Be(HttpStatusCode.OK);
         (await ReadJsonAsync(stolenLeave)).GetProperty("data").GetProperty("left").GetBoolean()
             .Should().BeFalse();
@@ -260,7 +268,7 @@ public sealed class CollaborationLiveCoEditingTests
         using var ownLeaveContent = new StringContent(
             $$"""{"sessionId":"{{ownerSessionId}}"}""", Encoding.UTF8, "application/json");
         using var ownLeave = await aliceClient.PostAsync(
-            $"/api/v1/saved-maps/{mapId}/collaboration/sessions/leave", ownLeaveContent);
+            $"/api/v1/maps/{mapId}/collaboration/sessions/leave", ownLeaveContent);
         ownLeave.StatusCode.Should().Be(HttpStatusCode.OK);
         (await ReadJsonAsync(ownLeave)).GetProperty("data").GetProperty("left").GetBoolean()
             .Should().BeTrue();
@@ -272,22 +280,22 @@ public sealed class CollaborationLiveCoEditingTests
             Encoding.UTF8,
             "application/json");
         using var nonOwnerAppend = await bobClient.PostAsync(
-            $"/api/v1/saved-maps/{mapId}/collaboration/operations",
+            $"/api/v1/maps/{mapId}/collaboration/operations",
             nonOwnerAppendContent);
         nonOwnerAppend.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task Checkpoint_MixedMapIdFormsAndClientCursor_UsesCanonicalServerState()
     {
-        using var factory = CreateFactory(restartDurableOperationLog: true);
+        var factory = hosts.Durable;
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
 
         // Append through the "N" GUID route form, then checkpoint through the "D" form: both
-        // must resolve to ONE canonical op log (honua-server#2999 review).
+        // must resolve to ONE canonical op log.
         var nForm = draft.DraftId.ToString("N");
         var dForm = draft.DraftId.ToString("D");
         var first = await AppendOperationAsync(
@@ -297,12 +305,12 @@ public sealed class CollaborationLiveCoEditingTests
             client, dForm, "op-vis", "SetLayerVisibility", baseCursor: head,
             payload: """{"layerId":"parcels","visible":false}""");
 
-        // The replay window is server-derived: a client-supplied cursor field (which previously
-        // could silently drop accepted operation 1) is ignored, so BOTH ops reach the version.
+        // Ignore client-supplied replay cursors. The server-derived window must include
+        // both accepted operations in the version.
         using var content = new StringContent(
             """{"changeNote":"canonical","sinceCursor":1}""", Encoding.UTF8, "application/json");
         using var response = await client.PostAsync(
-            $"/api/v1/saved-maps/{dForm}/collaboration/checkpoints", content);
+            $"/api/v1/maps/{dForm}/collaboration/checkpoints", content);
         var text = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Created, "checkpoint response body: {0}", text);
         using var document = JsonDocument.Parse(text);
@@ -313,9 +321,9 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/sessions/join")]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/sessions/join")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task EditAndCheckpoint_MultiReplicaWithProcessLocalLog_FailClosedAndAdvertised()
     {
         // The in-memory op log declares it cannot prove cross-replica replay continuity...
@@ -327,7 +335,7 @@ public sealed class CollaborationLiveCoEditingTests
         using var factory = CreateFactory(configuration: new Dictionary<string, string?>
         {
             // The direct override, rather than Deployment:Mode=MultiNode, which additionally
-            // demands Redis and shared file storage from the platform config validator.
+            // demands shared file storage from the platform config validator.
             [SavedMapCollaborationTopology.MultiReplicaConfigurationKey] = "true"
         });
         using var client = CreateAdminClient(factory);
@@ -338,14 +346,14 @@ public sealed class CollaborationLiveCoEditingTests
             Encoding.UTF8,
             "application/json");
         using var appendResponse = await client.PostAsync(
-            $"/api/v1/saved-maps/{draft.DraftId:D}/collaboration/operations", appendContent);
+            $"/api/v1/maps/{draft.DraftId:D}/collaboration/operations", appendContent);
         var appendText = await appendResponse.Content.ReadAsStringAsync();
         appendResponse.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, "append response body: {0}", appendText);
         appendText.Should().Contain("replica-shared");
 
         using var content = new StringContent("{}", Encoding.UTF8, "application/json");
         using var response = await client.PostAsync(
-            $"/api/v1/saved-maps/{draft.DraftId:D}/collaboration/checkpoints", content);
+            $"/api/v1/maps/{draft.DraftId:D}/collaboration/checkpoints", content);
 
         var text = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, "checkpoint response body: {0}", text);
@@ -355,7 +363,7 @@ public sealed class CollaborationLiveCoEditingTests
         using var joinContent = new StringContent(
             """{"displayName":"Ada"}""", Encoding.UTF8, "application/json");
         using var joinResponse = await client.PostAsync(
-            $"/api/v1/saved-maps/{draft.DraftId:D}/collaboration/sessions/join", joinContent);
+            $"/api/v1/maps/{draft.DraftId:D}/collaboration/sessions/join", joinContent);
         joinResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var join = (await ReadJsonAsync(joinResponse)).GetProperty("data");
         join.GetProperty("capabilities").GetProperty("operations").GetBoolean().Should().BeFalse();
@@ -364,50 +372,11 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/sessions/join")]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
-    public async Task EditAndCheckpoint_SingleInstanceWithRedisConfigured_RemainAvailable()
-    {
-        // Redis presence alone must NEVER imply multi-replica: a single instance commonly uses
-        // Redis for cache/jobs and must keep full live co-editing (honua-server#2999 review).
-        using var factory = CreateFactory(
-            configuration: new Dictionary<string, string?>
-            {
-                ["Redis:ConnectionString"] = "localhost:6379",
-                ["ConnectionStrings:Redis"] = "localhost:6379",
-                ["Cache:Redis:ConnectionString"] = "localhost:6379"
-            },
-            // Checkpointing is gated on op-log restart durability, never on topology, so the
-            // durable log here isolates the claim under test: Redis presence must not disable
-            // any part of live co-editing.
-            restartDurableOperationLog: true);
-        using var client = CreateAdminClient(factory);
-        var draft = await CreateMapDraftAsync(client);
-        var mapId = draft.DraftId.ToString("D");
-
-        using var joinContent = new StringContent(
-            """{"displayName":"Ada"}""", Encoding.UTF8, "application/json");
-        using var joinResponse = await client.PostAsync(
-            $"/api/v1/saved-maps/{mapId}/collaboration/sessions/join", joinContent);
-        joinResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await ReadJsonAsync(joinResponse)).GetProperty("data")
-            .GetProperty("capabilities").GetProperty("operations").GetBoolean().Should().BeTrue();
-
-        var append = await AppendOperationAsync(
-            client, mapId, "op-1", "SetViewport", baseCursor: 0, payload: """{"zoom":7}""");
-        append.GetProperty("status").GetString().Should().Be("accepted");
-
-        var checkpoint = await CheckpointAsync(client, mapId, "single instance");
-        checkpoint.GetProperty("appliedOperationCount").GetInt32().Should().Be(1);
-    }
-
-    [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task Append_MalformedPayloadForCheckpointableKind_IsRejectedAndMapStaysCheckpointable()
     {
-        using var factory = CreateFactory(restartDurableOperationLog: true);
+        var factory = hosts.Durable;
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
@@ -427,7 +396,7 @@ public sealed class CollaborationLiveCoEditingTests
         {
             using var badContent = new StringContent(malformed, Encoding.UTF8, "application/json");
             using var badResponse = await client.PostAsync(
-                $"/api/v1/saved-maps/{mapId}/collaboration/operations", badContent);
+                $"/api/v1/maps/{mapId}/collaboration/operations", badContent);
             badResponse.StatusCode.Should().Be(
                 HttpStatusCode.BadRequest, "payload should be rejected on admission: {0}", malformed);
         }
@@ -443,11 +412,11 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/sessions/join")]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/sessions/join")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
     public async Task Join_NonCompositionDraftFamily_IsRejectedBeforeOperationsEnterTheLog()
     {
-        using var factory = CreateFactory();
+        var factory = hosts.Default;
         using var client = CreateAdminClient(factory);
 
         // Only Map/App drafts are composition-eligible, so only they can be checkpointed.
@@ -462,7 +431,7 @@ public sealed class CollaborationLiveCoEditingTests
         using var joinContent = new StringContent(
             """{"displayName":"Ada"}""", Encoding.UTF8, "application/json");
         using var joinResponse = await client.PostAsync(
-            $"/api/v1/saved-maps/{mapId}/collaboration/sessions/join", joinContent);
+            $"/api/v1/maps/{mapId}/collaboration/sessions/join", joinContent);
         joinResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
         using var appendContent = new StringContent(
@@ -470,15 +439,15 @@ public sealed class CollaborationLiveCoEditingTests
             Encoding.UTF8,
             "application/json");
         using var appendResponse = await client.PostAsync(
-            $"/api/v1/saved-maps/{mapId}/collaboration/operations", appendContent);
+            $"/api/v1/maps/{mapId}/collaboration/operations", appendContent);
         appendResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
     public async Task Append_KindTheCheckpointApplierCannotApply_IsRejected()
     {
-        using var factory = CreateFactory(restartDurableOperationLog: true);
+        var factory = hosts.Durable;
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
@@ -492,7 +461,7 @@ public sealed class CollaborationLiveCoEditingTests
             Encoding.UTF8,
             "application/json");
         using var response = await client.PostAsync(
-            $"/api/v1/saved-maps/{mapId}/collaboration/operations", content);
+            $"/api/v1/maps/{mapId}/collaboration/operations", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
@@ -504,11 +473,11 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task Checkpoint_AfterPriorCheckpoint_ReplaysOnlyPendingOperations()
     {
-        using var factory = CreateFactory(restartDurableOperationLog: true);
+        var factory = hosts.Durable;
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
@@ -537,7 +506,7 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task Checkpoint_CursorWriteFailsAfterVersionCommit_RetryRepairsCursorAndVersionsCurrentDraft()
     {
         using var factory = CreateFactory(
@@ -558,7 +527,7 @@ public sealed class CollaborationLiveCoEditingTests
         using (var firstContent = new StringContent(
                    """{"changeNote":"recover me"}""", Encoding.UTF8, "application/json"))
         using (var firstResponse = await client.PostAsync(
-                   $"/api/v1/saved-maps/{mapId}/collaboration/checkpoints", firstContent))
+                   $"/api/v1/maps/{mapId}/collaboration/checkpoints", firstContent))
         {
             firstResponse.StatusCode.Should().Be(
                 HttpStatusCode.Conflict,
@@ -629,7 +598,7 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task Checkpoint_CommittedCursorFallsBehindReplayWindow_RecoversBeforeReplayingSuffix()
     {
         using var factory = CreateFactory(
@@ -651,7 +620,7 @@ public sealed class CollaborationLiveCoEditingTests
         using (var firstContent = new StringContent(
                    """{"changeNote":"committed prefix"}""", Encoding.UTF8, "application/json"))
         using (var firstResponse = await client.PostAsync(
-                   $"/api/v1/saved-maps/{mapId}/collaboration/checkpoints", firstContent))
+                   $"/api/v1/maps/{mapId}/collaboration/checkpoints", firstContent))
         {
             firstResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
         }
@@ -687,15 +656,15 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task Checkpoint_UnresolvableMapId_ReturnsNotFound()
     {
-        using var factory = CreateFactory(restartDurableOperationLog: true);
+        var factory = hosts.Durable;
         using var client = CreateAdminClient(factory);
 
         using var content = new StringContent("{}", Encoding.UTF8, "application/json");
         using var response = await client.PostAsync(
-            $"/api/v1/saved-maps/{Guid.NewGuid():D}/collaboration/checkpoints",
+            $"/api/v1/maps/{Guid.NewGuid():D}/collaboration/checkpoints",
             content);
 
         var responseText = await response.Content.ReadAsStringAsync();
@@ -703,15 +672,15 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/sessions/stream")]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("GET /api/v1/maps/{mapId}/collaboration/sessions/stream")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
     public async Task Append_ConcurrentOperations_FanOutFollowsAssignedCursorOrder()
     {
         // The log assigns cursor 1 to the first request, but that request's continuation is held
         // open while a second request is assigned cursor 2 and completes. Without a
         // serialization point between cursor assignment and live fan-out the stream broadcasts
         // cursor 2 first, so live clients apply same-aspect edits in the reverse of the order
-        // replay and checkpointing use (honua-server#2999 review).
+        // replay and checkpointing use.
         DelayedFirstAppendOperationLog? delayedLog = null;
         using var factory = CreateFactory(decorateOperationLog: inner =>
             delayedLog = new DelayedFirstAppendOperationLog(inner, TimeSpan.FromSeconds(2)));
@@ -724,7 +693,7 @@ public sealed class CollaborationLiveCoEditingTests
         var wsClient = factory.Server.CreateWebSocketClient();
         wsClient.ConfigureRequest = request => request.Headers["X-API-Key"] = AdminPassword;
         using var observer = await wsClient.ConnectAsync(
-            new Uri($"ws://localhost/api/v1/saved-maps/{mapId}/collaboration/sessions/stream?displayName=Obs"),
+            new Uri($"ws://localhost/api/v1/maps/{mapId}/collaboration/sessions/stream?displayName=Obs"),
             cts.Token);
         _ = await ReceiveJsonAsync(observer, cts.Token);
         _ = await ReceiveJsonAsync(observer, cts.Token);
@@ -756,9 +725,9 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/sessions/join")]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/sessions/join")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task Checkpoint_OperationLogNotRestartDurable_FailsClosedAndIsAdvertised()
     {
         // The shipped log loses acknowledged operations when the process restarts...
@@ -767,7 +736,7 @@ public sealed class CollaborationLiveCoEditingTests
         // ...so a checkpoint cannot prove the immutable version it would mint contains every
         // accepted edit: after a restart an empty replay is indistinguishable from a session
         // that never appended anything, and the version would silently omit those edits.
-        using var factory = CreateFactory();
+        var factory = hosts.Default;
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
@@ -780,7 +749,7 @@ public sealed class CollaborationLiveCoEditingTests
 
         using var content = new StringContent("{}", Encoding.UTF8, "application/json");
         using var response = await client.PostAsync(
-            $"/api/v1/saved-maps/{mapId}/collaboration/checkpoints", content);
+            $"/api/v1/maps/{mapId}/collaboration/checkpoints", content);
         var text = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, "checkpoint response body: {0}", text);
         text.Should().Contain("restart-durable");
@@ -789,14 +758,14 @@ public sealed class CollaborationLiveCoEditingTests
         // client learns from the handshake instead of a failed checkpoint.
         using var joinContent = new StringContent("""{"displayName":"Ada"}""", Encoding.UTF8, "application/json");
         using var joinResponse = await client.PostAsync(
-            $"/api/v1/saved-maps/{mapId}/collaboration/sessions/join", joinContent);
+            $"/api/v1/maps/{mapId}/collaboration/sessions/join", joinContent);
         joinResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var join = (await ReadJsonAsync(joinResponse)).GetProperty("data");
         join.GetProperty("capabilities").GetProperty("operations").GetBoolean().Should().BeTrue();
         join.GetProperty("capabilities").GetProperty("checkpoints").GetBoolean().Should().BeFalse();
 
         // A restart-durable log satisfies the contract and the same checkpoint succeeds.
-        using var durableFactory = CreateFactory(restartDurableOperationLog: true);
+        var durableFactory = hosts.Durable;
         using var durableClient = CreateAdminClient(durableFactory);
         var durableDraft = await CreateMapDraftAsync(durableClient);
         var durableMapId = durableDraft.DraftId.ToString("D");
@@ -807,8 +776,8 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/sessions/stream")]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("GET /api/v1/maps/{mapId}/collaboration/sessions/stream")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
     public async Task Stream_ResumeCursorOutsideWindow_SnapshotKeepsRetainedOperations()
     {
         // Retain only the last two operations so cursors 1-2 are pruned while 3-4 are retained
@@ -831,9 +800,9 @@ public sealed class CollaborationLiveCoEditingTests
         // Resuming from a pruned cursor: the client must be told to resync AND still receive the
         // retained-but-not-yet-checkpointed suffix. Advertising the head cursor with an empty
         // tail would advance it past operations 3 and 4, which the durable draft (checkpointed
-        // behind that head) does not contain either (honua-server#2999 review).
+        // behind that head) does not contain either.
         using var stale = await wsClient.ConnectAsync(
-            new Uri($"ws://localhost/api/v1/saved-maps/{mapId}/collaboration/sessions/stream?resumeFrom=1"),
+            new Uri($"ws://localhost/api/v1/maps/{mapId}/collaboration/sessions/stream?resumeFrom=1"),
             cts.Token);
         _ = await ReceiveJsonAsync(stale, cts.Token);
         var error = await ReceiveJsonAsync(stale, cts.Token);
@@ -849,7 +818,7 @@ public sealed class CollaborationLiveCoEditingTests
         // The other direction: an in-window resume must NOT re-send operations the client
         // already has, and must not claim a position it did not deliver.
         using var current = await wsClient.ConnectAsync(
-            new Uri($"ws://localhost/api/v1/saved-maps/{mapId}/collaboration/sessions/stream?resumeFrom=4"),
+            new Uri($"ws://localhost/api/v1/maps/{mapId}/collaboration/sessions/stream?resumeFrom=4"),
             cts.Token);
         _ = await ReceiveJsonAsync(current, cts.Token);
         var currentSnapshot = await ReceiveJsonAsync(current, cts.Token);
@@ -861,7 +830,7 @@ public sealed class CollaborationLiveCoEditingTests
 
         // A partial in-window resume gets exactly the operations it is missing — no duplicates.
         using var partial = await wsClient.ConnectAsync(
-            new Uri($"ws://localhost/api/v1/saved-maps/{mapId}/collaboration/sessions/stream?resumeFrom=3"),
+            new Uri($"ws://localhost/api/v1/maps/{mapId}/collaboration/sessions/stream?resumeFrom=3"),
             cts.Token);
         _ = await ReceiveJsonAsync(partial, cts.Token);
         var partialSnapshot = await ReceiveJsonAsync(partial, cts.Token);
@@ -874,11 +843,11 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task Append_PatchStyleWithNonStringStyleRef_IsRejectedAndStyleSurvives()
     {
-        using var factory = CreateFactory(restartDurableOperationLog: true);
+        var factory = hosts.Durable;
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
@@ -887,8 +856,8 @@ public sealed class CollaborationLiveCoEditingTests
             client, mapId, "op-style", "PatchStyle", baseCursor: 0,
             payload: """{"layerId":"parcels","styleRef":"style-night"}""");
 
-        // A non-string styleRef used to be admitted, take a permanent cursor, and then CLEAR the
-        // layer's style at checkpoint time — malformed input turned into a destructive edit.
+        // Reject a non-string styleRef before assigning a permanent cursor so malformed
+        // input cannot clear the layer style during checkpointing.
         foreach (var malformed in new[]
         {
             """{"operationId":"bad-number","kind":"PatchStyle","baseCursor":1,"payload":{"layerId":"parcels","styleRef":42}}""",
@@ -899,7 +868,7 @@ public sealed class CollaborationLiveCoEditingTests
         {
             using var badContent = new StringContent(malformed, Encoding.UTF8, "application/json");
             using var badResponse = await client.PostAsync(
-                $"/api/v1/saved-maps/{mapId}/collaboration/operations", badContent);
+                $"/api/v1/maps/{mapId}/collaboration/operations", badContent);
             var badText = await badResponse.Content.ReadAsStringAsync();
             badResponse.StatusCode.Should().Be(
                 HttpStatusCode.BadRequest, "payload should be rejected on admission: {0}", malformed);
@@ -919,11 +888,11 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task Checkpoint_ReorderReferencingUnknownLayer_SurfacesStateConflict()
     {
-        using var factory = CreateFactory(restartDurableOperationLog: true);
+        var factory = hosts.Durable;
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
@@ -934,27 +903,27 @@ public sealed class CollaborationLiveCoEditingTests
             Encoding.UTF8,
             "application/json");
         using var duplicateResponse = await client.PostAsync(
-            $"/api/v1/saved-maps/{mapId}/collaboration/operations", duplicateContent);
+            $"/api/v1/maps/{mapId}/collaboration/operations", duplicateContent);
         duplicateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         // An id absent from the composition is a genuine STATE conflict, not a shape error: it
         // cannot be judged at admission time (an earlier pending operation may still introduce
         // the layer), so it must surface at checkpoint time instead of silently no-opping while
-        // the operation's cursor is marked persisted (honua-server#2999 review).
+        // the operation's cursor is marked persisted.
         _ = await AppendOperationAsync(
             client, mapId, "op-reorder", "ReorderLayers", baseCursor: 0,
             payload: """{"layerIds":["parcels","ghost-layer"]}""");
 
         using var content = new StringContent("""{"changeNote":"reorder"}""", Encoding.UTF8, "application/json");
         using var response = await client.PostAsync(
-            $"/api/v1/saved-maps/{mapId}/collaboration/checkpoints", content);
+            $"/api/v1/maps/{mapId}/collaboration/checkpoints", content);
         var text = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Conflict, "checkpoint response body: {0}", text);
         text.Should().Contain("ghost-layer");
         text.Should().NotContain("Exception");
 
         // A reorder whose ids all exist still applies.
-        using var freshFactory = CreateFactory(restartDurableOperationLog: true);
+        var freshFactory = hosts.Durable;
         using var freshClient = CreateAdminClient(freshFactory);
         var freshDraft = await CreateTwoLayerMapDraftAsync(freshClient);
         var freshMapId = freshDraft.DraftId.ToString("D");
@@ -973,11 +942,11 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task Checkpoint_ReplaceRemovesScalarTarget_ExplicitSupersessionUnwedgesMap()
     {
-        using var factory = CreateFactory(restartDurableOperationLog: true);
+        var factory = hosts.Durable;
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
@@ -1000,7 +969,7 @@ public sealed class CollaborationLiveCoEditingTests
         using var checkpointContent = new StringContent(
             """{"changeNote":"replace then hide"}""", Encoding.UTF8, "application/json");
         using var conflictResponse = await client.PostAsync(
-            $"/api/v1/saved-maps/{mapId}/collaboration/checkpoints", checkpointContent);
+            $"/api/v1/maps/{mapId}/collaboration/checkpoints", checkpointContent);
         conflictResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
         var conflict = await ReadJsonAsync(conflictResponse);
         conflict.GetProperty("conflictCode").GetString().Should().Be("missing-composition-target");
@@ -1023,7 +992,7 @@ public sealed class CollaborationLiveCoEditingTests
             Encoding.UTF8,
             "application/json");
         using var reconcileResponse = await client.PostAsync(
-            $"/api/v1/saved-maps/{mapId}/collaboration/checkpoints", reconcileContent);
+            $"/api/v1/maps/{mapId}/collaboration/checkpoints", reconcileContent);
         var reconcileText = await reconcileResponse.Content.ReadAsStringAsync();
         reconcileResponse.StatusCode.Should().Be(
             HttpStatusCode.Created,
@@ -1062,16 +1031,15 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/sessions/stream")]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
+    [Endpoint("GET /api/v1/maps/{mapId}/collaboration/sessions/stream")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
     public async Task Stream_WindowAdvancesAfterPreliminaryReplay_StillAnnouncesResync()
     {
         // The resume cursor is resumable when the handshake first checks, and pruned by the time
         // the snapshot tail is read. The client is no longer holding a complete history, so it
         // MUST be told to resync: silently restarting the tail from the new window base leaves it
         // believing it has every operation between its cursor and that base, and the durable
-        // document it never reloads only contains the checkpointed prefix (honua-server#2999
-        // review).
+        // document it never reloads only contains the checkpointed prefix.
         using var factory = CreateFactory(
             decorateOperationLog: inner => new WindowAdvancesAfterFirstReplayOperationLog(inner));
         using var client = CreateAdminClient(factory);
@@ -1088,7 +1056,7 @@ public sealed class CollaborationLiveCoEditingTests
         var wsClient = factory.Server.CreateWebSocketClient();
         wsClient.ConfigureRequest = request => request.Headers["X-API-Key"] = AdminPassword;
         using var socket = await wsClient.ConnectAsync(
-            new Uri($"ws://localhost/api/v1/saved-maps/{mapId}/collaboration/sessions/stream?resumeFrom=1"),
+            new Uri($"ws://localhost/api/v1/maps/{mapId}/collaboration/sessions/stream?resumeFrom=1"),
             cts.Token);
 
         var status = await ReceiveJsonAsync(socket, cts.Token);
@@ -1117,14 +1085,14 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/operations")]
-    [Endpoint("GET /api/v1/saved-maps/{mapId}/collaboration/sessions/stream")]
+    [Endpoint("GET /api/v1/maps/{mapId}/collaboration/operations")]
+    [Endpoint("GET /api/v1/maps/{mapId}/collaboration/sessions/stream")]
     public async Task Replay_MultiReplicaWithProcessLocalLog_FailsClosedOnHttpAndStream()
     {
         // A declared multi-replica deployment on a process-local log advertises Replay=false. Both
         // read paths must honour that: answering 200 from node-local state would let two replicas
         // hand the same client contradictory histories, each looking authoritative, which is
-        // strictly worse than refusing (honua-server#2999 review).
+        // strictly worse than refusing.
         using var factory = CreateFactory(configuration: new Dictionary<string, string?>
         {
             [SavedMapCollaborationTopology.MultiReplicaConfigurationKey] = "true"
@@ -1138,13 +1106,13 @@ public sealed class CollaborationLiveCoEditingTests
         using var joinContent = new StringContent(
             """{"displayName":"Ada"}""", Encoding.UTF8, "application/json");
         using var joinResponse = await client.PostAsync(
-            $"/api/v1/saved-maps/{mapId}/collaboration/sessions/join", joinContent);
+            $"/api/v1/maps/{mapId}/collaboration/sessions/join", joinContent);
         joinResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         (await ReadJsonAsync(joinResponse)).GetProperty("data")
             .GetProperty("capabilities").GetProperty("replay").GetBoolean().Should().BeFalse();
 
         using var replayResponse = await client.GetAsync(
-            $"/api/v1/saved-maps/{mapId}/collaboration/operations?since=0");
+            $"/api/v1/maps/{mapId}/collaboration/operations?since=0");
         var replayText = await replayResponse.Content.ReadAsStringAsync();
         replayResponse.StatusCode.Should().Be(
             HttpStatusCode.ServiceUnavailable, "replay response body: {0}", replayText);
@@ -1155,7 +1123,7 @@ public sealed class CollaborationLiveCoEditingTests
         var wsClient = factory.Server.CreateWebSocketClient();
         wsClient.ConfigureRequest = request => request.Headers["X-API-Key"] = AdminPassword;
         using var socket = await wsClient.ConnectAsync(
-            new Uri($"ws://localhost/api/v1/saved-maps/{mapId}/collaboration/sessions/stream"),
+            new Uri($"ws://localhost/api/v1/maps/{mapId}/collaboration/sessions/stream"),
             cts.Token);
 
         var status = await ReceiveJsonAsync(socket, cts.Token);
@@ -1178,11 +1146,11 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task Append_WhitespaceOnlyLayerId_IsRejectedAndMapStaysCheckpointable()
     {
-        using var factory = CreateFactory(restartDurableOperationLog: true);
+        var factory = hosts.Durable;
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
@@ -1191,7 +1159,7 @@ public sealed class CollaborationLiveCoEditingTests
         // consumed a cursor, and then threw an UNMAPPED ArgumentException out of the shared Studio
         // composition editor at checkpoint time: every later checkpoint 500s while the operation is
         // retained, then fails the continuity guard once it is pruned — the map can never save
-        // another version (honua-server#2999 review).
+        // another version.
         foreach (var malformed in new[]
         {
             """{"operationId":"ws-style","kind":"PatchStyle","baseCursor":0,"payload":{"layerId":" ","styleRef":"roads"}}""",
@@ -1202,7 +1170,7 @@ public sealed class CollaborationLiveCoEditingTests
         {
             using var badContent = new StringContent(malformed, Encoding.UTF8, "application/json");
             using var badResponse = await client.PostAsync(
-                $"/api/v1/saved-maps/{mapId}/collaboration/operations", badContent);
+                $"/api/v1/maps/{mapId}/collaboration/operations", badContent);
             var badText = await badResponse.Content.ReadAsStringAsync();
             badResponse.StatusCode.Should().Be(
                 HttpStatusCode.BadRequest, "payload should be rejected on admission: {0}", malformed);
@@ -1221,15 +1189,15 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task Checkpoint_ConcurrentDraftUpdateAfterApply_FailsClosedAndKeepsOperationsReplayable()
     {
         // A competing Studio draft update lands between the checkpoint's apply and its version
         // save. The version save re-reads the draft, so without a generation check it versions the
         // COMPETING body — a version that omits the operations just replayed — while still marking
-        // their head cursor checkpointed, permanently hiding them from every later checkpoint
-        // (honua-server#2999 review). The checkpoint must instead fail closed and leave the cursor
+        // their head cursor checkpointed, permanently hiding them from every later checkpoint.
+        // The checkpoint must instead fail closed and leave the cursor
         // where it was.
         using var competing = JsonDocument.Parse(
             """{"layers":[{"id":"parcels","title":"Parcels"}],"title":"concurrent draft edit"}""");
@@ -1253,7 +1221,7 @@ public sealed class CollaborationLiveCoEditingTests
         using var racedContent = new StringContent(
             """{"changeNote":"raced checkpoint"}""", Encoding.UTF8, "application/json");
         using var racedResponse = await client.PostAsync(
-            $"/api/v1/saved-maps/{mapId}/collaboration/checkpoints", racedContent);
+            $"/api/v1/maps/{mapId}/collaboration/checkpoints", racedContent);
         var racedText = await racedResponse.Content.ReadAsStringAsync();
         racedResponse.StatusCode.Should().Be(
             HttpStatusCode.Conflict, "raced checkpoint response body: {0}", racedText);
@@ -1280,7 +1248,7 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task Checkpoint_DraftDeletedDuringVersionSave_ReturnsNotFoundAndKeepsCursorUnadvanced()
     {
         var store = new DeleteDuringVersionSaveStore(new InMemoryStudioPackageStore());
@@ -1300,7 +1268,7 @@ public sealed class CollaborationLiveCoEditingTests
         using var content = new StringContent(
             """{"changeNote":"deletion race"}""", Encoding.UTF8, "application/json");
         using var response = await client.PostAsync(
-            $"/api/v1/saved-maps/{mapId}/collaboration/checkpoints", content);
+            $"/api/v1/maps/{mapId}/collaboration/checkpoints", content);
         var responseText = await response.Content.ReadAsStringAsync();
 
         store.DeleteWasTriggered.Should().BeTrue();
@@ -1317,19 +1285,17 @@ public sealed class CollaborationLiveCoEditingTests
     }
 
     [IntegrationTest]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/operations")]
-    [Endpoint("POST /api/v1/saved-maps/{mapId}/collaboration/checkpoints")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/operations")]
+    [Endpoint("POST /api/v1/maps/{mapId}/collaboration/checkpoints")]
     public async Task Append_ViewportOutsideSharedBounds_IsRejectedAndMapStaysCheckpointable()
     {
-        using var factory = CreateFactory(restartDurableOperationLog: true);
+        var factory = hosts.Durable;
         using var client = CreateAdminClient(factory);
         var draft = await CreateMapDraftAsync(client);
         var mapId = draft.DraftId.ToString("D");
 
-        // The shared Studio view contract caps zoom at 24 and pitch at 85 — the same bounds the MCP
-        // composition tool schemas advertise. Payloads outside them used to reach an unconditional
-        // success path, consume a permanent cursor, and persist a view no client can render
-        // (honua-server#2999 review).
+        // Validate zoom <= 24 and pitch <= 85 before assigning a cursor, matching the
+        // shared Studio view contract advertised by the MCP composition schemas.
         foreach (var malformed in new[]
         {
             """{"operationId":"zoom-high","kind":"SetViewport","baseCursor":0,"payload":{"zoom":25}}""",
@@ -1340,7 +1306,7 @@ public sealed class CollaborationLiveCoEditingTests
         {
             using var badContent = new StringContent(malformed, Encoding.UTF8, "application/json");
             using var badResponse = await client.PostAsync(
-                $"/api/v1/saved-maps/{mapId}/collaboration/operations", badContent);
+                $"/api/v1/maps/{mapId}/collaboration/operations", badContent);
             var badText = await badResponse.Content.ReadAsStringAsync();
             badResponse.StatusCode.Should().Be(
                 HttpStatusCode.BadRequest, "payload should be rejected on admission: {0}", malformed);
@@ -1419,7 +1385,7 @@ public sealed class CollaborationLiveCoEditingTests
 
                     // Checkpointing requires a restart-durable op log: the shipped in-memory log
                     // loses acknowledged operations on restart and the endpoint fails closed
-                    // rather than mint a version it cannot prove is complete (#2999 review).
+                    // rather than mint a version it cannot prove is complete.
                     if (restartDurableOperationLog || retainedOperationCount is not null || decorateOperationLog is not null)
                     {
                         services.RemoveAll<ISavedMapOperationLogRepository>();
@@ -1513,7 +1479,7 @@ public sealed class CollaborationLiveCoEditingTests
             """;
         using var content = new StringContent(body, Encoding.UTF8, "application/json");
         using var response = await client.PostAsync(
-            $"/api/v1/saved-maps/{mapId}/collaboration/operations",
+            $"/api/v1/maps/{mapId}/collaboration/operations",
             content);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         return (await ReadJsonAsync(response)).GetProperty("data");
@@ -1524,7 +1490,7 @@ public sealed class CollaborationLiveCoEditingTests
         using var content = new StringContent(
             $$"""{"changeNote":"{{changeNote}}"}""", Encoding.UTF8, "application/json");
         using var response = await client.PostAsync(
-            $"/api/v1/saved-maps/{mapId}/collaboration/checkpoints", content);
+            $"/api/v1/maps/{mapId}/collaboration/checkpoints", content);
         var text = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Created, "checkpoint response body: {0}", text);
         using var document = JsonDocument.Parse(text);

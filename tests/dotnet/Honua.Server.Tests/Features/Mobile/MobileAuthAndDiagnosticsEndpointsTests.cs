@@ -11,13 +11,9 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Mobile;
 
-/// <summary>
-/// Integration coverage for mobile runtime auth refresh and diagnostics upload endpoints (#924).
-/// </summary>
-[Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]
-public sealed class MobileAuthAndDiagnosticsEndpointsTests : IAsyncLifetime
+public sealed partial class MobileAuthAndDiagnosticsEndpointsTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture()
         .ConfigureWebHost(builder =>

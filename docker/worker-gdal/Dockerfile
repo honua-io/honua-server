@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 #
 # Honua heavyweight GP/ETL worker image (honua-worker-etl) — ADR-0038.
 #
@@ -29,6 +29,9 @@ ARG GDAL_VERSION=3.13.1
 ARG GDAL_BASE_IMAGE=ghcr.io/osgeo/gdal:ubuntu-full-3.13.1@sha256:aff1d5515aa0e9b50be34ab11d6c0c2cfabc23cdcb7a2e0bc5748101eedb3e4a
 # Pinned .NET runtime version installed onto the GDAL (Ubuntu) base.
 ARG DOTNET_RUNTIME_VERSION=11.0.0
+# The ASP.NET Core runtime is copied from this digest-pinned image (the same one the
+# serving image uses) instead of being downloaded by dotnet-install.sh at build time.
+ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:11.0.0-resolute-chiseled-extra@sha256:cea9d5494f358fe43082300c24d1cd9f651066b6b7de1e5735bca8d3ade68649
 # PDAL is built from its upstream release archive against the SAME GDAL/Ubuntu
 # toolchain as the runtime. Ubuntu 26.04 does not publish PDAL, and cross-release
 # UbuntuGIS packages are intentionally forbidden. Pin both release and upstream
@@ -56,6 +59,9 @@ COPY src/Honua.Cloud/Aws/*.csproj src/Honua.Cloud/Aws/
 COPY src/Honua.Cloud/Azure/*.csproj src/Honua.Cloud/Azure/
 COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/
 COPY src/Honua.Worker.Gdal/*.csproj src/Honua.Worker.Gdal/
+# The lock file must be present for the first restore: the second restore below is
+# NuGet's no-op path for unchanged inputs and does not re-validate it.
+COPY src/Honua.Worker.Gdal/packages.lock.json src/Honua.Worker.Gdal/
 COPY eng/ eng/
 
 # Restore the worker project and keep the NuGet cache mounted for publish.
@@ -64,8 +70,8 @@ RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
     --mount=type=secret,id=github_actor \
     --mount=type=secret,id=github_token \
     sh scripts/docker/restore-dotnet-with-github-packages.sh \
-      src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj \
-    || dotnet restore src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj
+      src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj --locked-mode \
+    || dotnet restore src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj --locked-mode
 
 # Copy the full source tree and publish. Restore again in the same RUN and cache
 # mount as publish: a cached earlier restore layer does not prove that a fresh
@@ -77,7 +83,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
     --mount=type=secret,id=github_actor \
     --mount=type=secret,id=github_token \
     sh scripts/docker/restore-dotnet-with-github-packages.sh \
-      src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj \
+      src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj --locked-mode \
  && dotnet publish src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj \
       --configuration "${CONFIGURATION}" \
       --no-restore \
@@ -139,6 +145,8 @@ COPY docker/worker-gdal/native-entry.c /tmp/honua-native-entry.c
 RUN mkdir -p /opt/honua \
  && cc -std=c11 -Wall -Wextra -Werror -fPIC -shared /tmp/honua-native-entry.c -o /opt/honua/libhonua_gp_entry.so
 
+FROM ${DOTNET_ASPNET_IMAGE} AS aspnet-runtime
+
 # ---------------------------------------------------------------------------
 # Runtime stage: GDAL base + .NET runtime + published worker.
 # ---------------------------------------------------------------------------
@@ -153,8 +161,9 @@ ARG PDAL_VERSION
 # (the PDAL proof steps in ci.yml and pr-gate.yml read it). It is declared in
 # the runtime stage, after every expensive layer, as in ./Dockerfile.
 
-# Install the .NET runtime onto the GDAL (Ubuntu) base via the dotnet-install
-# script. The GDAL base already provides gdalwarp / ogr2ogr on PATH.
+# Copy the .NET and ASP.NET Core runtime onto the GDAL (Ubuntu) base from the
+# digest-pinned aspnet image; the version check below proves it is
+# DOTNET_RUNTIME_VERSION. The GDAL base already provides gdalwarp / ogr2ogr on PATH.
 #
 # PDAL (Point Data Abstraction Library) is added here for the point-cloud
 # decompress + reproject path (#1854): the `pdal translate` CLI decompresses LAZ
@@ -186,12 +195,10 @@ RUN apt-get update \
       libxml2-16 \
       python3-scipy \
  && rm -f /usr/bin/pebble \
- && rm -rf /var/lib/apt/lists/* \
- && curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
- && chmod +x /tmp/dotnet-install.sh \
- && /tmp/dotnet-install.sh --version "${DOTNET_RUNTIME_VERSION}" --runtime aspnetcore --install-dir /usr/share/dotnet \
- && ln -sf /usr/share/dotnet/dotnet /usr/local/bin/dotnet \
- && rm -f /tmp/dotnet-install.sh
+ && rm -rf /var/lib/apt/lists/*
+
+COPY --from=aspnet-runtime /usr/share/dotnet /usr/share/dotnet
+RUN ln -sf /usr/share/dotnet/dotnet /usr/local/bin/dotnet
 
 COPY --from=pdal-build /opt/pdal /opt/pdal
 
@@ -257,15 +264,16 @@ ARG DOTNET_RUNTIME_VERSION
 ARG PDAL_VERSION
 ARG HONUA_GIT_SHA=
 
-# Non-root runtime user.
+# Non-root runtime user. It owns only its scratch root: application files stay
+# root-owned, so a compromised job cannot rewrite the worker or its scripts.
 RUN groupadd --gid 1001 --system honua \
  && useradd --uid 1001 --gid 1001 --system --no-create-home --shell /usr/sbin/nologin honua \
  && mkdir -p /app /tmp/honua-gdal-worker \
- && chown -R 1001:1001 /app /tmp/honua-gdal-worker
+ && chown 1001:1001 /tmp/honua-gdal-worker
 
 WORKDIR /app
-COPY --from=build --chown=1001:1001 /app .
-COPY --chown=1001:1001 LICENSE THIRD-PARTY-NOTICES.md /app/
+COPY --from=build /app .
+COPY LICENSE THIRD-PARTY-NOTICES.md /app/
 # Qualification-only read-only OS/store observer. It refuses execution without
 # an explicit mounted policy; it is invoked by governed ECS Exec, never the job.
 COPY --chown=0:0 --chmod=0444 scripts/qualification/gp_native_observer.py /app/gp_native_observer.py

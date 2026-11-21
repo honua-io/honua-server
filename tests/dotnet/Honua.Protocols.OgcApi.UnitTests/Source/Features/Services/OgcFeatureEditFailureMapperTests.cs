@@ -20,6 +20,7 @@ public sealed class OgcFeatureEditFailureMapperTests
     [InlineData("Geometry is required for create operation on a spatial layer", 1000, 400)]
     [InlineData("Create failed.", 1000, 500)]
     [InlineData("Something else.", 422, 400)]
+    [InlineData("Parcel owner not found in the registry.", 400, 400)]
     [InlineData("Feature is owned by another principal and cannot be modified under the owner-based edit policy.", 403, 403)]
     public void DetermineStatus_ClassifiesSafeWriterMessages(string message, int code, int expected)
     {
@@ -27,6 +28,18 @@ public sealed class OgcFeatureEditFailureMapperTests
             EditOperationResult.Failure(message, code));
 
         status.Should().Be(expected);
+    }
+
+    [UnitTest]
+    public void MapDeleteFailure_RejectionWordedAsNotFound_StaysAClientError()
+    {
+        var result = Honua.Protocols.Ogc.Api.Features.OgcFeaturesCrudHandler.MapDeleteFailure(
+            new DefaultHttpContext(),
+            EditOperationResult.Failure("Parent asset not found.", Honua.Core.Features.Edit.FeatureEditGate.RejectedErrorCode, 42),
+            "42");
+
+        result.Should().BeAssignableTo<IStatusCodeHttpResult>()
+            .Which.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
     }
 
     [UnitTest]

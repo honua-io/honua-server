@@ -14,7 +14,7 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
     // reverts to the configured limits on restart.
     private const int TunableFloor = 1;
 
-    // Trailing window over which acquisition timeouts are counted for the pressure signal (#2805). A
+    // Trailing window over which acquisition timeouts are counted for the pressure signal. A
     // windowed count reflects a current exhaustion episode instead of a lifetime-monotonic total that,
     // once incremented, would keep the finding latched forever.
     private static readonly TimeSpan AcquisitionTimeoutWindow = TimeSpan.FromSeconds(60);
@@ -36,6 +36,7 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
     private long _lastAdjustmentTimestamp;
     private double _durationEwmaMs;
     private double _queueWaitEwmaMs;
+    private bool _hasQueueWaitSample;
     private long _adjustmentCount;
     private int _lastAdjustmentDirection;
     private bool _disposed;
@@ -80,6 +81,9 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
 
             if (_waiters.Count == 0 && _inFlight < _targetLimit)
             {
+                // An immediate admission waited zero: averaging it in lets the queue-wait EWMA
+                // fall once queueing stops, instead of holding the last burst's wait forever.
+                RecordQueueWaitLocked(_timeProvider.GetTimestamp());
                 _inFlight++;
                 return true;
             }
@@ -376,9 +380,12 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
     {
         var elapsedTicks = Math.Max(0, _timeProvider.GetTimestamp() - enqueuedAtTimestamp);
         var waitMs = elapsedTicks * 1000d / _timestampFrequency;
-        _queueWaitEwmaMs = _queueWaitEwmaMs <= 0
-            ? waitMs
-            : (_queueWaitEwmaMs * 0.8) + (waitMs * 0.2);
+        // Seed from the first sample only: an average that has decayed to zero is still an average,
+        // so one queued wait must not jump it straight to that wait's raw value.
+        _queueWaitEwmaMs = _hasQueueWaitSample
+            ? (_queueWaitEwmaMs * 0.8) + (waitMs * 0.2)
+            : waitMs;
+        _hasQueueWaitSample = true;
     }
 
     private static int Clamp(int value, int min, int max)

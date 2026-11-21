@@ -59,7 +59,7 @@ internal static partial class FeatureServerEndpoints
 
         // /tiles is not an Esri protocol surface: unlike GeoServices /rest, layer-not-found
         // must be a real HTTP 404 with a problem+json body, not a 200-wrapped GeoServices
-        // error envelope (honua-server#2945).
+        // error envelope.
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
             context,
             layerId,
@@ -85,7 +85,7 @@ internal static partial class FeatureServerEndpoints
             ?? publication.LayerIndex;
         if (storageLayerId is null)
         {
-            // /tiles is not an Esri protocol surface (honua-server#2945): a real 404, not
+            // /tiles is not an Esri protocol surface: a real 404, not
             // the GeoServices 200-envelope that path-based classification would otherwise apply.
             return ProblemDetailsHelpers.CreateProblem(
                 context,
@@ -97,30 +97,10 @@ internal static partial class FeatureServerEndpoints
 
         var queryValues = ToCaseInsensitiveDictionary(context.Request.Query);
         var where = GetValueString(queryValues, "where");
-        SqlFragment? sqlFilter = null;
-        if (!string.IsNullOrWhiteSpace(where))
+        var (sqlFilter, whereError) = TranslateCallerWhere(context, resource, where);
+        if (whereError != null)
         {
-            var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-            var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, where);
-            if (!parseResult.IsSuccess)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    ErrorMessages.Validation.InvalidParameter,
-                    [parseResult.ErrorMessage ?? "Invalid filter syntax."]);
-            }
-
-            if (parseResult.Expression != null)
-            {
-                var translationResult = filterService.Translate(parseResult.Expression, resource);
-                if (!translationResult.IsSuccess)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context,
-                        ErrorMessages.Validation.InvalidParameter,
-                        [translationResult.ErrorMessage ?? "Invalid filter syntax."]);
-                }
-
-                sqlFilter = translationResult.SqlFilter;
-            }
+            return whereError;
         }
 
         TemporalFilter? temporalFilter = null;
@@ -183,7 +163,7 @@ internal static partial class FeatureServerEndpoints
                 x,
                 y,
                 z,
-                query,
+                await VectorTileQuery.ForLayerAsync(context, resource, query).ConfigureAwait(false),
                 tileOptions,
                 tileLimits,
                 cancellationToken,

@@ -9,11 +9,6 @@ using Xunit;
 
 namespace Honua.Core.Tests.Raster.CogParser;
 
-/// <summary>
-/// Unit tests for CogMetadataExtractor.
-/// Validates extent computation with TIFF-spec ascending tag order
-/// where tag 33550 (PixelScale) precedes tag 33922 (Tiepoint).
-/// </summary>
 public class CogMetadataExtractorTests
 {
     [Trait("Tier", "Fast")]
@@ -286,7 +281,7 @@ public class CogMetadataExtractorTests
     [Fact]
     public async Task ReadMetadataAsync_TiepointTagWithNonDoubleType_ReturnsDefaultOriginWithoutThrowing()
     {
-        // Regression test for BH4-025: tag 33922 declared as SHORT (type 3) instead of DOUBLE (type 12).
+        // tag 33922 declared as SHORT (type 3) instead of DOUBLE (type 12).
         // Without the type guard, GetValidatedExternalArrayByteCount returns 12 bytes (6 * 2) but
         // ReadDouble(data, 24, ...) slices at offset 24 into that 12-byte span → ArgumentOutOfRangeException.
         var tiffData = BuildSyntheticCogBytesWithShortTiepoint(
@@ -310,7 +305,7 @@ public class CogMetadataExtractorTests
     [Fact]
     public async Task ReadMetadataAsync_PixelScaleTagWithNonDoubleType_ReturnsUnitScaleWithoutThrowing()
     {
-        // Regression test for BH4-025: tag 33550 declared as SHORT (type 3) instead of DOUBLE (type 12).
+        // tag 33550 declared as SHORT (type 3) instead of DOUBLE (type 12).
         // Without the type guard, GetValidatedExternalArrayByteCount returns 6 bytes (3 * 2) but
         // ReadDouble(data, 8, ...) slices at offset 8 into that 6-byte span → ArgumentOutOfRangeException.
         var tiffData = BuildSyntheticCogBytesWithShortPixelScale(
@@ -420,10 +415,6 @@ public class CogMetadataExtractorTests
         }
     }
 
-    /// <summary>
-    /// Builds a synthetic classic TIFF (little-endian) with georeferencing tags
-    /// in TIFF-spec ascending order. Tag 33550 comes before tag 33922.
-    /// </summary>
     private static byte[] BuildSyntheticCogBytes(
         int width, int height, int tileWidth, int tileHeight,
         double scaleX, double scaleY, double tiepointX, double tiepointY)
@@ -474,9 +465,6 @@ public class CogMetadataExtractorTests
         return ms.ToArray();
     }
 
-    /// <summary>
-    /// Builds a minimal TIFF with no georeferencing tags.
-    /// </summary>
     private static byte[] BuildSyntheticCogBytesNoGeo(int width, int height)
     {
         using var ms = new MemoryStream();
@@ -578,10 +566,6 @@ public class CogMetadataExtractorTests
         return ms.ToArray();
     }
 
-    /// <summary>
-    /// Builds a synthetic TIFF with a GeoKeyDirectoryTag containing both
-    /// GeographicTypeGeoKey and/or ProjectedCSTypeGeoKey.
-    /// </summary>
     private static byte[] BuildSyntheticCogBytesWithGeoKeys(
         int width, int height, int geographicSrid, int projectedSrid)
     {
@@ -648,9 +632,6 @@ public class CogMetadataExtractorTests
         return ms.ToArray();
     }
 
-    /// <summary>
-    /// Builds a minimal TIFF with BitsPerSample and SampleFormat tags for pixel type testing.
-    /// </summary>
     private static byte[] BuildSyntheticCogBytesWithSampleFormat(
         int width, int height, int bitsPerSample, ushort sampleFormat)
     {
@@ -681,10 +662,6 @@ public class CogMetadataExtractorTests
         return ms.ToArray();
     }
 
-    /// <summary>
-    /// Builds a minimal TIFF whose BitsPerSample and SampleFormat arrays fit inline
-    /// in the classic TIFF value field (two SHORT values each).
-    /// </summary>
     private static byte[] BuildSyntheticCogBytesWithInlineShortArrays(
         int width, int height, ushort bitsPerSample, ushort sampleFormat, ushort samplesPerPixel)
     {
@@ -713,11 +690,6 @@ public class CogMetadataExtractorTests
         return ms.ToArray();
     }
 
-    /// <summary>
-    /// Builds a synthetic TIFF where the ModelTiepointTag (33922) uses SHORT type
-    /// instead of the required DOUBLE type. The ModelPixelScaleTag uses the correct DOUBLE type.
-    /// This exercises the BH4-025 type guard in ExtractTiepointAsync.
-    /// </summary>
     private static byte[] BuildSyntheticCogBytesWithShortTiepoint(
         int width, int height, double scaleX, double scaleY)
     {
@@ -743,7 +715,7 @@ public class CogMetadataExtractorTests
         WriteIfdEntry(writer, 324, 4, 1, 5000);
         WriteIfdEntry(writer, 325, 4, 1, 1000);
         WriteIfdEntry(writer, 33550, 12, 3, scaleDataOffset);   // PixelScale — correct DOUBLE type
-        WriteIfdEntry(writer, 33922, 3, 6, tiepointDataOffset); // Tiepoint — wrong SHORT type (BH4-025)
+        WriteIfdEntry(writer, 33922, 3, 6, tiepointDataOffset); // Tiepoint — wrong SHORT type
 
         writer.Write((uint)0); // no next IFD
 
@@ -758,11 +730,6 @@ public class CogMetadataExtractorTests
         return ms.ToArray();
     }
 
-    /// <summary>
-    /// Builds a synthetic TIFF where the ModelPixelScaleTag (33550) uses SHORT type
-    /// instead of the required DOUBLE type. The ModelTiepointTag uses the correct DOUBLE type.
-    /// This exercises the BH4-025 type guard in ExtractPixelScaleAsync.
-    /// </summary>
     private static byte[] BuildSyntheticCogBytesWithShortPixelScale(
         int width, int height, double tiepointX, double tiepointY)
     {
@@ -787,7 +754,7 @@ public class CogMetadataExtractorTests
         WriteIfdEntry(writer, 323, 4, 1, 256);
         WriteIfdEntry(writer, 324, 4, 1, 5000);
         WriteIfdEntry(writer, 325, 4, 1, 1000);
-        WriteIfdEntry(writer, 33550, 3, 3, scaleDataOffset);      // PixelScale — wrong SHORT type (BH4-025)
+        WriteIfdEntry(writer, 33550, 3, 3, scaleDataOffset);      // PixelScale — wrong SHORT type
         WriteIfdEntry(writer, 33922, 12, 6, tiepointDataOffset);  // Tiepoint — correct DOUBLE type
 
         writer.Write((uint)0); // no next IFD
@@ -837,9 +804,6 @@ public class CogMetadataExtractorTests
     private static uint PackInlineShortPair(ushort first, ushort second)
         => (uint)(first | (second << 16));
 
-    /// <summary>
-    /// In-memory ICloudRangeReader for unit testing without cloud dependencies.
-    /// </summary>
     private sealed class InMemoryRangeReader : ICloudRangeReader
     {
         private readonly byte[] _data;

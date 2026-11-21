@@ -29,10 +29,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Integration tests for GPServer REST endpoints operating as a protocol adapter
-/// over the canonical process runtime.
-/// </summary>
 // PostgresFixture keeps the reference-counted PostgreSQL infrastructure alive between cases.
 // Default-host cases share one isolated host. Cases that replace other services
 // build their own host.
@@ -223,7 +219,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
 
         var response = await _client.PostAsync($"/rest/services/{ServiceId}/GPServer", content);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -249,7 +245,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         await StartDefaultApplicationAsync();
         var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer?f=html");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -273,7 +269,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         try
         {
             using var response = await fixture.Client.GetAsync("/rest/services/MissingService/GPServer");
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -330,7 +326,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     public async Task TaskInfo_KnownTask_EveryParameterIncludesDefaultValueKey()
     {
         await StartDefaultApplicationAsync();
-        // Regression (#1775): a missing defaultValue key makes
+        // A missing defaultValue key makes
         // arcgis.geoprocessing.import_toolbox() raise KeyError('defaultValue').
         // Esri always emits the key (null when unset) on every parameter.
         var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/geometry.buffer");
@@ -362,7 +358,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         string taskName, string parameterName, string dataType, JsonValueKind expectedKind, string expectedJson)
     {
         await StartDefaultApplicationAsync();
-        // Regression (#4634): Esri's Python SDK writes non-string defaults into
+        // Esri's Python SDK writes non-string defaults into
         // generated code with str(), so a "false" string became an unbound name.
         using var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/{taskName}");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -408,7 +404,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
 
         var response = await _client.PostAsync($"/rest/services/{ServiceId}/GPServer/geometry.buffer", content);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -420,7 +416,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         await StartDefaultApplicationAsync();
         var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/BufferAnalysis");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -444,7 +440,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         try
         {
             using var response = await fixture.Client.GetAsync($"/rest/services/{ServiceId}/GPServer/geometry.buffer");
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -596,7 +592,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         var response = await _client.PostAsync(
             $"/rest/services/{ServiceId}/GPServer/analytics.cluster-managed/execute", content);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("submitJob");
@@ -645,7 +641,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
     public async Task ExecutePost_WithContextOutSR_ReprojectsGeometryOutput()
     {
-        // #4030: the Esri 10.6.1+ `context` parameter replaces env:*; context.outSR must
+        // The Esri 10.6.1+ `context` parameter replaces env:*; context.outSR must
         // reproject the result exactly like env:outSR instead of being stored and ignored.
         // The job serves a WGS 84 point (1, 2); the baseline request without context proves
         // the output is otherwise unprojected, so the projected ordinates come from context.
@@ -763,7 +759,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     public async Task SubmitJob_WithUnsupportedOrConflictingContext_Returns400()
     {
         await StartDefaultApplicationAsync();
-        // #4030: a context property Honua cannot apply is rejected by name rather than
+        // A context property Honua cannot apply is rejected by name rather than
         // silently ignored, and a context SR that disagrees with env:* is ambiguous.
         var cases = new (Dictionary<string, string> Extra, string Expected)[]
         {
@@ -811,7 +807,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
     public async Task ExecutePost_TerminalFailedOrCancelledJob_ReturnsEsriErrorEnvelope()
     {
-        // #4034: Esri clients decide execute success by the absence of an `error` object,
+        // Esri clients decide execute success by the absence of an `error` object,
         // so a failed or cancelled synchronous run must return the GeoServices error
         // envelope — never `results: []`, which reads as an empty successful run.
         var cases = new (ExecutionJobStatus Status, string? ErrorMessage, string GeoServicesStatus, string Outcome)[]
@@ -880,8 +876,6 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         await StartDefaultApplicationAsync();
         // analytics.cluster is protocol-only and cannot use either GPServer
         // execution route, so the response must not prescribe submitJob as a remedy.
-        // (conversion.geometry-format was this exemplar until #3936 gave it a real
-        // managed executor; the assertion below is unchanged.)
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
@@ -892,7 +886,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         var response = await _client.PostAsync(
             $"/rest/services/{ServiceId}/GPServer/analytics.cluster/execute", content);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("ProtocolOnly");
@@ -938,7 +932,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         var response = await _client.PostAsync(
             $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/submitJob", content);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -949,9 +943,9 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     {
         await StartDefaultApplicationAsync();
         // Esri's GP framework matches value lists case-insensitively, so the
-        // adapter accepts 'Detection'. Before #3053 it then passed the caller's
-        // spelling through verbatim and the ordinally-comparing canonical plan
-        // validator rejected the very submission the adapter had just accepted.
+        // adapter accepts 'Detection'. It must not then pass the caller's spelling
+        // through verbatim, or the ordinally-comparing canonical plan validator
+        // rejects the very submission the adapter just accepted.
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
@@ -986,10 +980,8 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         string? extraValue)
     {
         await StartDefaultApplicationAsync();
-        // #4033: the Esri input translator used to add a derived 'srid' input whenever an esriGeometry or
-        // FeatureSet was translated. These three tasks declare no 'srid' parameter, so canonical plan
-        // validation rejected every such submission as UNKNOWN_PARAMETER. The spatial reference travels
-        // inside the translated EWKB instead, where each executor reads it.
+        // These tasks declare no srid parameter. Spatial reference must travel inside
+        // the translated EWKB, where executors read it, without adding an unknown input.
         var inputs = new Dictionary<string, string>
         {
             ["f"] = "json",
@@ -1072,7 +1064,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/BufferAnalysis/submitJob?f=json&input=test");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -1108,7 +1100,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
                 $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob",
                 content);
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -1150,7 +1142,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
                 $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob",
                 content);
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             var body = await response.Content.ReadAsStringAsync();
             body.Should().NotContain("honua.services");
@@ -1227,12 +1219,12 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithIdempotencyKeyParameter_ThreadsKeyToJobService()
     {
-        // server#4627: GPServer previously submitted every job with a null
-        // idempotencyKey, so a caller-supplied key had no effect and a lost-response
-        // retry could be denied at quota / mint a second job instead of returning the
-        // original. Verify the optional GeoServices-style "idempotencyKey" request
-        // parameter reaches IGeoprocessingJobService.SubmitJobAsync and is excluded
-        // from the task's own input parameters.
+        // A caller-supplied idempotency key must take effect: submitting every job
+        // with a null idempotencyKey lets a lost-response retry be denied at quota or
+        // mint a second job instead of returning the original. Verify the optional
+        // GeoServices-style "idempotencyKey" request parameter reaches
+        // IGeoprocessingJobService.SubmitJobAsync and is excluded from the task's own
+        // input parameters.
         var recordingService = new RecordingGeoprocessingJobService();
         var submitFixture = new WebAppFixture()
             .ConfigureServices(services =>
@@ -1245,22 +1237,29 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         try
         {
             using var client = submitFixture.CreateAdminClient();
-            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            async Task<HttpResponseMessage> SubmitAsync()
             {
-                ["f"] = "json",
-                ["wkb"] = PointWkbBase64,
-                ["srid"] = "4326",
-                ["distance"] = "25.5",
-                ["idempotencyKey"] = "client-retry-key-1"
-            });
+                using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    ["f"] = "json",
+                    ["wkb"] = PointWkbBase64,
+                    ["srid"] = "4326",
+                    ["distance"] = "25.5",
+                    ["idempotencyKey"] = "client-retry-key-1"
+                });
+                return await client.PostAsync($"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob", content);
+            }
 
-            var response = await client.PostAsync(
-                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob",
-                content);
+            var response = await SubmitAsync();
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             recordingService.LastIdempotencyKey.Should().Be("client-retry-key-1");
             recordingService.LastPlan!.Steps[0].Inputs.Should().NotContainKey("idempotencyKey");
+
+            // The plan id is part of the idempotency fingerprint, so a retry must name the same plan.
+            var firstPlanId = recordingService.LastPlan!.PlanId;
+            (await SubmitAsync()).StatusCode.Should().Be(HttpStatusCode.OK);
+            recordingService.LastPlan!.PlanId.Should().Be(firstPlanId);
         }
         finally
         {
@@ -1407,7 +1406,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}")]
     public async Task JobResult_WithEnvOutSR_ReprojectsAsyncGeometryOutput()
     {
-        // Async honesty (#1228 follow-up): a submitJob request that carried
+        // Async honesty: a submitJob request that carried
         // env:outSR must actually reproject the geometry served from
         // results/{param}, matching the synchronous execute path — not accept
         // env:outSR and then silently return the unprojected geometry.
@@ -1627,7 +1626,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     }
 
     // -----------------------------------------------------------------------
-    // Jobs listing / history (#2143)
+    // Jobs listing / history
     // -----------------------------------------------------------------------
 
     [IntegrationTest]
@@ -1696,7 +1695,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         await StartDefaultApplicationAsync();
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/AnyTask/jobs?num=0&f=json");
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -1767,7 +1766,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         var response = await _client.GetAsync(
             $"/rest/services/AnyService/GPServer/AnyTask/jobs/{jobId}?f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -1781,8 +1780,8 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
     public async Task SubmitJob_WithEnvOutSR_IsAccepted()
     {
         await StartDefaultApplicationAsync();
-        // env:outSR is now recognized (not rejected) on submitJob, matching the
-        // synchronous execute route's behavior. See #1228.
+        // env:outSR is recognized (not rejected) on submitJob, matching the
+        // synchronous execute route's behavior.
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
@@ -1960,7 +1959,7 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
         var response = await _client.PostAsync(
             $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob", content);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         doc.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
@@ -2383,14 +2382,6 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
             => throw new NotSupportedException();
     }
 
-    /// <summary>
-    /// Test double for the async results/{param} path with env:outSR in the job
-    /// metadata. Serves a single WGS 84 (EPSG:4326) GeoJSON point output so the
-    /// handler's env:outSR reprojection can be exercised end to end. Factory
-    /// methods pick the working-SRID metadata: <see cref="Reprojectable"/> stores a
-    /// known 4326 working SRID (reprojects to 3857); <see cref="UnknownWorkingSr"/>
-    /// omits it (the transform cannot be applied and must be rejected).
-    /// </summary>
     private sealed class OutSrResultBackedGeoprocessingJobService : IGeoprocessingJobService
     {
         private const string GeoJsonDataUriPrefix = "data:application/geo+json;base64,";
@@ -2516,17 +2507,6 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
             => throw new NotSupportedException();
     }
 
-    /// <summary>
-    /// Test double for the synchronous /execute path: submission returns a
-    /// terminal Succeeded job immediately, so the PollUntilTerminalAsync loop
-    /// completes on the first tick. Submission echoes the protocol metadata
-    /// back through the job's spec so the binding-validation gate (which
-    /// reads gpserver.serviceId/gpserver.taskName from Parameters) sees the
-    /// values that the adapter stamped on the plan. <paramref name="terminalStatus"/>
-    /// selects the terminal state the job reports (Failed/Cancelled drive the
-    /// synchronous failure envelope), and <paramref name="artifactUri"/> lets a test
-    /// serve an inline GeoJSON data URI instead of the default stored-artifact URL.
-    /// </summary>
     private sealed class SyncExecuteGeoprocessingJobService(
         ExecutionJobStatus terminalStatus = ExecutionJobStatus.Succeeded,
         string? errorMessage = null,
@@ -2666,10 +2646,8 @@ public sealed class GPServerEndpointTests : IClassFixture<PostgresFixture>, ICla
             CancellationToken cancellationToken = default)
             => throw exception;
 
-        // Audit-C1: IResourceValidator V2 methods are now abstract on the interface,
-        // so this throwing test stub must satisfy them explicitly. Only the
-        // ValidateServiceV2Async path is exercised by these tests; the rest forward
-        // the same simulated failure for completeness.
+        // Only ValidateServiceV2Async is exercised here; the other validator methods
+        // forward the same simulated failure.
         public Task<ResourceValidationResult<MetadataV2Object>> ValidateStorageLayerV2Async(
             int storageLayerId, CancellationToken cancellationToken = default) => throw exception;
 

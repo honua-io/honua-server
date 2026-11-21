@@ -111,8 +111,10 @@ internal static class MapLibreToSldConverter
                 AddPolygonSymbolizer(rule, layer, diagnostics);
                 return rule;
             case "symbol":
-                AddSymbolLayer(rule, layer, diagnostics);
-                return rule;
+                // A symbol layer with neither an icon nor text has nothing to export; dropping
+                // the rule (as for background layers) lets a style made only of such layers
+                // reach the MapLibreLayers error instead of exporting an empty <Rule>.
+                return AddSymbolLayer(rule, layer, diagnostics) ? rule : null;
             case "background":
                 diagnostics.Add(Warn(
                     "BackgroundLayer",
@@ -190,7 +192,7 @@ internal static class MapLibreToSldConverter
         rule.Add(symbolizer);
     }
 
-    private static void AddSymbolLayer(XElement rule, MapLibreStyleLayer layer, List<SldConversionDiagnostic> diagnostics)
+    private static bool AddSymbolLayer(XElement rule, MapLibreStyleLayer layer, List<SldConversionDiagnostic> diagnostics)
     {
         var iconImage = TryGetLiteralString(layer, "icon-image", diagnostics, isLayout: true);
         var hasText = layer.Layout?.ContainsKey("text-field") == true
@@ -218,73 +220,22 @@ internal static class MapLibreToSldConverter
             rule.Add(new XElement(Sld + "PointSymbolizer", graphic));
         }
 
-        if (hasText)
+        var textSymbolizer = hasText ? TryBuildTextSymbolizer(layer, diagnostics) : null;
+        if (textSymbolizer is not null)
         {
-            var textField = TryGetLiteralString(layer, "text-field", diagnostics, isLayout: true);
-            var textColor = TryGetLiteralString(layer, "text-color", diagnostics);
-            var textOpacity = TryGetLiteralNumber(layer, "text-opacity", diagnostics);
-            var textSize = TryGetLiteralNumber(layer, "text-size", diagnostics, isLayout: true);
-            var haloColor = TryGetLiteralString(layer, "text-halo-color", diagnostics);
-            var haloWidth = TryGetLiteralNumber(layer, "text-halo-width", diagnostics);
-
-            var textSymbolizer = new XElement(Sld + "TextSymbolizer");
-            if (!string.IsNullOrEmpty(textField))
-            {
-                textSymbolizer.Add(BuildLabel(textField));
-            }
-
-            if (textSize.HasValue || !string.IsNullOrEmpty(GetFontFamily(layer, diagnostics)))
-            {
-                var font = new XElement(Sld + "Font");
-                var family = GetFontFamily(layer, diagnostics);
-                if (!string.IsNullOrEmpty(family))
-                {
-                    font.Add(BuildCss("font-family", family));
-                }
-
-                if (textSize.HasValue)
-                {
-                    font.Add(BuildCss("font-size", FormatNumber(textSize.Value)));
-                }
-
-                textSymbolizer.Add(font);
-            }
-
-            // text-opacity rides on a separate paint property on the import side, so
-            // mirror that here: emit fill-opacity in the SLD <Fill> rather than
-            // dropping it. Otherwise stored MapLibre opacity round-trips through
-            // export → import as 1.0.
-            if (!string.IsNullOrEmpty(textColor) || textOpacity.HasValue)
-            {
-                textSymbolizer.Add(BuildFill(textColor, textOpacity));
-            }
-
-            if (haloWidth.HasValue || !string.IsNullOrEmpty(haloColor))
-            {
-                var halo = new XElement(Sld + "Halo");
-                if (haloWidth.HasValue)
-                {
-                    halo.Add(new XElement(Sld + "Radius", FormatNumber(haloWidth.Value)));
-                }
-
-                if (!string.IsNullOrEmpty(haloColor))
-                {
-                    halo.Add(BuildFill(haloColor, null));
-                }
-
-                textSymbolizer.Add(halo);
-            }
-
             rule.Add(textSymbolizer);
         }
 
-        if (string.IsNullOrEmpty(iconImage) && !hasText)
+        if (string.IsNullOrEmpty(iconImage) && textSymbolizer is null)
         {
             diagnostics.Add(Warn(
                 "SymbolLayer",
-                $"Symbol layer '{layer.Id}' has no icon-image or text-field; nothing to export.",
+                $"Symbol layer '{layer.Id}' has no icon-image or exportable text-field; nothing to export.",
                 layer.Id));
+            return false;
         }
+
+        return true;
     }
 
     private static string? GetFontFamily(MapLibreStyleLayer layer, List<SldConversionDiagnostic> diagnostics)
@@ -372,6 +323,82 @@ internal static class MapLibreToSldConverter
         }
 
         return stroke;
+    }
+
+    // A TextSymbolizer needs a Label; without one it would render nothing, so it is not written.
+    private static XElement? TryBuildTextSymbolizer(MapLibreStyleLayer layer, List<SldConversionDiagnostic> diagnostics)
+        => TryGetLabel(layer, diagnostics) is { } label
+            ? new XElement(Sld + "TextSymbolizer", label, BuildFont(layer, diagnostics), BuildTextFill(layer, diagnostics), BuildHalo(layer, diagnostics))
+            : null;
+
+    // text-field as an SLD Label: a literal or {field} template, or the data-driven ["get", field]
+    // (optionally inside ["to-string", ...]) that the SLD importer writes for <ogc:PropertyName>.
+    private static XElement? TryGetLabel(MapLibreStyleLayer layer, List<SldConversionDiagnostic> diagnostics)
+    {
+        if (layer.Layout is null || !layer.Layout.TryGetValue("text-field", out var expression))
+        {
+            return null;
+        }
+
+        if (expression.Kind == MapLibreExpressionKind.String)
+        {
+            return string.IsNullOrEmpty(expression.StringValue) ? null : BuildLabel(expression.StringValue);
+        }
+
+        if (TryGetPropertyName(expression) is { } field)
+        {
+            return new XElement(Sld + "Label", new XElement(Ogc + "PropertyName", field));
+        }
+
+        diagnostics.Add(Warn(
+            "text-field",
+            "Property 'text-field' is an expression SLD cannot express; the text symbolizer was omitted from SLD output.",
+            layer.Id));
+        return null;
+    }
+
+    private static string? TryGetPropertyName(MapLibreExpression expression) => expression.Items switch
+    {
+        [{ StringValue: "get" }, { Kind: MapLibreExpressionKind.String, StringValue.Length: > 0 } field] => field.StringValue,
+        [{ StringValue: "to-string" }, var inner] => TryGetPropertyName(inner),
+        _ => null,
+    };
+
+    private static XElement? BuildFont(MapLibreStyleLayer layer, List<SldConversionDiagnostic> diagnostics)
+    {
+        var textSize = TryGetLiteralNumber(layer, "text-size", diagnostics, isLayout: true);
+        var family = GetFontFamily(layer, diagnostics);
+        if (!textSize.HasValue && string.IsNullOrEmpty(family))
+        {
+            return null;
+        }
+
+        return new XElement(Sld + "Font",
+            string.IsNullOrEmpty(family) ? null : BuildCss("font-family", family),
+            textSize.HasValue ? BuildCss("font-size", FormatNumber(textSize.Value)) : null);
+    }
+
+    // text-opacity rides on a separate paint property on the import side, so it is written as
+    // fill-opacity in the SLD <Fill> rather than dropped; otherwise it round-trips as 1.0.
+    private static XElement? BuildTextFill(MapLibreStyleLayer layer, List<SldConversionDiagnostic> diagnostics)
+    {
+        var textColor = TryGetLiteralString(layer, "text-color", diagnostics);
+        var textOpacity = TryGetLiteralNumber(layer, "text-opacity", diagnostics);
+        return !string.IsNullOrEmpty(textColor) || textOpacity.HasValue ? BuildFill(textColor, textOpacity) : null;
+    }
+
+    private static XElement? BuildHalo(MapLibreStyleLayer layer, List<SldConversionDiagnostic> diagnostics)
+    {
+        var haloColor = TryGetLiteralString(layer, "text-halo-color", diagnostics);
+        var haloWidth = TryGetLiteralNumber(layer, "text-halo-width", diagnostics);
+        if (!haloWidth.HasValue && string.IsNullOrEmpty(haloColor))
+        {
+            return null;
+        }
+
+        return new XElement(Sld + "Halo",
+            haloWidth.HasValue ? new XElement(Sld + "Radius", FormatNumber(haloWidth.Value)) : null,
+            string.IsNullOrEmpty(haloColor) ? null : BuildFill(haloColor, null));
     }
 
     private static XElement BuildLabel(string textField)
@@ -651,18 +678,6 @@ internal static class MapLibreToSldConverter
 
     private static string FormatNumber(double value)
         => value.ToString("R", CultureInfo.InvariantCulture);
-
-    public static string SerializeMapLibreLayers(JsonElement style, out string? error)
-    {
-        error = null;
-        if (style.ValueKind != JsonValueKind.Object || !style.TryGetProperty("layers", out var layersElement) || layersElement.ValueKind != JsonValueKind.Array)
-        {
-            error = "Stored style is missing the layers array.";
-            return string.Empty;
-        }
-
-        return layersElement.GetRawText();
-    }
 
     private static SldConversionDiagnostic Warn(string construct, string message, string? ruleName) => new()
     {

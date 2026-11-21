@@ -19,17 +19,10 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Endpoint round-trip tests for the Esri-conventional task-name alias overlay
-/// (<see cref="Honua.Protocols.GeoServices.GPServer.GPServerEsriTaskAliases"/>):
-/// task-list publication, task-info/submitJob/execute resolution via alias,
-/// unknown-alias behavior, deliberate case-insensitivity, duplicate-name handling,
-/// and the deterministic collision policy (a real catalog process ID always wins
-/// over an alias; aliases only resolve when no real process owns the name).
-/// </summary>
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.GPServer)]
-public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
+public sealed class GPServerEsriTaskAliasEndpointTests(WebAppFixture fixture, GPServerEsriTaskAliasEndpointTests.AliasHosts hosts)
+    : IClassFixture<WebAppFixture>, IClassFixture<GPServerEsriTaskAliasEndpointTests.AliasHosts>
 {
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
     private const string ServiceId = WebAppFixture.TestServiceId;
@@ -41,19 +34,11 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
         "return", "try", "while", "with", "yield", "gis", "future", "estimate"
     ];
 
-    private readonly WebAppFixture _fixture = new();
-    private HttpClient _client = null!;
-
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-        _client = _fixture.Client;
-    }
-
-    public async Task DisposeAsync()
-    {
-        await _fixture.DisposeAsync();
-    }
+    // One default host per class: its cases only read the catalog or expect a 404. Cases that
+    // replace services use the AliasHosts host for their configuration; the one case that needs
+    // the colliding catalog and the recording service together builds its own.
+    private readonly WebAppFixture _fixture = fixture;
+    private readonly HttpClient _client = fixture.Client;
 
     // -----------------------------------------------------------------------
     // Task list (service info)
@@ -118,7 +103,7 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer")]
     public async Task ServiceInfo_EveryAliasInTheContract_IsPublishedOnceAndResolves()
     {
-        // #4781: the certification harness reads /GPServer?f=json and requires every
+        // The certification harness reads /GPServer?f=json and requires every
         // canonical id and its alias exactly once. DeleteFeatures and CalculateField were
         // in the contract but never published, because their processes are protocol-only.
         // Drive the assertion from the real contract so the two can never disagree again.
@@ -162,48 +147,35 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_KeywordParameterAlias_PreservesCanonicalInputAndRejectsConflicts(string fromName, bool conflict)
     {
-        var recordingService = new RecordingJobService();
-        var fixture = new WebAppFixture().ConfigureServices(services =>
+        var (host, recordingService) = await hosts.RecordingAsync();
+        using var client = host.CreateAdminClient();
+        var parameters = new Dictionary<string, string>
         {
-            services.RemoveAll<IGeoprocessingJobService>();
-            services.AddSingleton<IGeoprocessingJobService>(recordingService);
-        });
-        await fixture.InitializeAsync();
-        try
+            ["f"] = "json",
+            ["input"] = "data:application/geo+json;base64," + Convert.ToBase64String(
+                System.Text.Encoding.UTF8.GetBytes("{\"type\":\"FeatureCollection\",\"features\":[]}")),
+            [fromName] = "old_field",
+            ["to"] = "new_field"
+        };
+        if (conflict)
         {
-            using var client = fixture.CreateAdminClient();
-            var parameters = new Dictionary<string, string>
-            {
-                ["f"] = "json",
-                ["input"] = "data:application/geo+json;base64," + Convert.ToBase64String(
-                    System.Text.Encoding.UTF8.GetBytes("{\"type\":\"FeatureCollection\",\"features\":[]}")),
-                [fromName] = "old_field",
-                ["to"] = "new_field"
-            };
-            if (conflict)
-            {
-                parameters["from"] = "different_field";
-            }
-            using var content = new FormUrlEncodedContent(parameters);
-            using var response = await client.PostAsync(
-                $"/rest/services/{ServiceId}/GPServer/transform.attribute-rename/submitJob", content);
-            if (conflict)
-            {
-                await response.AssertGeoServicesErrorAsync(400);
-                recordingService.LastPlan.Should().BeNull();
-                return;
-            }
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            recordingService.LastPlan.Should().NotBeNull();
-            var step = recordingService.LastPlan!.Steps.Should().ContainSingle().Which;
-            step.ProcessId.Should().Be("transform.attribute-rename");
-            step.Inputs.Should().Contain("from", "old_field").And.Contain("to", "new_field");
-            step.Inputs.Keys.Should().NotContain(key => key.StartsWith("HonuaParameter_", StringComparison.OrdinalIgnoreCase));
+            parameters["from"] = "different_field";
         }
-        finally
+        using var content = new FormUrlEncodedContent(parameters);
+        using var response = await client.PostAsync(
+            $"/rest/services/{ServiceId}/GPServer/transform.attribute-rename/submitJob", content);
+        if (conflict)
         {
-            await fixture.DisposeAsync();
+            await response.AssertGeoServicesErrorAsync(400);
+            recordingService.LastPlan.Should().BeNull();
+            return;
         }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        recordingService.LastPlan.Should().NotBeNull();
+        var step = recordingService.LastPlan!.Steps.Should().ContainSingle().Which;
+        step.ProcessId.Should().Be("transform.attribute-rename");
+        step.Inputs.Should().Contain("from", "old_field").And.Contain("to", "new_field");
+        step.Inputs.Keys.Should().NotContain(key => key.StartsWith("HonuaParameter_", StringComparison.OrdinalIgnoreCase));
     }
 
     [IntegrationTest]
@@ -271,7 +243,7 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
         root.GetProperty("displayName").GetString().Should().Be("Buffer");
         root.GetProperty("description").GetString().Should().Contain("Creates a polygon");
 
-        // CONTRACT HONESTY (#2788): the alias renames the task, it does not adapt the
+        // CONTRACT HONESTY: the alias renames the task, it does not adapt the
         // wire contract to Esri Buffer's. Task-info must publish the canonical Honua
         // inputs (base64 WKB + SRID + distance) — not Esri Buffer's feature-record-set
         // input or linear-unit distance — so a client driving invocation from this
@@ -348,47 +320,32 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_ByEsriAlias_ResolvesToCanonicalProcess(string taskName)
     {
-        var recordingService = new RecordingJobService();
-        var submitFixture = new WebAppFixture()
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<IGeoprocessingJobService>();
-                services.AddSingleton<IGeoprocessingJobService>(recordingService);
-            });
-
-        await submitFixture.InitializeAsync();
-        try
+        var (host, recordingService) = await hosts.RecordingAsync();
+        using var client = host.CreateAdminClient();
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            using var client = submitFixture.CreateAdminClient();
-            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["f"] = "json",
-                ["wkb"] = PointWkbBase64,
-                ["srid"] = "4326",
-                ["distance"] = "25.5"
-            });
+            ["f"] = "json",
+            ["wkb"] = PointWkbBase64,
+            ["srid"] = "4326",
+            ["distance"] = "25.5"
+        });
 
-            var response = await client.PostAsync(
-                $"/rest/services/{ServiceId}/GPServer/{taskName}/submitJob", content);
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceId}/GPServer/{taskName}/submitJob", content);
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            doc.RootElement.GetProperty("jobId").GetString().Should().Be("gp-alias-job");
-            doc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("jobId").GetString().Should().Be("gp-alias-job");
+        doc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");
 
-            // The alias resolves to the canonical engine process...
-            recordingService.LastPlan.Should().NotBeNull();
-            recordingService.LastPlan!.Steps.Should().ContainSingle()
-                .Which.ProcessId.Should().Be("geometry.buffer");
-            // ...while the protocol binding metadata keeps the addressed task name so
-            // job-status/results/cancel round-trips under the same alias route.
-            recordingService.LastProtocolMetadata.Should().Contain(
-                new KeyValuePair<string, string>("gpserver.taskName", taskName));
-        }
-        finally
-        {
-            await submitFixture.DisposeAsync();
-        }
+        // The alias resolves to the canonical engine process...
+        recordingService.LastPlan.Should().NotBeNull();
+        recordingService.LastPlan!.Steps.Should().ContainSingle()
+            .Which.ProcessId.Should().Be("geometry.buffer");
+        // ...while the protocol binding metadata keeps the addressed task name so
+        // job-status/results/cancel round-trips under the same alias route.
+        recordingService.LastProtocolMetadata.Should().Contain(
+            new KeyValuePair<string, string>("gpserver.taskName", taskName));
     }
 
     [IntegrationTest]
@@ -423,39 +380,25 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
     public async Task Execute_ByEsriAlias_RunsCanonicalProcessInline(string taskName)
     {
-        var executeFixture = new WebAppFixture()
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<IGeoprocessingJobService>();
-                services.AddSingleton<IGeoprocessingJobService>(new SyncExecuteJobService());
-            });
-
-        await executeFixture.InitializeAsync();
-        try
+        var host = await hosts.ExecuteAsync();
+        using var client = host.CreateAdminClient();
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            using var client = executeFixture.CreateAdminClient();
-            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["f"] = "json",
-                ["wkb"] = PointWkbBase64,
-                ["srid"] = "4326",
-                ["distance"] = "10"
-            });
+            ["f"] = "json",
+            ["wkb"] = PointWkbBase64,
+            ["srid"] = "4326",
+            ["distance"] = "10"
+        });
 
-            var response = await client.PostAsync(
-                $"/rest/services/{ServiceId}/GPServer/{taskName}/execute", content);
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceId}/GPServer/{taskName}/execute", content);
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var root = doc.RootElement;
-            root.GetProperty("jobStatus").GetString().Should().Be("esriJobSucceeded");
-            root.GetProperty("results").EnumerateArray().Should().NotBeEmpty(
-                "geometry.buffer is sync-eligible, so its alias must execute inline too");
-        }
-        finally
-        {
-            await executeFixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+        root.GetProperty("jobStatus").GetString().Should().Be("esriJobSucceeded");
+        root.GetProperty("results").EnumerateArray().Should().NotBeEmpty(
+            "geometry.buffer is sync-eligible, so its alias must execute inline too");
     }
 
     [IntegrationTest]
@@ -487,30 +430,21 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer")]
     public async Task ServiceInfo_CatalogProcessIdMatchingAlias_PublishesNameOnlyOnce()
     {
-        var collisionFixture = CreateCollisionFixture();
+        var collisionFixture = await hosts.CollisionAsync();
+        var response = await collisionFixture.Client.GetAsync($"/rest/services/{ServiceId}/GPServer");
 
-        await collisionFixture.InitializeAsync();
-        try
-        {
-            var response = await collisionFixture.Client.GetAsync($"/rest/services/{ServiceId}/GPServer");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var tasks = doc.RootElement.GetProperty("tasks").EnumerateArray()
+            .Select(item => item.GetString())
+            .ToArray();
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var tasks = doc.RootElement.GetProperty("tasks").EnumerateArray()
-                .Select(item => item.GetString())
-                .ToArray();
-
-            // The custom process owns the name; the geometry.buffer alias is suppressed
-            // so its encoded name is published once and the raw route still resolves it.
-            tasks.Should().NotContain("Buffer");
-            tasks.Count(name => name == "Honua_427566666572").Should().Be(1);
-            tasks.Should().Contain("Honua_67656F6D657472792E627566666572");
-            tasks.Should().OnlyHaveUniqueItems();
-        }
-        finally
-        {
-            await collisionFixture.DisposeAsync();
-        }
+        // The custom process owns the name; the geometry.buffer alias is suppressed
+        // so its encoded name is published once and the raw route still resolves it.
+        tasks.Should().NotContain("Buffer");
+        tasks.Count(name => name == "Honua_427566666572").Should().Be(1);
+        tasks.Should().Contain("Honua_67656F6D657472792E627566666572");
+        tasks.Should().OnlyHaveUniqueItems();
     }
 
     [IntegrationTest]
@@ -518,26 +452,17 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
     public async Task TaskInfo_CatalogProcessIdMatchingAlias_ResolvesToCatalogProcess()
     {
-        var collisionFixture = CreateCollisionFixture();
+        var collisionFixture = await hosts.CollisionAsync();
+        var response = await collisionFixture.Client.GetAsync($"/rest/services/{ServiceId}/GPServer/Buffer");
 
-        await collisionFixture.InitializeAsync();
-        try
-        {
-            var response = await collisionFixture.Client.GetAsync($"/rest/services/{ServiceId}/GPServer/Buffer");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var root = doc.RootElement;
-
-            // Deterministic: the real process named "Buffer" wins over the alias, every time.
-            root.GetProperty("name").GetString().Should().Be("Buffer");
-            root.GetProperty("displayName").GetString().Should().Be("Custom Buffer");
-            root.GetProperty("description").GetString().Should().Be(CustomBufferDescription);
-        }
-        finally
-        {
-            await collisionFixture.DisposeAsync();
-        }
+        // Deterministic: the real process named "Buffer" wins over the alias, every time.
+        root.GetProperty("name").GetString().Should().Be("Buffer");
+        root.GetProperty("displayName").GetString().Should().Be("Custom Buffer");
+        root.GetProperty("description").GetString().Should().Be(CustomBufferDescription);
     }
 
     [IntegrationTest]
@@ -549,19 +474,10 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
         // not an exact (ordinal) process-ID match, and the case-insensitive alias
         // overlay is bypassed because a real process holds the name — so the request
         // 404s instead of nondeterministically routing to geometry.buffer.
-        var collisionFixture = CreateCollisionFixture();
+        var collisionFixture = await hosts.CollisionAsync();
+        var response = await collisionFixture.Client.GetAsync($"/rest/services/{ServiceId}/GPServer/buffer");
 
-        await collisionFixture.InitializeAsync();
-        try
-        {
-            var response = await collisionFixture.Client.GetAsync($"/rest/services/{ServiceId}/GPServer/buffer");
-
-            await response.AssertGeoServicesErrorAsync(404);
-        }
-        finally
-        {
-            await collisionFixture.DisposeAsync();
-        }
+        await response.AssertGeoServicesErrorAsync(404);
     }
 
     [IntegrationTest]
@@ -611,10 +527,6 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
     private const string CustomBufferDescription =
         "Catalog process that owns the name 'Buffer', shadowing the geometry.buffer alias.";
 
-    /// <summary>
-    /// Builds a fixture whose process catalog contains a real process whose ID collides
-    /// with the Esri alias <c>Buffer</c>, to prove the deterministic collision policy.
-    /// </summary>
     private static WebAppFixture CreateCollisionFixture(Action<IServiceCollection>? extraServices = null)
         => new WebAppFixture()
             .ConfigureServices(services =>
@@ -625,10 +537,59 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
                 extraServices?.Invoke(services);
             });
 
-    /// <summary>
-    /// Wraps the built-in catalog and adds a process whose ID equals the Esri alias
-    /// <c>Buffer</c>, simulating a custom/catalog process colliding with the alias table.
-    /// </summary>
+    // One host per replaced-service configuration, each started on first use and shared by the
+    // class. Cases in a class run one at a time, so a case takes the recording service cleared.
+    public sealed class AliasHosts : IAsyncLifetime
+    {
+        private readonly RecordingJobService _recording = new();
+        private readonly Lazy<Task<WebAppFixture>> _recordingHost;
+        private readonly Lazy<Task<WebAppFixture>> _executeHost = new(() => StartAsync(
+            new WebAppFixture().ConfigureServices(services => UseJobService(services, new SyncExecuteJobService()))));
+        private readonly Lazy<Task<WebAppFixture>> _collisionHost = new(() => StartAsync(CreateCollisionFixture()));
+
+        public AliasHosts()
+        {
+            _recordingHost = new(() => StartAsync(
+                new WebAppFixture().ConfigureServices(services => UseJobService(services, _recording))));
+        }
+
+        internal async Task<(WebAppFixture Host, RecordingJobService Jobs)> RecordingAsync()
+        {
+            var host = await _recordingHost.Value;
+            _recording.Clear();
+            return (host, _recording);
+        }
+
+        internal Task<WebAppFixture> ExecuteAsync() => _executeHost.Value;
+
+        internal Task<WebAppFixture> CollisionAsync() => _collisionHost.Value;
+
+        public Task InitializeAsync() => Task.CompletedTask;
+
+        public async Task DisposeAsync()
+        {
+            foreach (var host in new[] { _recordingHost, _executeHost, _collisionHost })
+            {
+                if (host.IsValueCreated && host.Value.IsCompletedSuccessfully)
+                {
+                    await host.Value.Result.DisposeAsync();
+                }
+            }
+        }
+
+        private static async Task<WebAppFixture> StartAsync(WebAppFixture host)
+        {
+            await host.InitializeAsync();
+            return host;
+        }
+
+        private static void UseJobService(IServiceCollection services, IGeoprocessingJobService jobService)
+        {
+            services.RemoveAll<IGeoprocessingJobService>();
+            services.AddSingleton(jobService);
+        }
+    }
+
     private sealed class AliasCollidingProcessCatalog(IProcessCatalog inner) : IProcessCatalog
     {
         private static readonly ProcessDefinition CustomBuffer = new()
@@ -664,15 +625,17 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
             => category == CustomBuffer.Category ? [CustomBuffer] : inner.GetProcessesByCategory(category);
     }
 
-    /// <summary>
-    /// Records the submitted plan/metadata so tests can assert which canonical process
-    /// an alias-addressed submitJob resolved to.
-    /// </summary>
-    private sealed class RecordingJobService : IGeoprocessingJobService
+    internal sealed class RecordingJobService : IGeoprocessingJobService
     {
         public AnalysisPlan? LastPlan { get; private set; }
 
         public IReadOnlyDictionary<string, string>? LastProtocolMetadata { get; private set; }
+
+        public void Clear()
+        {
+            LastPlan = null;
+            LastProtocolMetadata = null;
+        }
 
         public Task EnsureCallerAuthorizedAsync(
             ClaimsPrincipal principal,
@@ -731,10 +694,6 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
             => throw new NotSupportedException();
     }
 
-    /// <summary>
-    /// Test double for the synchronous /execute path: submission returns a terminal
-    /// Succeeded job immediately so the polling loop completes on the first tick.
-    /// </summary>
     private sealed class SyncExecuteJobService : IGeoprocessingJobService
     {
         private static readonly AnalysisResultPackage SuccessPackage =

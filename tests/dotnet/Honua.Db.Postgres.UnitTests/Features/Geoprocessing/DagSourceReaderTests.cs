@@ -29,12 +29,6 @@ using NSubstitute;
 
 namespace Honua.Db.Postgres.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// In-memory unit coverage for the first-class DAG remote source connectors. Each
-/// reader is exercised against a faked transport (HttpMessageHandler / streaming
-/// feature store) so the upstream-query build, pagination/streaming, and GeoJSON
-/// projection are verified without Docker or a live remote service.
-/// </summary>
 public sealed class DagSourceReaderTests
 {
     // -------------------------------------------------------------------------
@@ -264,12 +258,9 @@ public sealed class DagSourceReaderTests
     [UnitTest]
     public async Task HonuaLayer_ObjectIdsRequest_BuildsExactObjectIdSet()
     {
-        // #4624: analytics.buffer-aggregate (and its layer-sourced siblings) advertise
-        // 'objectIds' but source.honua-layer previously never propagated it into the
-        // FeatureQuery the streaming store filters by, so it was silently accepted and
-        // ignored. Assert the built FeatureQuery.ObjectIds is EXACTLY the requested set
-        // (order preserved, no extras, no drops) — an independent value check, not a
-        // snapshot of whatever the reader happened to produce before this fix.
+        // Analytics.buffer-aggregate and its layer-sourced siblings propagate objectIds
+        // into the streaming store FeatureQuery. Check the exact requested set in order,
+        // with no extra or missing IDs, against independently supplied values.
         var store = Substitute.For<IStreamingFeatureStore>();
         store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(_ => ToAsync());
@@ -291,7 +282,7 @@ public sealed class DagSourceReaderTests
     [UnitTest]
     public async Task HonuaLayer_GeometryOrTimeSelector_WithoutCanonicalTranslator_FailsClosedBeforeReading()
     {
-        // #4624: a geometry/time selector the connector cannot interpret canonically must never be
+        // A geometry/time selector the connector cannot interpret canonically must never be
         // dropped — reading without it would hand back a broader feature set than requested.
         var store = Substitute.For<IStreamingFeatureStore>();
         var reader = new HonuaLayerDagSource(store, SingleLayerMetadata(42));
@@ -431,7 +422,7 @@ public sealed class DagSourceReaderTests
     [UnitTest]
     public async Task HonuaLayer_InsideJobScopeWithNoSubmitterSnapshot_RefusesTheRead()
     {
-        // honua-server#3068 fail-closed contract. An active job scope carrying NO submitter
+        // Fail-closed contract. An active job scope carrying NO submitter
         // snapshot means the read cannot be constrained to the caller: the request-scoped RLS
         // and field-mask sources would resolve "nothing applies" and hand back every row and
         // every attribute. The connector must refuse instead — and must refuse BEFORE touching

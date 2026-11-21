@@ -10,11 +10,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Db.Postgres.Tests.Features.GeometryService;
 
-/// <summary>
-/// Proves geometry-service area routing follows WKT2 geocentric versus ellipsoidal
-/// classification. A misclassified Cartesian GEODCRS takes the geography branch and
-/// returns a spheroidal area many orders of magnitude above the planar unit square.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresGeometryCrsMetricsTests : IAsyncLifetime
 {
@@ -90,7 +85,7 @@ public sealed class PostgresGeometryCrsMetricsTests : IAsyncLifetime
     {
         // POINT(0 -90) is outside the Web Mercator domain. The latitude is clamped
         // before ST_Transform, so Y is the mercator limit rather than an error or a
-        // pole overflow. 4269 is geographic but is not EPSG:4326 (#6132).
+        // pole overflow. 4269 is geographic but is not EPSG:4326.
         var wkb = new WKBWriter().Write(new Point(0, -90));
 
         var projected = await _service!.ProjectAsync(wkb, 4269, 3857);

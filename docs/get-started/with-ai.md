@@ -3,7 +3,7 @@ type: guide
 title: "Get started with AI"
 description: "Start with an agent and local Docker, verify the first dataset, then create and publish maps and apps, operate Honua, and move to cloud when ready."
 tags: [getting-started, agents, deployment, publishing, studio]
-aliases: ["setup Honua with AI", "install with an agent", "Docker or cloud", "Lambda ECS EKS Batch Redis databases", "secrets from a prompt", "AI GIS getting started"]
+aliases: ["setup Honua with AI", "install with an agent", "Docker or cloud", "Lambda ECS EKS Batch databases", "secrets from a prompt", "AI GIS getting started"]
 relations:
   - predicate: uses
     target: /guides/workflows/use-workflow-language.md
@@ -78,7 +78,7 @@ not published until release promotion. The
 RC tag. Until the channel tag exists, a local evaluation uses that preview
 image and says so. Create an isolated Compose
 project, generate installation secrets directly into protected local files,
-start Honua/PostGIS/Redis with persistent volumes, and verify readiness and an
+start Honua/PostGIS with persistent volumes, and verify readiness and an
 authenticated operation. Then connect the agent as described in step 3. For a
 first evaluation, publish the quickstart's small sample table and query its
 expected identities and coordinates. Reuse that layer for the map steps below.
@@ -159,7 +159,7 @@ publishes on `http://localhost:18080`. Export its admin password as
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
-pip install 'honua-sdk==0.3.1'
+pip install 'honua-sdk==0.3.2'
 ```
 
 ```python
@@ -337,7 +337,7 @@ a map to Honua; perform step 8 when publication is requested.
 For cloud:
 
 > Set up Honua in my authorized AWS account and region. Use Lambda for serving,
-> PostGIS for platform data, Redis for durable work, S3 for shared files, and
+> PostGIS for platform data and durable work, S3 for shared files, and
 > Batch for large imports and processing. Show the selected deployment and
 > resource scope before provisioning, then verify the complete path.
 
@@ -355,15 +355,14 @@ image and a Lambda image are different deployment inputs.
 | EKS | Serving on an existing or provisioned Kubernetes cluster through Helm. |
 | Lambda | Request-serving instances with a target-specific image; background work must survive outside the request. |
 | AWS Batch | Separate execution for supported long-running work; it is not the map/API endpoint. |
-| PostgreSQL/PostGIS | The platform's operational database and managed spatial storage. |
-| Redis | Shared state for supported durable jobs, proposals, scheduling, and coordination; a serving-only topology can omit it with explicit capability limits. |
+| PostgreSQL/PostGIS | The platform's operational database, managed spatial storage, and the shared state for durable jobs, proposals, scheduling, and coordination. |
 | S3 or equivalent shared storage | Files and artifacts that separate API and worker processes must both reach. |
 | Existing GIS databases | Additional data sources connected for publication; these are distinct from the platform database. |
 
 For Lambda, a large file import requires a compatible durable Batch runner and
 shared file storage. Large managed-layer publication also needs a compatible
 remote runner, but reads its source database directly. Configure and verify the
-API and worker together; adding Redis alone does not create a Batch executor.
+API and worker together; a database alone does not create a Batch executor.
 See [Batch execution](../guides/deploy/geoprocessing-aws-batch.md) and
 [import runners](../guides/publish/import-files.md#where-background-imports-run).
 

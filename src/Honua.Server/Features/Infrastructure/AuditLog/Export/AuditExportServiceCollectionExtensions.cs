@@ -4,6 +4,7 @@
 using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Export;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.ObjectStorage;
 using Honua.Db.Postgres.Features.AuditLog;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,22 +26,23 @@ internal static class AuditExportServiceCollectionExtensions
 
         var section = configuration.GetSection(AuditExportOptions.SectionName);
         services.Configure<AuditExportOptions>(section);
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IObjectStorageServerFolders, AuditExportServerFolders>());
 
         var options = new AuditExportOptions();
         section.Bind(options);
 
         // Shared, inert-without-sinks infrastructure.
-        services.TryAddSingleton<IAuditDeadLetterStore, InMemoryAuditDeadLetterStore>();
+        services.TryAddSingleton<InMemoryAuditDeadLetterStore>();
         services.TryAddSingleton(_ => new AuditResidencyGuard(options.AllowedRegions));
         services.TryAddSingleton(sp => new AuditExportDispatcher(
             options.Dispatch,
-            sp.GetRequiredService<IAuditDeadLetterStore>(),
+            sp.GetRequiredService<InMemoryAuditDeadLetterStore>(),
             sp.GetRequiredService<ILogger<AuditExportDispatcher>>(),
             sp.GetRequiredService<AuditResidencyGuard>()));
 
         // Retention is independent of the SIEM push sinks: a bounded retention
         // window (RetentionDays > 0) schedules a background sweep that prunes
-        // expired audit records even when no export sink is enabled (#509). A
+        // expired audit records even when no export sink is enabled. A
         // Postgres-backed pruner is used when a database is wired; otherwise the
         // no-op pruner keeps the sweep inert (tests / non-database hosts).
         if (options.ToRetentionPolicy().IsBounded)

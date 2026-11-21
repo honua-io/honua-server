@@ -10,12 +10,13 @@ public static class StudioAiChatRequestMapper
     private const int MaxMessageCount = 256;
     private const int MaxToolCount = 128;
     private const int MaxToolCallCount = 256;
-    // The tenant comes from the authenticated request, never the wire, and is bound here so rebuilding the request cannot drop the bytes the transcript signature covers.
+    // The tenant and requesting actor come from the authenticated request, never the wire, and are bound here so rebuilding the request cannot drop the bytes the transcript signature covers.
     public static (StudioAiChatRequest? Request, string? Error) ToDomain(
         StudioAiChatHttpRequest http,
         bool allowCallerOverrides = true,
         byte[]? acceptedRequestJson = null,
-        string? certificationTenantId = null)
+        string? certificationTenantId = null,
+        string? certificationActorId = null)
     {
         ArgumentNullException.ThrowIfNull(http);
 
@@ -158,16 +159,17 @@ public static class StudioAiChatRequestMapper
         }
 
         var certification = http.Certification;
-        if (certification is not null && certificationTenantId is not null)
+        if (certification is not null && (certificationTenantId is not null || certificationActorId is not null))
         {
             certification = new StudioAiTranscriptCertification
             {
                 CandidateId = certification.CandidateId,
-                TenantId = certificationTenantId,
+                TenantId = certificationTenantId ?? certification.TenantId,
                 ReleaseId = certification.ReleaseId,
                 EndpointIdentity = certification.EndpointIdentity,
                 ActionId = certification.ActionId,
-                RunNonce = certification.RunNonce
+                RunNonce = certification.RunNonce,
+                RequestedBy = certificationActorId ?? string.Empty
             };
         }
 

@@ -12,9 +12,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.Postgres.Tests.Features.Infrastructure.Transforms;
 
-/// <summary>
-/// Integration tests for PostGIS-backed coordinate transform service.
-/// </summary>
 [Collection("Database")]
 public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
 {
@@ -148,7 +145,7 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
         result.Should().BeNull();
     }
 
-    // --- Batch point transform tests (#1593) ---
+    // --- Batch point transform tests ---
 
     [IntegrationTest]
     public async Task TransformPointsAsync_SameSrid_ReturnsIdentity()
@@ -266,7 +263,7 @@ public sealed class PostGisCoordinateTransformServiceTests : IAsyncLifetime
     [IntegrationTest]
     public async Task TransformExtentAsync_AntimeridianCrossing_Wgs84ToWebMercator_ReturnsWrappedBounds()
     {
-        // #2739: a dateline-crossing input (minX > maxX) must stay wrapped in the output, taking
+        // A dateline-crossing input (minX > maxX) must stay wrapped in the output, taking
         // its X bounds from the transformed western/eastern edges rather than collapsing the
         // sampled longitudes into a single inflated [-max,+max] span. The western edge (170) is
         // the output MinX and the eastern edge (-170) is the output MaxX, so MinX > MaxX.

@@ -9,14 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Db.Postgres.Tests.Features.Identity;
 
-/// <summary>
-/// Integration tests for <see cref="PostgresUserStore"/> (#3141) using the shared
-/// Testcontainers Postgres fixture. Exercises CRUD parity with the in-memory store,
-/// stable-identifier resolution (SCIM <c>userName</c> vs OIDC subject / <c>externalId</c>),
-/// restart durability, and the cross-replica revocation scenario (two store instances over
-/// one database simulating replicas) against an isolated per-test schema mirroring
-/// migration 106.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresUserStoreTests(PostgresFixture fixture)
 {
@@ -61,7 +53,7 @@ public sealed class PostgresUserStoreTests(PostgresFixture fixture)
     [IntegrationTest]
     public async Task GetUser_ByOidcSubject_ResolvesRecordWhoseUserNameDiffers()
     {
-        // #3141 finding 2: deferred snapshots capture the OIDC subject while SCIM keys the
+        // Deferred snapshots capture the OIDC subject while SCIM keys the
         // record by userName. The durable store must resolve either identifier to ONE record.
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresUserStoreTests));
         try
@@ -166,10 +158,10 @@ public sealed class PostgresUserStoreTests(PostgresFixture fixture)
     [IntegrationTest]
     public async Task DeprovisionUser_OnReplicaA_IsAuthoritativelyInactiveOnReplicaB()
     {
-        // #3141 acceptance 1: deactivating a managed user on replica A must
+        // Deactivating a managed user on replica A must
         // deterministically stop deferred work executing on replica B. The deferred lane
         // resolves membership through IUserStore.GetUserAsync; an inactive user (or a
-        // resolution miss) fails closed (#3119).
+        // resolution miss) fails closed.
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresUserStoreTests));
         try
         {
@@ -495,7 +487,7 @@ public sealed class PostgresUserStoreTests(PostgresFixture fixture)
     public async Task Reads_ManagedUserTablesAbsent_ReturnEmpty_DoNotThrow()
     {
         // Fresh/legacy DB where migration 106 has not run: reads must degrade to "no
-        // managed users" (honua-server#1341 resilience pattern) instead of surfacing 42P01.
+        // managed users" instead of surfacing 42P01.
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresUserStoreTests));
         try
         {

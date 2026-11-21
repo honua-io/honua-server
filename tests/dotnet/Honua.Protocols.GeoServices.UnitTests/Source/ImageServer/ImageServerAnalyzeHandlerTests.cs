@@ -17,11 +17,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Tests for <see cref="ImageServerAnalyzeHandler"/>. Verifies that the
-/// internal raster-function analysis helper validates a raster function chain
-/// document and returns the planned execution metadata.
-/// </summary>
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerAnalyzeHandlerTests
 {
@@ -96,7 +91,7 @@ public class ImageServerAnalyzeHandlerTests
     {
 
         var context = CreateImageServerContext();
-        // Hillshade is now an implemented terrain function (#1803); use a genuinely-unknown
+        // Hillshade is now an implemented terrain function; use a genuinely-unknown
         // function name so the unsupported-function -> 400 path is exercised.
         var result = await _handler.AnalyzeAsync(
             context,

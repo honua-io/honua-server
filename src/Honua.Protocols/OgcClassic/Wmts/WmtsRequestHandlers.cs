@@ -52,7 +52,6 @@ internal static class WmtsRequestHandlers
         "http://www.opengis.net/ows/1.1 http://schemas.opengis.net/ows/1.1.0/owsExceptionReport.xsd";
     private const string WmtsCapabilitiesSchemaLocation =
         "http://www.opengis.net/wmts/1.0 http://schemas.opengis.net/wmts/1.0/wmtsGetCapabilities_response.xsd";
-    private const string CiteWmtsNonQueryableLayerTitle = "cite:BasicPolygons";
     private const string WmtsProtocolName = "Wmts";
     private static readonly char[] _wmtsAdditionalQuerySeparators = ['&', ';'];
 
@@ -334,18 +333,27 @@ internal static class WmtsRequestHandlers
             var visibleLayers = accessibleLayers
                 .Where(l => ResourceHasGeometry(l.Resource))
                 .ToArray();
-            var xml = await BuildWmtsCapabilitiesAsync(
-                context.Request,
-                svcDef,
-                visibleLayers,
-                snapshot.Graph,
-                sections,
-                wmtsMaxZoom,
-                capabilitiesFeatureReader,
-                tileMatrixSetRegistry,
-                logger,
-                cancellationToken).ConfigureAwait(false);
-            return Results.Content(xml, responseMimeType);
+            var capabilities = PooledTextBuilder.Rent();
+            try
+            {
+                await BuildWmtsCapabilitiesAsync(
+                    capabilities,
+                    context.Request,
+                    svcDef,
+                    visibleLayers,
+                    snapshot.Graph,
+                    sections,
+                    wmtsMaxZoom,
+                    capabilitiesFeatureReader,
+                    tileMatrixSetRegistry,
+                    logger,
+                    cancellationToken).ConfigureAwait(false);
+                return PooledTextBuilder.ToUtf8Result(capabilities, responseMimeType);
+            }
+            finally
+            {
+                PooledTextBuilder.Return(capabilities);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -659,7 +667,7 @@ internal static class WmtsRequestHandlers
         var serviceSrid = ResolveServiceSrid(service, layer.Resource);
 
         // Resolve the optional elevation/vertical selection from the validated `elevation`
-        // dimension and record it on the render descriptor. Shape A (#1792): recorded only —
+        // dimension and record it on the render descriptor. Shape A: recorded only —
         // the render itself does not yet apply the vertical slice (deferred Shape B).
         var verticalSelection = ResolveWmtsLayerVerticalSelection(layer, query);
         var renderDescriptors = new RenderLayerDescriptor[]
@@ -760,7 +768,7 @@ internal static class WmtsRequestHandlers
             return CreateWmtsExceptionReport(context, "InvalidParameterValue", "format", "Only FORMAT=image/png is supported.");
         }
 
-        if (!IsWmtsLayerQueryable(service, layer))
+        if (!IsWmtsLayerQueryable(layer))
         {
             return CreateWmtsExceptionReport(context,
                 "OperationNotSupported",
@@ -791,7 +799,7 @@ internal static class WmtsRequestHandlers
         }
 
         // Resolve the requested gridset to a protocol-neutral GridGeometry so the pixel->world
-        // math is driven by the registry (#1873) rather than hardcoded WebMercator constants.
+        // math is driven by the registry rather than hardcoded WebMercator constants.
         // Built-in WebMercatorQuad geometry is seeded from the same extent/formulas as the
         // legacy inline math, so WebMercatorQuad behaviour stays byte-identical (the CITE guard);
         // WorldCRS84Quad and operator-defined custom gridsets are now resolved end-to-end too.
@@ -1245,7 +1253,8 @@ internal static class WmtsRequestHandlers
         return sb.ToString();
     }
 
-    private static async Task<string> BuildWmtsCapabilitiesAsync(
+    private static async Task BuildWmtsCapabilitiesAsync(
+        StringBuilder sb,
         HttpRequest request,
         MetadataV2Service service,
         IReadOnlyList<WmtsLayer> visibleLayers,
@@ -1258,7 +1267,6 @@ internal static class WmtsRequestHandlers
         CancellationToken cancellationToken)
     {
         service = service with { Metadata = PublishedMetadataProjection.ForCapabilities(graph, service) };
-        var sb = new StringBuilder(4096);
         var includeServiceIdentification = sections.HasFlag(WmtsCapabilitiesSections.ServiceIdentification);
         var includeServiceProvider = sections.HasFlag(WmtsCapabilitiesSections.ServiceProvider);
         var includeOperationsMetadata = sections.HasFlag(WmtsCapabilitiesSections.OperationsMetadata);
@@ -1415,7 +1423,7 @@ internal static class WmtsRequestHandlers
             foreach (var layer in visibleLayers)
             {
                 var layerId = layer.Identifier;
-                var isQueryable = IsWmtsLayerQueryable(service, layer);
+                var isQueryable = IsWmtsLayerQueryable(layer);
                 MetadataV2TemporalRange? layerTemporalRange = wmtsTemporalRanges.TryGetValue(layer.StorageLayerId, out var fetchedRange)
                     ? fetchedRange
                     : null;
@@ -1510,63 +1518,33 @@ internal static class WmtsRequestHandlers
         }
 
         sb.AppendLine("</Capabilities>");
-
-        return sb.ToString();
     }
 
-    private static bool IsWmtsLayerQueryable(MetadataV2Service service, WmtsLayer layer)
-    {
-        // CITE's BasicPolygons fixture is explicitly non-queryable in v1; preserve the
-        // same behavior in V2 since CITE conformance still pivots on the cite/BasicPolygons
-        // pair to assert the "no GetFeatureInfo" branch. Match by both Name and Title to be
-        // robust against fixtures that put the conformance string in either slot.
-        var serviceName = service.Metadata.Name ?? string.Empty;
-        if (!string.Equals(serviceName, CiteServiceName, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
+    private static bool IsWmtsLayerQueryable(WmtsLayer layer)
+        => OgcClassicDeclaredDimensions.IsWmtsQueryable(layer.Resource);
 
-        var resourceName = layer.Resource.Metadata.Name ?? string.Empty;
-        var resourceTitle = layer.Resource.Metadata.Title ?? string.Empty;
-        if (string.Equals(resourceName, CiteWmtsNonQueryableLayerTitle, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(resourceTitle, CiteWmtsNonQueryableLayerTitle, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        return true;
-    }
+    private static WmtsDimensionDefinition[] GetDeclaredWmtsDimensionDefinitions(MetadataV2Object resource)
+        => [.. OgcClassicDeclaredDimensions.ReadWmtsDimensions(resource).Select(declared => new WmtsDimensionDefinition(
+            Identifier: declared.Identifier,
+            Values: declared.Values,
+            DefaultValue: declared.DefaultValue,
+            SupportsCurrent: declared.SupportsCurrent,
+            CurrentValue: declared.CurrentValue))];
 
     private static WmtsDimensionDefinition[] GetWmtsDimensionDefinitions(WmtsLayer layer)
     {
-        // CITE Terrain is identified by display name across both fixtures. Match
-        // resource Title (preferred — that's the human-facing label) and Name.
-        var resourceTitle = layer.Resource.Metadata.Title ?? string.Empty;
-        var resourceName = layer.Resource.Metadata.Name ?? string.Empty;
-        if (string.Equals(resourceTitle, CiteTerrainLayerTitle, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(resourceName, CiteTerrainLayerTitle, StringComparison.OrdinalIgnoreCase))
+        // Dimensions declared in resource metadata take the place of the
+        // data-derived time dimension below.
+        var declared = GetDeclaredWmtsDimensionDefinitions(layer.Resource);
+        if (declared.Length > 0)
         {
-            return
-            [
-                new WmtsDimensionDefinition(
-                    Identifier: "elevation",
-                    Values: ["100", "200", "300"],
-                    DefaultValue: "100",
-                    SupportsCurrent: true,
-                    CurrentValue: "300"),
-                new WmtsDimensionDefinition(
-                    Identifier: "scenario",
-                    Values: ["winter", "summer"],
-                    DefaultValue: "winter",
-                    SupportsCurrent: false,
-                    CurrentValue: null)
-            ];
+            return declared;
         }
 
         // Time-aware feature layers advertise a continuous "time" dimension so
         // tile/GetFeatureInfo validation accepts a TIME parameter. The default
         // and extent values are computed asynchronously from the layer's
-        // temporal range in GetWmtsDimensionDefinitionsAsync. Only emit the
+        // temporal range in GetWmtsDimensionDefinitionsFromRange. Only emit the
         // dimension when the resource's temporal extension actually resolves to
         // a Date/DateTime schema field — otherwise capabilities would advertise
         // a dimension that the request path cannot fulfill.
@@ -1586,78 +1564,20 @@ internal static class WmtsRequestHandlers
         return [];
     }
 
+    // Only the data-derived time stub has no values; a declared dimension always lists at least
+    // one, and a layer with declared dimensions never gains a data-derived time dimension.
+    private static bool IsDataDerivedTimeStub(WmtsDimensionDefinition[] dimensions)
+        => dimensions is [{ Values.Length: 0 }];
+
     // Continuous resolution is "0". "PT0S" is a zero-length duration, and ArcGIS Pro rejects a dimension declared that way.
     private const string ContinuousTemporalResolution = "0";
-
-    private static async Task<WmtsDimensionDefinition[]> GetWmtsDimensionDefinitionsAsync(
-        WmtsLayer layer,
-        IFeatureReader? featureReader,
-        CancellationToken cancellationToken)
-    {
-        var staticDimensions = GetWmtsDimensionDefinitions(layer);
-        if (staticDimensions.Length == 0 || featureReader is null)
-        {
-            return staticDimensions;
-        }
-
-        if (!TemporalExtentHelpers.TryResolveOptInTemporalFieldsV2(layer.Resource, out _))
-        {
-            return staticDimensions;
-        }
-
-        var range = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
-            layer.Resource,
-            layer.StorageLayerId,
-            featureReader,
-            cancellationToken).ConfigureAwait(false);
-        if (range is null || !range.Value.HasExtent || range.Value.Min is null || range.Value.Max is null)
-        {
-            return staticDimensions;
-        }
-
-        var min = TemporalExtentHelpers.FormatOgcTemporalValue(range.Value.Min.Value);
-        var max = TemporalExtentHelpers.FormatOgcTemporalValue(range.Value.Max.Value);
-        var populated = new WmtsDimensionDefinition(
-            Identifier: "time",
-            Values: [$"{min}/{max}/{ContinuousTemporalResolution}"],
-            DefaultValue: max,
-            SupportsCurrent: true,
-            CurrentValue: max);
-
-        // Replace any stub time dimension already present (from the sync path)
-        // with the populated entry; preserve other dimensions in their order.
-        var resolved = new WmtsDimensionDefinition[staticDimensions.Length];
-        var replaced = false;
-        for (var i = 0; i < staticDimensions.Length; i++)
-        {
-            if (!replaced && string.Equals(staticDimensions[i].Identifier, "time", StringComparison.OrdinalIgnoreCase))
-            {
-                resolved[i] = populated;
-                replaced = true;
-            }
-            else
-            {
-                resolved[i] = staticDimensions[i];
-            }
-        }
-
-        if (!replaced)
-        {
-            var combined = new WmtsDimensionDefinition[resolved.Length + 1];
-            Array.Copy(resolved, combined, resolved.Length);
-            combined[^1] = populated;
-            return combined;
-        }
-
-        return resolved;
-    }
 
     private static WmtsDimensionDefinition[] GetWmtsDimensionDefinitionsFromRange(
         WmtsLayer layer,
         MetadataV2TemporalRange? temporalRange)
     {
         var staticDimensions = GetWmtsDimensionDefinitions(layer);
-        if (staticDimensions.Length == 0)
+        if (!IsDataDerivedTimeStub(staticDimensions))
         {
             return staticDimensions;
         }
@@ -1676,30 +1596,7 @@ internal static class WmtsRequestHandlers
             SupportsCurrent: true,
             CurrentValue: max);
 
-        var resolved = new WmtsDimensionDefinition[staticDimensions.Length];
-        var replaced = false;
-        for (var i = 0; i < staticDimensions.Length; i++)
-        {
-            if (!replaced && string.Equals(staticDimensions[i].Identifier, "time", StringComparison.OrdinalIgnoreCase))
-            {
-                resolved[i] = populated;
-                replaced = true;
-            }
-            else
-            {
-                resolved[i] = staticDimensions[i];
-            }
-        }
-
-        if (!replaced)
-        {
-            var combined = new WmtsDimensionDefinition[resolved.Length + 1];
-            Array.Copy(resolved, combined, resolved.Length);
-            combined[^1] = populated;
-            return combined;
-        }
-
-        return resolved;
+        return [populated];
     }
 
     private static async Task<bool> ResolveWmtsLegendSupportAsync(
@@ -1748,8 +1645,7 @@ internal static class WmtsRequestHandlers
         }
 
         // A single layer whose temporal column cannot be aggregated must not 500 the
-        // whole GetCapabilities document — skip its TIME dimension and keep the rest
-        // (honua-server#1911).
+        // whole GetCapabilities document — skip its TIME dimension and keep the rest.
         var tasks = temporalLayers.Select(layer =>
             ResolveWmtsTemporalRangeSafeAsync(layer, featureReader, logger, cancellationToken));
 
@@ -2088,10 +1984,8 @@ internal static class WmtsRequestHandlers
             return (null, null);
         }
 
-        var resourceTitle = layer.Resource.Metadata.Title ?? string.Empty;
-        var resourceName = layer.Resource.Metadata.Name ?? string.Empty;
-        if (string.Equals(resourceTitle, CiteTerrainLayerTitle, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(resourceName, CiteTerrainLayerTitle, StringComparison.OrdinalIgnoreCase))
+        // TIME is not resolved against feature data for a layer that declares its own dimensions.
+        if (OgcClassicDeclaredDimensions.ReadWmtsDimensions(layer.Resource).Length > 0)
         {
             return (null, null);
         }
@@ -2504,11 +2398,13 @@ internal static class WmtsRequestHandlers
             return null;
         }
 
-        var extent = OgcTileExtent.ExpandDegenerateAxes(transformedExtent.Value, ResolveWmtsMaxZoom(context));
-        var minLon = Math.Min(extent.MinLon, extent.MaxLon);
-        var minLat = Math.Min(extent.MinLat, extent.MaxLat);
-        var maxLon = Math.Max(extent.MinLon, extent.MaxLon);
-        var maxLat = Math.Max(extent.MinLat, extent.MaxLat);
+        var extent = TileExtent.ExpandDegenerateAxes(transformedExtent.Value, ResolveWmtsMaxZoom(context));
+        // ows:WGS84BoundingBox cannot cross the dateline; advertise the full longitude range.
+        var crossesDateline = extent.MinLon > extent.MaxLon;
+        var minLon = crossesDateline ? -180d : extent.MinLon;
+        var maxLon = crossesDateline ? 180d : extent.MaxLon;
+        var minLat = extent.MinLat;
+        var maxLat = extent.MaxLat;
 
         return (
             $"{FormatWmtsCoordinate(minLon)} {FormatWmtsCoordinate(minLat)}",

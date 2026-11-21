@@ -17,12 +17,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Db.Snowflake.Tests;
 
-/// <summary>
-/// Verifies that the Snowflake provider plugs into the shared Metadata v2 provider seam:
-/// it is discoverable by canonical name and aliases, advertises read-only capabilities,
-/// and resolves through <see cref="FeatureProviderQueryRouter"/> for source-backed publications
-/// whose connection selects the Snowflake engine. These tests run in normal CI; no live warehouse.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public class SnowflakeProviderResolutionTests
 {
@@ -314,7 +308,7 @@ public class SnowflakeProviderResolutionTests
             Options.Create(new SnowflakeOptions()),
             NullLogger<SnowflakeFeatureDataAccess>.Instance);
 
-        return new SnowflakeFeatureStore(dataAccess, readSecurity);
+        return new SnowflakeFeatureStore(dataAccess, readSecurity ?? new LayerReadSecurityResolver(null, null, null, null));
     }
 
     private sealed class ThrowingConnectionFactory : ISnowflakeConnectionFactory

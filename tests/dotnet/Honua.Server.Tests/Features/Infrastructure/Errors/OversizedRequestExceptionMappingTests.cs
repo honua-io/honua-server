@@ -9,11 +9,6 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Errors;
 
-/// <summary>
-/// BUG A regression: oversized request bodies / form values must map to a clean HTTP 413
-/// envelope without leaking the framework's internal limit message (for example
-/// "Form value length limit 4194304 exceeded."), even when debug details are enabled.
-/// </summary>
 public sealed class OversizedRequestExceptionMappingTests
 {
     // Framework FormReader/FormPipeReader message shape for form key/value length limits.

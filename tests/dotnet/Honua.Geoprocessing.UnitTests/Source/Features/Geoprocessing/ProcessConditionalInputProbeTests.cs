@@ -9,14 +9,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Direct coverage for the conditional-input probe that backs the toolbox translation lane
-/// (#2145). These run the REAL <c>ProcessPlanValidator</c> and the REAL built-in catalog — the
-/// same pair the geoprocessing submit path runs — so the assertions are about canonical
-/// admissibility rather than a stubbed rule set. Fully offline: no Docker, no Redis, no job
-/// store. The end-to-end report shape is covered by
-/// <c>Honua.Server.Tests.Import.ToolboxTranslationEndpointTests</c>.
-/// </summary>
 public sealed class ProcessConditionalInputProbeTests
 {
     private readonly BuiltInProcessCatalog _catalog = new();
@@ -130,8 +122,8 @@ public sealed class ProcessConditionalInputProbeTests
     [UnitTest]
     public void FindAdmissibilityViolations_GeometryFormatIsNowJobExecutable()
     {
-        // conversion.geometry-format was protocol-only until its managed executor landed
-        // (#3936). It now declares the job entry point, so a toolbox tool may target it.
+        // conversion.geometry-format was protocol-only until its managed executor landed.
+        // It now declares the job entry point, so a toolbox tool may target it.
         var violations = Probe().FindAdmissibilityViolations(
             "conversion.geometry-format",
             ["geometry", "target"]);
@@ -144,7 +136,7 @@ public sealed class ProcessConditionalInputProbeTests
     public void FindAdmissibilityViolations_KrigingIsNowJobExecutable()
     {
         // raster.interpolate-kriging was the catalog's one advertised-but-unexecutable
-        // entry. It is implemented (#3932/#4409), so a toolbox tool may target it.
+        // entry. It is implemented, so a toolbox tool may target it.
         var violations = Probe().FindAdmissibilityViolations("raster.interpolate-kriging", ["points"]);
 
         violations.Should().NotContain(violation =>
@@ -217,7 +209,7 @@ public sealed class ProcessConditionalInputProbeTests
         // supplies algorithm=kmeans. Only violations common to EVERY enumerated branch condemn a
         // mapping, and the dbscan branch's eps/minPoints demand is one the caller avoids by
         // choosing kmeans, so nothing is reported here; the branch-requirement path states it
-        // exactly instead (#3048).
+        // exactly instead.
         var violations = Probe().FindAdmissibilityViolations(
             "analytics.cluster-managed",
             ["input", "algorithm", "k"]);
@@ -262,7 +254,7 @@ public sealed class ProcessConditionalInputProbeTests
         // The missing-source failure holds in EVERY branch, so it must still be reported — an
         // earlier rule discounted any violation on a non-Required parameter, and a member of an
         // exactly-one-of source group is not declared Required either, so this mapping was
-        // certified as merely partial (honua-server#2145 review).
+        // certified as merely partial.
         var violations = Probe().FindAdmissibilityViolations("surface.slope", ["units"]);
 
         violations.Should().NotBeEmpty("no value of 'units' supplies a source raster");
@@ -275,8 +267,7 @@ public sealed class ProcessConditionalInputProbeTests
     {
         // `source` already satisfies surface.slope's exactly-one source group — no value of
         // `units` makes layerId/rasterId required. Returning every candidate whenever a
-        // discriminator was in play downgraded a mapping the submit path accepts
-        // (honua-server#2145 review).
+        // discriminator was in play downgraded a mapping the submit path accepts.
         var unverifiable = Probe().FindUnverifiableConditionalParameters(
             "surface.slope",
             ["source", "units"]);
@@ -291,7 +282,7 @@ public sealed class ProcessConditionalInputProbeTests
         // ComputedFieldTransformExecutor infers op=expression only when 'expression' is
         // supplied and otherwise throws "missing required input 'op'". Canonical validation
         // returned silently on an absent 'op', so mapping input+target alone was certified as
-        // translated even though it can never run (honua-server#2145 review).
+        // translated even though it can never run.
         var violations = Probe().FindAdmissibilityViolations(
             "transform.computed-field",
             ["input", "target"]);
@@ -404,7 +395,7 @@ public sealed class ProcessConditionalInputProbeTests
     }
 
     // -----------------------------------------------------------------------
-    // Enumerated value domains give an EXACT per-branch answer (#3048)
+    // Enumerated value domains give an EXACT per-branch answer
     // -----------------------------------------------------------------------
 
     [UnitTest]
@@ -489,7 +480,7 @@ public sealed class ProcessConditionalInputProbeTests
     [UnitTest]
     public void AdvertisedButNotExecutableProcesses_IsEmpty()
     {
-        // The catalog entry-point ruling (#4409) admits no advertised-but-unexecutable
+        // The catalog entry-point ruling admits no advertised-but-unexecutable
         // state: an operation is callable through a declared entry point or it is not in
         // the catalog. The set is retained as fail-closed machinery — a future addition
         // that lands in it is refused by the gate rather than quietly becoming a dead end.

@@ -25,17 +25,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Routing;
 
-/// <summary>
-/// Queued closest-facility, OD-cost-matrix, and location-allocation jobs on the
-/// real <see cref="PgRoutingProvider"/> and the <see cref="PgRoutingFixture"/> lattice.
-/// Costs, ranks, identities, and geometry are checked against a lattice shortest-path
-/// and WGS84 length oracle in this file. The canonical durable worker publishes the
-/// named GP results.
-/// </summary>
-/// <remarks>
-/// Opt-in only: set <c>HONUA_ROUTING_TEST=1</c>. The seeded graph is the same 3x3
-/// lattice as <see cref="NAServerPgRoutingEndToEndTests"/> (edge cost 1, walking cost 2).
-/// </remarks>
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixture>, IAsyncLifetime
 {
@@ -44,15 +33,8 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
     private const double MeterTolerance = 0.05;
     private const double MileTolerance = 1e-4;
 
-    /// <summary>
-    /// Far below half the 0.01° lattice spacing, so a match is still one vertex.
-    /// </summary>
     private const double VertexIdentityTolerance = 1e-9;
 
-    /// <summary>
-    /// Below the sine of a 0.01° lattice hop (~1.7e-4). A numerical zero is a
-    /// coincident point or an equatorial geodesic, not a collapsed edge.
-    /// </summary>
     private const double VincentySingularityTolerance = 1e-12;
 
     private static readonly TimeSpan StallTolerance = TimeSpan.FromSeconds(30);
@@ -427,8 +409,11 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
         await host.InitializeAsync();
         using var client = Client(host);
         client.Timeout = TimeSpan.FromMinutes(5);
+        // The default policy retries after 30 s and 60 s; each stored backoff is checked against it
+        // and the retry is then made due instead of sleeping through it.
         var retry = JobRetryPolicy.Default;
-        var budget = SuccessBudget + retry.ComputeDelay(2) + retry.ComputeDelay(3);
+        var jobStore = host.GetService<IExecutionJobStore>();
+        var retries = new ScheduledRetryExpediter(isolatedJobs.DataSource, jobStore, isolatedJobs.Schema);
         var cases = new (string Task, string First, string Second, string Output)[]
         {
             ("FindClosestFacilities", "Incidents", "Facilities", "Output_Routes"),
@@ -450,11 +435,12 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
             }
 
             var jobId = await SubmitAsync(client, failure.Task, inputs);
-            using var terminal = await UntilTerminalAsync(client, failure.Task, jobId, "GPServer", budget);
+            await retries.ExpediteAsync(jobId, retry, SuccessBudget);
+            using var terminal = await UntilTerminalAsync(client, failure.Task, jobId, "GPServer", SuccessBudget);
             var body = terminal.RootElement.GetRawText();
             terminal.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobFailed", body);
             AssertNoProviderLeak(body);
-            var durable = (await host.GetService<IExecutionJobStore>().GetAsync(jobId))!;
+            var durable = (await jobStore.GetAsync(jobId))!;
             durable.Status.Should().Be(ExecutionJobStatus.Failed);
             durable.AttemptCount.Should().Be(retry.MaxAttempts);
             durable.ErrorMessage.Should().Be("Job execution failed.");
@@ -706,7 +692,6 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
             Math.Abs(vertex.Lon - lon) < VertexIdentityTolerance
             && Math.Abs(vertex.Lat - lat) < VertexIdentityTolerance).Id;
 
-    /// <summary>Orthogonal 3x3 lattice. Each hop costs <paramref name="minutesPerHop"/> minutes.</summary>
     private static int TravelMinutes(int from, int to, int minutesPerHop)
     {
         var distance = new Dictionary<int, int> { [from] = 0 };
@@ -750,7 +735,6 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
         throw new InvalidOperationException($"No lattice path from {from} to {to}.");
     }
 
-    /// <summary>WGS84 Vincenty inverse. Independent of PostGIS <c>ST_Length(geography)</c>.</summary>
     private static double VincentyMeters(double lon1Deg, double lat1Deg, double lon2Deg, double lat2Deg)
     {
         const double a = 6378137.0;
@@ -811,7 +795,6 @@ public sealed class RoutingPgRoutingQueuedJobTests : IClassFixture<PgRoutingFixt
         return b * coefficientA * (sigma - deltaSigma);
     }
 
-    /// <summary>Spherical Web Mercator used by EPSG:3857, radius 6378137.</summary>
     private static (double X, double Y) ToWebMercator(double lonDeg, double latDeg)
     {
         const double radius = 6378137.0;

@@ -25,7 +25,7 @@ internal static partial class GPServerEndpoints
 {
     private const string RouteBase = "/rest/services/{serviceId}/GPServer";
     private const string ProtocolName = "GPServer";
-    private static readonly string[] SpatialReferenceParameterKeys = ["srid", "toSrid", "targetSrid", "outSr"];
+    private static readonly string[] SpatialReferenceParameterKeys = ["toSrid", "targetSrid", "outSr", "srid"];
     private static readonly HashSet<string> FormContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "application/x-www-form-urlencoded",
@@ -45,7 +45,7 @@ internal static partial class GPServerEndpoints
             .WithDescription("Returns metadata about the GPServer service including available tasks")
             .WithTags("GPServer");
 
-        // PUBLIC by design (#1144): GeoServices REST POST mirror of the GET
+        // PUBLIC by design: GeoServices REST POST mirror of the GET
         // service-info read; returns the same metadata as the GET form. Marked
         // AllowAnonymous so the audit architecture guard records the
         // intentional decision.
@@ -67,7 +67,7 @@ internal static partial class GPServerEndpoints
             .WithDescription("Returns metadata about a specific GP task including parameters")
             .WithTags("GPServer");
 
-        // PUBLIC by design (#1144): GeoServices REST POST mirror of the GET
+        // PUBLIC by design: GeoServices REST POST mirror of the GET
         // task-info read; returns the same metadata as the GET form. Marked
         // AllowAnonymous so the audit architecture guard records the
         // intentional decision.
@@ -81,7 +81,7 @@ internal static partial class GPServerEndpoints
             .AllowAnonymous();
 
         // Async submit job (POST + GET per Esri GP contract)
-        // HANDLER-AUTHORIZED (#1144): the handler calls
+        // HANDLER-AUTHORIZED: the handler calls
         // IGeoprocessingJobService.EnsureCallerAuthorizedAsync before reading the
         // request body, so 401/403 are returned ahead of 400 for unauth
         // callers. Marked AllowAnonymous to record the explicit decision.
@@ -130,7 +130,7 @@ internal static partial class GPServerEndpoints
             .WithTags("GPServer");
 
         // Jobs listing / history for a task (submitted/running/completed/failed),
-        // newest first, with opaque cursor paging. HANDLER-AUTHORIZED (#1144):
+        // newest first, with opaque cursor paging. HANDLER-AUTHORIZED:
         // ListJobsAsync enforces Job/Read authorization and per-job ownership in the
         // shared service before any job is surfaced. Marked AllowAnonymous so the
         // audit guard records the explicit decision.
@@ -171,7 +171,7 @@ internal static partial class GPServerEndpoints
             .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get, HttpMethods.Post]))
             .WithTags("GPServer");
 
-        // HANDLER-AUTHORIZED (#1144): GetJobAsync/CancelJobAsync resolve
+        // HANDLER-AUTHORIZED: GetJobAsync/CancelJobAsync resolve
         // ownership against HttpContext.User; unauthenticated callers receive
         // GeoprocessingAuthorizationException → 401. Marked AllowAnonymous so
         // the audit guard records the intentional decision.
@@ -233,7 +233,7 @@ internal static partial class GPServerEndpoints
             // Esri-conventional name, so an unmodified ArcGIS client browsing the task
             // list can find the tool it's looking for either way.
             // The NetworkAnalysisUtilities tasks (GetTravelModes, GetToolInfo) resolve on
-            // every GP service by name (#5035) but are deliberately NOT listed here: the
+            // every GP service by name but are deliberately NOT listed here: the
             // listing is the callable-name set SOAP GetTaskNames must equal, and the
             // utility tasks have no SOAP or job form. ArcGIS Pro / arcpy.nax address them
             // directly on the "utilityUrl" GP service rather than discovering them.
@@ -281,8 +281,8 @@ internal static partial class GPServerEndpoints
         var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
         var definition = ResolveTaskDefinition(processCatalog, taskName);
         // Keep metadata consistent with the service task list: GPServer is a JOB entry
-        // point, so it describes exactly the operations that declare that entry point
-        // (#4409). Execution routes retain their independent IsJobCallable guards.
+        // point, so it describes exactly the operations that declare that entry point.
+        // Execution routes retain their independent IsJobCallable guards.
         if (definition == null || !GPServerExecutionPolicy.IsJobCallable(definition))
         {
             GPServerLog.TaskResolutionUnavailable(logger, serviceId, taskName);
@@ -462,7 +462,7 @@ internal static partial class GPServerEndpoints
             {
                 // Read-only projection of the routing provider: no job, no job
                 // authorization, anonymous like the NAServer solves it describes, and
-                // answered for every service id like them (#5035).
+                // answered for every service id like them.
                 return await HandleNetworkAnalysisUtilityExecuteAsync(context, taskName, ct).ConfigureAwait(false);
             }
 
@@ -780,7 +780,7 @@ internal static partial class GPServerEndpoints
 
                 // Normalize FeatureLayer ring winding to the right-hand rule at the egress point so
                 // the non-reprojected (and identity-SRID) paths emit the same winding the
-                // reprojected path already produces (#2745). Idempotent for already-normalized
+                // reprojected path already produces. Idempotent for already-normalized
                 // values and a no-op for non-GeoJSON artifacts.
                 if (artifact.Kind == ArtifactKind.FeatureLayer)
                 {
@@ -1155,7 +1155,7 @@ internal static partial class GPServerEndpoints
             }
 
             // Normalize FeatureLayer ring winding to the right-hand rule at the egress point so the
-            // non-reprojected (and identity-SRID) async paths match the reprojected path (#2745).
+            // non-reprojected (and identity-SRID) async paths match the reprojected path.
             if (artifact.Kind == ArtifactKind.FeatureLayer)
             {
                 value = GPServerOutputReprojection.NormalizeGeoJsonWinding(value) ?? value;
@@ -1606,7 +1606,7 @@ internal static partial class GPServerEndpoints
         return false;
     }
 
-    private static bool TryParseSpatialReferenceValue(string? value, out int? srid)
+    internal static bool TryParseSpatialReferenceValue(string? value, out int? srid)
     {
         srid = null;
         if (string.IsNullOrWhiteSpace(value))
@@ -1618,6 +1618,11 @@ internal static partial class GPServerEndpoints
         if (int.TryParse(trimmed, System.Globalization.NumberStyles.Integer,
                 System.Globalization.CultureInfo.InvariantCulture, out var bare))
         {
+            if (bare <= 0)
+            {
+                return false;
+            }
+
             srid = bare;
             return true;
         }
@@ -1636,6 +1641,11 @@ internal static partial class GPServerEndpoints
                         wkid.ValueKind == System.Text.Json.JsonValueKind.Number &&
                         wkid.TryGetInt32(out var wkidValue))
                     {
+                        if (wkidValue <= 0)
+                        {
+                            return false;
+                        }
+
                         srid = wkidValue;
                         return true;
                     }
@@ -1644,6 +1654,11 @@ internal static partial class GPServerEndpoints
                         latest.ValueKind == System.Text.Json.JsonValueKind.Number &&
                         latest.TryGetInt32(out var latestValue))
                     {
+                        if (latestValue <= 0)
+                        {
+                            return false;
+                        }
+
                         srid = latestValue;
                         return true;
                     }
@@ -1709,7 +1724,7 @@ internal static partial class GPServerEndpoints
             // catalog declaration includes that entry point. Protocol-only and
             // workflow-only operations stay out because they are reached through a
             // different entry point, and nothing is advertised here that cannot be
-            // submitted here (#4409).
+            // submitted here.
             if (!GPServerExecutionPolicy.IsJobCallable(process))
             {
                 continue;
@@ -1829,7 +1844,7 @@ internal static partial class GPServerEndpoints
             // that cross-repo integration tests assert). The synchronous `execute`
             // route is purely additive capability and gates itself via
             // GPServerExecutionPolicy.IsSynchronous; it does not change advertised
-            // task/service metadata. See #1228.
+            // task/service metadata.
             ExecutionType = "esriExecutionTypeAsynchronous",
             Parameters = [.. parameters]
         };
@@ -1925,7 +1940,7 @@ internal static partial class GPServerEndpoints
 
         var plan = new AnalysisPlan
         {
-            PlanId = $"gpserver-{serviceId}-{taskSlug}-{Guid.NewGuid():N}",
+            PlanId = ProtocolPlanId.Create($"gpserver-{serviceId}-{taskSlug}", ResolveIdempotencyKey(rawParameters)),
             IntentId = $"gpserver:{serviceId}:{definition.ProcessId}",
             Steps =
             [
@@ -1944,7 +1959,7 @@ internal static partial class GPServerEndpoints
             RoutingProcessDefinitions.Handles(definition.ProcessId) ? null : featureSchema);
     }
 
-    private static int ResolveWorkingSrid(
+    internal static int ResolveWorkingSrid(
         IReadOnlyDictionary<string, string> rawParameters,
         int? derivedSrid)
     {

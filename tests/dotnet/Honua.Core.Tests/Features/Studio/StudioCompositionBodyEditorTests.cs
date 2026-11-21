@@ -8,11 +8,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Studio;
 
-/// <summary>
-/// Unit tests for the pure, side-effect-free <see cref="StudioCompositionBodyEditor"/>
-/// operations (honua-server#3002) the Studio composition MCP tools patch a
-/// draft's envelope through.
-/// </summary>
 public sealed class StudioCompositionBodyEditorTests
 {
     [UnitTest]
@@ -123,10 +118,10 @@ public sealed class StudioCompositionBodyEditorTests
         // Dictionary<string, JsonElement>...
         Assert.Null(StudioJsonContext.Default.GetTypeInfo(typeof(Dictionary<string, JsonElement>)));
 
-        // ...so serializing the merged map threw at runtime for EVERY MCP or checkpoint mutation of
-        // an existing object body — the only path this merge exists to serve (honua-server#2999
-        // review). Writing the merged object through the JSON writer/DOM needs no metadata, and the
-        // returned element must stay readable after the writer's own document is disposed.
+        // ...so serializing the merged map would throw at runtime for EVERY MCP or checkpoint
+        // mutation of an existing object body — the only path this merge exists to serve. Writing
+        // the merged object through the JSON writer/DOM needs no metadata, and the returned element
+        // must stay readable after the writer's own document is disposed.
         JsonElement written;
         {
             using var document = JsonDocument.Parse(
@@ -330,7 +325,7 @@ public sealed class StudioCompositionBodyEditorTests
     [UnitTest]
     public void SetLayerVisibility_TogglesOnlyTheNamedLayer()
     {
-        // honua-server#3199: before this seam AddLayer was the only writer of `visible`, and it
+        // Before this seam AddLayer was the only writer of `visible`, and it
         // rejects duplicate ids -- so composition state had no way to change a layer's visibility.
         var body = StudioCompositionBodyEditor.AddLayer(
             StudioCompositionBody.Empty, new StudioCompositionLayer { Id = "parcels" });

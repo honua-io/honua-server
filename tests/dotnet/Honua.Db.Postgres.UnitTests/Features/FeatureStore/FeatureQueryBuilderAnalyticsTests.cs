@@ -10,13 +10,6 @@ using FeatureStoreStringBuilderPooledObjectPolicy = Honua.Db.Postgres.Features.F
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
-/// <summary>
-/// SQL-shape tests for the spatial analytics query builders. These assertions
-/// intentionally look for substrings that guard the review-driven fixes in
-/// <see cref="FeatureQueryBuilder"/>.Analytics.* so regressions (e.g. raw
-/// <c>geometry</c> references under bytea storage or a trailing LIMIT after
-/// buffer aggregation) fail loudly at unit-test time.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class FeatureQueryBuilderAnalyticsTests
 {
@@ -333,7 +326,7 @@ public sealed class FeatureQueryBuilderAnalyticsTests
     [Fact]
     public void AzimuthalScale_AtPlaneLimits_StaysWithinOnePercent()
     {
-        // Reviewer rerun: tangential scale of azimuthal equidistant is rho/sin(rho)
+        // Tangential scale of azimuthal equidistant is rho/sin(rho)
         // on the WGS 84 semi-major axis. Web Mercator at 60°N is sec(latitude) = 2,
         // so a 1,000 m ground separation is 2,000 m in EPSG:3857 and a requested
         // 1,000 m buffer only reaches about 500 m on the ground — below 600 m.
@@ -576,7 +569,7 @@ public sealed class FeatureQueryBuilderAnalyticsTests
     [Fact]
     public void BuildSpatialJoinQuery_JoinContainsTarget_PutsTheJoinGeometryFirstInStContains()
     {
-        // honua-server#3069: the canonical member name fixes the operand order, so
+        // The canonical member name fixes the operand order, so
         // the point-in-polygon direction must emit ST_Contains(join, target). The
         // reversed form silently matched nothing for a point target layer.
         var queryBuilder = CreateQueryBuilder();

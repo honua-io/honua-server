@@ -123,7 +123,7 @@ public sealed class ServiceCollectionExtensionsImportLimitsTests
         limits.MaxArchiveEntryBytes.Should().Be(10000);
         limits.MaxArchiveExtractedBytes.Should().Be(20000);
         limits.MaxArchiveCompressionRatio.Should().Be(75.5);
-        // GeometryValidityMode is parsed case-insensitively from the section (#2743).
+        // GeometryValidityMode is parsed case-insensitively from the section.
         limits.GeometryValidityMode.Should().Be(Honua.Core.Configuration.ValidationMode.Strict);
     }
 
@@ -149,15 +149,6 @@ public sealed class ServiceCollectionExtensionsImportLimitsTests
         limits.GeometryValidityMode.Should().Be(Honua.Core.Configuration.ValidationMode.Repair);
     }
 
-    /// <summary>
-    /// Mechanical drift guard for the hand-rolled <c>Import:Limits</c> parser (#3315): every
-    /// settable property of <see cref="ImportLimits"/> gets a distinct non-default value in
-    /// configuration, and every one of them must survive into the registered instance. Six keys
-    /// (MaxVertices, MaxRings, MaxWkbSize, MaxSingleFeatureBytes, ValidateGeometry,
-    /// SkipInvalidGeometry) were declared on the record but never read by the parser, so operators
-    /// who set them silently kept the defaults. Reflection-driven on purpose: adding a property to
-    /// the record without teaching the parser fails here, naming the property.
-    /// </summary>
     [Fact]
     public void AddPostgreSqlServices_HonoursEveryImportLimitsConfigurationKey()
     {

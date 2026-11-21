@@ -23,7 +23,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
+internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool, IChecksOwnArgumentNames
 {
     public const string NamePrefix = "honua_op_";
 
@@ -38,8 +38,6 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
 
     // Request routing fields and the preview flag are read from the arguments directly.
     private static readonly string[] RoutingArgumentNames = ["dryRun", "connectionId", "serviceName"];
-    private const int MaxReportedUnknownArguments = 10;
-    private const int MaxReportedArgumentNameLength = 64;
 
     private readonly OperationDescriptor _descriptor;
     private readonly string _catalogVersion;
@@ -204,6 +202,12 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
         ValidateArgumentNames(arguments);
 
         var dryRun = ReadBool(arguments, "dryRun");
+        if (dryRun && !_descriptor.Policy.SupportsDryRun)
+        {
+            return McpToolHelpers.ErrorResult(new GeoprocessingValidationException(
+                $"Operation '{_descriptor.OperationId}' does not support dry-run execution."));
+        }
+
         // Supported previews use normal dispatch so configured preview restrictions
         // still apply. Only mutations are submitted as approval proposals.
         var supportedPreview = RequiresProposalSubmission && dryRun && _descriptor.Policy.SupportsDryRun;
@@ -216,9 +220,9 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
 
         if (_descriptor.ApprovalModel == OperationApprovalModel.OperatorGate && !proposalOnly && !supportedPreview)
         {
-            // Fail closed until #3586 replaces this refusal with the unified runtime's
-            // transport-neutral approval proof. The MCP adapter must not implement an
-            // approval lane or invoke an operation that requires one.
+            // Fail closed: there is no transport-neutral approval proof from the unified
+            // runtime to check here. The MCP adapter must not implement an approval lane
+            // or invoke an operation that requires one.
             return McpToolHelpers.ErrorResult(new GeoprocessingApprovalRequiredException(
                 $"operations/{_descriptor.OperationId}"));
         }
@@ -275,9 +279,7 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
 
         if (cacheKey is not null && OperationScopeMapping.ExceedsScopeAuthority(request, context))
         {
-            return McpToolHelpers.SuccessResult(
-                ScopeDeniedOutput(),
-                McpJsonContext.Default.McpOperationToolOutput);
+            return OperationResult(ScopeDeniedOutput());
         }
 
         // Deterministic, read-only cache hit: identical inputs from the identical
@@ -298,18 +300,14 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
                         .ConfigureAwait(false);
                     if (decision.Kind != PolicyDecisionKind.Allow)
                     {
-                        return McpToolHelpers.SuccessResult(
-                            PolicyGateOutput(decision),
-                            McpJsonContext.Default.McpOperationToolOutput);
+                        return OperationResult(PolicyGateOutput(decision));
                     }
                 }
 
                 var envelopeFactory = httpContext.RequestServices.GetService<IOperationEnvelopeFactory>();
                 if (envelopeFactory is null || string.IsNullOrWhiteSpace(hit.OperationInstanceId))
                 {
-                    return McpToolHelpers.SuccessResult(
-                        Failure("The cached result was not returned because the durable operation envelope runtime is unavailable."),
-                        McpJsonContext.Default.McpOperationToolOutput);
+                    return OperationResult(Failure("The cached result was not returned because the durable operation envelope runtime is unavailable."));
                 }
 
                 var envelope = await envelopeFactory.CompleteCacheHitAsync(
@@ -321,14 +319,10 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
                     .ConfigureAwait(false);
                 if (envelope.Status != OperationHandleStatus.Completed)
                 {
-                    return McpToolHelpers.SuccessResult(
-                        Project(envelope, cacheKey),
-                        McpJsonContext.Default.McpOperationToolOutput);
+                    return OperationResult(Project(envelope, cacheKey));
                 }
 
-                return McpToolHelpers.SuccessResult(
-                    ProjectCacheHit(hit, envelope),
-                    McpJsonContext.Default.McpOperationToolOutput);
+                return OperationResult(ProjectCacheHit(hit, envelope));
             }
         }
 
@@ -365,7 +359,14 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
         }
 
         return (proposalOnly ? ApprovalContinuation.TryRequest(httpContext, handle) : null)
-            ?? McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpOperationToolOutput);
+            ?? OperationResult(output);
+    }
+
+    private static McpToolsCallResult OperationResult(McpOperationToolOutput output)
+    {
+        var result = McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpOperationToolOutput);
+        result.IsError = output.Status == OperationHandleStatus.Failed.ToString();
+        return result;
     }
 
     private OperationPolicyContext BindProposalIdentity(HttpContext httpContext, OperationRequest request, OperationPolicyContext context)
@@ -533,23 +534,11 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
         var unknown = supplied.EnumerateObject()
             .Select(property => property.Name)
             .Where(name => !_acceptedArgumentNames.Contains(name))
-            .Distinct(StringComparer.Ordinal)
-            .Order(StringComparer.Ordinal)
             .ToArray();
-        if (unknown.Length == 0)
+        if (unknown.Length > 0)
         {
-            return;
+            throw McpDeclaredArgumentGuard.Refusal(Name, unknown);
         }
-
-        var reported = unknown
-            .Take(MaxReportedUnknownArguments)
-            .Select(name => name.Length > MaxReportedArgumentNameLength ? name[..MaxReportedArgumentNameLength] + "..." : name);
-        var more = unknown.Length > MaxReportedUnknownArguments
-            ? $" and {unknown.Length - MaxReportedUnknownArguments} more"
-            : string.Empty;
-        throw new GeoprocessingValidationException(
-            $"Tool '{Name}' does not accept argument(s): {string.Join(", ", reported)}{more}. "
-            + "Use only the properties in the tool's input schema.");
     }
 
     private Dictionary<string, string?> ReadParameters(JsonElement? arguments)
@@ -599,8 +588,8 @@ internal sealed class PublishedOperationTool : IMcpTool, IMcpInputRequiredTool
         {
             JsonValueKind.True => true,
             JsonValueKind.False => false,
-            JsonValueKind.String => bool.TryParse(property.GetString(), out var parsed) && parsed,
-            _ => false,
+            JsonValueKind.String when bool.TryParse(property.GetString(), out var parsed) => parsed,
+            _ => throw new GeoprocessingValidationException($"Argument '{name}' must be a boolean."),
         };
     }
 

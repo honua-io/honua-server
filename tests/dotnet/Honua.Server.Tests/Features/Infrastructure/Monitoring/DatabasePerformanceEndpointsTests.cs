@@ -15,9 +15,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Integration tests for database performance monitoring endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>
@@ -179,11 +176,11 @@ public class DatabasePerformanceEndpointsTests : IClassFixture<WebAppFixture>
         var httpRequestSnapshotProvider = scope.ServiceProvider.GetRequiredService<IHttpRequestMetricsSnapshotProvider>();
         var baseline = httpRequestSnapshotProvider.GetHttpRequestMetricsSnapshot();
 
-        // ErrorRate (#2809) is no longer TotalErrors/TotalQueries; ProductionMetricsCollector.GetHealthMetrics
-        // now sources it from CalculateWindowedErrorRate(), which sums RequestCount/ErrorCount across all
-        // protocols in HonuaTelemetry's rolling serving-latency window. RecordHttpRequest (below) only
-        // updates the IHttpRequestMetricsSnapshotProvider counters, not that window, so the windowed rate
-        // must be driven directly via HonuaTelemetry.RecordServingRequest -- the same call the real request
+        // ErrorRate is not TotalErrors/TotalQueries; ProductionMetricsCollector.GetHealthMetrics sources it
+        // from CalculateWindowedErrorRate(), which sums RequestCount/ErrorCount across all protocols in
+        // HonuaTelemetry's rolling serving-latency window. RecordHttpRequest (below) only updates the
+        // IHttpRequestMetricsSnapshotProvider counters, not that window, so the windowed rate must be
+        // driven directly via HonuaTelemetry.RecordServingRequest -- the same call the real request
         // pipeline makes -- and the expectation derived from a before/after snapshot of that window.
         long windowBaselineRequests = 0;
         long windowBaselineErrors = 0;

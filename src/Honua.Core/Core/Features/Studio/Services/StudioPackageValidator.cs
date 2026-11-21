@@ -966,7 +966,7 @@ public sealed partial class StudioPackageValidator : IStudioPackageValidator
 
             // Controls are chrome (docked to a map corner, a toolbar, a filter rail), not
             // grid items — ADR-0031 keeps them out of the layout reference space even
-            // though a control:{id} ref now resolves for interactions.
+            // though a control:{id} ref resolves for interactions.
             if (StudioInteractionVocabulary.IsControlRef(item.Ref))
             {
                 diagnostics.Add(Error(

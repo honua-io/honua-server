@@ -73,8 +73,7 @@ public sealed partial class TemporalHistoryService : ITemporalHistoryService
             CursorKind: TemporalCursorKind.Generation,
             CurrentGeneration: currentGeneration,
             DeferredCapabilities: new TemporalDeferredCapabilities(
-                // Slices 2-5 are now implemented; report them as supported when the layer is
-                // history-capable so clients negotiate the diff/timeline/attribution/rollback surfaces.
+                // History-capable layers support diff/timeline/attribution/rollback.
                 SupportsDiff: historyCapable,
                 SupportsTimeline: historyCapable,
                 SupportsAttribution: historyCapable,
@@ -143,14 +142,20 @@ public sealed partial class TemporalHistoryService : ITemporalHistoryService
             resolvedGeneration = currentGeneration;
         }
 
+        var limit = Math.Min(request.Limit ?? DefaultLimit, MaxLimit);
+
+        // The page bound goes into the change-log read itself, not only onto its result.
         var changes = await _changeTracker
             .GetChangesInWindowAsync(
-                resolvedGeneration, currentGeneration, [storageLayerId],
-                excludeOriginReplicaId: null, cancellationToken)
+                new FeatureChangeWindow
+                {
+                    SinceGeneration = resolvedGeneration,
+                    ThroughGeneration = currentGeneration,
+                    LayerIds = [storageLayerId],
+                    Limit = limit
+                },
+                cancellationToken)
             .ConfigureAwait(false);
-
-        var limit = request.Limit ?? DefaultLimit;
-        limit = Math.Min(limit, MaxLimit);
 
         // Bound the page first, then batch-fetch the surviving features' current snapshots with a
         // single ObjectIds query instead of one feature read per change (avoids up to MaxLimit

@@ -16,35 +16,6 @@ using YamlDotNet.Serialization.NamingConventions;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// Exact-candidate OData lossless-delta certification (honua-server#3872). Boots the real,
-/// digest-addressed candidate server image (<c>HONUA_CANDIDATE_IMAGE</c>) against a real PostGIS
-/// over the production container path, drives the equal-timestamp / delete / recreate /
-/// filter-transition delta scenario over real HTTP, restarts the candidate container mid-scenario,
-/// and asserts convergence against an independently computed direct SQL query — never in-process.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Requires Docker and <c>HONUA_CANDIDATE_IMAGE</c>; the test <c>[SkippableFact]</c>-skips when
-/// either is unavailable, mirroring <see cref="CandidateTelemetryGateCertificationTests"/>. Writes
-/// an immutable JSON receipt (image identity, per-stage state hashes, and the pass/fail outcome) to
-/// <c>HONUA_CANDIDATE_RECEIPT_DIR</c> when it is set, and to the test output otherwise.
-/// </para>
-/// <para>
-/// The candidate image boots against an empty database and immediately activates a Metadata v2
-/// snapshot containing only the built-in GPServer bootstrap entry (honua-server#2349); the
-/// read path never re-derives one from the legacy V1 catalog once any snapshot is active
-/// (honua-server#1412). This harness seeds the V1 catalog directly
-/// (<c>tests/seed/odata.yaml</c>'s SQL, byte-identical to the in-process fixture) and then
-/// activates the same V1-to-V2 compat projection production code uses on a real publish
-/// (<c>PostgresMetadataV2LegacyCatalogProjector</c> / <c>CloudDemoServiceSeeder</c>) — executed
-/// here as the equivalent SQL function the shared test fixture already ships
-/// (<c>tests/seed/base-schema.sql</c>'s <c>honua.seed_metadata_v2_compat_snapshot()</c>), applied
-/// against the target database once the candidate's own migrations have created the schema, so
-/// the next request already resolves the seeded layer through the real, unmodified read path
-/// exactly as it would after a real publish, with no restart or cache-invalidation race observed.
-/// </para>
-/// </remarks>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.CandidateCertification)]
 public sealed class CandidateODataDeltaCertificationTests
 {
@@ -258,7 +229,6 @@ public sealed class CandidateODataDeltaCertificationTests
     private sealed class CandidateODataEnvironment : IAsyncDisposable
     {
         private const string PostgresImage = "postgis/postgis:18-3.6";
-        private const string RedisImage = "redis:7.2-alpine";
         private const int CandidateContainerPort = 8080;
         private const string DatabasePassword = "candidate-3872-odata-delta";
 
@@ -266,7 +236,6 @@ public sealed class CandidateODataDeltaCertificationTests
         private readonly ITestOutputHelper _output;
         private readonly string _networkName;
         private readonly string _postgresContainerName;
-        private readonly string _redisContainerName;
         private readonly string _candidateContainerName;
         private readonly string _postgresConnectionStringFromHost;
         private readonly int _candidateHostPort;
@@ -276,7 +245,6 @@ public sealed class CandidateODataDeltaCertificationTests
             ITestOutputHelper output,
             string networkName,
             string postgresContainerName,
-            string redisContainerName,
             string candidateContainerName,
             string postgresConnectionStringFromHost,
             int candidateHostPort)
@@ -285,7 +253,6 @@ public sealed class CandidateODataDeltaCertificationTests
             _output = output;
             _networkName = networkName;
             _postgresContainerName = postgresContainerName;
-            _redisContainerName = redisContainerName;
             _candidateContainerName = candidateContainerName;
             _postgresConnectionStringFromHost = postgresConnectionStringFromHost;
             _candidateHostPort = candidateHostPort;
@@ -299,7 +266,6 @@ public sealed class CandidateODataDeltaCertificationTests
             var suffix = Guid.NewGuid().ToString("N")[..8];
             var networkName = $"honua-cod-{suffix}";
             var postgresContainerName = $"honua-cod-pg-{suffix}";
-            var redisContainerName = $"honua-cod-redis-{suffix}";
             var candidateContainerName = $"honua-cod-server-{suffix}";
 
             await Docker.RunCheckedAsync(["network", "create", networkName]);
@@ -319,25 +285,21 @@ public sealed class CandidateODataDeltaCertificationTests
 
                 // The candidate is certified under Production, the deployment profile it claims to
                 // certify: Development takes materially different composition and validation
-                // branches (e.g. the durable-event/Redis-required guardrail below is skipped
-                // entirely outside Production), so this lane must not pass on a boot mode a real
-                // release never runs. Production requires a reachable Redis for durable
-                // coordination, so a real one is booted here too.
-                await Docker.RunCheckedAsync(["run", "-d", "--name", redisContainerName, "--network", networkName, RedisImage]);
-
+                // branches (some startup guardrails are skipped entirely outside Production), so
+                // this lane must not pass on a boot mode a real release never runs.
+                //
                 // Boot the candidate first so its own migrations create the schema (including the
                 // metadata_v2_snapshots family the compat activation below writes into) exactly as
                 // a real deployment would; only then seed and activate the V1-to-V2 projection
                 // against the live database, which the running candidate resolves on its very next
                 // request with no restart or cache-invalidation race.
-                var candidateHostPort = LocalSubstrateDockerFixture.GetFreeTcpPort();
+                var candidateHostPort = LoopbackTcpPort.GetFree();
                 await Docker.RunCheckedAsync(
                 [
                     "run", "-d", "--name", candidateContainerName, "--network", networkName,
                     "-p", $"127.0.0.1:{candidateHostPort.ToString(CultureInfo.InvariantCulture)}:{CandidateContainerPort.ToString(CultureInfo.InvariantCulture)}",
                     "-e", "ASPNETCORE_ENVIRONMENT=Production",
                     "-e", $"ConnectionStrings__DefaultConnection=Host={postgresContainerName};Port=5432;Database=honua;Username=honua;Password={DatabasePassword}",
-                    "-e", $"ConnectionStrings__Redis={redisContainerName}:6379",
                     "-e", "HONUA_ADMIN_PASSWORD=Candidate-3872-Odata-Delta!admin",
                     "-e", "Security__ConnectionEncryption__MasterKey=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
                     "-e", "HostValidation__AllowedHosts__0=127.0.0.1",
@@ -350,7 +312,6 @@ public sealed class CandidateODataDeltaCertificationTests
                     output,
                     networkName,
                     postgresContainerName,
-                    redisContainerName,
                     candidateContainerName,
                     postgresConnectionStringFromHost,
                     candidateHostPort);
@@ -364,7 +325,6 @@ public sealed class CandidateODataDeltaCertificationTests
             catch
             {
                 await Docker.RunAsync(["rm", "-f", candidateContainerName]);
-                await Docker.RunAsync(["rm", "-f", redisContainerName]);
                 await Docker.RunAsync(["rm", "-f", postgresContainerName]);
                 await Docker.RunAsync(["network", "rm", networkName]);
                 throw;
@@ -485,8 +445,7 @@ public sealed class CandidateODataDeltaCertificationTests
             {
                 // pg_isready over TCP, not the default local socket: the image's init phase answers
                 // on the unix socket before the final server the harness connects to is listening,
-                // and the container restarts once after initdb (see CandidateTelemetryGateCertificationTests'
-                // StartPostgresAsync in the sibling deploy-gate certification lane, same lesson).
+                // and the container restarts once after initdb.
                 var (exitCode, _, _) = await Docker.RunAsync(["exec", containerName, "pg_isready", "-h", "127.0.0.1", "-U", "honua", "-d", "honua"]);
                 if (exitCode == 0)
                 {
@@ -499,11 +458,6 @@ public sealed class CandidateODataDeltaCertificationTests
             throw new TimeoutException($"Postgres container '{containerName}' never became ready.");
         }
 
-        /// <summary>
-        /// Seeds the legacy V1 catalog with the same SQL the in-process fixture applies
-        /// (<c>tests/seed/odata.yaml</c>), so the candidate-cert layer is byte-identical to the one
-        /// <c>ODataDeltaTests.Convergence.cs</c> exercises in-process.
-        /// </summary>
         private static async Task SeedV1CatalogAsync(string connectionString)
         {
             var seedPath = ResolveRepoRelativePath(Path.Join("tests", "seed", "odata.yaml"));
@@ -522,15 +476,6 @@ public sealed class CandidateODataDeltaCertificationTests
             }
         }
 
-        /// <summary>
-        /// Activates the same V1-to-V2 compat projection production code applies on a real publish
-        /// (<c>PostgresMetadataV2LegacyCatalogProjector.BuildFromLegacyCatalogAsync</c> /
-        /// <c>CloudDemoServiceSeeder.ProjectLegacyCatalogIntoGraphAsync</c>). This harness runs
-        /// outside the candidate's process, so it executes the equivalent SQL function the shared
-        /// test fixture already ships and already uses for the same purpose
-        /// (<c>tests/seed/base-schema.sql</c>'s <c>honua.seed_metadata_v2_compat_snapshot()</c>)
-        /// against the target database, before the candidate's first boot.
-        /// </summary>
         private static async Task ActivateCompatSnapshotAsync(string connectionString)
         {
             var baseSchemaPath = ResolveRepoRelativePath(Path.Join("tests", "seed", "base-schema.sql"));
@@ -570,7 +515,6 @@ public sealed class CandidateODataDeltaCertificationTests
         {
             HttpClient.Dispose();
             await Docker.RunAsync(["rm", "-f", _candidateContainerName]);
-            await Docker.RunAsync(["rm", "-f", _redisContainerName]);
             await Docker.RunAsync(["rm", "-f", _postgresContainerName]);
             await Docker.RunAsync(["network", "rm", _networkName]);
         }

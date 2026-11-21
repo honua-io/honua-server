@@ -270,6 +270,27 @@ internal sealed partial class StreamingFileImportService
         internal ImportedDatasetSpatialMetadata.Identity? ExpectedIdentity { get; init; }
     }
 
+    private static GeometryFamilyViews.TableScope FamilyViewScope(NpgsqlTransaction transaction, StagingPromotion promotion) => new()
+    {
+        Connection = transaction.Connection!,
+        Transaction = transaction,
+        Schema = promotion.Schema,
+        Table = promotion.Table
+    };
+
+    // Honua's per-type views over the target would block the swap's drop; they are
+    // returned so the caller recreates them over the new table.
+    private static async Task<IReadOnlyList<GeometryFamilyViews.Detached>> SwapIntoTargetAsync(
+        NpgsqlTransaction transaction, StagingPromotion promotion, CancellationToken cancellationToken)
+    {
+        var familyViews = await GeometryFamilyViews.DetachAsync(FamilyViewScope(transaction, promotion), cancellationToken);
+        await using var command = new NpgsqlCommand(SwapImportTableSql, transaction.Connection, transaction);
+        command.Parameters.AddWithValue("schema_name", promotion.Schema);
+        command.Parameters.AddWithValue("table_name", promotion.Table);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        return familyViews;
+    }
+
     private async Task SwapStagingTableAsync(
         NpgsqlConnection connection, StagingPromotion promotion, CancellationToken cancellationToken)
     {
@@ -282,6 +303,7 @@ internal sealed partial class StreamingFileImportService
                 connection, transaction, schemaName, tableName, expectedIdentity, cancellationToken);
             var previousType = expectedIdentity is null ? null : await ReadImportedGeometryTypeAsync(
                 connection, transaction, schemaName, tableName, cancellationToken);
+            IReadOnlyList<GeometryFamilyViews.Detached> familyViews = [];
             // Only create-only promotes a uniquely named table; replace keeps the shared swap,
             // including when its target does not exist yet.
             if (promotion.LoadMode == ImportLoadMode.CreateOnly)
@@ -290,10 +312,7 @@ internal sealed partial class StreamingFileImportService
             }
             else
             {
-                await using var command = new NpgsqlCommand(SwapImportTableSql, connection, transaction);
-                command.Parameters.AddWithValue("schema_name", schemaName);
-                command.Parameters.AddWithValue("table_name", tableName);
-                await command.ExecuteNonQueryAsync(cancellationToken);
+                familyViews = await SwapIntoTargetAsync(transaction, promotion, cancellationToken);
             }
 
             if (expectedIdentity is null || previousType is not null)
@@ -301,6 +320,8 @@ internal sealed partial class StreamingFileImportService
                 await RefreshImportedGeometryTypeAsync(
                     connection, schemaName, tableName, cancellationToken, transaction, previousType);
             }
+
+            await GeometryFamilyViews.AttachAsync(FamilyViewScope(transaction, promotion), familyViews, cancellationToken);
 
             var identity = await ImportedDatasetSpatialMetadata.LockAndResolveAsync(
                 connection, transaction, schemaName, tableName, "geometry", cancellationToken);

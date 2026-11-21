@@ -13,12 +13,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Worker.Gdal.Tests;
 
-/// <summary>
-/// Fake-runner coverage for <see cref="GdalSurfaceJobExecutor"/>: argument
-/// projection per surface.* id, source-bytes guardrails, and the canonical
-/// data-URI artifact contract. Integration coverage with the real gdaldem CLI
-/// fires only when GDAL is present on the host.
-/// </summary>
 public sealed class GdalSurfaceExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-surface-test";
@@ -300,17 +294,6 @@ public sealed class GdalSurfaceExecutorTests
         }
     }
 
-    /// <summary>
-    /// Real <c>gdaldem slope</c> with an analytical value oracle (honua-server#4400).
-    /// </summary>
-    /// <remarks>
-    /// This test's entire oracle used to be <c>data:image/tiff</c> plus the <c>II</c>/<c>MM</c>
-    /// magic bytes, so anyone auditing by name read "reconciles against source" as a decoded
-    /// receipt when nothing was reconciled. The sample DEM is a 16x16 Float32 raster burned to a
-    /// single constant elevation, so the slope of every cell is exactly zero — a value oracle
-    /// derived from the input, not a snapshot of the output. A pass-through, a wrong band, or a
-    /// slope computed from the wrong source all break it.
-    /// </remarks>
     [GdalCliFact("gdaldem", "gdalinfo")]
     [Protocol(ProtocolNames.TestQuality)]
     [Operation(Operations.TestInfrastructure)]
@@ -345,7 +328,7 @@ public sealed class GdalSurfaceExecutorTests
             (payload[0] == 0x49 && payload[1] == 0x49 || payload[0] == 0x4D && payload[1] == 0x4D)
                 .Should().BeTrue("output must be a real GeoTIFF");
 
-            // #4400: the value oracle. The source DEM is constant at
+            // The value oracle. The source DEM is constant at
             // GdalCli.SampleDemConstantElevation, so slope must be identically zero. Without
             // this the assertions above pass for any GeoTIFF gdaldem happens to emit.
             var statistics = await GdalCli.ReadBandStatisticsAsync(payload, scratch).ConfigureAwait(false);
@@ -376,12 +359,6 @@ public sealed class GdalSurfaceExecutorTests
         }
     }
 
-    /// <summary>
-    /// Number of slope cells that must carry a valid (non-NoData) value: everything but the
-    /// one-cell border <c>gdaldem</c> leaves NoData when it is invoked without
-    /// <c>-compute_edges</c>. Asserted as a floor so a GDAL build that does compute the edges
-    /// still passes with every cell valid.
-    /// </summary>
     private const int MinimumSlopeValidCellCount =
         (GdalCli.SampleDemSize - 2) * (GdalCli.SampleDemSize - 2);
 

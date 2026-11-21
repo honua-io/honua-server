@@ -13,9 +13,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
-/// <summary>
-/// Integration tests for the STAC queryables endpoints (Filter Extension).
-/// </summary>
 [Protocol(TestProtocols.Stac)]
 [Collection("Database")]
 public sealed class StacQueryablesTests : IClassFixture<WebAppFixture>
@@ -107,11 +104,6 @@ public sealed class StacQueryablesTests : IClassFixture<WebAppFixture>
     }
 }
 
-/// <summary>
-/// BH-S-01 regression: GET /stac/collections/{id}/queryables must enforce the same
-/// resource access policy as GET /stac/collections/{id}. An unauthenticated caller
-/// must not be able to read the field schema (names/types) of a private collection.
-/// </summary>
 [Protocol(TestProtocols.Stac)]
 [Collection("Database")]
 public sealed class StacQueryablesAuthorizationTests : IAsyncLifetime
@@ -153,7 +145,7 @@ public sealed class StacQueryablesAuthorizationTests : IAsyncLifetime
         // AccessPolicyHelpers reports RequiresAuthentication for an anonymous principal against
         // AllowAnonymous=false, so the denial is exactly 401 with a challenge — 403 would mean
         // the caller was authenticated and merely unauthorised, which is a different defect.
-        // Before fix BH-S-01 the handler skipped the access check and returned 200.
+
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         response.Headers.WwwAuthenticate.Should().NotBeEmpty(
             "a 401 must carry the authentication challenge that tells the client how to authenticate");

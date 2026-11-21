@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 using Amazon.IdentityManagement;
@@ -9,11 +10,12 @@ using Amazon.Runtime;
 using Amazon.S3;
 using Amazon.S3.Model;
 using Amazon.SecurityToken;
-using Amazon.SecurityToken.Model;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Import.ObjectStore;
+using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.ObjectStorage;
 using Honua.FileStorage;
 using Honua.Import.FileImport;
 using Microsoft.Extensions.Options;
@@ -21,18 +23,6 @@ using Xunit;
 
 namespace Honua.CloudIntegration.Tests;
 
-/// <summary>
-/// LocalStack Community coverage for the customer-bucket reader: a small object streams in the
-/// request, an object above the background threshold is queued without a body read, and an
-/// allow-listed role is assumed with the configured external id.
-/// </summary>
-/// <remarks>
-/// LocalStack Community STS grants every AssumeRole: it does not evaluate trust-policy
-/// conditions (<c>sts:ExternalId</c>), even with <c>ENFORCE_IAM=1</c>, and it issues credentials
-/// for missing roles and foreign accounts too. A refusal cell cannot execute against it, so the
-/// external-id denial is proven in <c>Honua.Aws.UnitTests.AwsImportObjectStoreReaderTests</c>
-/// against an STS double that applies the trust policy, not as a permanently skipped cell here.
-/// </remarks>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.CloudIntegration)]
 [Trait("Category", "Integration")]
 [Trait("Category", "Emulator")]
@@ -40,7 +30,6 @@ namespace Honua.CloudIntegration.Tests;
 public sealed class ImportObjectStoreLocalStackTests : IClassFixture<ImportObjectStoreLocalStackFixture>
 {
     private const string Payload = """{"type":"FeatureCollection","features":[]}""";
-    private const string ExternalId = "ext-from-config";
 
     private readonly ImportObjectStoreLocalStackFixture _fixture;
 
@@ -58,9 +47,8 @@ public sealed class ImportObjectStoreLocalStackTests : IClassFixture<ImportObjec
         using var clients = _fixture.CreateClients();
         await PutAsync(clients.S3, bucket, key, Payload);
 
-        var inner = CreateReader(clients, Buckets(bucket));
-        var reader = new CountingReader(inner);
-        var admission = await EvaluateAsync($"s3://{bucket}/{key}", reader, Buckets(bucket), SyncLimits());
+        var reader = new CountingReader(CreateReader(clients));
+        var admission = await EvaluateAsync(Location(HostConnection(bucket), key), reader, SyncLimits());
 
         Assert.Null(admission.Problem);
         Assert.False(admission.Background);
@@ -85,10 +73,11 @@ public sealed class ImportObjectStoreLocalStackTests : IClassFixture<ImportObjec
         using var clients = _fixture.CreateClients();
         await PutAsync(clients.S3, bucket, key, Payload);
 
-        var inner = CreateReader(clients, Buckets(bucket));
+        var inner = CreateReader(clients);
         var reader = new CountingReader(inner);
         var limits = new ImportLimits { BackgroundJobThresholdBytes = 8, MaxObjectStoreImportBytes = 5_000_000 };
-        var admission = await EvaluateAsync($"s3://{bucket}/{key}", reader, Buckets(bucket), limits);
+        var location = Location(HostConnection(bucket), key);
+        var admission = await EvaluateAsync(location, reader, limits);
 
         Assert.Null(admission.Problem);
         Assert.True(admission.Background);
@@ -99,7 +88,6 @@ public sealed class ImportObjectStoreLocalStackTests : IClassFixture<ImportObjec
         Assert.Equal(admission.ETag, admission.Request.ObjectStoreETag);
         Assert.Null(admission.Request.FileStream);
 
-        var location = Location(bucket, key);
         await using var pinned = await inner.OpenReadAsync(location, admission.ETag!, CancellationToken.None);
         using var text = new StreamReader(pinned, Encoding.UTF8);
         Assert.Equal(Payload, await text.ReadToEndAsync());
@@ -114,9 +102,9 @@ public sealed class ImportObjectStoreLocalStackTests : IClassFixture<ImportObjec
         using var clients = _fixture.CreateClients();
         await PutAsync(clients.S3, bucket, key, Payload);
 
-        var reader = new CountingReader(CreateReader(clients, Buckets(bucket)));
+        var reader = new CountingReader(CreateReader(clients));
         var limits = new ImportLimits { BackgroundJobThresholdBytes = 8, MaxObjectStoreImportBytes = 8 };
-        var admission = await EvaluateAsync($"s3://{bucket}/{key}", reader, Buckets(bucket), limits);
+        var admission = await EvaluateAsync(Location(HostConnection(bucket), key), reader, limits);
 
         Assert.Equal(0, reader.Opens);
         Assert.Equal(1, reader.Heads);
@@ -128,104 +116,121 @@ public sealed class ImportObjectStoreLocalStackTests : IClassFixture<ImportObjec
     }
 
     [SkippableFact]
-    public async Task BucketOutsideTheAllowList_IsForbiddenBeforeHead()
-    {
-        Skip.IfNot(_fixture.Available, "LocalStack Community not available (Docker daemon absent).");
-        var bucket = NewBucket();
-        const string key = "layers/secret.geojson";
-        using var clients = _fixture.CreateClients();
-        await PutAsync(clients.S3, bucket, key, Payload);
-
-        var reader = new CountingReader(CreateReader(clients, Buckets("other-bucket")));
-        var admission = await EvaluateAsync($"s3://{bucket}/{key}", reader, Buckets("other-bucket"), SyncLimits());
-
-        Assert.Equal(0, reader.Heads);
-        Assert.Equal(0, reader.Opens);
-        Assert.NotNull(admission.Problem);
-        Assert.Equal(ImportObjectStoreProblems.Forbidden, admission.Problem.Code);
-    }
-
-    [SkippableFact]
     public async Task MissingObject_IsNotFound_AndAReplacedObject_IsChanged()
     {
         Skip.IfNot(_fixture.Available, "LocalStack Community not available (Docker daemon absent).");
         var bucket = NewBucket();
         const string key = "layers/replaced.geojson";
         using var clients = _fixture.CreateClients();
-        var reader = CreateReader(clients, Buckets(bucket));
+        var reader = CreateReader(clients);
+        var location = Location(HostConnection(bucket), key);
         var missing = await Assert.ThrowsAsync<ImportObjectStoreException>(
-            () => reader.HeadAsync(Location(bucket, key), CancellationToken.None));
+            () => reader.HeadAsync(location, CancellationToken.None));
         Assert.Equal(ImportObjectStoreProblems.NotFound, missing.Code);
 
         await PutAsync(clients.S3, bucket, key, Payload);
-        var head = await reader.HeadAsync(Location(bucket, key), CancellationToken.None);
+        var head = await reader.HeadAsync(location, CancellationToken.None);
         await PutAsync(clients.S3, bucket, key, Payload + " ");
         var changed = await Assert.ThrowsAsync<ImportObjectStoreException>(
-            () => reader.OpenReadAsync(Location(bucket, key), head.ETag, CancellationToken.None));
+            () => reader.OpenReadAsync(location, head.ETag, CancellationToken.None));
         Assert.Equal(ImportObjectStoreProblems.Changed, changed.Code);
     }
 
+    // A customer connection: AssumeRole with the minted external id, then test, browse and import through it.
     [SkippableFact]
-    public async Task AllowListedRole_ReadsWithTheConfiguredExternalId()
+    public async Task CustomerConnection_ConnectsBrowsesAndImportsThroughTheAssumedRole()
     {
         Skip.IfNot(_fixture.Available, "LocalStack Community not available (Docker daemon absent).");
         var bucket = NewBucket();
-        const string key = "layers/assumed.geojson";
         using var clients = _fixture.CreateClients();
-        await PutAsync(clients.S3, bucket, key, Payload);
-        var roleArn = await CreateExternalIdRoleAsync(clients.Iam, bucket);
-        Assert.True(
-            await TryAssumeAsync(clients.Sts, roleArn, ExternalId),
-            "AssumeRole with the configured external id must succeed against the emulator.");
+        await PutAsync(clients.S3, bucket, "parcels/lots.geojson", Payload);
+        await PutAsync(clients.S3, bucket, "parcels/2026/later.geojson", Payload);
+        await PutAsync(clients.S3, bucket, "private/secret.geojson", Payload);
+        var externalId = ObjectStoragePolicy.NewExternalId();
+        var connection = HostConnection(bucket) with
+        {
+            BuiltIn = false,
+            Prefix = "parcels/",
+            RoleArn = await CreateExternalIdRoleAsync(clients.Iam, bucket, externalId),
+            ExternalId = externalId,
+        };
+        using var factory = CreateFactory(clients);
+        var connector = new AwsObjectStoreConnector(factory);
 
-        var admitted = CreateReader(clients, RoleOptions(bucket, roleArn, ExternalId));
-        var head = await admitted.HeadAsync(Location(bucket, key, roleArn), CancellationToken.None);
-        Assert.False(string.IsNullOrWhiteSpace(head.ETag));
+        var health = await connector.TestAsync(connection, CancellationToken.None);
+        var page = await connector.BrowseAsync(new ObjectStorageBrowseRequest { Connection = connection, Prefix = "parcels/" }, CancellationToken.None);
+        var resolver = new ObjectStorageConnectionResolver(NoBuiltIns(), new SingleStore(connection));
+        var outside = await resolver.ResolveObjectAsync(connection.Id, "private/secret.geojson", CancellationToken.None);
+        var resolved = await resolver.ResolveObjectAsync(connection.Id, "parcels/lots.geojson", CancellationToken.None);
+        var admission = await EvaluateAsync(ImportObjectLocation.From(resolved), new AwsImportObjectStoreReader(factory), SyncLimits());
+
+        Assert.True(health.IsHealthy, health.Message);
+        Assert.Equal(["parcels/2026/"], page.Folders);
+        Assert.Equal("parcels/lots.geojson", Assert.Single(page.Objects).Key);
+        Assert.Equal(ObjectStorageResolveFailure.InvalidKey, outside.Failure);
+        Assert.Null(admission.Problem);
+        Assert.Equal(connection.Id.ToString(), admission.AuditConnectionId);
+        using var text = new StreamReader(admission.Request!.FileStream!, Encoding.UTF8);
+        Assert.Equal(Payload, await text.ReadToEndAsync());
     }
 
     private static async Task<ImportObjectStoreCoordinator.Admission> EvaluateAsync(
-        string sourceUri,
+        ImportObjectLocation location,
         IImportObjectStoreReader reader,
-        ImportObjectStoreOptions options,
         ImportLimits limits)
         => await ImportObjectStoreCoordinator.EvaluateAsync(
             new ImportObjectStoreCoordinator.Command
             {
-                SourceUri = sourceUri,
+                Location = location,
                 TableName = "parcels",
                 TargetSrid = 4326,
             },
-            options,
-            limits,
-            reader,
-            canAcceptBackground: true,
-            static name => name.EndsWith(".geojson", StringComparison.OrdinalIgnoreCase),
+            new ImportObjectStoreCoordinator.Host
+            {
+                Limits = limits,
+                Reader = reader,
+                CanAcceptBackground = true,
+                FormatSupported = static name => name.EndsWith(".geojson", StringComparison.OrdinalIgnoreCase),
+            },
             CancellationToken.None);
 
-    private static AwsImportObjectStoreReader CreateReader(EmulatorClients clients, ImportObjectStoreOptions options)
-        => new(clients.S3, clients.Sts, new StaticOptions(options));
+    // The lease created from this client disposes it. The analyzer cannot see that hand-off.
+    [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "AwsObjectStoreLease.Owned disposes the session client when the caller finishes the request.")]
+    private AmazonS3Client CreateSessionClient(AWSCredentials credentials)
+        => new AmazonS3Client(credentials, _fixture.S3Config());
 
-    private static ImportObjectStoreOptions Buckets(params string[] buckets)
-        => new() { AllowedBuckets = buckets };
+    private AwsObjectStoreClientFactory CreateFactory(EmulatorClients clients)
+        => new(new AwsObjectStoreClientSeams
+        {
+            HostClient = clients.S3,
+            Sts = clients.Sts,
+            SessionClient = CreateSessionClient,
+            Options = new ImportObjectStoreOptions { ServiceUrl = _fixture.ServiceUrl, Region = "us-east-1" },
+        });
 
-    private static ImportObjectStoreOptions RoleOptions(string bucket, string roleArn, string? externalId)
+    // A factory built from test seams owns no clients, so its Dispose is a no-op and the reader may keep it.
+    [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "A seam-built AwsObjectStoreClientFactory owns no clients; the fixture disposes them.")]
+    private AwsImportObjectStoreReader CreateReader(EmulatorClients clients) => new(CreateFactory(clients));
+
+    private static ObjectStorageConnection HostConnection(string bucket)
         => new()
         {
-            AllowedBuckets = [bucket],
-            AssumeRoles = [new ImportObjectStoreRoleOptions { RoleArn = roleArn, ExternalId = externalId }],
+            Id = Guid.NewGuid(),
+            Name = bucket,
+            Bucket = bucket,
+            Region = "us-east-1",
+            BuiltIn = true,
+        };
+
+    private static ImportObjectLocation Location(ObjectStorageConnection connection, string key)
+        => new()
+        {
+            Connection = connection,
+            Key = key,
         };
 
     private static ImportLimits SyncLimits()
         => new() { BackgroundJobThresholdBytes = 1_000_000, MaxObjectStoreImportBytes = 5_000_000 };
-
-    private static ImportObjectLocation Location(string bucket, string key, string? roleArn = null)
-        => new()
-        {
-            Bucket = bucket,
-            Key = key,
-            AssumeRoleArn = roleArn,
-            SourceUri = $"s3://{bucket}/{key}",
-        };
 
     private static string NewBucket() => "honua-imp-" + Guid.NewGuid().ToString("N");
 
@@ -250,9 +255,9 @@ public sealed class ImportObjectStoreLocalStackTests : IClassFixture<ImportObjec
         });
     }
 
-    private static async Task<string> CreateExternalIdRoleAsync(AmazonIdentityManagementServiceClient iam, string bucket)
+    private static async Task<string> CreateExternalIdRoleAsync(AmazonIdentityManagementServiceClient iam, string bucket, string externalId)
     {
-        var name = "honua-import-" + Guid.NewGuid().ToString("N")[..12];
+        var name = ObjectStorageConnectionKinds.RoleNamePrefix + Guid.NewGuid().ToString("N")[..12];
         var trust = $$"""
             {
               "Version": "2012-10-17",
@@ -261,7 +266,7 @@ public sealed class ImportObjectStoreLocalStackTests : IClassFixture<ImportObjec
                   "Effect": "Allow",
                   "Principal": { "AWS": "arn:aws:iam::000000000000:root" },
                   "Action": "sts:AssumeRole",
-                  "Condition": { "StringEquals": { "sts:ExternalId": "{{ExternalId}}" } }
+                  "Condition": { "StringEquals": { "sts:ExternalId": "{{externalId}}" } }
                 }
               ]
             }
@@ -274,45 +279,18 @@ public sealed class ImportObjectStoreLocalStackTests : IClassFixture<ImportObjec
         await iam.PutRolePolicyAsync(new PutRolePolicyRequest
         {
             RoleName = name,
-            PolicyName = "read-import",
+            PolicyName = "read-connection",
             PolicyDocument = $$"""
                 {
                   "Version": "2012-10-17",
                   "Statement": [
-                    {
-                      "Effect": "Allow",
-                      "Action": ["s3:GetObject", "s3:GetObjectAttributes"],
-                      "Resource": "arn:aws:s3:::{{bucket}}/*"
-                    }
+                    { "Effect": "Allow", "Action": "s3:GetObject", "Resource": "arn:aws:s3:::{{bucket}}/*" },
+                    { "Effect": "Allow", "Action": ["s3:ListBucket", "s3:GetBucketLocation"], "Resource": "arn:aws:s3:::{{bucket}}" }
                   ]
                 }
                 """,
         });
         return created.Role.Arn;
-    }
-
-    private static async Task<bool> TryAssumeAsync(AmazonSecurityTokenServiceClient sts, string roleArn, string? externalId)
-    {
-        try
-        {
-            var request = new AssumeRoleRequest
-            {
-                RoleArn = roleArn,
-                RoleSessionName = "honua-import-probe",
-                DurationSeconds = 900,
-            };
-            if (!string.IsNullOrWhiteSpace(externalId))
-            {
-                request.ExternalId = externalId;
-            }
-
-            var response = await sts.AssumeRoleAsync(request);
-            return !string.IsNullOrWhiteSpace(response.Credentials?.AccessKeyId);
-        }
-        catch (AmazonServiceException)
-        {
-            return false;
-        }
     }
 
     private sealed class CountingReader(IImportObjectStoreReader inner) : IImportObjectStoreReader
@@ -334,20 +312,40 @@ public sealed class ImportObjectStoreLocalStackTests : IClassFixture<ImportObjec
         }
     }
 
-    private sealed class StaticOptions(ImportObjectStoreOptions value) : IOptionsMonitor<ImportObjectStoreOptions>
+    private static ObjectStorageBuiltInSources NoBuiltIns()
+        => new(new StaticMonitor<CloudStorageOptions>(new()), new StaticMonitor<ObjectStorageConnectionOptions>(new()), []);
+
+    private sealed class StaticMonitor<T>(T value) : IOptionsMonitor<T>
     {
-        public ImportObjectStoreOptions CurrentValue => value;
+        public T CurrentValue => value;
 
-        public ImportObjectStoreOptions Get(string? name) => value;
+        public T Get(string? name) => value;
 
-        public IDisposable? OnChange(Action<ImportObjectStoreOptions, string?> listener) => null;
+        public IDisposable? OnChange(Action<T, string?> listener) => null;
+    }
+
+    private sealed class SingleStore(ObjectStorageConnection connection) : IObjectStorageConnectionStore
+    {
+        public Task<bool> SaveSetupAsync(ObjectStorageConnectionSetup setup, int maxOpenForMinter, CancellationToken cancellationToken) => Task.FromResult(true);
+
+        public Task<ObjectStorageConnectionSetup?> FindOpenSetupAsync(string externalId, CancellationToken cancellationToken)
+            => Task.FromResult<ObjectStorageConnectionSetup?>(null);
+
+        public Task<ObjectStorageCreateOutcome> CreateAsync(ObjectStorageConnection item, string mintedBy, CancellationToken cancellationToken)
+            => Task.FromResult(ObjectStorageCreateOutcome.SetupRejected);
+
+        public Task<ObjectStorageConnection?> GetAsync(Guid id, CancellationToken cancellationToken)
+            => Task.FromResult(id == connection.Id ? connection : null);
+
+        public Task<IReadOnlyList<ObjectStorageConnection>> ListAsync(CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyList<ObjectStorageConnection>>([connection]);
+
+        public Task<bool> UpdateAsync(ObjectStorageConnection item, CancellationToken cancellationToken) => Task.FromResult(false);
+
+        public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken) => Task.FromResult(false);
     }
 }
 
-/// <summary>
-/// One LocalStack Community container (S3, IAM, and STS) shared by the object-store import tests.
-/// Docker absence degrades to <see cref="Available"/> = false so the tests skip.
-/// </summary>
 public sealed class ImportObjectStoreLocalStackFixture : IAsyncLifetime
 {
     private const string Image = "localstack/localstack:3.6.0";
@@ -399,14 +397,17 @@ public sealed class ImportObjectStoreLocalStackFixture : IAsyncLifetime
         }
     }
 
-    public EmulatorClients CreateClients()
-    {
-        var s3 = new AmazonS3Config
+    public AmazonS3Config S3Config()
+        => new()
         {
             ServiceURL = ServiceUrl,
             ForcePathStyle = true,
             AuthenticationRegion = "us-east-1",
         };
+
+    public EmulatorClients CreateClients()
+    {
+        var s3 = S3Config();
         var sts = new AmazonSecurityTokenServiceConfig
         {
             ServiceURL = ServiceUrl,

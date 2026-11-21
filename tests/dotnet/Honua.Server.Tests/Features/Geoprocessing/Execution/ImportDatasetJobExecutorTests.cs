@@ -22,18 +22,6 @@ using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Integration coverage for the <c>import.dataset</c> durable GP job (#1630).
-/// Drives <see cref="ImportDatasetJobExecutor"/> against a real PostGIS
-/// container so the composed steps (stage -> import -> flatten/publish ->
-/// extent+MVT refresh -> provenance) execute end-to-end and the job reaches the
-/// typed/refreshed end-state. The executor adapts into the canonical job runtime
-/// (it is the <see cref="IJobExecutor"/> the dispatcher routes for the
-/// <c>import.dataset</c> process id); this test exercises that executor directly
-/// with a recording <see cref="IJobExecutionContext"/> double so progress,
-/// provenance, and the resulting layer can be asserted without standing up the
-/// Redis-backed worker loop.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiProcesses)]
 public sealed class ImportDatasetJobExecutorTests : IAsyncLifetime
@@ -271,11 +259,6 @@ public sealed class ImportDatasetJobExecutorTests : IAsyncLifetime
         };
     }
 
-    /// <summary>
-    /// Staging directory that matches the <c>ImportStagingDirectory</c> default in
-    /// <c>GeoprocessingExecutorOptions</c> so the path-traversal guard (BH3-027) passes
-    /// for legitimate test files.
-    /// </summary>
     // Path.Combine args are a temp-dir root plus a literal relative folder name; no rooted-segment risk.
     private static readonly string StagingDirectory =
         Path.Join(Path.GetTempPath(), "honua-import-staging");
@@ -293,7 +276,7 @@ public sealed class ImportDatasetJobExecutorTests : IAsyncLifetime
             }
         });
 
-        // BH3-027: files must be placed under the configured staging root.
+        // files must be placed under the configured staging root.
         Directory.CreateDirectory(StagingDirectory);
         // Path.Combine args are a staging root plus a generated relative file name; no rooted-segment risk.
         var path = Path.Join(StagingDirectory, $"import_dataset_{Guid.NewGuid():N}.geojson");

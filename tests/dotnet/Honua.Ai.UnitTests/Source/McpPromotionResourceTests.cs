@@ -21,12 +21,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
-/// <summary>
-/// Verifies the promotion-surface resource handlers — published services,
-/// deployments, map/app packages, and the list-root index — serialize canonical
-/// fields, surface provenance edges, enforce authorization, return not-found for
-/// unknown identifiers, and cap list reads with a <c>truncated</c> flag.
-/// </summary>
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpPromotionResourceTests
 {
@@ -40,7 +34,7 @@ public sealed class McpPromotionResourceTests
     private readonly IDeploymentStore _deployments = Substitute.For<IDeploymentStore>();
 
     // Empty by default: every existing case here reads a deployment-backed package,
-    // so the draft fallback must not change any of their outcomes (honua-server#3262).
+    // so the draft fallback must not change any of their outcomes.
     private readonly InMemoryPackageDraftStore _drafts =
         new(new PackageDraftRetentionOptions(), TimeProvider.System);
 
@@ -368,7 +362,7 @@ public sealed class McpPromotionResourceTests
     [Endpoint("POST /mcp resources/read honua://map-packages/{packageId}")]
     public async Task MapPackageResource_NoDeploymentsButARecordedDraft_ResolvesAsDraft()
     {
-        // honua-server#3262: a draft has no deployment by definition, so the deployment
+        // A draft has no deployment by definition, so the deployment
         // reverse-lookup alone made the URI the create tool returns unresolvable.
         _deployments.ListBySourceAsync(DeploymentSourceKind.MapPackage, "map_draft", Arg.Any<CancellationToken>())
             .Returns([]);

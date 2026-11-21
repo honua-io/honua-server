@@ -27,13 +27,9 @@ public static class HonuaTelemetry
     // NONE of them declares an OpenTelemetry `unit`, and that omission is load-bearing. The
     // OTel Prometheus exporter derives the exposed series name from BOTH the instrument name and
     // its unit: it maps the unit through the UCUM table and appends it when the name does not
-    // already end in the mapped form. With units declared, these instruments used to be exported
-    // as `honua_geoservices_error_total_errors_total`, `honua_request_error_total_errors_total`
-    // and `honua_serving_request_duration_ms_milliseconds` — names nothing in the platform
-    // referenced, so every SLO ratio divided by an absent series and silently produced no series
-    // at all (an empty PromQL vector never fires an alert). Dropping the unit makes the exported
-    // name identical to the instrument name, which is the name the whole platform already assumes
-    // (see docker/monitoring/grafana/dashboards/honua-serving-overview.json). The unit stays
+    // already end in the mapped form. Omitting the unit keeps each exported name identical
+    // to its instrument name, as required by consumers such as
+    // docker/monitoring/grafana/dashboards/honua-serving-overview.json. The unit stays
     // documented in the instrument name (`_ms`) and description.
     //
     // Do not add a `unit` argument to these three instruments without also updating every
@@ -57,7 +53,7 @@ public static class HonuaTelemetry
 
     private const int DefaultMaxExceptionDetailLength = 256;
 
-    // Serving-latency rolling-window aggregation defaults (Part 1, #2463).
+    // Serving-latency rolling-window aggregation defaults.
     private const int DefaultServingLatencyWindowSeconds = 300; // 5 minutes
     private const int DefaultServingLatencySamplesPerProtocol = 4096;
 
@@ -77,11 +73,6 @@ public static class HonuaTelemetry
     private const double FastLatencyThresholdMs = 100.0;
     private const double MediumLatencyThresholdMs = 1000.0;
     private const double SlowLatencyThresholdMs = 5000.0;
-
-    // Memory categorization thresholds
-    private const long SmallMemoryThresholdBytes = 1024; // 1KB
-    private const long MediumMemoryThresholdBytes = 1024 * 1024; // 1MB
-    private const long LargeMemoryThresholdBytes = 10 * 1024 * 1024; // 10MB
 
     // Stack trace detail threshold
     internal const int MinStackTraceDetailLength = 2048;
@@ -116,7 +107,7 @@ public static class HonuaTelemetry
         _maxExceptionDetailLength = maxLength;
 
         // Span-event attributes are fixed once added, so providers that record exception text on
-        // events (retry callbacks) apply this same policy at construction (#5475).
+        // events (retry callbacks) apply this same policy at construction.
         TelemetryExceptionDetailPolicy.Configure(exportDetails
             ? message => SanitizeTelemetryText(message, maxLength)
             : static _ => null);
@@ -445,33 +436,6 @@ public static class HonuaTelemetry
         return activity;
     }
 
-    public static Activity? StartBusinessIntelligenceActivity(string metricType, string? userId = null, string? clientId = null)
-    {
-        var activity = ActivitySource.StartActivity(Activities.BusinessIntelligence, ActivityKind.Internal);
-        activity?.SetTag(Tags.BusinessMetric, metricType);
-
-        if (userId != null)
-        {
-            activity?.SetTag(Tags.UserId, userId);
-        }
-
-        if (clientId != null)
-        {
-            activity?.SetTag(Tags.ClientId, clientId);
-        }
-
-        return activity;
-    }
-
-    public static Activity? StartSecurityActivity(string checkType, string riskLevel = "low")
-    {
-        var activity = ActivitySource.StartActivity(Activities.SecurityMonitoring, ActivityKind.Internal);
-        activity?.SetTag(Tags.Operation, checkType);
-        activity?.SetTag(Tags.SecurityRisk, riskLevel);
-
-        return activity;
-    }
-
     public static void RecordException(Activity? activity, Exception exception)
     {
         if (activity == null)
@@ -585,24 +549,6 @@ public static class HonuaTelemetry
         };
 
         activity.SetTag(Tags.LatencyCategory, category);
-    }
-
-    public static void CategorizeMemoryAllocation(Activity? activity, long allocationBytes)
-    {
-        if (activity == null)
-        {
-            return;
-        }
-
-        var category = allocationBytes switch
-        {
-            <= SmallMemoryThresholdBytes => "small",
-            < MediumMemoryThresholdBytes => "medium",
-            < LargeMemoryThresholdBytes => "large",
-            _ => "xlarge"
-        };
-
-        activity.SetTag(Tags.MemoryCategory, category);
     }
 }
 

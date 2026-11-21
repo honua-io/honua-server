@@ -14,8 +14,12 @@ internal static class BoundedArtifactWriter
         string processId,
         long maxBytes,
         CancellationToken cancellationToken,
-        IEnumerable<(string Name, object Value)>? extraMembers = null)
+        IEnumerable<(string Name, object Value)>? extraMembers = null,
+        int srid = 0)
     {
+        var extraList = extraMembers as IReadOnlyList<(string Name, object Value)> ?? extraMembers?.ToList();
+        var explicitResolvedSrid = ResolveExplicitSrid(srid, extraList);
+
         using var buffer = new LimitedStream(maxBytes, cancellationToken);
         using (var text = new StreamWriter(buffer, new UTF8Encoding(false), 1024, leaveOpen: true))
         using (var json = new JsonTextWriter(text) { AutoCompleteOnClose = false })
@@ -24,13 +28,18 @@ internal static class BoundedArtifactWriter
             json.WriteStartObject();
             json.WritePropertyName("type");
             json.WriteValue("FeatureCollection");
+            if (explicitResolvedSrid > 0)
+            {
+                WriteSpatialReferenceMember(json, explicitResolvedSrid);
+            }
+
             json.WritePropertyName("processId");
             json.WriteValue(processId);
             json.WritePropertyName("featureCount");
             json.WriteValue(features.Count);
-            if (extraMembers is not null)
+            if (extraList is not null)
             {
-                foreach (var (name, value) in extraMembers)
+                foreach (var (name, value) in extraList)
                 {
                     json.WritePropertyName(name);
                     json.WriteValue(value);
@@ -40,6 +49,7 @@ internal static class BoundedArtifactWriter
             json.WritePropertyName("features");
             json.WriteStartArray();
             var encoder = GeoJsonArtifactCodec.CreateWriter();
+            var inferredCrs = explicitResolvedSrid > 0 ? null : new FeatureArtifactSpatialReferenceAccumulator();
             foreach (var feature in features)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -47,13 +57,65 @@ internal static class BoundedArtifactWriter
                 // Flush at feature boundaries as well as the fixed-size text buffer's
                 // boundaries, so an oversized feature stops before touching the next row.
                 json.Flush();
+                inferredCrs?.Add(feature.Geometry);
             }
 
             json.WriteEndArray();
+            if (inferredCrs?.Value is { State: "known", Srid: > 0 } known)
+            {
+                WriteSpatialReferenceMember(json, known.Srid.Value);
+            }
+
             json.WriteEndObject();
         }
 
         return buffer.ToArray();
+    }
+
+    private static void WriteSpatialReferenceMember(JsonTextWriter json, int srid)
+    {
+        json.WritePropertyName(FeatureArtifactSpatialReference.MemberName);
+        json.WriteStartObject();
+        json.WritePropertyName("schemaVersion");
+        json.WriteValue(FeatureArtifactSpatialReference.SchemaVersion);
+        json.WritePropertyName("state");
+        json.WriteValue("known");
+        json.WritePropertyName("srid");
+        json.WriteValue(srid);
+        json.WriteEndObject();
+    }
+
+    private static int ResolveExplicitSrid(
+        int explicitSrid,
+        IReadOnlyList<(string Name, object Value)>? extraMembers)
+    {
+        if (explicitSrid > 0)
+        {
+            return explicitSrid;
+        }
+
+        if (extraMembers is not null)
+        {
+            foreach (var (name, value) in extraMembers)
+            {
+                if (!string.Equals(name, "srid", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (value is int intSrid && intSrid > 0)
+                {
+                    return intSrid;
+                }
+
+                if (value is long longSrid && longSrid is > 0 and <= int.MaxValue)
+                {
+                    return (int)longSrid;
+                }
+            }
+        }
+
+        return 0;
     }
 
     private sealed class LimitedStream(long maxBytes, CancellationToken cancellationToken) : Stream

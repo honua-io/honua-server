@@ -42,7 +42,6 @@
       "tests/dotnet/Honua.Server.Tests/Features/Admin/OidcJwtBearerValidationTests.cs",
       "tests/dotnet/Honua.Server.Tests/Features/Admin/OidcProviderEndpointsTests.cs",
       "tests/dotnet/Honua.Server.Tests/Features/Admin/OperatorBearerTokenServiceTests.cs",
-      "tests/dotnet/RedisCollection.cs",
       "tests/dotnet/Shared/AlertUnitSupport/AlertEventTestFactories.cs",
       "tests/dotnet/Shared/AlertUnitSupport/AwsPublisherFakes.cs",
       "tests/dotnet/Shared/AlertUnitSupport/AzurePublisherFake.cs",

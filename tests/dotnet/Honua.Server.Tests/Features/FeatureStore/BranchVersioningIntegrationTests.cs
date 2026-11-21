@@ -18,12 +18,6 @@ using Npgsql;
 
 namespace Honua.Server.Tests.Features.FeatureStore;
 
-/// <summary>
-/// Branch-versioning Slice 1 integration tests (#1272 Track B, ADR-0051). Proves the readable/editable
-/// version core against a real PostGIS schema: a version's edits are isolated from DEFAULT, a versioned
-/// read overlays them, the DEFAULT read is unaffected, the ancestor base image is captured on first
-/// touch, and the DEFAULT (null version) read/edit path is byte-identical.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.TestQuality)]
 public sealed partial class BranchVersioningIntegrationTests : IAsyncLifetime
@@ -45,7 +39,7 @@ public sealed partial class BranchVersioningIntegrationTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        // honua-server#1568 residual: serialize the raw CREATE SCHEMA on the shared schema-mutation
+        // Serialize the raw CREATE SCHEMA on the shared schema-mutation
         // advisory lock (symmetric with the locked migration set below) so this per-test namespace DDL
         // does not race a concurrent collection's locked DROP SCHEMA ... CASCADE and deadlock (40P01).
         await _fixture.CreateSchemaUnderLockAsync(_schema);
@@ -54,7 +48,7 @@ public sealed partial class BranchVersioningIntegrationTests : IAsyncLifetime
         // versioning tables (gdb_versions, version_edits, feature_changes, sync_generation) and their
         // triggers all exist exactly as production runs them.
         //
-        // honua-server#1568 follow-up: 001_CreateHonuaSchema.sql mutates the literal, process-global
+        // 001_CreateHonuaSchema.sql mutates the literal, process-global
         // honua schema (CREATE SCHEMA IF NOT EXISTS honua; CREATE TABLE honua.services/layers ...),
         // which per-test search_path isolation does NOT scope. Running this upgrade unlocked made it a
         // non-participant that raced every locked seeder's ACCESS EXCLUSIVE catalog locks on the same
@@ -70,7 +64,7 @@ public sealed partial class BranchVersioningIntegrationTests : IAsyncLifetime
         // geometries; without it the geography GIST index expression (ST_Transform(...,4326)) rejects
         // the SRID-0 WKB the test produces.
         //
-        // #2020: this INSERT mutates the literal, process-global honua.layers table; route it through
+        // This INSERT mutates the literal, process-global honua.layers table; route it through
         // the shared schema-mutation advisory lock (like the migration above) so it serializes with
         // parallel-collection seeders instead of racing the catalog (40P01).
         await _fixture.ApplyGlobalSeedSqlAsync($"""
@@ -82,7 +76,7 @@ public sealed partial class BranchVersioningIntegrationTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        // #2020: DROP SCHEMA ... CASCADE churns the global pg_catalog; serialize it on the shared
+        // DROP SCHEMA ... CASCADE churns the global pg_catalog; serialize it on the shared
         // schema-mutation advisory lock so teardown orders behind in-flight seeders rather than
         // deadlocking them.
         await _fixture.DropSchemaAsync(_schema);
@@ -485,7 +479,7 @@ public sealed partial class BranchVersioningIntegrationTests : IAsyncLifetime
 
         // Seed the SAME disjoint-field fixture twice (two independent features) so the two detection
         // modes can be compared on identical edits: branch edits only "name", DEFAULT edits only
-        // "status" => the edited attribute sets are disjoint (#2135).
+        // "status" => the edited attribute sets are disjoint.
         var byAttributeFeature = await store.CreateAsync(
             PointsLayerId, BuildFeatureWithFields(13.0, 13.0, ("name", "Base"), ("status", "open")), CancellationToken.None);
         var byObjectFeature = await store.CreateAsync(

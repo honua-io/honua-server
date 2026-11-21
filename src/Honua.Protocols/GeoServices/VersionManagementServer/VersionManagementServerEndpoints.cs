@@ -32,14 +32,14 @@ public static class VersionManagementServerEndpoints
     private const string Tag = "VersionManagementServer";
 
     // The GeoServices branch-versioning contract identifies the implicit DEFAULT version by this
-    // fixed GUID. IVersionManager does not list DEFAULT, so the adapter projects it (#5036).
+    // fixed GUID. IVersionManager does not list DEFAULT, so the adapter projects it.
     private static readonly Guid DefaultVersionId = new("BD3F4817-9A00-41AC-B0CC-58F78DBAE0A1");
 
     public static IEndpointRouteBuilder MapVersionManagementServerEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
-        // versioning.branch is built-experimental (ADR-0058 / #2346): the VMS surface is
+        // versioning.branch is built-experimental (ADR-0058): the VMS surface is
         // implemented but gated OFF the GA surface by default. Routes return 404 when the
         // capability resolves experimental-disabled (the production default). Opt in via
         // Capabilities:Experimental:versioning.branch:Enabled=true (or the global master
@@ -48,7 +48,7 @@ public static class VersionManagementServerEndpoints
         var group = endpoints.MapGroup(BasePath)
             .WithCapabilityGate("versioning.branch");
 
-        // HANDLER-AUTHORIZED (#1144): every route below enforces authorization in its handler —
+        // HANDLER-AUTHORIZED: every route below enforces authorization in its handler —
         // service read (Query) access for the read surface, plus the Pro branch-versioning
         // entitlement and service write authorization (Update + data-editor RBAC) for lifecycle
         // operations. Marked AllowAnonymous so the audit architecture guard records the
@@ -373,7 +373,7 @@ public static class VersionManagementServerEndpoints
 
         // The owner is security metadata, not a client-controlled version attribute.
         // ArcGIS clients may send an owner field, but accepting it lets any editor create
-        // a version attributed to another principal (#4036).
+        // a version attributed to another principal.
         var owner = ResolveOwner(context);
         var access = ParseAccess(GeoServicesRequestValueHelpers.GetValueString(values!, "accessPermission"));
         if (!VersionAccessPolicy.CanCreateVersion(
@@ -460,9 +460,14 @@ public static class VersionManagementServerEndpoints
 
         // Match the exact served identity rather than a bare name: different owners may use the
         // same branch name, and storage can hold either a bare or already-qualified create input.
+        // Hidden private versions are left out before counting, so neither the not-found answer
+        // nor the ambiguity conflict reveals another owner's private version.
+        var callerName = context.User?.Identity?.Name;
+        var isAdmin = ServiceDataEditorAuthorization.IsAdminPrincipal(context);
         var versions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
         var matches = versions.Where(version =>
-            ToWireVersionName(version).Equals(versionName, StringComparison.OrdinalIgnoreCase)).ToArray();
+            ToWireVersionName(version).Equals(versionName, StringComparison.OrdinalIgnoreCase)
+            && VersionAccessPolicy.IsVersionVisible(version, callerName, isAdmin)).ToArray();
         if (matches.Length == 0)
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionName}' was not found.");
@@ -614,7 +619,7 @@ public static class VersionManagementServerEndpoints
         }
 
         // Async fast path: start a durable, pollable job under the version lock and return 202 with a
-        // job handle. The synchronous path stays the default for small/fast versions (#1553).
+        // job handle. The synchronous path stays the default for small/fast versions.
         if (ParseAsyncRequested(values!))
         {
             var job = await jobRunner.StartReconcileAsync(serviceId, versionId, policy, detection, cancellationToken)
@@ -631,7 +636,7 @@ public static class VersionManagementServerEndpoints
             var hasConflicts = !result.Conflicts.IsDefaultOrEmpty && result.Conflicts.Length > 0;
 
             // withPost=true posts the version in the same operation after a clean reconcile (Esri
-            // conformance; #2135). When conflicts remain it is a no-op-with-conflicts response: the
+            // conformance). When conflicts remain it is a no-op-with-conflicts response: the
             // reconcile conflicts are returned and nothing is posted.
             var posted = false;
             var appliedChanges = 0;
@@ -723,6 +728,11 @@ public static class VersionManagementServerEndpoints
         {
             var callerName = context.User?.Identity?.Name;
             var isAdmin = ServiceDataEditorAuthorization.IsAdminPrincipal(context);
+            if (!VersionAccessPolicy.IsVersionVisible(conflictVersion, callerName, isAdmin))
+            {
+                return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuid}' was not found.");
+            }
+
             if (!VersionAccessPolicy.CanManageVersion(conflictVersion, callerName, isAdmin))
             {
                 return StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage);
@@ -788,7 +798,7 @@ public static class VersionManagementServerEndpoints
             return gate;
         }
 
-        // Async fast path: start a durable, pollable post job under the version lock (#1553).
+        // Async fast path: start a durable, pollable post job under the version lock.
         if (ParseAsyncRequested(values!))
         {
             var job = await jobRunner.StartPostAsync(serviceId, versionId, cancellationToken).ConfigureAwait(false);
@@ -903,7 +913,7 @@ public static class VersionManagementServerEndpoints
         }
 
         // Opening an edit session against a version that is mid-reconcile/post would be a false
-        // acknowledgement: the version is locked (Redis-backed) for the duration of that job, so no
+        // acknowledgement: the version is held under the version lock for the duration of that job, so no
         // edit can land. Refuse with a 409 in-progress, matching reconcile/post lock contention.
         if (requireWritable && version.State is VersionState.Reconciling or VersionState.Posting)
         {
@@ -974,7 +984,7 @@ public static class VersionManagementServerEndpoints
 
     // Version GUIDs on the GeoServices wire are registry-format: braced and upper case. Native
     // clients do not follow a version reference given in another form: DEFAULT is never opened,
-    // and a created version is reported as a failed create (#5036). Routes and gdbVersion accept
+    // and a created version is reported as a failed create. Routes and gdbVersion accept
     // either form, because clients strip the braces when they build a version URL.
     private static string ToWireGuid(Guid versionId) => versionId.ToString("B").ToUpperInvariant();
 
@@ -1023,7 +1033,7 @@ public static class VersionManagementServerEndpoints
             return validation;
         }
 
-        // Read-surface RBAC parity with the sibling FeatureServer/GPServer handlers (#1376): version
+        // Read-surface RBAC parity with the sibling FeatureServer/GPServer handlers: version
         // metadata (owners, names) and conflict payloads (attribute/geometry images) must not be
         // readable on a service the caller cannot query. Write operations layer the stricter
         // Update + data-editor checks on top via VersionManagementAuthorization.
@@ -1128,6 +1138,13 @@ public static class VersionManagementServerEndpoints
 
         var callerName = context.User?.Identity?.Name;
         var isAdmin = ServiceDataEditorAuthorization.IsAdminPrincipal(context);
+        // A private version the caller cannot see answers exactly like an unknown GUID, so a
+        // refusal never confirms that someone else's private version exists.
+        if (!VersionAccessPolicy.IsVersionVisible(version, callerName, isAdmin))
+        {
+            return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuidString}' was not found.");
+        }
+
         if (!VersionAccessPolicy.CanManageVersion(version, callerName, isAdmin))
         {
             return StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage);

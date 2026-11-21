@@ -20,7 +20,6 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
-/// <summary>MapServer identify and find endpoint integration tests.</summary>
 [Collection("Database.GeoServicesMapServer")]
 [Protocol(TestProtocols.MapServer)]
 public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
@@ -60,7 +59,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         identify.Results!.Length.Should().BeGreaterThan(0);
     }
 
-    // QGIS 3.44.3 and Esri's Identify documentation use unquoted x/y keys (#4520).
+    // QGIS 3.44.3 and Esri's Identify documentation use unquoted x/y keys.
     [IntegrationTheory]
     [InlineData("{x: -122.5, y: 37.5}", false)]
     [InlineData("{x: -122.5, y: 37.5}", true)]
@@ -168,7 +167,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
             $"{geometryType} identify tolerance applies around the geometry boundary");
     }
 
-    // Regression (#1429): the ArcGIS JS SDK and arcpy send mapExtent as an Esri JSON
+    // The ArcGIS JS SDK and arcpy send mapExtent as an Esri JSON
     // envelope ({"xmin":..,"ymin":..,"xmax":..,"ymax":..}); it must be accepted, not 400.
     [IntegrationTest]
     [Operation(Operations.Identify)]
@@ -312,7 +311,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=invalidType&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -324,7 +323,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&tolerance=abc&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -336,7 +335,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,,600,96&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -348,7 +347,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&layers=visible:{WebAppFixture.TestLayerId},&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -360,7 +359,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&layers=visible:{WebAppFixture.TestLayerId},foo&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -372,7 +371,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry=-122.5,,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -385,7 +384,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify?geometry={malformedGeometry}&geometryType=esriGeometryPolygon&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -415,7 +414,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify",
             payload);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -427,7 +426,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             "/rest/services/%20/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -520,7 +519,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=test&layers={WebAppFixture.TestLayerId},&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -532,7 +531,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=test&layers={WebAppFixture.TestLayerId}&searchFields=name,,category&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -544,7 +543,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=test&layers={WebAppFixture.TestLayerId},foo&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -578,8 +577,8 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
     [Endpoint("GET /rest/services/{serviceId}/MapServer/find")]
     public async Task MapServer_Find_WithEmptySearchFields_ReturnsFindResults()
     {
-        // Esri clients (ArcGIS API for Python) send searchFields= empty, which is the
-        // original honua-server#1771 repro that 500'd.
+        // Esri clients (ArcGIS API for Python) send searchFields= empty, which must
+        // not 500.
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=a&layers=0&searchFields=&returnGeometry=true&f=json");
 
@@ -623,7 +622,7 @@ public sealed class MapServerIdentifyEndpointTests : MapServerEndpointTestBase
     {
         var response = await Fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/find?searchText=Test&f=json");
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 }

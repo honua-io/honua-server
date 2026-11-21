@@ -15,12 +15,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Unit tests for <see cref="AdminAuthSessionStore"/> covering session lifecycle
-/// and the BH-028 distributed-cache exception fallback regression, plus the
-/// <see cref="AdminAuthClaimsProjector"/> that decides which validated claims reach
-/// an admin session and the principal projected back out of one.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Security)]
@@ -74,6 +68,37 @@ public sealed class AdminAuthSessionStoreTests
         var remove = () => store.RemoveAuthenticatedSessionAsync("a-session", CancellationToken.None);
 
         await remove.Should().ThrowAsync<ServiceUnavailableException>();
+    }
+
+    [UnitTest]
+    public async Task OperatorBearerBinding_IsLiveUntilTheSessionSignsOut()
+    {
+        var store = CreateStore();
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
+        var sessionId = await store.CreateAuthenticatedSessionAsync(
+            "oidc", "access-token", null, [], expiresAt, CancellationToken.None);
+
+        var binding = await store.BindOperatorBearerAsync(sessionId, expiresAt, CancellationToken.None);
+
+        binding.Should().Be(AdminAuthSessionStore.DeriveBearerBinding(sessionId)).And.NotBe(sessionId,
+            "a bearer holder must not learn the session cookie");
+        (await store.IsOperatorBearerBindingLiveAsync(binding, CancellationToken.None)).Should().BeTrue();
+        await store.RemoveAuthenticatedSessionAsync(sessionId, CancellationToken.None);
+        (await store.IsOperatorBearerBindingLiveAsync(binding, CancellationToken.None))
+            .Should().BeFalse("signing out ends every bearer minted from the session");
+    }
+
+    [UnitTest]
+    public async Task IsOperatorBearerBindingLiveAsync_StoreUnavailable_Throws()
+    {
+        var tokens = Substitute.For<ISecurityTokenStore>();
+        tokens.FindAsync(default, default)
+            .ReturnsForAnyArgs(Task.FromException<StoredSecurityToken?>(new InvalidOperationException("database unavailable")));
+        var store = new AdminAuthSessionStore(tokens, NullLogger<AdminAuthSessionStore>.Instance);
+
+        var check = () => store.IsOperatorBearerBindingLiveAsync("a-binding", CancellationToken.None);
+
+        await check.Should().ThrowAsync<ServiceUnavailableException>();
     }
 
     [UnitTest]
@@ -161,7 +186,7 @@ public sealed class AdminAuthSessionStoreTests
         session.Should().BeNull();
     }
 
-    // ─── Session claim projection (SEC-10) ──────────────────────────────────────
+    // ─── Session claim projection ──────────────────────────────────────
 
     [UnitTest]
     public void TryProjectValidatedClaims_DropsAuthorityClaimsFromTheValidatedToken()

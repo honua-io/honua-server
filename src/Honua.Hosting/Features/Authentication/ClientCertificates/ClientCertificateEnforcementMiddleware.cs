@@ -146,7 +146,10 @@ internal sealed partial class ClientCertificateEnforcementMiddleware(
         => options.Mode switch
         {
             ClientCertificateAuthenticationMode.RequiredForAdmin => IsAdminRequest(context, options),
-            ClientCertificateAuthenticationMode.RequiredForNative => IsProtectedGrpcRequest(context, options),
+            // RequiredForNative names the native HTTP/2 transport, so browser gRPC-Web stays on its
+            // ordinary credentials; RequiredForEnvironment has no transport exemption.
+            ClientCertificateAuthenticationMode.RequiredForNative =>
+                !IsGrpcWebRequest(context) && IsProtectedGrpcRequest(context, options),
             ClientCertificateAuthenticationMode.RequiredForEnvironment =>
                 IsAdminRequest(context, options) || IsProtectedGrpcRequest(context, options),
             _ => false,
@@ -160,7 +163,7 @@ internal sealed partial class ClientCertificateEnforcementMiddleware(
         }
 
         // Classify the admin surface independently of how the API version segment is
-        // spelled (#6106). Admin groups are mapped as /api/v{version:apiVersion}/admin and
+        // spelled. Admin groups are mapped as /api/v{version:apiVersion}/admin and
         // URL-segment versioning accepts /api/v1/admin, /api/v1.0/admin, ... so a literal
         // prefix match alone let /api/v1.0/admin skip RequiredForAdmin entirely. The
         // matched endpoint's route template is authoritative when routing has already run;
@@ -214,11 +217,6 @@ internal sealed partial class ClientCertificateEnforcementMiddleware(
 
     private static bool IsProtectedGrpcRequest(HttpContext context, ClientCertificateAuthenticationOptions options)
     {
-        if (IsGrpcWebRequest(context))
-        {
-            return false;
-        }
-
         var path = context.Request.Path.Value;
         if (string.IsNullOrWhiteSpace(path))
         {

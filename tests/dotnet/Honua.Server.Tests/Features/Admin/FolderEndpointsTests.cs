@@ -15,6 +15,9 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using System.Security.Claims;
 
 namespace Honua.Server.Tests.Features.Admin;
@@ -25,16 +28,25 @@ namespace Honua.Server.Tests.Features.Admin;
 public sealed class FolderEndpointsTests : IAsyncLifetime
 {
     private readonly FacetAuthorization _authorization = new();
+    private readonly ILogger _mutationLog = Substitute.For<ILogger>();
     private readonly WebAppFixture _fixture;
 
     public FolderEndpointsTests()
     {
+        _mutationLog.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         _fixture = new WebAppFixture();
         _fixture.ConfigureWebHost(b =>
             {
                 b.UseEnvironment("Test");
                 b.UseSetting("HONUA_DEV_AUTH", "false");
                 b.UseSetting("HONUA_ADMIN_PASSWORD", "folder-test-key");
+                b.ConfigureLogging(logging =>
+                {
+                    var provider = Substitute.For<ILoggerProvider>();
+                    provider.CreateLogger(Arg.Any<string>()).Returns(NullLogger.Instance);
+                    provider.CreateLogger("FolderMutations").Returns(_mutationLog);
+                    logging.AddProvider(provider);
+                });
             })
             .ConfigureServices(services =>
             {
@@ -91,6 +103,54 @@ public sealed class FolderEndpointsTests : IAsyncLifetime
         await AssertMembership(null);
         SetEtag(root);
         (await _client.DeleteAsync($"/api/v1/admin/folders/{id}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        AssertAuditOperationIdentity();
+    }
+
+    private void AssertAuditOperationIdentity()
+    {
+        var operationIds = _mutationLog.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(ILogger.Log))
+            .Select(call => call.GetArguments()[2])
+            .OfType<IEnumerable<KeyValuePair<string, object?>>>()
+            .Select(state => state.Single(item => item.Key == "OperationId").Value);
+        operationIds.Should().Equal("folder.create", "service.move", "folder.update", "service.move", "folder.delete");
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/folder")]
+    [Endpoint("POST /api/v1/operations/handles/{handleId}/compensate")]
+    public async Task ServiceMove_Compensate_RestoresThePriorFolder_AndRefusesAfterACatalogChange()
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>();
+        var before = await store.GetCurrentAsync();
+        var priorFolder = before.Graph.Services.Where(service => service.Metadata.Name == "test").Select(service => service.FolderId)
+            .Distinct().Single();
+        SetEtag(await _client.GetAsync("/api/v1/admin/folders"));
+        var created = await _client.PostAsJsonAsync("/api/v1/admin/folders", new { name = "RestoreTarget" });
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+        using var createdBody = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var folderId = createdBody.RootElement.GetProperty("data").GetProperty("metadata").GetProperty("id").GetString();
+        SetEtag(created);
+        var moved = await _client.PutAsJsonAsync("/api/v1/admin/services/test/folder", new { folderId });
+        moved.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var instanceId = moved.Headers.GetValues("X-Honua-Operation-Instance-Id").Single();
+        var restored = await _client.PostAsync($"/api/v1/operations/handles/{instanceId}/compensate", null);
+        restored.StatusCode.Should().Be(HttpStatusCode.OK, await restored.Content.ReadAsStringAsync());
+        await AssertMembership(priorFolder);
+        var repeat = await _client.PostAsync($"/api/v1/operations/handles/{instanceId}/compensate", null);
+        repeat.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        SetEtag(await _client.GetAsync("/api/v1/admin/folders"));
+        var movedAgain = await _client.PutAsJsonAsync("/api/v1/admin/services/test/folder", new { folderId });
+        movedAgain.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var changedInstance = movedAgain.Headers.GetValues("X-Honua-Operation-Instance-Id").Single();
+        SetEtag(movedAgain);
+        (await _client.PostAsJsonAsync("/api/v1/admin/folders", new { name = "UnrelatedCatalogChange" })).StatusCode.Should().Be(HttpStatusCode.Created);
+        var refused = await _client.PostAsync($"/api/v1/operations/handles/{changedInstance}/compensate", null);
+        ((int)refused.StatusCode).Should().Be(412);
+        SetEtag(await _client.GetAsync("/api/v1/admin/folders"));
+        (await _client.PutAsJsonAsync("/api/v1/admin/services/test/folder", new { folderId = priorFolder })).StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
     [IntegrationTest]

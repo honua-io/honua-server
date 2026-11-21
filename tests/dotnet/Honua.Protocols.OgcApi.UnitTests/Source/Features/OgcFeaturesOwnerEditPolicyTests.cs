@@ -30,9 +30,6 @@ using NSubstitute;
 
 namespace Honua.Protocols.OgcApi.UnitTests.Features;
 
-/// <summary>
-/// OGC API Features item and transaction edits share the owner-edit policy.
-/// </summary>
 public sealed partial class OgcFeaturesOwnerEditPolicyTests
 {
     private const string NonOwnerDenial =
@@ -98,7 +95,9 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
         {
             executed.Result.WasRolledBack.Should().BeTrue();
             executed.Writer.ApplyCount.Should().Be(0);
-            executed.Reader.QueryCount.Should().Be(1);
+            // Updates read the effective attributes before rules and the owner check.
+            // Deletes without rules only need the owner snapshot.
+            executed.Reader.QueryCount.Should().Be(executed.Result.UpdateResults.IsEmpty ? 1 : 2);
         }
 
         updated[0].Result.UpdateResults[0].ErrorCode.Should().Be(EditOperationResult.NotPermittedErrorCode);
@@ -133,7 +132,8 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
         foreach (var item in executed)
         {
             item.Result.IsSuccess.Should().BeTrue();
-            item.Reader.QueryCount.Should().Be(0);
+            item.Reader.OwnerQueryCount.Should().Be(0);
+            item.Reader.QueryCount.Should().Be(1);
             item.Writer.ApplyCount.Should().Be(1);
             item.Writer.LastBatch.Updates[0].Attributes.ContainsKey("owner").Should().BeFalse();
         }
@@ -159,7 +159,8 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
         {
             item.Result.IsSuccess.Should().BeTrue();
             item.Writer.ApplyCount.Should().Be(1);
-            item.Reader.QueryCount.Should().Be(0);
+            item.Reader.OwnerQueryCount.Should().Be(0);
+            item.Reader.QueryCount.Should().Be(1);
         }
 
         foreach (var item in stamped)
@@ -244,8 +245,7 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
         var geometry = new OgcFeaturesGeometryServices(
             Substitute.For<IGeometryService>(),
             Substitute.For<ICoordinateTransformService>(),
-            Options.Create(new LimitsOptions()),
-            NullLogger<OgcFeaturesGeometryServices>.Instance);
+            Options.Create(new LimitsOptions()));
         var adapter = new OgcFeaturesEditParameterAdapter(NullLogger<OgcFeaturesEditParameterAdapter>.Instance);
         var processor = new EditProcessor(NullLogger<EditProcessor>.Instance);
         var validator = new FeatureMutationValidator(Substitute.For<IGeometryValidator>());
@@ -365,12 +365,19 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
     {
         public int QueryCount { get; private set; }
 
+        public int OwnerQueryCount { get; private set; }
+
         public Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
         {
             QueryCount++;
+            if (query.OutFields is { } fields && fields.SequenceEqual(["owner"]))
+            {
+                OwnerQueryCount++;
+            }
+
             var features = ImmutableArray.CreateBuilder<Feature>();
             if (query.ObjectIds is { } ids)
             {

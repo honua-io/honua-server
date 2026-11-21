@@ -8,9 +8,6 @@ using Xunit;
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Enforces NuGet package version governance.
-/// </summary>
 [Trait("Category", "Architecture")]
 public sealed class PackageGovernanceTests
 {
@@ -60,7 +57,7 @@ public sealed class PackageGovernanceTests
     }
 
     // The devkit embeds the honua-samples GP project templates byte for byte (their
-    // TEMPLATE-MANIFEST.json SHA-256 is the drift anchor, #6217). They scaffold a user's own
+    // TEMPLATE-MANIFEST.json SHA-256 is the drift anchor). They scaffold a user's own
     // standalone project, which has no access to this repository's Directory.Packages.props,
     // so their PackageReference versions must stay inline. They are not built by this repo.
     private static bool IsEmbeddedProjectTemplate(string repositoryRoot, string path)

@@ -9,6 +9,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
@@ -32,16 +33,16 @@ internal static class AdminLayerFieldConfigurationEndpoints
             .WithTags("Admin", "Metadata", "Fields")
             .RequireAdminAuthorization();
 
-        _ = group.MapGet("/{storageLayerId:int}/fields", HandleGetLayerFields)
-            .WithName("GetAdminLayerFields")
-            .WithSummary("Get persisted layer field configuration")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var getFields = AdminHttpOperationRouteBinding.ForApi("admin.layer.fields.get", "/metadata/layers", "/{storageLayerId:int}/fields");
+        _ = group.MapMethods(getFields.RoutePattern, getFields.Methods, HandleGetLayerFields)
+            .WithAdminOperation(getFields.Definition)
+            .WithSummary("Get persisted layer field configuration");
 
-        _ = group.MapPut("/{storageLayerId:int}/fields", HandleUpdateLayerFields)
+        var setFields = AdminHttpOperationRouteBinding.ForApi("admin.layer.fields.set", "/metadata/layers", "/{storageLayerId:int}/fields");
+        _ = group.MapMethods(setFields.RoutePattern, setFields.Methods, HandleUpdateLayerFields)
+            .WithAdminOperation(setFields.Definition)
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
-            .WithName("UpdateAdminLayerFields")
-            .WithSummary("Update persisted layer field aliases, coded-value domains, and visibility")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+            .WithSummary("Update persisted layer field aliases, coded-value domains, and visibility");
     }
 
     private static async Task<IResult> HandleGetLayerFields(
@@ -51,7 +52,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
         [FromServices] ILayerFieldConfigurationStore fieldConfigurationStore,
         CancellationToken cancellationToken)
     {
-        var layerResult = await ValidateLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
+        var layerResult = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync((storageLayerId, context), resourceValidator, cancellationToken).ConfigureAwait(false);
         if (layerResult.Problem != null || layerResult.Resource == null)
         {
             return layerResult.Problem!;
@@ -75,7 +76,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
         [FromServices] OutputCacheInvalidationService cacheInvalidator,
         CancellationToken cancellationToken)
     {
-        var layerResult = await ValidateLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
+        var layerResult = await ServiceResourceValidationHelpers.ValidateAdminStorageLayerAsync((storageLayerId, context), resourceValidator, cancellationToken).ConfigureAwait(false);
         if (layerResult.Problem != null || layerResult.Resource == null)
         {
             return layerResult.Problem!;
@@ -128,21 +129,6 @@ internal static class AdminLayerFieldConfigurationEndpoints
         return Results.Json(
             ApiResponse<LayerFieldConfigurationResponse>.CreateSuccess(response),
             LayerFieldConfigurationJsonContext.Default.ApiResponseLayerFieldConfigurationResponse);
-    }
-
-    private static async Task<(MetadataV2Object? Resource, IResult? Problem)> ValidateLayerAsync(
-        int storageLayerId,
-        HttpContext context,
-        IResourceValidator resourceValidator,
-        CancellationToken cancellationToken)
-    {
-        var layerResult = await resourceValidator.ValidateStorageLayerV2Async(storageLayerId, cancellationToken).ConfigureAwait(false);
-        if (!layerResult.IsValid || layerResult.Resource == null)
-        {
-            return (null, ServiceResourceValidationHelpers.CreateAdminValidationProblem(context, layerResult, $"Layer {storageLayerId} not found."));
-        }
-
-        return (layerResult.Resource, null);
     }
 
     private static string? ValidateRequest(
@@ -258,10 +244,9 @@ internal static class AdminLayerFieldConfigurationEndpoints
         IReadOnlyList<LayerFieldConfiguration> configurations)
     {
         var configurationMap = configurations.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
-        // V2 cutover: MetadataV2Field has no Domain/IsHidden — those are now operator-only
-        // overrides held in the configuration store. When no override row exists the
-        // response falls back to Description for alias, null Domain, and Hidden=false
-        // (the V2 baseline; v1 used to read these off the FieldDefinition itself).
+        // MetadataV2Field has no Domain/IsHidden — those are operator-only overrides held
+        // in the configuration store. When no override row exists the response falls back
+        // to Description for alias, null Domain, and Hidden=false (the V2 baseline).
         var fields = resource.SchemaFields
             .Select(field =>
             {

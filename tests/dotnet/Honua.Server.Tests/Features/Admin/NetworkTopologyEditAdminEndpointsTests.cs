@@ -14,13 +14,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Integration tests for the batched network-topology edge/restriction edit admin
-/// endpoints (#2716). Covers draft-generation allocation, batched apply, optimistic
-/// concurrency (<c>If-Match</c>), idempotency (<c>Idempotency-Key</c> replay and
-/// conflict), validation rejections, all-or-nothing rollback, the active-generation
-/// safety invariant, the anonymous-access auth gate, and audit/telemetry emission.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
@@ -91,7 +84,7 @@ public class NetworkTopologyEditAdminEndpointsTests
         var id = NewId(suffix);
 
         // NetworkDatasetRegistry.ResolveAsync (the real, non-mocked resolver this endpoint
-        // uses to discover the dataset's SRID and #2655 travel-profile cost columns) only
+        // uses to discover the dataset's SRID and travel-profile cost columns) only
         // advertises a profile when its forward/reverse cost columns actually exist as
         // numeric columns on the edge table. Unlike the registry-CRUD-only tests in
         // NetworkDatasetAdminEndpointsTests, this endpoint calls that resolver, so the

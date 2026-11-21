@@ -25,12 +25,6 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
-/// <summary>
-/// Integration coverage for MapServer <c>dynamicLayers</c> workspace data layers
-/// (<c>source.type=dataLayer</c>, #1660). A dataLayer source resolves a registered workspace
-/// (data connection) and table to an already-published layer, gated by a server-side allowlist;
-/// non-allowlisted workspaces, unpublished tables, and disabled servers are rejected.
-/// </summary>
 [Protocol(TestProtocols.MapServer)]
 public sealed class MapServerDynamicWorkspaceTests : IClassFixture<MapServerDynamicWorkspaceTests.Fixture>
 {
@@ -90,7 +84,7 @@ public sealed class MapServerDynamicWorkspaceTests : IClassFixture<MapServerDyna
         var response = await client.GetAsync(
             $"/rest/services/{ServiceName}/MapServer/dynamicLayer?f=json&layer={layer}");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("workspace that is not available");
@@ -110,7 +104,7 @@ public sealed class MapServerDynamicWorkspaceTests : IClassFixture<MapServerDyna
         var response = await client.GetAsync(
             $"/rest/services/{ServiceName}/MapServer/dynamicLayer?f=json&layer={layer}");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("not enabled on this server");
@@ -127,7 +121,7 @@ public sealed class MapServerDynamicWorkspaceTests : IClassFixture<MapServerDyna
         var response = await client.GetAsync(
             $"/rest/services/{ServiceName}/MapServer/dynamicLayer?f=json&layer={layer}");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("table that is not published");
@@ -138,7 +132,7 @@ public sealed class MapServerDynamicWorkspaceTests : IClassFixture<MapServerDyna
     [Endpoint("GET /rest/services/{serviceId}/MapServer/dynamicLayer")]
     public async Task DynamicLayer_WithQueryTableDataSource_ReturnsBadRequest()
     {
-        // queryTable (raw SQL query table) remains deferred (#1866) and must be rejected.
+        // queryTable (raw SQL query table) remains deferred and must be rejected.
         using var client = _hosts.Allowlisted.CreateClient();
 
         // A queryTable carries a raw SQL string; it is rejected either by the request-level
@@ -149,7 +143,7 @@ public sealed class MapServerDynamicWorkspaceTests : IClassFixture<MapServerDyna
         var response = await client.GetAsync(
             $"/rest/services/{ServiceName}/MapServer/dynamicLayer?f=json&layer={layer}");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("not supported");
@@ -169,7 +163,7 @@ public sealed class MapServerDynamicWorkspaceTests : IClassFixture<MapServerDyna
         var response = await client.GetAsync(
             $"/rest/services/{ServiceName}/MapServer/dynamicLayer?f=json&layer={layer}");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("rightTableSource");
@@ -187,7 +181,7 @@ public sealed class MapServerDynamicWorkspaceTests : IClassFixture<MapServerDyna
         var response = await client.GetAsync(
             $"/rest/services/{ServiceName}/MapServer/export?bbox=-180,-90,180,90&size=64,64&f=json&dynamicLayers={dynamicLayers}");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("workspace that is not available");

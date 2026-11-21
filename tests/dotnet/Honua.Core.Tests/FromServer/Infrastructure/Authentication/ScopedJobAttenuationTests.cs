@@ -8,11 +8,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
-/// <summary>
-/// Unit tests for the pure attenuation math that computes and freezes the
-/// narrow-only intersection at the heart of the custom-code auth spine. These prove
-/// the intersection can only narrow, before any token or pipeline is involved.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
@@ -176,10 +171,8 @@ public sealed class ScopedJobAttenuationTests
     [UnitTest]
     public void Intersect_GrantBasedWriteSubmitter_RetainsWrite_NoRoleNeeded()
     {
-        // #2192: the submitter's write authority comes purely from a layer-scoped
-        // write:{service}/{layer} permission GRANT — they hold no data-editor role.
-        // The intersection must retain that write (previously it was dropped because
-        // only roles were considered).
+        // The submitter has a layer-scoped write:{service}/{layer} grant and no
+        // data-editor role. The intersection must retain the scoped write authority.
         var effective = ScopedJobAttenuation.Intersect(
             ownerRoles: [],
             ownerGrants: ["write:parcels/lots"],

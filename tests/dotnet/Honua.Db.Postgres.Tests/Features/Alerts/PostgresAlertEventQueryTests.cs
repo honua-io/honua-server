@@ -14,12 +14,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Alerts;
 
-/// <summary>
-/// Integration tests for <see cref="PostgresAlertEventQuery"/> and
-/// <see cref="PostgresAlertLifecycleStore"/> using the shared Testcontainers
-/// Postgres fixture. Mirrors migration 013 (alert events) and migration 034
-/// (alert event lifecycle) inside an isolated per-test schema (#1168).
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresAlertEventQueryTests(PostgresFixture fixture)
 {
@@ -151,10 +145,8 @@ public sealed class PostgresAlertEventQueryTests(PostgresFixture fixture)
     [IntegrationTest]
     public async Task ListAsync_WithOpsEventNullRuleId_DoesNotThrowAndReturnsNullRuleId()
     {
-        // Regression: migration 075 relaxed rule_id to NULL so ops notifications
-        // (deploy/job terminal events) can reuse the alert outbox. The list mapper
-        // previously called GetInt64 unconditionally and threw InvalidCastException
-        // when an ops row (NULL rule_id) surfaced (#2427).
+        // Ops notifications share the alert outbox with a null rule_id. The list mapper
+        // must accept these rows without calling GetInt64 on null.
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAlertEventQueryTests));
         try
         {

@@ -7,9 +7,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Unit tests for <see cref="GeoServicesGeometryParser"/> geometryType validation (#1462).
-/// </summary>
 public sealed class GeoServicesGeometryParserTests
 {
     [UnitTest]
@@ -77,8 +74,8 @@ public sealed class GeoServicesGeometryParserTests
     [UnitTest]
     public void TryParse_WithShortEnvelopeCoordinates_Fails()
     {
-        // A two-coordinate list declared as an envelope previously read xmax/ymax from the
-        // zero-initialized stackalloc tail and silently queried a different window (#1990).
+        // Reject an envelope with only two coordinates rather than reading its
+        // missing bounds from the zero-initialized stackalloc tail.
         var parsed = GeoServicesGeometryParser.TryParseGeoServicesGeometry(
             "1,2",
             "esriGeometryEnvelope",

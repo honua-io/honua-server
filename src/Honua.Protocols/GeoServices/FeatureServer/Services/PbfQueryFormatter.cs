@@ -418,6 +418,8 @@ internal sealed partial class PbfQueryFormatter
                 {
                     "esriFieldTypeDate" => (MetadataV2FieldType?)MetadataV2FieldType.DateTime,
                     "esriFieldTypeDateOnly" => MetadataV2FieldType.Date,
+                    // An exact Decimal field reads as canonical text; the PBF value is a double.
+                    "esriFieldTypeDouble" when value is string => MetadataV2FieldType.Decimal,
                     _ => null
                 };
                 if (temporalType.HasValue
@@ -779,7 +781,7 @@ internal sealed partial class PbfQueryFormatter
         // field 1: quantizeOriginPosition (0 = upperLeft, 1 = lowerLeft).
         // With no client transform, coordinates are encoded as y = round(Y * 1e6) and
         // translate 0. Esri decodes upperLeft as translateY - q * scale, which mirrors
-        // that positive Y. Declare lowerLeft so the same encoding decodes unchanged (#6145).
+        // that positive Y. Declare lowerLeft so the same encoding decodes unchanged.
         if (quantizationTransform is null
             || string.Equals(quantizationTransform.OriginPosition, QuantizationTransform.LowerLeft, StringComparison.Ordinal))
         {

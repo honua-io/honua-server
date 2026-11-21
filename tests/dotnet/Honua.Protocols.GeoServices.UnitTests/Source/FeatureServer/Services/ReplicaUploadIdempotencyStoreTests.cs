@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Edit.Receipts;
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Infrastructure.Security;
@@ -11,12 +12,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Unit tests for <see cref="DistributedReplicaUploadIdempotencyStore"/> (#4026): the reservation that
-/// holds off an in-flight duplicate upload, the recorded outcome a retry replays, the ownership guard on
-/// recording, expiry, and scope isolation. Exercises the in-process path of the shared
-/// <see cref="IdempotencyPayloadStore"/>.
-/// </summary>
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class ReplicaUploadIdempotencyStoreTests
 {

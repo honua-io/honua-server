@@ -7,13 +7,6 @@ using Honua.Core.Features.Authorization.Domain;
 
 namespace Honua.Core.Tests.Features.Authorization;
 
-/// <summary>
-/// Unit tests for <see cref="PermissionResolver"/> — the canonical per-operation
-/// permission resolver (#1375). Locks in the grant-resolution decision matrix:
-/// wildcard precedence, per-layer / per-operation granularity, read/query
-/// synonym handling, the no-matching-grant fallback signal, and the anonymous
-/// requires-authentication signal.
-/// </summary>
 public sealed class PermissionResolverTests
 {
     private static EffectivePermissions Effective(params PermissionGrant[] grants)

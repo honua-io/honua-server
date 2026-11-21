@@ -16,11 +16,17 @@ public static class InMemoryFilterEvaluator
 
     public static bool Evaluate(FilterExpression expression, IReadOnlyDictionary<string, JsonElement> properties)
     {
-        return EvaluateTruth(expression, properties, depth: 0) == TruthValue.True;
+        return !ExceedsMaxDepth(expression) && EvaluateTruth(expression, properties, depth: 0) == TruthValue.True;
     }
 
     public static bool TryValidateStreamingExpression(FilterExpression expression, out string? error)
     {
+        if (ExceedsMaxDepth(expression))
+        {
+            error = "Expression exceeds the streaming depth limit.";
+            return false;
+        }
+
         return TryValidateBooleanExpression(expression, out error);
     }
 
@@ -31,7 +37,7 @@ public static class InMemoryFilterEvaluator
     {
         if (depth > MaxStreamingDepth)
         {
-            return TruthValue.False; // Fail closed for expressions that exceed streaming limits.
+            return TruthValue.Unknown;
         }
 
         return expr switch

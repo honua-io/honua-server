@@ -13,14 +13,9 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.PrintingTools;
 
-/// <summary>
-/// Utilities/PrintingTools is a GPServer service: service resource, task resources,
-/// Utilities folder and service node, and the SOAP binding and catalog entries
-/// sibling GP services already publish.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.PrintingTools)]
-public sealed class PrintingToolsGpServerService5546Tests : IAsyncLifetime
+public sealed class PrintingToolsGpServerService5546Tests : IClassFixture<WebAppFixture>, IDisposable
 {
     private const string ServicePath = "/rest/services/Utilities/PrintingTools/GPServer";
     private const string SoapPath = "/services/Utilities/PrintingTools/GPServer";
@@ -28,19 +23,14 @@ public sealed class PrintingToolsGpServerService5546Tests : IAsyncLifetime
     private const string GeoServicesSoapNamespace = "http://www.esri.com/schemas/ArcGIS/10.8";
     private static readonly string[] SoapNameOperations = ["GetTaskNames", "GetToolNames"];
 
-    private readonly WebAppFixture _fixture = new();
-    private HttpClient _client = null!;
+    private readonly HttpClient _client;
 
-    public async Task InitializeAsync()
+    public PrintingToolsGpServerService5546Tests(WebAppFixture fixture)
     {
-        await _fixture.InitializeAsync();
-        _client = _fixture.Client;
+        _client = fixture.CreateAdminClient();
     }
 
-    public async Task DisposeAsync()
-    {
-        await _fixture.DisposeAsync();
-    }
+    public void Dispose() => _client.Dispose();
 
     [IntegrationTest]
     [Operation(Operations.Print)]

@@ -62,11 +62,6 @@ internal static class GrpcConversionHelpers
                 : null,
         };
 
-        if (!string.IsNullOrEmpty(request.OrderBy))
-        {
-            query = query with { OrderBy = ParseOrderBy(request.OrderBy) };
-        }
-
         if (request.OutStatistics.Count > 0)
         {
             query = query with
@@ -266,7 +261,7 @@ internal static class GrpcConversionHelpers
             Length = field.Length ?? 0,
             Nullable = field.Nullable,
             // Same display-name precedence as GeoServices REST field metadata
-            // (FeatureServerUtilities.V2 / QueryFormatters), honua-server#5330.
+            // (FeatureServerUtilities.V2 / QueryFormatters).
             Alias = field.Alias ?? field.Title ?? field.Name
         };
     }
@@ -934,37 +929,4 @@ internal static class GrpcConversionHelpers
             OutStatisticFieldName = proto.OutStatisticFieldName
         };
     }
-
-    // Schema field types have to travel with the clause because an untyped managed JSONB attribute sorts a numeric value as text.
-    public static ImmutableArray<OrderByClause> WithSchemaFieldTypes(
-        ImmutableArray<OrderByClause> orderBy,
-        IReadOnlyList<MetadataV2Field> schemaFields)
-        => orderBy
-            .Select(clause => schemaFields.FirstOrDefault(field =>
-                    string.Equals(field.Name, clause.Field, StringComparison.OrdinalIgnoreCase)) is { } declared
-                ? clause with { Field = declared.Name, FieldType = declared.Type }
-                : clause)
-            .ToImmutableArray();
-
-    private static ImmutableArray<OrderByClause> ParseOrderBy(string orderBy)
-    {
-        var clauses = orderBy.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var builder = ImmutableArray.CreateBuilder<OrderByClause>(clauses.Length);
-
-        foreach (var clause in clauses)
-        {
-            var parts = clause.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length == 0)
-                continue;
-
-            var field = parts[0];
-            var ascending = parts.Length < 2 ||
-                !parts[1].Equals("DESC", StringComparison.OrdinalIgnoreCase);
-
-            builder.Add(new OrderByClause(field, ascending));
-        }
-
-        return builder.ToImmutable();
-    }
-
 }

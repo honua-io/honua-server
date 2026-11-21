@@ -1,14 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics;
 using Honua.Core.Features.Infrastructure.Monitoring;
 
 namespace Honua.TestKit.Infrastructure;
 
-/// <summary>
-/// Performance monitor that discards all metrics. Used by unit tests
-/// where telemetry recording is not the concern under test.
-/// </summary>
 public sealed class NoopPerformanceMonitor : IPerformanceMonitor
 {
     public void RecordDatabaseQuery(string queryType, string layerId, TimeSpan duration, int recordCount)
@@ -45,6 +42,10 @@ public sealed class NoopPerformanceMonitor : IPerformanceMonitor
     {
     }
 
+    public void RecordHistogram(string name, double value, TagList tags)
+    {
+    }
+
     public void RecordGeospatialOperation(string operationType, TimeSpan duration, int coordinateCount, int? fromSrid = null, int? toSrid = null)
     {
     }
@@ -62,9 +63,6 @@ public sealed class NoopPerformanceMonitor : IPerformanceMonitor
     }
 }
 
-/// <summary>
-/// Operation scope that does nothing. Used alongside <see cref="NoopPerformanceMonitor"/>.
-/// </summary>
 public sealed class NoopOperationScope : IOperationScope
 {
     public IOperationScope WithTag(string key, string value) => this;

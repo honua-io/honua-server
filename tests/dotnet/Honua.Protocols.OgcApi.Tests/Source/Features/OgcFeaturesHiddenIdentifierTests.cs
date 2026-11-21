@@ -14,9 +14,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
-/// <summary>
-/// Provides a PostGIS application whose custom public identifier is hidden as an attribute.
-/// </summary>
 public sealed class OgcFeaturesHiddenIdentifierFixture : IAsyncLifetime
 {
     public WebAppFixture App { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
@@ -48,9 +45,6 @@ public sealed class OgcFeaturesHiddenIdentifierFixture : IAsyncLifetime
     public Task DisposeAsync() => App.DisposeAsync();
 }
 
-/// <summary>
-/// Verifies hiding an identifier attribute preserves collection and item identity binding.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiFeatures)]
 [Operation(Operations.Query)]
@@ -87,6 +81,7 @@ public sealed class OgcFeaturesHiddenIdentifierTests : IClassFixture<OgcFeatures
             features[0].GetProperty("properties").TryGetProperty("public_id", out _).Should().BeFalse();
         }
     }
+
     [IntegrationTheory]
     [InlineData("items?ids=public-1")]
     [InlineData("items/public-1")]
@@ -109,4 +104,20 @@ public sealed class OgcFeaturesHiddenIdentifierTests : IClassFixture<OgcFeatures
         feature.GetProperty("properties").GetProperty("name").GetString().Should().Be("Test Feature");
     }
 
+    [IntegrationTheory]
+    [InlineData("items?ids=public-1&f=csv")]
+    [InlineData("items/public-1?f=csv")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task Csv_HiddenIdentifier_OmitsAttributeColumn(string path)
+    {
+        using var response = await _fixture.Client.GetAsync($"/ogc/features/collections/0/{path}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var reader = new StringReader(await response.Content.ReadAsStringAsync());
+        var header = reader.ReadLine()!.Split(',');
+        Assert.DoesNotContain("public_id", header);
+        var row = reader.ReadLine()!.Split(',');
+        Assert.Equal("public-1", row[0]);
+        Assert.Null(reader.ReadLine());
+    }
 }

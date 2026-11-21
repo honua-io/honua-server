@@ -12,22 +12,6 @@ using Xunit;
 
 namespace Honua.Server.Tests.Features.Experimental;
 
-/// <summary>
-/// Unit tests for the fail-closed startup gates on experimental data providers
-/// (Redshift: PA-181, Snowflake: PA-182, Databricks: #2436). When a provider is
-/// explicitly enabled via its legacy <c>X:Enabled=true</c> flag but the corresponding
-/// experimental feature gate is not set, startup must throw <see cref="InvalidOperationException"/>
-/// with a clear diagnostic pointing at the required flag. When neither the legacy
-/// flag nor the experimental gate is set, startup must succeed silently.
-///
-/// <para>
-/// All three warehouse providers must gate identically. Databricks was un-gated
-/// until #2436: an operator could enable it by configuring a host alone, while the
-/// identical action on Redshift threw. <see cref="EveryWarehouseProviderGatesIdentically"/>
-/// is the regression guard, so a fourth warehouse provider cannot be added with the
-/// gate quietly omitted.
-/// </para>
-/// </summary>
 [Trait("Category", "ExperimentalGate")]
 public sealed class ExperimentalProviderGateTests
 {
@@ -213,7 +197,7 @@ public sealed class ExperimentalProviderGateTests
             because: "when Snowflake:Enabled is not set, the fail-closed gate must not trigger");
     }
 
-    // ---- Databricks fail-closed (#2436) ----
+    // ---- Databricks fail-closed ----
 
     [Fact]
     public void Databricks_ExplicitlyEnabledWithoutExperimentalFlag_ThrowsAtStartup()
@@ -254,10 +238,9 @@ public sealed class ExperimentalProviderGateTests
     [Fact]
     public void Databricks_HostConfiguredWithoutExperimentalFlag_DoesNotRegisterProvider()
     {
-        // The specific hole #2436 closed. Configuring a host was previously enough to
-        // register Databricks, because it had no gate to opt into — the provider was
-        // dormant-until-configured rather than experimental-until-opted-in. Supplying a
-        // host must now leave the provider unregistered while the gate is off.
+        // Configuring a host alone must not register Databricks: the provider is
+        // experimental-until-opted-in, not dormant-until-configured. Supplying a host
+        // leaves the provider unregistered while the gate is off.
         var configuration = BuildConfiguration(new Dictionary<string, string?>
         {
             ["Databricks:Host"] = "https://dbc-test.cloud.databricks.com",

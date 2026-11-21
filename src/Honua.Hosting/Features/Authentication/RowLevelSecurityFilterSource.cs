@@ -5,6 +5,7 @@ using System.Security.Claims;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Authorization.Services;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
@@ -42,6 +43,8 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         _rbacOptions = rbacOptions.Value;
         _logger = logger;
     }
+
+    public bool IsCallerRead => _httpContextAccessor.HttpContext is not null;
 
     public async Task<SqlFragment?> ResolveAsync(MetadataV2Object resource, CancellationToken cancellationToken = default)
     {
@@ -160,11 +163,18 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
 
         var attribute = resource.SchemaFields.FirstOrDefault(field =>
             string.Equals(field.Name, policy.Attribute, StringComparison.OrdinalIgnoreCase))?.Name ?? policy.Attribute;
-        var expression = BuildExpression(policy, values, attribute);
+        FilterExpression expression = BuildExpression(policy, values, attribute);
+        var restriction = RlsPolicyRestrictions.Parse(
+            _filterExpressionService, policy.FilterExpression, policy.AreaGeometry,
+            resource.FindPrimaryGeometryField()?.Name);
+        if (restriction is not null)
+        {
+            expression = new BinaryExpression(expression, BinaryOperator.And, restriction);
+        }
 
         var normalized = _filterExpressionService.Normalize(expression, resource);
         var translation = _filterExpressionService.Translate(normalized, resource);
-        if (!translation.IsSuccess || translation.SqlFilter is null)
+        if (!translation.IsSuccess || translation.IsUnknownField || translation.SqlFilter is null)
         {
             // A configured policy that cannot translate (e.g. attribute not in the
             // schema) must never be silently dropped — that would leak hidden rows.

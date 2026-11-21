@@ -5,6 +5,11 @@ services:
   honua:
     environment:
       Studio__EndUserAuthorization__Enabled: "true"
+      # Generated style, source and tile URLs must use the browser's HTTPS edge.
+      PUBLIC_BASE_URL: "https://localhost:${HONUA_CONSOLE_PORT:-18083}"
+      # Allow the Console HTTPS edge in CORS so Studio's browser requests to /mcp succeed
+      # without colliding with customer Cors__AllowedOrigins__* entries.
+      HONUA_ADMIN_UI_CORS_ORIGINS: "https://localhost:${HONUA_CONSOLE_PORT:-18083}"
       # Trust the scheme and host only from the Console edge's fixed address.
       ForwardedHeaders__Enabled: "true"
       ForwardedHeaders__ForwardLimit: "1"

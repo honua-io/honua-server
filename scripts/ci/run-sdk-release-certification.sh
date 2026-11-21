@@ -55,7 +55,7 @@ else
 fi
 
 mkdir -p "$work_dir/dotnet"
-(cd "$work_dir/dotnet" && "$dotnet_cmd" new console --framework net10.0 --no-restore >/dev/null && "$dotnet_cmd" add package "$grpc_package" --version "$grpc_version" --source https://api.nuget.org/v3/index.json >/dev/null && "$dotnet_cmd" restore --source https://api.nuget.org/v3/index.json) >"$results_dir/geospatial-grpc-install.log" 2>&1
+(cd "$work_dir/dotnet" && "$dotnet_cmd" new console --framework net11.0 --no-restore >/dev/null && "$dotnet_cmd" add package "$grpc_package" --version "$grpc_version" --source https://api.nuget.org/v3/index.json >/dev/null && "$dotnet_cmd" restore --source https://api.nuget.org/v3/index.json) >"$results_dir/geospatial-grpc-install.log" 2>&1
 grpc_install=$?
 (cd "$work_dir/dotnet" && "$dotnet_cmd" add package "$dotnet_package" --version "$dotnet_version" --source https://api.nuget.org/v3/index.json) >"$results_dir/dotnet-install.log" 2>&1
 dotnet_install=$?

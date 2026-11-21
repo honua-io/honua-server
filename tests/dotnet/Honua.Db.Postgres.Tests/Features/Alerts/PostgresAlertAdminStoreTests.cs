@@ -13,9 +13,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Alerts;
 
-/// <summary>
-/// Integration tests for alert admin health aggregation in <see cref="PostgresAlertAdminStore"/>.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresAlertAdminStoreTests(PostgresFixture fixture)
 {
@@ -114,7 +111,7 @@ public sealed class PostgresAlertAdminStoreTests(PostgresFixture fixture)
 
     private async Task EnsureAlertSchemaAsync()
     {
-        // honua-server#1568 (signature 2): this DDL creates the literal, process-global
+        // This DDL creates the literal, process-global
         // honua.alert_* tables (search_path isolation does not scope them), so apply it under the
         // shared seed advisory lock to keep parallel [Collection("Database")] tests off the 40P01
         // deadlock path racing ACCESS EXCLUSIVE catalog locks on the same global objects.
@@ -225,7 +222,7 @@ public sealed class PostgresAlertAdminStoreTests(PostgresFixture fixture)
             """);
     }
 
-    // #2020: every literal honua.* mutation (TRUNCATE teardown + INSERT helpers) routes
+    // Every literal honua.* mutation (TRUNCATE teardown + INSERT helpers) routes
     // through the shared schema-mutation advisory lock so this parallelized collection
     // serializes its global-schema writes with sibling collections instead of racing the
     // catalog and deadlocking (40P01). The DDL setup (EnsureAlertSchemaAsync) was already

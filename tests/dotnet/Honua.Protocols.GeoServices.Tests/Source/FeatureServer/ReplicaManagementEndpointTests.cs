@@ -19,10 +19,6 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Integration tests for the admin/operator named-replica management API (#1167, slice 1):
-/// list + detail of durable named replicas behind <c>RequireAdminAuthorization</c>.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 public sealed class ReplicaManagementEndpointTests : IAsyncLifetime
@@ -144,7 +140,7 @@ public sealed class ReplicaManagementEndpointTests : IAsyncLifetime
         {
             fixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, capabilities: ["Query", "Sync"]);
 
-            // #4405: assert the admin half against a replica that actually exists. The old form
+            // Assert the admin half against a replica that actually exists. The old form
             // (`NotBe(401)` + `NotBe(403)`) was satisfied by 400, 404 or 500 — it proved the
             // middleware ran, not that an admin can list replicas.
             var replicaId = await CreateReplicaAsync(fixture, "AuthorizedListReplica");
@@ -160,7 +156,7 @@ public sealed class ReplicaManagementEndpointTests : IAsyncLifetime
             var body = await ReadListAsync(adminResponse);
             body!.Data!.Replicas.Should().ContainSingle(replica => replica.ReplicaId == replicaId);
 
-            // #4405: the direction the "admin-only" claim actually rests on. An authenticated
+            // The direction the "admin-only" claim actually rests on. An authenticated
             // principal that is not an admin must be forbidden, not merely unauthenticated.
             // Only anonymous 401 was covered before, which a route with no admin gate at all
             // would also have produced.
@@ -233,7 +229,7 @@ public sealed class ReplicaManagementEndpointTests : IAsyncLifetime
         {
             fixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, capabilities: ["Query", "Sync"]);
 
-            // #4405: the previous form asked for the all-zeros replicaId — the same literal
+            // The previous form asked for the all-zeros replicaId — the same literal
             // GetReplica_ForUnknownReplica_ReturnsNotFound uses to assert a 404 — so the admin
             // half was guaranteed vacuous: it proved only that auth ran before the 404.
             var replicaId = await CreateReplicaAsync(fixture, "AuthorizedDetailReplica");
@@ -261,11 +257,6 @@ public sealed class ReplicaManagementEndpointTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Mints an API key whose grants are genuinely scoped, so the principal authenticates but
-    /// never receives the <c>admin</c> role. Without this the admin-only replica routes had no
-    /// 403 evidence at all — only anonymous 401 (honua-server#4405).
-    /// </summary>
     private static async Task<HttpClient> CreateAuthenticatedNonAdminClientAsync(
         WebAppFixture fixture,
         string keyName)

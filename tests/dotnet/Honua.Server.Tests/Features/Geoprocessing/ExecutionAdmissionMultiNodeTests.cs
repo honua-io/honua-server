@@ -479,10 +479,10 @@ public sealed class ExecutionAdmissionMultiNodeTests
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task NodeLocalGatesOnly_UnderTheSameInterleaving_Oversubscribe()
     {
-        // Negative control: with only per-node gates (the pre-#3853 critical section), holding
-        // each node's create until both nodes have evaluated admits two jobs against a global
-        // limit of one. This proves the interleaving below really reproduces the race, so the
-        // shared-lease counterpart passing is evidence rather than luck.
+        // Negative control: with only per-node gates, holding each node's create until both
+        // nodes have evaluated admits two jobs against a global limit of one. This proves the
+        // interleaving below really reproduces the race, so the shared-lease counterpart
+        // passing is evidence rather than luck.
         var limits = Limits(global: 1, perPartition: 100);
         var rendezvous = new Rendezvous(parties: 2, TimeSpan.FromSeconds(3));
         var nodeA = CreateNode("node-a", limits, sharedLease: false, wrapStore: rendezvous.Wrap);
@@ -791,10 +791,6 @@ public sealed class ExecutionAdmissionMultiNodeTests
         public string[] EnqueuedJobIds => enqueued.ToArray();
     }
 
-    /// <summary>
-    /// Independent observer of the durable active set: the maximum global count and the maximum
-    /// per-partition count and cost weight seen at any sample during a burst.
-    /// </summary>
     private sealed class StaticOptionsMonitor<T>(T value) : IOptionsMonitor<T>
     {
         public T CurrentValue => value;

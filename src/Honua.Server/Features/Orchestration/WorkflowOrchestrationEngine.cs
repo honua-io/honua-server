@@ -74,7 +74,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             var tenantContext = _httpContextAccessor?.HttpContext?.RequestServices
                 .GetService<ITenantContext>();
             // Record managed provenance now, while the author is resolvable, so a later triggered
-            // run on a replica that cannot re-resolve them fails closed (honua-server#3081).
+            // run on a replica that cannot re-resolve them fails closed.
             var membershipManaged = await JobSecurityContextCapture
                 .IsManagedMembershipAsync(principal, _principalMembershipSource, cancellationToken)
                 .ConfigureAwait(false);
@@ -88,7 +88,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         // cursor, so a legacy definition would reclaim the same occurrence and log a failure on
         // every poll, forever. This is a permanent property of the stored definition — only
         // republishing changes it — and that is the exception both loops already treat as
-        // permanent (honua-server#3068 review).
+        // permanent.
         var snapshot = definition.AuthorSecurityContext ?? throw new WorkflowDefinitionValidationException(
                 $"Workflow '{definition.WorkflowId}' was published before its author's row/field "
                 + "security identity was recorded, so a triggered run cannot reconstruct it. "
@@ -194,7 +194,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             .ConfigureAwait(false);
         var runSecurityContext = membershipResult.Context;
 
-        // #2798/#3046: gate the mutating-process execution tier AND per-layer read access
+        // Gate the mutating-process execution tier AND per-layer read access
         // BEFORE any step job is submitted. The reconcile loop submits step jobs under a
         // synthesized orchestrator principal that carries role=admin and so bypasses the
         // operator evaluator; without this pre-check an Execute-only operator could schedule
@@ -266,7 +266,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             Audit = new OperationAuditInfo
             {
                 RequestedBy = principal.Identity?.Name,
-                // Pin the RUN REQUESTER's row/field security identity (#3068). Each step job is
+                // Pin the RUN REQUESTER's row/field security identity. Each step job is
                 // later submitted under OrchestrationSystemPrincipal, which carries role=admin so
                 // the reconcile loop can dispatch; capturing the snapshot from THAT principal
                 // would give every step job admin row/field visibility and launder away the
@@ -410,6 +410,14 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             activity?.SetTag(OrchestrationTelemetry.Tags.WorkflowId, run.WorkflowId);
             activity?.SetTag("honua.orchestration.step_count", run.StepStates.Count);
 
+            // Without the requester's snapshot the run has no identity to act with on its step
+            // jobs, so it is ended rather than reconciled forever.
+            if (run.Audit.SubmitterSecurityContext is null)
+            {
+                await PersistRunAsync(EndRunWithoutSnapshot(run), reconciliationCancellation.Token).ConfigureAwait(false);
+                return;
+            }
+
             var rawDefinition = await _definitionStore.GetAsync(run.WorkflowId, reconciliationCancellation.Token).ConfigureAwait(false);
             // Re-apply the deterministic ForEach unroll so the reconciler sees the same
             // flat step-set the run's durable states were created from. The transform is
@@ -418,7 +426,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             if (definition is null)
             {
                 var now = _clock.GetUtcNow();
-                var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy, run.Audit.SubmitterSecurityContext);
+                var principal = OrchestrationSystemPrincipal.ForRun(run.Audit);
                 var warnings = new List<string>(run.Warnings);
 
                 var finalisedSteps = run.StepStates.ToArray();
@@ -539,6 +547,37 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         }
     }
 
+    private WorkflowRun EndRunWithoutSnapshot(WorkflowRun run)
+    {
+        const string reason = "The workflow run has no requester security snapshot, so its step jobs were not observed or cancelled.";
+        var now = _clock.GetUtcNow();
+        var warnings = new List<string>(run.Warnings);
+        var steps = run.StepStates.Select(step =>
+        {
+            if (IsStepTerminal(step.Status))
+            {
+                return step;
+            }
+
+            if (!string.IsNullOrWhiteSpace(step.JobId))
+            {
+                warnings.Add($"Step '{step.StepId}' job '{step.JobId}' was left without cancellation: the run has no requester security snapshot.");
+            }
+
+            return step with { Status = WorkflowStepStatus.Cancelled, CompletedAt = now, ErrorMessage = step.ErrorMessage ?? reason };
+        }).ToArray();
+        OrchestrationLog.WorkflowRunEndedWithoutSnapshot(_logger, run.RunId, warnings.Count - run.Warnings.Count);
+        return run with
+        {
+            Status = IsRunTerminal(run.Status) ? run.Status : WorkflowRunStatus.Failed,
+            UpdatedAt = now,
+            CompletedAt = run.CompletedAt ?? now,
+            ErrorMessage = IsRunTerminal(run.Status) ? run.ErrorMessage : reason,
+            StepStates = steps,
+            Warnings = warnings,
+        };
+    }
+
     private async Task<WorkflowRun> ReconcileRunAsync(
         WorkflowRun run,
         WorkflowDefinition definition,
@@ -555,7 +594,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             var detail = $"Added: [{string.Join(", ", defStepIds.Except(runStepIds))}], Removed: [{string.Join(", ", runStepIds.Except(defStepIds))}]";
             OrchestrationLog.DefinitionStepSetMismatch(_logger, run.RunId, run.WorkflowId, detail);
 
-            var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy, run.Audit.SubmitterSecurityContext);
+            var principal = OrchestrationSystemPrincipal.ForRun(run.Audit);
             var mismatchWarnings = new List<string>(run.Warnings);
             var finalisedSteps = run.StepStates.ToArray();
             for (var i = 0; i < finalisedSteps.Length; i++)
@@ -638,7 +677,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 if (!string.IsNullOrWhiteSpace(state.JobId) &&
                     state.Status is WorkflowStepStatus.Queued or WorkflowStepStatus.Running)
                 {
-                    var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy, run.Audit.SubmitterSecurityContext);
+                    var principal = OrchestrationSystemPrincipal.ForRun(run.Audit);
                     try
                     {
                         await _jobService.CancelJobAsync(state.JobId!, principal, cancellationToken).ConfigureAwait(false);
@@ -837,14 +876,14 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         // for THIS run's expanded step, which is the only place a ForEach step's concrete layer
         // and dataset ids are known. The stored definition is the fallback for runs created
         // before that plan was persisted, where publication's binding on a static layer id is
-        // what travels (#3043). Either way the submit-time gate matches the binding against the
+        // what travels. Either way the submit-time gate matches the binding against the
         // layer the dataset resolves to NOW and refuses on a mismatch, so a dataset re-pointed
         // between authorization and dispatch fails this step rather than being re-authorized
         // under the orchestrator identity below.
         var basePlan = state.AuthorizedPlan ?? stepDefinition.Plan;
         var planForAttempt = WorkflowBindingResolver.ApplyBindings(basePlan, bindingResolution);
         var idempotencyKey = $"{run.RunId}:{state.StepId}:{attemptNumber}";
-        var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy, run.Audit.SubmitterSecurityContext);
+        var principal = OrchestrationSystemPrincipal.ForRun(run.Audit);
         var protocolMetadata = BuildOrchestrationMetadata(run, state.StepId, attemptNumber, stepDefinition.TimeoutSeconds);
 
         ExecutionJobRecord jobRecord;
@@ -936,7 +975,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         }
 
         var now = _clock.GetUtcNow();
-        var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy, run.Audit.SubmitterSecurityContext);
+        var principal = OrchestrationSystemPrincipal.ForRun(run.Audit);
 
         ExecutionJobRecord job;
         try
@@ -1070,7 +1109,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         WorkflowStepState state,
         CancellationToken cancellationToken)
     {
-        var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy, run.Audit.SubmitterSecurityContext);
+        var principal = OrchestrationSystemPrincipal.ForRun(run.Audit);
         try
         {
             await _jobService.CancelJobAsync(state.JobId!, principal, cancellationToken).ConfigureAwait(false);

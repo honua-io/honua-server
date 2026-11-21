@@ -11,18 +11,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.SensorThings;
 
-/// <summary>
-/// System query-option conformance for the STA read surface (#4201, #4203). Before these
-/// fixes <c>$filter</c> on the catalog entity sets, the <c>$orderby</c> property,
-/// <c>$select</c> and <c>$expand</c> were parsed and then dropped: every request answered
-/// 200 with unfiltered, unsorted, complete entities, so a client could not tell that the
-/// option had been ignored. A <c>$filter</c> literal of the wrong type reached PostgreSQL
-/// untyped and came back as a 500.
-///
-/// The expected values here are computed from the seeded series
-/// (<c>result = 15 + 10 * sin(id)</c> over ids 1..48, hourly from 2026-01-01T01:00Z), not
-/// snapshotted from the server's own output.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.SensorThings)]
 public sealed class SensorThingsQueryOptionsTests : IAsyncLifetime
@@ -42,7 +30,6 @@ public sealed class SensorThingsQueryOptionsTests : IAsyncLifetime
 
     private StringContent Json(string body) => SensorThingsTestData.ObservationJson(body, _featureId);
 
-    /// <summary>The seeded result for observation <paramref name="id"/>, computed here.</summary>
     private static double SeededResult(int id) => 15.0d + (10.0d * Math.Sin(id));
 
     private static IEnumerable<int> SeededIds => Enumerable.Range(1, SeededObservationCount);
@@ -174,7 +161,7 @@ public sealed class SensorThingsQueryOptionsTests : IAsyncLifetime
         matching.RootElement.GetProperty("value").EnumerateArray()
             .Select(value => value.GetProperty("name").GetString()).Should().Equal("Filterable Station");
 
-        // The repro from the issue: a filter matching nothing used to return every Thing.
+        // A filter matching nothing must return no Things.
         using var empty = await GetOkAsync($"/sta/v1.1/Things?$filter={Escape("name eq 'nope'")}&$count=true");
         empty.RootElement.GetProperty("value").GetArrayLength().Should().Be(0);
         empty.RootElement.GetProperty("@iot.count").GetInt64().Should().Be(0);
@@ -227,7 +214,7 @@ public sealed class SensorThingsQueryOptionsTests : IAsyncLifetime
             .Should().Be(HttpStatusCode.BadRequest);
     }
 
-    // ---- $filter literal typing (#4203) ----
+    // ---- $filter literal typing ----
 
     [IntegrationTest]
     [Operation(Operations.Query)]

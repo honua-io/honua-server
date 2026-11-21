@@ -5,6 +5,7 @@ using System.Security.Claims;
 using FluentAssertions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -22,16 +23,6 @@ using NSubstitute.ExceptionExtensions;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
-/// <summary>
-/// Unit coverage for the dispatcher that routes claimed geoprocessing jobs
-/// to the correct per-process executor. The dispatcher is the single
-/// IJobExecutor registered for ExecutionJobKind.Geoprocessing after slice 2;
-/// slice 3 extended it with geometry.area + geometry.union; slice 4 added
-/// geometry.centroid + geometry.length + geometry.convex-hull; slice 5 adds
-/// geometry.dissolve + geometry.simplify + geometry.snap. This test pins
-/// the routing contract so unknown process ids never reach a per-process
-/// executor by accident.
-/// </summary>
 public sealed class GeoprocessingDispatchJobExecutorTests
 {
     [UnitTest]
@@ -45,7 +36,7 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         // analytics.cluster is the bare-id catalog process that is NOT job-routed (it
         // executes through the layer-scoped PostGIS analytics protocol path, not the
         // dispatcher) — pick it for the unknown-id smoke. The managed counterpart
-        // analytics.cluster-managed IS job-routed (#1260) and so cannot be used here.
+        // analytics.cluster-managed IS job-routed and so cannot be used here.
         var record = CreateJobRecord("analytics.cluster");
 
         var result = await dispatcher.ExecuteAsync(record, context, CancellationToken.None);
@@ -562,6 +553,24 @@ public sealed class GeoprocessingDispatchJobExecutorTests
     }
 
     [UnitTest]
+    public async Task ExecuteAsync_WorkspaceRequestedWithoutSubmitterSnapshot_FailsWithoutResolvingTheRequesterWorkspace()
+    {
+        var workspaceLifecycle = Substitute.For<IWorkspaceLifecycleService>();
+        var dispatcher = CreateFakeExecutorDispatcher(BuildScopeFactory(workspaceLifecycle));
+        var context = Substitute.For<IJobExecutionContext>();
+        context.OperationId.Returns("op-no-snapshot");
+        var record = CreateFakeExecutorJobRecord(workspaceId: "ws-1", overwriteOutput: null);
+        record = record with { Audit = record.Audit with { RequestedBy = "victim", SubmitterSecurityContext = null } };
+
+        var result = await dispatcher.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.IsRetryable.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("no submitter security context");
+        await workspaceLifecycle.DidNotReceiveWithAnyArgs().GetOrCreateNamedWorkspaceAsync(default!, default!, default);
+    }
+
+    [UnitTest]
     public async Task ExecuteAsync_WorkspaceProviderNotRegistered_FailsPermanentlyWithoutRunningHandler()
     {
         using var services = new ServiceCollection().BuildServiceProvider();
@@ -692,11 +701,6 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
     }
 
-    /// <summary>
-    /// Job record routed to <see cref="FakeArtifactPublishingExecutor"/> (registered
-    /// only in the dispatchers these workspace-routing tests build), isolating the
-    /// workspace-routing behavior from real geometry executor logic.
-    /// </summary>
     private static ExecutionJobRecord CreateFakeExecutorJobRecord(string? workspaceId, bool? overwriteOutput)
     {
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -722,7 +726,11 @@ public sealed class GeoprocessingDispatchJobExecutorTests
             Status = ExecutionJobStatus.Running,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
-            Audit = new OperationAuditInfo { RequestedBy = "admin" },
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = "admin",
+                SubmitterSecurityContext = new JobSecurityContext("admin", null, []),
+            },
             Spec = new ExecutionJobSpec
             {
                 Kind = ExecutionJobKind.Geoprocessing,
@@ -734,11 +742,6 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         };
     }
 
-    /// <summary>
-    /// Minimal <see cref="IProcessExecutor"/> that publishes a single fixed
-    /// artifact and succeeds, used to isolate workspace-routing tests from real
-    /// geometry executor logic.
-    /// </summary>
     private sealed class FakeArtifactPublishingExecutor : IProcessExecutor
     {
         public const string HandledProcessId = "test.fake-artifact-publisher";
@@ -755,12 +758,6 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         }
     }
 
-    /// <summary>
-    /// Builds a dispatcher routing only <see cref="FakeArtifactPublishingExecutor"/>,
-    /// isolated from <see cref="CreateDispatcher"/>'s full executor set so the
-    /// exact-match <see cref="SupportedProcessIds_ListsSliceFiveExecutors"/>
-    /// assertion is unaffected by these workspace-routing tests.
-    /// </summary>
     private static GeoprocessingDispatchJobExecutor CreateFakeExecutorDispatcher(
         IServiceScopeFactory? scopeFactory)
     {
@@ -782,7 +779,7 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         var monitor = Substitute.For<IOptionsMonitor<GeoprocessingExecutorOptions>>();
         monitor.CurrentValue.Returns(options);
 
-        // Auto-registration contract (#2122): the dispatcher routes by enumerating
+        // Auto-registration contract: the dispatcher routes by enumerating
         // the IProcessExecutor set and keying on each executor's self-declared
         // ProcessIds, so the test composes the same executor instances as a flat
         // list instead of the former positional constructor.

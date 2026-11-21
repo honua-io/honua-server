@@ -9,6 +9,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Sql;
+using Honua.Core.Queries.Filters.GeoServicesSql;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Geoprocessing.Execution;
 
@@ -23,7 +24,7 @@ internal static partial class ProcessPlanValidator
     //
     // Every token set below is built from ProcessValueDomains, which BuiltInProcessCatalog
     // publishes verbatim as ProcessParameterSpec.AllowedValues, so the enforced domain and
-    // the advertised choice list cannot drift apart (#3048).
+    // the advertised choice list cannot drift apart.
     private static readonly HashSet<string> ClusterAlgorithmValues =
         new(ProcessValueDomains.ClusterAlgorithm, StringComparer.OrdinalIgnoreCase);
 
@@ -203,7 +204,7 @@ internal static partial class ProcessPlanValidator
                 // workflow's stored plan legitimately carries this input. It is deliberately not
                 // a catalog parameter -- it is server-owned, not caller-supplied -- and catalog
                 // validation runs BEFORE the gate, so rejecting it here would fail every
-                // correctly pinned workflow step (#3043 review).
+                // correctly pinned workflow step.
                 //
                 // Admitting it is not a forgery hole: GeoprocessingLayerAccessGuard strips any
                 // caller-supplied value before writing the layer it actually authorized, so a
@@ -321,7 +322,7 @@ internal static partial class ProcessPlanValidator
                 ValidateRasterMosaicSemantics(step, violations);
                 break;
             case "imagery.classify":
-                // Delegated cloud inference (#2241). Shape/semantic validation only:
+                // Delegated cloud inference. Shape/semantic validation only:
                 // whether a backend is actually configured is a deployment concern the
                 // static validator cannot see, so an unconfigured deployment surfaces
                 // the clear "no cloud inference backend is configured" message as a
@@ -342,7 +343,7 @@ internal static partial class ProcessPlanValidator
                 ValidateProximityEuclideanDistanceSemantics(step, violations);
                 break;
             case "proximity.euclidean-allocation":
-                // Allocation shares the distance op's parameter surface (#2255):
+                // Allocation shares the distance op's parameter surface:
                 // 'source' (required), optional maxDistance / distUnits / values. The
                 // native worker computes the nearest-source raster via the custom
                 // gdal_euclidean_allocation.py step.
@@ -478,29 +479,11 @@ internal static partial class ProcessPlanValidator
         }
     }
 
-    // geometry.buffer advertises a geodesic flag and accepts a FloatingPoint
-    // distance, but GeometryBufferJobExecutor only implements planar buffering
-    // and requires a strictly positive distance. Mirror both runtime guards at
-    // submit time so the plan is refused up front instead of failing only once
-    // the job runs (#2733).
+    // Buffer requires a strictly positive finite distance; both planar and geodesic buffering are supported.
     private static void ValidateGeometryBufferSemantics(
         AnalysisPlanStep step,
         List<GeoprocessingValidationFailure> violations)
     {
-        if (step.Inputs.TryGetValue("geodesic", out var geodesicRaw)
-            && !string.IsNullOrWhiteSpace(geodesicRaw)
-            && bool.TryParse(geodesicRaw, out var geodesic)
-            && geodesic)
-        {
-            AddRangeViolationIfNew(step, "geodesic",
-                "geodesic buffering is not yet supported; submit with geodesic=false and supply distance in the input CRS units",
-                violations);
-        }
-
-        // The base type validator already rejects non-finite FloatingPoint
-        // values, but it admits zero and negatives, which erode the geometry to
-        // an empty result at execution. A buffer requires a strictly positive,
-        // finite distance.
         RequirePositiveFiniteDouble(step, "distance", violations);
     }
 
@@ -580,11 +563,12 @@ internal static partial class ProcessPlanValidator
         try
         {
             ReadOnlyDynamicSql.ValidateReadOnlySingleStatement(sql);
+            _ = new GeoServicesSqlParser().Parse(where);
         }
         catch (ArgumentException)
         {
             AddRangeViolationIfNew(step, "where",
-                "expected a single read-only predicate without a statement separator, comment, or mutating SQL",
+                "expected a supported filter expression without a statement separator, comment, or mutating SQL",
                 violations);
         }
     }
@@ -703,7 +687,7 @@ internal static partial class ProcessPlanValidator
         }
     }
 
-    // enrichment.enrich (#2283) allow-lists mirror the EnrichmentJobExecutor body
+    // enrichment.enrich allow-lists mirror the EnrichmentJobExecutor body
     // so the validator rejects the same method/predicate/aggregate spellings the
     // executor refuses at runtime.
     private static readonly HashSet<string> EnrichmentMethodValues =
@@ -729,7 +713,7 @@ internal static partial class ProcessPlanValidator
     // this parameter, so validation accepts precisely what execution runs. Note the
     // deliberately similar SpatialFilterPredicateValues elsewhere in this file is the
     // transform.spatial-filter set (intersects/within only) and is NOT applicable
-    // here (#3043 review).
+    // here.
     private static readonly HashSet<string> EnrichmentPredicateValues =
         new(ProcessValueDomains.EnrichmentPredicate, StringComparer.OrdinalIgnoreCase);
 
@@ -738,7 +722,7 @@ internal static partial class ProcessPlanValidator
         "count", "sum", "mean", "avg", "average", "min", "max", "stddev", "std"
     };
 
-    // enrichment.enrich (#2283) resolves the enrichment dataset at execution, so
+    // enrichment.enrich resolves the enrichment dataset at execution, so
     // dataset-dependent defaults (default predicate) cannot be validated here.
     // This mirrors the executor's submit-time-checkable rules: exactly one source
     // (layerId XOR input), the method/predicate enums, the conditional distance
@@ -767,7 +751,7 @@ internal static partial class ProcessPlanValidator
         // catalog as layer-source-only. EnrichmentJobExecutor's inline branch parses the
         // staged FeatureCollection verbatim and applies neither, so accepting the
         // combination silently enriched every staged feature — an over-broad result the
-        // caller never asked for. Refuse it at submission instead (#3043 review).
+        // caller never asked for. Refuse it at submission instead.
         if (hasInline)
         {
             RejectLayerOnlySourceFilter(step, "where", violations);
@@ -777,7 +761,7 @@ internal static partial class ProcessPlanValidator
         {
             // Without this, a malformed bbox cleared the generic text-type check, queued a
             // job, and only failed deep inside the provider read as a generic source-read
-            // error instead of an actionable parameter violation (#3043 review).
+            // error instead of an actionable parameter violation.
             ValidateBboxSyntax(step, bboxRaw, violations);
         }
 
@@ -794,7 +778,7 @@ internal static partial class ProcessPlanValidator
         // 'method' genuinely takes precedence, as the published contract says and as the
         // wantsDistance computation below already assumes. Validating it unconditionally rejected
         // plans the executor would have run happily, and made an async submission fail where the
-        // equivalent synchronous POST /api/enrich request succeeded (#3043 review).
+        // equivalent synchronous POST /api/enrich request succeeded.
         if (!hasMethod
             && step.Inputs.TryGetValue("predicate", out var predicateRaw)
             && !string.IsNullOrWhiteSpace(predicateRaw)
@@ -846,11 +830,11 @@ internal static partial class ProcessPlanValidator
 
         // The catalog advertises 'aggregates' as "join methods only", and the executor's
         // nearest branch returns straight after AnnotateNearest without ever consulting
-        // plan.Stats — so this combination used to succeed while silently omitting every
+        // plan.Stats — so this combination would succeed while silently omitting every
         // requested statistic. Aggregates summarise a MATCH SET; nearest-neighbor produces a
         // single closest feature per target and has no set to summarise, so there is nothing
         // meaningful to compute here. Refuse at submission rather than queue a job whose
-        // output cannot carry what the request asked for (#3043 review).
+        // output cannot carry what the request asked for.
         if (hasMethod && EnrichmentNearestMethodValues.Contains(methodRaw!.Trim()))
         {
             violations.Add(new GeoprocessingValidationFailure
@@ -927,11 +911,10 @@ internal static partial class ProcessPlanValidator
         // let bbox=NaN,0,1,1 clear submission and reach BuildSpatialFilter, which builds an
         // envelope from those ordinates and then either fails deep in the provider path as a
         // generic read error or produces a filter the caller never asked for. Every ordinate
-        // must be finite to be a coordinate at all (#3043 review).
+        // must be finite to be a coordinate at all.
         // RemoveEmptyEntries would silently drop a MISSING ordinate, so `0,,1,2,3` collapsed to
         // four values, passed, and the source parser then read it as `0,1,2,3` — a different
-        // window than the caller supplied. Split without it so a blank ordinate is a rejection
-        // (honua-server#3043 review).
+        // window than the caller supplied. Split without it so a blank ordinate is a rejection.
         var parts = bbox.Split(',', StringSplitOptions.TrimEntries);
         var ok = parts.Length == 4
             && parts.All(p => double.TryParse(p, NumberStyles.Float, CultureInfo.InvariantCulture, out var ordinate)
@@ -943,7 +926,7 @@ internal static partial class ProcessPlanValidator
         }
     }
 
-    // Managed analytics counterparts (#1260) read an inline FeatureCollection
+    // Managed analytics counterparts read an inline FeatureCollection
     // and reject bad values at the executor with TransformInputException. These
     // validators mirror the executors' enum / conditional-required / range
     // checks so ValidatePlan rejects plans the executor would terminally fail.
@@ -1146,8 +1129,7 @@ internal static partial class ProcessPlanValidator
             // Absent 'op' is only legal in expression mode: ComputedFieldTransformExecutor
             // infers op=expression when 'expression' is supplied and otherwise throws
             // "missing required input 'op'". Returning silently let a mapping of input+target
-            // alone be certified as translated when it can never run
-            // (honua-server#2145 review).
+            // alone be certified as translated when it can never run.
             if (!hasExpression)
             {
                 violations.Add(new GeoprocessingValidationFailure
@@ -1754,10 +1736,10 @@ internal static partial class ProcessPlanValidator
 
         // The native worker reads a base64 'source'; the submit path can also
         // materialize 'source' from a registered catalog raster referenced by
-        // 'layerId' or 'rasterId' (#2264). A plan that supplies NONE of the three
+        // 'layerId' or 'rasterId'. A plan that supplies NONE of the three
         // would route to the worker with no readable input and fail there, so the
         // catalog rejects it at submit-time validation instead. (The base required
-        // loop no longer enforces 'source' because it is now optional.)
+        // loop does not enforce 'source' because it is optional.)
         var hasSource = (step.Inputs.TryGetValue("source", out var source) && !string.IsNullOrWhiteSpace(source))
             || step.RasterSources?.ContainsKey("source") == true;
         var hasLayerId = step.Inputs.TryGetValue("layerId", out var layerId) && !string.IsNullOrWhiteSpace(layerId);
@@ -1774,7 +1756,7 @@ internal static partial class ProcessPlanValidator
     }
 
     // pcloud.translate decompresses LAZ/COPC and, when a projected source CRS is
-    // supplied, reprojects to EPSG:4979 (#1854). 'source' is a declared-required
+    // supplied, reprojects to EPSG:4979. 'source' is a declared-required
     // base64 input enforced by the base type-validator. 'sourceSrs' is optional;
     // when present it must match the conservative CRS-token allow-shape the native
     // PdalPointCloudConvertJobExecutor enforces (a bare positive EPSG integer or

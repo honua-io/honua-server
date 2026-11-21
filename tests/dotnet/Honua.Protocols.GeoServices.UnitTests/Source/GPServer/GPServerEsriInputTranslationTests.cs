@@ -10,12 +10,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Unit coverage for the additive ArcGIS-compatible input translation: Esri
-/// FeatureSet / esriGeometry JSON inputs are rewritten to the canonical
-/// base64-WKB + srid contract, while native string / base64-WKB inputs pass
-/// through untouched.
-/// </summary>
 [Protocol(TestProtocols.GPServer)]
 public sealed class GPServerEsriInputTranslationTests
 {
@@ -154,7 +148,7 @@ public sealed class GPServerEsriInputTranslationTests
     [UnitTest]
     public void Translate_EsriWebMercatorAlias_EmbedsTheNormalizedSridInTheEwkb()
     {
-        // #4033: the executors read the SRID embedded in the EWKB, so Esri's 102100 alias must be
+        // The executors read the SRID embedded in the EWKB, so Esri's 102100 alias must be
         // normalized there too, not only on the reported InputSpatialReference.
         var inputs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {

@@ -15,6 +15,7 @@ using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Db.Postgres.Features.Studio;
 using Honua.Server.Tests.Features.Admin;
+using Honua.Server.Tests.Features.Studio;
 using Honua.TestKit;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Attributes;
@@ -30,27 +31,37 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Protocol(TestProtocols.Mcp)]
 public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithProductionJobSubstrate();
-    private readonly RedisFixture _redis = new();
+    private readonly WebAppFixture _fixture = PostgresJobHost.Create();
     private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
     private readonly string _studioSchema = $"dashboard_{Guid.NewGuid():N}";
     private HttpClient _client = null!;
+    private HumanApprovalHttpClient _setupApprover = null!;
 
     public async Task InitializeAsync()
     {
-        await _redis.InitializeAsync();
         HumanApprovalHttpClient.Configure(_fixture, _identityProvider).ConfigureWebHost(builder =>
         {
-            builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
             builder.UseSetting("Licensing:DevGrantEdition", "Pro");
         });
         _fixture.ConfigureServices(services =>
         {
+            ApprovedStudioDraftCall.ConfigureDurableOperationInstances(services);
             services.RemoveAll<IStudioPackageStore>();
             services.AddScoped<IStudioPackageStore>(provider => new PostgresStudioPackageStore(
                 provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), _studioSchema));
         });
         await _fixture.InitializeAsync();
+        PostgresJobHost.AssertPostgresJobs(_fixture);
+        await ApplyStudioMigrationsAsync();
+        _client = await ApprovedStudioDraftCall.CreateProposerAsync(_fixture);
+        _setupApprover = await HumanApprovalHttpClient.AuthenticateAsync(
+            _fixture, _identityProvider, "studio-draft-setup-approver");
+    }
+
+    private async Task ApplyStudioMigrationsAsync()
+    {
         var root = new DirectoryInfo(AppContext.BaseDirectory);
         while (root is not null && !File.Exists(Path.Join(root.FullName, "Honua.sln")))
         {
@@ -62,7 +73,7 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
                      "035_CreateStudioPackageLifecycle.sql", "036_CreateContentPublications.sql",
                      "082_CreatePromotionStores.sql",
                      "089_AddStudioContentEnumerationIndexes.sql", "090_AddStudioContentItemOwner.sql",
-                     // honua-server#4905 adds studio_*.tenant_id, which every lifecycle write reads.
+                     // The studio_*.tenant_id column is required because every lifecycle write reads.
                      "120_AddStudioTenantOwnership.sql",
                      "126_AddStudioContentHashInput.sql",
                      "134_VersionCanonicalDeployments.sql",
@@ -73,15 +84,14 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             // Execute 082 unchanged: production keeps the canonical promotion family in honua.
             await _fixture.Postgres.ExecuteAsync(sql);
         }
-        _client = _fixture.CreateAdminClient();
     }
 
     public async Task DisposeAsync()
     {
         _client.Dispose();
+        _setupApprover.Dispose();
         await _fixture.Postgres.DropSchemaAsync(_studioSchema);
         await _fixture.DisposeAsync();
-        await _redis.DisposeAsync();
         _identityProvider.Dispose();
     }
 
@@ -207,8 +217,10 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             .GetProperty("id").GetString().Should().Be("roads");
 
         await CallAsync("validate_draft", $$"""{"draftId":"{{draftId}}"}""");
+        using var editor = await HumanApprovalHttpClient.AuthenticateAsync(
+            _fixture, _identityProvider, "dashboard-human-editor");
         using var saveContent = new StringContent("""{"changeNote":"dashboard fixture"}""", Encoding.UTF8, "application/json");
-        using var saveResponse = await _client.PostAsync(
+        using var saveResponse = await editor.Client.PostAsync(
             $"/api/v1/studio/package-drafts/{draftId:D}/content-versions",
             saveContent);
         saveResponse.StatusCode.Should().Be(HttpStatusCode.Created, await saveResponse.Content.ReadAsStringAsync());
@@ -240,10 +252,17 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             services.RemoveAll<IStudioPackageStore>();
             services.AddScoped<IStudioPackageStore>(_ => new PostgresStudioPackageStore(connectionProvider, _studioSchema));
         });
+        HumanApprovalHttpClient.Configure(replica, _identityProvider).ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        });
         await replica.InitializeAsync();
         try
         {
             using var replicaClient = replica.CreateAdminClient();
+            using var replicaEditor = await HumanApprovalHttpClient.AuthenticateAsync(
+                replica, _identityProvider, "dashboard-human-editor");
             var versionPath = $"/api/v1/studio/content-items/{version.ItemId:D}/versions/{version.VersionId:D}";
             using var getResponse = await replicaClient.GetAsync(versionPath);
             getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -252,7 +271,7 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             reloaded.GetProperty("versionId").GetGuid().Should().Be(version.VersionId);
             reloaded.GetProperty("contentHash").GetString().Should().Be(expectedHash);
             using var reopenContent = new StringContent("{}", Encoding.UTF8, "application/json");
-            using var reopenResponse = await replicaClient.PostAsync(versionPath + "/reopen", reopenContent);
+            using var reopenResponse = await replicaEditor.Client.PostAsync(versionPath + "/reopen", reopenContent);
             reopenResponse.StatusCode.Should().Be(HttpStatusCode.Created, await reopenResponse.Content.ReadAsStringAsync());
             using var reopenedDocument = JsonDocument.Parse(await reopenResponse.Content.ReadAsStringAsync());
             var reopened = JsonSerializer.Deserialize(reopenedDocument.RootElement.GetProperty("data"),
@@ -307,6 +326,8 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
     private async Task<JsonElement> CallAsync(string verb, string arguments)
     {
         var response = await RpcAsync(verb, arguments);
+        var completed = await ApprovedStudioDraftCall.CompleteAsync(response, verb, (_fixture, _identityProvider, null, _setupApprover));
+        if (completed is { } value) return value;
         response.TryGetProperty("error", out _).Should().BeFalse(response.GetRawText());
         var result = response.GetProperty("result");
         if (result.TryGetProperty("isError", out var error))

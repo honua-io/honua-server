@@ -1,0 +1,45 @@
+# County parcels: notes for agents
+
+Query `parcels.parquet` (GeoParquet 1.1). Paths below are relative to this file; replace them with the file's URL when reading remotely.
+
+## Coordinate system
+
+- Geometry column `geometry` holds WKB in OGC:CRS84 (longitude, latitude); the source layer is EPSG:3857.
+- Geometry types: MultiPolygon.
+- Column `bbox` (xmin, ymin, xmax, ymax) is each feature's bounding box; filter on it to skip row groups.
+- Extent: -158.3, 21.25, -157.6, 21.75 (west, south, east, north).
+- Feature count: 1234.
+
+## Fields
+
+| Name | Type | Description |
+|---|---|---|
+| `objectid` | integer |  |
+| `tmk` | string | Tax map key; Parcel \| key; Identity: unique per feature, also carried by the vector tiles. |
+
+## Queries
+
+DuckDB:
+
+```sql
+INSTALL spatial; LOAD spatial;
+
+-- First rows
+SELECT * FROM read_parquet('parcels.parquet') LIMIT 10;
+
+-- One feature by its identity
+SELECT * FROM read_parquet('parcels.parquet') WHERE "tmk" = '<value>';
+
+-- Features in a box (west, south, east, north)
+SELECT * FROM read_parquet('parcels.parquet')
+WHERE bbox.xmin <= -157.6 AND bbox.xmax >= -158.3 AND bbox.ymin <= 21.75 AND bbox.ymax >= 21.25;
+```
+
+Python:
+
+```python
+import geopandas as gpd
+
+frame = gpd.read_parquet("parcels.parquet")
+one = frame[frame["tmk"] == "<value>"]
+```

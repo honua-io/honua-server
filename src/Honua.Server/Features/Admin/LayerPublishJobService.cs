@@ -50,6 +50,8 @@ internal sealed class LayerPublishJobService(
             return new LayerPublishAdmission(LayerPublishAdmissionKind.Completed, summary, null, rowCount, null);
         }
 
+        await RefuseDuplicateSourcePublicationAsync(connectionString, request, requestCancellation).ConfigureAwait(false);
+
         if (dispatcher.Mode == LayerPublishRunnerMode.Unavailable)
         {
             return new LayerPublishAdmission(LayerPublishAdmissionKind.Unavailable, null, null, rowCount, null);
@@ -76,6 +78,27 @@ internal sealed class LayerPublishJobService(
 
         await dispatcher.DispatchAsync(payload, queued, request.Table).ConfigureAwait(false);
         return Queued(jobId, rowCount, routeId);
+    }
+
+    // The publish transaction rechecks under its lock; this check only keeps an already published
+    // table from being accepted and then failing in the background.
+    private async Task RefuseDuplicateSourcePublicationAsync(
+        string connectionString, LayerPublishRequest request, CancellationToken cancellationToken)
+    {
+        if (request.StorageMode == LayerStorageMode.Managed || request.CreateEditableCopy)
+        {
+            return;
+        }
+
+        var existingLayerId = await publishingService.FindPublishedSourceLayerAsync(
+            connectionString, request, cancellationToken).ConfigureAwait(false);
+        if (existingLayerId.HasValue)
+        {
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Conflict,
+                $"Layer already exists for table '{request.Schema.Trim()}.{request.Table.Trim()}'.",
+                existingLayerId);
+        }
     }
 
     private static LayerPublishJobProgress CreateQueuedProgress(string jobId, LayerPublishJobPayload payload)

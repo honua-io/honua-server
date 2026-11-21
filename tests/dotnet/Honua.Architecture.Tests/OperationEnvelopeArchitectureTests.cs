@@ -21,9 +21,6 @@ using OperationGatewayRequest = Honua.Core.Features.ControlPlane.Abstractions.Op
 
 namespace Honua.Architecture.Tests;
 
-/// <summary>
-/// Security ratchets for the canonical operation identity and approval envelope.
-/// </summary>
 public sealed class OperationEnvelopeArchitectureTests
 {
     [ArchitectureTest]
@@ -390,9 +387,13 @@ public sealed class OperationEnvelopeArchitectureTests
         var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var source = File.ReadAllText(ArchitectureTestHelpers.CombinePath(
             root, "src", "Honua.Server", "Features", "ControlPlane", "OperationGateway.cs"));
-        var routeStart = source.IndexOf("public async Task<OperationGatewayResult> RouteAsync", StringComparison.Ordinal);
+        var routeStart = source.IndexOf("public Task<OperationGatewayResult> RouteAsync", StringComparison.Ordinal);
+        Assert.True(routeStart >= 0, "The ordinary gateway route must exist.");
         var routeEnd = source.IndexOf("private async Task<OperationGatewayResult> RouteAutonomyCompatibilityAsync", routeStart, StringComparison.Ordinal);
+        Assert.True(routeEnd > routeStart, "The gateway compatibility boundary must follow the ordinary route.");
         var route = source[routeStart..routeEnd];
+
+        Assert.Contains("RouteCoreAsync(request, InvocationOrigin.Caller, cancellationToken)", route, StringComparison.Ordinal);
 
         Assert.Contains("GetRequiredService<ICanonicalOperationInvoker>()", route, StringComparison.Ordinal);
         Assert.DoesNotContain("_ladder.Resolve", route, StringComparison.Ordinal);

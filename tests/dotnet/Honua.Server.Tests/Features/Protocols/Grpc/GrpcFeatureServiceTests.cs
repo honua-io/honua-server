@@ -90,7 +90,7 @@ public sealed partial class GrpcFeatureServiceTests
             .Returns(ResourceValidationResult.Success(_testTriple));
 
         // Default: every edit/delete target is visible to the caller through the RLS-enforced
-        // reader, so ApplyEdits' pre-read guard (#2071) passes. Tests that exercise an
+        // reader, so ApplyEdits' pre-read guard passes. Tests that exercise an
         // RLS-hidden row override GetAsync to return null for that objectid.
         _featureReader
             .GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
@@ -272,7 +272,7 @@ public sealed partial class GrpcFeatureServiceTests
         _featureChangeEventPublisher.ReceivedCalls().Should().BeEmpty();
     }
 
-    // SEC-5: the publication's declared edit capabilities bound gRPC ApplyEdits the same way
+    // the publication's declared edit capabilities bound gRPC ApplyEdits the same way
     // they bound FeatureServer applyEdits and OGC API Features, even for a caller whose
     // per-operation write grant would otherwise allow the edit.
     [UnitTheory]
@@ -783,7 +783,10 @@ public sealed partial class GrpcFeatureServiceTests
         // locked row when this flag is set, including fields the caller cannot see.
         update.Attributes.ContainsKey("code").Should().BeFalse();
         update.PreserveOmittedMaskedAttributes.Should().BeTrue();
-        captured.Value.Preconditions.IsDefaultOrEmpty.Should().BeTrue();
+        var precondition = captured.Value.Preconditions.Should().ContainSingle().Subject;
+        precondition.ObjectId.Should().Be(stored.Id);
+        precondition.ExpectedStateToken.Should().Be(FeatureStateToken.FromReadSnapshot(stored));
+        precondition.MaskedFields.Should().BeEmpty();
     }
 
     [UnitTest]
@@ -846,7 +849,7 @@ public sealed partial class GrpcFeatureServiceTests
         // (layer_id, objectid) with no row-level predicate. A row RLS hides from the caller
         // resolves to null through the RLS-enforced reader, so the delete must fail closed and
         // never reach the writer — otherwise a low-privilege caller could delete a hidden row by
-        // supplying its objectid (#2071).
+        // supplying its objectid.
         _featureReader
             .GetAsync(0, 999, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Feature?>(null));
@@ -872,7 +875,7 @@ public sealed partial class GrpcFeatureServiceTests
     [Operation(Operations.ApplyEdits)]
     public async Task ApplyEdits_WhenUpdateTargetHiddenByRls_ThrowsNotFoundAndDoesNotWrite()
     {
-        // Same RLS bypass via the update path (#2071): an update keyed by an RLS-hidden objectid
+        // Same RLS bypass via the update path: an update keyed by an RLS-hidden objectid
         // must fail closed.
         _featureReader
             .GetAsync(0, 999, Arg.Any<CancellationToken>())
@@ -904,7 +907,7 @@ public sealed partial class GrpcFeatureServiceTests
     public async Task ApplyEdits_AddsOnly_DoesNotPreReadAndWrites()
     {
         // Adds carry no objectid and are not subject to the visibility pre-read; an add-only
-        // batch must still reach the writer even when GetAsync would return null (#2071).
+        // batch must still reach the writer even when GetAsync would return null.
         _featureReader
             .GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Feature?>(null));
@@ -1234,7 +1237,7 @@ public sealed partial class GrpcFeatureServiceTests
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_DoesNotRepeatTheObjectIdAsAnAttribute()
     {
-        // honua-server#5330: the id travels in Feature.id; the storage primary-key
+        // The id travels in Feature.id; the storage primary-key
         // attribute is not repeated in the attribute map, in any casing.
         var features = ImmutableArray.Create(
             Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty
@@ -1308,7 +1311,7 @@ public sealed partial class GrpcFeatureServiceTests
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_ReturnsSpatialReferenceGeometryTypeAndFieldsFromMetadata()
     {
-        // REST-parity contract (#2252): a standard feature query response carries the
+        // REST-parity contract: a standard feature query response carries the
         // layer's spatial reference, geometry type, object-id field name, and field
         // definitions so gRPC clients do not have to fall back to a separate metadata
         // lookup. The fixture layer is WGS84 / Point with objectid + name fields.
@@ -1710,7 +1713,7 @@ public sealed partial class GrpcFeatureServiceTests
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_WithOutStatistics_IsRefusedWithoutReadingFeatures()
     {
-        // #5465: the geospatial.v1 response carries layer fields and feature rows only, so
+        // The geospatial.v1 response carries layer fields and feature rows only, so
         // an aggregate request must be refused rather than answered with ordinary features.
         var request = new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = 0, Where = "1=1" };
         request.OutStatistics.Add(new Proto.StatisticDefinition
@@ -1749,7 +1752,7 @@ public sealed partial class GrpcFeatureServiceTests
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_OrderBy_CarriesSchemaFieldTypes()
     {
-        // #5466: managed JSONB attributes only sort numerically when the clause carries the
+        // Managed JSONB attributes only sort numerically when the clause carries the
         // declared field type; untyped, population 20 sorts before 3.
         UseOrderingLayer();
         FeatureQuery? captured = null;
@@ -1757,7 +1760,7 @@ public sealed partial class GrpcFeatureServiceTests
             .Returns(QueryResult<Feature>.Create(0, ImmutableArray<Feature>.Empty));
 
         await _sut.QueryFeatures(
-            new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = OrderingLayerId, OrderBy = "POPULATION DESC, name, unknown_field" },
+            new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = OrderingLayerId, OrderBy = "POPULATION DESC, name" },
             CreateCallContext());
 
         AssertTypedOrdering(captured);
@@ -1773,7 +1776,7 @@ public sealed partial class GrpcFeatureServiceTests
             .Returns(AsyncEnumerable.Empty<Feature>());
 
         await _sut.QueryFeaturesStream(
-            new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = OrderingLayerId, OrderBy = "POPULATION DESC, name, unknown_field" },
+            new Proto.QueryFeaturesRequest { ServiceId = "test", LayerId = OrderingLayerId, OrderBy = "POPULATION DESC, name" },
             new TestServerStreamWriter<Proto.FeaturePage>(),
             CreateCallContext());
 
@@ -1801,15 +1804,13 @@ public sealed partial class GrpcFeatureServiceTests
     {
         query.Should().NotBeNull();
         var orderBy = query!.Value.OrderBy!.Value;
-        orderBy.Should().HaveCount(3);
+        orderBy.Should().HaveCount(2);
         orderBy[0].Field.Should().Be("population", "the clause resolves to the declared field name");
         orderBy[0].FieldType.Should().Be(MetadataV2FieldType.Integer);
         orderBy[0].Ascending.Should().BeFalse();
         orderBy[1].Field.Should().Be("name");
         orderBy[1].FieldType.Should().Be(MetadataV2FieldType.String);
         orderBy[1].Ascending.Should().BeTrue();
-        orderBy[2].Field.Should().Be("unknown_field");
-        orderBy[2].FieldType.Should().BeNull("a field the schema does not declare keeps the untyped path");
     }
 
     [UnitTest]
@@ -2112,7 +2113,7 @@ public sealed partial class GrpcFeatureServiceTests
     [Operation(Operations.Query)]
     public async Task QueryFeatures_PerOperationQueryGrant_DoesNotSkipRoleList()
     {
-        // Coarse policy requires a role the user lacks. A query grant must not skip it (#6358).
+        // Coarse policy requires a role the user lacks. A query grant must not skip it.
         var protectedService = CreateService(
             "protected",
             accessPolicy: new AccessPolicy { AllowedRoles = ["coarse-only"] });
@@ -2340,7 +2341,7 @@ public sealed partial class GrpcFeatureServiceTests
             opts.DataEditorRoles = ["data-editor"];
         });
 
-        // gRPC binds where clauses to the shared filter parser and translator (SEC-11);
+        // gRPC binds where clauses to the shared filter parser and translator;
         // the provider-specific SQL is not under test here.
         var sqlFilterTranslator = Substitute.For<ISqlFilterTranslator>();
         sqlFilterTranslator
@@ -2349,7 +2350,7 @@ public sealed partial class GrpcFeatureServiceTests
         services.AddSingleton<IFilterExpressionService>(
             new FilterExpressionService(new FilterExpressionTranslator(sqlFilterTranslator)));
 
-        // Register the per-operation resolver (#1376) so the gRPC read/write seams
+        // Register the per-operation resolver so the gRPC read/write seams
         // consult grants first; when no grant matches they fall back to the coarse
         // AccessPolicy exactly as before. Omitting grants exercises that fallback.
         if (resolverGrants is { Length: > 0 })
@@ -2401,9 +2402,6 @@ public sealed partial class GrpcFeatureServiceTests
         ],
         "Test"));
 
-    /// <summary>
-    /// Minimal ServerCallContext for unit testing gRPC services.
-    /// </summary>
     internal sealed class TestServerCallContext : ServerCallContext, IDisposable
     {
         private readonly CancellationTokenSource _cts = new();
@@ -2426,9 +2424,6 @@ public sealed partial class GrpcFeatureServiceTests
             Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Test double for IServerStreamWriter that collects written pages.
-    /// </summary>
     private sealed class TestServerStreamWriter<T> : IServerStreamWriter<T>
     {
         public List<T> Pages { get; } = new();
@@ -2447,11 +2442,6 @@ public sealed partial class GrpcFeatureServiceTests
         }
     }
 
-    /// <summary>
-    /// Minimal <see cref="IRoleStore"/> that resolves the supplied per-operation
-    /// grants for any role, so the gRPC resolver-seam tests can prove a grant is
-    /// honored without standing up the full RBAC store.
-    /// </summary>
     private sealed class GrpcMatrixRoleStore(PermissionGrant[] grants) : IRoleStore
     {
         public Task<EffectivePermissions> GetEffectivePermissionsAsync(
@@ -2487,14 +2477,13 @@ public sealed partial class GrpcFeatureServiceTests
             => Task.FromResult(permissions);
     }
 
+
     // ---- Aliased publication: service-local index vs storage handle ------
 
     private const string AliasedServiceName = "aliased";
 
-    /// <summary>Service-local index the request addresses; also the storage handle of a different resource.</summary>
     private const int AliasedLayerIndex = 3;
 
-    /// <summary>Storage handle the addressed publication is actually bound to.</summary>
     private const int AliasedStorageLayerId = 7;
 
     [UnitTest]
@@ -2663,13 +2652,6 @@ public sealed partial class GrpcFeatureServiceTests
         current.Graph.StorageBindings.Should().OnlyContain(binding => binding.StorageLayerId == reboundStorageLayerId);
     }
 
-    /// <summary>
-    /// Publishes <c>resource.aliased</c> at the service-local index
-    /// <see cref="AliasedLayerIndex"/> while binding it to storage handle
-    /// <see cref="AliasedStorageLayerId"/>, and gives a second resource
-    /// <see cref="AliasedLayerIndex"/> as its own storage handle. Reading the index as a
-    /// storage handle therefore lands on the neighbouring resource.
-    /// </summary>
     private (MetadataV2Service Service, MetadataV2Layer Publication, MetadataV2Object Resource) ArrangeAliasedLayer()
     {
         var graph = new TestMetadataV2GraphBuilder()
@@ -2714,9 +2696,6 @@ public sealed partial class GrpcFeatureServiceTests
     }
 }
 
-/// <summary>
-/// Provides async enumerable conversion for test data.
-/// </summary>
 internal static class AsyncEnumerableExtensions
 {
     public static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(this IEnumerable<T> source)

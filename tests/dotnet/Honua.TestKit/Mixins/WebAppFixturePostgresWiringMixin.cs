@@ -25,20 +25,6 @@ using Npgsql;
 
 namespace Honua.TestKit.Mixins;
 
-/// <summary>
-/// Audit-A2 mixin: the PostgreSQL/Npgsql test-host wiring that <see cref="WebAppFixture"/>
-/// previously inlined twice (once in the isolated-per-test branch, once in the
-/// shared-server branch) as ~120 LOC of duplicated <c>UseSetting</c>,
-/// <c>ConfigureAppConfiguration</c>, and <c>ConfigureTestServices</c> blocks. These
-/// concerns are independent of the fixture's HTTP client, schema-isolation, and seed
-/// surface, so they live here as static helpers that both bootstrap paths call.
-/// </summary>
-/// <remarks>
-/// Per structural-audit-2026-05 (group A2), this is the fourth slice of the
-/// WebAppFixture mixin split. Behaviour is byte-identical to the previous inline
-/// implementations — this is a pure relocation that de-duplicates the isolated and
-/// shared bootstrap paths.
-/// </remarks>
 internal static class WebAppFixturePostgresWiringMixin
 {
     private const string StableTestGeocodingBaseUrl = "https://8.8.8.8/nominatim";
@@ -52,13 +38,6 @@ internal static class WebAppFixturePostgresWiringMixin
     private static readonly string _testEncryptionSalt =
         Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 
-    /// <summary>
-    /// Applies the auth-bypass and migration-skip <c>UseSetting</c> flags that both the
-    /// isolated and shared bootstrap paths set on the host builder. honua-server#1144
-    /// requires BOTH <c>HONUA_DEV_AUTH</c> and <c>HONUA_DEV_AUTH_ALLOW_BYPASS</c> to be
-    /// set — the single flag is insufficient outside of Test+explicit-ack to prevent
-    /// accidental bypass activation in Staging/QA.
-    /// </summary>
     internal static void ApplyCommonHostSettings(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Test");
@@ -67,12 +46,6 @@ internal static class WebAppFixturePostgresWiringMixin
         builder.UseSetting("HONUA_SKIP_MIGRATIONS", "true");
     }
 
-    /// <summary>
-    /// Builds the in-memory app configuration dictionary that both bootstrap paths
-    /// supply to <see cref="IWebHostBuilder.ConfigureAppConfiguration"/>. The optional
-    /// <paramref name="extraSettings"/> let the shared bootstrap layer in its
-    /// admin-password and schema-header flags without duplicating the common entries.
-    /// </summary>
     internal static IDictionary<string, string?> BuildAppConfigurationDictionary(
         string connectionString,
         IDictionary<string, string?>? extraSettings = null)
@@ -101,7 +74,7 @@ internal static class WebAppFixturePostgresWiringMixin
             // Request-supplied secret references are refused unless an operator permits them;
             // integration tests name variables under this prefix.
             ["Security:RequestSecretReferences:AllowedEnvironmentVariablePrefixes:0"] = "HONUA_TEST_",
-            // The ops-health rollup sampler (#2553) is a hosted background service that would
+            // The ops-health rollup sampler is a hosted background service that would
             // otherwise boot in EVERY integration-test host and add constant background
             // Postgres sampling/flush/downsample/prune load across the whole parallel
             // Server.Tests fleet — enough to time out already-contended CI shards. Default it
@@ -121,12 +94,6 @@ internal static class WebAppFixturePostgresWiringMixin
         return settings;
     }
 
-    /// <summary>
-    /// Removes the PostgreSQL-backed service registrations that both bootstrap paths
-    /// strip before re-registering against the test connection string. Kept here so the
-    /// list of stripped services lives in one place and additions stay in lockstep
-    /// between the isolated and shared paths.
-    /// </summary>
     internal static void RemovePostgresBackedServices(IServiceCollection services)
     {
         services.RemoveAll<NpgsqlDataSource>();
@@ -150,34 +117,11 @@ internal static class WebAppFixturePostgresWiringMixin
         services.RemoveAll<ISqlFilterTranslator>();
     }
 
-    /// <summary>
-    /// Timer-based background DB pollers/reconcilers that should not run in the test host.
-    /// Matched by implementation-type name to avoid the TestKit referencing internal host types.
-    /// </summary>
-    /// <remarks>
-    /// Limited to <c>MigrationBatchBackgroundService</c>: its logic is exercised directly by
-    /// <c>MigrationBatchEndpointTests</c> via a recording orchestrator, so nothing depends on the
-    /// timer loop, and it was the confirmed source of the cross-schema
-    /// <c>honua.migration_batch_runs</c> "relation does not exist" noise. The Deploy/ExecutionJob/
-    /// FeatureChange reconcilers are intentionally NOT disabled — ControlPlane integration tests
-    /// submit work and wait for those background loops to advance it, so removing them hangs the
-    /// "Infra and Security" shard. Gating additional pollers requires per-poller verification.
-    /// </remarks>
     private static readonly HashSet<string> _disabledTestHostPollers = new(StringComparer.Ordinal)
     {
         "MigrationBatchBackgroundService",
     };
 
-    /// <summary>
-    /// Removes the timer-based background DB pollers/reconcilers from the test host. Under the
-    /// parallelized schema-isolated test shards (#1359/#1532) these poll the database every few
-    /// seconds from outside any request scope — so they cannot pick up the per-test schema —
-    /// producing cross-schema "relation does not exist" log noise and background DB contention
-    /// multiplied across every parallel test server. Their reconciliation logic is exercised
-    /// directly by dedicated tests (e.g. <c>MigrationBatchEndpointTests</c> via a recording
-    /// orchestrator, and the ControlPlane/Events reconciler unit tests), so the timer wrapper
-    /// serves no purpose in the WebAppFixture host.
-    /// </summary>
     internal static void RemoveBackgroundPollers(IServiceCollection services)
     {
         var pollers = services
@@ -193,13 +137,6 @@ internal static class WebAppFixturePostgresWiringMixin
         }
     }
 
-    /// <summary>
-    /// Builds the minimal in-memory <see cref="IConfiguration"/> that
-    /// <c>Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices</c> reads to
-    /// re-register the PostgreSQL-backed services. The optional
-    /// <paramref name="extraSettings"/> let the shared bootstrap layer in its
-    /// schema-header flag without duplicating the common entries.
-    /// </summary>
     internal static IConfiguration BuildPostgresTestConfiguration(
         string connectionString,
         IDictionary<string, string?>? extraSettings = null)
@@ -227,12 +164,6 @@ internal static class WebAppFixturePostgresWiringMixin
             .Build();
     }
 
-    /// <summary>
-    /// Replaces the multiplexing-enabled <see cref="NpgsqlDataSource"/> registered by
-    /// <c>AddPostgreSqlServices</c> with a non-multiplexing one bound to
-    /// <paramref name="connectionString"/>. Schema-based tests need session state, which
-    /// multiplexing breaks.
-    /// </summary>
     internal static void OverrideNonMultiplexingDataSource(
         IServiceCollection services,
         string connectionString)
@@ -253,13 +184,6 @@ internal static class WebAppFixturePostgresWiringMixin
         });
     }
 
-    /// <summary>
-    /// Replaces <see cref="IDatabaseConnectionProvider"/> with the test
-    /// implementation that observes the fixture's current schema via the supplied
-    /// accessor delegate. The delegate captures the fixture's mutable
-    /// <c>_currentSchema</c> so per-test schema isolation continues to work after the
-    /// host has already been built.
-    /// </summary>
     internal static void OverrideDatabaseConnectionProvider(
         IServiceCollection services,
         Func<string?> currentSchemaAccessor)
@@ -272,13 +196,6 @@ internal static class WebAppFixturePostgresWiringMixin
         });
     }
 
-    /// <summary>
-    /// Applies the full ConfigureTestServices block used by the isolated bootstrap
-    /// path: strip the Postgres-backed registrations, register them against the test
-    /// connection string, override the data source to disable multiplexing, register
-    /// the in-memory Metadata v2 graph, override the database connection provider,
-    /// then run the fixture-supplied service configurations.
-    /// </summary>
     internal static void ConfigureIsolatedTestServices(
         IServiceCollection services,
         string connectionString,
@@ -289,7 +206,7 @@ internal static class WebAppFixturePostgresWiringMixin
         RemoveBackgroundPollers(services);
 
         // The isolated host owns its fixture schema, so configure it as an operational schema
-        // exactly as an operator would (#5391): a secure connection whose search path names that
+        // exactly as an operator would: a secure connection whose search path names that
         // schema then resolves under the unchanged connection policy. Drop the composition root's
         // schema configuration so AddPostgreSqlServices registers this one.
         services.RemoveAll<Honua.Db.Postgres.Features.Infrastructure.PostgresSchemaConfiguration>();
@@ -306,7 +223,7 @@ internal static class WebAppFixturePostgresWiringMixin
         BindFixtureAttachmentStore(services);
 
         // Mirror the production composition root: wrap the provider raster-coverage
-        // renderer with the vector-aware styled-render decorator (honua-server#2498) so
+        // renderer with the vector-aware styled-render decorator so
         // integration tests exercise the same IRasterMapRenderer the running server uses.
         Honua.Infrastructure.Rendering.VectorAwareRasterMapRendererServiceCollectionExtensions
             .AddVectorAwareRasterMapRendering(services);
@@ -329,24 +246,11 @@ internal static class WebAppFixturePostgresWiringMixin
         }
     }
 
-    /// <summary>
-    /// Configuration that lists an isolated host's fixture schema under
-    /// <c>Database:OperationalSchemas</c>, or nothing when the schema is not yet known.
-    /// Only isolated hosts use it: a shared host serves many fixture schemas and cannot
-    /// configure them, so tests that pin a secure connection's search path to their fixture
-    /// schema need an isolated host.
-    /// </summary>
     internal static IDictionary<string, string?>? BuildFixtureOperationalSchemaSettings(string? fixtureSchema)
         => string.IsNullOrWhiteSpace(fixtureSchema)
             ? null
             : new Dictionary<string, string?> { ["Database:OperationalSchemas:0"] = fixtureSchema };
 
-    /// <summary>
-    /// Applies the ConfigureTestServices block used by the shared bootstrap path. Same
-    /// as the isolated path minus the database-connection-provider override (the shared
-    /// server uses schema-routing HTTP headers instead of a fixture-mutable accessor)
-    /// and minus per-fixture user configurations (the shared server has none).
-    /// </summary>
     internal static void ConfigureSharedTestServices(
         IServiceCollection services,
         string connectionString,
@@ -366,7 +270,7 @@ internal static class WebAppFixturePostgresWiringMixin
         BindFixtureAttachmentStore(services);
 
         // Mirror the production composition root: wrap the provider raster-coverage
-        // renderer with the vector-aware styled-render decorator (honua-server#2498) so
+        // renderer with the vector-aware styled-render decorator so
         // integration tests exercise the same IRasterMapRenderer the running server uses.
         Honua.Infrastructure.Rendering.VectorAwareRasterMapRendererServiceCollectionExtensions
             .AddVectorAwareRasterMapRendering(services);
@@ -376,7 +280,7 @@ internal static class WebAppFixturePostgresWiringMixin
         // present in the test database.
         WebAppFixtureMetadataV2Mixin.RegisterDefaultMetadataV2Graph(services);
 
-        // Incremental shared-host seam (#3712): request-local service overrides are
+        // Incremental shared-host seam: request-local service overrides are
         // selected by a per-fixture opaque header. General ConfigureServices actions
         // still use ConfigureIsolatedTestServices; only the explicit opt-in API can
         // reach this registry, so unsupported registration shapes fail closed.
@@ -384,11 +288,6 @@ internal static class WebAppFixturePostgresWiringMixin
         services.AddSingleton<IStartupFilter, ScopedServiceOverrideStartupFilter>();
     }
 
-    /// <summary>
-    /// Keeps attachment reads and transactional feature-delete cleanup on the same
-    /// maintained store, using the isolated host's schema or the shared request's schema.
-    /// The production default targets honua, which isolated test schemas do not populate.
-    /// </summary>
     private static void BindFixtureAttachmentStore(IServiceCollection services)
     {
         services.RemoveAll<PostgresAttachmentStore>();
@@ -403,12 +302,6 @@ internal static class WebAppFixturePostgresWiringMixin
             migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!));
     }
 
-    /// <summary>
-    /// Test hosts deliberately skip DbUp and provision isolated schemas through SeedRunner.
-    /// Replace the production journal guard explicitly so those test-only fixture schemas are
-    /// not mistaken for a production journal divergence. The replacement lives only in the
-    /// Honua.TestKit assembly; production registrations remain required and fail closed.
-    /// </summary>
     private static void UseFixtureSchemaGuardBypass(IServiceCollection services)
     {
         services.RemoveAll<IDatabaseSchemaGuard>();

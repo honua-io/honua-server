@@ -19,9 +19,6 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
-/// <summary>
-/// Integration tests for the STAC Search endpoints.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Stac)]
 public sealed class StacSearchTests : IAsyncLifetime
@@ -289,13 +286,6 @@ public sealed class StacSearchTests : IAsyncLifetime
         problem.GetProperty("detail").GetString().Should().Contain("Unsupported explicit geometry CRS 'EPSG:999999'");
     }
 
-    /// <summary>
-    /// STAC Item Search Filter Extension (honua-server#1932): a CQL2 filter referencing a property
-    /// that is not in the declared queryables set returns a structured 400. This is the
-    /// spec-permitted behavior because the queryables documents declare "additionalProperties":
-    /// false, so undeclared properties are not valid queryables and the request is rejected with a
-    /// problem+json error body rather than silently ignored.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.StacSearch)]
     [Endpoint("GET /stac/search")]
@@ -745,7 +735,7 @@ public sealed class StacSearchTests : IAsyncLifetime
             }
             else if (fields == "-properties,+properties.name")
             {
-                // BH2-009: include mode auto-seeds required fields, so geometry IS present even
+                // include mode auto-seeds required fields, so geometry IS present even
                 // though the caller only explicitly included properties.name.
                 item.TryGetProperty("geometry", out _).Should().BeTrue("geometry is a required STAC field and must be present in include mode");
                 item.TryGetProperty("id", out _).Should().BeTrue("id is a required STAC field and must be present in include mode");
@@ -754,7 +744,7 @@ public sealed class StacSearchTests : IAsyncLifetime
             }
             else
             {
-                // BH2-009: include mode with +geometry,-geometry — required fields (all 8) must
+                // include mode with +geometry,-geometry — required fields (all 8) must
                 // always be present; the prior ContainSingle() assertion was testing the bug.
                 item.TryGetProperty("geometry", out _).Should().BeTrue("geometry is required");
                 item.TryGetProperty("id", out _).Should().BeTrue("id is required");
@@ -788,7 +778,7 @@ public sealed class StacSearchTests : IAsyncLifetime
 
         using var json = JsonDocument.Parse(content);
         var item = json.RootElement.GetProperty("features").EnumerateArray().Should().ContainSingle().Subject;
-        // BH2-009: top-level 'id' is a required STAC field and must always be returned in
+        // top-level 'id' is a required STAC field and must always be returned in
         // include mode; the prior BeFalse() assertion was validating the bug.
         item.TryGetProperty("id", out _).Should().BeTrue("id is a required STAC item field and must be present in include mode");
         var properties = item.GetProperty("properties");
@@ -922,11 +912,6 @@ public sealed class StacSearchTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
-    /// <summary>
-    /// Regression test for BH2-009: a property-only include (e.g. +properties.datetime)
-    /// must not null out id, type, geometry, stac_version, links, or assets.
-    /// Before the fix, all eight required top-level fields were absent from the response.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.StacSearch)]
     [Endpoint("GET /stac/search")]
@@ -957,11 +942,6 @@ public sealed class StacSearchTests : IAsyncLifetime
         item.GetProperty("properties").TryGetProperty("name", out _).Should().BeTrue();
     }
 
-    /// <summary>
-    /// Regression test for #4147: the advertised STAC canonical fields must be
-    /// accepted by both the Fields and Sort extensions, including the canonical
-    /// properties.datetime spelling.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.StacSearch)]
     [Endpoint("GET /stac/search")]
@@ -998,11 +978,6 @@ public sealed class StacSearchTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Regression test for BH2-010: the GET search next-link for paginated requests must
-    /// use literal commas as collection-ID separators rather than encoding the separator
-    /// comma, so that following the link correctly returns page 2.
-    /// </summary>
     [IntegrationTest]
     [Operation(Operations.StacSearch)]
     [Endpoint("GET /stac/search")]
@@ -1034,7 +1009,7 @@ public sealed class StacSearchTests : IAsyncLifetime
             .Should().Contain(link => link.GetProperty("rel").GetString() == "next")
             .Subject;
 
-        // BH2-010: the next-link URL should contain `collections=N` with a literal comma
+        // the next-link URL should contain `collections=N` with a literal comma
         // as the ID separator (not %2C). The href must be followable as a GET request.
         var href = nextLink.GetProperty("href").GetString();
         href.Should().NotBeNull();

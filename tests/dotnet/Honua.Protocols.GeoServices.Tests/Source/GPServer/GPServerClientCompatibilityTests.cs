@@ -16,10 +16,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Client-shaped integration tests for the GPServer adapter. These tests keep
-/// route binding real while exercising the endpoint sequence a typed SDK would use.
-/// </summary>
 [Collection("Database.GeoServicesRaster")]
 [Protocol(TestProtocols.GPServer)]
 public sealed class GPServerClientCompatibilityTests : IClassFixture<WebAppFixture>
@@ -54,7 +50,7 @@ public sealed class GPServerClientCompatibilityTests : IClassFixture<WebAppFixtu
         // ADVERTISED executionType stays asynchronous (the established contract that
         // cross-repo integration tests assert). The synchronous execute route is
         // purely additive and self-gates via GPServerExecutionPolicy; it does not
-        // change advertised task metadata. See #1228.
+        // change advertised task metadata.
         task.ExecutionType.Should().Be("esriExecutionTypeAsynchronous");
         task.Parameters.Should().Contain(parameter => parameter.Name == "wkb" && parameter.Direction == "esriGPParameterDirectionInput");
         task.Parameters.Should().Contain(parameter => parameter.Name == "distance" && parameter.DataType == "GPDouble");

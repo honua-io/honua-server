@@ -15,21 +15,22 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.DataEnrichment;
 
-/// <summary>
-/// Endpoint-level integration tests for the managed enrichment-dataset catalog
-/// (#2280): discovery (<c>GET /api/enrich/datasets</c>, <c>/{id}</c>) and admin
-/// registration (<c>POST/PUT/DELETE /api/enrich/datasets</c>). Runs as Pro edition so
-/// Pro-tier datasets are visible to discovery.
-/// </summary>
 [Collection("Database")]
 [Protocol(ProtocolNames.DataEnrichment)]
-public sealed class EnrichmentDatasetCatalogEndpointTests : IAsyncLifetime
+public sealed class EnrichmentDatasetCatalogEndpointTests(EnrichmentDatasetCatalogEndpointTests.CatalogHost host)
+    : IClassFixture<EnrichmentDatasetCatalogEndpointTests.CatalogHost>
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    private readonly WebAppFixture _fixture = host.Fixture;
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+    // One host for the class: each case asserts only on ids no other case registers.
+    public sealed class CatalogHost : IAsyncLifetime
+    {
+        internal WebAppFixture Fixture { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
 
     private static StringContent JsonBody(object payload)
         => new(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");

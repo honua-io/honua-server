@@ -13,23 +13,23 @@ using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Verifies that every admin endpoint group rejects unauthenticated requests with 401
-/// when dev-auth bypass is disabled.
-/// </summary>
 [Collection("Database.AdminAuthorization")]
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public sealed class AdminAuthorizationTests : IAsyncLifetime
+public sealed class AdminAuthorizationTests : IClassFixture<AdminAuthorizationTests.AnonymousHost>
 {
     private const string AdminPassword = "admin-auth-test-key";
-    private readonly WebAppFixture _fixture;
-    private HttpClient _unauthenticatedClient = null!;
+    private readonly HttpClient _unauthenticatedClient;
 
-    public AdminAuthorizationTests()
+    public AdminAuthorizationTests(AnonymousHost host) => _unauthenticatedClient = host.UnauthenticatedClient;
+
+    // Every case sends an anonymous request and expects it to be refused or answered
+    // without side effects, so one host serves the class. No case sends credentials, so
+    // the authentication-failure limiter never counts against the shared host.
+    public sealed class AnonymousHost : IAsyncLifetime
     {
-        _fixture = new WebAppFixture()
+        private readonly WebAppFixture _fixture = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
             .ConfigureWebHost(builder =>
             {
@@ -37,18 +37,23 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
             });
-    }
 
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-        _unauthenticatedClient = _fixture.CreateClient(); // No admin headers
-    }
+        public HttpClient UnauthenticatedClient { get; private set; } = null!;
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+        public async Task InitializeAsync()
+        {
+            await _fixture.InitializeAsync();
+            UnauthenticatedClient = _fixture.CreateClient(); // No admin headers
+        }
+
+        public async Task DisposeAsync()
+        {
+            UnauthenticatedClient?.Dispose();
+            await _fixture.DisposeAsync();
+        }
+    }
 
     // --- AdminEndpoints (config, openapi, version, capabilities, tables) ---
-    // v1 manifest endpoints were removed in #1035 cutover; their auth tests removed with them.
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/config")]
@@ -60,7 +65,7 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
 
     // The admin OpenAPI document is public API documentation (the bundled
     // admin-api.json snapshot), intentionally readable without credentials so the
-    // /docs explorer can load it (#1635). The operations it documents stay gated.
+    // /docs explorer can load it. The operations it documents stay gated.
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/openapi.json")]
     public async Task GetOpenApi_WithoutAuth_Returns200WithValidOpenApiDocument()
@@ -81,7 +86,7 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    // The capabilities handshake is intentionally anonymous (#1633): browser SDK
+    // The capabilities handshake is intentionally anonymous: browser SDK
     // consumers run checkCompatibility() before they have credentials. The payload
     // must stay limited to constant build metadata — assert the expected fields are
     // present and that nothing deployment-specific leaks alongside them.
@@ -176,7 +181,7 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    // SIEM export and tamper-evidence surfaces are operator-only (#350, #509):
+    // SIEM export and tamper-evidence surfaces are operator-only:
     // reading the audit trail in bulk or verifying its integrity must require
     // admin credentials.
     [IntegrationTest]
@@ -358,7 +363,6 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    // --- MetadataResourceEndpoints removed in #1035 cutover; auth tests removed with them. ---
 
     // --- OperationsProgressEndpoints ---
 
@@ -424,7 +428,7 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    // --- ComplianceAdminEndpoints (#352) ---
+    // --- ComplianceAdminEndpoints ---
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/compliance/dashboard")]

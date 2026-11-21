@@ -17,7 +17,7 @@ public static partial class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/query"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/query"),
         // Esri clients POST large layerDefs/layers arrays that exceed URL limits, so the
-        // service-level query operation accepts both GET and POST (#1825).
+        // service-level query operation accepts both GET and POST.
         new("POST", "/rest/services/{serviceId}/FeatureServer/query"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/applyEdits"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits"),
@@ -33,7 +33,7 @@ public static partial class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/FeatureServer/synchronizeReplica"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/unRegisterReplica"),
 
-        // GeoServices VersionManagementServer — Esri-style branch versioning (#1272, ADR-0051).
+        // GeoServices VersionManagementServer — Esri-style branch versioning (ADR-0051).
         new("GET", "/rest/services/{serviceId}/VersionManagementServer"),
         new("POST", "/rest/services/{serviceId}/VersionManagementServer"),
         new("GET", "/rest/services/{serviceId}/VersionManagementServer/versions"),
@@ -58,7 +58,7 @@ public static partial class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/append"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/calculate"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/queryDomains"),
-        // queryDomains also accepts POST so clients can submit large layers arrays (#1825).
+        // queryDomains also accepts POST so clients can submit large layers arrays.
         new("POST", "/rest/services/{serviceId}/FeatureServer/queryDomains"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/relationships"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/validateSQL"),
@@ -81,19 +81,19 @@ public static partial class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryBufferAggregate"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryDensity"),
 
-        // Data enrichment API (#374): catalog of registered enrichment datasets
+        // Data enrichment API: catalog of registered enrichment datasets
         // plus a spatial-join enrichment facade over the shared analytics pipeline.
         new("GET", "/api/enrich/catalog"),
         new("POST", "/api/enrich"),
 
-        // Managed enrichment-dataset catalog: discovery + admin registration (#2280).
+        // Managed enrichment-dataset catalog: discovery + admin registration.
         new("GET", "/api/enrich/datasets"),
         new("GET", "/api/enrich/datasets/{id}"),
         new("POST", "/api/enrich/datasets"),
         new("PUT", "/api/enrich/datasets/{id}"),
         new("DELETE", "/api/enrich/datasets/{id}"),
 
-        // Spec-shaped "not implemented" FeatureServer operations (#1402).
+        // Spec-shaped "not implemented" FeatureServer operations.
         new("GET", "/rest/services/{serviceId}/FeatureServer/queryContingentValues"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/sharedTemplates"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/sharedTemplates/query"),
@@ -124,6 +124,8 @@ public static partial class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}"),
+        // Signed download links that gRPC GetAttachmentUrl issues for local file storage.
+        new("GET", "/api/v1/attachments/downloads/{token}"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/replicas"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/replicas/{replicaId}"),
     ];

@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -48,6 +49,7 @@ internal sealed class GeoprocessingJobDispatcher
     private readonly IOperationGateway? _operationGateway;
     private readonly IOperationEnvelopeFactory? _operationEnvelopeFactory;
     private readonly ExecutionAdmissionCoordinator _admissionCoordinator;
+    private readonly IJobSecurityContextSealer? _sealer;
 
     internal IGeoprocessingHostRuntime HostRuntime { get; init; } = ProcessEnvironmentHostRuntime.Instance;
 
@@ -59,8 +61,7 @@ internal sealed class GeoprocessingJobDispatcher
         IExecutionJobDefinitionRegistry? workloadRegistry = null,
         IEnumerable<IBatchComputeBackend>? backends = null,
         IExecutionAdmissionEvaluator? admissionEvaluator = null,
-        IOperationGateway? operationGateway = null,
-        IOperationEnvelopeFactory? operationEnvelopeFactory = null,
+        GeoprocessApprovalServices? approvals = null,
         ExecutionAdmissionCoordinator? admissionCoordinator = null)
     {
         _logger = logger;
@@ -70,10 +71,30 @@ internal sealed class GeoprocessingJobDispatcher
         _workloadRegistry = workloadRegistry;
         _backends = backends?.ToArray() ?? Array.Empty<IBatchComputeBackend>();
         _admissionEvaluator = admissionEvaluator;
-        _operationGateway = operationGateway;
-        _operationEnvelopeFactory = operationEnvelopeFactory;
+        _operationGateway = approvals?.Gateway;
+        _operationEnvelopeFactory = approvals?.EnvelopeFactory;
         _admissionCoordinator = admissionCoordinator ?? ExecutionAdmissionCoordinator.ProcessLocal;
+        _sealer = approvals?.Sealer;
     }
+
+    // The proposal's snapshot is used on resume only when its seal verifies for this proposal; a
+    // host without a sealer (a lightweight host with no key ring) neither seals nor checks.
+    internal JobSecurityContext? VerifiedProposalSubmitter(GeoprocessExecutionPayload payload)
+        => _sealer is null
+           || payload.SubmitterSecurityContext is not { } submitter
+           || _sealer.Verify(ProposalBinding(payload), submitter, payload.SubmitterSecurityContextSeal)
+            ? payload.SubmitterSecurityContext
+            : null;
+
+    private string? SealProposalSubmitter(GeoprocessExecutionPayload payload)
+        => _sealer is null || payload.SubmitterSecurityContext is not { } submitter
+            ? null
+            : _sealer.Seal(ProposalBinding(payload), submitter);
+
+    // Bound to the proposal's requester, key and the whole plan it asks to run.
+    private static string ProposalBinding(GeoprocessExecutionPayload payload)
+        => JobSecurityContextDigest.Binding(
+            "honua.geoprocess-proposal.v1", payload.RequestedBy, payload.IdempotencyKey, payload.SerializePlan());
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
 
@@ -151,9 +172,10 @@ internal sealed class GeoprocessingJobDispatcher
                 ? null
                 : new Dictionary<string, string>(protocolMetadata, StringComparer.Ordinal),
             // Persist the submitter's row/field security identity with the proposal so the
-            // resumed job enforces the ORIGINAL submitter's RLS and masking (#3068).
+            // resumed job enforces the ORIGINAL submitter's RLS and masking.
             SubmitterSecurityContext = submitterSecurityContext,
         };
+        payload = payload with { SubmitterSecurityContextSeal = SealProposalSubmitter(payload) };
 
         // The envelope and gateway derive the proposal identity from the idempotency key and
         // tenant alone, so scope the key to the durable submitter before it reaches them: two
@@ -284,7 +306,7 @@ internal sealed class GeoprocessingJobDispatcher
         if (selected is null && geoprocessingWorkloads.Length > 0)
         {
             // An exact retry of a job accepted under the previous workload set does not
-            // need a compatible image selected again (#6069).
+            // need a compatible image selected again.
             if (await ConfirmKeyedReplayAsync(confirmKeyedReplay, cancellationToken).ConfigureAwait(false))
             {
                 return null;
@@ -585,4 +607,19 @@ internal sealed class GeoprocessingJobDispatcher
             ? new(RemoteCancelOutcome.TerminalConflict, updated.Status)
             : new(RemoteCancelOutcome.Delegated);
     }
+}
+
+// What the dispatcher needs to park a plan for approval and resume it: the proposal gateway, the
+// envelope factory, and the sealer for the submitter snapshot the proposal carries. Each is absent
+// on a lightweight host, which then refuses plans that need approval.
+internal sealed class GeoprocessApprovalServices(
+    IOperationGateway? gateway = null,
+    IOperationEnvelopeFactory? envelopeFactory = null,
+    IJobSecurityContextSealer? sealer = null)
+{
+    public IOperationGateway? Gateway { get; } = gateway;
+
+    public IOperationEnvelopeFactory? EnvelopeFactory { get; } = envelopeFactory;
+
+    public IJobSecurityContextSealer? Sealer { get; } = sealer;
 }

@@ -10,12 +10,6 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
 
-/// <summary>
-/// Unit tests for the submit-time owner-snapshot capture (Phase 0 auth spine,
-/// Deliverable 1): it pins the submitter's tenant/roles/declared scope, validates
-/// the declared scope is ⊆ the submitter, and preserves existing behavior for jobs
-/// that declare no scope.
-/// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
@@ -105,7 +99,7 @@ public sealed class CustomCodeOwnerScopeCaptureTests
     [UnitTest]
     public void TryCapture_GrantBasedWriteSubmitter_PinsGrantsAndAcceptsScope()
     {
-        // #2192: the submitter's write authority comes purely from a layer-scoped
+        // The submitter's write authority comes purely from a layer-scoped
         // write:{service}/{layer} permission GRANT — no data-editor role. The capture
         // must accept the declared write AND pin the grant into the snapshot so the
         // later mint can intersect against it (instead of under-scoping the token).

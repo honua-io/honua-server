@@ -5,10 +5,12 @@ description: "Choose the image that includes your database stores while retainin
 ---
 # How to choose the default or full serving image
 
-The rc.2 default is the **chiseled JIT image with PostGIS as its only database
-store**. Native AOT remains an explicit `-aot` variant; promotion requires full
-suite and live-journey parity evidence by the 18 November evidence review. Choose the JIT **full** image when you need additional
-database stores. File-format support is a separate concern: the default keeps
+The rc.2 default is the **native-AOT image with PostGIS as its only database
+store**, on the plain chiseled runtime without ICU: the 2026.1 release channel
+and unsuffixed nightly and trunk tags select it. The chiseled JIT image remains
+available as the explicit `-jit` variant, and the tag-triggered `latest` and
+`vX.Y.Z` tags still select it. Choose the JIT **full** image
+when you need additional database stores. File-format support is a separate concern: the default keeps
 the import/export readers, including GeoPackage, Shapefile, GeoTIFF and Parquet.
 Importing a GeoPackage does not require a SQLite database-store provider.
 
@@ -66,7 +68,11 @@ root is `/tmp/honua`; mount it as a writable volume owned by that user, or as
 `--tmpfs /tmp/honua:rw,noexec,nosuid,size=512m,uid=1001,gid=1001,mode=750`.
 The image pre-creates its writable directories. A mounted empty root must permit
 UID 1001 to create child directories. Capacity depends on concurrent import and
-geoprocessing workloads; 512 MiB is the smoke-test allocation.
+geoprocessing workloads; 512 MiB is the smoke-test allocation and what the
+packaged Compose files give the server. It holds one maximum upload (100 MB by
+default) plus several concurrent GeoParquet responses, which are spooled there
+before sending. If the scratch volume fills anyway, GeoParquet queries answer
+`503` with `Retry-After` instead of a query error; retry once readers finish.
 
 | Writes | Image default | Configuration |
 | --- | --- | --- |
@@ -76,7 +82,7 @@ geoprocessing workloads; 512 MiB is the smoke-test allocation.
 | Geoprocessing output | `/tmp/honua/honua-geoprocessing-outputs` | `Geoprocessing__Executors__OutputRootDirectory`; defaults under `TMPDIR` |
 | Geoprocessing import staging | `/tmp/honua/honua-import-staging` | `Geoprocessing__Executors__ImportStagingDirectory`; defaults under `TMPDIR` |
 | Native/user caches | `/tmp/honua/cache` | `XDG_CACHE_HOME` |
-| User home and fallback data-protection keys | `/tmp/honua/.aspnet/DataProtection-Keys` | `HOME`; Redis-backed deployments use the shared Redis key repository |
+| User home and fallback data-protection keys | `/tmp/honua/.aspnet/DataProtection-Keys` | `HOME`; shared production keys are persisted in PostgreSQL |
 | Logs | Standard output/error | An operator-added file sink must use a separately configured writable path |
 
 When moving the root, set `HOME`, `TMPDIR`, `XDG_CACHE_HOME`,

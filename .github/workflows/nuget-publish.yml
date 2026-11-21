@@ -87,7 +87,7 @@ jobs:
           smoke_dir="$(mktemp -d)"
           trap 'rm -rf "${smoke_dir}"' EXIT
 
-          for framework in net10.0 net11.0; do
+          framework="$(scripts/ci/honua-target-framework.sh)"
           dotnet new console --framework "${framework}" --output "${smoke_dir}/${framework}" --no-restore
 
           pushd "${smoke_dir}/${framework}" >/dev/null
@@ -142,7 +142,6 @@ jobs:
           dotnet build --configuration Release /p:TreatWarningsAsErrors=true "/p:WarningsNotAsErrors=NU1901%3BNU1902%3BNU1903%3BNU1904"
 
           popd >/dev/null
-          done
 
       - name: Upload package artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

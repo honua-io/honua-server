@@ -22,7 +22,7 @@ namespace Honua.Server.Features.Console.Models;
 [JsonSerializable(typeof(ApiResponse<ConsoleRbacRole>))]
 [JsonSerializable(typeof(ApiResponse<ConsoleRoleAuditPage>))]
 [JsonSerializable(typeof(ApiResponse<object>))]
-// Share access projection, public-link, and embed contracts (#1215).
+// Share access projection, public-link, and embed contracts.
 [JsonSerializable(typeof(ApiResponse<ConsoleShareProjection>))]
 [JsonSerializable(typeof(ApiResponse<ConsolePublicLinkToken>))]
 [JsonSerializable(typeof(ApiResponse<ConsolePublicLinkListResponse>))]
@@ -30,9 +30,10 @@ namespace Honua.Server.Features.Console.Models;
 [JsonSerializable(typeof(ApiResponse<ConsoleEmbedToken>))]
 [JsonSerializable(typeof(ApiResponse<ConsoleEmbedRedeemResponse>))]
 [JsonSerializable(typeof(ApiResponse<ConsoleShareDependencyClosureResponse>))]
-// Open-data DCAT + STAC publication API (#1214).
+// Open-data DCAT + STAC publication API.
 [JsonSerializable(typeof(ApiResponse<ConsoleOpenDataPageResponse>))]
 [JsonSerializable(typeof(ApiResponse<ConsoleOpenDataPage>))]
+[JsonSerializable(typeof(ApiResponse<ConsoleOpenDataDatasetListResponse>))]
 [JsonSerializable(typeof(ApiResponse<ConsoleOpenDataEligibilityResponse>))]
 [JsonSerializable(typeof(ApiResponse<ConsoleDcatExportResponse>))]
 [JsonSerializable(typeof(ApiResponse<ConsoleStacPublicationState>))]
@@ -49,7 +50,7 @@ namespace Honua.Server.Features.Console.Models;
 [JsonSerializable(typeof(StacProjectionCatalog))]
 [JsonSerializable(typeof(StacProjectionCollection))]
 [JsonSerializable(typeof(StacProjectionItem))]
-// Catalog discovery-endpoints registry read API (#1279).
+// Catalog discovery-endpoints registry read API.
 [JsonSerializable(typeof(ApiResponse<CatalogDiscoveryRegistry>))]
 [JsonSerializable(typeof(ApiResponse<CatalogEndpointDetail>))]
 [JsonSerializable(typeof(ApiResponse<CatalogItem>))]
@@ -103,10 +104,11 @@ namespace Honua.Server.Features.Console.Models;
 // Per-itemType sidecar shapes, sourced for AOT-safe writes via SerializeToElement.
 [JsonSerializable(typeof(ConsoleServiceTypeMetadata))]
 [JsonSerializable(typeof(ConsoleLayerTypeMetadata))]
-[JsonSerializable(typeof(ConsoleSavedMapTypeMetadata))]
+[JsonSerializable(typeof(ConsoleDatasetTypeMetadata))]
+[JsonSerializable(typeof(ConsoleMapTypeMetadata))]
 [JsonSerializable(typeof(ConsoleDashboardTypeMetadata))]
 [JsonSerializable(typeof(ConsoleReportTypeMetadata))]
-[JsonSerializable(typeof(ConsoleGeneratedAppTypeMetadata))]
+[JsonSerializable(typeof(ConsoleAppTypeMetadata))]
 [JsonSerializable(typeof(ConsoleOpenDataTypeMetadata))]
 internal sealed partial class ConsoleJsonContext : JsonSerializerContext
 {

@@ -16,11 +16,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Publishing.Content;
 
-/// <summary>
-/// Unit tests for <see cref="ContentPublicationService"/> over the in-memory store:
-/// immutable versions, route pointer semantics, rollback/republish, policy/public-link,
-/// generated-app revision preview, dependency validation, and JSON serialization.
-/// </summary>
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class ContentPublicationServiceTests
 {
@@ -56,7 +51,7 @@ public sealed class ContentPublicationServiceTests
     [UnitTest]
     public async Task GetLatestRouteStatesBySourceContentIds_ReturnsNewestVersionsRouteAndOmitsUnmatchedIds()
     {
-        // honua-server#3003: Studio's content-item list endpoint batch-resolves publication
+        // Studio's content-item list endpoint batch-resolves publication
         // badges by the convention sourceContentId == Studio itemId. This exercises the store
         // method directly: the newest version's route wins per source content id, ids with no
         // matching version are omitted, and an unrelated publication for a different source
@@ -307,9 +302,9 @@ public sealed class ContentPublicationServiceTests
     [Operation(Operations.Update)]
     public async Task UpdatePolicy_OnPolicyWithNullNestedMembers_DoesNotThrow_AndAppliesDeltas()
     {
-        // Regression for #1239: a publication created from a minimal policy whose nested
-        // members deserialize to null must not NRE on a subsequent policy update. Simulate
-        // the deserialized state (null embed/share/service/publicLink) explicitly.
+        // A publication created from a minimal policy whose nested members deserialize to
+        // null must not NRE on a subsequent policy update. Simulate the deserialized state
+        // (null embed/share/service/publicLink) explicitly.
         var (service, _) = CreateService();
         var nullNestedPolicy = new ContentPublicationPolicy
         {

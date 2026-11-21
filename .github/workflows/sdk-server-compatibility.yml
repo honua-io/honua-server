@@ -38,7 +38,7 @@ concurrency:
 
 env:
   DOTNET_VERSION: '11.0.x'
-  NODE_VERSION: '20'
+  NODE_VERSION: '22.23.3'
   PYTHON_VERSION: '3.11'
   HONUA_SERVER_BASE_URL: 'http://localhost:5000'
   HONUA_ADMIN_API_KEY: 'ci-admin-password'
@@ -144,10 +144,13 @@ jobs:
         run: |
           set -euo pipefail
           cp compatibility-source/scripts/ci/run-sdk-server-compatibility.sh "$RUNNER_TEMP/run-sdk-server-compatibility.sh"
+          mkdir -p "$RUNNER_TEMP/compat-assets/scripts/ci" "$RUNNER_TEMP/compat-assets/tests/python/shared"
+          cp compatibility-source/scripts/ci/owned-server.py "$RUNNER_TEMP/compat-assets/scripts/ci/owned-server.py"
+          cp compatibility-source/tests/python/shared/process_ports.py "$RUNNER_TEMP/compat-assets/tests/python/shared/process_ports.py"
           cp compatibility-source/tests/seed/portal-compat.yaml "$RUNNER_TEMP/portal-compat.yaml"
           cp compatibility-source/tests/dotnet/Honua.Db.Postgres.Tests/Features/Import/Fixtures/GeoServer/CatalogApplySlice.json \
             "$RUNNER_TEMP/geoserver-catalog-apply-slice.json"
-          chmod +x "$RUNNER_TEMP/run-sdk-server-compatibility.sh"
+          chmod +x "$RUNNER_TEMP/run-sdk-server-compatibility.sh" "$RUNNER_TEMP/compat-assets/scripts/ci/owned-server.py"
 
       - name: Checkout honua-server target
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -305,12 +308,15 @@ jobs:
         continue-on-error: true
         shell: bash
         env:
+          # SDK artifact compilation exceeded the default ~2 GiB V8 heap.
+          NODE_OPTIONS: --max-old-space-size=4096
           HONUA_SDK_PORTAL_COMPAT_ENABLED: ${{ matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current' }}
           HONUA_SDK_MIGRATION_AUTOMATION_REQUIRED: ${{ matrix.migration_automation_required }}
           HONUA_SDK_MIGRATION_SERVER_IMAGE: ${{ matrix.server_label == 'current' && matrix.sdk_label == 'sdk-current' && inputs.server_current_image || '' }}
           HONUA_SDK_COMPAT_SERVER_LABEL: ${{ matrix.server_label }}
           HONUA_SDK_COMPAT_SDK_LABEL: ${{ matrix.sdk_label }}
           HONUA_SDK_MIGRATION_GEOSERVER_FIXTURE: ${{ runner.temp }}/geoserver-catalog-apply-slice.json
+          HONUA_SDK_OWNED_SERVER_SCRIPT: ${{ runner.temp }}/compat-assets/scripts/ci/owned-server.py
         run: |
           mkdir -p results
           set +e

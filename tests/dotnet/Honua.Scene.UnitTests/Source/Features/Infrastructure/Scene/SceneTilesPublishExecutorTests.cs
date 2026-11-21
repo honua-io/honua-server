@@ -22,11 +22,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Scene;
 
-/// <summary>
-/// Unit tests for the 3D Tiles generation executor (#842). The tests use
-/// in-memory stubs for the catalog and feature source so the pipeline can be
-/// exercised end-to-end without standing up Postgres.
-/// </summary>
 public sealed class SceneTilesPublishExecutorTests : IDisposable
 {
     private const int LayerId = 7;
@@ -69,6 +64,39 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     }
 
     [UnitTest]
+    public async Task Execute_OutputRootIsFile_ThrowsSafeOutputErrorBeforeRegistration()
+    {
+        BuildLayer();
+        _featureSource.Features = SamplePolygons();
+        await File.WriteAllTextAsync(_outputRoot, "blocks-directory-creation");
+        try
+        {
+            var act = () => _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
+            var failure = await act.Should().ThrowAsync<SceneOutputUnwritableException>();
+            failure.Which.InnerException.Should().BeAssignableTo<IOException>();
+            failure.Which.Message.Should().NotContain(_outputRoot);
+            _registration.Records.Should().BeEmpty();
+        }
+        finally
+        {
+            File.Delete(_outputRoot);
+        }
+    }
+
+    [UnitTest]
+    public async Task Execute_SourceIoFailure_RemainsServiceUnavailable()
+    {
+        BuildLayer();
+        _featureSource.StreamFailure = new IOException("source connection failed");
+
+        var act = () => _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
+
+        var failure = await act.Should().ThrowAsync<ServiceUnavailableException>();
+        failure.Which.InnerException.Should().BeSameAs(_featureSource.StreamFailure);
+        _registration.Records.Should().BeEmpty();
+    }
+
+    [UnitTest]
     public async Task Execute_ProducesDeterministicByteIdenticalOutput()
     {
         BuildLayer();
@@ -92,7 +120,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_LargeFixtureAboveLodThreshold_ProducesMultiTileLodTileset()
     {
-        // #1200 acceptance: a feature set at/above the LOD threshold must
+        // A feature set at/above the LOD threshold must
         // generate a multi-tile, multi-LOD tileset (REPLACE refinement, a
         // nested tile tree, more than one GLB) instead of one oversized tile.
         BuildLayer();
@@ -281,7 +309,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_WithObjectStore_ReplicatesTreeAndRecordsStoragePrefix()
     {
-        // WS0 statelessness (#2459, ADR-0060): when an object store is available
+        // Statelessness (ADR-0060): when an object store is available
         // the publish path must upload the promoted tileset tree under a stable
         // scenes/{sceneId} prefix and record that prefix on the registration so
         // any node can hydrate and serve it. The promoted local dir is stamped
@@ -311,9 +339,9 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_WithoutObjectStore_RecordsNullStoragePrefix()
     {
-        // Legacy path: with no object store configured the scene stays node-local
-        // and the registration carries no storage prefix, so serving hydration is
-        // skipped entirely — no behavioural change from before #2459.
+        // With no object store configured the scene stays node-local and the
+        // registration carries no storage prefix, so serving hydration is skipped
+        // entirely.
         BuildLayer();
         _featureSource.Features = SamplePolygons();
 
@@ -433,13 +461,9 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_LodPathDegenerateLeaf_DropsLeafAndEmitsValidTiles()
     {
-        // Regression (#2): in the LOD path the layer-level degeneracy guard only
-        // proves >=1 non-degenerate feature in the WHOLE layer, not per leaf. A
-        // spatial cluster of all-degenerate features lands in its own quadtree
-        // leaf; previously that leaf was routed into GeometryTileBuilder.BuildGlb
-        // with zero vertices, threw InvalidOperationException("No vertices
-        // produced for tile."), and aborted the entire generation run. The content
-        // node selection must now DROP such a leaf and still emit the valid tiles.
+        // The layer-level LOD guard proves only that the whole layer has a valid
+        // feature. Drop a quadtree leaf containing only degenerate features and
+        // still emit the valid tiles.
         BuildLayer();
         _featureSource.Features = ValidLinesWithDegenerateCluster();
 
@@ -552,9 +576,8 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         (maxZ - minZ).Should().BeGreaterThan(50.0,
             "the prism spans baseHeight=100 to baseHeight+max(height)=150");
 
-        // Tileset.json bounding region heights are read from disk and must
-        // include the 100m base offset; without the fix the max height would
-        // be just the extrusion height (max ~50m) and ignore the 100m base.
+        // The on-disk tileset bounding region must include the 100m base offset
+        // in addition to the extrusion height (at most roughly 50m).
         var tilesetJson = await File.ReadAllBytesAsync(Path.Join(outcome.Result.AssetRoot, "tileset.json"));
         using var tilesetDoc = JsonDocument.Parse(tilesetJson);
         var region = tilesetDoc.RootElement.GetProperty("root").GetProperty("boundingVolume").GetProperty("region");
@@ -834,12 +857,9 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_NoZValuesAndNoExtrusion_EmitsFlatZeroWarning()
     {
-        // 2D layers without an extrusionInfo block must surface the
-        // documented "flat at Z=0" warning so operators and admin tooling
-        // can spot when a generated tileset lost vertical fidelity. The
-        // Postgres scene source previously wrapped geometry in ST_Force3D
-        // (Z=0 for every 2D vertex), which masked this branch — the warning
-        // only fires when no vertex carries a Height value.
+        // A 2D layer without extrusionInfo must report the documented flat-at-Z=0
+        // warning so operators can detect lost vertical fidelity. This requires
+        // vertices without Height values.
         BuildLayer();
         _featureSource.Features = SamplePolygonsWithoutZ();
 
@@ -869,7 +889,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
 
         var act = () => _executor.RunDirectAsync(
             BuildIntent(sceneId: "promo-fail"), CancellationToken.None);
-        await act.Should().ThrowAsync<ServiceUnavailableException>();
+        await act.Should().ThrowAsync<SceneOutputUnwritableException>();
 
         // The registry insert preceded the failed promotion, but the
         // executor must call DeactivateAsync on the inserted record so
@@ -932,7 +952,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_ProtectedLayer_RegistersSceneAsProtectedWithRoles()
     {
-        // High/correctness regression: source layers with a non-anonymous
+        // Source layers with a non-anonymous
         // access policy must materialise non-public scenes that forward
         // the role allow-list. Without this mapping, generating a tileset
         // from a protected layer would publish its geometry/attributes

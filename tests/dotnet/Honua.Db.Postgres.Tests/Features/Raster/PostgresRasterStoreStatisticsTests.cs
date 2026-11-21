@@ -16,11 +16,6 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
-/// <summary>
-/// Verifies the compute-once-then-persist statistics behavior behind ImageServer/WCS
-/// service metadata (#1639): statistics must be served from persisted rows and never
-/// recomputed per request once a backfill has run.
-/// </summary>
 [Collection("Database")]
 public sealed class PostgresRasterStoreStatisticsTests(PostgresFixture fixture)
 {
@@ -168,10 +163,10 @@ public sealed class PostgresRasterStoreStatisticsTests(PostgresFixture fixture)
     [IntegrationTest]
     public async Task GetClippedMosaicStatisticsAsync_MultibandRasters_ReturnsPerBandStatisticsForClip()
     {
-        // Regression for #1920: the clipped-mosaic compute path (computeStatisticsHistograms
-        // over multiple rasters with an AOI geometry) failed with Postgres 42703
-        // ("column effective_acquisition does not exist") because the clip `source` CTE did
-        // not project the columns the ST_Union ORDER BY references.
+        // The clipped-mosaic compute path (computeStatisticsHistograms over multiple rasters
+        // with an AOI geometry) must not fail with Postgres 42703 ("column
+        // effective_acquisition does not exist"): the clip `source` CTE has to project the
+        // columns the ST_Union ORDER BY references.
         var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreStatisticsTests));
         try
         {
@@ -221,7 +216,7 @@ public sealed class PostgresRasterStoreStatisticsTests(PostgresFixture fixture)
             raw[0].MinValue.Should().Be(0);
             raw[0].MaxValue.Should().Be(300);
 
-            // A MinMax stretch (#1871) rescales the band to 8-bit, so the rendered statistics must
+            // A MinMax stretch rescales the band to 8-bit, so the rendered statistics must
             // be bounded to [0, 255] — proving the renderingRule was applied BEFORE stats.
             var rendering = new RasterIdentifyRendering(
                 new RasterStretch { StretchType = RasterStretchType.MinMax }, null, null);
@@ -241,7 +236,7 @@ public sealed class PostgresRasterStoreStatisticsTests(PostgresFixture fixture)
     [IntegrationTest]
     public async Task GetClippedMosaicHistogramsAsync_MultibandRasters_ReturnsPerBandHistogramsForClip()
     {
-        // Regression for #1920: the clipped-mosaic histogram path threw the same 42703 error.
+        // The clipped-mosaic histogram path must not throw the same 42703 error.
         var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreStatisticsTests));
         try
         {

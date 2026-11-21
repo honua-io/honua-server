@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Security;
 using NetTopologySuite.Features;
 using NetTopologySuite.IO;
 
@@ -191,8 +192,14 @@ internal static class FeatureStreamArtifact
 
         // Second segment is a fixed relative literal, so it can never be
         // rooted and silently discard outputRootDirectory.
+        // Owner-only, and refused if another local user pre-created it to read or replace spills.
+        // A directory left readable by an earlier version is narrowed once the claim proves ownership.
         var streamRoot = Path.Join(outputRootDirectory, "streams");
-        Directory.CreateDirectory(streamRoot);
+        PrivateTempFile.CreateOrClaimDirectory(streamRoot);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(streamRoot, PrivateTempFile.OwnerDirectory);
+        }
 
         var safeProcess = SanitizeForFileName(processId);
         var safeOperation = SanitizeForFileName(operationId);

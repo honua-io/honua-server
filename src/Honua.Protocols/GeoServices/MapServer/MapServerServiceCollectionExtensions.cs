@@ -16,17 +16,18 @@ internal static class MapServerServiceCollectionExtensions
         // Rendering is handled by static utility classes (SkiaMapRenderer, StyleTranslator, etc.).
         // Query endpoints reuse FeatureServer query handling for ArcGIS REST parity.
         services.AddSingleton<Honua.Infrastructure.Rendering.RasterRenderCapacityLimiter>();
+        services.AddExportTilesArtifactBudget(configuration);
 
         // Opt-in dynamicLayers workspace (source.type=dataLayer) allowlist. Defaults OFF; the
         // mapLayer dynamic-layer path stays available regardless. Workspace data layers resolve
         // to published resources backed by the allowlisted workspace and never accept ad-hoc SQL
-        // or unpublished tables (#1660).
+        // or unpublished tables.
         services.Configure<MapServerDynamicLayersOptions>(
             configuration.GetSection(MapServerDynamicLayersOptions.SectionName));
 
         // Durable tile-export map source: the singleton producer/fence resolve scoped services per
         // job via IServiceScopeFactory, so the singleton TileExport executor can render MapServer
-        // tiles from a pinned plan HTTP-independently (#2706).
+        // tiles from a pinned plan HTTP-independently.
         services.AddSingleton<Honua.Infrastructure.Tiles.ITileExportPackageProducer, Tiles.MapTileExportProducer>();
         services.AddSingleton<Honua.Infrastructure.Tiles.ITileExportSourceFence, Tiles.MapTileExportSourceFence>();
 

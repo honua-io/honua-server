@@ -66,7 +66,7 @@ internal static class ScheduledTickEndpoints
         }
 
         // A degraded start (database unreachable, or schema behind this build) answers a typed 503
-        // so Scheduler retries the tick (honua-server#5916).
+        // so Scheduler retries the tick.
         if (ControlPlaneNotReadyGuard.TryRefuse(context) is { } notReady)
         {
             return notReady;
@@ -101,7 +101,7 @@ internal static class ScheduledTickEndpoints
         catch (ArgumentOutOfRangeException)
         {
             // No handler is registered for the kind in this deployment (the owning feature is disabled,
-            // e.g. its store/Redis dependency is absent). Report 503 so the scheduler can retry/log
+            // e.g. its durable store dependency is absent). Report 503 so the scheduler can retry/log
             // rather than treating it as a client error.
             return Problem(
                 StatusCodes.Status503ServiceUnavailable,

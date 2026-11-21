@@ -2,16 +2,13 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Caching.Abstractions;
-using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Licensing.Abstractions;
-using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Realtime;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
-using Honua.Infrastructure.Monitoring;
 
 namespace Honua.Server.Features.HealthCheck;
 
@@ -20,8 +17,6 @@ using Honua.Core.Features.Infrastructure.Health;
 
 internal static class HealthEndpoints
 {
-    private static readonly TimeSpan DeepProbeTimeout = TimeSpan.FromSeconds(5);
-
     private static readonly string[] NonGetMethods =
     [
         HttpMethods.Post,
@@ -32,7 +27,7 @@ internal static class HealthEndpoints
 
     public static void MapHealthEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        // Probe answers must reflect the live process on every request (honua-server#4805): the
+        // Probe answers must reflect the live process on every request: the
         // entitled output-cache base policy otherwise stores the anonymous 200 for its default
         // expiration, so a store loss or dependency outage stays invisible to orchestration.
         _ = endpoints.MapMethods("/healthz/live", [HttpMethods.Get], HandleLivenessProbe)
@@ -109,35 +104,16 @@ internal static class HealthEndpoints
 
     private static async Task HandleDeepProbe(HttpContext context)
     {
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
-        deadline.CancelAfter(DeepProbeTimeout);
         ReadinessResult result;
         try
         {
-            var database = context.RequestServices.GetRequiredService<IDatabaseHealthChecker>();
-            var catalog = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
-            if (!context.RequestServices.GetRequiredService<MigrationState>().IsReady ||
-                !await database.IsDatabaseHealthyAsync(deadline.Token).WaitAsync(deadline.Token))
-            {
-                result = ReadinessResult.NotReady("Dependencies unavailable");
-            }
-            else
-            {
-                await catalog.GetCurrentAsync(deadline.Token).AsTask().WaitAsync(deadline.Token);
-                deadline.Token.ThrowIfCancellationRequested();
-                result = ReadinessResult.Ready();
-            }
+            result = await context.RequestServices.GetRequiredService<DeepProbe>()
+                .CheckAsync()
+                .WaitAsync(context.RequestAborted);
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
             return;
-        }
-        // This anonymous probe boundary reports dependency failures without exposing their details.
-        catch (Exception exception) when (exception is not OutOfMemoryException)
-        {
-            HealthEndpointsLog.DeepProbeFailed(context.RequestServices.GetRequiredService<ILoggerFactory>()
-                .CreateLogger("Honua.HealthCheck"), exception);
-            result = ReadinessResult.NotReady("Dependencies unavailable");
         }
 
         await WriteHealthCheckResponse(context, result);
@@ -251,12 +227,9 @@ internal static class HealthEndpoints
         // Intentional catch-all: nothing in this method should realistically throw (arithmetic
         // over an already-obtained memory reading plus GC.CollectionCount calls with fixed,
         // valid generation numbers), so this is a defensive guard rather than an expected
-        // failure path. It previously used a parenthesis-free empty catch clause that both hid
-        // the exception entirely and slipped past the ErrorHandlingPolicyTests regex, which
-        // only matched a typed, empty "catch (Exception ...)" clause. 0 is kept as the fallback
-        // score (the response's Status field independently reports readiness, so a fallback
-        // score of 0 here does not mislead about overall health), but the failure is now logged
-        // so it is diagnosable.
+        // failure path. 0 is the fallback score (the response's Status field independently
+        // reports readiness, so a fallback score of 0 here does not mislead about overall
+        // health), and the failure is logged so it is diagnosable rather than hidden.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             HealthEndpointsLog.PerformanceScoreCalculationFailed(logger, ex);

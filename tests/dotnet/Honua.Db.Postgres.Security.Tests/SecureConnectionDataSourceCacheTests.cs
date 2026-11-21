@@ -10,12 +10,6 @@ using Xunit;
 
 namespace Honua.Db.Postgres.Security.Tests;
 
-/// <summary>
-/// Regression tests for <see cref="SecureConnectionDataSourceCache"/> to
-/// ensure named secure connections honour the same data-source configuration
-/// — most importantly the embedded <c>search_path</c> — as the default
-/// <see cref="NpgsqlDataSource"/> built in <c>ServiceCollectionExtensions</c>.
-/// </summary>
 public sealed partial class SecureConnectionDataSourceCacheTests
 {
     private const string SampleConnectionString =
@@ -30,7 +24,7 @@ public sealed partial class SecureConnectionDataSourceCacheTests
         // ServiceCollectionExtensions.AddPostgreSqlServices which propagates
         // Database:Schema into the default NpgsqlDataSource. The secure cache
         // must do the same so background/service callers (ISchemaContext.CurrentSchema == null)
-        // still resolve schema-qualified tables (honua-server#2949).
+        // still resolve schema-qualified tables.
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -50,8 +44,8 @@ public sealed partial class SecureConnectionDataSourceCacheTests
         // for the default (non-multiplexing, non-schema-header) path, the factory applies
         // search_path via a physical-connection-initializer SET statement instead of the
         // libpq `options` startup parameter, because AWS RDS Proxy rejects that startup
-        // parameter outright (0A000) — see PostgresDataSourceFactory.Configure and
-        // honua-server#1638. Parity with the default data source is exactly the point:
+        // parameter outright (0A000) — see PostgresDataSourceFactory.Configure.
+        // Parity with the default data source is exactly the point:
         // the secure cache must stay RDS-Proxy-safe too, not diverge onto the parameter
         // the default path deliberately avoids.
         var connectionLimits = PostgresDataSourceFactory.ResolveConnectionLimits(configuration);
@@ -73,8 +67,8 @@ public sealed partial class SecureConnectionDataSourceCacheTests
     public void GetOrCreate_RoleDefaultsMode_NamedPoolKeepsPerConnectionSessionSettings()
     {
         // role-defaults is verified only for the DefaultConnection role; a named secure
-        // connection may use another role, so its pool keeps setting the timeouts itself
-        // (honua-server#5870). Multiplexing makes the settings visible on the string.
+        // connection may use another role, so its pool keeps setting the timeouts itself.
+        // Multiplexing makes the settings visible on the string.
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -326,7 +320,7 @@ public sealed partial class SecureConnectionDataSourceCacheTests
     public void Acquire_OnLambda_NamedAndBoundPoolsAreUnpooled()
     {
         // Named and bound pools SET session settings per connection, which pins RDS Proxy.
-        // A frozen Lambda never prunes, so each close must end the session (#6760).
+        // A frozen Lambda never prunes, so each close must end the session.
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["AWS_LAMBDA_FUNCTION_NAME"] = "honua-api" })
             .Build();

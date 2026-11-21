@@ -5,7 +5,6 @@ Comprehensive test infrastructure for Honua Server integration and unit tests.
 ## Features
 
 - **PostgreSQL/PostGIS Integration**: Testcontainers-based database fixtures with schema-based isolation
-- **Redis Integration**: Testcontainers-based Redis fixture for caching and import coordination tests
 - **Parallel Test Execution**: Aggressive parallel execution with schema isolation for maximum throughput
 - **Custom Test Attributes**: Protocol, Operation, and Endpoint tracking for 100% API surface coverage
 - **Fluent Test Data Builders**: Build complex spatial data scenarios with ease
@@ -138,18 +137,6 @@ A reusable local PostGIS instance is available via `docker compose -f docker/doc
 export HONUA_TEST_DB_URL="Host=localhost;Database=honua_test;Username=test;Password=test"
 ```
 
-### RedisFixture
-
-Shared Redis container for integration tests that need distributed caching or job coordination.
-
-#### External Redis (opt-in)
-
-Set `HONUA_TEST_REDIS_URL` to use an existing Redis instance instead of Testcontainers.
-
-```bash
-export HONUA_TEST_REDIS_URL="localhost:6379"
-```
-
 #### External Service Tests (opt-in)
 
 Enable Geoportal-backed Esri import integration tests:
@@ -178,11 +165,13 @@ dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
 ```
 
 The probe endpoint (`GET /__test/cross-server-consume/proxy?url=<sourceUrl>`)
-is mounted only when `ASPNETCORE_ENVIRONMENT=Test`. It accepts loopback
-`http`/`https` URLs without embedded credentials, forwards the request,
-and maps upstream failures to `502 Bad Gateway`; requests exceeding the
-two-minute timeout return `504 Gateway Timeout`. Invalid URLs return
-`400 Bad Request`.
+is not part of the server: the consume fixtures add it to their test host
+through `CrossServerConsumeProbe` in
+`tests/dotnet/Honua.Server.Tests/Features/CrossServerConsume/`. It accepts
+loopback `http`/`https` URLs without embedded credentials and returns the
+upstream status, content type and body. An unreachable reference server returns
+`502 Bad Gateway`, a request past the two-minute timeout `504 Gateway Timeout`,
+and any other URL `400 Bad Request`.
 
 The nightly `cross-server-consume-nightly.yml` workflow runs the same
 suite, generates the gap report from the TRX and uploads both as workflow
@@ -450,8 +439,8 @@ The `[ScaleTest]` tier runs against a multi-node stack behind nginx.
    `HONUA_SCALE_TEST_ADMIN_API_KEY="$HONUA_ADMIN_PASSWORD"`.
 4. **For replica-state scale tests** (create, extract, sync, unregister), also set
    `HONUA_SCALE_TEST_SERVICE_ID=<service-name>`.
-5. **If the default ports are busy**, override them with `HONUA_SCALE_TEST_HTTP_PORT=18080`,
-   `HONUA_SCALE_TEST_REDIS_PORT=6380` and `HONUA_SCALE_TEST_POSTGRES_PORT=55434`.
+5. **If the default ports are busy**, override them with `HONUA_SCALE_TEST_HTTP_PORT=18080`
+   and `HONUA_SCALE_TEST_POSTGRES_PORT=55434`.
 6. **Run only the scale tests**:
    `dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --filter Category=Scale`.
 
@@ -513,7 +502,7 @@ run. If the loader cannot locate a scenario under either root it also raises
 not yet wired (execution engine, publish surface, package composition, deploy
 promotion) report `Skipped` with a reason rather than failing — only `Failed`
 stages break the gate today. `SubmitJob` also degrades to
-`Skipped(redis-unavailable)` when the durable Redis-backed job store is absent,
+`Skipped(job-store-unavailable)` when the durable PostgreSQL job store is absent,
 which keeps local/dev runs honest instead of treating infrastructure gaps as
 contract failures.
 
@@ -585,7 +574,7 @@ pinned to `reportSchemaVersion = "1"` (`EvalReportSchema.Version`) and
 includes:
 
 - `environment` — `corpusSource`, `corpusVersion`, `corpusPath`,
-  `redisAvailable` (derived from observed successful `SubmitJob` stages)
+  `jobStoreAvailable` (derived from observed successful `SubmitJob` stages)
 - `scenarios[]` — id, mode, overall `status`
   (`Passed` / `Failed` / `PassedWithSkips`), per-stage outcomes, protocol parity
   probes, elapsed ms
@@ -643,28 +632,23 @@ image self-selects behaviour via its `ENTRYPOINT`.
 
 Runs in the `local-substrate` job of `.github/workflows/cloud-integration-harness.yml` (same
 nightly + manual triggers, no cloud secrets, plain ubuntu runner with Docker). It is the
-substrate-neutral proof that a **single host — containers only, no Kubernetes, no cloud** — can
-deploy, rolling-upgrade, run the expand/contract migration gate, and roll back with **zero
-downtime** on BOTH planes. Every test is `[SkippableFact]` and skips (never fails) when Docker is
-absent; the GP process tests need only a resolvable `dotnet` muxer, so they also run without Docker.
+substrate-neutral proof that a **single host — no Kubernetes, no cloud** — can run GP jobs and
+the expand/contract migration gate. Every test is `[SkippableFact]` and skips (never fails) when
+Docker is absent; the GP process tests need only a resolvable `dotnet` muxer, so they also run
+without Docker.
 
-It drives the real trunk seams end-to-end — `YarpRollingDeployBackend` (`honua-yarp-rolling`,
-`DeployTargetKind.SelfHostedRolling`) with a real embedded-YARP `InMemoryConfigProvider` and the
-real `ProcessContainerRuntimeClient` against docker; `LocalProcessPoolBatchComputeBackend`
+It drives the real trunk seams end-to-end — `LocalProcessPoolBatchComputeBackend`
 (`honua-local-process`, `BatchComputeTargetKind.LocalProcess`) spawning real child processes; and
 the real `PostgresDatabaseMigrationRunner` expand/contract gate over a Testcontainers Postgres.
 
-Matrix cells — {serving, GP} × {local/YARP} × {deploy, rolling-upgrade, expand/contract-migration, rollback}:
+Matrix cells — {GP, migration gate} × {local} × {deploy, rolling-upgrade, expand/contract-migration, rollback}:
 
 | Plane | Deploy | Rolling-upgrade | Expand/contract migration | Rollback |
 |-------|--------|-----------------|---------------------------|----------|
-| **Serving** (`LocalSubstrateRollingDeployTests`) | launch v2 standby, health-gate → `PromotionRecommended` | atomic proxy destination swap v1→v2; continuous request loop asserts **zero failed requests** across cutover | contract migrations gate the coordinated deploy (see migration row) | pre-cutover rollback keeps v1 serving (zero downtime); post-cutover rollback repoints the proxy at the previous replica, drains the failed one, and settles `RolledBack` |
 | **GP** (`LocalSubstrateProcessPoolTests`) | child-process launch → `Running`→`Succeeded` with exit-code mapping; `HONUA_*` env contract asserted | non-blocking pool-saturation admission: pending marker then launch once a slot frees; contract-version gate declares baseline v1 so a v2 job is refused | — | `CancelAsync` kills the process tree → `Cancelled` |
 | **Migration gate** (`LocalSubstrateMigrationGateTests`) | — | — | real runner over real Postgres: unannotated `DROP COLUMN` → **fail-closed** naming the compatibility-review marker; annotated → applies; `PlanMigrationsAsync` reports pending contract scripts (the `DeployPreflightProbe` signal that blocks a coordinated deploy) | — |
 
-Image/binary choices: the serving lane builds two tiny `busybox:1.36` `httpd` images
-(`honua-ci/ls-replica:v1|v2`) whose one-file docroot is the revision marker (HTTP 200 at `/`
-doubles as the health signal). The GP lane compiles a shell-free managed helper with Roslyn and
+Binary choices: the GP lane compiles a shell-free managed helper with Roslyn and
 launches it via the absolute-path `dotnet` muxer (no OS coreutil, PATH-shim-safe). The migration
 lane compiles per-scenario synthetic migration assemblies (embedded `.sql` resources) with Roslyn so
 the real runner is driven over a controlled expand/contract script set. The pure classification logic
@@ -757,5 +741,5 @@ every certification test skips, which is the correct local/PR outcome.
 ## Environment Requirements
 
 - Docker (for Testcontainers)
-- .NET 10 SDK
+- .NET 11 SDK matching the version and roll-forward policy in [`global.json`](../../../global.json)
 - 200+ max connections in PostgreSQL (configured automatically)
