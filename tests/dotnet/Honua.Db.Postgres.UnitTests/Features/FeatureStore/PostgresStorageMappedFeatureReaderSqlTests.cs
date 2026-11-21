@@ -464,6 +464,37 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
     }
 
     [UnitTheory]
+    [InlineData(10, 6)]
+    [InlineData(3, 3)]
+    [InlineData(5, 5)]
+    public void AppendPagination_ProbedNearestPageIsBoundedByThePageLimit(int nearestCount, int expectedLimit)
+        => AppendNearestPagination(nearestCount, probeArgument: true).Should().Equal(expectedLimit);
+
+    [UnitTest]
+    public void AppendPagination_UnprobedNearestPageStopsAtThePageLimit()
+        => AppendNearestPagination(10, probeArgument: false).Should().Equal(5);
+
+    private static IReadOnlyList<object?> AppendNearestPagination(int nearestCount, object probeArgument)
+    {
+        var sqlBuilderType = typeof(PostgresStorageMappedFeatureReader).GetNestedType(
+            "SqlBuilder",
+            BindingFlags.NonPublic);
+        var sqlBuilder = Activator.CreateInstance(sqlBuilderType!);
+        var query = new FeatureQuery
+        {
+            Limit = 5,
+            SpatialFilter = SpatialFilter.CreateKnnFilter([1, 2, 3], nearestCount)
+        };
+
+        typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("AppendPagination", BindingFlags.NonPublic | BindingFlags.Static)!
+            .Invoke(null, [sqlBuilder, query, probeArgument]);
+
+        sqlBuilder!.ToString().Should().Be(" LIMIT $1");
+        return (IReadOnlyList<object?>)sqlBuilderType!.GetProperty("Parameters")!.GetValue(sqlBuilder)!;
+    }
+
+    [UnitTheory]
     [InlineData(false)]
     [InlineData(true)]
     public void BuildFeatureSelect_AttributesUseJsonbExceptDistinctTextBoundary(bool distinct)

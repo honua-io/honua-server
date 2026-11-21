@@ -87,7 +87,7 @@ internal sealed partial class FeatureDataAccess
 
         AddParameterValue(command, ref parameterIndex, filter.Geometry);
 
-        var limit = filter.NearestCount ?? query.Limit;
+        var limit = query.ResolveNearestNeighborRowLimit();
         if (limit.HasValue)
         {
             AddParameterValue(command, ref parameterIndex, limit.Value);

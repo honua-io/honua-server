@@ -65,7 +65,7 @@ internal sealed partial class FeatureQueryBuilder
             AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
             AppendOrderByClause(sql, query, ref paramIndex, parameters);
             AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, geometryStorageType, ref paramIndex);
-            AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
+            AppendPagination(sql, isKnnQuery, query, ref paramIndex);
             sql.Append(") q");
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
@@ -215,7 +215,7 @@ internal sealed partial class FeatureQueryBuilder
             // to `parameters` here as well double-binds pagination, producing more bound parameters
             // than SQL placeholders and an Npgsql "Parameter '' cannot be null" 500 on WFS
             // GetFeature (which sets both count -> Limit and startIndex -> Offset).
-            AppendPagination(sql, isKnnQuery: false, query, spatialFilter: null, ref paramIndex);
+            AppendPagination(sql, isKnnQuery: false, query, ref paramIndex);
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }

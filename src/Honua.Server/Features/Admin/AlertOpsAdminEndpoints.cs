@@ -15,9 +15,6 @@ namespace Honua.Server.Features.Admin;
 
 internal static class AlertOpsAdminEndpoints
 {
-    private const int MaxRedriveBatchLimit = 5000;
-    private const int DefaultRedriveBatchLimit = 500;
-
     public static void MapAlertOpsAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/alerts")
@@ -52,7 +49,7 @@ internal static class AlertOpsAdminEndpoints
         HttpContext context,
         CancellationToken cancellationToken)
     {
-        var limit = maxCount is > 0 ? Math.Min(maxCount.Value, MaxRedriveBatchLimit) : DefaultRedriveBatchLimit;
+        var limit = AlertRedriveBatchLimit.Resolve(maxCount);
         var now = timeProvider.GetUtcNow();
         var redriven = await store.RedriveDeadLettersAsync(now, limit, cancellationToken).ConfigureAwait(false);
 
