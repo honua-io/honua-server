@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Views;
@@ -98,7 +99,19 @@ public sealed partial class McpWorkflowViewTests
                 Missing.Add($"read-only descriptor {name}");
                 return;
             }
-            if (_readSchemas.Add(name)) EnqueueReferences(read.InputSchema);
+            if (_readSchemas.Add(name)) EnqueueReferences(RequiredInputsOnly(read.InputSchema));
+        }
+
+        // A read prerequisite is callable without its optional filters, so only its required inputs gate reachability.
+        private static JsonElement RequiredInputsOnly(JsonElement schema)
+        {
+            if (schema.ValueKind != JsonValueKind.Object || JsonNode.Parse(schema.GetRawText()) is not JsonObject pruned) return schema;
+            var required = pruned["required"]?.AsArray().Select(field => field!.GetValue<string>()).ToHashSet(StringComparer.Ordinal) ?? [];
+            if (pruned["properties"] is JsonObject properties)
+                foreach (var optional in properties.Select(property => property.Key).Where(key => !required.Contains(key)).ToArray())
+                    properties.Remove(optional);
+            using var document = JsonDocument.Parse(pruned.ToJsonString());
+            return document.RootElement.Clone();
         }
     }
 }
