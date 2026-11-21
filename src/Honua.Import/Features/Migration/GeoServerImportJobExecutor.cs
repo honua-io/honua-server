@@ -197,6 +197,8 @@ internal sealed partial class GeoServerImportJobExecutor : IJobExecutor
             Warnings = result.Warnings,
             ApplyPlan = result.ApplyPlan ?? current.ApplyPlan,
             ApplyExecution = result.ApplyExecution ?? current.ApplyExecution,
+            MigrationRunId = result.MigrationRunId ?? current.MigrationRunId,
+            ReconciliationBundle = result.ReconciliationBundle ?? current.ReconciliationBundle,
             CurrentPhase = result.Success
                 ? (result.WasDryRun ? "Dry run completed" : result.ApplyExecution != null ? "Apply plan executed" : result.ApplyPlan != null ? "Apply plan generated" : "Import completed successfully")
                 : "Import failed"

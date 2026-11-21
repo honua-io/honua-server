@@ -922,7 +922,7 @@ internal static partial class ServiceCollectionExtensions
         services.TryAddScoped<IMigrationRunCheckpointStore, PostgresMigrationRunCheckpointStore>();
 
         // Register GeoServer import service
-        services.AddScoped<IGeoServerImportService, GeoServerImportService>();
+        AddGeoServerImportService(services);
 
         // Register OGC API Features collection import with its Postgres sink.
         services.AddScoped<IOgcApiFeaturesCollectionSink>(serviceProvider =>
@@ -1191,4 +1191,21 @@ internal static partial class ServiceCollectionExtensions
         int.TryParse(configuration["Styles:SaveLockWaitMilliseconds"], NumberStyles.None, CultureInfo.InvariantCulture, out var value) && value > 0
             ? value
             : 2000;
+
+    private static void AddGeoServerImportService(IServiceCollection services)
+    {
+        services.AddScoped<IGeoServerImportService>(serviceProvider =>
+            new GeoServerImportService(
+                serviceProvider.GetRequiredService<GeoServerRestClient>(),
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<ICrsRegistry>(),
+                serviceProvider.GetRequiredService<ILogger<GeoServerImportService>>(),
+                serviceProvider.GetService<ISldStyleConverter>(),
+                serviceProvider.GetService<ILayerPublishingService>(),
+                serviceProvider.GetService<IMigrationCatalogWriter>(),
+                serviceProvider.GetService<IMigrationStyleApplicator>())
+            {
+                MigrationRunCatalog = serviceProvider.GetService<IMigrationRunCatalog>()
+            });
+    }
 }

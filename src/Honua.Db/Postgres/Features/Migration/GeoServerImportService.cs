@@ -34,6 +34,8 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
     private readonly IMigrationStyleApplicator? _styleApplicator;
     private readonly ILogger<GeoServerImportService> _logger;
 
+    internal IMigrationRunCatalog? MigrationRunCatalog { get; init; }
+
     public GeoServerImportService(
         GeoServerRestClient restClient,
         IDatabaseConnectionProvider connectionProvider,
@@ -224,24 +226,21 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             };
             progress?.Report(currentProgress);
 
+            var flow = new ImportFlowContext
+            {
+                JobId = jobId,
+                ServiceInfo = serviceInfo,
+                FilteredResources = filteredResources,
+                Request = request,
+                CurrentProgress = currentProgress,
+                Progress = progress,
+                MetricsRecorder = metricsRecorder,
+                Stopwatch = stopwatch
+            };
+
             if (request.DryRun)
             {
-                currentProgress = currentProgress with
-                {
-                    Status = GeoServerImportStatus.Completed,
-                    CompletedAt = DateTimeOffset.UtcNow,
-                    CurrentPhase = "Dry run completed"
-                };
-                metricsRecorder.SampleResources();
-                var dryRunMetrics = BuildRunMetricsArtifact(metricsRecorder, serviceInfo, jobId, "geoserver dry run");
-                EmitRunMetrics(dryRunMetrics);
-                currentProgress = currentProgress with { RunMetrics = dryRunMetrics };
-                progress?.Report(currentProgress);
-
-                return CreateDryRunResult(serviceInfo, filteredResources, request, stopwatch.Elapsed) with
-                {
-                    RunMetrics = dryRunMetrics
-                };
+                return await CompleteDryRunAsync(flow, cancellationToken).ConfigureAwait(false);
             }
 
             currentProgress = currentProgress with
@@ -251,90 +250,8 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             };
             progress?.Report(currentProgress);
 
-            MigrationApplyPlanArtifact applyPlan;
-            using (metricsRecorder.BeginPhase(MigrationCostPerformancePhases.Manifest))
-            {
-                applyPlan = await CreateApplyPlanAsync(serviceInfo, filteredResources, request, cancellationToken)
-                    .ConfigureAwait(false);
-                metricsRecorder.RecordResourceCount(applyPlan.Summary.TotalStepCount);
-                metricsRecorder.RecordManualReview(applyPlan.Summary.ManualReviewStepCount, applyPlan.Summary.TotalStepCount);
-                metricsRecorder.SampleResources();
-            }
-
-            MigrationApplyExecutionArtifact applyExecution;
-            using (metricsRecorder.BeginPhase(MigrationCostPerformancePhases.Apply))
-            {
-                applyExecution = await ExecuteApplyPlanAsync(
-                        filteredResources,
-                        request,
-                        applyPlan,
-                        currentProgress,
-                        progress,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                metricsRecorder.RecordResourceCount(applyExecution.Summary.AppliedStepCount);
-                metricsRecorder.RecordResume(applyPlan.ReplayToken, applyExecution.Summary.AlreadyAppliedStepCount);
-                metricsRecorder.SampleResources();
-            }
-
-            var applyPlanWarnings = BuildApplyPlanWarnings(applyPlan, applyExecution);
-
-            var runMetrics = BuildRunMetricsArtifact(metricsRecorder, serviceInfo, jobId, "geoserver migration");
-            EmitRunMetrics(runMetrics);
-
-            if (applyExecution.Summary.FailedStepCount > 0)
-            {
-                var failureMessage = BuildApplyFailureMessage(applyExecution);
-                currentProgress = currentProgress with
-                {
-                    Status = GeoServerImportStatus.Failed,
-                    ResourcesProcessed = applyPlan.Summary.TotalStepCount,
-                    CompletedAt = DateTimeOffset.UtcNow,
-                    CurrentPhase = "Apply plan failed",
-                    ErrorMessage = failureMessage,
-                    Warnings = applyPlanWarnings,
-                    ApplyPlan = applyPlan,
-                    ApplyExecution = applyExecution,
-                    RunMetrics = runMetrics
-                };
-                progress?.Report(currentProgress);
-
-                return CreateFailedApplyPlanResult(
-                    serviceInfo,
-                    applyPlan,
-                    applyExecution,
-                    request,
-                    stopwatch.Elapsed,
-                    applyPlanWarnings,
-                    failureMessage) with
-                { RunMetrics = runMetrics };
-            }
-
-            currentProgress = currentProgress with
-            {
-                Status = GeoServerImportStatus.Completed,
-                ResourcesProcessed = applyPlan.Summary.TotalStepCount,
-                CompletedAt = DateTimeOffset.UtcNow,
-                CurrentPhase = "Apply plan executed",
-                Warnings = applyPlanWarnings,
-                ApplyPlan = applyPlan,
-                ApplyExecution = applyExecution,
-                RunMetrics = runMetrics
-            };
-            progress?.Report(currentProgress);
-
-            Log.ApplyPlanExecuted(
-                _logger,
-                applyPlan.Summary.TotalStepCount,
-                applyExecution.Summary.AppliedStepCount,
-                applyExecution.Summary.AlreadyAppliedStepCount,
-                applyExecution.Summary.ManualReviewStepCount,
-                applyExecution.Summary.UnsupportedStepCount);
-
-            return CreateApplyPlanResult(serviceInfo, applyPlan, applyExecution, request, stopwatch.Elapsed, applyPlanWarnings) with
-            {
-                RunMetrics = runMetrics
-            };
+            return await CompleteApplyFlowAsync(flow with { CurrentProgress = currentProgress }, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -435,7 +352,8 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             DataStoreCount = dataStores.Length,
             LayerCount = layers.Length,
             StyleCount = styles.Length,
-            ScopedWorkspaceNames = scopedWorkspaceNameSet
+            ScopedWorkspaceNames = scopedWorkspaceNameSet,
+            SecurityRules = serviceInfo.SecurityRules
         };
     }
 
@@ -658,6 +576,8 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
 
         public HashSet<string> ScopedWorkspaceNames { get; init; } =
             new(StringComparer.OrdinalIgnoreCase);
+
+        public GeoServerSecurityRule[] SecurityRules { get; init; } = [];
     }
 
     internal sealed record ImportStepResult
