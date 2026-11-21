@@ -10,6 +10,7 @@ using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -35,6 +36,25 @@ public sealed class McpTransportPreconditionTests
         {
             context.Request.Headers.Origin = origin;
         }
+
+        await McpEndpointExtensions.HandlePostAsync(context, CancellationToken.None);
+
+        Assert.Equal(status, context.Response.StatusCode);
+    }
+
+    [UnitTheory]
+    [InlineData("https://maps.example", "https://maps.example", 200)]
+    [InlineData("https://maps.example/honua/", "https://maps.example", 200)]
+    [InlineData("https://maps.example:8443", "https://maps.example:8443", 200)]
+    [InlineData("https://maps.example", "http://maps.example", 403)]
+    [InlineData("https://maps.example", "https://maps.example:8443", 403)]
+    [InlineData("https://maps.example", "https://rebound.example", 403)]
+    public async Task Post_FromConfiguredPublicOrigin_IsSameOriginWithoutACorsEntry(string publicBaseUrl, string origin, int status)
+    {
+        await using var services = CreateServices(publicBaseUrl);
+        var context = CreateLegacyContext(services);
+        context.Request.Host = new HostString(new Uri(origin).Authority);
+        context.Request.Headers.Origin = origin;
 
         await McpEndpointExtensions.HandlePostAsync(context, CancellationToken.None);
 
@@ -104,8 +124,11 @@ public sealed class McpTransportPreconditionTests
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
     }
 
-    private static ServiceProvider CreateServices() => new ServiceCollection()
+    private static ServiceProvider CreateServices(string? publicBaseUrl = null) => new ServiceCollection()
         .AddLogging()
+        .AddSingleton<IConfiguration>(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Public:BaseUrl"] = publicBaseUrl })
+            .Build())
         .AddCors(options => options.AddPolicy(HttpCorsPolicyNames.Production,
             policy => policy.WithOrigins("https://approved.example")))
         .AddSingleton(Options.Create(new McpOptions()))
