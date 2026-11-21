@@ -65,6 +65,15 @@
         "resolved": "2.80.0",
         "contentHash": "cDxy61tAgx/CD7fUQrXD/fGVqPQw8ka5vL8wM4WDlFZiubHDXWWTHkTvR5hP1tW0JI1uU3887uLLZds6FCfFTQ=="
       },
+      "Honua.Sdk.Field": {
+        "type": "Direct",
+        "requested": "[5.0.1, )",
+        "resolved": "5.0.1",
+        "contentHash": "9IeBG2WtReh3QVxX7zzAU2sTvCcWpkoc/z6tTyQdlOd3j84ePlj0hw2agrPLC5b67u9PUIBgPghb/I80jbFagQ==",
+        "dependencies": {
+          "Honua.Sdk.Abstractions": "5.0.1"
+        }
+      },
       "Microsoft.AspNetCore.Authentication.JwtBearer": {
         "type": "Direct",
         "requested": "[11.0.0, )",
@@ -413,8 +422,8 @@
       },
       "Honua.Sdk.Abstractions": {
         "type": "Transitive",
-        "resolved": "1.10.4",
-        "contentHash": "kCAThmNfUBxs8gJS+XbD68yAMm9hQnxRtZn0M6KJkiFTMy0qQ4jfpBzx5ftKDoUN4b2V5PwFczUsRk+LfL1P5w=="
+        "resolved": "5.0.1",
+        "contentHash": "QT13/pBiE/mAHkdc4YsbTvYaqbEVO48GgnWRzfpH5+8VK6E+7PXGODni9B3enjEYH4JKIJj38ryU5h2ME5+rEg=="
       },
       "Honua.Sdk.Geometry": {
         "type": "Transitive",
