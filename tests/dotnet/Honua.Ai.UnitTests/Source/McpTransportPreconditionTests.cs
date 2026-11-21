@@ -46,6 +46,7 @@ public sealed class McpTransportPreconditionTests
     [InlineData("https://maps.example", "https://maps.example", 200)]
     [InlineData("https://maps.example/honua/", "https://maps.example", 200)]
     [InlineData("https://maps.example:8443", "https://maps.example:8443", 200)]
+    [InlineData("https://maps.example", "https://maps.example:443", 200)]
     [InlineData("https://maps.example", "http://maps.example", 403)]
     [InlineData("https://maps.example", "https://maps.example:8443", 403)]
     [InlineData("https://maps.example", "https://rebound.example", 403)]
@@ -59,6 +60,19 @@ public sealed class McpTransportPreconditionTests
         await McpEndpointExtensions.HandlePostAsync(context, CancellationToken.None);
 
         Assert.Equal(status, context.Response.StatusCode);
+    }
+
+    [UnitTest]
+    public async Task Post_FromConfiguredPublicOrigin_BehindAProxyWithAnInternalHost_IsAccepted()
+    {
+        await using var services = CreateServices("https://maps.example");
+        var context = CreateLegacyContext(services);
+        context.Request.Host = new HostString("10.0.1.5:8080");
+        context.Request.Headers.Origin = "https://maps.example";
+
+        await McpEndpointExtensions.HandlePostAsync(context, CancellationToken.None);
+
+        Assert.Equal(200, context.Response.StatusCode);
     }
 
     [UnitTheory]
@@ -124,7 +138,8 @@ public sealed class McpTransportPreconditionTests
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
     }
 
-    private static ServiceProvider CreateServices(string? publicBaseUrl = null) => new ServiceCollection()
+    // The default is a sentinel so a PUBLIC_BASE_URL in the runner's environment cannot apply.
+    private static ServiceProvider CreateServices(string publicBaseUrl = "http://unused.invalid") => new ServiceCollection()
         .AddLogging()
         .AddSingleton<IConfiguration>(new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Public:BaseUrl"] = publicBaseUrl })
