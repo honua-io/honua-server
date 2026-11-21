@@ -11,13 +11,11 @@ public static partial class MetadataV2GraphValidator
     // A publication that accepts edits must be bound to storage that declares edit support. Feature
     // writes go through the managed store's writer, so edits declared over a read-only source binding
     // would be written where that layer never reads them.
-    private static void ValidatePublicationEditStorage(
-        List<string> errors,
-        MetadataV2Graph graph,
-        Dictionary<string, MetadataV2Object> resourcesById,
-        Dictionary<string, MetadataV2StorageBinding> storageBindingsById)
+    private static void ValidatePublicationEditStorage(List<string> errors, MetadataV2Graph graph)
     {
         var servicesById = ToUniqueDictionary(graph.Services, service => service.Metadata.Id);
+        var resourcesById = ToUniqueDictionary(graph.Resources, resource => resource.Metadata.Id);
+        var storageBindingsById = ToUniqueDictionary(graph.StorageBindings, binding => binding.Metadata.Id);
         foreach (var publication in graph.Publications)
         {
             if (!servicesById.TryGetValue(publication.ServiceId, out var service) || !DeclaresEdits(service, publication))
