@@ -23,28 +23,7 @@ public sealed class ImageServerTileRangeTests
     [Operation(Operations.GetTile)]
     public async Task GetImageTileAsync_CloudCogWithRangeHeader_ReturnsPartialContent()
     {
-        var graphProvider = ImageServerTestFixtures.BuildGraphWithLayer(1);
-        var rasterStore = Substitute.For<IRasterStore>();
-        rasterStore.QueryRastersAsync(default, default, default)
-            .ReturnsForAnyArgs([]);
-        var cogResolver = Substitute.For<ICogTileResolver>();
-        cogResolver.GetTileForLayerAsync(1, 0, 0, 0, RasterFormat.COG, Arg.Any<CancellationToken>())
-            .Returns(new CogTileLookup(
-                new RasterResult
-                {
-                    Data = SampleTileBytes,
-                    ContentType = "image/tiff",
-                    Width = 256,
-                    Height = 256,
-                    Srid = 3857
-                },
-                EditionGateHit: false));
-
-        var handler = new ImageServerTileHandler(
-            graphProvider,
-            rasterStore,
-            NullLogger<ImageServerTileHandler>.Instance,
-            cogResolver);
+        var handler = CreateCloudCogHandler();
         var context = ImageServerTestFixtures.CreateContext("/rest/services/1/ImageServer/tile/0/0/0?format=cog");
         context.Request.Method = HttpMethods.Get;
         context.Request.Headers.Range = "bytes=0-3";
@@ -105,6 +84,21 @@ public sealed class ImageServerTileRangeTests
     [Operation(Operations.GetTile)]
     public async Task GetImageTileAsync_HeadRequest_AdvertisesAcceptRangesAndContentLength()
     {
+        var handler = CreateCloudCogHandler();
+        var context = ImageServerTestFixtures.CreateContext("/rest/services/1/ImageServer/tile/0/0/0?format=cog");
+        context.Request.Method = HttpMethods.Head;
+
+        var result = await handler.GetImageTileAsync(context, 1, 0, 0, 0, "cog");
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.Response.Headers.AcceptRanges.ToString().Should().Be("bytes");
+        context.Response.ContentLength.Should().Be(SampleTileBytes.Length);
+        context.Response.Body.Length.Should().Be(0);
+    }
+
+    private static ImageServerTileHandler CreateCloudCogHandler()
+    {
         var graphProvider = ImageServerTestFixtures.BuildGraphWithLayer(1);
         var rasterStore = Substitute.For<IRasterStore>();
         rasterStore.QueryRastersAsync(default, default, default)
@@ -122,20 +116,10 @@ public sealed class ImageServerTileRangeTests
                 },
                 EditionGateHit: false));
 
-        var handler = new ImageServerTileHandler(
+        return new ImageServerTileHandler(
             graphProvider,
             rasterStore,
             NullLogger<ImageServerTileHandler>.Instance,
             cogResolver);
-        var context = ImageServerTestFixtures.CreateContext("/rest/services/1/ImageServer/tile/0/0/0?format=cog");
-        context.Request.Method = HttpMethods.Head;
-
-        var result = await handler.GetImageTileAsync(context, 1, 0, 0, 0, "cog");
-        await result.ExecuteAsync(context);
-
-        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
-        context.Response.Headers.AcceptRanges.ToString().Should().Be("bytes");
-        context.Response.ContentLength.Should().Be(SampleTileBytes.Length);
-        context.Response.Body.Length.Should().Be(0);
     }
 }
