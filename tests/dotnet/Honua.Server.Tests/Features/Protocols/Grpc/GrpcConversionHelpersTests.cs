@@ -194,6 +194,21 @@ public sealed class GrpcConversionHelpersTests
     }
 
     [UnitTest]
+    public void ToFeatureQuery_WithOutSrWkidAndLatestWkid_PrefersLatestWkid()
+    {
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            OutSr = new Proto.SpatialReference { Wkid = 102100, LatestWkid = 3857 }
+        };
+
+        var query = GrpcConversionHelpers.ToFeatureQuery(request);
+
+        query.OutputSrid.Should().Be(3857);
+    }
+
+    [UnitTest]
     public void ToFeatureQuery_WithStatistics_SetsOutStatistics()
     {
         var request = new Proto.QueryFeaturesRequest
@@ -789,6 +804,30 @@ public sealed class GrpcConversionHelpersTests
 
         query.SpatialFilter.Should().NotBeNull();
         query.SpatialFilter!.Value.Srid.Should().Be(4326);
+    }
+
+    [UnitTest]
+    public void ToFeatureQuery_WithSpatialFilterWkidAndLatestWkid_PrefersLatestWkid()
+    {
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            SpatialFilter = new Proto.SpatialFilter
+            {
+                Geometry = new Proto.Geometry
+                {
+                    Point = new Proto.PointGeometry { X = 10, Y = 20 }
+                },
+                SpatialRelationship = Proto.SpatialRelationship.Within,
+                SpatialReference = new Proto.SpatialReference { Wkid = 102100, LatestWkid = 3857 }
+            }
+        };
+
+        var query = GrpcConversionHelpers.ToFeatureQuery(request);
+
+        query.SpatialFilter.Should().NotBeNull();
+        query.SpatialFilter!.Value.Srid.Should().Be(3857);
     }
 
     [UnitTest]

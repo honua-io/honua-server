@@ -1603,6 +1603,7 @@ public sealed partial class GrpcFeatureServiceTests
         var response = await _sut.QueryFeatures(request, CreateCallContext());
 
         response.SpatialReference.Wkid.Should().Be(3857);
+        response.SpatialReference.LatestWkid.Should().Be(3857);
         await _featureReader.Received(1).QueryAsync(
             0,
             Arg.Is<FeatureQuery>(q => q.OutputSrid == 3857),
