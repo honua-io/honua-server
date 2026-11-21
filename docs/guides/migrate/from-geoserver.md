@@ -118,7 +118,15 @@ honua query "my-service/$LAYER_ID" --limit 5 --format geojson
 
 Compare counts, schemas, extents, representative records, relationships, and metadata with GeoServer or a source-native desktop client. Repoint WFS clients to `$HONUA_URL/wfs`, WMS clients to `$HONUA_URL/ogc/services/my-service/wms`, and WMTS clients to `$HONUA_URL/ogc/services/my-service/wmts` after validation.
 
-The runtime-neutral `honua-migrate reconcile compare` command requires a durable `MigrationRun` and portable source/target snapshots. The GeoServer service adapter does not yet emit that bundle, so automated reconciliation is deferred until the adapter is wired. This guide intentionally avoids presenting an unsupported command sequence.
+The GeoServer service adapter now records a durable `MigrationRun` and emits the portable source/target snapshot bundle (`--run-out`, `--source-snapshot`, `--target-snapshot`) so `honua-migrate reconcile compare` validates counts, schemas, extents, and metadata end-to-end:
+
+```bash
+honua-migrate reconcile compare \
+  --run geoserver-run.json \
+  --source geoserver-source-snapshot.json \
+  --target geoserver-target-snapshot.json \
+  --output geoserver-reconciliation.json
+```
 
 ## Troubleshoot
 

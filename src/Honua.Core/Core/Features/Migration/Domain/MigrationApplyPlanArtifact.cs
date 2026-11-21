@@ -81,5 +81,37 @@ public sealed record MigrationApplyPlanStep
 
     public string[] ReviewCodes { get; init; } = [];
 
+    public MigrationStyleDiff[]? StyleDiffs { get; init; }
+
+    public MigrationSecurityRuleDisposition[]? SecurityRules { get; init; }
+
     public required MigrationCompatibilityAssessment Compatibility { get; init; }
+}
+
+public sealed record MigrationStyleDiff
+{
+    public required string StyleId { get; init; }
+
+    public required string StyleName { get; init; }
+
+    public string Format { get; init; } = "sld";
+
+    public string[] UnsupportedConstructs { get; init; } = [];
+
+    public string[] Warnings { get; init; } = [];
+
+    public string[] Errors { get; init; } = [];
+}
+
+public sealed record MigrationSecurityRuleDisposition
+{
+    public required string RuleKey { get; init; }
+
+    public required string Mode { get; init; }
+
+    public string[] Roles { get; init; } = [];
+
+    public required string Status { get; init; }
+
+    public string? Reason { get; init; }
 }

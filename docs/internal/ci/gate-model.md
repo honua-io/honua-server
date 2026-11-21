@@ -199,9 +199,10 @@ earlier one could not.
 Full runs use off-hour minutes to reduce schedule-delivery contention. GitHub still delivers these crons hours late, so
 `full-ci-dispatch.yml` dispatches the full run itself on trunk pushes between 22:00 and
 03:00 Pacific when no full run is active and trunk head has no full result (at most two a night). The
-half-hourly `trunk-signal-watchdog.yml` reports a missing scheduled start after
-20 hours, independently of affected CI activity. It also reports outstanding work without a usable
-result for 2 hours, runs queued over 45 minutes, and excessive cancellations;
+`trunk-signal-watchdog.yml` workflow runs on `workflow_run` completion of `CI` and `Full CI dispatch`
+on `trunk` (with a half-hourly `schedule` fallback for quiet periods) and reports a missing scheduled start after
+20 hours, independently of affected CI activity. It also reports any running run without a usable
+result for 4 hours from its first runner-assigned job, a last result older than 22 hours, runs queued over 45 minutes, and excessive cancellations;
 its issue closes only when all signals recover. GitHub can report a workflow as queued
 while its children execute. For these runs the watchdog checks paginated, latest-attempt
 job evidence: runner assignment proves a scheduled start, while child jobs waiting

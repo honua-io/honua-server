@@ -969,11 +969,12 @@ internal sealed partial class FeatureServerQueryHandler(
                 return StandardErrorHelpers.CreateBadRequest(context, quantizationError ?? "Invalid quantizationParameters.");
             }
 
-            // quantization must post-process the materialized featureSet, so route it through
-            // the materialized path instead of the streaming writer. returnExceededLimitFeatures
-            // is accept-and-ignore: Honua already returns the page plus
-            // exceededTransferLimit, so it does not change the streaming decision.
-            var useStreaming = effectiveLimit > StreamingThreshold && !isPbf && !isFgb && !isGeobuf && !isParquet && !isArrow
+            // quantization must post-process the materialized featureSet for JSON, so route JSON
+            // through the materialized path instead of the streaming writer. PBF applies
+            // quantization per feature inside PbfQueryFormatter and streams into a bounded spool
+            // whenever Z/M detection and runtime-field discovery are not needed.
+            var usePbfStreaming = isPbf && CanStreamPbf(queryLayer.Resource, validatedParams, effectiveLimit);
+            var useStreaming = usePbfStreaming || (effectiveLimit > StreamingThreshold && !isPbf && !isFgb && !isGeobuf && !isParquet && !isArrow
                 && quantizationTransform is null
                 // The materialized formatter discovers runtime fields (notably the
                 // returnDistance column) and emits pjson/102100 aliases consistently.
@@ -981,7 +982,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 && requestedOutSrAlias is null
                 && !validatedParams.ReturnDistance
                 && !hasUnknownRequestedFields
-                && !validatedParams.ReturnDistinctValues;
+                && !validatedParams.ReturnDistinctValues);
 
             if (!useStreaming)
             {
@@ -1234,17 +1235,19 @@ internal sealed partial class FeatureServerQueryHandler(
                 };
             }
 
-            await _queryExecutor.StreamQueryAsync(
-                queryLayer.Service,
-                queryLayer.Resource,
-                queryLayer.Publication,
-                queryLayer.StorageLayerId,
-                query,
-                validatedParams,
-                outputSrid,
-                context,
-                format,
-                cancellationToken);
+            await ExecuteStreamingQueryAsync(
+                queryLayer,
+                new StreamingQueryDispatch
+                {
+                    UsePbfStreaming = usePbfStreaming,
+                    Query = query,
+                    ValidatedParams = validatedParams,
+                    OutputSrid = outputSrid,
+                    QuantizationTransform = quantizationTransform,
+                    Context = context,
+                    Format = format
+                },
+                cancellationToken).ConfigureAwait(false);
 
             HonuaTelemetry.SetSuccess(featureActivity);
             return _streamingResult;

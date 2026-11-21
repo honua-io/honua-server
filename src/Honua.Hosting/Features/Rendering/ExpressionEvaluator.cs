@@ -9,7 +9,7 @@ using SkiaSharp;
 namespace Honua.Infrastructure.Rendering;
 
 // Every entry point takes an explicit zoom so a zoom-dependent operator cannot run by accident.
-internal static class ExpressionEvaluator
+internal static partial class ExpressionEvaluator
 {
     private const double NumericEpsilon = 1e-9;
 
@@ -117,6 +117,11 @@ internal static class ExpressionEvaluator
             "to-number" => EvaluateToNumber(array, properties, zoom),
             "typeof" => EvaluateTypeof(array, properties, zoom),
             "concat" => EvaluateConcat(array, properties, zoom),
+            "downcase" => EvaluateDowncase(array, properties, zoom),
+            "in" => EvaluateIn(array, properties, zoom),
+            "index-of" => EvaluateIndexOf(array, properties, zoom),
+            "length" => EvaluateLength(array, properties, zoom),
+            "slice" => EvaluateSlice(array, properties, zoom),
             "==" => EvaluateComparison(array, properties, zoom, CompareEqual),
             "!=" => EvaluateComparison(array, properties, zoom, CompareNotEqual),
             "<" => EvaluateComparison(array, properties, zoom, CompareLessThan),

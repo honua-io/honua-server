@@ -9,6 +9,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
@@ -27,9 +28,10 @@ internal static class FeatureOverviewEndpoints
             .WithTags("Admin", "Features")
             .RequireAdminAuthorization();
 
-        group.MapGet("/", HandleGetFeatureOverview)
+        var overview = AdminHttpOperationRouteBinding.ForOperate("admin.server.features", "/features");
+        group.MapMethods(overview.RoutePattern, overview.Methods, HandleGetFeatureOverview)
+            .WithAdminOperation(overview.Definition)
             .WithDisplayName("Get Feature Overview")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<ApiResponse<FeatureOverviewResponse>>();
     }
 

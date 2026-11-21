@@ -1,8 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Security.Domain;
 
 namespace Honua.Core.Features.Admin.Domain;
 
@@ -52,6 +55,15 @@ public sealed class LayerPublishRequest
 
     // A published date or date-time column; when set, the layer reports temporal history.
     public string? TemporalColumn { get; init; }
+
+    // Opt-in temporal metadata (start/end time fields, track id, extent) persisted on the Metadata v2 resource.
+    public MetadataV2ObjectTemporal? Temporal { get; init; }
+
+    // Per-layer access policy persisted on the Metadata v2 resource.
+    public AccessPolicy? AccessPolicy { get; init; }
+
+    // Additional Metadata v2 resource extensions (for example declared WMS elevation dimensions).
+    public IReadOnlyDictionary<string, JsonElement>? Extensions { get; init; }
 
     public bool SupportsAttachments { get; init; }
 

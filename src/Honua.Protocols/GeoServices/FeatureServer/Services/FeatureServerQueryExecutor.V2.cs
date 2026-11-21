@@ -394,6 +394,83 @@ internal sealed partial class FeatureServerQueryExecutor
             cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task StreamPbfQueryAsync(
+        PbfStreamQueryRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var streamingFeatureStore = await ResolveStreamingFeatureStoreV2Async(
+            request.Service,
+            request.Resource,
+            request.Publication,
+            request.StorageLayerId,
+            FeatureProviderReadOperation.Query,
+            cancellationToken).ConfigureAwait(false);
+
+        var preparedStream = PrepareFeatureStream(
+            streamingFeatureStore, request.StorageLayerId, request.Query, cancellationToken);
+        var streamSource = new PbfStreamSource
+        {
+            Features = preparedStream.Features,
+            HasMoreResults = preparedStream.HasMoreResults,
+            Resource = request.Resource,
+            Options = CreatePbfEncodingOptions(request)
+        };
+
+        try
+        {
+            await _streamingFormatter.PbfFormatter.StreamAsPbfAsync(
+                streamSource, request.Context, cancellationToken).ConfigureAwait(false);
+        }
+        catch when (request.Context.Response.HasStarted)
+        {
+            // A 200 is already on the wire; drop the connection so the client cannot mistake a
+            // truncated page for a complete one.
+            request.Context.Abort();
+            throw;
+        }
+
+        await request.Context.Response.CompleteAsync().ConfigureAwait(false);
+    }
+
+    private static PbfStreamEncodingOptions CreatePbfEncodingOptions(PbfStreamQueryRequest request)
+    {
+        var queryParams = request.QueryParams;
+        string[]? outFields = string.IsNullOrEmpty(queryParams.OutFields)
+            ? null
+            : [.. queryParams.OutFields.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(f => f.Trim())
+                .Where(f => f.Length > 0)];
+        if (outFields is { Length: 0 })
+        {
+            outFields = null;
+        }
+
+        return new PbfStreamEncodingOptions
+        {
+            ReturnGeometry = queryParams.ReturnGeometry,
+            OutputSrid = request.OutputSrid,
+            ReturnZ = queryParams.ReturnZ,
+            ReturnM = queryParams.ReturnM,
+            GeometryPrecision = queryParams.GeometryPrecision,
+            MaxAllowableOffset = queryParams.MaxAllowableOffset,
+            OutFields = outFields,
+            QuantizationTransform = request.QuantizationTransform
+        };
+    }
+
+    internal sealed record PbfStreamQueryRequest
+    {
+        public required MetadataV2Service Service { get; init; }
+        public required MetadataV2Object Resource { get; init; }
+        public required MetadataV2Layer Publication { get; init; }
+        public required int StorageLayerId { get; init; }
+        public required FeatureQuery Query { get; init; }
+        public required QueryParameters QueryParams { get; init; }
+        public int? OutputSrid { get; init; }
+        public QuantizationTransform? QuantizationTransform { get; init; }
+        public required HttpContext Context { get; init; }
+    }
+
     private async Task StreamQueryAsync(
         IStreamingFeatureStore streamingFeatureStore,
         int layerId,

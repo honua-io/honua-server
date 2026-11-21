@@ -44,7 +44,8 @@ internal sealed partial class GeoServerImportService
                 TargetServiceName = serviceInfo.GlobalSettings?.Title ?? "geoserver-import"
             });
 
-        return MigrationApplyPlanBuilder.Build(manifest);
+        var plan = MigrationApplyPlanBuilder.Build(manifest);
+        return EnrichApplyPlan(plan, serviceInfo, filteredResources);
     }
 
     private static GeoServerServiceInfo CreateFilteredServiceInfoForPlan(
@@ -353,20 +354,16 @@ internal sealed partial class GeoServerImportService
             }
         }
 
-        var publishRequest = new LayerPublishRequest
-        {
-            Schema = publishSchema,
-            Table = publishTable,
-            LayerName = step.TargetResourceName ?? layer.Name,
-            Description = layer.Abstract,
-            GeometryColumn = null,
-            GeometryType = null,
-            Srid = request.TargetSrid ?? ResolveSrid(layer.SRS),
-            PrimaryKey = null,
-            Fields = [],
-            ServiceName = step.TargetServiceName,
-            Enabled = request.AutoPublishLayers && layer.Enabled
-        };
+        var publishRequest = BuildLayerPublishRequest(
+            new LayerPublishBuildContext
+            {
+                Step = step,
+                Layer = layer,
+                Schema = publishSchema,
+                Table = publishTable,
+                SecurityRules = filteredResources.SecurityRules,
+                Request = request
+            });
 
         try
         {
