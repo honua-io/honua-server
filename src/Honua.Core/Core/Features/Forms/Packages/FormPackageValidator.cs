@@ -80,6 +80,7 @@ public sealed class FormPackageValidator
         }
 
         var package = packageVersion.Package;
+        ValidateExpressionLanguage(package, issues);
         var target = await ResolveTargetAsync(package, issues, cancellationToken).ConfigureAwait(false);
         if (target.Resource is null)
         {
@@ -127,6 +128,8 @@ public sealed class FormPackageValidator
 
     private static void ValidatePackageShape(FormPackageDocument package, List<FormValidationIssue> issues)
     {
+        ValidateExpressionLanguage(package, issues);
+
         if (!string.Equals(package.SchemaVersion, "honua.form-package.v1", StringComparison.Ordinal))
         {
             AddError(issues, "schemaVersionUnsupported", "schemaVersion must be honua.form-package.v1.", path: "schemaVersion");
@@ -150,6 +153,18 @@ public sealed class FormPackageValidator
         foreach (var duplicate in duplicateFields)
         {
             AddError(issues, "fieldIdDuplicate", $"Field id '{duplicate.Key}' is duplicated.", duplicate.Key, "fields");
+        }
+    }
+
+    private static void ValidateExpressionLanguage(FormPackageDocument package, List<FormValidationIssue> issues)
+    {
+        if (!string.IsNullOrEmpty(package.ExpressionLanguage) ||
+            package.Fields.Any(static field =>
+                !string.IsNullOrEmpty(field.RelevanceExpression) ||
+                !string.IsNullOrEmpty(field.ConstraintExpression) ||
+                !string.IsNullOrEmpty(field.CalculatedExpression)))
+        {
+            AddError(issues, "expressionLanguageUnsupported", "The package expression language has no registered evaluation policy.", path: "expressionLanguage");
         }
     }
 

@@ -1,14 +1,14 @@
 ---
 type: reference
 title: "Forms"
-description: "Reference for Forms: builders create editable Drafts, validate them against the target Layer, go live with immutable Released Versions, and reopen a Released Version as a new Draft."
+description: "Reference for Forms: author Forms in XLSForm workbooks or JSON, create editable Drafts, validate them against the target Layer, go live with immutable Released Versions, export Released Versions back to XLSForm, and reopen a Released Version as a new Draft."
 resource: "honua://capability/fieldops.forms"
 resources:
   - "honua://capability/fieldops.offline-sync"
 ---
 # Forms
 
-Reference for Forms: builders create editable Drafts, validate them against the target Layer, go live with immutable Released Versions, and reopen a Released Version as a new Draft. Field clients fetch Released Form Versions and submit data against them.
+Reference for Forms: author Forms in XLSForm workbooks or JSON. Import creates an editable Draft; validate it against the target Layer, go live with an immutable Released Version, export the Released Version back to XLSForm, and reopen a Released Version as a new Draft. Field clients fetch Released Form Versions and submit data against them.
 
 All routes require admin authentication — see [Authentication](../../guides/secure/authentication.md). Submissions additionally require edit permission on the target Service/Layer.
 
@@ -20,6 +20,8 @@ Also available in Honua Console — UI guide coming soon.
 |---|---|---|
 | GET | `/api/v1/admin/forms` | List Forms |
 | POST | `/api/v1/admin/forms` | Create Draft Version 1, or the next Draft for an existing `formId` |
+| POST | `/api/v1/admin/forms/import?serviceId={serviceId}&layerId={layerId}` | Import an XLSForm workbook as a Draft |
+| GET | `/api/v1/admin/forms/{formId}/export` | Export the current Released Version as XLSForm |
 | GET | `/api/v1/admin/forms/{formId}` | Get the current Draft (falls back to the current Released Version) |
 | GET | `/api/v1/admin/forms/{formId}/versions` | List all Versions, newest first |
 | GET | `/api/v1/admin/forms/{formId}/versions/{formVersion}` | Get one Version with `ETag` |
@@ -28,14 +30,23 @@ Also available in Honua Console — UI guide coming soon.
 | POST | `/api/v1/admin/forms/{formId}/versions/{formVersion}/publish` | Validate a Draft and go live with an immutable Released Version |
 | POST | `/api/v1/admin/forms/{formId}/versions/{formVersion}/reopen` | Create a new Draft from a Released Version |
 
+### Import and export XLSForm
+
+Upload an `.xlsx` workbook as the `file` part of a `multipart/form-data` request to the import route. Supply the target service and layer in the query string. A successful import returns `201` with the Draft Version. Import does not go live: use the existing validate and publish routes after checking the resulting Draft.
+
+The workbook uses `survey`, `choices`, and `settings` sheets and may be at most 8 MiB (`413` above that). Each question binds to the target layer attribute of the same name: `text`, `barcode`, `select_one`, `date` and `dateTime` questions keep their meaning, and `integer` or `decimal` questions become `integer` or `number` fields by the attribute's type. `settings.form_id` becomes the Form `formId`, so importing a workbook again adds the next Draft of the same Form.
+
+Unsupported question types (for example `select_multiple`, `geopoint`, media, or a `calculate` without a matching attribute), repeat groups, and invalid cells produce `400` with a problem body whose `diagnostics` array names each blocking cell as `sheet`, `row`, `column` and `message`. Correct the workbook and import again; an unsuccessful import creates no Draft. Empty or malformed archives also return `400`. `relevant`, `constraint` and `calculation` expressions are kept on the Draft under `expressionLanguage: "xlsform"`, but validate and publish reject them until an evaluation policy is available.
+
+Export returns the current Released Version as an `.xlsx` download; it returns `404` when the Form has no Released Version, so publish Drafts first. Fields whose behavior XLSForm cannot carry (such as `boolean` fields, private or default values, validation or visibility rules, a `targetField` that differs from the field id, or repeatable sections) return `422` with the same `diagnostics` body, pointing at the survey row each field would occupy, rather than a workbook that silently omits behavior. Submit, attachment, privacy and offline policies are server configuration and are not part of the workbook.
+
 Contract notes:
 
 - Routes and operation names use Form directly. Regenerate clients after the [Forms route migration](../control-plane-migration-guide.md#forms-routes-and-operation-names).
-
 - The persisted document schema version is `honua.form-package.v1`; `formId` is server-generated when omitted on create.
 - Draft saves do not run go-live validation, and Draft updates clear the stored validation result — run `validate` again before `publish`.
 - Released Versions are immutable at the persistence layer; `reopen` creates a new Draft with `reopenedFromVersion` set.
-- Failures: `400` invalid Form JSON or failed go-live validation, `404` unknown Form/Version, `409` stale `ETag` or non-draft target, `428` missing `If-Match` on `PUT`.
+- Failures: `400` invalid Form JSON, failed go-live validation, or XLSForm import diagnostics, `404` unknown Form/Version, `409` stale `ETag` or non-draft target, `413` workbook over 8 MiB, `422` XLSForm export diagnostics, `428` missing `If-Match` on `PUT`.
 
 In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/forms/{formId}/versions/1/publish`, substituting `inspection-form`.
 

@@ -16281,6 +16281,106 @@
         }
       }
     },
+    "/forms/import": {
+      "post": {
+        "tags": [
+          "Forms"
+        ],
+        "summary": "Import Form From XLSForm",
+        "description": "Imports an XLSForm workbook (`survey`, `choices` and `settings` sheets) as a new Form Draft bound to the target service layer. Questions bind to the layer attribute of the same name; numeric questions become `integer` or `number` by that attribute type. Import never publishes. A workbook with an unsupported question type, structure or cell returns `400` with one diagnostic per blocking cell and creates no Draft. The action is audited as `forms.package.import_xlsform`.",
+        "operationId": "importFormXlsForm",
+        "parameters": [
+          {
+            "name": "serviceId",
+            "in": "query",
+            "required": true,
+            "description": "Target service identifier or name.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "layerId",
+            "in": "query",
+            "required": true,
+            "description": "Target layer identifier within the service.",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "XLSForm `.xlsx` workbook of at most 8388608 bytes."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Form Draft created from the workbook.",
+            "headers": {
+              "ETag": {
+                "description": "Concurrency token for the created Draft.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormsPackageVersion"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing target, unreadable upload, or workbook diagnostics. Workbook problems carry a `diagnostics` array; no Draft is created.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormsXlsFormProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "413": {
+            "description": "The workbook exceeds 8388608 bytes.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormsProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/forms/{formId}": {
       "get": {
         "tags": [
@@ -16330,6 +16430,62 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/forms/{formId}/export": {
+      "get": {
+        "tags": [
+          "Forms"
+        ],
+        "summary": "Export Form As XLSForm",
+        "description": "Exports the current Released Form Version as an XLSForm workbook. Drafts are not exported. Submit, attachment, privacy and offline policies are server configuration and are not part of the workbook. A Form whose fields carry behavior XLSForm cannot represent returns `422` with diagnostics instead of a workbook that omits it.",
+        "operationId": "exportFormXlsForm",
+        "parameters": [
+          {
+            "name": "formId",
+            "in": "path",
+            "required": true,
+            "description": "Stable Form identifier.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "XLSForm workbook for the current Released Version.",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "description": "The Released Version uses behavior XLSForm cannot represent; `diagnostics` names the survey row of each field.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormsXlsFormProblem"
+                }
+              }
+            }
           }
         }
       }
@@ -46048,6 +46204,10 @@
             "nullable": true,
             "description": "Package description."
           },
+          "expressionLanguage": {
+            "type": "string",
+            "description": "Language of the field expressions, such as `xlsform` for imported workbooks. Validation and publish reject packages that carry expressions until an evaluation policy for the language is registered."
+          },
           "target": {
             "$ref": "#/components/schemas/FormsTargetDefinition"
           },
@@ -46208,6 +46368,22 @@
           },
           "visibility": {
             "$ref": "#/components/schemas/FormsConditionalRule"
+          },
+          "relevanceExpression": {
+            "type": "string",
+            "description": "Relevance expression in the package expression language; the field applies only when it evaluates true."
+          },
+          "constraintExpression": {
+            "type": "string",
+            "description": "Constraint expression in the package expression language; a value is accepted only when it evaluates true."
+          },
+          "constraintMessage": {
+            "type": "string",
+            "description": "Message reported when the constraint expression rejects a value."
+          },
+          "calculatedExpression": {
+            "type": "string",
+            "description": "Expression in the package expression language that computes the field value."
           }
         }
       },
@@ -54434,6 +54610,64 @@
           "timestamp": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "FormsXlsFormDiagnostic": {
+        "type": "object",
+        "description": "One workbook cell that blocks an XLSForm import or export.",
+        "properties": {
+          "sheet": {
+            "type": "string",
+            "description": "Worksheet name: `survey`, `choices`, `settings`, or `workbook` for archive-level problems."
+          },
+          "row": {
+            "type": "integer",
+            "description": "One-based spreadsheet row number, counting the header row."
+          },
+          "column": {
+            "type": "string",
+            "description": "XLSForm column name, such as `type` or `name`."
+          },
+          "message": {
+            "type": "string",
+            "description": "Why the cell cannot be converted."
+          }
+        }
+      },
+      "FormsXlsFormProblem": {
+        "type": "object",
+        "description": "Problem document that lists every workbook cell blocking an XLSForm import or export.",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Problem type URI."
+          },
+          "title": {
+            "type": "string",
+            "description": "Short problem title."
+          },
+          "status": {
+            "type": "integer",
+            "description": "HTTP status code."
+          },
+          "detail": {
+            "type": "string",
+            "description": "Human-readable explanation."
+          },
+          "instance": {
+            "type": "string",
+            "description": "Request path the problem occurred on."
+          },
+          "correlationId": {
+            "type": "string",
+            "description": "Request correlation identifier."
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FormsXlsFormDiagnostic"
+            }
           }
         }
       },

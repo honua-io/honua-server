@@ -40,6 +40,8 @@ internal static class FormPackageEndpoints
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Post]))
             .Produces<FormPackageVersion>(StatusCodes.Status201Created);
 
+        admin.MapFormXlsFormEndpoints();
+
         admin.MapGet("/{formId}", HandleGetAdminCurrent)
             .WithName("GetCurrentForm")
             .WithSummary("Get the current Form Draft, falling back to the Released Version.")
