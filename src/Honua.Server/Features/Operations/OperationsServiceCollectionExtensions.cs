@@ -247,8 +247,8 @@ internal static class OperationsServiceCollectionExtensions
         {
             var descriptor = AdminOperateOperationCatalog.Descriptors.Single(
                 item => item.OperationId == definition.OperationId);
-            if (definition.ApprovalModel != Honua.Core.Features.Operations.Domain.OperationApprovalModel.None &&
-                definition.SideEffect != Honua.Core.Features.Operations.Domain.OperationSideEffectClass.ReadOnly)
+            if (descriptor.ApprovalModel != Honua.Core.Features.Operations.Domain.OperationApprovalModel.None ||
+                Honua.Core.Features.Operations.Policy.AgentApprovalRule.RequiresApproval(descriptor))
             {
                 services.AddSingleton<IOperationApprovalRequestMapper>(
                     sp => new AdminOperateOperationApprovalRequestMapper(
