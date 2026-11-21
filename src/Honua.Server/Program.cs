@@ -705,6 +705,8 @@ if (systemDatabaseConfigured && builder.Services.Any(service =>
     builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.OpsWatchdogStartupReconciliation>();
 }
 #endif
+Honua.Server.Features.Admin.PairedPublications.PublicPublicationDestinationServiceCollectionExtensions
+    .AddPublicPublicationDestination(builder.Services, builder.Configuration);
 
 // Configure file upload security limits
 builder.Services.Configure<FileUploadSecurityOptions>(

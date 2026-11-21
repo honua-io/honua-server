@@ -36,15 +36,13 @@ public sealed class CloudFrontCdnInvalidationStatusReaderTests
         Assert.Equal(CdnInvalidationStatus.Completed, result.Status);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("InProgress", CdnInvalidationStatus.Pending)]
     [InlineData("Completed", CdnInvalidationStatus.Completed)]
     [InlineData("completed", CdnInvalidationStatus.Failed)]
     [InlineData("Unknown", CdnInvalidationStatus.Failed)]
     [InlineData("", CdnInvalidationStatus.Failed)]
     [InlineData(null, CdnInvalidationStatus.Failed)]
-    [Trait("Category", "Unit")]
-    [Trait("Tier", "Fast")]
     public async Task ReadAsync_ProviderStatus_CompletesOnlyKnownCompletedStatus(string? status, CdnInvalidationStatus expected)
     {
         var reader = Reader(() => Response(status));
@@ -77,13 +75,11 @@ public sealed class CloudFrontCdnInvalidationStatusReaderTests
         Assert.Equal(CdnInvalidationStatus.Failed, result.Status);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("AccessDenied")]
     [InlineData("NoSuchInvalidation")]
     [InlineData("NoSuchDistribution")]
     [InlineData("Throttling")]
-    [Trait("Category", "Unit")]
-    [Trait("Tier", "Fast")]
     public async Task ReadAsync_ProviderRefuses_DoesNotTreatFailureAsCompletion(string errorCode)
     {
         var reader = Reader(() => throw new AmazonCloudFrontException("provider detail") { ErrorCode = errorCode });
@@ -116,12 +112,10 @@ public sealed class CloudFrontCdnInvalidationStatusReaderTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => reader.ReadAsync(new(DistributionId, InvalidationId), cancellation.Token));
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("")]
     [InlineData(" ")]
     [InlineData(null)]
-    [Trait("Category", "Unit")]
-    [Trait("Tier", "Fast")]
     public async Task ReadAsync_InvalidId_RefusesBeforeProvider(string? invalidationId)
     {
         var reader = Reader(() => throw new InvalidOperationException("provider must not be called"));
@@ -169,12 +163,10 @@ public sealed class CloudFrontCdnInvalidationStatusReaderTests
         Assert.Equal(nameof(TimeoutException), result.Detail);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("")]
     [InlineData(" ")]
     [InlineData(null)]
-    [Trait("Category", "Unit")]
-    [Trait("Tier", "Fast")]
     public async Task ReadAsync_InvalidResource_RefusesBeforeProvider(string? resourceId)
     {
         var reader = Reader(() => throw new InvalidOperationException("provider must not be called"));

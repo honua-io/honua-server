@@ -40,16 +40,15 @@ public sealed class PublicPublicationDestinationTests
         uri.AbsoluteUri.Should().Be("https://cdn.example.test/data/publications/roads/v1/roads.pmtiles");
         uploaded.Should().NotBeNull();
         uploaded!.ObjectKeyOverride.Should().Be("data/publications/roads/v1/roads.pmtiles");
-        uploaded.CachePolicy.Should().Be(StoredObjectCachePolicy.PublicReplacedInPlace);
+        uploaded.CachePolicy.Should().Be(StoredObjectCachePolicy.PublicImmutable);
         uploaded.TimeToLive.Should().BeNull();
         uploaded.Metadata.Should().BeEmpty();
         uploaded.Content.Should().BeSameAs(content);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(" City Roads ")]
     [InlineData("long-service-name-that-exceeds-the-normalized-tag-name-budget-and-must-use-the-shared-tag-digest-instead-of-growing-unbounded")]
-    [Trait("Tier", "Fast")]
     public async Task PutAsync_Provenance_UsesMatchingBoundedSubjectTagsAndExplicitMetadataRevision(string service)
     {
         var storage = new Mock<ICloudFileStorage>(MockBehavior.Strict);
@@ -80,11 +79,10 @@ public sealed class PublicPublicationDestinationTests
         uploaded.Metadata.Keys.Should().NotContain("release");
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(" ", 0, 1)]
     [InlineData("roads", -1, 1)]
     [InlineData("roads", 0, -1)]
-    [Trait("Tier", "Fast")]
     public async Task PutAsync_InvalidProvenance_RefusesBeforeStorage(string service, int layer, long revision)
     {
         var storage = new Mock<ICloudFileStorage>(MockBehavior.Strict);
@@ -100,15 +98,16 @@ public sealed class PublicPublicationDestinationTests
         storage.VerifyNoOtherCalls();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("roads", "v1", "current.json")]
     [InlineData("roads", "v1", "operations/reservation.json")]
     [InlineData("roads", "../v1", "roads.pmtiles")]
     [InlineData("../roads", "v1", "roads.pmtiles")]
     [InlineData("roads", "v1", "other.pmtiles")]
     [InlineData("roads", "v1", "roads%2fprivate.pmtiles")]
-    [InlineData("roads", "v1", "../descriptor.json")]
-    [Trait("Tier", "Fast")]
+    [InlineData("roads", "v1", "../collection.json")]
+    [InlineData("roads", "v1", "descriptor.json")]
+    [InlineData("roads", "v1", "item.json")]
     public async Task PutAsync_PrivateOrEscapingKey_RefusesBeforeStorage(string publication, string version, string name)
     {
         var storage = new Mock<ICloudFileStorage>(MockBehavior.Strict);
@@ -206,13 +205,12 @@ public sealed class PublicPublicationDestinationTests
         storage.VerifyNoOtherCalls();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("http://cdn.example.test/")]
     [InlineData("https://user:password@cdn.example.test/")]
     [InlineData("https://cdn.example.test/private/")]
     [InlineData("https://cdn.example.test/?token=secret")]
     [InlineData("https://cdn.example.test/#fragment")]
-    [Trait("Tier", "Fast")]
     public void Constructor_InvalidOrigin_RefusesConfiguration(string origin)
     {
         var action = () => new PublicPublicationDestination(Mock.Of<ICloudFileStorage>(), new Uri(origin));
@@ -232,11 +230,10 @@ public sealed class PublicPublicationDestinationTests
     }
 
 #if !HONUA_EXCLUDE_AWS
-    [Theory]
+    [UnitTheory]
     [InlineData("private-files", "https://cdn.example.test/", typeof(InvalidOperationException))]
     [InlineData("public-data", "http://cdn.example.test/", typeof(ArgumentException))]
     [InlineData("public-data", "https://cdn.example.test/private/", typeof(ArgumentException))]
-    [Trait("Tier", "Fast")]
     public void Registration_InvalidDestination_FailsBeforeResolvingServices(string bucket, string origin, Type exceptionType)
     {
         var services = new ServiceCollection();

@@ -12,24 +12,40 @@ internal static class PublicPublicationDestinationServiceCollectionExtensions
 {
     internal static IServiceCollection AddPublicPublicationDestination(this IServiceCollection services, IConfiguration configuration)
     {
-        var section = configuration.GetSection("FileStorage:PublicData");
-        if (!section.GetValue<bool>("Enabled"))
+        services.AddHttpClient(HttpPublicExportCanary.HttpClientName, client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(10);
+        });
+        services.AddScoped<PublicExportEligibility>();
+        services.AddSingleton<IPublicExportStateStore, CloudStoragePublicExportStateStore>();
+        services.AddSingleton<IPublicExportCanary, HttpPublicExportCanary>();
+        services.AddSingleton<IPublicExportOpsNotifier, OpsNotificationPublicExportNotifier>();
+        services.AddScoped<PublicExportPromoter>();
+        services.AddScoped<PublicExportRevocationService>();
+
+        var publicData = new PublicDataStorageOptions();
+        configuration.GetSection("FileStorage:PublicData").Bind(publicData);
+        if (!publicData.Enabled)
         {
             return services;
         }
 
+        services.AddScoped<IPublicExportAccessChangeListener>(provider =>
+            provider.GetRequiredService<PublicExportRevocationService>());
+        services.AddHostedService<PublicExportRevocationHostedService>();
+
 #if HONUA_EXCLUDE_AWS
         throw new InvalidOperationException("Public data storage requires a server build with AWS support.");
 #else
-        var bucket = section["BucketName"];
-        var region = section["Region"];
+        var bucket = publicData.BucketName;
+        var region = publicData.Region;
         if (string.IsNullOrWhiteSpace(bucket) || string.IsNullOrWhiteSpace(region) ||
             string.Equals(bucket, configuration["FileStorage:AwsS3:BucketName"], StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("Public data requires a region and a bucket distinct from private file storage.");
         }
 
-        if (!Uri.TryCreate(section["BaseUrl"], UriKind.Absolute, out var origin))
+        if (!Uri.TryCreate(publicData.BaseUrl, UriKind.Absolute, out var origin))
         {
             throw new InvalidOperationException("Public data requires an absolute HTTPS BaseUrl.");
         }

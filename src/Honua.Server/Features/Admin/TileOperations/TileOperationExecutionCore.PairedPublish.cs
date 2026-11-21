@@ -106,7 +106,7 @@ internal sealed partial class TileOperationExecutionCore
             var layer = await LayerFactsAsync(context, services, cancellationToken).ConfigureAwait(false);
             var companions = new ExportCompanionInput(descriptor, layer);
             companions = companions with { Thumbnail = TryRenderThumbnail(context, capture, companions) };
-            return await ActivateAsync(current, context, companions, build, cancellationToken).ConfigureAwait(false);
+            return await ActivateAsync(current, context, companions, build, services, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not PairedActivationUnknownException)
         {
@@ -338,6 +338,7 @@ internal sealed partial class TileOperationExecutionCore
         PairedPublishContext context,
         ExportCompanionInput validated,
         PMTilesBuildResult build,
+        IServiceProvider services,
         CancellationToken cancellationToken)
     {
         var run = context.Run;
@@ -348,16 +349,44 @@ internal sealed partial class TileOperationExecutionCore
             PublicationDescriptorJsonContext.Default.JsonObject, cancellationToken).ConfigureAwait(false);
 
         await SwitchPointerAsync(context.Store, context.Run, context.PointerETag).ConfigureAwait(false);
+        var publicDelivery = await TryPromotePublicAsync(context, companions.Descriptor, services, cancellationToken).ConfigureAwait(false);
         TileOperationLog.PairedPublishActivated(_logger, current.JobId, run.PublicationId, run.Version);
         return current with
         {
             ArchiveSizeBytes = build.ArchiveSize,
-            PublishedPublication = new PublishedPublication(run.PublicationId, run.Version, run.CaptureId, collectionKey, context.Store.PointerKey),
+            PublishedPublication = new PublishedPublication(run.PublicationId, run.Version, run.CaptureId, collectionKey, context.Store.PointerKey)
+            {
+                Public = publicDelivery
+            },
             Status = OperationStatus.Completed,
             CompletedAt = DateTimeOffset.UtcNow,
             ErrorMessage = null,
             CurrentPhase = "Paired publish completed"
         };
+    }
+
+    private static async Task<PublicExportDeliveryStatus?> TryPromotePublicAsync(
+        PairedPublishContext context,
+        PublicationDescriptor descriptor,
+        IServiceProvider services,
+        CancellationToken cancellationToken)
+    {
+        var promoter = services.GetService<PublicExportPromoter>();
+        if (promoter is null)
+        {
+            return null;
+        }
+
+        var layerIndex = context.Source.Published.Publication.LayerIndex ?? context.Source.StorageLayerId;
+        var input = new PublicExportPromotionInput(
+            descriptor,
+            context.Store,
+            context.Source.Resource,
+            context.Source.Published.Service,
+            context.Source.StorageLayerId,
+            layerIndex,
+            context.Source.MetadataRevision);
+        return await promoter.PromoteAsync(input, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task PutCompanionFilesAsync(

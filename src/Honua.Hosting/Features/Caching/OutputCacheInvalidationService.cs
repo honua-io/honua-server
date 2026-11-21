@@ -45,6 +45,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
     {
         await EvictStorageLayerAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
         await InvalidateCdnForAdministrativeChangeAsync(cancellationToken).ConfigureAwait(false);
+        await NotifyPublicExportAccessChangeAsync(serviceId: null, [storageLayerId], cancellationToken).ConfigureAwait(false);
     }
 
     private async Task EvictStorageLayerAsync(int storageLayerId, CancellationToken cancellationToken)
@@ -87,6 +88,10 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
     {
         await EvictLayerAsync(serviceId, serviceLayerIndex, cancellationToken).ConfigureAwait(false);
         await InvalidateCdnForAdministrativeChangeAsync(cancellationToken).ConfigureAwait(false);
+        await NotifyPublicExportAccessChangeAsync(
+            serviceId,
+            serviceLayerIndex.HasValue ? [serviceLayerIndex.Value] : null,
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task EvictLayerAsync(string? serviceId, int? serviceLayerIndex, CancellationToken cancellationToken)
@@ -250,6 +255,27 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
             EvictResponseCacheAsync(responsePatterns, cancellationToken),
             EvictCatalogCacheAsync(normalizedServiceId, layerIdList, cancellationToken)).ConfigureAwait(false);
         await InvalidateCdnForAdministrativeChangeAsync(cancellationToken).ConfigureAwait(false);
+        await NotifyPublicExportAccessChangeAsync(normalizedServiceId, layerIdList, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task NotifyPublicExportAccessChangeAsync(
+        string? serviceId,
+        IReadOnlyCollection<int>? layerIds,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var listener = scope.ServiceProvider.GetService<Honua.Core.Features.Infrastructure.Abstractions.IPublicExportAccessChangeListener>();
+            if (listener is not null)
+            {
+                await listener.OnAdministrativeAccessChangeAsync(serviceId, layerIds, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            LogPublicExportAccessChangeFailed(_logger, ex);
+        }
     }
 
     private async Task EvictTagsAsync(IEnumerable<string> tags, CancellationToken cancellationToken)
@@ -569,4 +595,8 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
     [LoggerMessage(EventId = 4517, Level = LogLevel.Warning,
         Message = "Failed to resolve OGC collection identifiers for collection {CollectionId} during cache invalidation")]
     private static partial void LogResolveCollectionIdsFailed(ILogger logger, string collectionId, Exception exception);
+
+    [LoggerMessage(EventId = 4519, Level = LogLevel.Warning,
+        Message = "Failed to evaluate public export revocation after administrative access change")]
+    private static partial void LogPublicExportAccessChangeFailed(ILogger logger, Exception exception);
 }
