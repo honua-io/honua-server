@@ -12,6 +12,8 @@ internal sealed class FormXlsFormUpload
     internal const long MaxWorkbookBytes = 8 * 1024 * 1024;
     internal const string FilePartName = "file";
 
+    private const long MultipartOverheadBytes = 64 * 1024;
+    private const long MaxMultipartBodyBytes = MaxWorkbookBytes + MultipartOverheadBytes;
     private const string Unreadable = "The multipart upload could not be read; check the boundary and that the workbook is at most 8 MiB.";
 
     public IResult? Error { get; private init; }
@@ -25,8 +27,18 @@ internal sealed class FormXlsFormUpload
             return Failed(context, StatusCodes.Status400BadRequest, "Request must be multipart/form-data with a 'file' part carrying the XLSForm workbook.");
         }
 
-        // Bound multipart parsing to the workbook limit plus room for part headers.
-        context.Features.Set<IFormFeature>(new FormFeature(context.Request, new FormOptions { MultipartBodyLengthLimit = MaxWorkbookBytes + (64 * 1024) }));
+        if (context.Request.ContentLength is long contentLength && contentLength > MaxMultipartBodyBytes)
+        {
+            return PayloadTooLarge(context);
+        }
+
+        var maxBodyFeature = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
+        if (maxBodyFeature is { IsReadOnly: false })
+        {
+            maxBodyFeature.MaxRequestBodySize = MaxMultipartBodyBytes;
+        }
+
+        context.Features.Set<IFormFeature>(new FormFeature(context.Request, new FormOptions { MultipartBodyLengthLimit = MaxMultipartBodyBytes }));
         IFormCollection form;
         try
         {
@@ -34,7 +46,13 @@ internal sealed class FormXlsFormUpload
         }
         catch (BadHttpRequestException ex)
         {
-            return Failed(context, ex.StatusCode, Unreadable);
+            return ex.StatusCode == StatusCodes.Status413PayloadTooLarge
+                ? PayloadTooLarge(context)
+                : Failed(context, ex.StatusCode, Unreadable);
+        }
+        catch (InvalidDataException ex) when (ex.Message.Contains("length limit", StringComparison.OrdinalIgnoreCase))
+        {
+            return PayloadTooLarge(context);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException)
         {
@@ -53,13 +71,16 @@ internal sealed class FormXlsFormUpload
 
         if (file.Length > MaxWorkbookBytes)
         {
-            return Failed(context, StatusCodes.Status413PayloadTooLarge, $"The workbook exceeds the {MaxWorkbookBytes}-byte limit.");
+            return PayloadTooLarge(context);
         }
 
         using var buffer = new MemoryStream();
         await file.CopyToAsync(buffer, context.RequestAborted).ConfigureAwait(false);
         return new FormXlsFormUpload { Content = buffer.ToArray() };
     }
+
+    private static FormXlsFormUpload PayloadTooLarge(HttpContext context)
+        => Failed(context, StatusCodes.Status413PayloadTooLarge, $"The workbook exceeds the {MaxWorkbookBytes}-byte limit.");
 
     private static FormXlsFormUpload Failed(HttpContext context, int statusCode, string detail)
         => new() { Error = ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, detail) };

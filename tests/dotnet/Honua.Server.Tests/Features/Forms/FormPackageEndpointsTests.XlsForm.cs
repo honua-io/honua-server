@@ -83,6 +83,18 @@ public sealed partial class FormPackageEndpointsTests
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("POST /api/v1/admin/forms/import")]
+    public async Task XlsFormImport_OversizedWorkbook_ReturnsPayloadTooLarge()
+    {
+        using var content = new MultipartFormDataContent();
+        using var file = new ByteArrayContent(new byte[(9 * 1024 * 1024)]);
+        content.Add(file, "file", "oversized.xlsx");
+        using var response = await _fixture.Client.PostAsync(XlsFormImportUrl(), content);
+        response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
+    }
+
     private readonly string _xlsFormId = $"survey_{Guid.NewGuid():N}";
 
     private async Task<FormPackageVersion> ImportXlsFormAsync(HttpContent file, string fileName)
