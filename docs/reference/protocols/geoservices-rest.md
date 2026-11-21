@@ -22,7 +22,7 @@ Honua serves a GeoServices REST surface under `/rest/services`, plus a Portal Sh
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/rest/info` | Compatibility info (`currentVersion: 10.8`, SOAP URLs, and `authInfo.isTokenBasedSecurity: false`; no token endpoint is emitted). |
+| GET | `/rest/info` | Compatibility info (`currentVersion: 10.8`, SOAP URLs, and `authInfo`). When `Authentication:PortalToken:Enabled` is `true` (the default), `authInfo.isTokenBasedSecurity` is `true` and `tokenServicesUrl` points to `/sharing/rest/generateToken`; when `false`, `isTokenBasedSecurity` is `false` and `tokenServicesUrl` is omitted. |
 | GET | `/rest/services` | Service catalog listing. |
 | GET, POST | `/sharing/rest/generateToken` | GeoServices REST token issuance. |
 | GET | `/sharing/rest/info` | Portal sharing info. |
@@ -66,10 +66,10 @@ a fresh import; this correction does not rewrite those tables in place.
 | Branch versioning (Pro; Preview in 2026.1) | `/rest/services/{serviceId}/VersionManagementServer` — `versions`, `create`, per-version operations and jobs | Experimental and off by default; routes return 404 until `versioning.branch` is enabled. |
 | Bulk and SQL | `append` (service and layer), `/{layerId}/calculate`, `validateSQL`, `queryDomains`, `getEstimates` | |
 | Temporal and binning | `/{layerId}/queryTopFeatures`, `queryDateBins`, `temporalExtent`, `queryBins` | |
-| Spatial analytics (Pro tier) | `/{layerId}/queryH3` (GET, POST), `queryClusters`, `spatialJoin`, `queryBufferAggregate`, `queryDensity` (POST) | Return 402 when the entitlement is inactive. |
+| Spatial analytics (Pro tier) | `/{layerId}/queryH3` (GET, POST), `queryClusters`, `spatialJoin`, `queryBufferAggregate`, `queryDensity` (POST) | Return 402 when the entitlement is inactive (POST operations validate required parameters with 400 first); `queryH3` returns 501 when the configured feature provider does not support H3. |
 | Renderer | `/{layerId}/generateRenderer` (GET, POST) | |
 
-Registered but **not implemented** (return a spec-shaped not-implemented error): `sharedTemplates` (and its `query`/`add`/`update`/`delete`), `htmlPopup`, `image`, `/{layerId}/hasAssets`, `queryAssets`, `cleanupAssets`, `uploadAssets`, `convert3D`, `query3D`, `/{layerId}/metadata/update`. GET-only `queryContingentValues` is implemented and returns graph-backed definitions (or an empty collection).
+Registered read-only or no-op stubs (return HTTP `200` empty/default documents rather than fabricating stored state): `sharedTemplates` and `sharedTemplates/query` (`{"sharedTemplates":[]}`), `htmlPopup` (`esriServerHTMLPopupTypeNone`), `/{layerId}/hasAssets` (`{"hasAssets":false}`), `/{layerId}/queryAssets` (`{"assets":[],"exceededTransferLimit":false}`), and `/{layerId}/cleanupAssets`. Registered but **not implemented** (return a spec-shaped `400` unsupported error): `POST sharedTemplates/add`, `update`, and `delete`, `/{layerId}/uploadAssets`, `/{layerId}/convert3D`, `/{layerId}/query3D`, and `POST /{layerId}/metadata/update`; `GET image` returns `404`. GET-only `queryContingentValues` is implemented and returns graph-backed definitions (or an empty collection).
 
 ### Layer index
 
@@ -178,7 +178,7 @@ Base: `/rest/services/Utilities/Geometry/GeometryServer` (all operations accept 
 
 Implemented operations: `buffer`, `simplify`, `project`, `intersect`, `union`, `clip`, `difference`, `areasAndLengths`, `lengths`, `distance`, `relation`, `densify`, `convexHull`, `generalize`, `labelPoints`, `cut`, `trimExtend`, `offset`, `autoComplete`, `reshape`, `findTransformations`, `toGeoCoordinateString`, `fromGeoCoordinateString`.
 
-`areasAndLengths` and `lengths` take `calculationType`. `calculationType=planar` selects the compatibility result: on a geographic CRS both axes are scaled by one equatorial radius (6,371,000 m) and longitude is not scaled by cos(latitude). On a projected CRS that is already in linear units, planar length and area stay in those units. `calculationType=ground` selects the ground result for the same input: length and area are measured on the WGS 84 spheroid, so a longitude span at high latitude is a ground distance. `calculationType=geodesic` stays the vertex-geodesic measure and is unchanged. `calculationType=preserveShape` returns ground metres and square metres of the shape sampled in the request CRS: edges are densified in that CRS, the samples are transformed to geographic, and the spheroidal length and area path measures them.
+`areasAndLengths` and `lengths` take `calculationType`. `calculationType=planar` selects the planar compatibility result: when `lengthUnit`/`areaUnit` is omitted, results stay in the request CRS's native units (raw degrees and square degrees on a geographic CRS such as EPSG:4326, or native linear units on a projected CRS). When an explicit `lengthUnit` or `areaUnit` is supplied on a geographic CRS, both axes are scaled by one equatorial radius (6,371,000 m) without scaling longitude by cos(latitude) before converting to the requested unit. `calculationType=ground` selects the ground result for the same input: length and area are measured on the WGS 84 spheroid, so a longitude span at high latitude is a ground distance. `calculationType=geodesic` stays the vertex-geodesic measure and is unchanged. `calculationType=preserveShape` returns ground metres and square metres of the shape sampled in the request CRS: edges are densified in that CRS, the samples are transformed to geographic, and the spheroidal length and area path measures them.
 
 > Open `https://server.example.com/rest/services/Utilities/Geometry/GeometryServer/buffer?geometries=-122.4,37.8&inSR=4326&distances=100&unit=9001&f=json` in a browser.
 
