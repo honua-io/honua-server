@@ -1012,7 +1012,7 @@
           {
             "name": "useGlobalIds",
             "status": "implemented",
-            "notes": "useGlobalIds=true resolves updates and deletes by the layer's configured globalIdField, preserves valid client-supplied GlobalID values on inserts, and returns both objectId and globalId in edit results; returns HTTP 400 when the target layer has no globalIdField."
+            "notes": "useGlobalIds=true resolves updates and deletes by the layer\u0027s configured globalIdField, preserves valid client-supplied GlobalID values on inserts, and returns both objectId and globalId in edit results; returns HTTP 400 when the target layer has no globalIdField."
           },
           {
             "name": "gdbVersion",
