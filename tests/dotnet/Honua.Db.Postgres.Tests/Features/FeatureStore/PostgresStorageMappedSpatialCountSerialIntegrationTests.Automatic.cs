@@ -41,6 +41,30 @@ public sealed partial class PostgresStorageMappedSpatialCountSerialIntegrationTe
         await AssertSessionRestoredAsync();
     }
 
+    [IntegrationTest]
+    public async Task AutomaticNextLinkRead_ScopesPageButKeepsCountPlanning()
+    {
+        await using var services = CreatePlanningServices(null, null);
+        await using var scope = services.CreateAsyncScope();
+        var reader = CreateRegisteredPlanningReader(scope.ServiceProvider);
+        await ClearPlanningObservationsAsync();
+
+        var result = await reader.QueryAsync(1, BboxQuery() with { Limit = 1, Offset = 1 });
+
+        result.TotalCount.Should().Be(3);
+        result.Items.Should().ContainSingle();
+        result.HasMoreResults.Should().BeTrue();
+        await using (var connection = await _source.OpenConnectionAsync())
+        {
+            await using var command = new NpgsqlCommand(
+                $"SELECT array_agg(DISTINCT workers ORDER BY workers) FROM {_schema}.observations", connection);
+            // The serial page observes 0 and the count that precedes it keeps the default 2.
+            ((string[])(await command.ExecuteScalarAsync())!).Should().Equal("0", "2");
+        }
+
+        await AssertSessionRestoredAsync();
+    }
+
     [IntegrationTheory]
     [InlineData(null, "false", "0,2", "2")]
     [InlineData(null, "true", "0", "0")]
@@ -98,7 +122,7 @@ public sealed partial class PostgresStorageMappedSpatialCountSerialIntegrationTe
         {
             "unbounded" => query with { Limit = null },
             "large-page" => query with { Limit = 101 },
-            "later-page" => query with { Offset = 1 },
+            "later-page" => query with { Offset = 1001 },
             "descending" => query with { OrderBy = ImmutableArray.Create(new OrderByClause("id", ascending: false)) },
             "include-null" => query with { IncludeNullGeometry = true },
             "explicit-polygon" => query with { SpatialFilter = query.SpatialFilter!.Value with { IsSimpleEnvelope = false } },

@@ -15,8 +15,13 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         _preferSerialSourceSpatialCounts is { } preferSerial
             ? preferSerial && CanUseScopedSourceSpatialCount(query)
             // An omitted option only scopes counts required by an eligible bounded
-            // read. Standalone counts keep PostgreSQL planning, even with a limit.
-            : isAssociatedFeatureRead && CanUseBoundedSpatialPlan(query);
+            // first page of up to 100 features. Standalone counts keep PostgreSQL
+            // planning, even with a limit. A count's cost does not shrink with the
+            // page, so the wider bounded-read limits do not extend to counts.
+            : isAssociatedFeatureRead && CanUseBoundedSpatialPlan(query) &&
+              query.Limit <= MaxAutomaticSerialCountLimit && query.Offset.GetValueOrDefault() == 0;
+
+    private const int MaxAutomaticSerialCountLimit = 100;
 
     private bool CanUseScopedSourceSpatialCount(FeatureQuery query) =>
         _mapping.IsSourceBacked &&

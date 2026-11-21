@@ -172,7 +172,6 @@ public sealed partial class PostgresBoundedSpatialPlannerIntegrationTests(Databa
 
     [IntegrationTheory]
     [InlineData("larger-page")]
-    [InlineData("later-page")]
     [InlineData("custom-order")]
     [InlineData("descending-id")]
     [InlineData("multiple-order-fields")]
@@ -188,7 +187,6 @@ public sealed partial class PostgresBoundedSpatialPlannerIntegrationTests(Databa
         var query = shape switch
         {
             "larger-page" => Bbox() with { Limit = 101 },
-            "later-page" => Bbox() with { Offset = 1 },
             "custom-order" => Bbox() with { OrderBy = [new OrderByClause("label")] },
             "descending-id" => Bbox() with { OrderBy = [new OrderByClause("id", ascending: false)] },
             "multiple-order-fields" => Bbox() with { OrderBy = [new OrderByClause("id"), new OrderByClause("label")] },
