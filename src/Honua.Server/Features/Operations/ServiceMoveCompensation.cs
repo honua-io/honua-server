@@ -6,6 +6,7 @@ using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Server.Features.Admin;
 
 namespace Honua.Server.Features.Operations;
@@ -17,13 +18,14 @@ internal static class ServiceMoveCompensation
 
     internal static async Task<IResult> PostAsync(HttpContext context, string handleId)
     {
+        context.Response.Headers.CacheControl = "no-store";
         if (!await OperationAdminAuthorization.IsAuthorizedAsync(
                 context, context.User, OperationSideEffectClass.MutatesMetadata, context.RequestAborted).ConfigureAwait(false))
             return Results.Forbid();
         var store = context.RequestServices.GetService<IOperationInstanceStore>();
         var catalog = context.RequestServices.GetService<IMetadataV2GraphStore>();
         if (store is null || catalog is null) return Unavailable();
-        var loaded = await LoadCompletedMoveAsync(store, handleId, context.RequestAborted).ConfigureAwait(false);
+        var loaded = await LoadCompletedMoveAsync(context, store, handleId).ConfigureAwait(false);
         if (loaded.Refusal is not null) return loaded.Refusal;
         var existing = await RecordedCompensationAsync(store, loaded.Evidence, context.RequestAborted).ConfigureAwait(false);
         if (existing is not null) return Status(existing);
@@ -84,10 +86,11 @@ internal static class ServiceMoveCompensation
     }
 
     private static async Task<LoadedMove> LoadCompletedMoveAsync(
-        IOperationInstanceStore store, string handleId, CancellationToken cancellationToken)
+        HttpContext context, IOperationInstanceStore store, string handleId)
     {
-        var handle = await store.GetAsync(handleId, cancellationToken).ConfigureAwait(false);
-        if (handle is null) return new(null!, null!, Results.NotFound());
+        var handle = await store.GetAsync(handleId, context.RequestAborted).ConfigureAwait(false);
+        if (handle is null || !OperationTenantAuthorization.CanAccess(context, handle.TenantId))
+            return new(null!, null!, Results.NotFound());
         if (handle.OperationId != "service.move" || handle.Status != OperationHandleStatus.Completed || handle.Result is null)
             return new(null!, null!, Conflict("Only a completed service move can be restored."));
         var evidence = ServiceMoveEvidence.Read(handle.Result.Details);

@@ -7,12 +7,16 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -88,6 +92,41 @@ public sealed class ServiceMoveRecoveryTests
         compensation.Reason.Should().Be(ServiceMoveEvidence.SupportedReason);
         AdminApiOperationCatalog.Descriptors.Single(descriptor => descriptor.OperationId == "folder.create").Compensation.Availability
             .Should().Be(OperationCompensationAvailability.Unavailable);
+    }
+
+    [UnitTest]
+    public async Task PostAsync_CrossTenantHandle_ReturnsNotFoundWithNoStore()
+    {
+        var instanceStore = Substitute.For<IOperationInstanceStore>();
+        instanceStore.GetAsync("opinst-other", Arg.Any<CancellationToken>()).Returns(new OperationHandle
+        {
+            OperationInstanceId = "opinst-other",
+            OperationId = "service.move",
+            Status = OperationHandleStatus.Completed,
+            CorrelationId = "corr-1",
+            TenantId = "tenant-a",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Result = new OperationResultSummary { Summary = "Move service completed." }
+        });
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns("tenant-b");
+        await using var services = new ServiceCollection()
+            .AddSingleton(instanceStore)
+            .AddSingleton(Substitute.For<IMetadataV2GraphStore>())
+            .AddSingleton(tenant)
+            .BuildServiceProvider();
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services,
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.NameIdentifier, "admin"), new Claim(ClaimTypes.Role, "Admin")], "test"))
+        };
+
+        var result = await ServiceMoveCompensation.PostAsync(context, "opinst-other");
+
+        result.Should().BeOfType<NotFound>();
+        context.Response.Headers.CacheControl.ToString().Should().Be("no-store");
     }
 
     private static MetadataV2Graph Graph() => new()
