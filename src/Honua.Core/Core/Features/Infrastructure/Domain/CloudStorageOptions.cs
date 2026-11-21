@@ -28,6 +28,19 @@ public sealed record CloudStorageOptions
     public TimeSpan CleanupInterval { get; set; } = TimeSpan.FromHours(1);
 
     public PMTilesPublishOptions PMTilesPublish { get; set; } = new();
+
+    public PublicDataStorageOptions PublicData { get; set; } = new();
+}
+
+public sealed record PublicDataStorageOptions
+{
+    public bool Enabled { get; set; }
+
+    public string BucketName { get; set; } = string.Empty;
+
+    public string Region { get; set; } = string.Empty;
+
+    public string BaseUrl { get; set; } = string.Empty;
 }
 
 public sealed record PMTilesPublishOptions

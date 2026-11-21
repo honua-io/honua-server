@@ -13,6 +13,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin.Services;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Models;
@@ -43,9 +44,10 @@ internal static class LayerPublishingEndpoints
             .WithDisplayName("List Published Layers")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
-        group.MapPost("/", HandlePublishLayer)
+        var publishLayer = AdminHttpOperationRouteBinding.ForApi("admin.layer.publish", "/connections/{id}/layers");
+        group.MapMethods(publishLayer.RoutePattern, publishLayer.Methods, HandlePublishLayer)
+            .WithAdminOperation(publishLayer.Definition)
             .WithDisplayName("Publish Layer")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<ApiResponse<PublishedLayerSummary>>(StatusCodes.Status201Created)
             .Produces<ApiResponse<LayerPublishAcceptedResponse>>(StatusCodes.Status202Accepted)
             .Produces<ApiResponse<object>>(StatusCodes.Status400BadRequest)
@@ -62,9 +64,10 @@ internal static class LayerPublishingEndpoints
             .Produces<ApiResponse<LayerPublishJobStatusResponse>>(StatusCodes.Status200OK)
             .Produces<ApiResponse<object>>(StatusCodes.Status404NotFound);
 
-        group.MapPut("/{storageLayerId:int}/enabled", HandleSetLayerEnabled)
+        var setEnabled = AdminHttpOperationRouteBinding.ForApi("admin.layer.set-enabled", "/connections/{id}/layers", "/{storageLayerId:int}/enabled");
+        group.MapMethods(setEnabled.RoutePattern, setEnabled.Methods, HandleSetLayerEnabled)
+            .WithAdminOperation(setEnabled.Definition)
             .WithDisplayName("Set Layer Enabled")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
             .AddAgentApprovalFilter(AgentApprovalFilter.LayerState);
 
         group.MapPut("/enabled", HandleSetServiceLayersEnabled)
