@@ -28,13 +28,17 @@ public sealed class DatumTransformOutputSridTests
     }
 
     [UnitTest]
-    public void CachedTransformExpression_PastTheCap_StillReturnsTheBuiltExpression()
+    public void GetOrAddBounded_PastTheCap_BuildsWithoutGrowingTheCache()
     {
-        for (var srid = 100_000; srid < 100_000 + DatumTransformSql.MaxCachedTransforms + 10; srid++)
-        {
-            DatumTransformSql.CachedTransformExpression("cap_probe", 4326, srid)
-                .Should().Be(DatumTransformSql.BuildTransformExpression("cap_probe", srid, selection: null, 4326));
-        }
+        var cache = new System.Collections.Concurrent.ConcurrentDictionary<int, string>();
+
+        var first = DatumTransformSql.GetOrAddBounded(cache, 1, static key => $"expr {key}", maxEntries: 2);
+        DatumTransformSql.GetOrAddBounded(cache, 2, static key => $"expr {key}", maxEntries: 2);
+        var third = DatumTransformSql.GetOrAddBounded(cache, 3, static key => $"expr {key}", maxEntries: 2);
+
+        third.Should().Be("expr 3");
+        cache.Keys.Should().BeEquivalentTo([1, 2]);
+        DatumTransformSql.GetOrAddBounded(cache, 1, static key => $"expr {key}", maxEntries: 2).Should().BeSameAs(first);
     }
 
     [UnitTest]

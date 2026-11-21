@@ -70,15 +70,24 @@ internal static class DatumTransformSql
     private static readonly ConcurrentDictionary<(string Operand, int ToSrid), string> RuntimeSridTransforms = new();
 
     public static string CachedTransformExpression(string operand, int fromSrid, int toSrid)
+        => GetOrAddBounded(
+            KnownSridTransforms,
+            (operand, fromSrid, toSrid),
+            static key => BuildTransformExpression(key.Operand, key.ToSrid, selection: null, key.FromSrid),
+            MaxCachedTransforms);
+
+    // The cached value while the cache holds fewer than maxEntries; past that, a freshly built one.
+    internal static string GetOrAddBounded<TKey>(
+        ConcurrentDictionary<TKey, string> cache, TKey key, Func<TKey, string> build, int maxEntries)
+        where TKey : notnull
     {
-        var key = (operand, fromSrid, toSrid);
-        if (KnownSridTransforms.TryGetValue(key, out var cached))
+        if (cache.TryGetValue(key, out var cached))
         {
             return cached;
         }
 
-        var built = BuildTransformExpression(operand, toSrid, selection: null, fromSrid);
-        return KnownSridTransforms.Count < MaxCachedTransforms ? KnownSridTransforms.GetOrAdd(key, built) : built;
+        var built = build(key);
+        return cache.Count < maxEntries ? cache.GetOrAdd(key, built) : built;
     }
 
     // Same text as BuildTransformExpression(operand, query.OutputSrid, query.OutputDatumTransformation,
