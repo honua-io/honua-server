@@ -13,11 +13,18 @@ Use this runbook before handing a self-hosted pilot to an operator or customer t
 
 ### Local or disposable pilot
 
-The repository Docker Compose stack supplies PostGIS and migrations. A local pilot still needs explicit runtime secrets:
+The repository Docker Compose stack supplies PostGIS and migrations. `docker-compose.yml` requires `POSTGRES_PASSWORD` and `HONUA_ADMIN_PASSWORD` in `.env`. Initialize `.env` without starting the stack yet (this generates `POSTGRES_PASSWORD`, `HONUA_ADMIN_PASSWORD`, `MINIO_ROOT_PASSWORD`, and `AuditLog__ChainVerification__Key`):
 
 ```bash
+python3 scripts/docker/quickstart.py --init-only
+```
+
+`docker-compose.yml` maps `HONUA_CONNECTION_ENCRYPTION_MASTER_KEY` from `.env` into the container's `Security__ConnectionEncryption__MasterKey` with a development fallback. Set a 32+ character `HONUA_CONNECTION_ENCRYPTION_MASTER_KEY` in `.env` before storing encrypted connection credentials. If you populate `.env` manually instead of running the initializer, set all three variables:
+
+```bash
+POSTGRES_PASSWORD=replace-with-postgres-password
 HONUA_ADMIN_PASSWORD=replace-with-admin-password
-Security__ConnectionEncryption__MasterKey=replace-with-32-plus-character-secret
+HONUA_CONNECTION_ENCRYPTION_MASTER_KEY=replace-with-32-plus-character-secret
 ```
 
 Start the stack normally. PostgreSQL holds shared durable job, queue, workflow, and coordination state:
@@ -28,7 +35,7 @@ docker compose up -d
 
 The stock Compose stack uses its PostgreSQL database for application and system state. Each replica keeps its cache in memory.
 
-For a disposable fresh-stack smoke test only, clear volumes first:
+For a disposable fresh-stack smoke test only, clear volumes first (after `.env` is initialized):
 
 ```bash
 docker compose down -v

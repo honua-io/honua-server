@@ -718,7 +718,7 @@ Expected: `Ready`, then a preflight payload with `readyForCoordinatedDeploy: tru
 
 - [Back up and restore](backup-and-restore.md)
 - [Monitor Honua Server](monitoring.md)
-- [Deploy on AWS and Azure](cloud-deployments.md)
+- [Cloud deployments](cloud-deployments.md)
 
 ### Investigation incident references
 
