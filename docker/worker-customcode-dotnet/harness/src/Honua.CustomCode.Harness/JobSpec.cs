@@ -269,7 +269,7 @@ public sealed class JobSpec
         return value;
     }
 
-    private static IReadOnlyDictionary<string, string?> ReadProcessEnv()
+    private static Dictionary<string, string?> ReadProcessEnv()
     {
         var map = new Dictionary<string, string?>(StringComparer.Ordinal);
         foreach (System.Collections.DictionaryEntry kv in Environment.GetEnvironmentVariables())
@@ -280,7 +280,7 @@ public sealed class JobSpec
         return map;
     }
 
-    private static IReadOnlyDictionary<string, string?> LoadSpecFile(string path)
+    private static Dictionary<string, string?> LoadSpecFile(string path)
     {
         if (!File.Exists(path))
         {
@@ -360,7 +360,7 @@ public sealed class JobSpec
         return doc.RootElement.Clone();
     }
 
-    private static IReadOnlyList<string> CoerceScope(string? raw)
+    private static string[] CoerceScope(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
         {

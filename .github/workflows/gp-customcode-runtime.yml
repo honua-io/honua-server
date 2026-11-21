@@ -69,3 +69,24 @@ jobs:
             -f "docker/worker-customcode-${RUNTIME}/Dockerfile" \
             -t "honua-worker-customcode-${RUNTIME}:ci" .
           docker image inspect "honua-worker-customcode-${RUNTIME}:ci" --format '{{.Id}} {{.Size}}'
+      - name: Verify offline .NET tool build as non-root uid 1001
+        if: matrix.runtime == 'dotnet'
+        run: |
+          set -euo pipefail
+          tar -C docker/worker-customcode-dotnet/harness --exclude='**/bin' --exclude='**/obj' --exclude='packages.lock.json' -cf - . \
+            | docker run --rm -i --network=none --entrypoint /bin/sh \
+                "honua-worker-customcode-dotnet:ci" \
+                -c 'set -eu
+                  test "$(id -u)" = "1001"
+                  tar -xf - -C /work/src
+                  dotnet build /work/src/samples/BufferTool/BufferTool.csproj \
+                    --configuration Release \
+                    --nologo \
+                    --source /opt/nuget/packages \
+                    -p:RestoreConfigFile=/opt/nuget/NuGet.config \
+                    -p:RestoreIgnoreFailedSources=false \
+                    -p:RestoreAdditionalProjectSources= \
+                    -p:RestoreAdditionalProjectFallbackFolders= \
+                    -p:NuGetAudit=false \
+                    --output /work/build
+                  test -f /work/build/BufferTool.dll'

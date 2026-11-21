@@ -14,7 +14,7 @@ common .NET geo stack + the Honua .NET SDK baked into the NuGet cache.
 
 ## Image contents
 
-- **Base:** `ghcr.io/osgeo/gdal:ubuntu-full-3.12.4` (pinned) — the full GDAL driver set
+- **Base:** `ghcr.io/osgeo/gdal:ubuntu-full-3.13.1` (pinned, Ubuntu 26.04 Resolute matching the .NET 11 SDK image) — the full GDAL driver set
   for tools that shell out to or P/Invoke GDAL.
 - Added: the **.NET 11 SDK** (copied from the digest-pinned SDK image of the build stage), `git`, `ca-certificates`.
 - Pre-warmed NuGet cache (no per-job restore for the common case): **NetTopologySuite**,
