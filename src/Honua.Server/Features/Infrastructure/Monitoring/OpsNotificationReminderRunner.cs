@@ -70,8 +70,7 @@ internal sealed class OpsNotificationReminderRunner(
         }
         else if (!findings.ContainsKey(schedule.SubjectId))
         {
-            await schedules.TryDeferAsync(schedule, timeProvider.GetUtcNow().AddMinutes(1), cancellationToken)
-                .ConfigureAwait(false);
+            await DeferUnlessRecentlyReportedAsync(schedule, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -96,6 +95,19 @@ internal sealed class OpsNotificationReminderRunner(
                 : OpsNotificationCadence.NextNotice(schedule.Severity, schedule.FirstSeenAt, now);
             await schedules.TryAdvanceAsync(schedule, next, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    // A finding some replica reported in the last two passes is still live there, and that replica sends the ordinal;
+    // deferring it here would keep pushing it past that replica's passes. Rows nobody reported recently are deferred so
+    // they cannot starve later reminders.
+    private async Task DeferUnlessRecentlyReportedAsync(OpsNotificationSchedule schedule, CancellationToken cancellationToken)
+    {
+        var now = timeProvider.GetUtcNow();
+        if (schedule.LastSeenAt is { } seen && seen >= now - PostgresOpsNotificationStore.RecentObservation)
+        {
+            return;
+        }
+        await schedules.TryDeferAsync(schedule, now.AddMinutes(1), cancellationToken).ConfigureAwait(false);
     }
 
     private static OpsNotification BuildNotification(OpsNotificationSchedule schedule, OperationProposal? proposal)

@@ -20,6 +20,9 @@ internal sealed record OpsNotificationSchedule
     public required OpsFindingSeverity Severity { get; init; }
     public required int NoticeNumber { get; init; }
     public required long Revision { get; init; }
+
+    // When any replica last reported the subject; null when the row was not read with it.
+    public DateTimeOffset? LastSeenAt { get; init; }
 }
 
 internal sealed class PostgresOpsNotificationStore(
@@ -38,6 +41,9 @@ internal sealed class PostgresOpsNotificationStore(
     // Each replica samples some sources on its own cadence (sign-in providers every five minutes), so one replica's
     // pass can miss a finding another still reports. An episode closes only after no replica has seen it for longer.
     internal static readonly TimeSpan FindingAbsenceGrace = TimeSpan.FromMinutes(10);
+
+    // Two reminder passes: a finding reported this recently is still live on some replica.
+    internal static readonly TimeSpan RecentObservation = TimeSpan.FromMinutes(2);
 
     internal static DateTimeOffset FirstNotice(OpsFindingSeverity severity, DateTimeOffset firstSeen)
         => severity >= OpsFindingSeverity.Critical ? firstSeen : firstSeen + WarningSettle;
@@ -173,7 +179,7 @@ internal sealed class PostgresOpsNotificationStore(
         {
             ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
             await using var command = new NpgsqlCommand($"""
-                SELECT source, subject_id, episode_id, first_seen_at, severity, notice_number, revision
+                SELECT source, subject_id, episode_id, first_seen_at, severity, notice_number, revision, last_seen_at
                 FROM {_schedules} WHERE closed_at IS NULL AND next_notice_at <= @now
                 ORDER BY next_notice_at, source, subject_id LIMIT @limit
                 """, connection);
@@ -191,7 +197,8 @@ internal sealed class PostgresOpsNotificationStore(
                     FirstSeenAt = reader.GetFieldValue<DateTimeOffset>(3),
                     Severity = (OpsFindingSeverity)reader.GetInt32(4),
                     NoticeNumber = reader.GetInt32(5),
-                    Revision = reader.GetInt64(6)
+                    Revision = reader.GetInt64(6),
+                    LastSeenAt = reader.GetFieldValue<DateTimeOffset>(7)
                 });
             }
             return schedules;

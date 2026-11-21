@@ -346,6 +346,40 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         (await store.ListDueAsync(clock.Now.AddMinutes(1), 100)).Should().BeEmpty();
     }
 
+    [IntegrationTest]
+    public async Task FindingSeenOnlyByAnotherReplica_LeavesDueOrdinalForThatReplica()
+    {
+        await using var harness = await ControlPlaneStateHarness.CreateAsync(database, nameof(OpsNotificationReminderRunnerTests));
+        var clock = new ReminderClock(DateTimeOffset.UtcNow);
+        var start = clock.Now;
+        var seen = CreateFindings();
+        seen.EvaluateAsync(Arg.Any<CancellationToken>()).Returns(new[] { Finding(start, OpsFindingSeverity.Critical) });
+        var missed = CreateFindings();
+        missed.EvaluateAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<OpsFinding>());
+        var outbox = Substitute.For<IAlertOutboxWriter>();
+        var notifications = CreateNotifications(outbox, new AlertOptions
+        {
+            Enabled = true,
+            Ops = new AlertOpsOptions { Enabled = true, Channels = ["webhook"] }
+        });
+        Task Pass(IOpsFindingsEvidenceSource source) => new OpsNotificationReminderRunner(harness.CreateNotificationStore(), source,
+            harness.CreateProposalStore(), notifications, clock, Substitute.For<IAlertDispatchHealth>()).RunAsync(CancellationToken.None);
+
+        await Pass(seen);
+        clock.Now = start.AddMinutes(29.5);
+        await Pass(seen);
+        clock.Now = start.AddMinutes(30);
+        await Pass(missed);
+        clock.Now = start.AddMinutes(30.5);
+        await Pass(seen);
+
+        await outbox.Received(2).CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+            Arg.Any<IReadOnlyList<AlertOutboxEntry>>(), Arg.Any<CancellationToken>());
+        await outbox.Received(1).CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+            Arg.Is<IReadOnlyList<AlertOutboxEntry>>(entries => entries.Count == 1 &&
+                entries[0].AlertEvent.DedupeKey.EndsWith(":Critical:1", StringComparison.Ordinal)), Arg.Any<CancellationToken>());
+    }
+
     private static async Task<EvidencePosture> FailedSelfCheckPostureAsync(TimeProvider clock)
     {
         var source = Substitute.For<IOpsSelfCheckSource>();
@@ -369,7 +403,8 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
             await store.ObserveAsync(new("finding", $"absent-{index:D3}", OpsFindingSeverity.Critical), clock.Now);
         }
         var original = await store.ListDueAsync(clock.Now, 100);
-        clock.Now = clock.Now.AddSeconds(1);
+        // No replica has reported these rows recently, so this replica defers them rather than leaving them to another.
+        clock.Now += PostgresOpsNotificationStore.RecentObservation + TimeSpan.FromSeconds(1);
         var finding = Finding(clock.Now, OpsFindingSeverity.Critical);
         var findings = CreateFindings();
         findings.EvaluateWithEvidenceAsync(Arg.Any<CancellationToken>()).Returns(new OpsFindingsEvaluation
