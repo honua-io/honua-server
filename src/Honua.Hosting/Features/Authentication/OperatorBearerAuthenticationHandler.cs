@@ -55,10 +55,10 @@ internal sealed class OperatorBearerAuthenticationHandler(
             return AuthenticateResult.Fail("The administrator password this operator bearer was issued from has changed.");
         }
 
-        return CreateResult(validation.Claims);
+        return CreateResult(validation.Claims, token);
     }
 
-    private AuthenticateResult CreateResult(IReadOnlyList<AdminAuthSessionClaim> claims)
+    private AuthenticateResult CreateResult(IReadOnlyList<AdminAuthSessionClaim> claims, string token)
     {
         try
         {

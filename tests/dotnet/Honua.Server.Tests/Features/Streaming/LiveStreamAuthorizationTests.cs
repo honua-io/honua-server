@@ -7,6 +7,7 @@ using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Server.Startup;
 using Honua.Server.Features.Streaming;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Security;
 using Microsoft.Extensions.Options;
 using Honua.TestKit.Attributes;
@@ -21,12 +22,21 @@ namespace Honua.Server.Tests.Features.Streaming;
 
 public sealed partial class LiveStreamAuthorizationTests
 {
-    [UnitTheory]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    public async Task Filter_EventDrivenCredentialRevocationAndExpiryCancelWithoutPeriodicAuthentication(bool expire, bool backingCredential)
+    public enum CredentialEnd
     {
+        TokenRevoked,
+        Expired,
+        BackingKeyRevoked
+    }
+
+    [UnitTheory]
+    [InlineData(CredentialEnd.TokenRevoked)]
+    [InlineData(CredentialEnd.Expired)]
+    [InlineData(CredentialEnd.BackingKeyRevoked)]
+    public async Task Filter_EventDrivenCredentialRevocationAndExpiryCancelWithoutPeriodicAuthentication(CredentialEnd end)
+    {
+        var expire = end == CredentialEnd.Expired;
+        var backingCredential = end == CredentialEnd.BackingKeyRevoked;
         var authentication = Substitute.For<IAuthenticationService>();
         var registrations = new ServiceCollection();
         registrations.AddLogging();
@@ -112,36 +122,29 @@ public sealed partial class LiveStreamAuthorizationTests
         ((IStatusCodeHttpResult)result!).StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
     }
 
-    [UnitTheory]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    [InlineData(true, true)]
-    public async Task Filter_PortalTransportApiKey_PreservesAdmissionHandler(bool header, bool syntheticTicket)
+    public enum KeyTransport
     {
-        var store = new InMemoryAdminApiKeyStore();
-        var key = await store.CreateAsync("stream-reader", ["read:test"], DateTimeOffset.UtcNow.AddMinutes(10), "test", CancellationToken.None);
-        await using var services = CreateServices(registrations =>
-        {
-            registrations.AddSingleton(new ApiKeyAuthenticationDependencies(
-                Options.Create(new ApiKeyAuthenticationOptions { EnvironmentName = "Production", AdminPassword = "Stream-proof-bootstrap-password-42!" }),
-                secretResolver: null, adminApiKeyStore: store));
-            registrations.AddAuthentication().AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(AuthenticationExtensions.ApiKeyScheme, _ => { });
-        });
+        Query,
+        Header
+    }
+
+    public enum AdmissionTicket
+    {
+        Handler,
+        Synthetic
+    }
+
+    [UnitTheory]
+    [InlineData(KeyTransport.Query, AdmissionTicket.Handler)]
+    [InlineData(KeyTransport.Header, AdmissionTicket.Handler)]
+    [InlineData(KeyTransport.Query, AdmissionTicket.Synthetic)]
+    [InlineData(KeyTransport.Header, AdmissionTicket.Synthetic)]
+    public async Task Filter_PortalTransportApiKey_PreservesAdmissionHandler(KeyTransport transport, AdmissionTicket ticket)
+    {
+        var syntheticTicket = ticket == AdmissionTicket.Synthetic;
+        await using var services = await CreatePortalApiKeyServicesAsync();
         using var scope = services.CreateScope();
-        var context = Context(scope.ServiceProvider, key.Key);
-        if (header)
-        {
-            context.Request.QueryString = QueryString.Empty;
-            context.Request.Headers["X-Esri-Authorization"] = "Bearer " + key.Key;
-        }
-        if (syntheticTicket)
-        {
-            var options = Substitute.For<IOptionsMonitor<PortalTokenAuthenticationOptions>>();
-            options.CurrentValue.Returns(new PortalTokenAuthenticationOptions { Enabled = true });
-            await new PortalTokenAuthenticationMiddleware(_ => Task.CompletedTask, options).InvokeAsync(context);
-            context.User.Identity!.IsAuthenticated.Should().BeTrue();
-        }
+        var context = await PresentPortalApiKeyAsync(scope.ServiceProvider, transport, ticket);
         var initial = await context.AuthenticateAsync(PortalTokenAuthenticationExtensions.PortalTokenScheme);
         initial.Succeeded.Should().BeTrue();
         if (syntheticTicket)
@@ -378,7 +381,7 @@ public sealed partial class LiveStreamAuthorizationTests
     public async Task Filter_SharingRevoked_ReloadsAudienceBeforePolicyRefresh()
     {
         var audience = Substitute.For<IPortalAudienceSnapshotProvider>();
-        audience.GetServiceIdsAsync("subject-a", "tenant-a", Arg.Any<CancellationToken>())
+        audience.GetServiceIdsAsync("subject-a", Arg.Is<TenantReadScope>(read => read.TenantId == "tenant-a"), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlySet<string>>(new HashSet<string>()));
         var tenant = Substitute.For<ITenantContext>();
         tenant.TenantId.Returns("tenant-a");
@@ -404,45 +407,16 @@ public sealed partial class LiveStreamAuthorizationTests
             PortalAudienceSnapshot.HasService(context, "svc").Should().BeFalse();
             return Results.Empty;
         });
-        await audience.Received(2).GetServiceIdsAsync("subject-a", "tenant-a", Arg.Any<CancellationToken>());
+        await audience.Received(2).GetServiceIdsAsync("subject-a", Arg.Is<TenantReadScope>(read => read.TenantId == "tenant-a"), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
     public async Task Filter_AdmissionAndInvalidationSerializeAudienceRefreshes()
     {
-        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var overlap = false;
-        var running = 0;
-        var calls = 0;
+        var gated = new GatedAudience();
         var audience = Substitute.For<IPortalAudienceSnapshotProvider>();
-        audience.GetServiceIdsAsync("subject-a", "tenant-a", Arg.Any<CancellationToken>())
-            .Returns(async call =>
-            {
-                if (Interlocked.Increment(ref running) != 1)
-                {
-                    overlap = true;
-                }
-                try
-                {
-                    var currentCall = Interlocked.Increment(ref calls);
-                    if (currentCall == 1)
-                    {
-                        return (IReadOnlySet<string>)new HashSet<string> { "svc" };
-                    }
-                    if (currentCall == 2)
-                    {
-                        started.TrySetResult();
-                        await resume.Task.WaitAsync(call.Arg<CancellationToken>());
-                        return (IReadOnlySet<string>)new HashSet<string> { "svc" };
-                    }
-                    return new HashSet<string>();
-                }
-                finally
-                {
-                    Interlocked.Decrement(ref running);
-                }
-            });
+        audience.GetServiceIdsAsync("subject-a", Arg.Is<TenantReadScope>(read => read.TenantId == "tenant-a"), Arg.Any<CancellationToken>())
+            .Returns(call => gated.ReadAsync(call.Arg<CancellationToken>()));
         var tenant = Substitute.For<ITenantContext>();
         tenant.TenantId.Returns("tenant-a");
         await using var services = CreateServices(registrations =>
@@ -461,12 +435,12 @@ public sealed partial class LiveStreamAuthorizationTests
             var policies = context.Features.Get<LiveStreamPolicyRefreshFeature>()!;
             policies.SetRefresh(_ => Task.FromResult(PortalAudienceSnapshot.HasService(context, "svc")));
             var admission = policies.RevalidateAsync!(static _ => Task.FromResult(true), CancellationToken.None);
-            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await gated.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
             var invalidation = registry.RefreshAsync(null, CancellationToken.None);
             await Task.Delay(100);
-            resume.TrySetResult();
+            gated.Resume.TrySetResult();
             await Task.WhenAll(admission, invalidation);
-            overlap.Should().BeFalse();
+            gated.Overlapped.Should().BeFalse();
             PortalAudienceSnapshot.HasService(context, "svc").Should().BeFalse();
             context.RequestAborted.IsCancellationRequested.Should().BeTrue();
             return Results.Empty;
@@ -488,24 +462,11 @@ public sealed partial class LiveStreamAuthorizationTests
         var issuer = services.GetRequiredService<IPortalTokenIssuer>();
         var key = await keyStore.CreateAsync("stream", ["admin:*"], DateTimeOffset.UtcNow.AddHours(1),
             "test", CancellationToken.None);
-        var issuance = await issuer.IssueAsync(new PortalTokenIssueRequest(
-            "alice", null, null, ["admin"], PortalTokenClientType.Referer, "https://stream-proof.example/",
-            DateTimeOffset.UtcNow.AddMinutes(30), Source: new PortalCredentialSource(
-                PortalCredentialSourceKind.ManagedApiKey, Reference: key.Record.Id.ToString("D"),
-                Version: PortalCredentialSourceVersion.ForManagedKey(key.Record))), CancellationToken.None);
+        var issuance = await IssueFromManagedKeyAsync(issuer, key.Record);
         var context = Context(scope.ServiceProvider, issuance.Token);
         context.Response.Body = new MemoryStream();
         context.User = (await context.AuthenticateAsync(PortalTokenAuthenticationExtensions.PortalTokenScheme)).Principal!;
-        var store = new FakeFeatureChangeEventStore();
-        store.Append(new Honua.Infrastructure.Events.FeatureChangeEventRequest
-        {
-            ServiceId = "test",
-            LayerId = 0,
-            ObjectId = 1,
-            Operation = "update",
-            Protocol = "test",
-            RequestId = "request"
-        });
+        var store = CreateStoreWithOneChange();
         using var manager = new FeatureStreamSessionManager(Options.Create(new FeatureStreamOptions()),
             Microsoft.Extensions.Logging.Abstractions.NullLogger<FeatureStreamSessionManager>.Instance,
             Honua.Server.Tests.Infrastructure.Telemetry.TestTelemetry.CreateFeatureStreamMetrics());
@@ -516,16 +477,7 @@ public sealed partial class LiveStreamAuthorizationTests
             await keyStore.RevokeAsync(key.Record.Id, CancellationToken.None);
             Assert.NotNull(await issuer.ValidateAsync(issuance.Token,
                 new PortalTokenBinding("https://stream-proof.example/", null), CancellationToken.None));
-            var policies = context.Features.Get<LiveStreamPolicyRefreshFeature>()!;
-            var security = new StreamSubscriberSecurity(["test"],
-                new Dictionary<(string, int), StreamLayerReadPolicy> { [("test", 0)] = new([], []) },
-                new Dictionary<(string, int), StreamLayerReadPolicy>());
-            security.EnableEventDrivenRefresh();
-            security.ReplayRevalidateAsync = async ct =>
-            {
-                await policies.RevalidateAsync!(static _ => Task.FromResult(true), ct);
-                context.RequestAborted.ThrowIfCancellationRequested();
-            };
+            var security = CreateReplayRevalidatedSecurity(context);
             var replay = typeof(FeatureStreamEndpoints).GetMethod("ReplayToSseAsync",
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
             var task = (Task<long>)replay.Invoke(null,
@@ -536,6 +488,119 @@ public sealed partial class LiveStreamAuthorizationTests
             Assert.Equal(0, context.Response.Body.Length);
             return Results.Empty;
         });
+    }
+
+    private static async Task<ServiceProvider> CreatePortalApiKeyServicesAsync()
+    {
+        var store = new InMemoryAdminApiKeyStore();
+        var key = await store.CreateAsync("stream-reader", ["read:test"], DateTimeOffset.UtcNow.AddMinutes(10), "test", CancellationToken.None);
+        return CreateServices(registrations =>
+        {
+            registrations.AddSingleton(new PortalApiKey(key.Key));
+            registrations.AddSingleton(new ApiKeyAuthenticationDependencies(
+                Options.Create(new ApiKeyAuthenticationOptions { EnvironmentName = "Production", AdminPassword = "Stream-proof-bootstrap-password-42!" }),
+                secretResolver: null, adminApiKeyStore: store));
+            registrations.AddAuthentication().AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(AuthenticationExtensions.ApiKeyScheme, _ => { });
+        });
+    }
+
+    private sealed record PortalApiKey(string Key);
+
+    private static async Task<HttpContext> PresentPortalApiKeyAsync(
+        IServiceProvider services, KeyTransport transport, AdmissionTicket ticket)
+    {
+        var key = services.GetRequiredService<PortalApiKey>().Key;
+        var context = Context(services, key);
+        if (transport == KeyTransport.Header)
+        {
+            context.Request.QueryString = QueryString.Empty;
+            context.Request.Headers["X-Esri-Authorization"] = "Bearer " + key;
+        }
+
+        if (ticket == AdmissionTicket.Synthetic)
+        {
+            var options = Substitute.For<IOptionsMonitor<PortalTokenAuthenticationOptions>>();
+            options.CurrentValue.Returns(new PortalTokenAuthenticationOptions { Enabled = true });
+            await new PortalTokenAuthenticationMiddleware(_ => Task.CompletedTask, options).InvokeAsync(context);
+            context.User.Identity!.IsAuthenticated.Should().BeTrue();
+        }
+
+        return context;
+    }
+
+    private static Task<PortalTokenIssuance> IssueFromManagedKeyAsync(IPortalTokenIssuer issuer, AdminApiKeyRecord key)
+        => issuer.IssueAsync(new PortalTokenIssueRequest(
+            "alice", null, null, ["admin"], PortalTokenClientType.Referer, "https://stream-proof.example/",
+            DateTimeOffset.UtcNow.AddMinutes(30), Source: new PortalCredentialSource(
+                PortalCredentialSourceKind.ManagedApiKey, Reference: key.Id.ToString("D"),
+                Version: PortalCredentialSourceVersion.ForManagedKey(key))), CancellationToken.None);
+
+    private static FakeFeatureChangeEventStore CreateStoreWithOneChange()
+    {
+        var store = new FakeFeatureChangeEventStore();
+        store.Append(new Honua.Infrastructure.Events.FeatureChangeEventRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            ObjectId = 1,
+            Operation = "update",
+            Protocol = "test",
+            RequestId = "request"
+        });
+        return store;
+    }
+
+    // Replay re-runs the stream's admission check, as the endpoint wires it for event-driven streams.
+    private static StreamSubscriberSecurity CreateReplayRevalidatedSecurity(HttpContext context)
+    {
+        var policies = context.Features.Get<LiveStreamPolicyRefreshFeature>()!;
+        var security = new StreamSubscriberSecurity(["test"],
+            new Dictionary<(string, int), StreamLayerReadPolicy> { [("test", 0)] = new([], []) },
+            new Dictionary<(string, int), StreamLayerReadPolicy>());
+        security.EnableEventDrivenRefresh();
+        security.ReplayRevalidateAsync = async ct =>
+        {
+            await policies.RevalidateAsync!(static _ => Task.FromResult(true), ct);
+            context.RequestAborted.ThrowIfCancellationRequested();
+        };
+        return security;
+    }
+
+    // Grants "svc" on the first read, holds the second read open, and revokes it on later reads.
+    private sealed class GatedAudience
+    {
+        private int _running;
+        private int _calls;
+
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Resume { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool Overlapped { get; private set; }
+
+        public async Task<IReadOnlySet<string>> ReadAsync(CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref _running) != 1)
+            {
+                Overlapped = true;
+            }
+
+            try
+            {
+                var call = Interlocked.Increment(ref _calls);
+                if (call == 2)
+                {
+                    Started.TrySetResult();
+                    await Resume.Task.WaitAsync(cancellationToken);
+                }
+
+                return call <= 2 ? new HashSet<string> { "svc" } : new HashSet<string>();
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _running);
+            }
+        }
     }
 
     private static ServiceProvider CreateServices(Action<IServiceCollection>? configure = null)

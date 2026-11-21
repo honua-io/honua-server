@@ -55,18 +55,7 @@ internal static class RealtimeServiceCollectionExtensions
         services.AddRealtimeEventLog(configuration);
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<IRealtimeStreamLifecycle, RealtimeStreamLifecycle>();
-        services.AddOptions<LiveStreamSecurityOptions>().Bind(configuration.GetSection(RealtimeOptions.SectionName))
-            .Validate(value => value.SecurityBackstopInterval > TimeSpan.Zero && value.SecurityBackstopInterval <= TimeSpan.FromSeconds(30),
-                "Realtime:SecurityBackstopInterval must be greater than zero and at most 30 seconds.").ValidateOnStart();
-        services.TryAddSingleton<LiveStreamSecurityRegistry>();
-        services.TryAddSingleton(provider => new RealtimeDispatcher(
-            provider.GetRequiredService<PostgresRealtimeEventLog>(),
-            provider.GetServices<IRealtimeFamilySource>(),
-            provider.GetRequiredService<IOptions<RealtimeOptions>>(),
-            provider.GetRequiredService<ILogger<RealtimeDispatcher>>())
-        {
-            Security = provider.GetService<LiveStreamSecurityRegistry>()
-        });
+        AddSecurityAwareDispatcher(services, configuration);
         services.TryAddSingleton<IRealtimeTransactionWriter, RealtimeTransactionWriter>();
         services.TryAddSingleton<IRealtimeWakeSignal>(provider => provider.GetRequiredService<RealtimeDispatcher>());
         services.TryAddSingleton<RealtimePresenceBatcher>();
@@ -100,6 +89,23 @@ internal static class RealtimeServiceCollectionExtensions
         }
 
         return services;
+    }
+
+    // Every task consumes security events, so each dispatcher refreshes its own streams.
+    private static void AddSecurityAwareDispatcher(IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddOptions<LiveStreamSecurityOptions>().Bind(configuration.GetSection(RealtimeOptions.SectionName))
+            .Validate(value => value.SecurityBackstopInterval > TimeSpan.Zero && value.SecurityBackstopInterval <= TimeSpan.FromSeconds(30),
+                "Realtime:SecurityBackstopInterval must be greater than zero and at most 30 seconds.").ValidateOnStart();
+        services.TryAddSingleton<LiveStreamSecurityRegistry>();
+        services.TryAddSingleton(provider => new RealtimeDispatcher(
+            provider.GetRequiredService<PostgresRealtimeEventLog>(),
+            provider.GetServices<IRealtimeFamilySource>(),
+            provider.GetRequiredService<IOptions<RealtimeOptions>>(),
+            provider.GetRequiredService<ILogger<RealtimeDispatcher>>())
+        {
+            Security = provider.GetService<LiveStreamSecurityRegistry>()
+        });
     }
 
     private static void AddStreamLifecycleServices(IServiceCollection services)
