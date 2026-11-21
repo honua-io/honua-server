@@ -31,7 +31,8 @@ internal sealed class PostgresOpsNotificationStore(
 
     // A Warning finding notifies only if it is still open after this window, so boot and deploy transients
     // (a target group before its first task, a probe during a restart) do not email the operator.
-    // Critical findings and escalations notify at once.
+    // Critical findings and escalations notify at once. The window lives here rather than in
+    // OpsNotificationCadence because Honua.Infrastructure.Monitoring already depends on this namespace.
     internal static readonly TimeSpan WarningSettle = TimeSpan.FromMinutes(15);
 
     internal static DateTimeOffset FirstNotice(OpsFindingSeverity severity, DateTimeOffset firstSeen)
@@ -141,7 +142,12 @@ internal sealed class PostgresOpsNotificationStore(
                     episode_id = CASE WHEN schedule.closed_at IS NOT NULL THEN EXCLUDED.episode_id ELSE schedule.episode_id END,
                     first_seen_at = CASE WHEN schedule.closed_at IS NOT NULL THEN @now ELSE schedule.first_seen_at END,
                     notice_number = CASE WHEN schedule.closed_at IS NOT NULL THEN 0 ELSE schedule.notice_number END,
-                    next_notice_at = CASE WHEN schedule.closed_at IS NOT NULL THEN @first_notice
+                    next_notice_at = CASE
+                        -- A Warning that reopens after it already notified keeps that notice's daily cadence,
+                        -- so a flapping alarm sends at most one Warning a day.
+                        WHEN schedule.closed_at IS NOT NULL AND @first_notice > @now AND schedule.notice_number > 0
+                            THEN GREATEST(@first_notice, schedule.next_notice_at)
+                        WHEN schedule.closed_at IS NOT NULL THEN @first_notice
                         WHEN @severity > schedule.severity THEN @now
                         WHEN @severity < schedule.severity THEN @now + interval '24 hours'
                         ELSE schedule.next_notice_at END,

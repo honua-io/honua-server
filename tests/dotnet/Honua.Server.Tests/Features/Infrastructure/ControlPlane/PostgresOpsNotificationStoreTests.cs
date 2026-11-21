@@ -48,8 +48,8 @@ public sealed class PostgresOpsNotificationStoreTests(DatabaseFixtureAdapter dat
         (await store.ListDueAsync(now.AddMinutes(16), 100)).Should().BeEmpty();
         await store.CloseMissingFindingsAsync([], now.AddMinutes(17));
         await store.ObserveAsync(new("finding", "subject", OpsFindingSeverity.Warning), now.AddMinutes(18));
-        (await store.ListDueAsync(now.AddMinutes(18), 100)).Should().BeEmpty();
-        var reopened = (await store.ListDueAsync(now.AddMinutes(18) + settle, 100)).Single();
+        (await store.ListDueAsync(now.AddMinutes(18) + settle, 100)).Should().BeEmpty();
+        var reopened = (await store.ListDueAsync(now.AddHours(24), 100)).Single();
         reopened.EpisodeId.Should().NotBe(first.EpisodeId);
         reopened.NoticeNumber.Should().Be(0);
     }
@@ -68,6 +68,25 @@ public sealed class PostgresOpsNotificationStoreTests(DatabaseFixtureAdapter dat
         await store.CloseMissingFindingsAsync(["critical", "escalates"], now.AddMinutes(5));
         var due = await store.ListDueAsync(now.AddDays(2), 100);
         due.Select(schedule => schedule.SubjectId).Should().BeEquivalentTo("critical", "escalates");
+    }
+
+    [IntegrationTest]
+    public async Task Observe_FlappingWarningSendsAtMostOneNoticeADay()
+    {
+        await using var harness = await CreateHarnessAsync();
+        var store = harness.CreateNotificationStore();
+        var now = DateTimeOffset.UtcNow;
+        await store.ObserveAsync(new("finding", "flap", OpsFindingSeverity.Warning), now);
+        var first = (await store.ListDueAsync(now.AddMinutes(16), 100)).Single();
+        (await store.TryAdvanceAsync(first, now.AddMinutes(16).AddHours(24))).Should().BeTrue();
+        for (var episode = 1; episode <= 3; episode++)
+        {
+            var reopenedAt = now.AddHours(episode);
+            await store.CloseMissingFindingsAsync([], reopenedAt.AddMinutes(-10));
+            await store.ObserveAsync(new("finding", "flap", OpsFindingSeverity.Warning), reopenedAt);
+            (await store.ListDueAsync(reopenedAt.AddMinutes(30), 100)).Should().BeEmpty();
+        }
+        (await store.ListDueAsync(now.AddMinutes(16).AddHours(24), 100)).Should().ContainSingle();
     }
 
     [IntegrationTest]
