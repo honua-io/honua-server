@@ -536,7 +536,7 @@ public class Cql2ParserTests
     [Fact]
     public void Parse_Bbox_OutOfRangeGeographicCoordinates_ThrowsArgumentException()
     {
-        const string cql = "S_INTERSECTS(geom, BBOX(200,-10,210,10))";
+        const string cql = "S_INTERSECTS(geom, BBOX(200,-10,-170,10))";
 
         var action = () => _parser.Parse(cql);
 
@@ -544,6 +544,18 @@ public class Cql2ParserTests
         exception.Message.Should().StartWith("Failed to parse CQL2 expression.");
         exception.InnerException.Should().BeOfType<ArgumentException>()
             .Which.Message.Should().Contain("Invalid BBOX coordinates");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("S_INTERSECTS(geom, BBOX(385000, 5810000, 395000, 5820000))")]
+    [InlineData("S_INTERSECTS(geom, BBOX(35, -120, 40, -115))")]
+    public void Parse_Bbox_ProjectedAndNorthEastCoordinates_DefersCrsRangeValidationToFilterProcessor(string cql)
+    {
+        var result = _parser.Parse(cql);
+
+        var spatial = result.Should().BeOfType<SpatialPredicate>().Subject;
+        spatial.Right.Should().BeOfType<GeometryLiteral>();
     }
 
     [Trait("Tier", "Fast")]

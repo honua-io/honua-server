@@ -130,6 +130,27 @@ public sealed class FeatureQueryBuilderH3SummaryTests
         result.Sql.Should().Contain("LATERAL h3_grid_disk");
     }
 
+    [Fact]
+    public void BuildH3AggregationQuery_WithPolyfillGeometry_DumpsPolygonsAndPassesInteriorRingHoles()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var h3Query = new H3AggregationQuery
+        {
+            Resolution = 7,
+            PolyfillGeometry = [0x01, 0x03, 0x00, 0x00, 0x00],
+            PolyfillSrid = 3857,
+            KRingDistance = 1
+        };
+
+        var result = queryBuilder.BuildH3AggregationQuery(layerId: 1, new FeatureQuery { SpatialReferenceSrid = 4326 }, h3Query);
+
+        result.Sql.Should().Contain("WITH polyfill_cells AS (");
+        result.Sql.Should().Contain("ST_MakePolygon(ST_ExteriorRing(poly.geom))::polygon");
+        result.Sql.Should().Contain("ARRAY(SELECT ST_MakePolygon(ST_InteriorRingN(poly.geom, ring_index))::polygon FROM generate_series(1, ST_NumInteriorRings(poly.geom)) AS ring_index)");
+        result.Sql.Should().Contain("FROM ST_Dump(ST_Transform(ST_SetSRID(ST_GeomFromWKB($3), 3857), 4326)) AS poly WHERE ST_Dimension(poly.geom) = 2");
+        result.Sql.Should().Contain(", aggregated AS (SELECT _h3cell::text AS \"cellIndex\"");
+    }
+
     private static FeatureQueryBuilder CreateQueryBuilder()
     {
         var poolProvider = new DefaultObjectPoolProvider();

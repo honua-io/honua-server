@@ -378,7 +378,7 @@ internal sealed partial class PbfQueryFormatter
 
         double scale = ComputeScale(geometryLimits, quantizationTransform);
         return new FeatureEncoding(queryFields, fieldIndex, objectIdFieldName, returnGeometry,
-            effectiveZ, effectiveM, geometryLimits, scale, quantizationTransform);
+            effectiveZ, effectiveM, geometryLimits, scale, quantizationTransform, srid);
     }
 
     private static void WriteFeature(
@@ -392,7 +392,8 @@ internal sealed partial class PbfQueryFormatter
         bool returnM,
         GeometryLimits geometryLimits,
         double scale,
-        QuantizationTransform? quantizationTransform)
+        QuantizationTransform? quantizationTransform,
+        int srid = 0)
     {
         // field 1: attributes (repeated Value messages)
         WriteAttributes(ref writer, feature, fields, fieldIndex, objectIdFieldName);
@@ -400,7 +401,7 @@ internal sealed partial class PbfQueryFormatter
         // field 2: geometry
         if (returnGeometry && feature.Geometry != null)
         {
-            WriteGeometry(ref writer, feature.Geometry, returnZ, returnM, geometryLimits, scale, quantizationTransform);
+            WriteGeometry(ref writer, feature.Geometry, returnZ, returnM, geometryLimits, scale, quantizationTransform, srid);
         }
     }
 
@@ -489,6 +490,9 @@ internal sealed partial class PbfQueryFormatter
             case byte[] bytes:
                 writer.WriteBytesAlways(8, bytes);  // bytes_value
                 break;
+            case ReadOnlyMemory<byte> rom:
+                writer.WriteBytesAlways(8, rom.Span); // bytes_value
+                break;
             case bool b:
                 writer.WriteBoolAlways(9, b);       // bool_value
                 break;
@@ -523,7 +527,8 @@ internal sealed partial class PbfQueryFormatter
         bool returnM,
         GeometryLimits geometryLimits,
         double scale,
-        QuantizationTransform? quantizationTransform)
+        QuantizationTransform? quantizationTransform,
+        int srid = 0)
     {
         Geometry? geometry;
         try
@@ -537,6 +542,20 @@ internal sealed partial class PbfQueryFormatter
 
         if (geometry == null || geometry.IsEmpty)
             return;
+
+        if (geometry.SRID <= 0 && srid > 0)
+        {
+            geometry.SRID = srid;
+        }
+
+        if (geometryLimits != null)
+        {
+            geometry = GeometryOutputProcessor.ApplyLimitsInPlace(geometry, geometryLimits);
+            if (geometry == null || geometry.IsEmpty)
+            {
+                return;
+            }
+        }
 
         var geoMsg = new ProtobufWriter(geometry.NumPoints * 16 + 32);
 
@@ -575,24 +594,24 @@ internal sealed partial class PbfQueryFormatter
         // schema carries independent Z/M scales, so keep the established six-decimal
         // ordinate precision instead of accidentally reusing the XY tolerance.
         var ordinateScale = quantizationTransform is null ? scale : DefaultQuantizationScale;
-        long prevX = 0, prevY = 0;
+        long prevX = 0, prevY = 0, prevZ = 0, prevM = 0;
 
         switch (geometry)
         {
             case Point pt:
-                AppendCoordinate(coords, pt.Coordinate, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform);
+                AppendCoordinate(coords, pt.Coordinate, scale, ordinateScale, ref prevX, ref prevY, ref prevZ, ref prevM, returnZ, returnM, quantizationTransform);
                 break;
 
             case MultiPoint mp:
                 lengths.Add((uint)mp.NumGeometries);
                 for (int i = 0; i < mp.NumGeometries; i++)
                 {
-                    AppendCoordinate(coords, mp.GetGeometryN(i).Coordinate, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform);
+                    AppendCoordinate(coords, mp.GetGeometryN(i).Coordinate, scale, ordinateScale, ref prevX, ref prevY, ref prevZ, ref prevM, returnZ, returnM, quantizationTransform);
                 }
                 break;
 
             case LineString ls:
-                AppendCoordinateSequence(coords, ls.CoordinateSequence, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform: quantizationTransform);
+                AppendCoordinateSequence(coords, ls.CoordinateSequence, scale, ordinateScale, ref prevX, ref prevY, ref prevZ, ref prevM, returnZ, returnM, quantizationTransform: quantizationTransform);
                 lengths.Add((uint)ls.NumPoints);
                 break;
 
@@ -604,18 +623,20 @@ internal sealed partial class PbfQueryFormatter
                     // Each path restarts delta encoding from an absolute first vertex.
                     prevX = 0;
                     prevY = 0;
-                    AppendCoordinateSequence(coords, line.CoordinateSequence, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform: quantizationTransform);
+                    prevZ = 0;
+                    prevM = 0;
+                    AppendCoordinateSequence(coords, line.CoordinateSequence, scale, ordinateScale, ref prevX, ref prevY, ref prevZ, ref prevM, returnZ, returnM, quantizationTransform: quantizationTransform);
                 }
                 break;
 
             case Polygon poly:
-                EncodePolygon(poly, coords, lengths, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform);
+                EncodePolygon(poly, coords, lengths, scale, ordinateScale, ref prevX, ref prevY, ref prevZ, ref prevM, returnZ, returnM, quantizationTransform);
                 break;
 
             case MultiPolygon mpoly:
                 for (int i = 0; i < mpoly.NumGeometries; i++)
                 {
-                    EncodePolygon((Polygon)mpoly.GetGeometryN(i), coords, lengths, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform);
+                    EncodePolygon((Polygon)mpoly.GetGeometryN(i), coords, lengths, scale, ordinateScale, ref prevX, ref prevY, ref prevZ, ref prevM, returnZ, returnM, quantizationTransform);
                 }
                 break;
         }
@@ -631,6 +652,8 @@ internal sealed partial class PbfQueryFormatter
         double ordinateScale,
         ref long prevX,
         ref long prevY,
+        ref long prevZ,
+        ref long prevM,
         bool returnZ,
         bool returnM,
         QuantizationTransform? quantizationTransform)
@@ -645,8 +668,10 @@ internal sealed partial class PbfQueryFormatter
         lengths.Add((uint)exterior.NumPoints);
         prevX = 0;
         prevY = 0;
+        prevZ = 0;
+        prevM = 0;
         AppendCoordinateSequence(
-            coords, exterior.CoordinateSequence, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM,
+            coords, exterior.CoordinateSequence, scale, ordinateScale, ref prevX, ref prevY, ref prevZ, ref prevM, returnZ, returnM,
             quantizationTransform: quantizationTransform,
             reverse: ShouldReverseRing(exterior, clockwise: true));
 
@@ -657,8 +682,10 @@ internal sealed partial class PbfQueryFormatter
             lengths.Add((uint)ring.NumPoints);
             prevX = 0;
             prevY = 0;
+            prevZ = 0;
+            prevM = 0;
             AppendCoordinateSequence(
-                coords, ring.CoordinateSequence, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM,
+                coords, ring.CoordinateSequence, scale, ordinateScale, ref prevX, ref prevY, ref prevZ, ref prevM, returnZ, returnM,
                 quantizationTransform: quantizationTransform,
                 reverse: ShouldReverseRing(ring, clockwise: false));
         }
@@ -683,6 +710,8 @@ internal sealed partial class PbfQueryFormatter
         double ordinateScale,
         ref long prevX,
         ref long prevY,
+        ref long prevZ,
+        ref long prevM,
         bool returnZ,
         bool returnM,
         QuantizationTransform? quantizationTransform)
@@ -699,13 +728,17 @@ internal sealed partial class PbfQueryFormatter
         if (returnZ)
         {
             var z = double.IsNaN(coord.Z) ? 0d : coord.Z;
-            coords.Add((long)Math.Round(z * ordinateScale));
+            var qz = (long)Math.Round(z * ordinateScale);
+            coords.Add(qz - prevZ);
+            prevZ = qz;
         }
 
         if (returnM)
         {
             var m = double.IsNaN(coord.M) ? 0d : coord.M;
-            coords.Add((long)Math.Round(m * ordinateScale));
+            var qm = (long)Math.Round(m * ordinateScale);
+            coords.Add(qm - prevM);
+            prevM = qm;
         }
     }
 
@@ -716,6 +749,8 @@ internal sealed partial class PbfQueryFormatter
         double ordinateScale,
         ref long prevX,
         ref long prevY,
+        ref long prevZ,
+        ref long prevM,
         bool returnZ,
         bool returnM,
         QuantizationTransform? quantizationTransform = null,
@@ -739,7 +774,9 @@ internal sealed partial class PbfQueryFormatter
                     z = 0d;
                 }
 
-                coords.Add((long)Math.Round(z * ordinateScale));
+                var qz = (long)Math.Round(z * ordinateScale);
+                coords.Add(qz - prevZ);
+                prevZ = qz;
             }
 
             if (returnM)
@@ -750,7 +787,9 @@ internal sealed partial class PbfQueryFormatter
                     m = 0d;
                 }
 
-                coords.Add((long)Math.Round(m * ordinateScale));
+                var qm = (long)Math.Round(m * ordinateScale);
+                coords.Add(qm - prevM);
+                prevM = qm;
             }
         }
     }

@@ -87,6 +87,43 @@ public sealed class GeoServicesDatumTransformationCatalogTests
         selection.ProjPipeline.Should().Contain("us_noaa_conus.tif");
     }
 
+    [UnitTheory]
+    [InlineData(Nad27, Nad83, true)]
+    [InlineData(Nad83, Nad27, false)]
+    public void TryGetForEnvelope_SeattleNorthernUsOverlapZone_SelectsConusGridDeterministically(
+        int fromSrid, int toSrid, bool expectedForward)
+    {
+        var found = _catalog.TryGetForEnvelope(fromSrid, toSrid, -122.4, 47.5, -122.2, 47.7, out var selection);
+
+        found.Should().BeTrue();
+        selection!.Wkid.Should().Be(1241);
+        selection.RequiredGrids.Should().Equal("us_noaa_conus.tif");
+        selection.TransformForward.Should().Be(expectedForward);
+    }
+
+    [UnitTheory]
+    [InlineData(172.0, 52.0, 178.0, 55.0)]
+    [InlineData(-165.0, 55.0, -150.0, 62.0)]
+    [InlineData(175.0, 52.0, -165.0, 60.0)]
+    public void TryGetForEnvelope_AlaskaAntimeridianLobesAndCrossing_SelectsAlaskaGrid(
+        double west, double south, double east, double north)
+    {
+        var found = _catalog.TryGetForEnvelope(Nad27, Nad83, west, south, east, north, out var selection);
+
+        found.Should().BeTrue();
+        selection!.Wkid.Should().Be(1243);
+        selection.RequiredGrids.Should().Contain("us_noaa_alaska.tif");
+    }
+
+    [UnitTest]
+    public void TryGetForEnvelope_NonCrossingBoxSpanningOppositeGlobe_DoesNotMatchAlaska()
+    {
+        var found = _catalog.TryGetForEnvelope(Nad27, Nad83, -170.0, 52.0, 170.0, 70.0, out var selection);
+
+        found.Should().BeFalse();
+        selection.Should().BeNull();
+    }
+
     [UnitTest]
     public void TryGetForEnvelope_BoxInsideConusAndCanada_SelectsCanadianPriority()
     {

@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Domain;
@@ -17,6 +18,7 @@ using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Services;
 using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
@@ -178,6 +180,49 @@ internal static partial class FeatureServerEndpoints
                 [geometryError ?? "returnGeometry must be a boolean."]);
         }
 
+        if (!TryParseBoolValue(values, "returnZ", false, out var returnZ, out var returnZError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid returnZ parameter",
+                [returnZError ?? "returnZ must be a boolean."]);
+        }
+
+        if (!TryParseBoolValue(values, "returnM", false, out var returnM, out var returnMError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid returnM parameter",
+                [returnMError ?? "returnM must be a boolean."]);
+        }
+
+        if (!TryParseIntValue(values, "geometryPrecision", out var geometryPrecision, out var precisionError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid geometryPrecision parameter",
+                [precisionError ?? "geometryPrecision must be an integer."]);
+        }
+
+        if (geometryPrecision is < 0)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid geometryPrecision parameter",
+                ["geometryPrecision cannot be negative."]);
+        }
+
+        double? maxAllowableOffset = null;
+        var maxAllowableOffsetStr = GetValueString(values, "maxAllowableOffset");
+        if (!string.IsNullOrWhiteSpace(maxAllowableOffsetStr))
+        {
+            if (!double.TryParse(maxAllowableOffsetStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedOffset) ||
+                double.IsNaN(parsedOffset) || double.IsInfinity(parsedOffset) || parsedOffset < 0)
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid maxAllowableOffset parameter",
+                    ["maxAllowableOffset must be a non-negative number."]);
+            }
+
+            maxAllowableOffset = parsedOffset;
+        }
+
         if (!TryParseIntValue(values, "resultOffset", out var resultOffset, out var offsetError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -235,15 +280,19 @@ internal static partial class FeatureServerEndpoints
         // Feature responses page at the service record cap and read one probe row for
         // exceededTransferLimit; count and ids responses carry no page, as on query.
         var featurePage = !returnIdsOnly && !returnCountOnly;
-        var pageLimit = featurePage
-            ? ResolveTopFeaturesPageLimit(resultRecordCount, queryLimits.MaxRecordCount)
-            : resultRecordCount;
+        var pageLimit = returnCountOnly
+            ? null
+            : (featurePage
+                ? ResolveTopFeaturesPageLimit(resultRecordCount, queryLimits.MaxRecordCount)
+                : resultRecordCount);
         query = query with
         {
             TopFilter = topFilter,
             SpatialReferenceSrid = resource.ReadSrid(),
             OutputSrid = outputSrid,
-            Offset = resultOffset,
+            IncludeZ = returnZ,
+            IncludeM = returnM,
+            Offset = returnCountOnly ? null : resultOffset,
             Limit = featurePage && pageLimit < int.MaxValue ? pageLimit + 1 : pageLimit
         };
 
@@ -326,6 +375,10 @@ internal static partial class FeatureServerEndpoints
                 topFeaturesIsPretty);
         }
 
+        var requestedOutFields = query.OutFields.HasValue && !query.OutFields.Value.IsDefaultOrEmpty
+            ? [.. query.OutFields.Value]
+            : (string[]?)null;
+
         // f=pbf returns the FeatureResult arm of the FeatureCollectionPBuffer; ArcGIS
         // queryTopFeatures supports pbf, so emit protobuf rather than rejecting it.
         if (topFeaturesIsPbf)
@@ -336,19 +389,35 @@ internal static partial class FeatureServerEndpoints
             {
                 ReturnGeometry = returnGeometry,
                 OutputSrid = topSrid,
-                ReturnZ = false,
-                ReturnM = false,
-                GeometryPrecision = null,
-                MaxAllowableOffset = null,
-                OutFields = query.OutFields.HasValue && !query.OutFields.Value.IsDefaultOrEmpty
-                        ? [.. query.OutFields.Value]
-                        : null
+                ReturnZ = returnZ,
+                ReturnM = returnM,
+                GeometryPrecision = geometryPrecision,
+                MaxAllowableOffset = maxAllowableOffset,
+                OutFields = requestedOutFields
             });
             return pbfPayload;
         }
 
+        var baseGeometryLimits = context.RequestServices.GetService<IOptions<LimitsOptions>>()?.Value?.Geometry ?? new GeometryLimits();
+        var effectiveGeometryLimits = (geometryPrecision.HasValue || maxAllowableOffset.HasValue)
+            ? GeometryOutputProcessor.CreateEffectiveLimits(
+                baseGeometryLimits,
+                geometryPrecision,
+                maxAllowableOffset,
+                forceSimplify: maxAllowableOffset is > 0)
+            : null;
+
         return CreateTopFeaturesJsonResult(
-            BuildTopFeaturesJsonResponse(result, schemaResource, returnGeometry, outputSrid), topFeaturesIsPretty);
+            BuildTopFeaturesJsonResponse(
+                result,
+                schemaResource,
+                returnGeometry,
+                outputSrid,
+                effectiveGeometryLimits,
+                returnZ,
+                returnM,
+                requestedOutFields),
+            topFeaturesIsPretty);
     }
 
     internal static int ResolveTopFeaturesPageLimit(int? resultRecordCount, int maxRecordCount)
@@ -369,13 +438,25 @@ internal static partial class FeatureServerEndpoints
         QueryResult<Feature> result,
         MetadataV2Object resource,
         bool returnGeometry,
-        int? outputSrid)
+        int? outputSrid,
+        GeometryLimits? geometryLimits = null,
+        bool returnZ = false,
+        bool returnM = false,
+        IReadOnlyList<string>? outFields = null)
     {
+        var geometryType = resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;
+        var hasGeometry = returnGeometry && geometryType is not MetadataV2GeometryType.None;
+        var srid = outputSrid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
+        var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+        HashSet<string>? requestedFieldSet = outFields is { Count: > 0 } && !outFields.Any(static f => f == "*")
+            ? new HashSet<string>(outFields, StringComparer.OrdinalIgnoreCase)
+            : null;
         var temporalFieldTypes = GeoServicesFieldConventions.ResolveTemporalFieldTypes(resource);
         var responseFeatures = result.Items.Select(feature =>
         {
             var attributes = feature.Attributes
-                .Where(kvp => !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
+                .Where(kvp => !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key)
+                    && (requestedFieldSet is null || requestedFieldSet.Contains(kvp.Key)))
                 .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
             GeoServicesFieldConventions.CoerceTemporalAttributes(attributes, temporalFieldTypes);
             return new GeoServicesFeature
@@ -383,7 +464,7 @@ internal static partial class FeatureServerEndpoints
                 Attributes = attributes,
                 Geometry = returnGeometry
                     ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
-                        feature.Geometry, null, null, false, false)
+                        feature.Geometry, srid, geometryLimits, returnZ, returnM)
                     : null,
                 // returnGeometry=false must omit the geometry property entirely (not emit
                 // null), matching the normal query operation.
@@ -391,10 +472,12 @@ internal static partial class FeatureServerEndpoints
             };
         }).ToArray();
 
-        var geometryType = resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;
-        var hasGeometry = returnGeometry && geometryType is not MetadataV2GeometryType.None;
-        var srid = outputSrid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
-        var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+        var visibleFields = ResolveVisibleFieldsV2(resource);
+        if (requestedFieldSet is not null)
+        {
+            visibleFields = visibleFields.Where(field => requestedFieldSet.Contains(field.Name));
+        }
+
         var response = new QueryResponse
         {
             GeometryType = hasGeometry ? MapGeometryTypeV2(geometryType) : null,
@@ -402,7 +485,7 @@ internal static partial class FeatureServerEndpoints
                 ? new GeoServicesSpatialReference { Wkid = srid, LatestWkid = srid }
                 : null,
             ObjectIdFieldName = objectIdField,
-            Fields = [.. ResolveVisibleFieldsV2(resource).Select(field => MapFieldInfoV2(field, objectIdField))],
+            Fields = [.. visibleFields.Select(field => MapFieldInfoV2(field, objectIdField))],
             Features = responseFeatures,
             ExceededTransferLimit = result.HasMoreResults
         };

@@ -220,10 +220,31 @@ internal static partial class FeatureServerEndpoints
 
         var response = new QueryResponse
         {
+            Fields = BuildDateBinFields(resource, dateBin.OutStatistics ?? ImmutableArray<StatisticDefinition>.Empty),
             Features = responseFeatures
         };
 
         return Results.Json(response, FeatureServerJsonContext.Default.QueryResponse, contentType: "application/json");
+    }
+
+    internal static GeoServicesFieldInfo[] BuildDateBinFields(
+        MetadataV2Object resource,
+        ImmutableArray<StatisticDefinition> outStatistics)
+    {
+        var fields = new List<GeoServicesFieldInfo>
+        {
+            new()
+            {
+                Name = "boundary",
+                Type = "esriFieldTypeDate",
+                Alias = "boundary",
+                Editable = false,
+                Nullable = true
+            }
+        };
+
+        AppendBinStatisticsFields(fields, resource, outStatistics);
+        return [.. fields];
     }
 
     internal static IResult? RequireProEditionForDateBins(HttpContext context)
@@ -234,7 +255,7 @@ internal static partial class FeatureServerEndpoints
             "Temporal histogram");
     }
 
-    private static bool TryParseDateBin(string json, string binField, out DateBinDefinition dateBin, out string? error)
+    internal static bool TryParseDateBin(string json, string binField, out DateBinDefinition dateBin, out string? error)
     {
         dateBin = default;
         error = null;
@@ -292,8 +313,17 @@ internal static partial class FeatureServerEndpoints
                     return false;
                 }
 
-                var intervalUnit = intervalUnitElement.GetString()?.ToLowerInvariant() ?? "days";
-                var interval = ConvertToTimeSpan(intervalCount, intervalUnit);
+                var intervalUnit = intervalUnitElement.GetString()?.ToLowerInvariant();
+                if (string.IsNullOrWhiteSpace(intervalUnit))
+                {
+                    error = "fixedBin.intervalUnit must not be empty.";
+                    return false;
+                }
+
+                if (!TryConvertToTimeSpan(intervalCount, intervalUnit, out var interval, out error))
+                {
+                    return false;
+                }
 
                 DateTimeOffset? origin = null;
                 if (fixedElement.TryGetProperty("origin", out var originElement) &&
@@ -322,17 +352,60 @@ internal static partial class FeatureServerEndpoints
         }
     }
 
-    private static TimeSpan ConvertToTimeSpan(int count, string unit)
+    internal static bool TryConvertToTimeSpan(int count, string unit, out TimeSpan interval, out string? error)
     {
-        return unit switch
+        interval = default;
+        error = null;
+
+        if (count <= 0)
         {
-            "seconds" => TimeSpan.FromSeconds(count),
-            "minutes" => TimeSpan.FromMinutes(count),
-            "hours" => TimeSpan.FromHours(count),
-            "days" => TimeSpan.FromDays(count),
-            "weeks" => TimeSpan.FromDays(count * 7),
-            _ => TimeSpan.FromDays(count)
-        };
+            error = "fixedBin.intervalCount must be greater than zero.";
+            return false;
+        }
+
+        try
+        {
+            switch (unit)
+            {
+                case "milliseconds":
+                    interval = TimeSpan.FromMilliseconds(count);
+                    return true;
+                case "seconds":
+                    interval = TimeSpan.FromSeconds(count);
+                    return true;
+                case "minutes":
+                    interval = TimeSpan.FromMinutes(count);
+                    return true;
+                case "hours":
+                    interval = TimeSpan.FromHours(count);
+                    return true;
+                case "days":
+                    interval = TimeSpan.FromDays(count);
+                    return true;
+                case "weeks":
+                    interval = TimeSpan.FromDays(count * 7L);
+                    return true;
+                case "months":
+                    interval = TimeSpan.FromDays(count * 30L);
+                    return true;
+                case "years":
+                    interval = TimeSpan.FromDays(count * 365L);
+                    return true;
+                default:
+                    error = $"Unsupported fixedBin.intervalUnit '{unit}'. Must be one of: milliseconds, seconds, minutes, hours, days, weeks, months, years.";
+                    return false;
+            }
+        }
+        catch (OverflowException)
+        {
+            error = "fixedBin.intervalCount is too large for the specified intervalUnit.";
+            return false;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            error = "fixedBin.intervalCount is out of range for the specified intervalUnit.";
+            return false;
+        }
     }
 
     private static bool TryParseOutStatistics(string json, out ImmutableArray<StatisticDefinition> outStats, out string? error)

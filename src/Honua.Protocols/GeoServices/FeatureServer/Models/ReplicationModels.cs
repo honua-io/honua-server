@@ -41,7 +41,8 @@ public sealed class CreateReplicaResponse
     public string? SyncModel { get; set; }
 
     [JsonPropertyName("serverGen")]
-    public long ServerGen { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? ServerGen { get; set; }
 
     [JsonPropertyName("layers")]
     public ReplicaLayerInfo[]? Layers { get; set; }
@@ -316,7 +317,8 @@ public sealed class SynchronizeReplicaResponse
     public string? SyncDirection { get; set; }
 
     [JsonPropertyName("serverGen")]
-    public long ServerGen { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? ServerGen { get; set; }
 
     [JsonPropertyName("edits")]
     public LayerChanges[]? Edits { get; set; }

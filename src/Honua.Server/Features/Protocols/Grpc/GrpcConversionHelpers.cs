@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
+using System.Text.Json;
 using Google.Protobuf;
 using Grpc.Core;
 using Google.Protobuf.Collections;
@@ -364,6 +366,50 @@ internal static class GrpcConversionHelpers
             case DateTimeOffset dto:
                 av.DatetimeValue = dto.ToUnixTimeMilliseconds();
                 break;
+            case DateOnly dateOnly:
+                av.StringValue = GrpcTypedValues.FormatDate(dateOnly);
+                break;
+            case TimeOnly timeOnly:
+                av.StringValue = GrpcTypedValues.FormatTime(timeOnly);
+                break;
+            case Guid guid:
+                av.StringValue = guid.ToString("D", CultureInfo.InvariantCulture);
+                break;
+            case JsonElement jsonElement:
+                switch (jsonElement.ValueKind)
+                {
+                    case JsonValueKind.Null:
+                    case JsonValueKind.Undefined:
+                        av.NullValue = Proto.NullValue.NullValue;
+                        break;
+                    case JsonValueKind.String:
+                        av.StringValue = jsonElement.GetString() ?? string.Empty;
+                        break;
+                    case JsonValueKind.Number:
+                        if (jsonElement.TryGetInt64(out var lVal))
+                        {
+                            av.Int64Value = lVal;
+                        }
+                        else if (jsonElement.TryGetDouble(out var dVal))
+                        {
+                            av.DoubleValue = dVal;
+                        }
+                        else
+                        {
+                            av.StringValue = jsonElement.GetRawText();
+                        }
+                        break;
+                    case JsonValueKind.True:
+                        av.BoolValue = true;
+                        break;
+                    case JsonValueKind.False:
+                        av.BoolValue = false;
+                        break;
+                    default:
+                        av.StringValue = jsonElement.GetRawText();
+                        break;
+                }
+                break;
             case byte[] bytes:
                 av.BytesValue = ByteString.CopyFrom(bytes);
                 break;
@@ -372,6 +418,9 @@ internal static class GrpcConversionHelpers
                 break;
             case decimal dec:
                 av.DoubleValue = (double)dec;
+                break;
+            case IFormattable formattable:
+                av.StringValue = formattable.ToString(null, CultureInfo.InvariantCulture);
                 break;
             default:
                 av.StringValue = GrpcTypedValues.ToInvariantText(value);
@@ -539,7 +588,7 @@ internal static class GrpcConversionHelpers
         return proto;
     }
 
-    private static Proto.Geometry ToProtoGeometry(byte[] wkb, GeometryLimits? geometryLimits)
+    internal static Proto.Geometry ToProtoGeometry(byte[] wkb, GeometryLimits? geometryLimits)
     {
         // Without simplification the stored WKB maps straight onto the response geometry.
         if (geometryLimits is not { SimplifyTolerance: > 0 }

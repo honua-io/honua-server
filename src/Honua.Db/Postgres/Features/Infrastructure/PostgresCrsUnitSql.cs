@@ -18,7 +18,7 @@ internal static class PostgresCrsUnitSql
             + $"WHEN COALESCE(proj4text, '') ILIKE '%+units=ft%' OR COALESCE(proj4text, '') ILIKE '%+units=foot%' THEN {foot} "
             + "WHEN COALESCE(proj4text, '') ILIKE '%+units=ind-ft%' THEN 0.3047995102481469 "
             + "WHEN COALESCE(proj4text, '') ILIKE '%+units=km%' THEN 1000 "
-            + "WHEN COALESCE(proj4text, '') ILIKE '%+units=m%' OR COALESCE(proj4text, '') ILIKE '%+units=meter%' OR COALESCE(proj4text, '') ILIKE '%+units=metre%' THEN 1 "
+            + "WHEN COALESCE(proj4text, '') ~ '\\+units=m(\\s|$)' OR COALESCE(proj4text, '') ILIKE '%+units=meter%' OR COALESCE(proj4text, '') ILIKE '%+units=metre%' THEN 1 "
             + "ELSE NULL END FROM spatial_ref_sys WHERE srid = "
             + srid.ToString(CultureInfo.InvariantCulture)
             + " LIMIT 1), 1.0)";

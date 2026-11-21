@@ -46,6 +46,7 @@ src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs MapGet $"{RouteBas
 src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs MapGet $"{RouteBase}/{{taskName}}/execute"
 src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs MapGet $"{RouteBase}/{{taskName}}/jobs/{{jobId}}"
 src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs MapGet $"{RouteBase}/{{taskName}}/jobs/{{jobId}}/cancel"
+src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs MapGet $"{RouteBase}/{{taskName}}/jobs/{{jobId}}/messages"
 src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs MapGet $"{RouteBase}/{{taskName}}/jobs/{{jobId}}/results/{{paramName}}"
 src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs MapGet $"{RouteBase}/{{taskName}}/submitJob"
 src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs MapGet RouteBase

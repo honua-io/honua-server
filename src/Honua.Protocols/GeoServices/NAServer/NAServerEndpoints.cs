@@ -643,7 +643,7 @@ internal static class NAServerEndpoints
             }
 
             var result = await routing.SolveLocationAllocationAsync(request, ct);
-            var response = NAServerResultMapping.MapLocationAllocation(result);
+            var response = NAServerResultMapping.MapLocationAllocation(result, request, request.OutSrid);
 
             return WriteResponse(
                 context,

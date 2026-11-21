@@ -118,7 +118,7 @@ internal static class ProcessEndpoints
             .AllowAnonymous();
     }
 
-    private static IResult GetProcessList(
+    internal static IResult GetProcessList(
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
         IOgcProcessesCatalog processCatalog)
@@ -189,6 +189,17 @@ internal static class ProcessEndpoints
                     RelationTypes.Next,
                     MediaTypes.Json,
                     "Next page"));
+        }
+
+        if (offset > 0)
+        {
+            var prevOffset = limit.HasValue ? Math.Max(0, offset - limit.Value) : 0;
+            links.Add(
+                Link.Create(
+                    BuildProcessListUrl(processListUrl, limit, prevOffset),
+                    RelationTypes.Prev,
+                    MediaTypes.Json,
+                    "Previous page"));
         }
 
         var processList = new OgcProcessList

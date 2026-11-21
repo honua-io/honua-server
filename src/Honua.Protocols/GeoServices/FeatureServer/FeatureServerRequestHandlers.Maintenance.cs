@@ -1727,7 +1727,8 @@ internal static partial class FeatureServerEndpoints
             return Results.Json(clauseResponse, FeatureServerJsonContext.Default.ValidateSqlResponse, contentType: "application/json");
         }
 
-        // Dialect (standard|native) or omitted: parse the SQL expression using the filter service.
+        // Dialect (standard|native) or omitted: parse the SQL expression using the filter service,
+        // then validate column references against the layer schema.
         var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, sqlExpression);
 
         if (!parseResult.IsSuccess)
@@ -1738,6 +1739,20 @@ internal static partial class FeatureServerEndpoints
                 ValidationError = parseResult.ErrorMessage ?? "Invalid SQL syntax."
             };
             return Results.Json(response, FeatureServerJsonContext.Default.ValidateSqlResponse, contentType: "application/json");
+        }
+
+        if (parseResult.Expression != null)
+        {
+            var translationResult = filterService.Translate(parseResult.Expression, resource.WithoutHiddenSchemaFields());
+            if (!translationResult.IsSuccess)
+            {
+                var response = new ValidateSqlResponse
+                {
+                    IsValidSql = false,
+                    ValidationError = translationResult.ErrorMessage ?? "Invalid SQL expression for the layer schema."
+                };
+                return Results.Json(response, FeatureServerJsonContext.Default.ValidateSqlResponse, contentType: "application/json");
+            }
         }
 
         var validResponse = new ValidateSqlResponse

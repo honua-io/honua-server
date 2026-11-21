@@ -24,7 +24,7 @@ internal static class DatabricksFeatureQueryBuilder
     public static DatabricksSqlStatement BuildSelect(DatabricksLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
-        EnsureSupported(query);
+        EnsureSupported(mapping, query);
 
         var parameters = new List<DatabricksSqlParameter>();
         var sql = new StringBuilder("SELECT ");
@@ -48,7 +48,7 @@ internal static class DatabricksFeatureQueryBuilder
     public static DatabricksSqlStatement BuildCount(DatabricksLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
-        EnsureSupported(query);
+        EnsureSupported(mapping, query);
 
         var parameters = new List<DatabricksSqlParameter>();
         var sql = new StringBuilder("SELECT COUNT(*) AS __honua_count FROM ");
@@ -62,7 +62,7 @@ internal static class DatabricksFeatureQueryBuilder
     {
         ArgumentNullException.ThrowIfNull(mapping);
         var effectiveQuery = query ?? default;
-        EnsureSupported(effectiveQuery);
+        EnsureSupported(mapping, effectiveQuery);
 
         var parameters = new List<DatabricksSqlParameter>();
         var geom = Dialect.QuoteIdentifier(mapping.GeometryColumn);
@@ -80,7 +80,7 @@ internal static class DatabricksFeatureQueryBuilder
     public static DatabricksSqlStatement BuildObjectIds(DatabricksLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
-        EnsureSupported(query);
+        EnsureSupported(mapping, query);
 
         var parameters = new List<DatabricksSqlParameter>();
         var sql = new StringBuilder("SELECT ");
@@ -230,7 +230,7 @@ internal static class DatabricksFeatureQueryBuilder
     public static DatabricksSqlStatement BuildStatistics(DatabricksLayerMapping mapping, FeatureQuery query)
     {
         ArgumentNullException.ThrowIfNull(mapping);
-        EnsureSupported(query);
+        EnsureSupported(mapping, query);
 
         if (!query.OutStatistics.HasValue || query.OutStatistics.Value.IsDefaultOrEmpty)
         {
@@ -389,8 +389,16 @@ internal static class DatabricksFeatureQueryBuilder
             $"layer {mapping.LayerId}");
     }
 
-    private static void EnsureSupported(FeatureQuery query)
+    private static void EnsureSupported(DatabricksLayerMapping mapping, FeatureQuery query)
     {
+        if (query.OutputSrid is > 0 && mapping.Srid > 0 && query.OutputSrid.Value != mapping.Srid)
+        {
+            throw new NotSupportedException(
+                $"Output SRID transforms are not supported by the Databricks provider " +
+                $"(layer SRID is {mapping.Srid}, requested {query.OutputSrid.Value}). " +
+                "Request features in the layer's storage SRID or use a PostGIS-backed layer.");
+        }
+
         if (query.EnforcedSqlFilter is not null)
         {
             throw new NotSupportedException(
@@ -426,6 +434,16 @@ internal static class DatabricksFeatureQueryBuilder
 
         if (query.SpatialFilter is { } spatial)
         {
+            if (spatial.Srid is > 0 && mapping.Srid > 0 && spatial.Srid.Value != mapping.Srid)
+            {
+                throw new NotSupportedException(
+                    "Cross-SRID spatial filter is not supported by the Databricks provider: " +
+                    $"filter SRID {spatial.Srid.Value.ToString(CultureInfo.InvariantCulture)} differs from layer SRID " +
+                    $"{mapping.Srid.ToString(CultureInfo.InvariantCulture)}. " +
+                    "Pre-project the filter geometry to SRID " +
+                    $"{mapping.Srid.ToString(CultureInfo.InvariantCulture)} before submitting the request.");
+            }
+
             var supported = spatial.IsSimpleEnvelope
                 ? IsSupportedEnvelopeRelationship(spatial.SpatialRelationship)
                 : IsSupportedGeometryRelationship(spatial.SpatialRelationship);

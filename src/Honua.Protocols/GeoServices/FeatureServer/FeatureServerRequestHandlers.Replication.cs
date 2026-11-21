@@ -520,12 +520,13 @@ internal static partial class FeatureServerEndpoints
             }
         }
 
+        var isPerLayer = string.Equals(syncModel, "perLayer", StringComparison.OrdinalIgnoreCase);
         var response = new CreateReplicaResponse
         {
             ReplicaId = registered?.ReplicaId,
             ReplicaName = replicaName,
             SyncModel = syncModel,
-            ServerGen = data.ThroughGeneration,
+            ServerGen = isPerLayer ? null : data.ThroughGeneration,
             Layers = [.. data.Layers.Select(layer => new ReplicaLayerInfo
             {
                 Id = layer.Changes.Id,
@@ -535,7 +536,7 @@ internal static partial class FeatureServerEndpoints
             CreationDate = now.ToUnixTimeMilliseconds(),
             TransportType = ReplicaEmbeddedTransportType,
             ResponseType = "esriReplicaResponseTypeData",
-            LayerServerGens = BuildLayerServerGens(layerIds, data.ThroughGeneration),
+            LayerServerGens = isPerLayer ? BuildLayerServerGens(layerIds, data.ThroughGeneration) : null,
             ExceededTransferLimit = data.ExceededTransferLimit ? true : null
         };
 
@@ -1487,14 +1488,19 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' was synchronized by a concurrent request. Re-run extractChanges and retry the synchronization from the new server generation.");
         }
 
+        var isPerLayer = string.Equals(replica.SyncModel, "perLayer", StringComparison.OrdinalIgnoreCase);
         var response = new SynchronizeReplicaResponse
         {
             Success = true,
             ReplicaId = replicaId,
             SyncDirection = syncDirection,
-            ServerGen = updated.LastSyncGeneration,
+            ServerGen = isPerLayer ? null : updated.LastSyncGeneration,
             Edits = downloadEdits,
-            LayerServerGens = downloadLayerServerGens,
+            LayerServerGens = isPerLayer
+                ? (downloadLayerServerGens ?? BuildLayerServerGens(
+                    replicaLayers.Select(static layer => layer.PublicLayerId),
+                    updated.LastSyncGeneration))
+                : null,
             AppliedAdds = appliedAdds,
             AppliedUpdates = appliedUpdates,
             AppliedDeletes = appliedDeletes,

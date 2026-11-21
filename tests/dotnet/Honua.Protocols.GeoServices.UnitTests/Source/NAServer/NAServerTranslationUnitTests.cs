@@ -876,6 +876,54 @@ public sealed class NAServerTranslationUnitTests
     }
 
     [UnitTest]
+    [Operation(Operations.LocationAllocation)]
+    public void MapLocationAllocation_WithRequest_PopulatesPointGeometriesAndSpatialReference()
+    {
+        var request = new LocationAllocationSolveRequest(
+            Facilities:
+            [
+                new RoutePoint(-122.4, 37.7),
+                new RoutePoint(-122.3, 37.8),
+            ],
+            DemandPoints:
+            [
+                new DemandPoint(new RoutePoint(-122.35, 37.75), Weight: 3),
+                new DemandPoint(new RoutePoint(-122.25, 37.85), Weight: 2),
+            ],
+            ProblemType: LocationAllocationProblemType.MinimizeImpedance,
+            FacilitiesToFind: 1,
+            ImpedanceCutoff: null,
+            OutSrid: 4326);
+
+        var result = new LocationAllocationSolveResult(
+            ChosenFacilityIds: [1],
+            Allocations:
+            [
+                new DemandAllocation(DemandPointId: 0, AllocatedFacilityId: 1, Weight: 3, ImpedanceMinutes: 4),
+                new DemandAllocation(DemandPointId: 1, AllocatedFacilityId: -1, Weight: 2, ImpedanceMinutes: double.PositiveInfinity),
+            ],
+            TotalWeightedImpedance: 12,
+            TotalWeightCovered: 3);
+
+        var response = NAServerResultMapping.MapLocationAllocation(result, request, request.OutSrid);
+
+        response.Facilities.GeometryType.Should().Be("esriGeometryPoint");
+        response.Facilities.SpatialReference.Should().NotBeNull();
+        response.Facilities.SpatialReference!.Wkid.Should().Be(4326);
+        var facility = response.Facilities.Features.Should().ContainSingle().Subject;
+        facility.Geometry.Should().NotBeNull();
+        facility.Geometry!.X.Should().Be(-122.3);
+        facility.Geometry.Y.Should().Be(37.8);
+
+        response.DemandPoints.GeometryType.Should().Be("esriGeometryPoint");
+        response.DemandPoints.SpatialReference.Should().NotBeNull();
+        response.DemandPoints.SpatialReference!.Wkid.Should().Be(4326);
+        response.DemandPoints.Features[0].Geometry.Should().NotBeNull();
+        response.DemandPoints.Features[0].Geometry!.X.Should().Be(-122.35);
+        response.DemandPoints.Features[0].Geometry!.Y.Should().Be(37.75);
+    }
+
+    [UnitTest]
     [Operation(Operations.ServiceArea)]
     public void MapServiceArea_PolygonResult_AssignsFromToBreakAndRings()
     {
