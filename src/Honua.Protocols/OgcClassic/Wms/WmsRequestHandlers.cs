@@ -31,7 +31,6 @@ using Honua.Protocols.Ogc.Classic.Wfs20.Services;
 using Honua.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using SkiaSharp;
 using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;
 using static Honua.Protocols.Ogc.Classic.OgcClassicRequestHelpers;
@@ -327,10 +326,7 @@ internal static partial class WmsRequestHandlers
         => OgcClassicDeclaredDimensions.HasWmsTimeDimension(layer.Resource);
 
     private static int GetWmsMaxLayersPerRequest(HttpContext context)
-    {
-        var configured = context.RequestServices.GetService<IOptions<LimitsOptions>>()?.Value?.Query?.MaxMapLayersPerRequest;
-        return configured is > 0 ? configured.Value : QueryLimits.DefaultMaxMapLayersPerRequest;
-    }
+        => MapLayerRequestLimit.Resolve(context.RequestServices);
 
     private static IResult? ValidateWmsLayerTokenCount(
         HttpContext context,
