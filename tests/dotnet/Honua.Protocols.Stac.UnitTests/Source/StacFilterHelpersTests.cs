@@ -471,6 +471,23 @@ public sealed class StacFilterHelpersTests
         value.End.Should().BeNull();
     }
 
+    [UnitTest]
+    public void ResolveTemporalField_WithExactTimestampFallbackFields_ReturnsStartAndEnd()
+    {
+        // exactTypes layers declare TIMESTAMPTZ columns as TimestampOffset (#9022).
+        var resource = CreateResource(
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+                new MetadataV2Field { Name = "start_datetime", Type = MetadataV2FieldType.TimestampOffset },
+                new MetadataV2Field { Name = "end_datetime", Type = MetadataV2FieldType.TimestampOffset }
+            ]);
+
+        var startField = StacFilterHelpers.ResolveTemporalField(resource, out var endField);
+
+        startField.Should().Be("start_datetime");
+        endField.Should().Be("end_datetime");
+    }
+
     private static MetadataV2Object CreateResource(MetadataV2Field[] fields)
     {
         return new MetadataV2Object

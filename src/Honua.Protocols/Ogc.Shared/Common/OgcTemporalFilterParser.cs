@@ -140,6 +140,7 @@ internal static class OgcTemporalFilterParser
         switch (typeLabel)
         {
             case MetadataV2FieldType.DateTime:
+            case MetadataV2FieldType.TimestampOffset:
                 type = TemporalPropertyType.DateTime;
                 return true;
             case MetadataV2FieldType.Date:

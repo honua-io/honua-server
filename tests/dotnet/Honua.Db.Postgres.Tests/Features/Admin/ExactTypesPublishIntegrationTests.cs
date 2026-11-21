@@ -83,7 +83,17 @@ public sealed class ExactTypesPublishIntegrationTests(PostgresFixture fixture) :
             .Should().Be(new DateTimeOffset(2024, 1, 1, 12, 0, 0, TimeSpan.Zero));
     }
 
-    private LayerPublishRequest ExactRequest() => new()
+    [IntegrationTest]
+    public async Task PublishWithExactTypes_AcceptsExactTimestampAsTemporalField()
+    {
+        // #9022: an exact TimestampOffset field may be the layer's temporal start field.
+        var published = await CreateService().PublishLayerAsync(
+            ConnectionString(), ExactRequest(new MetadataV2ObjectTemporal { StartTimeField = "signed" }));
+
+        (await ReadFieldTypesAsync(published.StorageLayerId)).Should().Contain("signed", "TimestampOffset");
+    }
+
+    private LayerPublishRequest ExactRequest(MetadataV2ObjectTemporal? temporal = null) => new()
     {
         Schema = _schema,
         Table = "ledger",
@@ -93,6 +103,7 @@ public sealed class ExactTypesPublishIntegrationTests(PostgresFixture fixture) :
         PrimaryKey = "id",
         ServiceName = _serviceName,
         TemporalColumn = "observed",
+        Temporal = temporal,
         ExactTypes = true
     };
 
