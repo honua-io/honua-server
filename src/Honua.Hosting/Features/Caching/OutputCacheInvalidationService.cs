@@ -170,14 +170,17 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
             EvictResponseCacheAsync(responsePatterns, cancellationToken)).ConfigureAwait(false);
     }
 
-    public Task InvalidateQueryResponsesAsync(CancellationToken cancellationToken = default)
-        => EvictResponseCacheAsync(
+    public async Task InvalidateQueryResponsesAsync(CancellationToken cancellationToken = default)
+    {
+        await EvictResponseCacheAsync(
             [
                 ResponseCacheUtilities.BuildFeatureServerPattern(),
                 ResponseCacheUtilities.BuildOgcPattern(),
                 ResponseCacheUtilities.BuildODataPattern(),
             ],
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
+        await NotifyPublicExportAccessChangeAsync(serviceId: null, layerIds: null, cancellationToken).ConfigureAwait(false);
+    }
 
     public async Task InvalidateOgcMetadataAsync(CancellationToken cancellationToken)
     {

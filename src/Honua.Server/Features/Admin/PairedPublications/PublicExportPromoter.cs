@@ -42,7 +42,7 @@ internal sealed record PublicExportPromoterDependencies
 // Copies an eligible Export version to the public data path:
 // artifacts -> version collection.json -> root catalog.json (pointer last), then checks the canary URL.
 internal sealed class PublicExportPromoter(
-    PublicExportPromoterDependencies deps,
+    PublicExportPromoterDependencies? deps = null,
     IPublicPublicationDestination? destination = null,
     TimeProvider? timeProvider = null)
 {
@@ -55,6 +55,7 @@ internal sealed class PublicExportPromoter(
         public required string FileName { get; init; }
         public required string ContentType { get; init; }
         public string? KnownSha256 { get; init; }
+        public long? KnownSizeBytes { get; init; }
         public required PublicPublicationProvenance Provenance { get; init; }
     }
 
@@ -63,7 +64,7 @@ internal sealed class PublicExportPromoter(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(input);
-        if (destination is null)
+        if (destination is null || deps is null)
         {
             return new PublicExportDeliveryStatus(PublicExportDeliveryStatus.NotConfigured) { Reason = NotConfiguredMessage };
         }
@@ -168,6 +169,7 @@ internal sealed class PublicExportPromoter(
                 FileName = descriptor.Artifacts.Pmtiles.Href,
                 ContentType = PmtilesPublicationArtifact.MediaTypeValue,
                 KnownSha256 = descriptor.Artifacts.Pmtiles.Sha256,
+                KnownSizeBytes = descriptor.Artifacts.Pmtiles.Bytes,
                 Provenance = provenance
             },
             cancellationToken).ConfigureAwait(false);
@@ -179,6 +181,7 @@ internal sealed class PublicExportPromoter(
                 FileName = descriptor.Artifacts.Geoparquet.Href,
                 ContentType = GeoparquetPublicationArtifact.MediaTypeValue,
                 KnownSha256 = descriptor.Artifacts.Geoparquet.Sha256,
+                KnownSizeBytes = descriptor.Artifacts.Geoparquet.Bytes,
                 Provenance = provenance
             },
             cancellationToken).ConfigureAwait(false);
@@ -229,6 +232,7 @@ internal sealed class PublicExportPromoter(
                 return await destination!.PutAsync(
                     new PublicPublicationArtifact(artifactKey, stream, spec.ContentType)
                     {
+                        SizeBytes = spec.KnownSizeBytes,
                         Sha256 = spec.KnownSha256,
                         CachePolicy = StoredObjectCachePolicy.PublicImmutable,
                         Provenance = spec.Provenance

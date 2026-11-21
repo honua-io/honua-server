@@ -10,7 +10,7 @@ using Honua.Infrastructure.SharedCaching;
 
 namespace Honua.Server.Features.Admin.PairedPublications;
 
-internal sealed class PublicPublicationDestination : IPublicPublicationDestination
+internal sealed class PublicPublicationDestination : IPublicPublicationDestination, IDisposable
 {
     internal const string RootCatalogKey = "data/catalog.json";
     internal const string Sha256MetadataKey = "sha256";
@@ -18,16 +18,28 @@ internal sealed class PublicPublicationDestination : IPublicPublicationDestinati
 
     private readonly ICloudFileStorage _storage;
     private readonly Uri _origin;
+    private readonly IDisposable? _ownedStorage;
 
     public PublicPublicationDestination(ICloudFileStorage storage, Uri origin)
+        : this(storage, origin, ownedStorage: null)
+    {
+    }
+
+    private PublicPublicationDestination(ICloudFileStorage storage, Uri origin, IDisposable? ownedStorage)
     {
         ArgumentNullException.ThrowIfNull(storage);
         ValidateOrigin(origin);
         _storage = storage;
         _origin = origin;
+        _ownedStorage = ownedStorage;
     }
 
+    internal static PublicPublicationDestination CreateOwned(ICloudFileStorage storage, Uri origin)
+        => new(storage, origin, storage as IDisposable);
+
     public Uri Origin => _origin;
+
+    public void Dispose() => _ownedStorage?.Dispose();
 
     internal static void ValidateOrigin(Uri origin)
     {
@@ -110,16 +122,28 @@ internal sealed class PublicPublicationDestination : IPublicPublicationDestinati
         }
 
         var prefix = PublicationPrefix(publicationId);
-        var files = await _storage.ListFilesAsync(prefix, maxResults: 1000, includeMetadata: false, cancellationToken).ConfigureAwait(false);
-        foreach (var file in files)
+        while (true)
         {
-            var objectKey = !string.IsNullOrWhiteSpace(file.StoragePath) ? file.StoragePath : file.FileId;
-            if (string.IsNullOrWhiteSpace(objectKey) || !objectKey.StartsWith(prefix, StringComparison.Ordinal))
+            var files = await _storage.ListFilesAsync(prefix, maxResults: 1000, includeMetadata: false, cancellationToken).ConfigureAwait(false);
+            var keys = files
+                .Select(file => !string.IsNullOrWhiteSpace(file.StoragePath) ? file.StoragePath : file.FileId)
+                .Where(key => !string.IsNullOrWhiteSpace(key) && key.StartsWith(prefix, StringComparison.Ordinal))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (keys.Length == 0)
             {
-                continue;
+                return;
             }
 
-            await DeleteConfirmedAsync(objectKey, cancellationToken).ConfigureAwait(false);
+            foreach (var objectKey in keys)
+            {
+                await DeleteConfirmedAsync(objectKey, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (files.Count < 1000)
+            {
+                return;
+            }
         }
     }
 

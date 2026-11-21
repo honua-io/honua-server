@@ -13,11 +13,12 @@ namespace Honua.Server.Tests.Features.Admin.PairedPublications;
 public sealed class PublicExportRevocationTests
 {
     [UnitTest]
-    public async Task OnAdministrativeAccessChange_WhenLayerRestricted_DeletesObjectsRewritesCatalogInvalidatesAndCompletes()
+    public async Task OnAdministrativeAccessChange_WhenLayerRestrictedByServiceName_DeletesObjectsRewritesCatalogInvalidatesAndCompletes()
     {
         var harness = RevocationHarness.Create(new RevocationScenario { AnonymousAllowed = false });
 
-        await harness.Service.OnAdministrativeAccessChangeAsync("svc-parcels", [7], CancellationToken.None);
+        // ServiceSettingsEndpoints passes service.Metadata.Name and layerIndex, not Metadata.Id / StorageLayerId.
+        await harness.Service.OnAdministrativeAccessChangeAsync("parcels-svc", [0], CancellationToken.None);
 
         harness.PublicStorage.Objects.Keys.Where(k => k.StartsWith("data/publications/parcels/", StringComparison.Ordinal))
             .Should().BeEmpty();
@@ -108,6 +109,24 @@ public sealed class PublicExportRevocationTests
 
         harness.StateStore.Revocations[first.RevocationId].State.Should().Be(PublicExportRevocationState.Completed);
         harness.PollReceipts.Should().ContainSingle(r => r.InvalidationId == "INV-RETRY");
+    }
+
+    [UnitTest]
+    public async Task OnAdministrativeAccessChange_WhenLayerUnpublishedFromService_RevokesExport()
+    {
+        var harness = RevocationHarness.Create(new RevocationScenario
+        {
+            AnonymousAllowed = true,
+            IncludeParcelsPublication = false
+        });
+
+        await harness.Service.OnAdministrativeAccessChangeAsync(serviceId: null, layerIds: null, CancellationToken.None);
+
+        harness.PublicStorage.Objects.Keys.Where(k => k.StartsWith("data/publications/parcels/", StringComparison.Ordinal))
+            .Should().BeEmpty();
+        harness.StateStore.Revocations.Values.Should().ContainSingle(r =>
+            r.PublicationId == "parcels" && r.State == PublicExportRevocationState.Completed);
+        harness.StateStore.Promoted.Keys.Should().Equal("roads");
     }
 
     [UnitTest]

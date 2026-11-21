@@ -14,16 +14,16 @@ internal static class PublicPublicationDestinationServiceCollectionExtensions
 {
     internal static IServiceCollection AddPublicPublicationDestination(this IServiceCollection services, IConfiguration configuration)
     {
-        RegisterCoreServices(services, configuration);
-
         var publicData = new PublicDataStorageOptions();
         configuration.GetSection("FileStorage:PublicData").Bind(publicData);
         if (!publicData.Enabled)
         {
+            services.AddSingleton(_ => new PublicExportPromoter(deps: null, destination: null));
             return services;
         }
 
         RegisterDestination(services, configuration, publicData);
+        RegisterCoreServices(services, configuration);
         services.AddScoped<IPublicExportAccessChangeListener>(provider =>
             provider.GetRequiredService<PublicExportRevocationService>());
         services.AddHostedService<PublicExportRevocationHostedService>();
@@ -87,7 +87,7 @@ internal static class PublicPublicationDestinationServiceCollectionExtensions
             Provider = CloudStorageProvider.AwsS3,
             AwsS3 = new AwsS3Options { BucketName = publicData.BucketName, Region = publicData.Region, EnableServerSideEncryption = false }
         });
-        services.AddSingleton<IPublicPublicationDestination>(provider => new PublicPublicationDestination(
+        services.AddSingleton<IPublicPublicationDestination>(provider => PublicPublicationDestination.CreateOwned(
             new AwsS3FileStorage(options, provider.GetRequiredService<ILogger<AwsS3FileStorage>>(),
                 provider.GetRequiredService<IUploadProgressStore>()), origin));
 #endif

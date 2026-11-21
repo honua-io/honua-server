@@ -19,6 +19,7 @@ namespace Honua.Server.Tests.Features.Admin.PairedPublications;
 internal sealed record RevocationScenario
 {
     public bool AnonymousAllowed { get; init; }
+    public bool IncludeParcelsPublication { get; init; } = true;
     public CdnInvalidationResult[]? InvalidationOutcomes { get; init; }
 }
 
@@ -49,7 +50,7 @@ internal sealed class RevocationHarness
             {
                 StateStore = stateStore,
                 Eligibility = CreateEligibility(opts),
-                GraphProvider = CreateGraphProvider().Object,
+                GraphProvider = CreateGraphProvider(opts).Object,
                 CdnInvalidation = CreateCdnService(opts.InvalidationOutcomes, invalidationRequests),
                 OpsNotifier = CreateNotifier(failureNotices).Object,
                 Configuration = config,
@@ -106,7 +107,10 @@ internal sealed class RevocationHarness
     {
         var evaluator = new Mock<IAccessPolicyEvaluator>();
         evaluator.Setup(e => e.Evaluate(It.IsAny<ClaimsPrincipal>(), It.IsAny<AccessPolicy?>(), It.IsAny<AccessPolicy?>(), It.IsAny<object?>()))
-            .Returns(opts.AnonymousAllowed ? AccessDecision.Allowed() : AccessDecision.RequiresAuth("Restricted"));
+            .Returns((ClaimsPrincipal _, AccessPolicy? layerPolicy, AccessPolicy? _, object? _) =>
+                layerPolicy?.AllowAnonymous == false && !opts.AnonymousAllowed
+                    ? AccessDecision.RequiresAuth("Restricted")
+                    : AccessDecision.Allowed());
 
         var services = new ServiceCollection();
         services.AddSingleton(evaluator.Object);
@@ -137,8 +141,21 @@ internal sealed class RevocationHarness
         return notifier;
     }
 
-    private static Mock<IMetadataV2GraphProvider> CreateGraphProvider()
+    private static Mock<IMetadataV2GraphProvider> CreateGraphProvider(RevocationScenario opts)
     {
+        var publications = new List<MetadataV2Layer>
+        {
+            new() { Metadata = new MetadataV2ObjectMetadata { Id = "pub-roads", Name = "roads" }, ServiceId = "svc-roads", ResourceId = "res-roads", LayerIndex = 1 }
+        };
+        if (opts.IncludeParcelsPublication)
+        {
+            publications.Add(new MetadataV2Layer
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "pub-parcels", Name = "parcels" },
+                ServiceId = "svc-parcels", ResourceId = "res-parcels", LayerIndex = 0
+            });
+        }
+
         var graph = new MetadataV2Graph
         {
             Revision = 2,
@@ -149,9 +166,18 @@ internal sealed class RevocationHarness
             ],
             Resources =
             [
-                new MetadataV2Object { Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "parcels" } },
-                new MetadataV2Object { Metadata = new MetadataV2ObjectMetadata { Id = "res-roads", Name = "roads" } }
-            ]
+                new MetadataV2Object
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "parcels" },
+                    AccessPolicy = new AccessPolicy { AllowAnonymous = opts.AnonymousAllowed }
+                },
+                new MetadataV2Object
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "res-roads", Name = "roads" },
+                    AccessPolicy = new AccessPolicy { AllowAnonymous = true }
+                }
+            ],
+            Publications = publications
         };
         var provider = new Mock<IMetadataV2GraphProvider>();
         provider.Setup(g => g.GetCurrentAsync(It.IsAny<CancellationToken>()))

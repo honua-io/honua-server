@@ -54,8 +54,7 @@ internal sealed partial class PublicExportRevocationService(
 
         foreach (var export in promoted)
         {
-            if (!MatchesScope(export, serviceId, layerIds) ||
-                await StillEligibleAsync(export, snapshot, cancellationToken).ConfigureAwait(false))
+            if (await StillEligibleAsync(export, snapshot, cancellationToken).ConfigureAwait(false))
             {
                 continue;
             }
@@ -351,27 +350,18 @@ internal sealed partial class PublicExportRevocationService(
             return false;
         }
 
+        var publication = snapshot.Graph.Publications.FirstOrDefault(candidate =>
+            snapshot.IsRoutable(candidate) &&
+            string.Equals(candidate.ServiceId, export.ServiceId, StringComparison.Ordinal) &&
+            string.Equals(candidate.ResourceId, export.ResourceId, StringComparison.Ordinal));
+        if (publication is null ||
+            !Honua.Core.Features.Metadata.Domain.V2.MetadataV2TenantVisibility.IsVisibleToTenant(publication, resource, service, null))
+        {
+            return false;
+        }
+
         var result = await deps.Eligibility.EvaluateAsync(resource, service, cancellationToken).ConfigureAwait(false);
         return result.IsEligible;
-    }
-
-    private static bool MatchesScope(
-        PromotedExportRecord export,
-        string? serviceId,
-        IReadOnlyCollection<int>? layerIds)
-    {
-        if (string.IsNullOrWhiteSpace(serviceId) && (layerIds is null || layerIds.Count == 0))
-        {
-            return true;
-        }
-
-        if (!string.IsNullOrWhiteSpace(serviceId) &&
-            string.Equals(export.ServiceId, serviceId.Trim(), StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        return layerIds is { Count: > 0 } && layerIds.Contains(export.StorageLayerId);
     }
 
     private string ResolveCurrentChangeId()

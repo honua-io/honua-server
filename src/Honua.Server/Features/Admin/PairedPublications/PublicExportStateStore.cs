@@ -113,9 +113,13 @@ internal sealed class CloudStoragePublicExportStateStore(
 
     private string RevocationPrefix => $"{RootPrefix}/revocations/";
 
+    private string CompletedRevocationPrefix => $"{RootPrefix}/revocations-completed/";
+
     private string PromotedKey(string publicationId) => $"{PromotedPrefix}{publicationId}.json";
 
     private string RevocationKey(string revocationId) => $"{RevocationPrefix}{revocationId}.json";
+
+    private string CompletedRevocationKey(string revocationId) => $"{CompletedRevocationPrefix}{revocationId}.json";
 
     public Task SavePromotedAsync(PromotedExportRecord record, CancellationToken cancellationToken)
     {
@@ -162,11 +166,23 @@ internal sealed class CloudStoragePublicExportStateStore(
         return records;
     }
 
-    public Task SaveRevocationAsync(PublicExportRevocationRecord record, CancellationToken cancellationToken)
+    public async Task SaveRevocationAsync(PublicExportRevocationRecord record, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(record);
         var payload = JsonSerializer.SerializeToUtf8Bytes(record, PublicExportStateJsonContext.Default.PublicExportRevocationRecord);
-        return PutJsonBytesAsync(RevocationKey(record.RevocationId), payload, cancellationToken);
+        if (record.State == PublicExportRevocationState.Completed)
+        {
+            await PutJsonBytesAsync(CompletedRevocationKey(record.RevocationId), payload, cancellationToken).ConfigureAwait(false);
+            var activeKey = RevocationKey(record.RevocationId);
+            if (!await storage.DeleteAsync(activeKey, cancellationToken).ConfigureAwait(false) &&
+                await storage.ExistsAsync(activeKey, cancellationToken).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException($"Archiving completed revocation '{record.RevocationId}' failed.");
+            }
+            return;
+        }
+
+        await PutJsonBytesAsync(RevocationKey(record.RevocationId), payload, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<PublicExportRevocationRecord>> ListPendingRevocationsAsync(CancellationToken cancellationToken)
