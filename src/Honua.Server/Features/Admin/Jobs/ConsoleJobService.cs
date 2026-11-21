@@ -378,6 +378,31 @@ internal sealed partial class ConsoleJobService(
                 : Task.FromResult(false)
             : store.TrySetAsync(job, cancellationToken: cancellationToken);
 
+    private async Task EnsureExportNotUnpublishedAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+    {
+        if (job.Spec.Kind != ExecutionJobKind.TileCache
+            || !TileCacheExecutionSpecBuilder.TryParse(job.Spec.Parameters, out var request, out _, out _)
+            || !string.Equals(request.Operation, TileCacheExecutionSpecBuilder.ExportOperation, StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(request.ExportId))
+        {
+            return;
+        }
+
+        var storage = serviceProvider.GetService<ICloudFileStorage>();
+        var storageOptions = serviceProvider.GetService<IOptions<Honua.Core.Features.Infrastructure.Domain.CloudStorageOptions>>();
+        if (storage is null || storageOptions is null)
+        {
+            return;
+        }
+
+        var store = Honua.Server.Features.Admin.Exports.ExportStore.Create(storage, storageOptions.Value, request.ExportId);
+        if (await store.ReadUnpublishedAsync(cancellationToken).ConfigureAwait(false) is not null)
+        {
+            throw new ConsoleJobConflictException(
+                $"Export '{request.ExportId}' was unpublished; start a new export with POST /api/v1/admin/exports instead of retrying an older job.");
+        }
+    }
+
     public async Task<ConsoleJobControlResponse?> RetryAsync(
         HttpContext context,
         string jobId,
@@ -394,6 +419,8 @@ internal sealed partial class ConsoleJobService(
         {
             throw new ConsoleJobConflictException("Only failed or cancelled jobs can be retried.");
         }
+
+        await EnsureExportNotUnpublishedAsync(job, cancellationToken).ConfigureAwait(false);
 
         var policy = job.RetryPolicy ?? JobRetryPolicy.Default;
         var policyDisabledReason = ResolveRetryPolicyDisabledReason(policy, job.AttemptCount);

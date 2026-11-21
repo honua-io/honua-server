@@ -212,7 +212,10 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
                 _logger,
                 MaxTilesFor(run.Job),
                 scope.ServiceProvider.GetService<ITileCacheGenerationCheckpointStore>())
-            { ProgressWriter = run.Progress.WriteAsync };
+            {
+                ProgressWriter = run.Progress.WriteAsync,
+                JobCreatedAt = run.Job.CreatedAt
+            };
             return await core.ExecuteAsync(started, run.Request, scope.ServiceProvider, cancellationToken)
                 .ConfigureAwait(false);
         }

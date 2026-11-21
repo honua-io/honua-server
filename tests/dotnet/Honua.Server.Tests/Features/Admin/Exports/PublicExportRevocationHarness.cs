@@ -26,6 +26,7 @@ internal sealed record RevocationScenario
     public bool IncludeParcelsPublication { get; init; } = true;
     public int GraphFailuresBeforeSuccess { get; init; }
     public CdnInvalidationResult[]? InvalidationOutcomes { get; init; }
+    public IPublicExportStateStore? StateStoreOverride { get; init; }
 }
 
 internal sealed class RevocationHarness
@@ -55,7 +56,7 @@ internal sealed class RevocationHarness
         var service = new PublicExportRevocationService(
             new PublicExportRevocationDependencies
             {
-                StateStore = stateStore,
+                StateStore = opts.StateStoreOverride ?? stateStore,
                 Eligibility = CreateEligibility(opts),
                 GraphProvider = CreateGraphProvider(opts).Object,
                 CdnInvalidation = CreateCdnService(opts.InvalidationOutcomes, invalidationRequests),

@@ -222,7 +222,7 @@ public sealed class PublicExportRevocationTests
         var harness = RevocationHarness.Create(new RevocationScenario { AnonymousAllowed = true });
         var privateStorage = new Mock<ICloudFileStorage>();
         privateStorage.Setup(s => s.UploadAsync(It.IsAny<FileUploadRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new UploadResult { Success = true, FileId = "exports/parcels/unpublished.json" });
+            .ReturnsAsync(new UploadResult { Success = true });
         privateStorage.Setup(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
         var jobs = new Mock<ITileCacheJobService>();
@@ -243,5 +243,33 @@ public sealed class PublicExportRevocationTests
             r.State == PublicExportRevocationState.Completed);
         harness.PublicStorage.Objects.Keys.Should().NotContain(k => k.StartsWith("data/publications/parcels/", StringComparison.Ordinal));
         harness.InvalidationRequests.Should().ContainSingle();
+    }
+
+    [UnitTest]
+    public async Task ExportCatalogUnpublish_WhenRevocationStateStoreFails_PreservesPointerForRetry()
+    {
+        var failingStateStore = new Mock<IPublicExportStateStore>();
+        failingStateStore.Setup(s => s.ListPendingRevocationsAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("state store unavailable"));
+        var harness = RevocationHarness.Create(new RevocationScenario
+        {
+            AnonymousAllowed = true,
+            StateStoreOverride = failingStateStore.Object
+        });
+        var privateStorage = new Mock<ICloudFileStorage>();
+        privateStorage.Setup(s => s.UploadAsync(It.IsAny<FileUploadRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UploadResult { Success = true });
+        var catalog = new ExportCatalog(new ExportCatalogDependencies
+        {
+            Storage = privateStorage.Object,
+            Options = Options.Create(new CloudStorageOptions()),
+            Jobs = new Mock<ITileCacheJobService>().Object,
+            PublicRevocation = harness.Service
+        });
+
+        var act = () => catalog.UnpublishAsync("parcels", CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*state store unavailable*");
+        privateStorage.Verify(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

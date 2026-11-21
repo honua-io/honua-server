@@ -56,6 +56,8 @@ internal sealed partial class TileOperationExecutionCore
 
     internal Func<TileOperationProgress, CancellationToken, Task>? ProgressWriter { private get; init; }
 
+    internal DateTimeOffset? JobCreatedAt { private get; init; }
+
     private Task WriteProgressAsync(TileOperationProgress progress, CancellationToken cancellationToken)
         => ProgressWriter != null
             ? ProgressWriter(progress, cancellationToken)

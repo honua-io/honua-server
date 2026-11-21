@@ -101,11 +101,18 @@ public sealed partial class ExportEndpointTests
         etagBefore.Should().NotBeNullOrWhiteSpace();
 
         // A job that started before DELETE (null initial tag) is fenced from activating after DELETE.
-        var midJobFence = () => TileOperationExecutionCore.RequireNotUnpublishedAsync(store, initialUnpublishedETag: null, CancellationToken.None);
+        var midJobFence = () => TileOperationExecutionCore.RequireNotUnpublishedAsync(
+            store, new TileOperationExecutionCore.ExportUnpublishFence(InitialETag: null), CancellationToken.None);
         await midJobFence.Should().ThrowAsync<ExportException>().WithMessage("*unpublished while the job was running*");
 
+        // A job created before DELETE is fenced even if retried after DELETE with the current marker tag.
+        var staleRetryFence = () => TileOperationExecutionCore.RequireNotUnpublishedAsync(
+            store, new TileOperationExecutionCore.ExportUnpublishFence(etagBefore, marker.UnpublishedAt.AddSeconds(-1)), CancellationToken.None);
+        await staleRetryFence.Should().ThrowAsync<ExportException>().WithMessage("*unpublished after the job was created*");
+
         // A republish started after DELETE sees the current tag, activates, and clears the marker.
-        await TileOperationExecutionCore.RequireNotUnpublishedAsync(store, etagBefore, CancellationToken.None);
+        await TileOperationExecutionCore.RequireNotUnpublishedAsync(
+            store, new TileOperationExecutionCore.ExportUnpublishFence(etagBefore, marker.UnpublishedAt.AddSeconds(1)), CancellationToken.None);
         await PublishAsync(IdentityField);
         (await store.ReadUnpublishedETagAsync(CancellationToken.None)).Should().BeNull();
     }
@@ -180,6 +187,7 @@ public sealed partial class ExportEndpointTests
     [IntegrationTest]
     [Endpoint("DELETE /api/v1/admin/exports/{exportId}")]
     [Endpoint("POST /api/v1/admin/tile-operations/jobs/{jobId}/retry")]
+    [Endpoint("POST /api/v1/admin/jobs/{jobId}/retry")]
     [Endpoint("GET /api/v1/exports/{exportId}/current.json")]
     public async Task RetryFailedExportJob_AfterUnpublish_ReturnsConflictAndStaysUnpublished()
     {
@@ -188,9 +196,16 @@ public sealed partial class ExportEndpointTests
         using var deleted = await _client.DeleteAsync($"{ExportsRoute}/{_exportId}");
         deleted.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        using var retry = await _client.PostAsync($"{JobsRoute}/{failedJobId}/retry", content: null);
-        retry.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        (await retry.Content.ReadAsStringAsync()).Should().Contain("/api/v1/admin/exports");
+        using var tileRetry = await _client.PostAsync($"{JobsRoute}/{failedJobId}/retry", content: null);
+        tileRetry.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await tileRetry.Content.ReadAsStringAsync()).Should().Contain("/api/v1/admin/exports");
+
+        using var consoleRetry = await _client.PostAsync($"/api/v1/admin/jobs/{failedJobId}/retry", content: null);
+        consoleRetry.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await consoleRetry.Content.ReadAsStringAsync()).Should().Contain("/api/v1/admin/exports");
+
+        var store = ExportStore.Create(Storage, _fixture.GetOptionalService<IOptions<CloudStorageOptions>>()!.Value, _exportId);
+        (await store.ReadUnpublishedAsync(CancellationToken.None)).Should().NotBeNull();
 
         using var current = await _client.GetAsync($"/api/v1/exports/{_exportId}/current.json");
         current.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -229,7 +244,7 @@ public sealed partial class ExportEndpointTests
             TileOperationProgress.CreateInitial(failedJobId, request.Operation, request.ServiceId, request.LayerId, request.TileMatrixSetId) with
             {
                 ExportId = _exportId,
-                Status = OperationStatus.Failed,
+                Status = Honua.Core.Features.Infrastructure.Domain.OperationStatus.Failed,
                 ErrorMessage = "Simulated failure"
             },
             TimeSpan.FromMinutes(5),

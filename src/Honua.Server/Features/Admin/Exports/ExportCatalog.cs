@@ -106,13 +106,12 @@ internal sealed partial class ExportCatalog(ExportCatalogDependencies deps)
                 UnpublishedAt = DateTimeOffset.UtcNow
             },
             cancellationToken).ConfigureAwait(false);
-        var deleted = await storage.DeleteAsync(store.PointerKey, cancellationToken).ConfigureAwait(false);
         if (publicRevocation is not null)
         {
             await publicRevocation.RevokeUnpublishedAsync(exportId, changeId: null, cancellationToken).ConfigureAwait(false);
         }
 
-        return deleted;
+        return await storage.DeleteAsync(store.PointerKey, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<(string ServiceId, string LayerId)> ResolveSourceIdentityAsync(
