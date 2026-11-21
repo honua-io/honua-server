@@ -62,6 +62,11 @@ internal sealed partial class GeoServerImportService
 
         return plan with
         {
+            Summary = plan.Summary with
+            {
+                ReadyStepCount = updatedSteps.Count(static s => string.Equals(s.Disposition, "ready", StringComparison.Ordinal)),
+                ManualReviewStepCount = updatedSteps.Count(static s => string.Equals(s.Disposition, "manual-review", StringComparison.Ordinal))
+            },
             Steps = updatedSteps,
             ManualReviewItems = plan.ManualReviewItems
                 .Concat(extraReview)
@@ -100,6 +105,8 @@ internal sealed partial class GeoServerImportService
 
         return (step with
         {
+            Disposition = security.RequiresManualReview ? "manual-review" : step.Disposition,
+            Action = security.RequiresManualReview ? "manual-review" : step.Action,
             ReviewCodes = reviewCodes,
             StyleDiffs = styleDiff.Diffs.Length > 0 ? styleDiff.Diffs : null,
             SecurityRules = security.Dispositions.Length > 0 ? security.Dispositions : null
@@ -177,30 +184,36 @@ internal sealed partial class GeoServerImportService
         }
 
         using var doc = JsonDocument.Parse(stream.ToArray());
-        return new Dictionary<string, JsonElement>(StringComparer.Ordinal) { ["wms"] = doc.RootElement.Clone() };
+        return new Dictionary<string, JsonElement>(StringComparer.Ordinal) { ["geoserverDimensions"] = doc.RootElement.Clone() };
     }
 
     private static void WriteElevationDimensionExtension(Utf8JsonWriter writer, GeoServerDimensionInfo elevDim)
     {
         writer.WriteStartObject();
-        writer.WriteStartArray("dimensions");
-        writer.WriteStartObject();
-        writer.WriteString("name", "elevation");
+        writer.WriteStartObject("elevation");
+        if (!string.IsNullOrWhiteSpace(elevDim.Attribute))
+        {
+            writer.WriteString("attribute", elevDim.Attribute);
+        }
+
+        if (!string.IsNullOrWhiteSpace(elevDim.EndAttribute))
+        {
+            writer.WriteString("endAttribute", elevDim.EndAttribute);
+        }
+
         writer.WriteString("units", string.IsNullOrWhiteSpace(elevDim.Units) ? "EPSG:5030" : elevDim.Units);
         if (!string.IsNullOrWhiteSpace(elevDim.UnitSymbol))
         {
             writer.WriteString("unitSymbol", elevDim.UnitSymbol);
         }
 
-        writer.WriteBoolean("nearestValue", elevDim.NearestMatchEnabled);
+        writer.WriteBoolean("nearestMatchEnabled", elevDim.NearestMatchEnabled);
         if (!string.IsNullOrWhiteSpace(elevDim.DefaultValueReference))
         {
-            writer.WriteString("default", elevDim.DefaultValueReference);
+            writer.WriteString("defaultValue", elevDim.DefaultValueReference);
         }
 
-        writer.WriteString("extent", !string.IsNullOrWhiteSpace(elevDim.Attribute) ? elevDim.Attribute! : (elevDim.DefaultValueReference ?? string.Empty));
         writer.WriteEndObject();
-        writer.WriteEndArray();
         writer.WriteEndObject();
     }
 }

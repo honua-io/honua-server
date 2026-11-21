@@ -6,10 +6,13 @@ using Honua.Core.Features.Security.Domain;
 
 namespace Honua.Core.Features.Migration.Services;
 
-internal sealed record GeoServerLayerSecurityTranslation(
-    AccessPolicy? AccessPolicy,
-    MigrationSecurityRuleDisposition[] Dispositions,
-    MigrationManifestReviewItem[] ReviewItems);
+internal sealed record GeoServerLayerSecurityTranslation
+{
+    public AccessPolicy? AccessPolicy { get; init; }
+    public MigrationSecurityRuleDisposition[] Dispositions { get; init; } = [];
+    public MigrationManifestReviewItem[] ReviewItems { get; init; } = [];
+    public bool RequiresManualReview { get; init; }
+}
 
 internal static class GeoServerSecurityRuleTranslator
 {
@@ -83,9 +86,28 @@ internal static class GeoServerSecurityRuleTranslator
             });
         }
 
+        public bool HasUnexpressedAccessRule { get; set; }
+
+        public bool RequiresManualReview
+        {
+            get
+            {
+                // Fail closed: if only read or only write was translated, Honua's AccessPolicyEvaluator
+                // falls back to AllowedRoles for writes (or leaves reads open), which would broaden access.
+                if (HasRead != HasWrite)
+                {
+                    return true;
+                }
+
+                // If an unexpressed wildcard/invalid rule matched and exact rules did not cover both modes,
+                // publishing with a null policy would expose the layer more broadly than GeoServer allowed.
+                return HasUnexpressedAccessRule && (!HasRead || !HasWrite);
+            }
+        }
+
         public AccessPolicy? BuildPolicy()
         {
-            if (!HasRead && !HasWrite)
+            if (RequiresManualReview || (!HasRead && !HasWrite))
             {
                 return null;
             }
@@ -110,7 +132,7 @@ internal static class GeoServerSecurityRuleTranslator
 
         if (rules.Count == 0)
         {
-            return new GeoServerLayerSecurityTranslation(null, [], []);
+            return new GeoServerLayerSecurityTranslation();
         }
 
         var accumulator = new PolicyAccumulator(layerSourceId);
@@ -119,10 +141,29 @@ internal static class GeoServerSecurityRuleTranslator
             ProcessLayerRule(layer, rule, accumulator);
         }
 
-        return new GeoServerLayerSecurityTranslation(
-            accumulator.BuildPolicy(),
-            accumulator.Dispositions.ToArray(),
-            accumulator.ReviewItems.ToArray());
+        if (accumulator.HasRead != accumulator.HasWrite)
+        {
+            accumulator.ReviewItems.Add(new MigrationManifestReviewItem
+            {
+                SourceId = layerSourceId,
+                Kind = "security-rule",
+                Code = UnexpressedRuleCode,
+                Severity = "manual-review",
+                Reason = "GeoServer layer defines only one of read/write access rules; held for manual review so Honua does not broaden the unspecified mode.",
+                ManualSteps =
+                [
+                    "Configure explicit read and write access policy roles in Honua before publishing this layer."
+                ]
+            });
+        }
+
+        return new GeoServerLayerSecurityTranslation
+        {
+            AccessPolicy = accumulator.BuildPolicy(),
+            Dispositions = accumulator.Dispositions.ToArray(),
+            ReviewItems = accumulator.ReviewItems.ToArray(),
+            RequiresManualReview = accumulator.RequiresManualReview
+        };
     }
 
     public static MigrationManifestReviewItem[] CollectUnmatchedUnexpressedRules(
@@ -294,6 +335,11 @@ internal static class GeoServerSecurityRuleTranslator
         GeoServerSecurityRule rule,
         string reason)
     {
+        if (!string.Equals(rule.Mode.Trim(), "a", StringComparison.OrdinalIgnoreCase))
+        {
+            accumulator.HasUnexpressedAccessRule = true;
+        }
+
         accumulator.Dispositions.Add(new MigrationSecurityRuleDisposition
         {
             RuleKey = rule.RuleKey,

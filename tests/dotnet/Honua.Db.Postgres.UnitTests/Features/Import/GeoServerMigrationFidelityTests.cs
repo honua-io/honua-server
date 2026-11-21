@@ -64,8 +64,42 @@ public sealed class GeoServerMigrationFidelityTests
         publish.Temporal.Should().NotBeNull();
         publish.Temporal!.StartTimeField.Should().Be("observed_at");
         publish.Temporal.EndTimeField.Should().Be("valid_until");
-        publish.Extensions.Should().NotBeNull().And.ContainKey("wms");
-        publish.Extensions!["wms"].GetRawText().Should().Contain("\"name\":\"elevation\"").And.Contain("\"units\":\"EPSG:5030\"");
+        publish.Extensions.Should().NotBeNull().And.ContainKey("geoserverDimensions");
+        publish.Extensions!["geoserverDimensions"].GetRawText().Should().Contain("\"attribute\":\"elev_m\"").And.Contain("\"units\":\"EPSG:5030\"");
+    }
+
+    [Fact]
+    public async Task ImportConfigurationAsync_WithReadOnlyRuleAndNoWriteRule_HoldsForManualReviewInsteadOfBroadening()
+    {
+        var responses = BuildBaseResponses();
+        responses["/geoserver/rest/security/acl/layers.json"] = """{"demo.roads.r":"ROLE_VIEWER"}""";
+        var publisher = new RecordingPublisher();
+        using var handler = new DictionaryHttpHandler(responses);
+        using var httpClient = new HttpClient(handler);
+        var service = CreateService(httpClient, new ServiceStubs { Publisher = publisher.Object });
+
+        var result = await service.ImportConfigurationAsync(BuildApplyRequest());
+
+        result.Success.Should().BeTrue();
+        publisher.Requests.Should().BeEmpty("a read-only rule without an explicit write rule must not publish and grant write access to readers");
+        result.ApplyPlan!.Steps.Should().ContainSingle(s => s.SourceId == "layer:demo:roads" && s.Disposition == "manual-review");
+    }
+
+    [Fact]
+    public async Task ImportConfigurationAsync_WithRestrictiveWildcardRule_HoldsForManualReviewInsteadOfPublishingOpen()
+    {
+        var responses = BuildBaseResponses();
+        responses["/geoserver/rest/security/acl/layers.json"] = """{"demo.*.r":"ROLE_SECRET"}""";
+        var publisher = new RecordingPublisher();
+        using var handler = new DictionaryHttpHandler(responses);
+        using var httpClient = new HttpClient(handler);
+        var service = CreateService(httpClient, new ServiceStubs { Publisher = publisher.Object });
+
+        var result = await service.ImportConfigurationAsync(BuildApplyRequest());
+
+        result.Success.Should().BeTrue();
+        publisher.Requests.Should().BeEmpty("a restrictive wildcard rule must hold the layer for manual review rather than publishing open");
+        result.ApplyPlan!.Steps.Should().ContainSingle(s => s.SourceId == "layer:demo:roads" && s.Disposition == "manual-review");
     }
 
     [Fact]
