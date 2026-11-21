@@ -37,20 +37,20 @@ public sealed class CapabilityKeyStatusDriftTests
     }
 
     [ArchitectureTest]
-    public void OptInRegistryCapabilities_AreMatchedToAtLeastOneCatalogKey()
+    public void PreReleaseRegistryCapabilities_EachResolveToACatalogKey()
     {
         var statusByKey = CapabilityKeyCatalog.All.ToDictionary(
             static key => key.Key, static key => key.Status, StringComparer.Ordinal);
 
-        var keyed = new CapabilityRegistry().All
-            .Where(static descriptor => descriptor.RequiresOptIn
-                && descriptor.Maturity is CapabilityMaturity.Experimental or CapabilityMaturity.Preview)
-            .Where(descriptor => CatalogKeysOf(descriptor, statusByKey).Any())
+        var unkeyed = new CapabilityRegistry().All
+            .Where(static descriptor => StatusByMaturity.ContainsKey(descriptor.Maturity))
+            .Where(descriptor => !CatalogKeysOf(descriptor, statusByKey).Any())
             .Select(static descriptor => descriptor.Id)
             .ToArray();
 
-        keyed.Should().Contain(["serve.sensorthings", "serve.3d-tiles-scene", "scene.catalog", "serve.i3s-scene"],
-            "the status check above is only meaningful while these off-by-default capabilities resolve to catalog keys.");
+        unkeyed.Should().BeEmpty(
+            "a pre-release capability with no catalog key escapes the status check above; "
+            + "give it a key in CapabilityKeyCatalog or an entitlement key that has one.");
     }
 
     private static IEnumerable<string> CatalogKeysOf(
