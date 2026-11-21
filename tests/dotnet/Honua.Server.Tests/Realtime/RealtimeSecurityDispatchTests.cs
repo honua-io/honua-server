@@ -171,11 +171,7 @@ public sealed class RealtimeSecurityDispatchTests(DatabaseFixtureAdapter databas
         await using var harness = await RealtimeLogHarness.CreateAsync(database);
         using var registry = new LiveStreamSecurityRegistry();
         var source = CreateEmptyFeatureSource();
-        var dispatcher = new RealtimeDispatcher(harness.Log, [source], Options.Create(new RealtimeOptions()),
-            NullLogger<RealtimeDispatcher>.Instance)
-        {
-            Security = registry
-        };
+        var dispatcher = CreateSourceDispatcher(harness, source, registry);
         await dispatcher.InitializeAsync(CancellationToken.None);
         var refreshed = false;
         using var stream = registry.Register(new("alice", null), _ =>
@@ -228,6 +224,13 @@ public sealed class RealtimeSecurityDispatchTests(DatabaseFixtureAdapter databas
     private static Task<long> AppendPolicyChangedAsync(RealtimeLogHarness harness, CancellationToken cancellationToken)
         => harness.Log.AppendAsync(RealtimeLogFamilies.Security, [new RealtimeLogRow("*", "policy-changed",
             RealtimeLogHarness.Payload(new { kind = "policy-changed", subject = "*" }))], null, cancellationToken);
+
+    private static RealtimeDispatcher CreateSourceDispatcher(
+        RealtimeLogHarness harness, IRealtimeFamilySource source, LiveStreamSecurityRegistry registry)
+        => new(harness.Log, [source], Options.Create(new RealtimeOptions()), NullLogger<RealtimeDispatcher>.Instance)
+        {
+            Security = registry
+        };
 
     private static IRealtimeFamilySource CreateEmptyFeatureSource()
     {
