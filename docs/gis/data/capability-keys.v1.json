@@ -288,7 +288,8 @@
       "displayName": "Branch Versioning",
       "category": "Editing",
       "edition": "Pro",
-      "description": "Core branch versioning (Pro): named gdb versions, isolated edits, reconcile/post, and gdbVersion-scoped editing/querying. Organisational approval and policy controls remain Enterprise. Preview in 2026.1; the experimental runtime opt-in remains required."
+      "description": "Core branch versioning (Pro): named gdb versions, isolated edits, reconcile/post, and gdbVersion-scoped editing/querying. Organisational approval and policy controls remain Enterprise. Preview in 2026.1; the experimental runtime opt-in remains required.",
+      "status": "experimental"
     },
     {
       "key": "editing.featureserver-edits",
@@ -367,7 +368,8 @@
       "displayName": "mTLS Client-Certificate Authentication",
       "category": "Identity",
       "edition": "Enterprise",
-      "description": "Native client-certificate (mTLS) authentication: trust profiles, issuer/chain validation with CRL/OCSP revocation, and certificate-to-principal mapping."
+      "description": "Native client-certificate (mTLS) authentication: trust profiles, issuer/chain validation with CRL/OCSP revocation, and certificate-to-principal mapping.",
+      "status": "experimental"
     },
     {
       "key": "identity.oidc",
@@ -568,28 +570,32 @@
       "displayName": "CityGML/BIM Scene Ingest",
       "category": "Scene",
       "edition": "Enterprise",
-      "description": "Ingest CityGML building models into a servable Building Scene Layer 3D Tiles tileset with per-feature discipline / sub-layer semantics."
+      "description": "Ingest CityGML building models into a servable Building Scene Layer 3D Tiles tileset with per-feature discipline / sub-layer semantics.",
+      "status": "experimental"
     },
     {
       "key": "scene.catalog",
       "displayName": "Scene Catalog",
       "category": "Scene",
       "edition": "Community",
-      "description": "Discover published 3D scene layers through the scene catalog surface."
+      "description": "Discover published 3D scene layers through the scene catalog surface.",
+      "status": "experimental"
     },
     {
       "key": "scene.pointcloud-ingest",
       "displayName": "Point Cloud Scene Ingest",
       "category": "Scene",
       "edition": "Enterprise",
-      "description": "Ingest LAS point clouds into a servable 3D Tiles point tileset preserving per-point classification, intensity, and RGB."
+      "description": "Ingest LAS point clouds into a servable 3D Tiles point tileset preserving per-point classification, intensity, and RGB.",
+      "status": "experimental"
     },
     {
       "key": "serve.3d-tiles-scene",
       "displayName": "3D Tiles Scene Serving",
       "category": "Serve",
       "edition": "Community",
-      "description": "Serve published 3D Tiles scene layers through the SceneServer surface. Scene ingest (CityGML/point cloud) is Enterprise-gated separately."
+      "description": "Serve published 3D Tiles scene layers through the SceneServer surface. Scene ingest (CityGML/point cloud) is Enterprise-gated separately.",
+      "status": "experimental"
     },
     {
       "key": "serve.elevation",
@@ -659,7 +665,7 @@
       "displayName": "I3S Scene Serving",
       "category": "Serve",
       "edition": "Enterprise",
-      "description": "Serve I3S metadata previews through Enterprise-gated SceneServer handlers; unlicensed requests return HTTP 402.",
+      "description": "Serve I3S metadata previews through Enterprise-gated SceneServer handlers. Off by default: the routes return HTTP 404 until Capabilities:Experimental:serve.i3s-scene:Enabled=true; once enabled, unlicensed requests return HTTP 402.",
       "status": "experimental"
     },
     {
@@ -718,7 +724,8 @@
       "displayName": "OGC SensorThings API",
       "category": "Serve",
       "edition": "Community",
-      "description": "Query sensor observation data through OGC SensorThings API v1.1."
+      "description": "Query sensor observation data through OGC SensorThings API v1.1.",
+      "status": "preview"
     },
     {
       "key": "serve.stac",
