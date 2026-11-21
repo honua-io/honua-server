@@ -26,6 +26,11 @@ internal static class McpTelemetry
         unit: "{read}",
         description: "Count of MCP resource reads by family and status.");
 
+    public static readonly Counter<long> AccessAuditDroppedCount = HonuaTelemetry.Meter.CreateCounter<long>(
+        "honua.mcp.access_audit.dropped",
+        unit: "{record}",
+        description: "Count of MCP access audit records dropped because the audit queue was full.");
+
     public static readonly Counter<long> GroundingResultCount = HonuaTelemetry.Meter.CreateCounter<long>(
         "honua.grounding.result",
         unit: "{result}",

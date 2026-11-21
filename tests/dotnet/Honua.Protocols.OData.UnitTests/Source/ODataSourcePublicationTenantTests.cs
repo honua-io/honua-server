@@ -59,6 +59,30 @@ public sealed class ODataSourcePublicationTenantTests
         stream.DidNotReceive().StreamFeaturesAsync(2, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    public async Task HandleApplyAsync_PrimaryDeniedByAccessPolicy_DoesNotReadIt()
+    {
+        var graph = CreateGraph();
+        graph = graph with
+        {
+            Publications = graph.Publications.Select(p => p with { Metadata = p.Metadata with { Tenant = null } }).ToArray(),
+            Resources = graph.Resources.Select(r => r.Metadata.Id == "private"
+                ? r with { AccessPolicy = new() { AllowAnonymous = false } }
+                : r).ToArray()
+        };
+        var provider = new TestMetadataV2GraphProvider(graph);
+        using var services = CreateServices(provider, tenantId: null);
+        var stream = Substitute.For<IStreamingFeatureStore>();
+        stream.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(EmptyFeatures());
+        var (search, _) = CreateSearch(provider, Substitute.For<IRelationshipStore>(), stream);
+
+        await search.HandleApplyAsync(new(7, "aggregate($count as n)", null, "https://honua.example/odata", Context(services)), CancellationToken.None);
+
+        stream.DidNotReceive().StreamFeaturesAsync(2, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        stream.Received(1).StreamFeaturesAsync(1, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
     [UnitTheory]
     [InlineData(null, false)]
     [InlineData("tenant-a", false)]

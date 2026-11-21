@@ -282,6 +282,43 @@ public sealed class FeatureServerQueryTopFeaturesTests : IClassFixture<WebAppFix
     [IntegrationTest]
     [Operation(Operations.QueryTopFeatures)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures")]
+    public async Task QueryTopFeatures_PageShorterThanTheTopSet_ReportsExceededTransferLimit()
+    {
+        var all = await GetTopFeaturesAsync(string.Empty);
+        all.GetProperty("features").GetArrayLength().Should().BeGreaterThan(1, "the fixture holds several top features");
+
+        var page = await GetTopFeaturesAsync("&resultRecordCount=1");
+
+        page.GetProperty("features").GetArrayLength().Should().Be(1);
+        page.GetProperty("exceededTransferLimit").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryTopFeatures)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures")]
+    public async Task QueryTopFeatures_OffsetAboveTheMaximum_ReturnsAnError()
+    {
+        var root = await GetTopFeaturesAsync($"&resultOffset={int.MaxValue}");
+
+        root.TryGetProperty("error", out var error).Should().BeTrue();
+        error.GetRawText().Should().Contain("resultOffset cannot exceed");
+        root.TryGetProperty("features", out _).Should().BeFalse();
+    }
+
+    private async Task<JsonElement> GetTopFeaturesAsync(string parameters)
+    {
+        var topFilter = JsonSerializer.Serialize(new { groupByFields = "category", topCount = 2, orderByFields = "objectid desc" });
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryTopFeatures?topFilter={Uri.EscapeDataString(topFilter)}{parameters}&f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return document.RootElement.Clone();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryTopFeatures)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures")]
     public async Task QueryTopFeatures_UnknownParameter_ReturnsBadRequest()
     {
         // Genuinely-unknown params must still be rejected with 400; only the standard

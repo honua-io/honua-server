@@ -407,6 +407,80 @@ public sealed class OgcProcessesCiteEchoFixtureTests
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("GET /ogc/processes/processes")]
+    [Endpoint("GET /ogc/processes/processes/{processId}")]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task CiteProfile_EchoFixture_ExecutesSynchronouslyWithoutAsyncPreference()
+    {
+        var fixture = CreateFixture();
+        await PostgresJobHost.StartAsync(fixture);
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            client.Timeout = TimeSpan.FromSeconds(45);
+
+            (await ReadJobControlOptionsAsync(client, "/ogc/processes/processes/honua-cite-echo"))
+                .Should().Equal("async-execute", "sync-execute");
+            using var list = JsonDocument.Parse(await client.GetStringAsync("/ogc/processes/processes"));
+            var listed = list.RootElement.GetProperty("processes").EnumerateArray()
+                .Single(process => process.GetProperty("id").GetString() == OgcProcessesCiteEchoFixture.ProcessId);
+            listed.GetProperty("jobControlOptions").EnumerateArray().Select(option => option.GetString())
+                .Should().Equal("async-execute", "sync-execute");
+
+            using var body = new StringContent(
+                """{"inputs":{"literal":"teststring"},"outputs":{"literal":{"transmissionMode":"value"}},"response":"raw"}""",
+                Encoding.UTF8,
+                "application/json");
+            using var response = await client.PostAsync("/ogc/processes/processes/honua-cite-echo/execution", body);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("teststring");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Operation(Operations.JobResults)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
+    public async Task CiteProfile_EchoFixture_SyncAndAsyncDocumentResultsShareOneShape()
+    {
+        const string execution =
+            """{"inputs":{"literal":"teststring"},"outputs":{"literal":{"transmissionMode":"value"}},"response":"document"}""";
+        var fixture = CreateFixture();
+        await PostgresJobHost.StartAsync(fixture);
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            client.Timeout = TimeSpan.FromSeconds(45);
+
+            using var submit = await PostExecutionAsync(client, execution);
+            submit.StatusCode.Should().Be(HttpStatusCode.Created);
+            var jobId = await ReadJobIdAsync(submit);
+            using var terminal = await PollUntilSucceededAsync(client, jobId);
+            using var asyncResults = JsonDocument.Parse(await client.GetStringAsync($"/ogc/processes/jobs/{jobId}/results"));
+
+            using var body = new StringContent(execution, Encoding.UTF8, "application/json");
+            using var syncResponse = await client.PostAsync("/ogc/processes/processes/honua-cite-echo/execution", body);
+            syncResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var syncResults = JsonDocument.Parse(await syncResponse.Content.ReadAsStringAsync());
+
+            asyncResults.RootElement.GetProperty("literal").GetString().Should().Be("teststring");
+            JsonElement.DeepEquals(syncResults.RootElement, asyncResults.RootElement).Should().BeTrue(
+                $"sync results {syncResults.RootElement} must match async results {asyncResults.RootElement}");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     [Theory]
     [InlineData("{\"literal\":1}", "literal")]
     [InlineData("{\"literal\":\"ok\",\"object\":\"text\"}", "object")]
@@ -473,6 +547,13 @@ public sealed class OgcProcessesCiteEchoFixtureTests
         request.Headers.Add("Prefer", "respond-async");
         request.Content = new StringContent(json, Encoding.UTF8, "application/json");
         return await client.SendAsync(request);
+    }
+
+    private static async Task<string?[]> ReadJobControlOptionsAsync(HttpClient client, string path)
+    {
+        using var document = JsonDocument.Parse(await client.GetStringAsync(path));
+        return [.. document.RootElement.GetProperty("jobControlOptions").EnumerateArray()
+            .Select(option => option.GetString())];
     }
 
     private static async Task<string> ReadJobIdAsync(HttpResponseMessage response)

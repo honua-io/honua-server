@@ -17,6 +17,9 @@ internal static class SamlTestAssertions
 
     public const string AcsUrl = Audience + "/saml/acs";
 
+    // The IdP session handle that signed responses carry and logout requests name.
+    public const string SessionIndex = "_session1";
+
     public static X509Certificate2 CreateSigningCertificate()
     {
         using var rsa = RSA.Create(2048);
@@ -156,16 +159,25 @@ internal static class SamlTestAssertions
     }
 
     public static string CreateSignedLogoutRequest(X509Certificate2 certificate, string nameId)
+        => SignLogoutRequest(certificate, nameId, $"<samlp:SessionIndex>{SessionIndex}</samlp:SessionIndex>");
+
+    // A logout request that names the subject but none of its sessions.
+    public static string CreateSignedLogoutRequestWithoutSessionIndex(X509Certificate2 certificate, string nameId)
+        => SignLogoutRequest(certificate, nameId, sessionIndexXml: string.Empty);
+
+    public static string CreateUnsignedLogoutRequest(string nameId)
+        => Convert.ToBase64String(Encoding.UTF8.GetBytes(
+            BuildLogoutRequestXml(nameId, "_logout-unsigned", $"<samlp:SessionIndex>{SessionIndex}</samlp:SessionIndex>")));
+
+    private static string SignLogoutRequest(X509Certificate2 certificate, string nameId, string sessionIndexXml)
     {
-        var xml = BuildLogoutRequestXml(nameId);
-        var signed = SignElement(xml, "_logout1", new SigningParameters(certificate));
+        var id = "_logout" + Guid.NewGuid().ToString("N");
+        var xml = BuildLogoutRequestXml(nameId, id, sessionIndexXml);
+        var signed = SignElement(xml, id, new SigningParameters(certificate));
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(signed));
     }
 
-    public static string CreateUnsignedLogoutRequest(string nameId)
-        => Convert.ToBase64String(Encoding.UTF8.GetBytes(BuildLogoutRequestXml(nameId)));
-
-    private static string BuildLogoutRequestXml(string nameId)
+    private static string BuildLogoutRequestXml(string nameId, string id, string sessionIndexXml)
     {
         const string saml = "urn:oasis:names:tc:SAML:2.0:assertion";
         const string samlp = "urn:oasis:names:tc:SAML:2.0:protocol";
@@ -174,10 +186,10 @@ internal static class SamlTestAssertions
         // Realistic IdP shape: a prefixed samlp:LogoutRequest root with samlp-prefixed and
         // assertion-default-namespace children, exercising exclusive-C14N prefix rendering.
         return $"""
-            <samlp:LogoutRequest xmlns:samlp="{samlp}" xmlns="{saml}" ID="_logout1" Version="2.0" IssueInstant="{issueInstant}">
+            <samlp:LogoutRequest xmlns:samlp="{samlp}" xmlns="{saml}" ID="{id}" Version="2.0" IssueInstant="{issueInstant}" Destination="{Audience}/saml/slo">
               <Issuer>{Issuer}</Issuer>
               <NameID Format="urn:oasis:names:tc:SAML:2.0:nameid-format:persistent">{nameId}</NameID>
-              <samlp:SessionIndex>_session1</samlp:SessionIndex>
+              {sessionIndexXml}
             </samlp:LogoutRequest>
             """;
     }
@@ -277,7 +289,7 @@ internal static class SamlTestAssertions
                   </SubjectConfirmation>
                 </Subject>
                 {conditionsXml}
-                <AuthnStatement AuthnInstant="{issueInstant}">
+                <AuthnStatement AuthnInstant="{issueInstant}" SessionIndex="{SessionIndex}">
                   <AuthnContext><AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:Password</AuthnContextClassRef></AuthnContext>
                 </AuthnStatement>
                 <AttributeStatement>

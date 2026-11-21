@@ -285,14 +285,14 @@ internal sealed partial class OgcFeaturesGeometryServices
 
     private SimpleGeoJsonGeometry ConvertGeometryToSimpleGeometry(Geometry geometry, AxisOrder axisOrder)
     {
+        // Both callers decode the geometry themselves, so it is swapped and rounded in place.
         if (axisOrder == AxisOrder.NorthEast)
         {
-            geometry = (Geometry)geometry.Copy();
             geometry.Apply(new AxisSwapCoordinateFilter());
             geometry.GeometryChanged();
         }
 
-        geometry = GeometryOutputProcessor.ApplyLimits(geometry, _geometryLimits) ?? geometry;
+        geometry = GeometryOutputProcessor.ApplyLimitsInPlace(geometry, _geometryLimits) ?? geometry;
 
         var geoJson = RingWindingNormalizer.WriteGeoJson(_geoJsonWriter, geometry);
 

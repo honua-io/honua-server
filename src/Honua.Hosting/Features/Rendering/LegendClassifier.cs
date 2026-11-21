@@ -29,6 +29,21 @@ internal static class LegendClassifier
     private const string StepOperator = "step";
     private const string InterpolateOperator = "interpolate";
     private const string GetOperator = "get";
+    private const string WithheldClassLabel = "Default";
+
+    // Class values keyed on a withheld field (hidden, or masked for this caller) would disclose that field's values,
+    // so such a style layer gets one neutral entry: its fallback swatch, labelled without the layer id a publisher may name per class.
+    internal static LegendClassSet Classify(MapLibreStyleLayer styleLayer, IReadOnlySet<string> withheldFields)
+    {
+        ArgumentNullException.ThrowIfNull(withheldFields);
+        return withheldFields.Count > 0
+               && StyleTranslator.CollectReferencedFields([styleLayer]).Any(withheldFields.Contains)
+            ? new LegendClassSet
+            {
+                Classes = [new LegendClass(WithheldClassLabel, ImmutableDictionary<string, object?>.Empty)]
+            }
+            : Classify(styleLayer);
+    }
 
     internal static LegendClassSet Classify(MapLibreStyleLayer styleLayer)
     {

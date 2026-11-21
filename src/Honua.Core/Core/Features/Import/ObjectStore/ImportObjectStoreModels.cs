@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.ObjectStorage;
+
 namespace Honua.Core.Features.Import.ObjectStore;
 
 public static class ImportObjectStoreProblems
@@ -13,46 +15,52 @@ public static class ImportObjectStoreProblems
 
     public const string Changed = "import.source_changed";
 
-    public const string UnsupportedScheme = "import.source_unsupported_scheme";
+    public const string RequesterPays = "import.source_requester_pays";
 
     public const string TypePrefix = "https://honua.io/problems/";
 
     public static string TypeFor(string code) => TypePrefix + code;
 }
 
+// Endpoint settings for S3 clients. Which buckets and roles are reachable is decided by connections.
 public sealed class ImportObjectStoreOptions
 {
     public const string SectionName = "Import:ObjectStore";
 
-    public string[] AllowedBuckets { get; set; } = [];
-
-    // The external id is never taken from the request.
-    public ImportObjectStoreRoleOptions[] AssumeRoles { get; set; } = [];
-
     public string? Region { get; set; }
 
+    // Emulators only; refused when the environment is Production.
     public string? ServiceUrl { get; set; }
 
     public bool ForcePathStyle { get; set; }
 }
 
-public sealed class ImportObjectStoreRoleOptions
-{
-    public string RoleArn { get; set; } = string.Empty;
-
-    // The role-trust external id is configured on the server and is never accepted from the request, logged, or written to the audit record.
-    public string? ExternalId { get; set; }
-}
-
 public sealed record ImportObjectLocation
 {
-    public required string Bucket { get; init; }
+    public required ObjectStorageConnection Connection { get; init; }
 
     public required string Key { get; init; }
 
-    public string? AssumeRoleArn { get; init; }
+    public string Bucket => Connection.Bucket;
 
-    public required string SourceUri { get; init; }
+    public string SourceUri => $"s3://{Connection.Bucket}/{Key}";
+
+    public static ImportObjectLocation From(ObjectStorageResolution resolution)
+    {
+        ArgumentNullException.ThrowIfNull(resolution);
+        if (!resolution.Succeeded || resolution.Connection is null || resolution.Key is null)
+        {
+            throw new ArgumentException("Only a resolved connection object has a location.", nameof(resolution));
+        }
+
+        return new ImportObjectLocation
+        {
+            Connection = resolution.Connection,
+            Key = resolution.Key,
+        };
+    }
+
+    public override string ToString() => $"ImportObjectLocation {{ SourceUri = {SourceUri}, ConnectionId = {Connection.Id} }}";
 }
 
 public sealed record ImportObjectHead
@@ -82,6 +90,11 @@ public sealed class ImportObjectStoreException : Exception
 
     public static ImportObjectStoreException Changed(string message)
         => new(ImportObjectStoreProblems.Changed, message);
+
+    public static ImportObjectStoreException RequesterPays()
+        => new(
+            ImportObjectStoreProblems.RequesterPays,
+            "Requester-pays buckets are not supported. Turn off requester pays or copy the data to a bucket you pay for.");
 }
 
 public interface IImportObjectStoreReader

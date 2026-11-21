@@ -173,9 +173,9 @@ with HonuaAdminClient(os.environ["HONUA_BASE_URL"], api_key=os.environ["HONUA_AP
     ))
 if not layer.service_name:
     raise SystemExit("publish did not return a service name")
-open("layer.id", "w").write(str(layer.layer_id) + "\n")
+open("layer.id", "w").write(str(layer.storage_layer_id) + "\n")
 open("service.name", "w").write(layer.service_name + "\n")
-print(f"{layer.service_name} {layer.layer_id}")
+print(f"{layer.service_name} {layer.storage_layer_id}")
 PY
 export HONUA_SERVICE="$(cat service.name)"
 export HONUA_LAYER_ID="$(cat layer.id)"

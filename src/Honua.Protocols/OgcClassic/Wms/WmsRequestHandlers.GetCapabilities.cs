@@ -335,12 +335,14 @@ internal static partial class WmsRequestHandlers
             .AppendLine("\" />");
     }
 
-    private static async Task<string> BuildWmsCapabilities(
+    private static async Task BuildWmsCapabilities(
+        StringBuilder sb,
         HttpContext context,
         MetadataV2Service service,
-        IReadOnlyList<WmsLayer> accessibleLayers,
+        WmsCapabilitiesLayers layers,
         string version)
     {
+        var accessibleLayers = layers.Accessible;
         var isWms111 = IsWms111Version(version);
         var crsElementName = isWms111 ? "SRS" : "CRS";
         var wmsEndpoint = BaseUrlResolver.PreserveToken(
@@ -359,7 +361,6 @@ internal static partial class WmsRequestHandlers
                 layer.Publication.Metadata.Id,
                 logger))).ConfigureAwait(false)).OfType<PreparedWmsCapabilitiesLayer>().ToArray();
 
-        var sb = new StringBuilder(8192);
         sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
         if (isWms111)
         {
@@ -540,10 +541,10 @@ internal static partial class WmsRequestHandlers
             sb.AppendLine("      </Layer>");
         }
 
+        AppendWmsChallengeLayers(sb, layers.Challenge, version);
         sb.AppendLine("    </Layer>");
         sb.AppendLine("  </Capability>");
         sb.Append(isWms111 ? "</WMT_MS_Capabilities>" : "</WMS_Capabilities>").AppendLine();
-        return sb.ToString();
     }
 
     private static string[] GetWmsCapabilitiesCrs(IReadOnlyList<MetadataV2SpatialReference>? supportedCrs, string version)
@@ -697,11 +698,26 @@ internal static partial class WmsRequestHandlers
         string indent)
     {
         sb.Append(indent).AppendLine("<EX_GeographicBoundingBox>");
-        sb.Append(indent).Append("  <westBoundLongitude>").Append(minX.ToString("F6", CultureInfo.InvariantCulture)).AppendLine("</westBoundLongitude>");
-        sb.Append(indent).Append("  <eastBoundLongitude>").Append(maxX.ToString("F6", CultureInfo.InvariantCulture)).AppendLine("</eastBoundLongitude>");
-        sb.Append(indent).Append("  <southBoundLatitude>").Append(minY.ToString("F6", CultureInfo.InvariantCulture)).AppendLine("</southBoundLatitude>");
-        sb.Append(indent).Append("  <northBoundLatitude>").Append(maxY.ToString("F6", CultureInfo.InvariantCulture)).AppendLine("</northBoundLatitude>");
+        sb.Append(indent).Append("  <westBoundLongitude>").Append(FormatLowerBound(minX)).AppendLine("</westBoundLongitude>");
+        sb.Append(indent).Append("  <eastBoundLongitude>").Append(FormatUpperBound(maxX)).AppendLine("</eastBoundLongitude>");
+        sb.Append(indent).Append("  <southBoundLatitude>").Append(FormatLowerBound(minY)).AppendLine("</southBoundLatitude>");
+        sb.Append(indent).Append("  <northBoundLatitude>").Append(FormatUpperBound(maxY)).AppendLine("</northBoundLatitude>");
         sb.Append(indent).AppendLine("</EX_GeographicBoundingBox>");
+    }
+
+    // Bounds are written with six decimals. Half-away rounding can move an edge
+    // inward past a feature that sits on it, so each edge rounds away from the box.
+    // A value already on a 6-decimal boundary stays there.
+    private static string FormatLowerBound(double value) => FormatOutwardBound(value, Math.Floor);
+
+    private static string FormatUpperBound(double value) => FormatOutwardBound(value, Math.Ceiling);
+
+    private static string FormatOutwardBound(double value, Func<double, double> outward)
+    {
+        var scaled = value * 1_000_000d;
+        var nearest = Math.Round(scaled, MidpointRounding.AwayFromZero);
+        var rounded = Math.Abs(scaled - nearest) <= 1e-4 ? nearest : outward(scaled);
+        return (rounded / 1_000_000d).ToString("F6", CultureInfo.InvariantCulture);
     }
 
     private static void AppendWmsBoundingBox(
@@ -733,13 +749,13 @@ internal static partial class WmsRequestHandlers
             .Append("=\"")
             .Append(EscapeXml(crs))
             .Append("\" minx=\"")
-            .Append(outputMinX.ToString("F6", CultureInfo.InvariantCulture))
+            .Append(FormatLowerBound(outputMinX))
             .Append("\" miny=\"")
-            .Append(outputMinY.ToString("F6", CultureInfo.InvariantCulture))
+            .Append(FormatLowerBound(outputMinY))
             .Append("\" maxx=\"")
-            .Append(outputMaxX.ToString("F6", CultureInfo.InvariantCulture))
+            .Append(FormatUpperBound(outputMaxX))
             .Append("\" maxy=\"")
-            .Append(outputMaxY.ToString("F6", CultureInfo.InvariantCulture))
+            .Append(FormatUpperBound(outputMaxY))
             .AppendLine("\" />");
     }
 
@@ -753,13 +769,13 @@ internal static partial class WmsRequestHandlers
     {
         sb.Append(indent)
             .Append("<LatLonBoundingBox minx=\"")
-            .Append(minX.ToString("F6", CultureInfo.InvariantCulture))
+            .Append(FormatLowerBound(minX))
             .Append("\" miny=\"")
-            .Append(minY.ToString("F6", CultureInfo.InvariantCulture))
+            .Append(FormatLowerBound(minY))
             .Append("\" maxx=\"")
-            .Append(maxX.ToString("F6", CultureInfo.InvariantCulture))
+            .Append(FormatUpperBound(maxX))
             .Append("\" maxy=\"")
-            .Append(maxY.ToString("F6", CultureInfo.InvariantCulture))
+            .Append(FormatUpperBound(maxY))
             .AppendLine("\" />");
     }
 

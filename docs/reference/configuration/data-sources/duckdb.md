@@ -277,6 +277,16 @@ DuckDB is an embedded analytical database optimized for read-heavy OLAP workload
   scans by default. Use object-store lifecycle policies, CDN/proxy caches where appropriate,
   compact Parquet row groups, partition pruning, and explicit layer limits instead of treating
   object storage like an OLTP backend.
+- **Restricted access**: After loading its extensions and object-store settings, each DuckDB
+  database instance turns off external access except for the configured `ExternalSource`
+  paths (a glob or directory allows its directory prefix, a plain file allows that file)
+  and the DuckDB temp directory. It also turns off extension auto-install and auto-load,
+  and locks its configuration. Queries cannot read or write other files or URLs, attach
+  databases, or install extensions. DuckDB can still write inside the allowed prefixes, so
+  mount local source directories read-only and give object-store credentials read access
+  only. Keep each source in its own directory or bucket prefix: a glob at the top of a
+  bucket (`s3://bucket/*.parquet`) allows the whole bucket, and a bare relative glob
+  (`*.parquet`) allows the server's working directory.
 - **File locking**: DuckDB holds a file lock on the `.duckdb` file. Only one process can open
   the file at a time (even in read-only mode, a shared lock is acquired). Do not run multiple
   Honua instances against the same DuckDB file.

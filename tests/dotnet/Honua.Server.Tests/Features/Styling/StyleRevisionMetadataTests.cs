@@ -310,6 +310,17 @@ public class StyleRevisionMetadataTests
             return Task.FromResult<LayerStyleDefinition?>(_state);
         }
 
+        public Task<int?> GetLayerStyleWriteVersionAsync(int layerId, CancellationToken cancellationToken = default)
+            => Task.FromResult<int?>(layerId == _expectedLayerId ? _state?.StyleVersion ?? 0 : null);
+
+        public Task<LayerStyleDefinition?> SetStyleIfVersionAsync(
+            int layerId,
+            ConditionalStyleWrite write,
+            CancellationToken cancellationToken = default)
+            => (_state?.StyleVersion ?? 0) == write.ExpectedVersion
+                ? SetMapLibreStyleAsync(layerId, write.MapLibreStyleJson, cancellationToken: cancellationToken)
+                : Task.FromResult<LayerStyleDefinition?>(null);
+
         public Task<LayerStyleDefinition?> SetStyleAsync(
             int layerId,
             string mapLibreStyleJson,

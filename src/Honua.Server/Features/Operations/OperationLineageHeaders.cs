@@ -32,6 +32,8 @@ internal static class OperationLineageHeaders
             Admission = hop.Admission,
             AgentOrigin = string.IsNullOrWhiteSpace(context.ApprovedProposalId)
                 && Honua.Infrastructure.Authentication.AgentPrincipal.IsAgentRequest(hop.Origin),
+            AgentRequested = Honua.Infrastructure.Authentication.AgentPrincipal.IsAgentRequest(hop.Origin)
+                || Honua.Core.Features.Operations.Policy.AgentApprovalRule.IsAgent(context.Roles),
         }));
     }
 
@@ -106,6 +108,10 @@ internal readonly record struct OperationLineageAttestation
 
     // The dispatching caller was an agent; the receiving hop marks its principal as one.
     public bool AgentOrigin { get; init; }
+
+    // An agent made the call, or made the proposal a human approved (the replay carries the agent
+    // role but is not marked, so approval gates do not apply twice).
+    public bool AgentRequested { get; init; }
 }
 
 // Set on a request that carried a valid one-use attestation: the operations gateway dispatched
@@ -114,9 +120,14 @@ internal sealed class AttestedOperationLineage
 {
     internal static readonly AttestedOperationLineage Instance = new();
 
+    internal static readonly AttestedOperationLineage ForAgent = new() { AgentRequested = true };
+
     private AttestedOperationLineage()
     {
     }
+
+    // A credential issued on this hop is an agent credential.
+    internal bool AgentRequested { get; private init; }
 }
 
 internal sealed record OperationLoopbackAdmission(
@@ -146,7 +157,7 @@ internal sealed class OperationLineageAttestationMiddleware(RequestDelegate next
 
         if (!StringValues.IsNullOrEmpty(token) && store.TryConsume(token, out var lineage))
         {
-            context.Features.Set(AttestedOperationLineage.Instance);
+            context.Features.Set(lineage.AgentRequested ? AttestedOperationLineage.ForAgent : AttestedOperationLineage.Instance);
             Add(context, OperationLineageHeaders.OperationInstanceId, lineage.OperationInstanceId);
             Add(context, OperationLineageHeaders.AuditId, lineage.AuditId);
             Add(context, OperationLineageHeaders.ProposalId, lineage.ProposalId);

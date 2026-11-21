@@ -32,7 +32,7 @@ Use the `/ogc/wcs/{serviceId}` form, not `/ogc/services/{serviceId}/wcs`. Over H
 
 ### Token auth (if authentication is enabled)
 
-Honua implements the portal token endpoint at `/sharing/rest/generateToken` (GET or POST form-encoded). Desktop clients that prompt for credentials when adding a secured service use it automatically. For an application-managed credential, use `PortalCompat.generateToken` from `@honua/sdk-js/client-compat`:
+Honua implements the portal token endpoint at `/sharing/rest/generateToken` (POST form-encoded; credentials in a GET query string are refused unless the server sets `Authentication__PortalToken__AllowQueryStringCredentials=true`). Desktop clients that prompt for credentials when adding a secured service use it automatically. For an application-managed credential, use `PortalCompat.generateToken` from `@honua/sdk-js/client-compat`:
 
 ```js
 const credential = await portal.generateToken({

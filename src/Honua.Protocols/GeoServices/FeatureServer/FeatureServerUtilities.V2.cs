@@ -34,6 +34,8 @@ internal static partial class FeatureServerEndpoints
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(publications);
         ArgumentNullException.ThrowIfNull(snapshot);
+        publications = [.. publications.Select(pair =>
+            (ManagedWriteStorage.WithoutUnservableEdits(snapshot, service, pair.Publication), pair.Resource))];
 
         var objectIdField = ResolveServiceObjectIdFieldV2(service, snapshot);
         var supportsStatistics = true;
@@ -118,10 +120,12 @@ internal static partial class FeatureServerEndpoints
         ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(publication);
         ArgumentNullException.ThrowIfNull(snapshot);
+        publication = ManagedWriteStorage.WithoutUnservableEdits(snapshot, service, publication);
 
         var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         var displayField = ResolveDisplayFieldFromResource(resource, objectIdField);
         var globalIdField = ResolveGlobalIdFieldV2(resource);
+        var subtypes = ResolveVisibleSubtypes(resource);
         var supportsStatistics = true;
         var supportsAdvancedQueries = ServiceSupportsAdvancedQueriesV2(service);
         var relationships = authorizedRelationships ?? BuildRelationshipResponseV2(resource, snapshot, service);
@@ -231,24 +235,24 @@ internal static partial class FeatureServerEndpoints
             // has typed/subtyped templates they live inside each `types[]` entry; it is populated
             // only by layers without subtypes (none authored on the canonical graph today).
             Templates = [],
-            TypeIdField = resource.Subtypes?.SubtypeField,
+            TypeIdField = subtypes?.SubtypeField,
             Types = GeoServicesTemplateMapper.MapTypes(
-                resource.Subtypes,
+                subtypes,
                 MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None)),
             AdvancedQueryCapabilities = advancedQueryCapabilities,
             // Esri subtype surface (subtypeField / subtypes / defaultSubtypeCode) carried
             // from the canonical resource so it survives import → publish → compat-compile
             // and reaches Esri clients. Omitted when the layer has none.
-            SubtypeField = resource.Subtypes?.SubtypeField,
-            DefaultSubtypeCode = resource.Subtypes?.DefaultSubtypeCode,
-            Subtypes = GeoServicesSubtypeMapper.Map(resource.Subtypes),
+            SubtypeField = subtypes?.SubtypeField,
+            DefaultSubtypeCode = subtypes?.DefaultSubtypeCode,
+            Subtypes = GeoServicesSubtypeMapper.Map(subtypes),
             // Contingent-value definition surfaced on the layer metadata from the canonical
             // resource's contingentValueGroups (the same source the service-level
             // queryContingentValues operation reads), reusing GeoServicesContingentValueMapper.
             // Omitted when the layer declares no contingent values.
             ContingentValuesDefinition = GeoServicesContingentValueMapper.Map(
                 publication.LayerIndex ?? snapshot.ResolveStorageLayerId(resource) ?? -1,
-                resource.ContingentValueGroups)
+                [.. resource.ContingentValueGroups.Where(group => !group.Fields.Any(resource.IsHiddenSchemaField))])
         };
     }
 
@@ -311,6 +315,27 @@ internal static partial class FeatureServerEndpoints
 
     internal static string BuildServiceCapabilitiesV2(MetadataV2Service service, bool offlineSyncEnabled)
         => BuildServiceCapabilitiesV2(service, [], supportsAttachmentUploads: false, offlineSyncEnabled);
+
+    // A service as a directory listing sees it: the resources the caller may discover through it.
+    internal sealed record ListedService(
+        MetadataV2Service Service, MetadataV2GraphSnapshot Snapshot, IReadOnlyCollection<MetadataV2Object> VisibleResources);
+
+    // The service capabilities a directory listing shows: editing only where a publication the caller can see
+    // has storage that takes managed writes, the same rule the service metadata applies.
+    internal static string BuildListedServiceCapabilitiesV2(ListedService listed, bool offlineSyncEnabled)
+    {
+        var (service, snapshot, visible) = listed;
+        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Object Resource)> publications =
+        [
+            .. snapshot.PublicationsForService(service.Metadata.Id)
+                .Where(snapshot.IsRoutable)
+                .Select(publication => (Publication: ManagedWriteStorage.WithoutUnservableEdits(snapshot, service, publication),
+                    Resource: snapshot.ResolveResource(publication)))
+                .Where(pair => pair.Resource is not null && visible.Contains(pair.Resource))
+                .Select(static pair => (pair.Publication, pair.Resource!))
+        ];
+        return BuildServiceCapabilitiesV2(service, publications, supportsAttachmentUploads: false, offlineSyncEnabled);
+    }
 
     internal static string BuildServiceCapabilitiesV2(
         MetadataV2Service service,
@@ -893,17 +918,43 @@ internal static partial class FeatureServerEndpoints
             return null;
         }
 
-        return new EditFieldsInfo
+        // A hidden or masked editor-tracking field is not named, as it is not listed.
+        var info = new EditFieldsInfo
         {
-            CreatorField = BlankToNull(editing.CreatorField),
-            CreationDateField = BlankToNull(editing.CreatedAtField),
-            EditorField = BlankToNull(editing.EditorField),
-            EditDateField = BlankToNull(editing.UpdatedAtField),
+            CreatorField = VisibleOrNull(resource, editing.CreatorField),
+            CreationDateField = VisibleOrNull(resource, editing.CreatedAtField),
+            EditorField = VisibleOrNull(resource, editing.EditorField),
+            EditDateField = VisibleOrNull(resource, editing.UpdatedAtField),
         };
+        return info is { CreatorField: null, CreationDateField: null, EditorField: null, EditDateField: null } ? null : info;
     }
 
-    private static string? BlankToNull(string? value)
-        => string.IsNullOrWhiteSpace(value) ? null : value;
+    // Subtype codes over a hidden or masked field, and per-subtype defaults and domains of one, would disclose it.
+    internal static MetadataV2Subtypes? ResolveVisibleSubtypes(MetadataV2Object resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        var subtypes = resource.Subtypes;
+        if (subtypes is null || resource.IsHiddenSchemaField(subtypes.SubtypeField))
+        {
+            return null;
+        }
+
+        var hidden = resource.HiddenSchemaFieldNames();
+        return hidden.Count == 0
+            ? subtypes
+            : subtypes with
+            {
+                Subtypes = [.. subtypes.Subtypes.Select(subtype => subtype with
+                {
+                    FieldOverrides = subtype.FieldOverrides
+                        .Where(pair => !hidden.Contains(pair.Key))
+                        .ToDictionary(StringComparer.OrdinalIgnoreCase)
+                })]
+            };
+    }
+
+    private static string? VisibleOrNull(MetadataV2Object resource, string? fieldName)
+        => string.IsNullOrWhiteSpace(fieldName) || resource.IsHiddenSchemaField(fieldName) ? null : fieldName;
 
     internal static string? ResolveGlobalIdFieldV2(MetadataV2Object resource)
         => resource.SchemaFields.FirstOrDefault(field => !field.Hidden && field.Type == MetadataV2FieldType.Uuid &&

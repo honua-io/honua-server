@@ -24,6 +24,9 @@ internal static class ReadOnlyDynamicSql
         "vacuum"
     };
 
+    private static readonly HashSet<string>.AlternateLookup<ReadOnlySpan<char>> MutatingTokenLookup =
+        MutatingTokens.GetAlternateLookup<ReadOnlySpan<char>>();
+
     public static void ValidateReadOnlySingleStatement(string sql)
     {
         if (string.IsNullOrWhiteSpace(sql))
@@ -38,7 +41,8 @@ internal static class ReadOnlyDynamicSql
             throw new ArgumentException("Only read-only SELECT statements are eligible for dynamic execution.", nameof(sql));
         }
 
-        foreach (var token in EnumerateSqlTokensOutsideQuotes(sql))
+        var tokens = new SqlTokenizer(sql);
+        for (var token = tokens.Next(); token.Kind != SqlTokenKind.End; token = tokens.Next())
         {
             if (token.Kind == SqlTokenKind.StatementSeparator)
             {
@@ -50,79 +54,91 @@ internal static class ReadOnlyDynamicSql
                 throw new ArgumentException("SQL comments are not allowed in dynamic command text.", nameof(sql));
             }
 
-            if (token.Kind == SqlTokenKind.Word && MutatingTokens.Contains(token.Value))
+            if (token.Kind == SqlTokenKind.Word && MutatingTokenLookup.Contains(sql.AsSpan(token.Start, token.Length)))
             {
                 throw new ArgumentException("Mutating SQL statements are not allowed in dynamic read command text.", nameof(sql));
             }
         }
     }
 
-    private static string GetFirstToken(string sql)
+    // The first word, scanning (and validating literals) only up to it.
+    private static ReadOnlySpan<char> GetFirstToken(string sql)
     {
-        // Not rewritten as .Where(...).FirstOrDefault(): this needs to throw when no Word token
-        // exists, and SqlToken is a struct where a default() sentinel would be ambiguous with a
-        // genuine empty-value token.
-        foreach (var token in (EnumerateSqlTokensOutsideQuotes(sql)).Where(token => token.Kind == SqlTokenKind.Word))
+        var tokens = new SqlTokenizer(sql);
+        for (var token = tokens.Next(); token.Kind != SqlTokenKind.End; token = tokens.Next())
         {
-            return token.Value;
+            if (token.Kind == SqlTokenKind.Word)
+            {
+                return sql.AsSpan(token.Start, token.Length);
+            }
         }
 
         throw new ArgumentException("SQL command text does not contain an executable statement.", nameof(sql));
     }
 
-    private static IEnumerable<SqlToken> EnumerateSqlTokensOutsideQuotes(string sql)
+    // Tokens outside quoted literals and identifiers, as offsets into the statement, so a scan allocates nothing.
+    private struct SqlTokenizer(string sql)
     {
-        var index = 0;
-        while (index < sql.Length)
+        private int _index;
+
+        public SqlToken Next()
         {
-            var current = sql[index];
-
-            if (current == '\'')
+            while (_index < sql.Length)
             {
-                index = SkipSingleQuotedLiteral(sql, index + 1);
-                continue;
+                var current = sql[_index];
+                if (current == '\'')
+                {
+                    _index = SkipSingleQuotedLiteral(sql, _index + 1);
+                }
+                else if (current == '"')
+                {
+                    _index = SkipDoubleQuotedIdentifier(sql, _index + 1);
+                }
+                else if (ReadPunctuation(current) is { } punctuation)
+                {
+                    return punctuation;
+                }
+                else if (char.IsLetter(current) || current == '_')
+                {
+                    return ReadWord();
+                }
+                else
+                {
+                    _index++;
+                }
             }
 
-            if (current == '"')
-            {
-                index = SkipDoubleQuotedIdentifier(sql, index + 1);
-                continue;
-            }
+            return new SqlToken(SqlTokenKind.End, _index, 0);
+        }
 
+        private SqlToken? ReadPunctuation(char current)
+        {
+            var start = _index;
+            var next = _index + 1 < sql.Length ? sql[_index + 1] : '\0';
             if (current == ';')
             {
-                yield return new SqlToken(SqlTokenKind.StatementSeparator, ";");
-                index++;
-                continue;
+                _index++;
+                return new SqlToken(SqlTokenKind.StatementSeparator, start, 1);
             }
 
-            if (current == '-' && index + 1 < sql.Length && sql[index + 1] == '-')
+            if ((current == '-' && next == '-') || (current == '/' && next == '*'))
             {
-                yield return new SqlToken(SqlTokenKind.Comment, "--");
-                index += 2;
-                continue;
+                _index += 2;
+                return new SqlToken(SqlTokenKind.Comment, start, 2);
             }
 
-            if (current == '/' && index + 1 < sql.Length && sql[index + 1] == '*')
+            return null;
+        }
+
+        private SqlToken ReadWord()
+        {
+            var start = _index++;
+            while (_index < sql.Length && (char.IsLetterOrDigit(sql[_index]) || sql[_index] == '_'))
             {
-                yield return new SqlToken(SqlTokenKind.Comment, "/*");
-                index += 2;
-                continue;
+                _index++;
             }
 
-            if (char.IsLetter(current) || current == '_')
-            {
-                var start = index++;
-                while (index < sql.Length && (char.IsLetterOrDigit(sql[index]) || sql[index] == '_'))
-                {
-                    index++;
-                }
-
-                yield return new SqlToken(SqlTokenKind.Word, sql[start..index]);
-                continue;
-            }
-
-            index++;
+            return new SqlToken(SqlTokenKind.Word, start, _index - start);
         }
     }
 
@@ -170,10 +186,11 @@ internal static class ReadOnlyDynamicSql
 
     private enum SqlTokenKind
     {
+        End,
         Word,
         StatementSeparator,
         Comment
     }
 
-    private readonly record struct SqlToken(SqlTokenKind Kind, string Value);
+    private readonly record struct SqlToken(SqlTokenKind Kind, int Start, int Length);
 }

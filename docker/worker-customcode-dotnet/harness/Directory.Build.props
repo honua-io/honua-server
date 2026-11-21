@@ -17,6 +17,15 @@
     <NuGetAudit>false</NuGetAudit>
     <Deterministic>true</Deterministic>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!--
+      Every harness project restores from its committed packages.lock.json; the image and CI
+      restore in locked mode, so only package contents whose hashes are recorded get in. After a
+      version change, regenerate on the build host (SDK of the image's DOTNET_SDK_IMAGE):
+        dotnet restore Honua.CustomCode.slnx -p:RestoreLockedMode=false -p:RestoreForceEvaluate=true
+        dotnet restore warm/Honua.CustomCode.Warm.csproj -p:RestoreLockedMode=false -p:RestoreForceEvaluate=true
+    -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
   </PropertyGroup>
 
 </Project>

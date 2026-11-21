@@ -12,4 +12,9 @@ public interface IRowLevelSecurityFilterSource
     Task<IReadOnlyList<FilterExpression>> ResolveExpressionsAsync(
         MetadataV2Object resource, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("This row policy source does not support event delivery.");
+
+    // True while the current call chain reads on behalf of a caller (an HTTP, gRPC or MCP request).
+    // Background jobs are not counted: they read catalog layers through the layer source, which
+    // already refuses a layer the metadata index does not know.
+    bool IsCallerRead => false;
 }

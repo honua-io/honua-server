@@ -167,6 +167,12 @@ StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, buil
 var useTestSchemaHeaders = builder.Configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
 var forwardedHeadersEnabled = StartupConfigurationHelpers.ConfigureForwardedHeaders(builder.Services, builder.Configuration);
 StartupConfigurationHelpers.ResolveEnvironmentSecretReferences(builder.Configuration);
+if (Honua.Server.Startup.LicensingRegistration.DevGrantRefusal(builder.Configuration, builder.Environment) is { } devGrantRefusal)
+{
+    Honua.Server.Hosting.StartupRefusal.Exit(devGrantRefusal);
+    return;
+}
+
 // Validate the declared paid deployment before registering or starting any data workers.
 await StartupConfigurationHelpers.LoadBootstrapLicenseSnapshotAsync(builder.Configuration, builder.Environment);
 // Start the license hosted service before any workload execution or reconciliation service.
@@ -241,6 +247,12 @@ if (clientCertificateMode != ClientCertificateAuthenticationMode.Disabled)
 // envelope was created on another node fails closed instead of being replayed with plaintext.
 builder.Services.AddDataProtection()
     .SetApplicationName("Honua.Server");
+// Job capabilities in stored execution records are protected with the same key ring.
+builder.Services.TryAddSingleton<Honua.ControlPlane.IExecutionJobSecretProtector>(static services =>
+    new Honua.Server.Features.Infrastructure.SecurityState.DataProtectionExecutionJobSecrets(services));
+// Stored submitter snapshots on approval proposals and workflow records are sealed with it too.
+builder.Services.TryAddSingleton<Honua.Core.Features.Authorization.Abstractions.IJobSecurityContextSealer,
+    Honua.Server.Features.Infrastructure.SecurityState.DataProtectionJobSecurityContextSealer>();
 builder.Services.AddSingleton<Honua.ControlPlane.OperationHumanApprovalAuthority>();
 builder.Services.AddSingleton<Honua.ControlPlane.OperationInitiationResolver>();
 builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationHumanApprovalVerifier>(
@@ -677,6 +689,8 @@ if (Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingL
 builder.Services.AddCloudFileStorage(builder.Configuration);
 builder.Services.Configure<Honua.Core.Features.Import.ObjectStore.ImportObjectStoreOptions>(
     builder.Configuration.GetSection(Honua.Core.Features.Import.ObjectStore.ImportObjectStoreOptions.SectionName));
+Honua.Core.Features.ObjectStorage.ObjectStorageServiceCollectionExtensions.AddObjectStorageConnections(
+    builder.Services, builder.Configuration);
 #if !HONUA_EXCLUDE_AWS
 builder.Services.AddAwsImportObjectStore();
 Honua.Cloud.Aws.Features.Cdn.CloudFrontCdnServiceCollectionExtensions.AddCloudFrontCdnInvalidation(
@@ -756,6 +770,7 @@ if (Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingL
 }
 builder.Services.AddScoped<Honua.Infrastructure.Monitoring.IDeployPreflightProbe,
     Honua.Infrastructure.Monitoring.DeployPreflightProbe>();
+builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.DeployPreflightMigrationPlanCache>();
 builder.Services.AddScoped<IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
 builder.Services.AddSingleton<Honua.Server.Features.HealthCheck.DeepProbe>();
@@ -1079,6 +1094,8 @@ builder.Services.AddEnterpriseIdentity(builder.Configuration);
 builder.Services.AddSecurityHeaders(builder.Configuration);
 // Configure security audit log sink
 builder.Services.AddHonuaAuditLog();
+// Operator switches that widen the audit trail (AuditLog:Policy); both off by default.
+builder.Services.AddHonuaAuditPolicy(builder.Configuration);
 // SIEM export connectors (Splunk HEC / Microsoft Sentinel / S3 / syslog) + audit retention and
 // data-residency controls. Off by default (AuditLog:Export:Enabled=false); registers
 // the dispatcher (retry/backoff + dead-letter), residency guard, retention pruner, and any enabled
@@ -1812,6 +1829,7 @@ app.MapDeployControlEndpoints();
 app.MapGpProcessReleaseEndpoints();
 app.MapGpProcessReleaseJobEndpoints();
 Honua.Server.Features.Geoprocessing.CustomCode.CustomCodeArtifactEndpoints.MapCustomCodeArtifactEndpoints(app);
+Honua.Server.Features.Geoprocessing.CustomCode.CustomCodeCapabilityRedemptionEndpoints.MapCustomCodeCapabilityRedemptionEndpoints(app);
 
 // Cloud event-driven control-plane surface (TriggerMode=Event only): the EventBridge-invoked
 // reconcile Lambda + EventBridge Scheduler backstop post here. No-op under poll (on-prem).
@@ -1893,6 +1911,7 @@ app.MapComplianceAdminEndpoints();
 
 // Configure secure connection management endpoints
 app.MapSecureConnectionEndpoints();
+app.MapObjectStorageConnectionEndpoints();
 // Experimental gate (PA-001): only map federation endpoints when the feature is enabled.
 if (app.Configuration.GetValue<bool>("Experimental:Features:FederatedQuery", false))
 {

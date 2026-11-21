@@ -29,7 +29,11 @@ class ManagedWorkflowTests(unittest.TestCase):
             for flag in ['TreatWarningsAsErrors=true', 'RunAnalyzers="${PRODUCER_RUN_ANALYZERS}"', 'UseSharedCompilation=false']:
                 self.assertIn(flag, section)
         self.assertIn("PRODUCER_RUN_ANALYZERS: ${{ needs.changes.outputs.full_ci == 'true' && 'true' || 'false' }}", producer)
-        self.assertIn('-p:RunAnalyzers=true', (ROOT / 'scripts/ci/build-selected-protocol-profiles.py').read_text())
+        profiles = (ROOT / 'scripts/ci/build-selected-protocol-profiles.py').read_text()
+        self.assertIn('"-p:RunAnalyzers=true", "-p:BuildProjectReferences=false"', profiles)
+        self.assertIn('os.environ.get("PRODUCER_RUN_ANALYZERS", "true").strip().lower() == "false"', profiles)
+        self.assertIn('if [[ "${FULL_CI}" == true ]]; then profile_scope=--all; fi', producer)
+        self.assertIn('protocol-profile-selection.py --dry-run "${profile_scope}"', producer)
         self.assertIn('dotnet-restore-retry.sh \"${BUILD_TARGET}\" -p:Configuration=Release', producer)
         self.assertLess(producer.index('Build (warnings as errors)'), producer.index('mode: publish'))
         self.assertNotIn('dotnet test ', producer)
@@ -47,7 +51,9 @@ class ManagedWorkflowTests(unittest.TestCase):
         shard = job('server-tests')
         self.assertIn('needs: [changes, targeted-shards, build]', shard)
         self.assertLess(shard.index('Consume managed shard'), shard.index('Plan shard-local exact-head cache'))
-        self.assertIn("if: steps.managed-status.outputs.restored != 'true' && steps.shard-cache-materialize.outputs.restored != 'true'", shard)
+        self.assertIn("if: (steps.managed-status.outputs.restored != 'true' || "
+                      "steps.setup-dotnet.outputs.host-package-fallback-used == 'true') && "
+                      "steps.shard-cache-materialize.outputs.restored != 'true'", shard)
         self.assertIn('managed-test-build.py fallback --projects-file', shard)
         self.assertIn('actions/cache/restore@', shard)
         self.assertIn('matrix.advisory != true', shard)
@@ -100,13 +106,17 @@ class ManagedWorkflowTests(unittest.TestCase):
 
     def test_ci_gate_selected_skips_fail_and_docs_dependabot_skips_remain_valid(self):
         shell = self.gate_shell('ci-gate')
-        base = dict(REQUIRE_MANAGED_BUILD='true', REQUIRE_FORMAT='true',
+        base = dict(REQUIRE_MANAGED_BUILD='true', REQUIRE_RUNTIME_PROOFS='true', REQUIRE_FORMAT='true',
                     BUILD_RESULT='success', FORMAT_RESULT='success', RUNTIME_PROOFS_RESULT='success')
         self.assertEqual(0, self.execute_guard(shell, **base))
         for lane in ['BUILD_RESULT', 'FORMAT_RESULT', 'RUNTIME_PROOFS_RESULT']:
             for result in ['skipped', 'cancelled', 'failure']:
                 with self.subTest(lane=lane, result=result):
                     self.assertNotEqual(0, self.execute_guard(shell, **(base | {lane: result})))
+        # Affected runs that do not select the runtime lane allow runtime-proofs to skip.
+        self.assertEqual(0, self.execute_guard(shell, **(base | {
+            'REQUIRE_RUNTIME_PROOFS': 'false', 'RUNTIME_PROOFS_RESULT': 'skipped',
+        })))
         # Docs-only/dependabot selection deliberately requires neither lane.
         self.assertEqual(0, self.execute_guard(shell, REQUIRE_MANAGED_BUILD='false',
             REQUIRE_FORMAT='false', BUILD_RESULT='skipped', FORMAT_RESULT='skipped'))

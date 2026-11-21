@@ -23,7 +23,7 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
 {
     private string _dbPath = null!;
     private DuckDBFeatureStore _store = null!;
-    private Func<LayerReadSecurityResolver?, DuckDBFeatureStore> _createStore = null!;
+    private Func<LayerReadSecurityResolver, DuckDBFeatureStore> _createStore = null!;
     private DuckDBLayerRegistry _registry = null!;
     private string _connectionString = null!;
     private DuckDBSpatialBootstrap _spatialBootstrap = null!;
@@ -100,7 +100,7 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
         var cacheManager = new DuckDBFeatureCacheManager(_registry);
 
         _createStore = readSecurity => new DuckDBFeatureStore(queryBuilder, dataAccess, cacheManager, readSecurity: readSecurity);
-        _store = _createStore(null);
+        _store = _createStore(new LayerReadSecurityResolver(null, null, null, null));
         _filterTranslator = new DuckDbSqlFilterTranslator();
         _resource = new MetadataV2Object
         {
@@ -180,7 +180,7 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Read_WithNoPolicyResolved_ReturnsSameRowsAsWithoutResolver()
+    public async Task Read_WithNoPolicyResolved_ReturnsSameRowsAsEmptyResolver()
     {
         var store = _createStore(CreateResolver());
         var query = new FeatureQuery();

@@ -130,7 +130,7 @@ internal static partial class FeatureServerEndpoints
                 "sync.offline");
             FeatureServerResponse response = MapServiceToResponseV2(
                 service,
-                publications,
+                await HideMaskedFieldsAsync(context, publications, cancellationToken).ConfigureAwait(false),
                 snapshot,
                 limits,
                 supportsGeobufOutput: featureReader is IGeobufFeatureStore,
@@ -294,15 +294,17 @@ internal static partial class FeatureServerEndpoints
             var offlineSyncEnabled = CapabilityFlagOptions.IsExperimentalEnabled(
                 context.RequestServices.GetRequiredService<IConfiguration>(),
                 "sync.offline");
-            var timeInfo = await BuildTimeInfoV2Async(
+            var schemaResource = await HideMaskedFieldsAsync(context, resource, cancellationToken).ConfigureAwait(false);
+            var timeInfo = GeoServicesWithheldFields.WithoutWithheldTimeFields(schemaResource, await BuildTimeInfoV2Async(
                 resource,
                 publication,
                 snapshot,
                 featureReader,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false));
 
-            var drawingInfo = ResolveDrawingInfoV2(resource, snapshot);
-            var popupInfo = ResolvePopupInfoV2(resource);
+            var drawingInfo = GeoServicesWithheldFields.WithoutWithheldReferences(
+                ResolveDrawingInfoV2(resource, snapshot), schemaResource) ?? BuildDefaultDrawingInfoV2(resource);
+            var popupInfo = GeoServicesWithheldFields.WithoutWithheldReferences(ResolvePopupInfoV2(resource), schemaResource);
 
             var extrusionValidationErrors = ValidateExtrusionInfoV2(resource, out var extrusionInfo);
             if (extrusionValidationErrors.Count > 0)
@@ -320,22 +322,24 @@ internal static partial class FeatureServerEndpoints
             var accessibleResources = FilterAccessibleLayersV2(access, snapshot, allPairs)
                 .Select(pair => pair.Resource.Metadata.Id)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var metadataResource = resource with
+            var metadataResource = schemaResource with
             {
                 Relationships = [.. resource.Relationships.Where(relationship =>
                     accessibleResources.Contains(relationship.RelatedResourceId))]
             };
 
+            // Edit constraints (composite ownership) come from every relationship, including ones the
+            // caller cannot see; only the advertised relationship list is filtered.
             LayerResponse response = MapLayerToResponseV2(
                 service,
-                resource,
+                schemaResource,
                 publication,
                 snapshot,
                 limits,
                 timeInfo,
                 drawingInfo: drawingInfo,
                 popupInfo: popupInfo,
-                extrusionInfo: extrusionInfo,
+                extrusionInfo: WithoutWithheldExtrusion(schemaResource, extrusionInfo),
                 supportsGeobufOutput: featureReader is IGeobufFeatureStore,
                 supportsAttachmentUploads: supportsAttachmentUploads,
                 branchVersioningEnabled: await IsPublicationBranchVersioningAvailableAsync(
@@ -362,6 +366,33 @@ internal static partial class FeatureServerEndpoints
                 "Layer metadata retrieval failed");
         }
     }
+
+    // Field names the caller's masks withhold are left out of schema listings, as hidden fields are.
+    private static Task<MetadataV2Object> HideMaskedFieldsAsync(
+        HttpContext context, MetadataV2Object resource, CancellationToken cancellationToken)
+        => GeoServicesWithheldFields.HideMaskedFieldsAsync(context, resource, cancellationToken);
+
+    private static async Task<IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Object Resource)>> HideMaskedFieldsAsync(
+        HttpContext context,
+        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Object Resource)> publications,
+        CancellationToken cancellationToken)
+    {
+        var visible = new List<(MetadataV2Layer Publication, MetadataV2Object Resource)>(publications.Count);
+        foreach (var (publication, resource) in publications)
+        {
+            visible.Add((publication, await HideMaskedFieldsAsync(context, resource, cancellationToken).ConfigureAwait(false)));
+        }
+
+        return visible;
+    }
+
+    // Extrusion over a withheld field would name it and draw its values as heights.
+    private static FeatureServerExtrusionInfo? WithoutWithheldExtrusion(
+        MetadataV2Object schemaResource, FeatureServerExtrusionInfo? extrusionInfo)
+        => schemaResource.IsHiddenSchemaField(extrusionInfo?.HeightField)
+           || schemaResource.IsHiddenSchemaField(extrusionInfo?.BaseHeightField)
+            ? null
+            : extrusionInfo;
 
     private static IReadOnlyList<string> ValidateExtrusionInfoV2(
         MetadataV2Object resource,

@@ -80,8 +80,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
                     : DatumOutputSelection.Resolve(DatumCatalog.Shared, _storageSrid, targetSrid, tileArea));
             var geometryForTile = _storageSrid == targetSrid
                 ? geometry
-                : DatumTransformSql.BuildTransformExpression(
-                    geometry, targetSrid, selection, _storageSrid);
+                : selection is null
+                    ? DatumTransformSql.CachedTransformExpression(geometry, _storageSrid, targetSrid)
+                    : DatumTransformSql.BuildTransformExpression(geometry, targetSrid, selection, _storageSrid);
             var originalGeometryForTile = geometryForTile;
             if (!step.IsFull)
             {

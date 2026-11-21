@@ -12,6 +12,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Admin.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Models;
@@ -186,7 +187,11 @@ internal static class LayerPublishingEndpoints
                 connectionId,
                 request.Query.Page,
                 request.Query.PageSize,
-                request.Query.NameQuery),
+                request.Query.NameQuery)
+            {
+                ManagedConnectionId = await ManagedImportConnection.ResolveOwnerAsync(
+                    context.RequestServices, context.RequestAborted).ConfigureAwait(false)
+            },
             context.RequestAborted).ConfigureAwait(false);
     }
 
@@ -423,6 +428,7 @@ internal static class LayerPublishingEndpoints
                 ServiceName = request.ServiceName,
                 TargetSrid = request.TargetSrid,
                 GeometryColumn = request.GeometryColumn,
+                GeometryType = request.GeometryType,
                 PrimaryKey = request.PrimaryKey,
                 ExactTypes = request.ExactTypes,
                 Fields = request.Fields ?? Array.Empty<string>()

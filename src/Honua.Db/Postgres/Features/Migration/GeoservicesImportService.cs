@@ -164,13 +164,11 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         await ImportTableOwnership.AssertExistingOwnedAsync(connection, schemaName, stagingTable, cancellationToken);
         var schema = SqlIdentifier.QuoteIdentifier(schemaName);
         var target = SqlIdentifier.QuoteIdentifier(tableName);
-        await using (var swap = connection.CreateCommand())
-        {
-            swap.CommandText =
-                (targetExists ? $"DROP TABLE {schema}.{target} RESTRICT; " : string.Empty)
-                + $"ALTER TABLE {schema}.{SqlIdentifier.QuoteIdentifier(stagingTable)} RENAME TO {target};";
-            await swap.ExecuteNonQueryAsync(cancellationToken);
-        }
+        await GeometryFamilyViews.ReplaceAsync(
+            new GeometryFamilyViews.TableScope { Connection = connection, Schema = schemaName, Table = tableName },
+            (targetExists ? $"DROP TABLE {schema}.{target} RESTRICT; " : string.Empty)
+                + $"ALTER TABLE {schema}.{SqlIdentifier.QuoteIdentifier(stagingTable)} RENAME TO {target};",
+            cancellationToken);
 
         // The rename keeps the staging-derived primary-key and sequence names. Give them the names a
         // first import of the target creates, unless another relation already holds that name.

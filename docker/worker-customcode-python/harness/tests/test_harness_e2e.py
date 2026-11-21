@@ -237,3 +237,66 @@ def test_expired_queue_budget_refuses_source_before_user_code(tmp_path):
     assert run(env={**_env(tmp_path), "HONUA_JOB_START_DEADLINE": "1"}, source_root=tmp_path / "src",
                workdir=tmp_path / "out", client_factory=lambda b, t: FakeClient(), uploader_factory=FakeUploader,
                clone_fn=must_not_clone, restore_fn=lambda root, manifest: None) == EXIT_HARNESS_ERROR
+
+
+def _redemption_env(tmp_path):
+    env = _env(tmp_path)
+    del env["HONUA_JOB_TOKEN"]
+    env.update({"HONUA_JOB_REDEMPTION_CODE": "c" * 64, "HONUA_JOB_ID": "job-1", "HONUA_JOB_ATTEMPT": "1"})
+    return env
+
+
+def test_e2e_redeems_code_once_and_builds_client_from_capability(tmp_path, monkeypatch) -> None:
+    from honua_customcode_harness import redeem
+    calls = []
+    seen_tokens = []
+
+    def redeem_fn(target, code):
+        calls.append((target, code))
+        return "a" * 64
+
+    monkeypatch.setattr(redeem, "redeem_capability", redeem_fn)
+
+    def client_factory(base_url, token):
+        seen_tokens.append(token)
+        return FakeClient()
+
+    rc = run(
+        env=_redemption_env(tmp_path),
+        source_root=tmp_path / "src",
+        workdir=tmp_path / "out",
+        client_factory=client_factory,
+        uploader_factory=FakeUploader,
+        clone_fn=_make_clone_fn("def execute(context):\n    return None\n"),
+        restore_fn=lambda root, manifest: None,
+        strip_env=False,
+    )
+
+    assert rc == EXIT_OK
+    assert calls == [(redeem.RedemptionTarget("https://api.honua.test", "job-1", "1"), "c" * 64)]
+    assert seen_tokens == ["a" * 64]
+
+
+def test_e2e_refused_redemption_never_fetches_or_runs_source(tmp_path, monkeypatch) -> None:
+    from honua_customcode_harness import redeem
+
+    cloned = []
+
+    def redeem_fn(*_args):
+        raise redeem.RedemptionError("Job capability redemption refused (HTTP 401).")
+
+    monkeypatch.setattr(redeem, "redeem_capability", redeem_fn)
+
+    rc = run(
+        env=_redemption_env(tmp_path),
+        source_root=tmp_path / "src",
+        workdir=tmp_path / "out",
+        client_factory=lambda b, t: FakeClient(),
+        uploader_factory=FakeUploader,
+        clone_fn=lambda *args: cloned.append(args),
+        restore_fn=lambda root, manifest: None,
+        strip_env=False,
+    )
+
+    assert rc == EXIT_HARNESS_ERROR
+    assert cloned == []

@@ -16,6 +16,8 @@ internal static class FormsServiceCollectionExtensions
         services.TryAddScoped<FormPackageValidator>();
         services.TryAddScoped<IFormTargetMetadataResolver, FormTargetMetadataResolver>();
         services.AddScoped<FormPackageLifecycleService>();
+        services.AddScoped<FormXlsFormEvents>();
+        services.AddScoped<FormXlsFormService>();
         services.AddScoped<FormOfflinePolicyService>();
         services.AddScoped<FormSubmissionService>();
 

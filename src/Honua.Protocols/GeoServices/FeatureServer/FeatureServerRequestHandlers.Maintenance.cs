@@ -422,6 +422,11 @@ internal static partial class FeatureServerEndpoints
                 $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not bound to a storage layer.");
         }
 
+        if (FeatureServerEditRefusals.ForSourceTable(context, snapshot, publication) is { } sourceTableRefusal)
+        {
+            return sourceTableRefusal;
+        }
+
         IReadOnlyDictionary<string, StringValues> values = ToCaseInsensitiveDictionary(context.Request.Query);
         if (HttpMethods.IsPost(context.Request.Method))
         {
@@ -967,12 +972,17 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
-        var accessibleLayers = FilterAccessibleLayersV2(access, snapshot, selectedLayers);
-        var domains = accessibleLayers
-            .SelectMany(pair => pair.Resource.SchemaFields
+        // A masked field's domain names the field and lists its coded values, so it is left out as a hidden field's is.
+        var domainList = new List<DomainInfo>();
+        foreach (var pair in FilterAccessibleLayersV2(access, snapshot, selectedLayers))
+        {
+            var schemaResource = await HideMaskedFieldsAsync(context, pair.Resource, cancellationToken).ConfigureAwait(false);
+            domainList.AddRange(schemaResource.SchemaFields
                 .Where(static field => !field.Hidden && field.Domain is not null)
-                .Select(field => MapDomainInfoV2(pair.Publication, pair.Resource, field, snapshot)))
-            .ToArray();
+                .Select(field => MapDomainInfoV2(pair.Publication, pair.Resource, field, snapshot)));
+        }
+
+        var domains = domainList.ToArray();
 
         var response = new QueryDomainsResponse
         {
@@ -1890,10 +1900,7 @@ internal static partial class FeatureServerEndpoints
         {
             try
             {
-                OrderByParsing.ParseFeatureServerOrderBy(
-                    sqlExpression,
-                    resource,
-                    FeatureServerOrderByFields.AllowedCoreOrderByFields);
+                CallerOrderByFields.ParseCallerOrderBy(sqlExpression, resource);
                 return (true, null);
             }
             catch (InvalidOperationException ex)
@@ -1913,7 +1920,8 @@ internal static partial class FeatureServerEndpoints
 
         if (parseResult.Expression != null)
         {
-            var translationResult = filterService.Translate(parseResult.Expression, resource);
+            // A hidden field validates like an undeclared one, so validateSQL is no existence probe.
+            var translationResult = filterService.Translate(parseResult.Expression, resource.WithoutHiddenSchemaFields());
             if (!translationResult.IsSuccess)
             {
                 return (false, translationResult.ErrorMessage ?? "Invalid SQL expression for the service schema.");

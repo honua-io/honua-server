@@ -17,6 +17,45 @@ namespace Honua.Server.Tests.Features.Streaming;
 public sealed class StreamSubscriberSecurityTests
 {
     [UnitTest]
+    public void DescribeUnstreamableLayer_NamedLayerWithoutReadableRoute_IsRefused()
+    {
+        var security = CreateSecurityWithUnstreamableLayers(7);
+
+        security.DescribeUnstreamableLayer([0, 7]).Should().Contain("Layer 7");
+    }
+
+    [UnitTest]
+    public void DescribeUnstreamableLayer_UnscopedOrStreamableLayers_IsAccepted()
+    {
+        var security = CreateSecurityWithUnstreamableLayers(7);
+
+        security.DescribeUnstreamableLayer(null).Should().BeNull("an unscoped subscription stays open");
+        security.DescribeUnstreamableLayer([0]).Should().BeNull();
+    }
+
+    [UnitTest]
+    public void DescribeUnstreamableLayer_LayerReadableThroughAnotherRoute_IsAccepted()
+    {
+        // Layer 0 is unstreamable in one service but readable in "svc".
+        var security = CreateSecurityWithUnstreamableLayers(0);
+
+        security.DescribeUnstreamableLayer([0]).Should().BeNull();
+    }
+
+    private static StreamSubscriberSecurity CreateSecurityWithUnstreamableLayers(params int[] layers)
+    {
+        var policy = new StreamLayerReadPolicy([], new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        return new StreamSubscriberSecurity(
+            new HashSet<string>(["svc"], StringComparer.Ordinal),
+            new Dictionary<(string, int), StreamLayerReadPolicy> { [("svc", 0)] = policy },
+            new Dictionary<(string, int), StreamLayerReadPolicy>(),
+            new HashSet<(string, int)>(layers.Select(layer => ("other", layer))))
+        {
+            UnstreamablePolicyLayers = layers.ToHashSet(),
+        };
+    }
+
+    [UnitTest]
     public async Task Delivery_FilterFieldBecomesMasked_DropsQueuedMatch()
     {
         var security = CreateUnrestrictedSecurity();

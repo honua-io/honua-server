@@ -10,5 +10,6 @@ public static partial class EndpointRegistry
         new("GET", "/api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex}/content"),
         new("PUT", "/api/geoprocessing/jobs/{jobId}/custom-artifacts/{name}"),
         new("GET", "/api/geoprocessing/jobs/{jobId}/custom-artifacts/{name}"),
+        new("POST", "/api/geoprocessing/jobs/{jobId}/attempts/{attempt}/capability"),
     ];
 }

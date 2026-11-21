@@ -314,7 +314,7 @@ internal static partial class Wps20Endpoint
         }
 
         var process = catalog.GetProcess(request.Identifier);
-        if (process is null)
+        if (process is null || !ProcessExecutionEligibility.IsJobCallable(process))
         {
             return Exception("NoSuchProcess", $"Process '{request.Identifier}' does not exist.", "identifier", StatusCodes.Status404NotFound);
         }

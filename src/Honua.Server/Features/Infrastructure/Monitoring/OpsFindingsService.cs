@@ -766,7 +766,9 @@ internal sealed partial class OpsFindingsService : IOpsFindingsEvidenceSource
     // expand -> deploy -> migrate -> contract discipline; contracting is an operator-sequenced step.
     private async Task EvaluatePendingContractMigrationsAsync(DateTimeOffset now, List<OpsFinding> findings, CancellationToken cancellationToken)
     {
-        var snapshot = await _deployProbe.ProbeAsync(cancellationToken).ConfigureAwait(false);
+        var snapshot = await _deployProbe
+            .ProbeAsync(DeployPreflightProbe.BackgroundMigrationPlanMaxAge, cancellationToken)
+            .ConfigureAwait(false);
         var migration = snapshot.Migration;
         if (!migration.HasPendingContractScripts && migration.PendingContractScripts.Count == 0)
         {

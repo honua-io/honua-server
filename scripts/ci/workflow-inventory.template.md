@@ -336,7 +336,7 @@ The scoped `GP Alias Contract` check runs the real GeoServices alias tests and O
 | `gp-alias-contract.yml` | GP Alias Contract | `pull_request` (base `trunk`, relevant contract/test/judgment paths) | Runs the GeoServices alias contract and the OGC API process-list HTTP regression in their actual protocol assemblies. Uses the existing .NET setup and pinned PostGIS service conventions; requires all selected cases to execute and pass. |
 | `routing-utility-contract.yml` | Routing Utility Contract | `pull_request` (base `trunk`, GPServer/NAServer discovery and test paths) | Runs the provider-level routing descriptor, catalog collision/access guards, and existing routing utility, metadata, anonymous, SOAP and FindRoutes contracts in the GeoServices component assembly. Requires every new source method and every selected result to execute and pass; retains TRX proof. |
 | `featureserver-relationship-contract.yml` | FeatureServer Relationship Contract | `pull_request` (base `trunk`, relationship projection/test/workflow paths) | Runs service and layer relationship HTTP regressions in the actual GeoServices assembly using the existing .NET setup and pinned PostGIS fixture. Requires every source-derived case to execute and pass, including reciprocal directional names, identity collisions, and authorization visibility; retains TRX proof. |
-| `gp-customcode-runtime.yml` | GP Custom Code Runtime | path-filtered `pull_request`, `workflow_dispatch` | Executes Python and .NET standalone custom-code harness regression suites, including real loopback broker uploads; retains JUnit/TRX evidence. No live cloud qualification is implied. |
+| `gp-customcode-runtime.yml` | GP Custom Code Runtime | path-filtered `pull_request`, `workflow_dispatch` | Executes Python and .NET standalone custom-code harness regression suites, including real loopback broker uploads; retains JUnit/TRX evidence. Also builds both custom-code worker images (hash-locked packages, digest-pinned .NET SDK). No live cloud qualification is implied. |
 | `gp-scoped-key-contract.yml` | GP Scoped Key Contract | `pull_request` (base `trunk`, GP execution/authentication/test paths) | Runs shared job authorization and terminal regressions plus GP REST/SOAP endpoint and durable-runtime tests in their actual assemblies with PostGIS and cache fixtures. Requires every new source-derived scoped key case to execute and pass; retains TRX proof. One job per test project builds it once and runs each case with `--no-build` and its own TRX (`scripts/ci/gp-scoped-key-contract.py`): 6 jobs instead of 13. |
 | `ai-admission-contract.yml` | AI Admission Contract | `pull_request` (base `trunk`, AI admission/reporting/control and relevant project/fixture paths), `workflow_dispatch` | Bounded feature evidence on one Docker-capable runner: sequential Release tests for Server reporting and canonical admission controls/toolset, Core reporting, accepted Studio prompt budgets, Studio certification endpoints, and PostgreSQL admission scopes/lifecycle. Requires positive execution of every named class, at least two prompt-budget, three certification endpoint and sixteen PostgreSQL cases, and zero failures/skips; retains raw TRX and tested commit identity. Distributed-cache backend/coordinator cases remain in Hosting Components. Adds no required context, routing-cap increase or installed/rollback qualification. |
 | `portal-group-discovery-contract.yml` | Portal Group Discovery Contract | `pull_request` (base `trunk`, Portal read/store/test paths) | Runs actual Portal user/group HTTP integration and existing sharing/read regressions with PostGIS. Requires each new source-derived paging and denial case to execute and pass; controlled test-store state is not native production content evidence. |
@@ -349,6 +349,7 @@ The scoped `GP Alias Contract` check runs the real GeoServices alias tests and O
 | `control-plane-sdk-governance.yml` | Control Plane SDK Governance | `pull_request`, `workflow_dispatch`, `release` | PR governance for the control-plane SDK surface, separate from release publishing. |
 | `import-fidelity-scorecard-governance.yml` | Import Fidelity Scorecard Governance | `pull_request`, `workflow_dispatch` | Path-scoped to parity/baseline/perf-budget assets; smoke-tests the perf-parity gate (#1249) with pass/fail fixtures. |
 | `capability-matrix-aggregation.yml` | Capability Matrix Aggregation | `pull_request`, weekly `schedule`, `workflow_dispatch` | Joins `feature-catalog.json`, `docs/cite-status.md`, the GeoServices REST parity index, capability crosswalks, and committed client-compat envelopes into `docs/gis/data/capability-matrix.v1.json` (#2892/#2893). Generator/input validation is strict; committed-file drift is advisory. PR inputs include the licensing constants in `FeatureCatalog.cs` used to resolve manifest entitlements. PR operation-capability completeness, registry resolution and authored artifact checks run in the existing PR Gate architecture job after canonical catalog regeneration; scheduled/manual aggregation runs audit the committed catalog. |
+| `install-images.yml` | Install Images | `pull_request` (base `trunk`, install image paths), `push` to `trunk` (same paths), weekly `schedule`, `workflow_dispatch` | Builds the small images installs run beside the server: `docker/postgres-client` (psql for the Launch Stack start-up containers) and `docker/console-web` (the Compose quickstart Console web server) and `docker/compose-postgres` (the Compose installs' PostgreSQL 17 / PostGIS / pgRouting database). Pull requests build, smoke and block fixable HIGH/CRITICAL findings on linux/amd64 and linux/arm64, and `database-upgrade` runs `scripts/docker/test-compose-postgres-upgrade.sh` (a volume created on the previous base starts with refreshed collation versions). Trunk, schedule and dispatch runs pass `publish-authorization.yml`, push one multi-platform digest per image to the public `honua-server` package, run `scripts/ci/trivy-release-gate.sh` on each platform of that digest, then assign `<image>` tags, attest and verify anonymous pull. |
 | `serving-image-boundary.yml` | Serving Image Boundary | `pull_request` (base `trunk`, **image-defining paths only**), `workflow_dispatch` | Pull requests build and boundary-verify the PostGIS serving image only. Manual dispatch still builds PostGIS and Lambda. Lambda native-AOT is not a pull-request build; `nightly-container-build.yml` and `deploy-platform-images.yml` keep it. Since #3204 the trigger carries only inputs that DEFINE the image (the serving Dockerfiles, `.dockerignore`, the in-image restore helper, the boundary verifier and its fixture harness, this workflow); managed source (`src/**`, `eng/**`, solution, build props) is deliberately not a trigger and is placed on the lanes in the table below. The trigger paths and the in-workflow variant `case` arms are parsed and cross-checked by `scripts/ci/native-image-impact.py`, which fails closed on drift from `.github/native-image-impact.json`. Exact v3 content addresses may reuse a successful per-variant verification marker only when `HONUA_SERVING_IMAGE_SKIP` is exactly `true`; absent/false is full verification, and every digest/decision is recorded in the run summary. Promotion and one-variable rollback are documented in `serving-image-content-addressed-skip.md`. Deliberately isolated from the required lean `PR Gate`. |
 | `store-image-size.yml` | Store Image Size | image-input `pull_request`, `workflow_dispatch`, `workflow_call` | Builds PostGIS JIT/AOT and full JIT images, records before/after byte counts and compiler inputs, rejects excluded stores and satellites, and proves startup refusal, format import/export, label rendering and security scanning. Scheduled CI and manual `full_ci=true` runs call it on their own commit; `CI Gate` requires its success when selected. Evidence is uploaded as run artifacts. |
 | `worker-gdal-image.yml` | GDAL Worker Image | `pull_request` (base `trunk`, path-filtered), weekly `schedule`, `workflow_dispatch` | Builds the GDAL worker image, proves native handoff/PDAL/public API execution, and enforces unchanged Trivy policy; publishes SARIF. Explicit canonical-trunk dispatch can publish the exact tested amd64 bytes under a unique nightly tag with verified source provenance, including a trunk-reachable `candidate_sha` whose nightly tag and image revision name that commit while the attestation stays on the trunk workflow SHA; PR/schedule runs never publish images and receipts are qualification:false. |
@@ -531,7 +532,7 @@ which is why both the run count and exact observed span are recorded.
 | `flaky-detection.yml` | Flaky Test Detection | daily `schedule` (05:00 UTC), `workflow_dispatch` | Bounded, **incremental** flake hunt (ADR-0037). Each run takes a rotating window of `.github/ci-shards.json` shards (default 6), re-runs each shard's own filter under its own inner budget via `scripts/ci/run-server-test-shard.sh` (default 2 iterations), and reports per-shard flake candidates through `scripts/ci/summarize-flaky-detection.py`. The whole shard set is covered every `ceil(shards / shard_count)` days. Test commands run in dedicated process groups; cancellation cleans up the group and snapshotted descendants, including those that leave the group, with a bounded half-second escalation. Group escalation reaches children forked after the snapshot. Signal handlers are installed before child creation and record cancellation for cleanup outside the active child wait, checked every 0.1 seconds; this also preserves cancellation during startup without reentering the subprocess wait lock. Reports only; it never gates. Also runs the validated issue-backed quarantine in a separate non-gating matrix, without retries or exclusions. |
 | `flake-quarantine.yml` | Publish Flaky Test Quarantine | completed `workflow_run` [CI, PR Gate] | Trusted same-repository publisher: validates raw first/retry TRX and candidate hashes; requires unambiguous identities within selected failed methods (including passing siblings) and all retry rows, files one bot issue per project/method, and maintains at most 25 active issue-backed exclusions expiring within 14 days. Reads one shard artifact per shard: the highest `-attempt-<n>` (unsuffixed names count as attempt 0). A coalescing publisher sweeps the CI and PR Gate run histories and reads artifacts per completed trusted source run, avoiding the repository-wide artifact listing. An overlap watermark preserves old-run reruns and deferred batches; each sweep inspects at most 25 source runs (including empty ones), rechecks completion/attempt identity after artifact listing, and checkpoints completed run versions so equal-timestamp backlogs advance, with twice-hourly scheduled recovery. Never checks out triggering code or executes downloaded artifacts. |
 | `nightly-slow-tier.yml` | Nightly Slow Tier (Emulator) | daily `schedule` (04:00 UTC), `workflow_dispatch` | `--filter "Tier=Slow&Category=Emulator"` across `Honua.Server.Tests`, `Honua.Db.Postgres.Tests`, `Honua.Core.Tests` — `[EmulatorTest]` only. LocalStack + Azurite come from `EmulatorFixture` (Testcontainers); Postgres from a service container. Asserts `HONUA_TEST_DB_URL` before dispatch. |
-| `load-soak-nightly.yml` | Load/Soak Diagnostics (manual) | `workflow_dispatch` | Diagnostic load tests only. The unsourced nightly schedule was retired in favor of candidate capacity qualification (#5314). |
+| `load-soak-nightly.yml` | Load/Soak Diagnostics | daily `schedule` (11:30 UTC), `workflow_dispatch` | Nightly load/soak diagnostics against trunk source with per-run credentials. Reports regressions between candidates; release qualification stays with `capacity-soak-candidate.yml` (#5314). |
 | `capacity-soak-candidate.yml` | capacity-soak-candidate | `workflow_dispatch`, `workflow_call` | Runs at the manifest candidate source and image, collects complete raw observations, and attests a bounded evidence ZIP. The release checker independently recomputes all eight signals and binds the exact producer attestation. See docs/internal/operations/capacity-soak-runbook.md. |
 | `capacity-evidence-contract.yml` | Capacity evidence contract | path-filtered `pull_request`, `workflow_dispatch` | Real HTTP outcome fixtures, analytical population assertions, and positive/negative ZIP checks against the pinned independent release verifier (#5314). No qualification or signing permissions. |
 | `security-nightly.yml` | Security Nightly | daily `schedule` (02:00 UTC), `workflow_dispatch`, `pull_request` on package/project changes (NuGet job only) | Consolidated NuGet vulnerability scan (annotates High/Critical and opens a tracking issue, reports Moderate; advisories never fail the job, an unreadable report does), Trivy filesystem scan, container security scan (Hadolint, Trivy with the committed OpenVEX decisions, structure tests, runtime constraints), and a by-digest rescan of every supported release image in `eng/security/supported-images.json` that uploads SARIF and files fixable High/Critical findings privately. |
@@ -684,7 +685,7 @@ All issue forms now require acceptance criteria, affected repos, gate-tier impac
 
 Five composite actions were added to `.github/actions/` for shared CI setup and evidence handling:
 
-- `setup-dotnet-ci` — .NET SDK, NuGet cache *(active)*
+- `setup-dotnet-ci` — .NET SDK, NuGet cache, opt-in host NuGet fallback folder *(active)*
 - `setup-node-ci` — Node.js setup, npm cache *(future: SDK workflows)*
 - `setup-python-ci` — Python setup, pip cache *(future: conformance/script workflows)*
 - `upload-ci-evidence` — artifact upload with standard naming and tier-based retention *(active)*
@@ -745,7 +746,12 @@ unknown or invalid routing still fails closed. A full-build fallback retains
 these Stage 0 CPU limits and disables build analyzers; its validation scope is
 unchanged. Stage 0 uses
 `HONUA_STAGE0_MAX_CPU_COUNT` (default 5, range 1–16) and reports restore, build,
-and test durations separately. Host queue/sync timings are reported by the
+and test durations separately. After the one build, the no-build test commands
+(affected unit projects and every selected shard, including integration shards
+under `--integration`) run concurrently, `HONUA_STAGE0_TEST_PARALLELISM` at a
+time (default 3, at most the Stage 0 CPU count, checked before the build). Every
+command keeps its own log and TRX check. A failure or interrupt starts no queued
+command, and the run fails once the running ones finish. Host queue/sync timings are reported by the
 local lane runner; they are separate from execution time.
 
 Trailing `selective_base` dispatches use their verified base for the managed
@@ -921,6 +927,13 @@ hosted jobs waiting plus three executing shards, filling its 16 slots; another
 coverage and the full/affected concurrency bounds remain unchanged. Live
 post-deployment runner idle times remain to be measured.
 
+Full runs (scheduled, or dispatched with `full_ci` or without `selective_base`,
+the `run-name` rule) put every server-test index on standard `ubuntu-latest`
+runners, which are free for this public repository; affected runs keep the
+heavy pool. Paired full runs on 18 Nov 2026 took a 78-minute server phase on
+hosted runners (run 44271438677, all 225 shards, no larger runner size) against
+193-327 minutes on the six `honua-heavy` runners. The matrix stays on one pool.
+
 ### Covered trunk runs
 
 A full trunk run covers every merge up to its head. Its first job,
@@ -948,6 +961,9 @@ helper checks out no contributor code and queues without cancellation. It runs o
 version of the file, and the environment's trunk-only rule guards the bot App key
 once the key moves there from the repository secrets.
 Conflicted PRs are not armed; they are armed after the branch is updated.
+The release App key (`HONUA_RELEASE_APP_ID`, `HONUA_RELEASE_APP_PRIVATE_KEY`) is held the
+same way: only the trunk run of the nightly `select-candidate` job and the normalization
+consumer's `validate` job enter `bot-app`.
 
 Admission requires both the triggering event and the live PR to be non-draft and
 free of `hold`, `train:hold` and `train:escalated`. A queued held/draft event cannot
@@ -998,16 +1014,16 @@ that run supplies the after-change timing and memory evidence.
 
 ### Full-CI producer routing
 
-Only `Build & Format Check` consumes the hosted `CI producer / Runner select`
-output. Its opt-in `HONUA_CI_PRODUCER_RUNNER=honua-build` requires the separate
-read-only OIDC role `HONUA_CI_PRODUCER_READ_ROLE_ARN`, current-instance heartbeat
-age <=90 seconds, and at least two idle gate runners. Missing/stale/busy proof or
-setup failure selects `ubuntu-latest`, without wake, wait, polling or retries.
-The existing global heavy selector does not control this producer. Light jobs
-stay hosted. The producer uses a private writable SDK directory, skips sudo
+Only `Build & Format Check` consumes `CI producer / Runner select`, a call of the
+shared advisory selector. Trunk schedules and dispatches take an idle
+`honua-heavy` runner while more than two heavy runners stay idle; missing,
+stale or busy proof and setup failure select `ubuntu-latest`, without wake,
+wait, polling or retries. Light jobs stay hosted. The producer uses a private writable SDK directory, skips sudo
 cleanup off hosted runners and bounds all nested build workers to four.
 Selective dispatches build that graph with `RunAnalyzers=false`; scheduled
-and `full_ci` runs, and the protocol-profile builds, keep analyzers.
+and `full_ci` runs keep analyzers. Protocol-profile builds analyze Honua.Server
+and, after a no-analyzer producer, reuse its referenced projects
+(`BuildProjectReferences=false` after a no-analyzer `ResolveProjectReferences`).
 See [producer admission and MAIN-owned preflight](gate-model.md#full-ci-producer-admission)
 before enabling the source contract; merging it does not activate any pool.
 
@@ -1102,12 +1118,14 @@ dependency, workflow or shard definition.
 
 | Workflow file | Trigger | Compute policy |
 |---|---|---|
-| `advisory-runner-select.yml` | `workflow_call` from CodeQL, Store Image Size and Serving Image Boundary | Light bootstrap; same-repository PRs read existing instance/heartbeat with trusted base scripts; heavy pool while more than two of its runners are idle (two stay free for required PR Gate jobs), else the original hosted label. |
+| `advisory-runner-select.yml` | `workflow_call` from CodeQL, Store Image Size, Serving Image Boundary and the full-CI producer | Hosted bootstrap (honua-light has only the snap AWS CLI, which cannot start in the runner sandbox); same-repository PRs read existing instance/heartbeat with trusted base scripts; heavy pool while more than two of its runners are idle (two stay free for required PR Gate jobs), else the original hosted label. |
 
 The selector is read-only: it never wakes or resizes capacity. Its 90-second
 heartbeat proof binds the current instance and available heavy worker. Forks,
-non-PR callers, missing configuration/credentials, busy/stale hosts and health
-read errors use hosted compute. The existing OIDC trust is PR-only. Selection
+dispatches from non-default refs, missing configuration/credentials, busy/stale
+hosts and health read errors use hosted compute. The OIDC trust admits
+same-repository PRs and the trunk ref (role assumption succeeded on trunk
+dispatch 44309947920). Selection
 errors also preserve hosted execution through caller fallback expressions.
 Each consumer independently checks repository trust before accepting the
 selected runner and uses hosted compute for forks;
@@ -2060,3 +2078,62 @@ headers.
 Shard filters are unchanged, so every case runs in the same shards on selected PR
 runs and twice-daily full trunk runs. No workflow, shard definition, required
 check name or aggregate `needs` changed.
+
+### Admin authentication browser sessions share one host per configuration
+
+On hosted full trunk run 44271438677 the Server Features Admin Authentication
+and Credentials shard ran `AdminAuthEndpointsTests` with an application per
+case:
+- `AdminAuthEndpointsTests+BrowserSessions`: 27 cases, 240 seconds of case time.
+- `AdminAuthEndpointsTests+GrpcBrowserSessions`: 12 cases, 133 seconds.
+- `AdminAuthEndpointsTests`: 33 cases, 266 seconds; 7 of them use the default
+  application.
+
+These classes now take one class-fixture host per configuration: the default
+application, the password-token application and the generic OIDC callback
+application. `BrowserSessions` boots 4 applications instead of 27,
+`GrpcBrowserSessions` 2 instead of 12, and the outer class 27 instead of 33.
+Cases with their own configuration or stub identity provider keep their own
+application.
+
+Every case uses fresh clients, so cookies, CSRF tokens and sessions stay per
+case, and each client gets its own client address from a test-only header that
+the host maps in a startup filter (the same technique as
+`ProposalEndpointsTests`, now shared as `PerClientAddress`). The in-process
+transport otherwise leaves the address empty, which skips the per-address
+limits; with an address per client, the sign-in endpoints' five requests a
+minute and the failed-password block now apply, per case.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR
+runs and twice-daily full trunk runs. No workflow, shard definition, required
+check name or aggregate `needs` changed.
+
+### Credential-expiry cases start with a 3-second lifetime
+
+Expiry cases in `FeatureStreamEndpointsTests` (OData poll, default-tenant OData read,
+WebSocket and SSE stream, Kestrel close), `SensorThingsStreamEndpointsTests`
+(`ObservationsStream` over WebSocket and SSE) and `McpModernBearerAuthenticationTests`
+(zero-skew reuse) issued portal credentials or JWTs that lived 6 to 30 seconds and
+waited them out on the real clock. The product checks expiry against the real
+clock, so the tests still do, but the credential under test now lives 3 seconds.
+Each case warms the host with a separate long-lived credential first.
+`ExpiringCredentials` in `Honua.TestKit` runs the step that needs the credential
+valid. If a slow runner outlives the credential before that step finishes, the
+helper repeats the step with a 10-second and then a 30-second lifetime, so no case
+asserts on a credential that ended before its setup. The stream cases record every
+frame received during setup, including frames from discarded attempts. After setup
+they check those frames again for the other tenant's data and for the marked change
+or observation, so a retry cannot hide a leak. Every assertion is unchanged.
+
+Measured on the build host (Release, the same 66 cases, 66/66 passing on every
+run, head twice and base once):
+- The six FeatureStream expiry cases: 127.3 to 63.8-66.4 seconds.
+- The two SensorThings expiry cases: 44.3 to 10.3-10.4 seconds.
+- The MCP zero-skew case: 33.9 to 9.1-10.0 seconds.
+- The revocation twins are unchanged.
+
+These cases run in Server Features Streaming Endpoints 1, 2 and 4, Server Features
+Streaming Transports, SensorThings 5 and MCP and Sessions 1. Shard filters are
+unchanged, so every case runs in the same shards on selected PR runs and
+twice-daily full trunk runs. No workflow, shard definition, required check name or
+aggregate `needs` changed.

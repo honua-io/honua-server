@@ -54,6 +54,30 @@ public sealed class QueryFormatterTests
         await act.Should().ThrowAsync<GeoParquetLimitExceededException>();
     }
 
+    [UnitTest]
+    public async Task FormatQueryResultAsync_Parquet_IgnoresArtifactLayoutOnTheSharedLimits()
+    {
+        var options = Options.Create(new LimitsOptions
+        {
+            GeoParquet = new GeoParquetLimits
+            {
+                MaxResponseBytes = 32,
+                MaxArtifactBytes = 8 * 1024 * 1024,
+                RowsPerRowGroup = 16_384,
+                OrderByBboxHilbert = true,
+                CompressWithZstd = true,
+            }
+        });
+        var formatter = new QueryFormatter(options, new PbfQueryFormatter(options), NullLogger<QueryFormatter>.Instance);
+        var feature = Feature.Create(1, new WKBWriter().Write(new Point(1, 2)), ImmutableDictionary<string, object?>.Empty);
+        var act = async () => await formatter.FormatQueryResultAsync(
+            QueryResult<Feature>.Create(1, [feature]), CreatePointLayer(),
+            format: "parquet", returnGeometry: true, outputSrid: 4326, returnZ: false, returnM: false,
+            geometryPrecision: null, maxAllowableOffset: null);
+
+        await act.Should().ThrowAsync<GeoParquetLimitExceededException>();
+    }
+
     [global::Xunit.Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false)]

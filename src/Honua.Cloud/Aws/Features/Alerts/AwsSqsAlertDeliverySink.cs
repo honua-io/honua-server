@@ -37,20 +37,21 @@ internal sealed class AwsSqsPublisher : ISqsPublisher, IDisposable
         Dictionary<string, string> attributes,
         CancellationToken cancellationToken)
     {
+        // AWS SDK v4 leaves request collections null (AWSConfigs.InitializeCollections is false), so the
+        // attribute map is built here rather than filled through the indexer.
         var request = new SendMessageRequest
         {
             QueueUrl = queueUrl,
-            MessageBody = messageBody
+            MessageBody = messageBody,
+            MessageAttributes = attributes.ToDictionary(
+                static pair => pair.Key,
+                static pair => new MessageAttributeValue
+                {
+                    DataType = "String",
+                    StringValue = pair.Value
+                },
+                StringComparer.Ordinal)
         };
-
-        foreach (var (key, value) in attributes)
-        {
-            request.MessageAttributes[key] = new MessageAttributeValue
-            {
-                DataType = "String",
-                StringValue = value
-            };
-        }
 
         try
         {

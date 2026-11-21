@@ -441,6 +441,10 @@ internal static partial class ServiceCollectionExtensions
             new PostgresStudioPackageStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
+        services.AddScoped<Honua.Core.Features.Styling.Abstractions.ISharedStyleConsumerIndex>(serviceProvider =>
+            new Features.Studio.PostgresSharedStyleConsumerIndex(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
         // Durable Studio map collaboration store. Overrides the in-memory
         // default registered by AddStudioMapCollaboration when Postgres is active.
         services.AddScoped<Honua.Core.Features.Console.Collaboration.Abstractions.IStudioMapCollaborationStore>(serviceProvider =>
@@ -478,6 +482,11 @@ internal static partial class ServiceCollectionExtensions
                 configuration["Database:Schema"]));
         services.AddSingleton<IDeploymentStore>(serviceProvider =>
             new Features.Publishing.PostgresDeploymentStore(
+                serviceProvider.GetRequiredService<NpgsqlDataSource>(),
+                configuration["Database:Schema"]));
+
+        services.AddSingleton<Honua.Core.Features.ObjectStorage.IObjectStorageConnectionStore>(serviceProvider =>
+            new Features.Security.PostgresObjectStorageConnectionStore(
                 serviceProvider.GetRequiredService<NpgsqlDataSource>(),
                 configuration["Database:Schema"]));
 
@@ -541,6 +550,12 @@ internal static partial class ServiceCollectionExtensions
             new PostgresStyleCatalog(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
+
+        services.AddScoped<IStyleSaveLock>(serviceProvider =>
+            new PostgresStyleSaveLock(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                configuration["Database:Schema"],
+                StyleSaveLockWaitMilliseconds(serviceProvider.GetRequiredService<IConfiguration>())));
 
         // Reconciles Type=Style graph resources + StyleResourceIds with the style catalog
         services.AddScoped<IMetadataV2StyleGraphSync, Features.Metadata.PostgresMetadataV2StyleGraphSync>();
@@ -1171,4 +1186,9 @@ internal static partial class ServiceCollectionExtensions
             : defaultValue;
     }
 
+    // An unset, non-numeric or non-positive value keeps the two-second default instead of failing every save.
+    private static int StyleSaveLockWaitMilliseconds(IConfiguration configuration) =>
+        int.TryParse(configuration["Styles:SaveLockWaitMilliseconds"], NumberStyles.None, CultureInfo.InvariantCulture, out var value) && value > 0
+            ? value
+            : 2000;
 }

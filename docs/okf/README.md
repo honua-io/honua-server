@@ -47,6 +47,11 @@ includes the capability and the evidence that proves it without a name lookup.
 A `resource` naming a key that the registry does not carry is an error, so the
 join cannot silently dangle.
 
+The key is an identity, not an address. The server's MCP endpoint does not serve
+`honua://capability/...` URIs, so `resources/read` on one returns `-32002` (not
+found). To read about a capability, open its concept page,
+`docs/okf/capabilities/<key>.md`, which links to the pages that document it.
+
 The capability concepts are generated from the registry rather than written by
 hand, so they say exactly what the registry says: which edition carries the
 capability, its lifecycle status, and how mature its surfaces are. A capability

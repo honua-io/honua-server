@@ -196,7 +196,13 @@ internal sealed partial class DeployWorkflowService
             };
         }
 
-        plan = await ApplyProbeUrlValidationAsync(plan, spec, cancellationToken).ConfigureAwait(false);
+        plan = await ApplyProbeUrlValidationAsync(
+                plan,
+                spec,
+                _controlPlaneOptions?.CurrentValue.AllowPrivateNetworkProbes == true,
+                cancellationToken)
+            .ConfigureAwait(false);
+        plan = ApplyTargetIdentityOverrideBlock(plan, target, parameterOverrides);
 
         return new DeployWorkflowPlanResult(target, spec, plan, capabilities, canonicalApproval);
     }
@@ -205,9 +211,11 @@ internal sealed partial class DeployWorkflowService
     private static async Task<DeployPlan> ApplyProbeUrlValidationAsync(
         DeployPlan plan,
         DeployOperationSpec spec,
+        bool allowPrivateNetworkProbes,
         CancellationToken cancellationToken)
     {
-        var (blocks, warnings) = await DescribeProbeUrlFindingsAsync(spec, cancellationToken).ConfigureAwait(false);
+        var (blocks, warnings) = await DescribeProbeUrlFindingsAsync(spec, allowPrivateNetworkProbes, cancellationToken)
+            .ConfigureAwait(false);
         if (blocks.Count == 0 && warnings.Count == 0)
         {
             return plan;
@@ -223,6 +231,7 @@ internal sealed partial class DeployWorkflowService
 
     private static async Task<(List<string> Blocks, List<string> Warnings)> DescribeProbeUrlFindingsAsync(
         DeployOperationSpec spec,
+        bool allowPrivateNetworkProbes,
         CancellationToken cancellationToken)
     {
         var blocks = new List<string>();
@@ -244,7 +253,9 @@ internal sealed partial class DeployWorkflowService
                 continue;
             }
 
-            var validation = await DeployProbeUrlPolicy.ValidateAsync(url, cancellationToken).ConfigureAwait(false);
+            var validation = await DeployProbeUrlPolicy
+                .ValidateAsync(url, allowPrivateNetworkProbes, cancellationToken)
+                .ConfigureAwait(false);
             if (validation.IsValid)
             {
                 continue;
@@ -633,7 +644,11 @@ internal sealed partial class DeployWorkflowService
 
         // A probe host can resolve differently at submit time than it did at plan time (for example
         // after an approval wait), so the probe destination rule is re-applied before any mutation.
-        var (probeBlocks, _) = await DescribeProbeUrlFindingsAsync(operation.Deploy, cancellationToken).ConfigureAwait(false);
+        var (probeBlocks, _) = await DescribeProbeUrlFindingsAsync(
+                operation.Deploy,
+                _controlPlaneOptions?.CurrentValue.AllowPrivateNetworkProbes == true,
+                cancellationToken)
+            .ConfigureAwait(false);
         if (probeBlocks.Count > 0)
         {
             throw new ResourceConflictException(
@@ -876,7 +891,15 @@ internal sealed partial class DeployWorkflowService
         }
         catch (DeployAdmissionBlockedException ex)
         {
-            return new DeployPromotionResult(DeployPromotionOutcome.PreconditionFailed, operation, ex.Message);
+            var cleared = operation with
+            {
+                UpdatedAt = DateTimeOffset.UtcNow,
+                CurrentPhase = "Manual promotion blocked by deployment admission policy.",
+                Deploy = operation.Deploy with { ManualPromotionPending = false }
+            };
+            await _workflowStore.TrySetAsync(cleared, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var latest = await _workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false) ?? cleared;
+            return new DeployPromotionResult(DeployPromotionOutcome.PreconditionFailed, latest, ex.Message);
         }
         catch (OperationCanceledException)
         {

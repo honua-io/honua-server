@@ -21,7 +21,7 @@ using static Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Ser
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
+public sealed partial class GeoParquetQueryFormatterTests(ITestOutputHelper output)
 {
     [UnitTheory]
     [InlineData(3)]

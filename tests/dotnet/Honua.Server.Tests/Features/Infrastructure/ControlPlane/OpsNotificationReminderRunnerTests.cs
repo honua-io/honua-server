@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using FluentAssertions;
 using Honua.Alerts;
 using Honua.Alerts.Ops;
+using Honua.ControlPlane;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -158,6 +159,8 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
     {
         await using var harness = await ControlPlaneStateHarness.CreateAsync(database, nameof(OpsNotificationReminderRunnerTests));
         var clock = new ReminderClock(DateTimeOffset.UtcNow);
+        await harness.CreateNotificationStore().ObserveAsync(new("finding", "finding-1", OpsFindingSeverity.Warning),
+            clock.Now - PostgresOpsNotificationStore.WarningSettle);
         var findings = CreateFindings();
         findings.EvaluateAsync(Arg.Any<CancellationToken>()).Returns(new[] { Finding(clock.Now, OpsFindingSeverity.Warning) });
         var outbox = Substitute.For<IAlertOutboxWriter>();
@@ -202,7 +205,8 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         var store = harness.CreateNotificationStore();
         foreach (var finding in values)
         {
-            await store.ObserveAsync(new("finding", finding.Id, finding.Severity), clock.Now.AddMinutes(-1));
+            await store.ObserveAsync(new("finding", finding.Id, finding.Severity),
+                clock.Now - PostgresOpsNotificationStore.WarningSettle - TimeSpan.FromMinutes(1));
         }
         values.Add(Finding(clock.Now, OpsFindingSeverity.Critical));
         var findings = CreateFindings();

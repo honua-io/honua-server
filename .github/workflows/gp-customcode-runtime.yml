@@ -43,3 +43,29 @@ jobs:
           name: customcode-runtime-tests
           path: artifacts
           if-no-files-found: error
+
+  # Both custom-code worker images build here on every change to them: every package they
+  # install is hash-verified (Python requirements.lock, .NET packages.lock.json files) and the
+  # .NET SDK comes from the digest-pinned SDK image, so a stale lock or pin fails this PR.
+  images:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    name: Build ${{ matrix.runtime }} worker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [python, dotnet]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build docker/worker-customcode-${{ matrix.runtime }}
+        env:
+          RUNTIME: ${{ matrix.runtime }}
+        run: |
+          set -euo pipefail
+          docker build --platform linux/amd64 \
+            -f "docker/worker-customcode-${RUNTIME}/Dockerfile" \
+            -t "honua-worker-customcode-${RUNTIME}:ci" .
+          docker image inspect "honua-worker-customcode-${RUNTIME}:ci" --format '{{.Id}} {{.Size}}'

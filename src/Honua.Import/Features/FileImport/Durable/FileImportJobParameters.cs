@@ -34,7 +34,7 @@ internal static class FileImportJobParameters
 
     public const string ObjectStoreETag = "import.object_store_etag";
 
-    public const string ObjectStoreRoleArn = "import.object_store_role_arn";
+    public const string ObjectStoreConnectionId = "import.object_store_connection_id";
 
     public const string ObjectStoreContentType = "import.object_store_content_type";
 
@@ -79,7 +79,7 @@ internal static class FileImportJobParameters
             parameters[ObjectStoreETag] = request.ObjectStoreETag!;
         }
 
-        AddIfPresent(parameters, ObjectStoreRoleArn, request.ObjectStoreRoleArn);
+        AddIfPresent(parameters, ObjectStoreConnectionId, request.ObjectStoreConnectionId);
         AddIfPresent(parameters, ObjectStoreContentType, request.ObjectStoreContentType);
         AddIfPresent(parameters, TargetSchema, request.TargetSchema);
         AddIfPresent(parameters, TargetSrid, request.TargetSrid?.ToString(CultureInfo.InvariantCulture));
@@ -155,7 +155,7 @@ internal static class FileImportJobParameters
             CloudFileId = objectStoreUri is null ? cloudFileId : null,
             ObjectStoreUri = objectStoreUri,
             ObjectStoreETag = objectStoreETag,
-            ObjectStoreRoleArn = Get(parameters, ObjectStoreRoleArn),
+            ObjectStoreConnectionId = Get(parameters, ObjectStoreConnectionId),
             ObjectStoreContentType = Get(parameters, ObjectStoreContentType),
             FileName = fileName,
             TableName = tableName,

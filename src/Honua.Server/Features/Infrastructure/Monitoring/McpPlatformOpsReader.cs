@@ -412,7 +412,7 @@ internal sealed class McpPlatformOpsReader(
                     "The verified proposal evidence does not match the proposal target.");
             }
 
-            await EnsureEvidenceProposerCanBeRevalidatedAsync(actor!, cancellationToken)
+            await EnsureEvidenceProposerCanBeRevalidatedAsync(principal, actor!, cancellationToken)
                 .ConfigureAwait(false);
 
             byte[] canonicalPayload;
@@ -491,23 +491,29 @@ internal sealed class McpPlatformOpsReader(
     }
 
     private async Task EnsureEvidenceProposerCanBeRevalidatedAsync(
+        ClaimsPrincipal principal,
         string actor,
         CancellationToken cancellationToken)
     {
-        const string marker = ":api-key:";
-        var markerIndex = actor.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
-        if (markerIndex <= 0
-            || !Guid.TryParse(actor[(markerIndex + marker.Length)..], out var apiKeyId))
+        if (OperationProposerApiKeyAuthority.IsSupportOrOAuthActor(actor)
+            && principal.Identity?.IsAuthenticated == true
+            && !OperationProposerApiKeyAuthority.IsApiKeyActor(actor))
+        {
+            return;
+        }
+
+        if (!OperationProposerApiKeyAuthority.TryGetKeyId(actor, out var apiKeyId))
         {
             throw new GeoprocessingValidationException(
-                "Evidence-bound proposals require a stored API-key proposer that can be revalidated at approval time.");
+                "Evidence-bound proposals require a stored API-key proposer or an authenticated support/OAuth workload actor.");
         }
 
         var apiKeys = _services.GetService<IAdminApiKeyStore>();
-        if (apiKeys is null || await apiKeys.GetAsync(apiKeyId, cancellationToken).ConfigureAwait(false) is null)
+        var record = apiKeys is null ? null : await apiKeys.GetAsync(apiKeyId, cancellationToken).ConfigureAwait(false);
+        if (record is null || record.RevokedAt is not null)
         {
             throw new GeoprocessingValidationException(
-                "Evidence-bound proposals require a stored API-key proposer that can be revalidated at approval time.");
+                "Evidence-bound proposals require a stored non-revoked API-key proposer that can be revalidated at approval time.");
         }
     }
 
@@ -606,7 +612,10 @@ internal sealed class McpPlatformOpsReader(
         var resource = new DefaultHttpContext { User = principal, RequestAborted = cancellationToken };
         resource.Request.Method = HttpMethods.Post;
         var grant = await _authorization.AuthorizeAsync(principal, resource, AuthenticationExtensions.AdminPolicy).ConfigureAwait(false);
-        if (!grant.Succeeded)
+        var hasScopedOpsPropose = !grant.Succeeded
+            && principal.Identity?.IsAuthenticated == true
+            && AdminApiKeyPermission.HasOpsProposeGrant(principal);
+        if (!grant.Succeeded && !hasScopedOpsPropose)
             throw new GeoprocessingAuthorizationException(false, "Caller is not authorized to propose platform mutations.");
 
         var scope = _scopeAuthorizer.Evaluate(principal, resourceType, operation);

@@ -122,6 +122,9 @@ public sealed class TablePublishValidationRequest
 
     public string? GeometryColumn { get; init; }
 
+    // On a mixed table, the one geometry type to publish; without it a mixed table is an error.
+    public string? GeometryType { get; init; }
+
     public string? PrimaryKey { get; init; }
 
     public IReadOnlyList<string> Fields { get; init; } = Array.Empty<string>();

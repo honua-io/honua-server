@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics;
+
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
 public interface IPerformanceMonitor
@@ -22,6 +24,8 @@ public interface IPerformanceMonitor
     void RecordCounter(string name, long value, IDictionary<string, string>? tags = null);
 
     void RecordHistogram(string name, double value, IDictionary<string, string>? tags = null);
+
+    void RecordHistogram(string name, double value, TagList tags);
 
     void RecordGeospatialOperation(string operationType, TimeSpan duration, int coordinateCount, int? fromSrid = null, int? toSrid = null);
 

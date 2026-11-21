@@ -34,7 +34,43 @@ internal sealed partial class ProcessGdalCommandRunner(
         "AZURE_STORAGE_SAS_TOKEN",
         "AZURE_CLIENT_ID",
         "AZURE_CLIENT_SECRET",
-        "AZURE_TENANT_ID"
+        "AZURE_TENANT_ID",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "PGPASSWORD",
+        "PGPASSFILE",
+        "PGUSER",
+        "PGHOST",
+        "PGDATABASE"
+    ];
+
+    private static readonly string[] SensitiveVariablePrefixes =
+    [
+        "ConnectionStrings__",
+        "Database__",
+        "Postgres__",
+        "Honua__",
+        "HONUA_",
+        "Security__",
+        "License__",
+        "FileStorage__",
+        "OTEL_"
+    ];
+
+    private static readonly string[] SensitiveVariableSubstrings =
+    [
+        "SECRET",
+        "PASSWORD",
+        "PASSWD",
+        "TOKEN",
+        "API_KEY",
+        "APIKEY",
+        "PRIVATE_KEY",
+        "CONNECTION_STRING",
+        "CONNECTIONSTRING",
+        "CREDENTIAL",
+        "LICENSE_KEY",
+        "ENCRYPTION_KEY",
+        "SIGNING_KEY"
     ];
 
     public async Task<GdalCommandResult> RunAsync(
@@ -181,10 +217,11 @@ internal sealed partial class ProcessGdalCommandRunner(
             AddEnvironmentReference(sensitiveNames, configuration["FileStorage:AzureBlob:ConnectionString"]);
         }
 
-        // ProcessStartInfo starts with a copy of the worker's complete environment. Strip every
-        // known cloud credential and configured env: indirection before re-adding only the values
-        // BuildEnvironment authorized for this exact S3/Azure VSI invocation.
-        foreach (var inheritedName in environment.Keys.Where(sensitiveNames.Contains).ToArray())
+        // Strip inherited cloud credentials, configured secret references, and host secrets
+        // before re-adding only the values BuildEnvironment authorized for this invocation.
+        foreach (var inheritedName in environment.Keys
+                     .Where(name => sensitiveNames.Contains(name) || IsSensitiveHostVariable(name))
+                     .ToArray())
         {
             environment.Remove(inheritedName);
         }
@@ -193,6 +230,27 @@ internal sealed partial class ProcessGdalCommandRunner(
         {
             environment[kvp.Key] = kvp.Value;
         }
+    }
+
+    private static bool IsSensitiveHostVariable(string name)
+    {
+        foreach (var prefix in SensitiveVariablePrefixes)
+        {
+            if (name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        foreach (var token in SensitiveVariableSubstrings)
+        {
+            if (name.Contains(token, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static void AddEnvironmentReference(HashSet<string> sensitiveNames, string? configuredValue)

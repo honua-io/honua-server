@@ -31,13 +31,25 @@ public sealed class OperationHumanApprovalAuthorityTests
     [InlineData(true, (int)AdminAuthSessionOrigin.Builtin)]
     [InlineData(false, (int)AdminAuthSessionOrigin.InteractiveOidc)]
     [InlineData(false, (int)AdminAuthSessionOrigin.Builtin)]
-    public async Task VerifyAsync_AuthorizedHuman_AllowsRequesterAndAnotherPerson(bool requesterApproves, int originValue)
+    public async Task VerifyAsync_AuthorizedHuman_AllowsDistinctPersonAndHumanSelfApprovalOnly(bool requesterApproves, int originValue)
     {
         var origin = (AdminAuthSessionOrigin)originValue;
         using var host = new OperationHumanApprovalTestHost();
         var human = await host.CreateHumanAsync(origin: origin);
         var requester = requesterApproves ? CanonicalSecurityActor.Resolve(human.Principal)!.ActorId : "agent:requester";
         var proposal = OperationHumanApprovalTestHost.Proposal(requester);
+        if (requesterApproves)
+        {
+            proposal = proposal with
+            {
+                Initiation = proposal.Initiation! with
+                {
+                    Kind = OperationInitiationKind.Human,
+                    Channel = OperationInitiationChannel.InteractiveOidc,
+                },
+            };
+        }
+
         host.ReviewRequest(human);
         var review = await host.Authority.OpenReviewAsync(proposal, host.Context);
         host.ApproveRequest(human, review);
@@ -55,6 +67,62 @@ public sealed class OperationHumanApprovalAuthorityTests
         evidence.CapabilityReference.Should().HaveLength(64);
         evidence.SessionReference.Should().HaveLength(64).And.NotBe(human.SessionId);
         review.ExpiresAt.Should().BeOnOrBefore(host.Clock.GetUtcNow().AddMinutes(5));
+    }
+
+    [UnitTest]
+    public async Task VerifyAsync_AgentProposalSelfApproval_RefusesByDefault()
+    {
+        using var host = new OperationHumanApprovalTestHost();
+        var human = await host.CreateHumanAsync();
+        var actorId = CanonicalSecurityActor.Resolve(human.Principal)!.ActorId;
+        var proposal = OperationHumanApprovalTestHost.Proposal(actorId);
+        host.ReviewRequest(human);
+        var review = await host.Authority.OpenReviewAsync(proposal, host.Context);
+        host.ApproveRequest(human, review);
+
+        var verify = () => host.Authority.VerifyAsync(proposal, OperationHumanApprovalTestHost.Approval(human));
+
+        await verify.Should().ThrowAsync<HumanApprovalRequiredException>();
+    }
+
+    [UnitTest]
+    public async Task VerifyAsync_SelfApprovalDisabledByConfig_RefusesHumanSelfApproval()
+    {
+        using var host = new OperationHumanApprovalTestHost(options: new() { AllowSelfApproval = false });
+        var human = await host.CreateHumanAsync();
+        var actorId = CanonicalSecurityActor.Resolve(human.Principal)!.ActorId;
+        var proposal = OperationHumanApprovalTestHost.Proposal(actorId);
+        proposal = proposal with
+        {
+            Initiation = proposal.Initiation! with
+            {
+                Kind = OperationInitiationKind.Human,
+                Channel = OperationInitiationChannel.InteractiveOidc,
+            },
+        };
+        host.ReviewRequest(human);
+        var review = await host.Authority.OpenReviewAsync(proposal, host.Context);
+        host.ApproveRequest(human, review);
+
+        var verify = () => host.Authority.VerifyAsync(proposal, OperationHumanApprovalTestHost.Approval(human));
+
+        await verify.Should().ThrowAsync<HumanApprovalRequiredException>();
+    }
+
+    [UnitTest]
+    public async Task VerifyAsync_SingleAdminSelfApprovalEnabledByConfig_AllowsApproval()
+    {
+        using var host = new OperationHumanApprovalTestHost(options: new() { AllowSelfApproval = true });
+        var human = await host.CreateHumanAsync();
+        var actorId = CanonicalSecurityActor.Resolve(human.Principal)!.ActorId;
+        var proposal = OperationHumanApprovalTestHost.Proposal(actorId);
+        host.ReviewRequest(human);
+        var review = await host.Authority.OpenReviewAsync(proposal, host.Context);
+        host.ApproveRequest(human, review);
+
+        var evidence = await host.Authority.VerifyAsync(proposal, OperationHumanApprovalTestHost.Approval(human));
+
+        evidence.ActorId.Should().Be(actorId);
     }
 
     [UnitTest]

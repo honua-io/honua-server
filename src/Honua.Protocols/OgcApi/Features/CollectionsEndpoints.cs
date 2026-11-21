@@ -452,7 +452,9 @@ internal static class CollectionsEndpoints
                 return validation.ErrorResult!;
             }
 
-            var resource = validation.Resource!;
+            // A field the caller's mask withholds is not a queryable for that caller.
+            var resource = await CallerVisibleSchema.HideMaskedFieldsAsync(context, validation.Resource!, effectiveToken)
+                .ConfigureAwait(false);
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var queryablesId = $"{baseUrl}/ogc/features/collections/{Uri.EscapeDataString(collectionId)}/queryables";
@@ -667,22 +669,22 @@ internal static class CollectionsEndpoints
             (double Lon, double Lat) maxTransformed = default;
             if (extentSrid != 4326)
             {
-                transformedToCrs84 =
-                    OgcExtentTransformer.TryTransformToCrs84(bbox.West, bbox.South, extentSrid, out minTransformed) &&
-                    OgcExtentTransformer.TryTransformToCrs84(bbox.East, bbox.North, extentSrid, out maxTransformed);
-
-                if (!transformedToCrs84)
+                // One extent transform, including the outward margin. Transforming the two
+                // opposite corners with a different formula than feature output leaves edge
+                // points just outside the advertised box.
+                var extentResult = await OgcExtentTransformer.TryTransformExtentToCrs84Async(
+                    bbox.West,
+                    bbox.South,
+                    bbox.East,
+                    bbox.North,
+                    extentSrid,
+                    coordinateTransformService,
+                    cancellationToken).ConfigureAwait(false);
+                if (extentResult.HasValue)
                 {
-                    var extentResult = await coordinateTransformService.TransformExtentAsync(
-                        bbox.West, bbox.South,
-                        bbox.East, bbox.North,
-                        extentSrid, 4326, cancellationToken);
-                    if (extentResult.HasValue)
-                    {
-                        minTransformed = (extentResult.Value.MinX, extentResult.Value.MinY);
-                        maxTransformed = (extentResult.Value.MaxX, extentResult.Value.MaxY);
-                        transformedToCrs84 = true;
-                    }
+                    minTransformed = (extentResult.Value.MinLon, extentResult.Value.MinLat);
+                    maxTransformed = (extentResult.Value.MaxLon, extentResult.Value.MaxLat);
+                    transformedToCrs84 = true;
                 }
             }
 

@@ -5,6 +5,7 @@ using System.IO.Compression;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.TestKit;
@@ -151,6 +152,50 @@ public sealed class SavedLayerPresentationRenderingTests : IAsyncLifetime
         var content = await response.Content.ReadAsByteArrayAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, Encoding.UTF8.GetString(content));
         return content;
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/drawing-info")]
+    [Endpoint("GET /api/styles/{publicationId}.json")]
+    public async Task SavedDrawingInfo_IsServedByTheCollectionStyleLink()
+    {
+        (await CollectionStyleDocumentsAsync()).Should().NotContain(style => RedColor.IsMatch(style), "the default symbol is not red");
+
+        await PutDrawingInfoAsync(RedPointDrawingInfo);
+
+        (await CollectionStyleDocumentsAsync()).Should().Contain(
+            style => RedColor.IsMatch(style), "the collection rel=style document must serve the saved renderer");
+    }
+
+    private static readonly Regex RedColor = new(@"(?i)#e60000|rgba?\(\s*230\s*,\s*0\s*,\s*0\b", RegexOptions.None, TimeSpan.FromSeconds(1));
+
+    // Every MapLibre document the feature collections advertise as rel="style".
+    private async Task<List<string>> CollectionStyleDocumentsAsync()
+    {
+        using var collections = JsonDocument.Parse(await GetTextAsync("/ogc/features/collections"));
+        var styles = new List<string>();
+        foreach (var collection in collections.RootElement.GetProperty("collections").EnumerateArray())
+        {
+            using var detail = JsonDocument.Parse(await GetTextAsync($"/ogc/features/collections/{Uri.EscapeDataString(collection.GetProperty("id").GetString()!)}"));
+            var hrefs = detail.RootElement.GetProperty("links").EnumerateArray()
+                .Where(link => link.GetProperty("rel").GetString() == "style")
+                .Select(link => link.GetProperty("href").GetString()!);
+            foreach (var href in hrefs)
+            {
+                styles.Add(await GetTextAsync(href));
+            }
+        }
+
+        return styles;
+    }
+
+    private async Task<string> GetTextAsync(string url)
+    {
+        using var response = await _fixture.Client.GetAsync(url);
+        var text = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, text);
+        return text;
     }
 
     private async Task PutDrawingInfoAsync(string json)

@@ -60,7 +60,8 @@ public sealed class OperationRuntimeStartupValidator(IServiceScopeFactory scopeF
         var unsafePublicDescriptors = descriptors
             .Where(descriptor =>
                 !descriptor.IsCompatibilityOnly &&
-                descriptor.ApprovalModel != Honua.Core.Features.Operations.Domain.OperationApprovalModel.None &&
+                (descriptor.ApprovalModel != Honua.Core.Features.Operations.Domain.OperationApprovalModel.None ||
+                 AgentApprovalRule.RequiresApproval(descriptor)) &&
                 !OperationDescriptorPublication.CanAdvertise(descriptor, mapperCounts))
             .Select(descriptor => descriptor.OperationId)
             .ToArray();

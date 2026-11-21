@@ -26,7 +26,7 @@ namespace Honua.Server.Tests.Features.Admin;
 
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
+public sealed partial class AdminAuthEndpointsTests : IClassFixture<AdminAuthEndpointsTests.BaseSessionHost>, IDisposable
 {
     private const string TestTenantId = "11111111-1111-1111-1111-111111111111";
     private const string TestClientId = "22222222-2222-2222-2222-222222222222";
@@ -39,19 +39,18 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     private static readonly RsaSecurityKey _oidcSigningKey = CreateOidcSigningKey();
     private static readonly SigningCredentials _oidcSigningCredentials = new(_oidcSigningKey, SecurityAlgorithms.RsaSha256);
 
-    private readonly LazyBaseHost _baseHost = new();
+    private readonly HttpClient _baseClient;
 
-    public Task InitializeAsync() => Task.CompletedTask;
+    // Configured OIDC and certificate cases own their app; the default-app cases share the class host.
+    public AdminAuthEndpointsTests(BaseSessionHost baseHost) => _baseClient = baseHost.CreateBrowser();
 
-    public Task DisposeAsync() => _baseHost.DisposeAsync();
-
-    private Task<HttpClient> GetClientAsync() => _baseHost.GetClientAsync();
+    public void Dispose() => _baseClient.Dispose();
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/auth/config")]
     public async Task GetAuthConfig_IsAnonymous_Returns200()
     {
-        var client = await GetClientAsync();
+        var client = _baseClient;
         var response = await client.GetAsync("/api/v1/admin/auth/config");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -62,7 +61,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/auth/config")]
     public async Task GetAuthConfig_NoOidcConfigured_ReturnsEmptyProviders()
     {
-        var client = await GetClientAsync();
+        var client = _baseClient;
         var response = await client.GetAsync("/api/v1/admin/auth/config");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -206,7 +205,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/auth/logout")]
     public async Task Logout_IsAnonymous_Returns200()
     {
-        var client = await GetClientAsync();
+        var client = _baseClient;
         var response = await client.PostAsJsonAsync("/api/v1/admin/auth/logout", new object());
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -216,7 +215,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
     public async Task CreateAuthorizeUrl_NoOidcConfigured_ReturnsNotFound()
     {
-        var client = await GetClientAsync();
+        var client = _baseClient;
         var response = await client.PostAsJsonAsync(
             "/api/v1/admin/auth/providers/azuread/authorize-url",
             new { });
@@ -396,7 +395,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/token")]
     public async Task RequestToken_NoOidcConfigured_ReturnsNotFound()
     {
-        var client = await GetClientAsync();
+        var client = _baseClient;
         var response = await client.PostAsJsonAsync(
             "/api/v1/admin/auth/providers/azuread/token",
             new
@@ -524,7 +523,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/auth/providers/{providerKey}/logout-url")]
     public async Task GetLogoutUrl_NoOidcConfigured_ReturnsNotFound()
     {
-        var client = await GetClientAsync();
+        var client = _baseClient;
         var response = await client.GetAsync("/api/v1/admin/auth/providers/azuread/logout-url");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -1003,7 +1002,7 @@ public sealed partial class AdminAuthEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/auth/bearer")]
     public async Task IssueOperatorBearer_WithoutAuthenticatedSession_ReturnsUnauthorized()
     {
-        var client = await GetClientAsync();
+        var client = _baseClient;
         var response = await client.PostAsync("/api/v1/admin/auth/bearer", content: null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);

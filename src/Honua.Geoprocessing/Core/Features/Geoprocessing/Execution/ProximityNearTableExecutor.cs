@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 
@@ -14,12 +15,15 @@ internal sealed class ProximityNearTableExecutor(
 
     protected override string ProcessId => HandledProcessId;
 
-    protected override List<IFeature> Apply(
+    protected override async Task<List<IFeature>> ApplyAsync(
         FeatureCollection source,
         StepInputReader inputs,
+        IJobExecutionContext context,
         CancellationToken cancellationToken)
     {
-        var nearLayer = OverlayExecutorSupport.ReadLayer(inputs, "near", _options.CurrentValue.MaxArtifactBytes);
+        var opts = _options.CurrentValue;
+        var nearLayer = await OverlayExecutorSupport.ReadLayerAsync(
+            inputs, "near", opts.MaxArtifactBytes, opts.OutputRootDirectory, context, cancellationToken).ConfigureAwait(false);
         var nearIdField = inputs.GetOrDefault("nearIdField", string.Empty);
         var inputIdField = inputs.GetOrDefault("inputIdField", string.Empty);
         var searchRadius = ProximityNearSupport.ReadSearchRadius(inputs);

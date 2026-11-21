@@ -40,6 +40,18 @@ internal static class MapAlgebraExpression
         {
             var c = expr[i];
 
+            if (c == '*' && i + 1 < expr.Length && expr[i + 1] == '*')
+            {
+                error = "'expression' must not use exponentiation operator '**'; use power(x, y)";
+                return false;
+            }
+
+            if (c == '<' && i + 1 < expr.Length && expr[i + 1] == '<')
+            {
+                error = "'expression' must not use bit-shift operator '<<'";
+                return false;
+            }
+
             if (char.IsWhiteSpace(c) || IsAllowedSymbol(c))
             {
                 i++;
@@ -48,22 +60,23 @@ internal static class MapAlgebraExpression
 
             if (char.IsDigit(c) || c == '.')
             {
-                // Skip a numeric literal (digits, decimal point, optional exponent).
+                // Skip a numeric literal (digits, decimal point, optional signed exponent).
                 while (i < expr.Length && (char.IsDigit(expr[i]) || expr[i] == '.'))
                 {
                     i++;
                 }
 
-                // Consume an optional exponent ('e' or 'E') only when immediately followed
-                // by at least one digit. A bare 'e' (e.g. "1e" or "1eA") is not a valid
-                // Python literal and would produce a SyntaxError in gdal_calc.py.
+                // Consume an optional exponent ('e' or 'E') with optional sign followed by digits.
                 if (i < expr.Length && (expr[i] == 'e' || expr[i] == 'E'))
                 {
                     var exponentStart = i;
-                    i++; // advance past 'e'/'E'
+                    i++;
+                    if (i < expr.Length && (expr[i] == '+' || expr[i] == '-'))
+                    {
+                        i++;
+                    }
                     if (i >= expr.Length || !char.IsDigit(expr[i]))
                     {
-                        // No digit follows the exponent character — reject the expression.
                         error = $"'expression' contains an incomplete numeric exponent near position {exponentStart}";
                         return false;
                     }
@@ -79,7 +92,7 @@ internal static class MapAlgebraExpression
             if (char.IsAsciiLetter(c))
             {
                 var start = i;
-                while (i < expr.Length && (char.IsAsciiLetterOrDigit(expr[i])))
+                while (i < expr.Length && (char.IsAsciiLetterOrDigit(expr[i]) || expr[i] == '_'))
                 {
                     i++;
                 }

@@ -38,6 +38,8 @@ internal sealed class PostgresCogStore : ICogStore
                    width, height, band_count, pixel_type, srid, compression,
                    tile_width, tile_height, overview_levels,
                    extent_xmin, extent_ymin, extent_xmax, extent_ymax,
+                   bits_per_sample, predictor, is_little_endian, photometric_interpretation,
+                   planar_configuration, nodata,
                    ifd_cache, metadata_scanned_at, created_at
             FROM {_tableName}
             WHERE id = @id
@@ -117,6 +119,8 @@ internal sealed class PostgresCogStore : ICogStore
                    width, height, band_count, pixel_type, srid, compression,
                    tile_width, tile_height, overview_levels,
                    extent_xmin, extent_ymin, extent_xmax, extent_ymax,
+                   bits_per_sample, predictor, is_little_endian, photometric_interpretation,
+                   planar_configuration, nodata,
                    ifd_cache, metadata_scanned_at, created_at
             FROM {_tableName}
             WHERE layer_id = @layerId
@@ -139,11 +143,6 @@ internal sealed class PostgresCogStore : ICogStore
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
 
-        var overviewSummaries = metadata.OverviewLevels
-            .Select(o => new CogOverviewLevelSummary(o.Level, o.Width, o.Height))
-            .ToArray();
-        var overviewJson = JsonSerializer.Serialize(overviewSummaries, RasterJsonContext.Default.CogOverviewLevelSummaryArray);
-
         command.CommandText = $"""
             UPDATE {_tableName}
             SET width = @width, height = @height, band_count = @bandCount,
@@ -152,11 +151,21 @@ internal sealed class PostgresCogStore : ICogStore
                 overview_levels = @overviewLevels::jsonb,
                 extent_xmin = @xmin, extent_ymin = @ymin,
                 extent_xmax = @xmax, extent_ymax = @ymax,
+                bits_per_sample = @bitsPerSample, predictor = @predictor, is_little_endian = @isLittleEndian,
+                photometric_interpretation = @photometricInterpretation, planar_configuration = @planarConfiguration, nodata = @noData,
                 ifd_cache = @ifdCache,
                 metadata_scanned_at = NOW()
             WHERE id = @id
             """;
         command.AddParameter("@id", id);
+        AddMetadataParameters(command, metadata);
+        command.AddParameter("@ifdCache", (object?)ifdCache ?? DBNull.Value);
+
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void AddMetadataParameters(System.Data.Common.DbCommand command, CogMetadata metadata)
+    {
         command.AddParameter("@width", metadata.Width);
         command.AddParameter("@height", metadata.Height);
         command.AddParameter("@bandCount", metadata.BandCount);
@@ -165,14 +174,20 @@ internal sealed class PostgresCogStore : ICogStore
         command.AddParameter("@compression", metadata.Compression);
         command.AddParameter("@tileWidth", metadata.TileWidth);
         command.AddParameter("@tileHeight", metadata.TileHeight);
-        command.AddParameter("@overviewLevels", overviewJson);
+        var overviewSummaries = metadata.OverviewLevels
+            .Select(o => new CogOverviewLevelSummary(o.Level, o.Width, o.Height))
+            .ToArray();
+        command.AddParameter("@overviewLevels", JsonSerializer.Serialize(overviewSummaries, RasterJsonContext.Default.CogOverviewLevelSummaryArray));
         command.AddParameter("@xmin", metadata.Extent.XMin);
         command.AddParameter("@ymin", metadata.Extent.YMin);
         command.AddParameter("@xmax", metadata.Extent.XMax);
         command.AddParameter("@ymax", metadata.Extent.YMax);
-        command.AddParameter("@ifdCache", (object?)ifdCache ?? DBNull.Value);
-
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        command.AddParameter("@bitsPerSample", metadata.BitsPerSample);
+        command.AddParameter("@predictor", metadata.Predictor);
+        command.AddParameter("@isLittleEndian", metadata.IsLittleEndian);
+        command.AddParameter("@photometricInterpretation", metadata.PhotometricInterpretation);
+        command.AddParameter("@planarConfiguration", metadata.PlanarConfiguration);
+        command.AddParameter("@noData", (object?)metadata.NoData ?? DBNull.Value);
     }
 
     private static CogRegistration ReadRegistration(System.Data.Common.DbDataReader reader)
@@ -221,7 +236,7 @@ internal sealed class PostgresCogStore : ICogStore
                 }
             }
 
-            metadata = new CogMetadata(
+            metadata = ReadDecodeFields(reader, new CogMetadata(
                 reader.GetInt32(widthOrd),
                 reader.GetInt32(heightOrd),
                 reader.IsDBNull(bandCountOrd) ? 1 : reader.GetInt32(bandCountOrd),
@@ -238,7 +253,7 @@ internal sealed class PostgresCogStore : ICogStore
                     XMax = reader.IsDBNull(xmaxOrd) ? 0 : reader.GetDouble(xmaxOrd),
                     YMax = reader.IsDBNull(ymaxOrd) ? 0 : reader.GetDouble(ymaxOrd),
                     Srid = reader.IsDBNull(sridOrd) ? 0 : reader.GetInt32(sridOrd)
-                });
+                }));
         }
 
         return new CogRegistration
@@ -254,6 +269,27 @@ internal sealed class PostgresCogStore : ICogStore
             IfdCache = reader.IsDBNull(ifdCacheOrd) ? null : (byte[])reader[ifdCacheOrd],
             MetadataScannedAt = reader.IsDBNull(metadataScannedOrd) ? null : reader.GetDateTime(metadataScannedOrd),
             CreatedAt = reader.GetDateTime(reader.GetOrdinal("created_at"))
+        };
+    }
+
+    // How the scan decoded the samples and its NoData value. Rows scanned before these columns
+    // existed hold NULLs, which keep the record defaults until the COG is scanned again.
+    private static CogMetadata ReadDecodeFields(System.Data.Common.DbDataReader reader, CogMetadata metadata)
+    {
+        var bitsOrd = reader.GetOrdinal("bits_per_sample");
+        var predictorOrd = reader.GetOrdinal("predictor");
+        var littleEndianOrd = reader.GetOrdinal("is_little_endian");
+        var photometricOrd = reader.GetOrdinal("photometric_interpretation");
+        var planarOrd = reader.GetOrdinal("planar_configuration");
+        var noDataOrd = reader.GetOrdinal("nodata");
+        return metadata with
+        {
+            BitsPerSample = reader.IsDBNull(bitsOrd) ? metadata.BitsPerSample : reader.GetInt32(bitsOrd),
+            Predictor = reader.IsDBNull(predictorOrd) ? metadata.Predictor : reader.GetInt32(predictorOrd),
+            IsLittleEndian = reader.IsDBNull(littleEndianOrd) ? metadata.IsLittleEndian : reader.GetBoolean(littleEndianOrd),
+            PhotometricInterpretation = reader.IsDBNull(photometricOrd) ? metadata.PhotometricInterpretation : reader.GetInt32(photometricOrd),
+            PlanarConfiguration = reader.IsDBNull(planarOrd) ? metadata.PlanarConfiguration : reader.GetInt32(planarOrd),
+            NoData = reader.IsDBNull(noDataOrd) ? metadata.NoData : reader.GetString(noDataOrd),
         };
     }
 }

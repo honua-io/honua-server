@@ -28,7 +28,7 @@ namespace Honua.Server.Tests.Features.Styling;
 
 [Collection("Database")]
 [Protocol(TestProtocols.OgcApiStyles)]
-public sealed class OgcStylesEndpointTests : IAsyncLifetime
+public sealed partial class OgcStylesEndpointTests : IAsyncLifetime
 {
     private const string MapboxStyleMediaType = "application/vnd.mapbox.style+json";
     private const string Sld10MediaType = "application/vnd.ogc.sld+xml;version=1.0";
@@ -122,6 +122,8 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
             .EnumerateArray()
             .Select(parameter => parameter.GetProperty("$ref").GetString())
             .Should().Contain(["#/components/parameters/validate", "#/components/parameters/prefer"]);
+        updateOperation.GetProperty("responses").TryGetProperty("412", out _).Should().BeTrue();
+        paths.TryGetProperty("/ogc/styles/{styleId}/impact", out _).Should().BeTrue();
     }
 
     [IntegrationTest]

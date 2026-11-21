@@ -95,7 +95,7 @@ Detect the active snapshot through the admin API:
 
 Run `GET /api/v1/admin/metadata/environments/{environment}/inventory` in the authorized [API explorer](../../reference/openapi-and-explorer.md), substituting the configured `Metadata__Environment` value.
 
-Expected: `200 OK` with `environment`, `revision`, `eTag`, and `entries`. A `404` with `Metadata v2 environment '<env>' does not have an active revision.` means no snapshot is active for that environment.
+Expected: `200 OK` with `environment`, `revision`, `etag`, `generatedAt`, and `entries`. A `404` with `Metadata v2 environment '<env>' does not have an active revision.` means no snapshot is active for that environment.
 
 Detect it directly in PostGIS:
 

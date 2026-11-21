@@ -1,11 +1,13 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Data.Common;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
@@ -75,10 +77,11 @@ internal static partial class ServiceSettingsEndpoints
             .Produces<ApiResponse<object>>(400)
             .Produces<ApiResponse<object>>(404)
             .ProducesProblem(409)
+            .ProducesProblem(422)
             .ProducesProblem(500)
             .ProducesProblem(501)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
-            .AddAgentApprovalFilter(AgentApprovalFilter.LayerMetadataAccessPolicy);
+            .AddAgentApprovalFilter(AgentApprovalFilter.LayerMetadata);
     }
 
     private static async Task<Results<Ok<ApiResponse<ServiceListPage>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
@@ -94,6 +97,8 @@ internal static partial class ServiceSettingsEndpoints
 
         try
         {
+            listQuery = await ResolveLayerScopeOwnerAsync(listQuery, context).ConfigureAwait(false);
+
             var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
             var tenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId;
             if (ServiceCatalogPage.FolderIsMissing(snapshot, listQuery.FolderId, tenantId))
@@ -101,9 +106,14 @@ internal static partial class ServiceSettingsEndpoints
                 return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound, detail: "Folder not found.");
             }
 
+            var scope = new ServiceListScope
+            {
+                TenantId = tenantId,
+                UnlistedProtocols = await ServableProtocolsAsync(context).ConfigureAwait(false)
+            };
             context.Response.Headers.ETag = snapshot.Etag;
             return TypedResults.Ok(ApiResponse<ServiceListPage>.CreateSuccess(
-                ServiceCatalogPage.Create(snapshot, listQuery, tenantId)));
+                ServiceCatalogPage.Create(snapshot, listQuery, scope)));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -113,6 +123,20 @@ internal static partial class ServiceSettingsEndpoints
                 detail: "An internal error occurred while listing services.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
+    }
+
+    private static async Task<AdminListQuery> ResolveLayerScopeOwnerAsync(AdminListQuery query, HttpContext context)
+    {
+        if (query.ConnectionId is null)
+        {
+            return query;
+        }
+
+        return query with
+        {
+            ManagedConnectionId = await Services.ManagedImportConnection.ResolveOwnerAsync(
+                context.RequestServices, context.RequestAborted).ConfigureAwait(false)
+        };
     }
 
     private static async Task<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
@@ -370,6 +394,13 @@ internal static partial class ServiceSettingsEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure($"Invalid source governance: {governanceError}"));
             }
 
+            if (RefuseInvalidExtrusion(request.Extrusion, resource) is { } extrusionRefusal)
+            {
+                return extrusionRefusal;
+            }
+
+            var extrusion = NormalizeExtrusionUnit(request.Extrusion);
+
             var connections = context.RequestServices.GetRequiredService<IAdoNetDatabaseConnectionProvider>();
             var mutation = await MutateResourceByIdAsync(
                 graphStore,
@@ -418,6 +449,7 @@ internal static partial class ServiceSettingsEndpoints
 
                     next = next with
                     {
+                        Extrusion = extrusion ?? next.Extrusion,
                         Metadata = governanceRequested
                             ? ApplySourceGovernancePatch(
                                 next.Metadata,
@@ -450,14 +482,7 @@ internal static partial class ServiceSettingsEndpoints
             await InvalidateServiceCatalogCacheAsync(context, graphProvider, serviceName, logger,
                 request.Editing is not null ? persistedResource.Metadata.Id : null).ConfigureAwait(false);
 
-            var response = BuildLayerMetadataResponse(
-                serviceLayerIndex,
-                persistedResource.Metadata.Name,
-                persistedResource.Metadata,
-                persistedResource.AccessPolicy,
-                persistedResource.Temporal,
-                null,
-                persistedResource.Editing);
+            var response = BuildLayerMetadataResponse(serviceLayerIndex, persistedResource);
             return TypedResults.Ok(ApiResponse<LayerMetadataResponse>.CreateSuccess(response));
         }
         catch (ArgumentException ex) when (request.Editing is not null)
@@ -478,6 +503,29 @@ internal static partial class ServiceSettingsEndpoints
                 title: "Layer metadata update failed",
                 detail: "An internal error occurred while updating layer metadata.",
                 statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    // A feature-only install cannot serve terrain or elevation, so the list does not advertise them
+    // for services that leave their protocols unset. Service settings keep the full set, so a save
+    // still stores "all". Without a raster store, or when the check fails, the list keeps the full set.
+    internal static async Task<string[]> ServableProtocolsAsync(HttpContext context)
+    {
+        var rasterStorage = context.RequestServices.GetService<IRasterStorageAvailability>();
+        if (rasterStorage is null)
+        {
+            return MetadataV2ServiceProtocols.All;
+        }
+
+        try
+        {
+            return await rasterStorage.IsInstalledAsync(context.RequestAborted).ConfigureAwait(false)
+                ? MetadataV2ServiceProtocols.All
+                : MetadataV2ServiceProtocols.WithoutRasterStorage;
+        }
+        catch (DbException)
+        {
+            return MetadataV2ServiceProtocols.All;
         }
     }
 
@@ -566,20 +614,16 @@ internal static partial class ServiceSettingsEndpoints
         };
     }
 
-    private static LayerMetadataResponse BuildLayerMetadataResponse(
-        int serviceLayerIndex,
-        string layerName,
-        MetadataV2ObjectMetadata metadata,
-        AccessPolicy? accessPolicy,
-        MetadataV2ObjectTemporal? timeInfo,
-        RasterMosaicResponse? rasterMosaic,
-        MetadataV2ObjectEditing? editing)
+    private static LayerMetadataResponse BuildLayerMetadataResponse(int serviceLayerIndex, MetadataV2Object resource)
     {
+        var metadata = resource.Metadata;
+        var accessPolicy = resource.AccessPolicy;
+        var timeInfo = resource.Temporal;
         return new LayerMetadataResponse
         {
             ServiceLayerIndex = serviceLayerIndex,
-            LayerName = layerName,
-            Editing = editing,
+            LayerName = metadata.Name,
+            Editing = resource.Editing,
             License = metadata.License,
             Attribution = metadata.Attribution,
             Publisher = metadata.Publisher,
@@ -598,7 +642,44 @@ internal static partial class ServiceSettingsEndpoints
                 EndTimeField = timeInfo.EndTimeField,
                 TrackIdField = timeInfo.TrackIdField
             } : null,
-            RasterMosaic = rasterMosaic
+            Extrusion = resource.Extrusion
+        };
+    }
+
+    // Validates an incoming extrusion block against the layer's fields, as the scene guide documents:
+    // an invalid block is refused with 422 and the validator's stable codes, never silently dropped.
+    private static ProblemHttpResult? RefuseInvalidExtrusion(MetadataV2ExtrusionInfo? extrusion, MetadataV2Object resource)
+    {
+        if (extrusion is null)
+        {
+            return null;
+        }
+
+        var errors = MetadataV2ExtrusionValidator.Validate(extrusion, resource.SchemaFields);
+        return errors.Count == 0
+            ? null
+            : TypedResults.Problem(
+                title: "Invalid extrusion",
+                detail: $"The extrusion block is invalid: {string.Join(", ", errors)}.",
+                statusCode: StatusCodes.Status422UnprocessableEntity,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["code"] = errors[0]
+                });
+    }
+
+    private static MetadataV2ExtrusionInfo? NormalizeExtrusionUnit(MetadataV2ExtrusionInfo? extrusion)
+    {
+        if (extrusion is null)
+        {
+            return null;
+        }
+
+        MetadataV2VerticalUnits.TryNormalize(extrusion.Unit, out var unit);
+        return extrusion with
+        {
+            Unit = unit,
+            AdditionalProperties = null
         };
     }
 

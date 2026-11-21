@@ -286,7 +286,7 @@ internal static partial class FeatureServerEndpoints
             return (query with { SqlFilter = addition, Where = null }, null);
         }
 
-        var translation = filterService.Translate(parseResult.Expression, resource);
+        var translation = filterService.Translate(parseResult.Expression, resource.WithoutHiddenSchemaFields());
         if (!translation.IsSuccess || translation.SqlFilter is null)
         {
             return (query, StandardErrorHelpers.CreateBadRequest(context,

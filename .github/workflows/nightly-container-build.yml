@@ -72,6 +72,10 @@ jobs:
   select-candidate:
     name: Select certified trunk candidate
     runs-on: ubuntu-24.04
+    # The release App key is an environment secret of bot-app, which deploys only from
+    # trunk, so a branch workflow cannot read it. Only a trunk run hands off; tag and
+    # branch-proof runs run outside the environment.
+    environment: ${{ github.ref_type == 'branch' && github.ref_name == 'trunk' && 'bot-app' || '' }}
     timeout-minutes: 30
     permissions:
       # The Actions token only reads here: run lists, check runs and the tag lookup.
@@ -218,7 +222,7 @@ jobs:
           [ "${HAS_APP_ID}" = true ] || missing+=(HONUA_RELEASE_APP_ID)
           [ "${HAS_APP_PRIVATE_KEY}" = true ] || missing+=(HONUA_RELEASE_APP_PRIVATE_KEY)
           if [ "${#missing[@]}" -ne 0 ]; then
-            echo "::error::Nightly candidate hand-off needs the honua-release GitHub App, but repository secret(s) ${missing[*]} are not set. Setup: create a GitHub App on the honua-io org with repository permissions Contents: write, Workflows: write and Actions: write; install it on honua-server only; then add its App ID as HONUA_RELEASE_APP_ID and its private key (PEM) as HONUA_RELEASE_APP_PRIVATE_KEY in honua-server's Actions secrets. See honua-io/honua-server#6613. The Actions token is not used as a fallback: it cannot create this tag."
+            echo "::error::Nightly candidate hand-off needs the honua-release GitHub App, but secret(s) ${missing[*]} are not set in the trunk-only bot-app environment. Setup: create a GitHub App on the honua-io org with repository permissions Contents: write, Workflows: write and Actions: write; install it on honua-server only; then add its App ID as HONUA_RELEASE_APP_ID and its private key (PEM) as HONUA_RELEASE_APP_PRIVATE_KEY as secrets of honua-server's bot-app environment. See honua-io/honua-server#6613. The Actions token is not used as a fallback: it cannot create this tag."
             exit 1
           fi
 
@@ -1226,10 +1230,11 @@ jobs:
       # The customer quickstart pins this executor, so it gets the release gate the serving
       # images get: no tag and no quickstart until its digest has no HIGH/CRITICAL finding
       # with an upstream fix (see scripts/ci/trivy-release-gate.sh). The scan reads the
-      # runner's platform (linux/amd64); both platforms copy the same docker and compose
-      # release. An executor published before this gate is scanned again when its candidate
-      # is rerun. A failure holds the nightly candidate until the CLI pin is bumped or an
-      # exception is recorded in .trivyignore-release.
+      # runner's platform (linux/amd64); both platforms copy the same docker release and
+      # compile the same pinned Compose source. An executor published before this gate is
+      # scanned again when its candidate is rerun. A failure holds the nightly candidate
+      # until the CLI or Compose source pin is bumped or an exception is recorded in
+      # .trivyignore-release.
       - name: Gate executor on fixable HIGH/CRITICAL vulnerabilities
         env:
           CANDIDATE: ghcr.io/honua-io/honua-server@${{ steps.executor.outputs.digest }}
@@ -1282,6 +1287,28 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.console-token.outputs.token }}
         run: python3 scripts/docker/fetch_quickstart_console.py --output artifacts/console.zip
+      # The quickstart also pulls third-party images (database, Console web, build bases), listed
+      # by scripts/docker/shipped_images.py. A tag can move after review, so every one must be
+      # pinned by digest, and each gets the release gate before the quickstart is packaged. The
+      # database and Console web images are Honua's (.github/workflows/install-images.yml); a
+      # finding there is fixed by re-pinning the weekly rebuild's digest.
+      - name: Require digest pins for third-party install images
+        run: python3 scripts/docker/shipped_images.py
+      - name: Gate third-party and Honua install images on fixable HIGH/CRITICAL vulnerabilities
+        timeout-minutes: 10
+        env:
+          TRIVY_IMAGE: aquasec/trivy:0.68.1@sha256:a93fd67162843c0f749002af9245fe9a2e5edc41445bd71d3949c803e95ef05b
+          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
+        run: |
+          images="$(python3 scripts/docker/shipped_images.py --list)"
+          status=0
+          for image in $images; do
+            if ! scripts/ci/trivy-release-gate.sh "$image"; then
+              echo "::error::$image has fixable HIGH/CRITICAL findings"
+              status=1
+            fi
+          done
+          exit "$status"
       - name: Package immutable customer quickstart
         env:
           SERVER_IMAGE: ${{ needs.manifest-aot.outputs.image }}

@@ -4,10 +4,13 @@
 using System.Security.Cryptography;
 using System.Text;
 using FluentAssertions;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Npgsql;
+using NpgsqlTypes;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -38,34 +41,65 @@ public sealed class PostgresAdminApiKeyStoreTests(DatabaseFixtureAdapter databas
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/api-keys")]
     [Endpoint("POST /api/v1/admin/api-keys/{id}/rotate")]
-    public async Task ExpandedStorage_ValidatesBothKeyFormats_AndRotationPreservesCompatibility()
+    public async Task CreatedAndRotatedKeys_AreStoredSalted_AndValidateAcrossInstances()
     {
         var writer = new PostgresAdminApiKeyStore(database.DataSource, TimeProvider.System, _schema);
         var reader = new PostgresAdminApiKeyStore(database.DataSource, TimeProvider.System, _schema);
-        var legacy = await writer.CreateAsync("existing", ["admin:read"], null, null, CancellationToken.None);
-        var expanded = await writer.CreateAsync("expanded", ["admin:read"], null, null, CancellationToken.None);
-        var salt = RandomNumberGenerator.GetBytes(32);
-        var digest = HMACSHA256.HashData(salt, Encoding.UTF8.GetBytes(expanded.Key));
-        await using (var update = database.DataSource.CreateCommand($"""
-            UPDATE "{_schema}".admin_api_keys SET key_salt = @salt, key_hash = @digest WHERE id = @id
-            """))
-        {
-            update.Parameters.AddWithValue("salt", salt);
-            update.Parameters.AddWithValue("digest", digest);
-            update.Parameters.AddWithValue("id", expanded.Record.Id);
-            await update.ExecuteNonQueryAsync();
-        }
+        var created = await writer.CreateAsync("salted", ["admin:read"], null, null, CancellationToken.None);
+        var stored = (await reader.GetAsync(created.Record.Id, CancellationToken.None))!;
+        stored.KeySalt.Should().HaveCount(AdminApiKeyHashing.SaltSizeInBytes);
+        stored.KeyHash.Should().Equal(HMACSHA256.HashData(stored.KeySalt!, Encoding.UTF8.GetBytes(created.Key)));
+        (await reader.ValidateAsync(created.Key, CancellationToken.None)).Should().NotBeNull();
+        (await reader.ValidateAsync(created.Key + "different", CancellationToken.None)).Should().BeNull();
 
-        (await reader.ValidateAsync(legacy.Key, CancellationToken.None)).Should().NotBeNull();
-        (await reader.ValidateAsync(expanded.Key, CancellationToken.None)).Should().NotBeNull();
-        (await reader.ValidateAsync(expanded.Key, CancellationToken.None)).Should().NotBeNull();
-        (await reader.ValidateAsync(expanded.Key + "different", CancellationToken.None)).Should().BeNull();
-        var rotated = await reader.RotateAsync(expanded.Record.Id, CancellationToken.None);
+        var rotated = await reader.RotateAsync(created.Record.Id, CancellationToken.None);
         rotated.Should().NotBeNull();
-        (await writer.ValidateAsync(expanded.Key, CancellationToken.None)).Should().BeNull();
+        (await writer.ValidateAsync(created.Key, CancellationToken.None)).Should().BeNull();
         (await writer.ValidateAsync(rotated!.Key, CancellationToken.None)).Should().NotBeNull();
-        rotated.Record.KeySalt.Should().BeNull();
-        rotated.Record.KeyHash.Should().Equal(SHA256.HashData(Encoding.UTF8.GetBytes(rotated.Key)));
+        rotated.Record.KeySalt.Should().HaveCount(AdminApiKeyHashing.SaltSizeInBytes).And.NotEqual(stored.KeySalt);
+        rotated.Record.KeyHash.Should().Equal(HMACSHA256.HashData(rotated.Record.KeySalt!, Encoding.UTF8.GetBytes(rotated.Key)));
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    public async Task UnsaltedRecord_FromEarlierRelease_IsRewrittenSaltedOnFirstUse()
+    {
+        var store = new PostgresAdminApiKeyStore(database.DataSource, TimeProvider.System, _schema);
+        var created = await store.CreateAsync("existing", ["admin:read"], null, null, CancellationToken.None);
+        var unsalted = SHA256.HashData(Encoding.UTF8.GetBytes(created.Key));
+        await WriteStoredDigestAsync(created.Record.Id, unsalted, salt: null);
+
+        var first = await store.ValidateAsync(created.Key, CancellationToken.None);
+
+        first.Should().NotBeNull();
+        var rewritten = (await store.GetAsync(created.Record.Id, CancellationToken.None))!;
+        rewritten.KeySalt.Should().HaveCount(AdminApiKeyHashing.SaltSizeInBytes);
+        rewritten.KeyHash.Should().NotEqual(unsalted);
+        rewritten.KeyHash.Should().Equal(HMACSHA256.HashData(rewritten.KeySalt!, Encoding.UTF8.GetBytes(created.Key)));
+        first!.Record.KeySalt.Should().Equal(rewritten.KeySalt);
+        (await store.ValidateAsync(created.Key, CancellationToken.None)).Should().NotBeNull();
+        (await store.ValidateAsync(created.Key + "different", CancellationToken.None)).Should().BeNull();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/revoke")]
+    public async Task UnsaltedRecord_ConcurrentFirstUses_AllAuthenticate_AndRevocationStillDenies()
+    {
+        var store = new PostgresAdminApiKeyStore(database.DataSource, TimeProvider.System, _schema);
+        var created = await store.CreateAsync("existing", ["admin:read"], null, null, CancellationToken.None);
+        await WriteStoredDigestAsync(created.Record.Id, SHA256.HashData(Encoding.UTF8.GetBytes(created.Key)), salt: null);
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 8).Select(
+            _ => store.ValidateAsync(created.Key, CancellationToken.None)));
+
+        var stored = (await store.GetAsync(created.Record.Id, CancellationToken.None))!;
+        stored.KeySalt.Should().HaveCount(AdminApiKeyHashing.SaltSizeInBytes);
+        results.Should().OnlyContain(result => result != null
+            && result.Record.KeySalt!.SequenceEqual(stored.KeySalt!)
+            && result.Record.KeyHash.SequenceEqual(stored.KeyHash));
+        (await store.RevokeAsync(created.Record.Id, CancellationToken.None)).Should().NotBeNull();
+        (await store.ValidateAsync(created.Key, CancellationToken.None)).Should().BeNull();
     }
 
     [IntegrationTest]
@@ -74,12 +108,7 @@ public sealed class PostgresAdminApiKeyStoreTests(DatabaseFixtureAdapter databas
     {
         var store = new PostgresAdminApiKeyStore(database.DataSource, TimeProvider.System, _schema);
         var created = await store.CreateAsync("existing", ["admin:read"], null, null, CancellationToken.None);
-        await using var update = database.DataSource.CreateCommand($"""
-            UPDATE "{_schema}".admin_api_keys SET key_salt = @salt WHERE id = @id
-            """);
-        update.Parameters.AddWithValue("salt", new byte[1]);
-        update.Parameters.AddWithValue("id", created.Record.Id);
-        await update.ExecuteNonQueryAsync();
+        await WriteStoredDigestAsync(created.Record.Id, SHA256.HashData(Encoding.UTF8.GetBytes(created.Key)), new byte[1]);
         (await store.ValidateAsync(created.Key, CancellationToken.None)).Should().BeNull();
     }
 
@@ -124,7 +153,7 @@ public sealed class PostgresAdminApiKeyStoreTests(DatabaseFixtureAdapter databas
 
         var restricted = await instanceA.CreateAsync(
             "browser-key", ["read:catalog"], null, "test",
-            new Honua.Infrastructure.Authentication.AdminApiKeyRestrictions(
+            new AdminApiKeyRestrictions(
                 ["https://*.example.com"], ["203.0.113.0/24", "2001:db8::/32"]),
             CancellationToken.None);
         var unrestricted = await instanceA.CreateAsync("server-key", ["read:catalog"], null, "test", CancellationToken.None);
@@ -154,5 +183,16 @@ public sealed class PostgresAdminApiKeyStoreTests(DatabaseFixtureAdapter databas
         var defaults = await store.CreateAsync("defaults", [], null, null, CancellationToken.None);
         defaults.Record.Permissions.Should().Equal("admin:*");
         (await store.RotateAsync(expired.Record.Id, CancellationToken.None)).Should().BeNull("an expired key cannot be rotated");
+    }
+
+    private async Task WriteStoredDigestAsync(Guid id, byte[] digest, byte[]? salt)
+    {
+        await using var update = database.DataSource.CreateCommand($"""
+            UPDATE "{_schema}".admin_api_keys SET key_hash = @digest, key_salt = @salt WHERE id = @id
+            """);
+        update.Parameters.AddWithValue("digest", digest);
+        update.Parameters.Add(new NpgsqlParameter("salt", NpgsqlDbType.Bytea) { Value = (object?)salt ?? DBNull.Value });
+        update.Parameters.AddWithValue("id", id);
+        await update.ExecuteNonQueryAsync();
     }
 }

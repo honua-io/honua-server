@@ -22,8 +22,9 @@ public sealed class PostgresRasterMapRendererTests(PostgresFixture fixture)
     private const int LayerId = 9001;
 
     [IntegrationTest]
-    public async Task RenderCollectionMapAsync_WhenRasterTableIsMissing_ReturnsEmptyRasterResult()
+    public async Task RenderCollectionMapAsync_WhenRasterTableIsMissingWithRasterStorageInstalled_Fails()
     {
+        // The shared fixture has postgis_raster, so a missing raster table is a broken schema.
         var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterMapRendererTests));
         try
         {
@@ -32,23 +33,10 @@ public sealed class PostgresRasterMapRendererTests(PostgresFixture fixture)
                 NullLogger<PostgresRasterMapRenderer>.Instance,
                 schemaName);
 
-            var result = await renderer.RenderCollectionMapAsync(
-                0,
-                new MapRenderRequest
-                {
-                    BoundingBox = new[] { -180d, -90d, 180d, 90d },
-                    BoundingBoxCrs = 4326,
-                    Crs = 4326,
-                    Width = 256,
-                    Height = 256,
-                    Format = RasterFormat.PNG
-                });
+            var render = () => renderer.RenderCollectionMapAsync(0, WorldPngRequest());
 
-            result.Data.Should().BeEmpty();
-            result.ContentType.Should().Be("image/png");
-            result.Width.Should().Be(256);
-            result.Height.Should().Be(256);
-            result.Srid.Should().Be(4326);
+            (await render.Should().ThrowAsync<PostgresException>())
+                .Which.SqlState.Should().Be(PostgresErrorCodes.UndefinedTable);
         }
         finally
         {
@@ -301,4 +289,14 @@ public sealed class PostgresRasterMapRendererTests(PostgresFixture fixture)
             await operation();
         }
     }
+
+    internal static MapRenderRequest WorldPngRequest() => new()
+    {
+        BoundingBox = new[] { -180d, -90d, 180d, 90d },
+        BoundingBoxCrs = 4326,
+        Crs = 4326,
+        Width = 256,
+        Height = 256,
+        Format = RasterFormat.PNG
+    };
 }

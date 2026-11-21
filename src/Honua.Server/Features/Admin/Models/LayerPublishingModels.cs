@@ -132,6 +132,9 @@ public sealed class LayerPublishJobStatusResponse
 
     public int? StorageLayerId { get; init; }
 
+    // Deprecated wire alias of StorageLayerId; published clients still read layerId.
+    public int? LayerId => StorageLayerId;
+
     public string? ErrorMessage { get; init; }
 }
 
@@ -156,6 +159,9 @@ public sealed class ValidateTablePublishRequest
 
     [StringLength(64)]
     public string? GeometryColumn { get; init; }
+
+    [StringLength(32)]
+    public string? GeometryType { get; init; }
 
     [StringLength(64)]
     public string? PrimaryKey { get; init; }

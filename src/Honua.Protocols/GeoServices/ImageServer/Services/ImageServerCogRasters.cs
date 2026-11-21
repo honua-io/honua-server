@@ -31,8 +31,8 @@ internal static class ImageServerCogRasters
     public const string Entitlement = "raster.cloud-cog-serving";
 
     // exportImage composes the COG tiles and identify and getSamples read their samples (the Image
-    // capability); statistics and histograms read raster_data only, so they are not advertised.
-    public const string Capabilities = "Image,Metadata";
+    // capability); computeStatisticsHistograms and legend read the COGs' coarsest overviews.
+    public const string Capabilities = "Image,Metadata,Statistics";
 
     // raster_data rasters win; COGs describe the layer only when it has none. Registered COG ids
     // are not raster_data rows, so the caller skips raster_data statistics when FromCogs is set.

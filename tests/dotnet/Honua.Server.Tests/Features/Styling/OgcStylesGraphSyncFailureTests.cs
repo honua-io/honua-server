@@ -212,7 +212,7 @@ public sealed class OgcStyleProjectionGraphSyncTests
             catalog);
 
         var summaries = await projection.ListStylesAsync();
-        var update = await projection.UpdateStyleAsync(styleId, mapLibreStyle, strict: false);
+        var update = await projection.UpdateStyleAsync(styleId, mapLibreStyle, new OgcStyleWriteOptions());
 
         summaries.Should().ContainSingle()
             .Which.Should().Be(new OgcStyleSummary(styleId, "Standalone owner"));
@@ -286,7 +286,7 @@ public sealed class OgcStyleProjectionGraphSyncTests
             catalog,
             graphSync);
 
-        var result = await projection.UpdateStyleAsync(styleId, mapLibreStyle, strict: false);
+        var result = await projection.UpdateStyleAsync(styleId, mapLibreStyle, new OgcStyleWriteOptions());
 
         result.Status.Should().Be(OgcStyleUpdateStatus.Updated);
         graphSync.Calls.Should().Equal(11, 22);
@@ -356,7 +356,7 @@ public sealed class OgcStyleProjectionGraphSyncTests
             catalog,
             graphSync);
 
-        var result = await projection.UpdateStyleAsync(styleId, mapLibreStyle, strict: false, cancellation.Token);
+        var result = await projection.UpdateStyleAsync(styleId, mapLibreStyle, new OgcStyleWriteOptions(), cancellation.Token);
 
         result.Status.Should().Be(OgcStyleUpdateStatus.Updated);
         await catalog.Received(1).ListAssociationsAsync(CancellationToken.None);

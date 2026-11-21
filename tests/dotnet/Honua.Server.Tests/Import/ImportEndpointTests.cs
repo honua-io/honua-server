@@ -209,42 +209,38 @@ public class ImportEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/upload-object")]
-    public async Task ImportFileFromObjectStore_WithUnsupportedScheme_ReturnsTypedProblem()
+    public async Task ImportFileFromObjectStore_WithARawSourceUri_IsRefused()
     {
         using var response = await _client.PostAsJsonAsync(
             "/api/v1/admin/import/upload-object",
-            new { sourceUri = "https://example.com/parcels.geojson", tableName = "parcels" });
+            new { sourceUri = "s3://customer/parcels.geojson", tableName = "parcels" });
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("import.source_unsupported_scheme");
+        body.Should().Contain("connectionId and key");
     }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/upload-object")]
-    public async Task ImportFileFromObjectStore_WithBucketOutsideAllowList_ReturnsForbidden()
+    public async Task ImportFileFromObjectStore_WithAnUnknownConnection_ReturnsNotFound()
     {
         using var response = await _client.PostAsJsonAsync(
             "/api/v1/admin/import/upload-object",
-            new { sourceUri = "s3://not-allow-listed/parcels.geojson", tableName = "parcels" });
+            new { connectionId = Guid.NewGuid(), key = "parcels.geojson", tableName = "parcels" });
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("import.source_forbidden");
-        body.Should().Contain("not-allow-listed");
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/capabilities/manifest")]
-    public async Task CapabilityManifest_ObjectStore_IsDisabledUntilABucketIsAllowListed()
+    public async Task CapabilityManifest_ObjectStore_IsListedWithTheS3Scheme()
     {
         using var response = await _client.GetAsync("/api/v1/capabilities/manifest");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var capability = document.RootElement.GetProperty("capabilities").EnumerateArray()
             .Single(item => item.GetProperty("id").GetString() == "import.objectStore");
-        capability.GetProperty("available").GetBoolean().Should().BeFalse();
-        capability.GetProperty("reasonCode").GetString().Should().Be("disabled-by-configuration");
+
         capability.GetProperty("schemes").EnumerateArray().Select(item => item.GetString())
             .Should().Equal("s3");
     }

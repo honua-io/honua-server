@@ -37,19 +37,14 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     private readonly FeatureProviderBinding? _binding;
     private readonly DataConnection? _boundConnection;
     private readonly IMetadataV2GraphProvider? _v2Provider;
-    private readonly LayerReadSecurityResolver? _readSecurity;
+    private readonly LayerReadSecurityResolver _readSecurity;
     private readonly IFilterExpressionService? _filterExpressions;
-
-    public OracleFeatureStore(OracleFeatureDataAccess dataAccess, OracleSpatialGuard spatialGuard)
-        : this(dataAccess, spatialGuard, v2Provider: null, readSecurity: null, binding: null, filterExpressions: null)
-    {
-    }
 
     public OracleFeatureStore(
         OracleFeatureDataAccess dataAccess,
         OracleSpatialGuard spatialGuard,
         IMetadataV2GraphProvider? v2Provider,
-        LayerReadSecurityResolver? readSecurity = null,
+        LayerReadSecurityResolver readSecurity,
         IFilterExpressionService? filterExpressions = null)
         : this(dataAccess, spatialGuard, v2Provider, readSecurity, binding: null, filterExpressions)
     {
@@ -59,14 +54,14 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
         OracleFeatureDataAccess dataAccess,
         OracleSpatialGuard spatialGuard,
         IMetadataV2GraphProvider? v2Provider,
-        LayerReadSecurityResolver? readSecurity,
+        LayerReadSecurityResolver readSecurity,
         FeatureProviderBinding? binding,
         IFilterExpressionService? filterExpressions)
     {
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _spatialGuard = spatialGuard ?? throw new ArgumentNullException(nameof(spatialGuard));
         _v2Provider = v2Provider;
-        _readSecurity = readSecurity;
+        _readSecurity = readSecurity ?? throw new ArgumentNullException(nameof(readSecurity));
         _filterExpressions = filterExpressions;
         _binding = binding;
         _boundConnection = binding?.Connection;
@@ -221,12 +216,9 @@ internal sealed class OracleFeatureStore : IFeatureDataProvider, IFeatureReader,
     private async Task EnsureReadPolicyEnforceableAsync(int layerId, CancellationToken cancellationToken)
     {
         await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
-        if (_readSecurity is not null)
-        {
-            await _readSecurity
-                .EnsureNoUnenforcedPolicyAsync("Oracle", layerId, _binding?.Resource, rejectPermanentFilter: false, cancellationToken)
-                .ConfigureAwait(false);
-        }
+        await _readSecurity
+            .EnsureNoUnenforcedPolicyAsync("Oracle", layerId, _binding?.Resource, rejectPermanentFilter: false, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async Task EnsureNoPermanentFilterAsync(int layerId, CancellationToken cancellationToken)

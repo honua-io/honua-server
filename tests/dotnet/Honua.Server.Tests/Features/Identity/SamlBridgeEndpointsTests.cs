@@ -60,6 +60,16 @@ public class SamlBridgeEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /saml/login")]
+    public async Task Login_WithoutSignOnUrl_ReturnsNotFound()
+    {
+        var response = await _client.GetAsync("/saml/login");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.False(response.Headers.Contains("Set-Cookie"));
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /saml/metadata")]
     public async Task Metadata_WhenConfigured_ReturnsSpMetadata()
     {
@@ -138,6 +148,61 @@ public class SamlBridgeEndpointsTests : IAsyncLifetime
         var response = await _client.PostAsync("/saml/slo", sloContent);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /saml/slo")]
+    public async Task Slo_SameSignedLogoutRequestTwice_SecondIsRejected()
+    {
+        var samlRequest = SamlTestAssertions.CreateSignedLogoutRequest(_certificate, "replay-user@example.com");
+
+        using var first = new FormUrlEncodedContent(new Dictionary<string, string> { ["SAMLRequest"] = samlRequest });
+        using var second = new FormUrlEncodedContent(new Dictionary<string, string> { ["SAMLRequest"] = samlRequest });
+        var firstResponse = await _client.PostAsync("/saml/slo", first);
+        var secondResponse = await _client.PostAsync("/saml/slo", second);
+
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, secondResponse.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /saml/slo")]
+    public async Task Slo_RepeatedLogoutRequest_LeavesAnotherSessionSignedIn()
+    {
+        var firstSession = await SeedSessionAsync("repeat-user@example.com");
+        var secondSession = await SeedSessionAsync("repeat-user@example.com");
+        var samlRequest = SamlTestAssertions.CreateSignedLogoutRequest(_certificate, "repeat-user@example.com");
+
+        using var firstResponse = await PostLogoutAsync(samlRequest, firstSession);
+        using var repeatedResponse = await PostLogoutAsync(samlRequest, secondSession);
+
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, repeatedResponse.StatusCode);
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var sessionStore = scope.ServiceProvider.GetRequiredService<AdminAuthSessionStore>();
+        Assert.Null(await sessionStore.GetAuthenticatedSessionAsync(firstSession, CancellationToken.None));
+        Assert.NotNull(await sessionStore.GetAuthenticatedSessionAsync(secondSession, CancellationToken.None));
+    }
+
+    private async Task<string> SeedSessionAsync(string nameId)
+    {
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var sessionStore = scope.ServiceProvider.GetRequiredService<AdminAuthSessionStore>();
+        return await sessionStore.CreateAuthenticatedSessionAsync(
+            "saml",
+            "opaque-token",
+            idToken: null,
+            [new AdminAuthSessionClaim { Type = ClaimTypes.NameIdentifier, Value = nameId }],
+            DateTimeOffset.UtcNow.AddMinutes(5),
+            CancellationToken.None);
+    }
+
+    private async Task<HttpResponseMessage> PostLogoutAsync(string samlRequest, string sessionId)
+    {
+        using var client = _fixture.CreateClient(
+            c => c.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}"));
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string> { ["SAMLRequest"] = samlRequest });
+        return await client.PostAsync("/saml/slo", content);
     }
 
     [IntegrationTest]

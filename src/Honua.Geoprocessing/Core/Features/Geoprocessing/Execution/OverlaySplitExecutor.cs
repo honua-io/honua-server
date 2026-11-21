@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 
@@ -17,17 +18,19 @@ internal sealed class OverlaySplitExecutor(
 
     protected override string ProcessId => HandledProcessId;
 
-    protected override List<IFeature> Apply(
+    protected override async Task<List<IFeature>> ApplyAsync(
         FeatureCollection source,
         StepInputReader inputs,
+        IJobExecutionContext context,
         CancellationToken cancellationToken)
     {
         var splitField = inputs.GetOrDefault("splitField", string.Empty);
-        var maxBytes = _options.CurrentValue.MaxArtifactBytes;
+        var opts = _options.CurrentValue;
 
         if (inputs.TryGet("split", out _))
         {
-            var splitLayer = OverlayExecutorSupport.ReadLayer(inputs, "split", maxBytes);
+            var splitLayer = await OverlayExecutorSupport.ReadLayerAsync(
+                inputs, "split", opts.MaxArtifactBytes, opts.OutputRootDirectory, context, cancellationToken).ConfigureAwait(false);
             return SplitByFeatures(source, splitLayer, splitField, cancellationToken);
         }
 

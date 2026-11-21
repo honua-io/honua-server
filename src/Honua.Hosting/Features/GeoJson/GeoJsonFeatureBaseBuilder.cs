@@ -315,12 +315,13 @@ internal static partial class GeoJsonFeatureBaseBuilder
     }
 
     private static bool ContainsKeyIgnoreCase(
-        IReadOnlyDictionary<string, object?> properties,
+        Dictionary<string, object?> properties,
         string key)
-        => TryGetValueIgnoreCase(properties, key, out _);
+        => properties.ContainsKey(key) || TryGetValueIgnoreCase(properties, key, out _);
 
+    // Dictionary<,> rather than an interface: its struct enumerator is not boxed per lookup.
     private static bool TryGetValueIgnoreCase(
-        IReadOnlyDictionary<string, object?> properties,
+        Dictionary<string, object?> properties,
         string key,
         out object? value)
     {

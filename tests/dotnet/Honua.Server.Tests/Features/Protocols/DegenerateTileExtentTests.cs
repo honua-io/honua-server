@@ -8,6 +8,7 @@ using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Tiles;
 using Honua.Protocols.Ogc.Common;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -81,6 +82,30 @@ public sealed class DegenerateTileExtentTests : IAsyncLifetime
             .BeEquivalentTo(new MetadataV2Bbox { West = west, South = south, East = east, North = north });
     }
 
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wmts10)]
+    [Operation(Operations.Wmts, Operations.GetMetadata)]
+    [Endpoint("GET /ogc/services/{serviceId}/wmts")]
+    [InterfaceOperation(TestProtocols.Wmts10, "GetCapabilities")]
+    public async Task Capabilities_DatelineCrossingLayer_AdvertisesFullLongitudeRange()
+    {
+        var resource = _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[1];
+        _fixture.UpdateV2ResourceMetadata(1, spatial: resource.Spatial! with
+        {
+            Bbox = new MetadataV2Bbox { West = 177, South = -19, East = -178, North = -16 }
+        });
+
+        using var response = await _fixture.Client.GetAsync("/ogc/services/test/wmts?SERVICE=WMTS&REQUEST=GetCapabilities");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        XNamespace wmts = "http://www.opengis.net/wmts/1.0";
+        XNamespace ows = "http://www.opengis.net/ows/1.1";
+        var bounds = XDocument.Parse(await response.Content.ReadAsStringAsync()).Descendants(wmts + "Layer")
+            .Single(element => element.Element(ows + "Identifier")!.Value == "1").Element(ows + "WGS84BoundingBox")!;
+        Coordinates(bounds.Element(ows + "LowerCorner")!.Value).Should().Equal(-180, -19);
+        Coordinates(bounds.Element(ows + "UpperCorner")!.Value).Should().Equal(180, -16);
+    }
+
     private static double[] Coordinates(string value) => value.Split(' ', StringSplitOptions.RemoveEmptyEntries)
         .Select(number => double.Parse(number, CultureInfo.InvariantCulture)).ToArray();
 
@@ -113,7 +138,7 @@ public sealed class DegenerateTileExtentTests : IAsyncLifetime
     }
 }
 
-public sealed class OgcTileExtentTests
+public sealed class TileExtentTests
 {
     [UnitTheory]
     [InlineData(0)]
@@ -121,14 +146,14 @@ public sealed class OgcTileExtentTests
     [InlineData(24)]
     public void ExpandDegenerateAxes_WorldBoundary_ContainsPointWithinValidCoordinates(int maxZoom)
     {
-        var northeast = OgcTileExtent.ExpandDegenerateAxes((180, 90, 180, 90), maxZoom);
+        var northeast = TileExtent.ExpandDegenerateAxes((180, 90, 180, 90), maxZoom);
         northeast.MinLon.Should().BeLessThan(northeast.MaxLon);
         northeast.MinLat.Should().BeLessThan(northeast.MaxLat);
         northeast.MinLon.Should().BeGreaterThanOrEqualTo(-180);
         northeast.MinLat.Should().BeGreaterThanOrEqualTo(-90);
         northeast.MaxLon.Should().Be(180);
         northeast.MaxLat.Should().Be(90);
-        var southwest = OgcTileExtent.ExpandDegenerateAxes((-180, -90, -180, -90), maxZoom);
+        var southwest = TileExtent.ExpandDegenerateAxes((-180, -90, -180, -90), maxZoom);
         southwest.MinLon.Should().Be(-180);
         southwest.MinLat.Should().Be(-90);
         southwest.MaxLon.Should().BeGreaterThan(southwest.MinLon).And.BeLessThanOrEqualTo(180);
@@ -140,14 +165,25 @@ public sealed class OgcTileExtentTests
     [InlineData(24, 0.000021457672119140625)]
     public void ExpandDegenerateAxes_InteriorPoint_UsesOneFinestTileCenteredOnThePoint(int maxZoom, double expectedSpan)
     {
-        var extent = OgcTileExtent.ExpandDegenerateAxes((-156.45, 20.88, -156.45, 20.88), maxZoom);
+        var extent = TileExtent.ExpandDegenerateAxes((-156.45, 20.88, -156.45, 20.88), maxZoom);
         (extent.MaxLon - extent.MinLon).Should().BeApproximately(expectedSpan, 1e-12);
         (extent.MaxLat - extent.MinLat).Should().BeApproximately(expectedSpan, 1e-12);
         ((extent.MinLon + extent.MaxLon) / 2).Should().BeApproximately(-156.45, 1e-12);
         ((extent.MinLat + extent.MaxLat) / 2).Should().BeApproximately(20.88, 1e-12);
-        var line = OgcTileExtent.ExpandDegenerateAxes((-156.45, 20, -156.45, 21), maxZoom);
+        var line = TileExtent.ExpandDegenerateAxes((-156.45, 20, -156.45, 21), maxZoom);
         line.MinLat.Should().Be(20);
         line.MaxLat.Should().Be(21);
+    }
+
+    [UnitTest]
+    public void ExpandDegenerateAxes_ReprojectedPointWithMargin_StillUsesOneFinestTile()
+    {
+        var padded = OgcExtentTransformer.ExpandReprojectedCrs84(-156.45, 20.88, -156.45, 20.88);
+
+        var extent = TileExtent.ExpandDegenerateAxes(padded, 18);
+
+        (extent.MaxLon - extent.MinLon).Should().BeApproximately(0.001373291015625, 1e-12);
+        (extent.MaxLat - extent.MinLat).Should().BeApproximately(0.001373291015625, 1e-12);
     }
 
     [UnitTheory]
@@ -156,6 +192,35 @@ public sealed class OgcTileExtentTests
     public void ExpandDegenerateAxes_OutOfRangeZoom_ClampsToSupportedGrid(int input, int supported)
     {
         var source = (MinLon: -156.45, MinLat: 20.88, MaxLon: -156.45, MaxLat: 20.88);
-        OgcTileExtent.ExpandDegenerateAxes(source, input).Should().Be(OgcTileExtent.ExpandDegenerateAxes(source, supported));
+        TileExtent.ExpandDegenerateAxes(source, input).Should().Be(TileExtent.ExpandDegenerateAxes(source, supported));
+    }
+
+    [UnitTest]
+    public void ExpandDegenerateAxes_DatelineCrossingBox_KeepsItsLongitudeEdges()
+    {
+        var extent = TileExtent.ExpandDegenerateAxes((177.0, -19.0, -178.0, -16.0), 18);
+
+        extent.Should().Be((177.0, -19.0, -178.0, -16.0));
+    }
+
+    [UnitTest]
+    public void ExpandDegenerateAxes_InvertedLatitude_IsOrderedSouthToNorth()
+    {
+        var extent = TileExtent.ExpandDegenerateAxes((170.0, -16.0, 175.0, -19.0), 18);
+
+        extent.MinLat.Should().Be(-19.0);
+        extent.MaxLat.Should().Be(-16.0);
+    }
+
+    [UnitTest]
+    public void ExpandDegenerateAxes_SubTileLine_UsesOneFinestTileAroundItsMiddle()
+    {
+        // A line along a meridian whose stored float bbox is about 1.5e-5 degrees wide.
+        var extent = TileExtent.ExpandDegenerateAxes((-122.41940689, 37.70, -122.41939163, 37.80), 18);
+
+        (extent.MaxLon - extent.MinLon).Should().BeApproximately(0.001373291015625, 1e-12);
+        ((extent.MinLon + extent.MaxLon) / 2).Should().BeApproximately(-122.41939926, 1e-9);
+        extent.MinLat.Should().Be(37.70);
+        extent.MaxLat.Should().Be(37.80);
     }
 }

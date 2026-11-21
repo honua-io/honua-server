@@ -50,19 +50,8 @@ internal static class KubernetesJobManifestSerializer
             }
 
             WriteStringMap(writer, "nodeSelector", manifest.NodeSelector);
-
-            if (manifest.ImagePullSecrets.Count > 0)
-            {
-                writer.WriteStartArray("imagePullSecrets");
-                foreach (var secret in manifest.ImagePullSecrets)
-                {
-                    writer.WriteStartObject();
-                    writer.WriteString("name", secret);
-                    writer.WriteEndObject();
-                }
-
-                writer.WriteEndArray();
-            }
+            WriteImagePullSecrets(writer, manifest.ImagePullSecrets);
+            WritePodSecurityContext(writer);
 
             writer.WriteStartArray("containers");
             writer.WriteStartObject();
@@ -127,6 +116,7 @@ internal static class KubernetesJobManifestSerializer
             }
 
             WriteResources(writer, manifest);
+            WriteContainerSecurityContext(writer);
             writer.WriteEndObject();
             writer.WriteEndArray();
 
@@ -343,6 +333,55 @@ internal static class KubernetesJobManifestSerializer
             writer.WriteString(entry.Key, entry.Value);
         }
 
+        writer.WriteEndObject();
+    }
+
+    private static void WriteImagePullSecrets(Utf8JsonWriter writer, IReadOnlyList<string> secrets)
+    {
+        if (secrets.Count == 0)
+        {
+            return;
+        }
+
+        writer.WriteStartArray("imagePullSecrets");
+        foreach (var secret in secrets)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("name", secret);
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+    }
+
+    // The Pod Security "restricted" profile is emitted on every Job rather than relying on the
+    // operator's namespace admission policy. The explicit user is the one the shipped worker images
+    // declare; stating it here also lets images without a numeric USER start as non-root.
+    internal const long WorkerUserId = 1001;
+
+    private static void WritePodSecurityContext(Utf8JsonWriter writer)
+    {
+        writer.WriteStartObject("securityContext");
+        writer.WriteBoolean("runAsNonRoot", true);
+        writer.WriteNumber("runAsUser", WorkerUserId);
+        writer.WriteNumber("runAsGroup", WorkerUserId);
+        writer.WriteStartObject("seccompProfile");
+        writer.WriteString("type", "RuntimeDefault");
+        writer.WriteEndObject();
+        writer.WriteEndObject();
+    }
+
+    private static void WriteContainerSecurityContext(Utf8JsonWriter writer)
+    {
+        writer.WriteStartObject("securityContext");
+        writer.WriteBoolean("runAsNonRoot", true);
+        writer.WriteBoolean("allowPrivilegeEscalation", false);
+        writer.WriteBoolean("privileged", false);
+        writer.WriteStartObject("capabilities");
+        writer.WriteStartArray("drop");
+        writer.WriteStringValue("ALL");
+        writer.WriteEndArray();
+        writer.WriteEndObject();
         writer.WriteEndObject();
     }
 

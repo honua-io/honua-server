@@ -47,6 +47,7 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/console/content/{id}/open-data/stac"),
         new("POST", "/api/v1/console/content/{id}/open-data/stac/publish"),
         new("DELETE", "/api/v1/console/content/{id}/open-data/stac"),
+        new("GET", "/api/v1/open-data/datasets"),
         new("GET", "/api/v1/open-data/datasets/{id}"),
         new("GET", "/api/v1/open-data/datasets/{id}/data.json"),
         new("GET", "/api/v1/open-data/datasets/{id}/schema.org"),

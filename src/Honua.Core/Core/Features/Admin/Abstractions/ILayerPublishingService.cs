@@ -37,6 +37,14 @@ public interface ILayerPublishingService
         CancellationToken cancellationToken = default)
         => Task.FromResult(0L);
 
+    // The layer already published from this source table, or null. Lets a queued publish refuse
+    // a duplicate at admission, as the synchronous path does.
+    Task<int?> FindPublishedSourceLayerAsync(
+        string connectionString,
+        LayerPublishRequest request,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult<int?>(null);
+
     Task<PublishedLayerSummary?> LinkExistingLayerToServiceAsync(
         string connectionString,
         int layerId,

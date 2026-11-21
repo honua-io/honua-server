@@ -19,10 +19,11 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
         ArgumentException.ThrowIfNullOrWhiteSpace(executable);
         ArgumentNullException.ThrowIfNull(arguments);
 
-        Log.RunningContainer(logger, executable, string.Join(' ', arguments));
+        var (effectiveArguments, containerName) = EnsureRunContainerName(arguments);
+        Log.RunningContainer(logger, executable, string.Join(' ', effectiveArguments));
 
         var (exitCode, stdout, stderr) = await RunProcessAsync(
-            executable, arguments, environment, throwIfStartFails: true, cancellationToken).ConfigureAwait(false);
+            executable, effectiveArguments, environment, containerName, throwIfStartFails: true, cancellationToken).ConfigureAwait(false);
 
         Log.ContainerCompleted(logger, executable, exitCode);
         return new GdalCommandResult
@@ -51,6 +52,7 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
                 executable,
                 new[] { "image", "inspect", image },
                 environment: null,
+                containerName: null,
                 throwIfStartFails: false,
                 cancellationToken).ConfigureAwait(false);
             return exitCode == 0;
@@ -62,10 +64,42 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
         }
     }
 
+    internal static (IReadOnlyList<string> Arguments, string? ContainerName) EnsureRunContainerName(
+        IReadOnlyList<string> arguments)
+    {
+        if (arguments.Count == 0 || !string.Equals(arguments[0], "run", StringComparison.Ordinal))
+        {
+            return (arguments, null);
+        }
+
+        for (var i = 1; i < arguments.Count; i++)
+        {
+            if (string.Equals(arguments[i], "--name", StringComparison.Ordinal) && i + 1 < arguments.Count)
+            {
+                return (arguments, arguments[i + 1]);
+            }
+
+            if (arguments[i].StartsWith("--name=", StringComparison.Ordinal))
+            {
+                return (arguments, arguments[i]["--name=".Length..]);
+            }
+        }
+
+        var containerName = $"honua-gdal-{Guid.NewGuid():N}";
+        var updated = new List<string>(arguments.Count + 2) { arguments[0], "--name", containerName };
+        for (var i = 1; i < arguments.Count; i++)
+        {
+            updated.Add(arguments[i]);
+        }
+
+        return (updated, containerName);
+    }
+
     private static async Task<(int ExitCode, string StandardOutput, string StandardError)> RunProcessAsync(
         string executable,
         IReadOnlyList<string> arguments,
         IReadOnlyDictionary<string, string>? environment,
+        string? containerName,
         bool throwIfStartFails,
         CancellationToken cancellationToken)
     {
@@ -130,6 +164,10 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
         catch (OperationCanceledException)
         {
             TryKill(process);
+            if (!string.IsNullOrWhiteSpace(containerName))
+            {
+                await TryForceRemoveContainerAsync(executable, containerName).ConfigureAwait(false);
+            }
             throw;
         }
 
@@ -137,6 +175,38 @@ internal sealed partial class ProcessDockerCommandInvoker(ILogger<ProcessDockerC
         await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
 
         return (process.ExitCode, stdout.ToString(), stderr.ToString());
+    }
+
+    private static async Task TryForceRemoveContainerAsync(string executable, string containerName)
+    {
+        try
+        {
+            using var rmProcess = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = executable,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                },
+            };
+            rmProcess.StartInfo.ArgumentList.Add("rm");
+            rmProcess.StartInfo.ArgumentList.Add("-f");
+            rmProcess.StartInfo.ArgumentList.Add(containerName);
+            if (!rmProcess.Start())
+            {
+                return;
+            }
+
+            using var cleanupTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await rmProcess.WaitForExitAsync(cleanupTimeout.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            // Best-effort cleanup; the container may have already exited with --rm.
+        }
     }
 
     private static void TryKill(Process process)

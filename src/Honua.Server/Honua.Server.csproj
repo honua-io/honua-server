@@ -30,6 +30,8 @@
   <Import Project="..\..\eng\Honua.BuildProfiles.props" />
   <!-- Protocol profiles are a separate axis from provider/cloud presets. -->
   <Import Project="..\..\eng\Honua.ProtocolProfiles.props" />
+  <!-- Locked NuGet restore for shipped images. -->
+  <Import Project="..\..\eng\Honua.ServerLockFiles.props" />
   <PropertyGroup Condition="'$(HonuaIncludeGeoServices)' != 'true'">
     <DefaultItemExcludes>$(DefaultItemExcludes);Features/Geocoding/GeocodingHandler.cs;Features/Geocoding/GeocodingEndpoints.cs;Features/PrintingTools/**/*.cs;Features/Protocols/SpatialAnalytics/SpatialAnalyticsRequestHandlers*.cs;Features/Protocols/SpatialAnalytics/SpatialAnalyticsEndpoints.cs;Features/Infrastructure/Analytics/AnalyticsFeatureQueryFactory.cs;Features/Infrastructure/Analytics/AnalyticsLayerSelectionFilterTranslator.cs;Features/Infrastructure/Hosting/Modules/GeoServicesProtocolModule.cs;Features/Protocols/Grpc/HonuaFeatureService*.cs</DefaultItemExcludes>
   </PropertyGroup>
@@ -43,7 +45,7 @@
     <DefaultItemExcludes>$(DefaultItemExcludes);Features/Infrastructure/Hosting/Modules/ODataProtocolModule.cs</DefaultItemExcludes>
   </PropertyGroup>
   <PropertyGroup Condition="'$(HonuaIncludeScene)' != 'true'">
-    <DefaultItemExcludes>$(DefaultItemExcludes);Features/Admin/SceneDatasetEndpoints.cs;Features/Admin/SceneGenerationEndpoints.cs;Features/Admin/SceneBimIngestEndpoints.cs;Features/Admin/ScenePointCloudIngestEndpoints.cs;Features/Admin/Scene/GeoprocessingPointCloudDecompressor.cs;Features/Infrastructure/Scene/SceneGenerationServiceCollectionExtensions.cs</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Features/Admin/SceneDatasetEndpoints.cs;Features/Admin/SceneAssetRootPolicy.cs;Features/Admin/SceneGenerationEndpoints.cs;Features/Admin/SceneBimIngestEndpoints.cs;Features/Admin/ScenePointCloudIngestEndpoints.cs;Features/Admin/Scene/GeoprocessingPointCloudDecompressor.cs;Features/Infrastructure/Scene/SceneGenerationServiceCollectionExtensions.cs</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -153,6 +155,7 @@
   </ItemGroup>
   <ItemGroup Condition="'$(HonuaIncludeScene)' != 'true'">
     <Compile Remove="Features\Admin\SceneDatasetEndpoints.cs" />
+    <Compile Remove="Features\Admin\SceneAssetRootPolicy.cs" />
     <Compile Remove="Features\Admin\SceneGenerationEndpoints.cs" />
     <Compile Remove="Features\Admin\SceneBimIngestEndpoints.cs" />
     <Compile Remove="Features\Admin\ScenePointCloudIngestEndpoints.cs" />
@@ -168,6 +171,7 @@
     <PackageReference Include="Grpc.AspNetCore.Server.Reflection" />
     <PackageReference Include="Grpc.AspNetCore.Web" />
     <PackageReference Include="Grpc.AspNetCore.HealthChecks" />
+    <PackageReference Include="Honua.Sdk.Field" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
     <PackageReference Include="Serilog.AspNetCore" />

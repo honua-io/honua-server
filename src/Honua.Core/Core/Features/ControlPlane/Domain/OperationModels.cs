@@ -197,6 +197,14 @@ public sealed record OperationAuditInfo
     public CustomCodeOwnerScope? CustomCodeOwnerScope { get; init; }
 
     public JobSecurityContext? SubmitterSecurityContext { get; init; }
+
+    // Binds the stored snapshot to this operation with the shared key ring, so an edited record is not trusted.
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? SubmitterSecurityContextSeal { get; init; }
+
+    // A stored snapshot whose seal did not verify on this node. It is not used, and is written back unchanged.
+    [System.Text.Json.Serialization.JsonIgnore]
+    public JobSecurityContext? UnverifiedSubmitterSecurityContext { get; init; }
 }
 
 public sealed record OperationConcurrencyPolicy
