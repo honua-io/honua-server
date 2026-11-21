@@ -318,7 +318,7 @@ public sealed class PostgresServerJobArtifactImportLedgerDiscardTests(PostgresFi
         var receiptSql = await File.ReadAllTextAsync(RepositoryPaths.Resolve(
             "src", "Honua.Server", "Migrations", "138_CreateJobArtifactImportReceipt.sql"));
         var discardSql = await File.ReadAllTextAsync(RepositoryPaths.Resolve(
-            "src", "Honua.Server", "Migrations", "224_AddDiscardedPhaseToJobArtifactImportReceipt.sql"));
+            "src", "Honua.Server", "Migrations", "225_AddDiscardedAtToJobArtifactImportReceipt.sql"));
         await fixture.ExecuteAsync(receiptSql.Replace("$HonuaSchema$", q, StringComparison.Ordinal));
         await fixture.ExecuteAsync(discardSql.Replace("$HonuaSchema$", q, StringComparison.Ordinal));
     }

@@ -175,7 +175,7 @@ public sealed class StagedImportMcpIntegrationTests
         await using var connection = new NpgsqlConnection(fixture.Postgres.ConnectionString);
         await connection.OpenAsync();
         var metadataSchema = fixture.Services.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>()["Database:Schema"] ?? "honua";
-        foreach (var file in new[] { "138_CreateJobArtifactImportReceipt.sql", "224_AddDiscardedPhaseToJobArtifactImportReceipt.sql" })
+        foreach (var file in new[] { "138_CreateJobArtifactImportReceipt.sql", "225_AddDiscardedAtToJobArtifactImportReceipt.sql" })
         {
             var script = await File.ReadAllTextAsync(RepositoryPaths.Resolve(
                 "src", "Honua.Server", "Migrations", file));

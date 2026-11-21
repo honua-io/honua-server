@@ -16,7 +16,6 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
 {
     private const string Reserved = "reserved";
     private const string Committed = "committed";
-    private const string Discarded = "discarded";
 
     private readonly NpgsqlDataSource _dataSource;
     private readonly string _metadataSchema;
@@ -123,7 +122,7 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
     {
         var existing = await ReadAsync(request.Connection, request.ScopeKey, cancellationToken).ConfigureAwait(false);
         ValidateDiscardableReceipt(existing, request.Scope);
-        if (existing!.Phase == Discarded)
+        if (existing!.IsDiscarded)
         {
             return ToAlreadyDiscardedReceipt(existing);
         }
@@ -242,10 +241,11 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
         await using var update = new NpgsqlCommand(
             $"""
             UPDATE {_table}
-            SET phase = '{Discarded}',
+            SET discarded_at = now(),
                 updated_at = now()
             WHERE scope_key = @scope_key
               AND phase = '{Committed}'
+              AND discarded_at IS NULL
             """,
             tx.Connection,
             tx.Transaction);
@@ -314,6 +314,11 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
         CancellationToken cancellationToken)
     {
         var existing = await ReadAsync(connection, scopeKey, cancellationToken).ConfigureAwait(false);
+        if (existing is { IsDiscarded: true })
+        {
+            throw new ServerJobArtifactImportDiscardedException(scope.IntentId);
+        }
+
         if (IsCommittedMatch(existing, scope))
         {
             return ToReceipt(existing!);
@@ -322,11 +327,6 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
         if (existing is { Phase: Committed })
         {
             throw new ServerJobArtifactImportConflictException(scope.IntentId);
-        }
-
-        if (existing is { Phase: Discarded })
-        {
-            throw new ServerJobArtifactImportDiscardedException(scope.IntentId);
         }
 
         if (existing is null)
@@ -530,7 +530,8 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
         await using var command = new NpgsqlCommand(
             $"""
             SELECT phase, fingerprint, schema_name, table_name, physical_table, feature_count,
-                   source_srid, target_srid, content_sha256, crs_state, intent_id, tenant_id, actor_id
+                   source_srid, target_srid, content_sha256, crs_state, intent_id, tenant_id, actor_id,
+                   discarded_at
             FROM {_table}
             WHERE scope_key = @scope_key
             """,
@@ -557,6 +558,7 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
             IntentId = reader.GetString(10),
             TenantId = reader.GetString(11),
             ActorId = reader.GetString(12),
+            DiscardedAt = reader.IsDBNull(13) ? null : reader.GetFieldValue<DateTimeOffset>(13),
         };
     }
 
@@ -572,7 +574,7 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
     }
 
     private static bool IsCommittedMatch(StoredReceipt? row, ServerJobArtifactImportScope scope)
-        => row is { Phase: Committed }
+        => row is { Phase: Committed, IsDiscarded: false }
             && string.Equals(row.Fingerprint, scope.Fingerprint, StringComparison.Ordinal);
 
     private static ServerJobArtifactImportReceipt ToReceipt(StoredReceipt row)
@@ -680,6 +682,8 @@ internal sealed class PostgresServerJobArtifactImportLedger : IServerJobArtifact
         public required string IntentId { get; init; }
         public required string TenantId { get; init; }
         public required string ActorId { get; init; }
+        public DateTimeOffset? DiscardedAt { get; init; }
+        public bool IsDiscarded => DiscardedAt.HasValue;
     }
 
     private sealed class Attempt(
