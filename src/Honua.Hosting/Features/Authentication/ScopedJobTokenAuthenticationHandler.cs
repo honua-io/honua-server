@@ -70,8 +70,7 @@ internal sealed class ScopedJobTokenAuthenticationHandler(
             }
 
             // No owner rehydration: use precisely the issuer's frozen intersection.
-            Context.Features.Set(new LiveStreamCredentialFeature(
-                new("JobToken", LiveStreamInvalidation.Hash(token)), validation.ExpiresAt));
+            Context.Features.Set(LiveStreamCredentialFeature.ForSecret("JobToken", token, validation.ExpiresAt));
             return AuthenticateResult.Success(new AuthenticationTicket(validation.Principal, Scheme.Name));
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)

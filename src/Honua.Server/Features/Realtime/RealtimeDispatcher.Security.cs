@@ -16,11 +16,13 @@ internal sealed partial class RealtimeDispatcher
         _ => 2
     };
 
+    private bool ConsumesSecurity(string family) => Security is not null && InternalPriority(family) < 2;
+
     private Task RefreshSecurityAsync(RealtimeEvent realtimeEvent, CancellationToken cancellationToken)
     {
         if (realtimeEvent.Family.Name == RealtimeLogFamilies.Catalog)
         {
-            return security!.RefreshAsync(null, cancellationToken);
+            return Security!.RefreshAsync(null, cancellationToken);
         }
 
         var payload = realtimeEvent.Payload;
@@ -30,11 +32,11 @@ internal sealed partial class RealtimeDispatcher
             || !payload.TryGetProperty("subject", out var subject) || subject.ValueKind != JsonValueKind.String)
         {
             // An unrecognized event cannot justify retaining the old policy snapshot.
-            return security!.RefreshAsync(null, cancellationToken);
+            return Security!.RefreshAsync(null, cancellationToken);
         }
 
         var credentialKind = payload.TryGetProperty("credentialKind", out var credential) && credential.ValueKind == JsonValueKind.String
             ? credential.GetString() : null;
-        return security!.RefreshAsync(new LiveStreamInvalidation(kind.GetString()!, subject.GetString()!, credentialKind), cancellationToken);
+        return Security!.RefreshAsync(new LiveStreamInvalidation(kind.GetString()!, subject.GetString()!, credentialKind), cancellationToken);
     }
 }

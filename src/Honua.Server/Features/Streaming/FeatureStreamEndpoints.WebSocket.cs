@@ -885,12 +885,7 @@ internal static partial class FeatureStreamEndpoints
                 preAddCursor);
         }
 
-        if (livePolicy?.RevalidateAsync is { } revalidate)
-        {
-            await revalidate(static _ => Task.FromResult(true), cancellationToken).ConfigureAwait(false);
-            context.RequestAborted.ThrowIfCancellationRequested();
-        }
-
+        await RevalidateAdmissionAsync(context, livePolicy, cancellationToken).ConfigureAwait(false);
         if (requested.Kind == FeatureStreamCursorKind.Epoch)
         {
             await SendWebSocketResetAsync(

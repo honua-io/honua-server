@@ -73,8 +73,7 @@ internal sealed class OperatorBearerAuthenticationHandler(
             }
 
             var expiry = new Microsoft.IdentityModel.JsonWebTokens.JsonWebTokenHandler().ReadJsonWebToken(token).ValidTo;
-            Context.Features.Set(new LiveStreamCredentialFeature(
-                new("OperatorBearer", LiveStreamInvalidation.Hash(token)), new DateTimeOffset(expiry)));
+            Context.Features.Set(LiveStreamCredentialFeature.ForSecret("OperatorBearer", token, new DateTimeOffset(expiry)));
             return AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name));
         }
         catch (ArgumentException)

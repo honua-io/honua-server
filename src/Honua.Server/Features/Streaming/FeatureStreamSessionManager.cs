@@ -11,7 +11,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Streaming;
 
-internal sealed class FeatureStreamSessionManager : IDisposable
+internal sealed partial class FeatureStreamSessionManager : IDisposable
 {
     internal const string DefaultSubscriptionId = "default";
     private static readonly TimeSpan RoutabilityRefreshInterval = TimeSpan.FromSeconds(1);
@@ -132,49 +132,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
             _routabilityRefreshGate.Release();
         }
-    }
-
-    internal async Task<bool> RefreshSessionSecurityAsync(Guid sessionId, CancellationToken cancellationToken)
-    {
-        if (!_sessions.TryGetValue(sessionId, out var entry))
-        {
-            return true;
-        }
-
-        foreach (var subscription in entry.GetRefreshableSubscriberSecurities(includeEventDriven: true))
-        {
-            try
-            {
-                if (subscription.Retired.IsCompleted)
-                {
-                    continue;
-                }
-                using var refreshStop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                var refresh = subscription.Security.RefreshAsync(refreshStop.Token);
-                var completed = await Task.WhenAny(refresh, subscription.Retired).WaitAsync(cancellationToken).ConfigureAwait(false);
-                if (completed == subscription.Retired)
-                {
-                    await refreshStop.CancelAsync().ConfigureAwait(false);
-                    // A store may ignore cancellation. Observe its eventual failure without
-                    // making a retired generation consume the remaining session deadline.
-                    _ = refresh.ContinueWith(static task => { _ = task.Exception; }, CancellationToken.None,
-                        TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-                    continue;
-                }
-                var outcome = await refresh.ConfigureAwait(false);
-                if (outcome == StreamSubscriberSecurityRefreshOutcome.Revoked && entry.IsCurrentSubscription(subscription))
-                {
-                    return false;
-                }
-            }
-            catch (Exception error) when (error is not OutOfMemoryException
-                && !entry.IsCurrentSubscription(subscription))
-            {
-                // A removed generation no longer participates in the session's authorization.
-            }
-        }
-
-        return true;
     }
 
     // A layer the refresh denies, or that cannot be re-resolved, ends the session, and policy is read once per tick.
@@ -920,16 +877,26 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             }
         }
 
-        public readonly record struct SubscriberSecuritySnapshot(string SubscriptionId, long Generation, StreamSubscriberSecurity Security, Task Retired);
+        public readonly record struct SubscriptionGeneration(string SubscriptionId, long Generation);
 
-        public SubscriberSecuritySnapshot[] GetRefreshableSubscriberSecurities(bool includeEventDriven = false)
+        public readonly record struct SubscriberSecuritySnapshot(
+            SubscriptionGeneration Key, StreamSubscriberSecurity Security, Task Retired);
+
+        // Periodic refresh covers only subscriptions that no event stream refreshes.
+        public SubscriberSecuritySnapshot[] GetRefreshableSubscriberSecurities()
+            => SnapshotSubscriberSecurities(static security => security.IsRefreshable);
+
+        public SubscriberSecuritySnapshot[] GetSubscriberSecurities()
+            => SnapshotSubscriberSecurities(static _ => true);
+
+        private SubscriberSecuritySnapshot[] SnapshotSubscriberSecurities(Func<StreamSubscriberSecurity, bool> include)
         {
             lock (_subscriptionLock)
             {
                 return _subscriptions
                     .Where(pair => (pair.Value.Filter as StreamSubscriptionFilter)?.SubscriberSecurity is { } security
-                        && (includeEventDriven || security.IsRefreshable))
-                    .Select(pair => new SubscriberSecuritySnapshot(pair.Key, pair.Value.Generation,
+                        && include(security))
+                    .Select(pair => new SubscriberSecuritySnapshot(new(pair.Key, pair.Value.Generation),
                         ((StreamSubscriptionFilter)pair.Value.Filter!).SubscriberSecurity!, pair.Value.Retired.Task))
                     .ToArray();
             }
@@ -939,8 +906,8 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         {
             lock (_subscriptionLock)
             {
-                return _subscriptions.TryGetValue(subscription.SubscriptionId, out var state)
-                    && state.Generation == subscription.Generation;
+                return _subscriptions.TryGetValue(subscription.Key.SubscriptionId, out var state)
+                    && state.Generation == subscription.Key.Generation;
             }
         }
 

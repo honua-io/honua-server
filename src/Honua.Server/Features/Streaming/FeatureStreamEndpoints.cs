@@ -134,13 +134,8 @@ internal static partial class FeatureStreamEndpoints
         if (context.Features.Get<LiveStreamPolicyRefreshFeature>() is { } livePolicy)
         {
             livePolicy.SetRefresh(ct => deps.SessionManager.RefreshSessionSecurityAsync(session.SessionId, ct));
-            if (livePolicy.RevalidateAsync is { } revalidate)
-            {
-                await revalidate(static _ => Task.FromResult(true), context.RequestAborted).ConfigureAwait(false);
-                context.RequestAborted.ThrowIfCancellationRequested();
-            }
+            await RevalidateAdmissionAsync(context, livePolicy, context.RequestAborted).ConfigureAwait(false);
         }
-
 
         // Snapshot servability is decided here, ahead of the transport handshake: it is the last
         // point at which an unservable baseline can still be reported as a typed problem document

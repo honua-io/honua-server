@@ -49,7 +49,7 @@ internal sealed class LiveStreamSecurityRegistry(
         Func<CancellationToken, Task>? revoke = null)
     {
         var id = Interlocked.Increment(ref _nextId);
-        var registration = new Registration(identity, refresh, revoke, () => _registrations.TryRemove(id, out _));
+        var registration = new Registration(identity, new(refresh, revoke), () => _registrations.TryRemove(id, out _));
         _registrations[id] = registration;
         return registration;
     }
@@ -60,9 +60,13 @@ internal sealed class LiveStreamSecurityRegistry(
             new ParallelOptions { MaxDegreeOfParallelism = 8, CancellationToken = cancellationToken },
             async (registration, token) =>
             {
-                if (invalidation is null || invalidation.Matches(registration.Identity))
+                if (invalidation?.Kind == "credential-revoked" && invalidation.Matches(registration.Identity))
                 {
-                    await registration.RefreshAsync(invalidation?.Kind == "credential-revoked", token).ConfigureAwait(false);
+                    await registration.RevokeAsync(token).ConfigureAwait(false);
+                }
+                else if (invalidation is null || invalidation.Matches(registration.Identity))
+                {
+                    await registration.RefreshAsync(token).ConfigureAwait(false);
                 }
             });
     }
@@ -84,24 +88,31 @@ internal sealed class LiveStreamSecurityRegistry(
         }
     }
 
+    internal sealed record Callbacks(Func<CancellationToken, Task> Refresh, Func<CancellationToken, Task>? Revoke);
+
     internal sealed class Registration(
         LiveStreamIdentity identity,
-        Func<CancellationToken, Task> refresh,
-        Func<CancellationToken, Task>? revoke,
+        Callbacks callbacks,
         Action remove) : IDisposable, IAsyncDisposable
     {
         private readonly SemaphoreSlim _gate = new(1, 1);
         private int _disposed;
         internal LiveStreamIdentity Identity { get; } = identity;
 
-        internal async Task RefreshAsync(bool revoked, CancellationToken cancellationToken)
+        internal Task RefreshAsync(CancellationToken cancellationToken) => RunAsync(callbacks.Refresh, cancellationToken);
+
+        // A stream without a revocation handler re-evaluates instead, which also fails closed.
+        internal Task RevokeAsync(CancellationToken cancellationToken)
+            => RunAsync(callbacks.Revoke ?? callbacks.Refresh, cancellationToken);
+
+        private async Task RunAsync(Func<CancellationToken, Task> action, CancellationToken cancellationToken)
         {
             await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 if (Volatile.Read(ref _disposed) == 0)
                 {
-                    await (revoked && revoke is not null ? revoke(cancellationToken) : refresh(cancellationToken)).ConfigureAwait(false);
+                    await action(cancellationToken).ConfigureAwait(false);
                 }
             }
             finally
@@ -139,6 +150,11 @@ internal sealed class LiveStreamPolicyRefreshFeature
 internal sealed record LiveStreamAdmissionFeature(string AuthenticationScheme, DateTimeOffset? ExpiresAt = null);
 
 internal sealed record LiveStreamCredentialFeature(LiveStreamCredential Credential, DateTimeOffset ExpiresAt,
-    LiveStreamCredential? BackingCredential = null);
+    LiveStreamCredential? BackingCredential = null)
+{
+    // Only the one-way hash of the presented secret is kept for later revocation matching.
+    internal static LiveStreamCredentialFeature ForSecret(string kind, string secret, DateTimeOffset expiresAt)
+        => new(new LiveStreamCredential(kind, LiveStreamInvalidation.Hash(secret)), expiresAt);
+}
 
 internal sealed class AllowAnonymousLiveStreamMetadata;

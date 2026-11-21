@@ -158,7 +158,7 @@ public sealed class RealtimeSecurityDispatchTests(DatabaseFixtureAdapter databas
         source.ReadWindowAsync(Arg.Any<CancellationToken>()).Returns(
             Task.FromResult(new RealtimeLogWindow(RealtimeFamily.Features, 0, 0)));
         var dispatcher = new RealtimeDispatcher(harness.Log, [source], Options.Create(new RealtimeOptions()),
-            NullLogger<RealtimeDispatcher>.Instance, registry);
+            NullLogger<RealtimeDispatcher>.Instance) { Security = registry };
         await dispatcher.InitializeAsync(CancellationToken.None);
         var refreshed = false;
         using var stream = registry.Register(new("alice", null), _ =>

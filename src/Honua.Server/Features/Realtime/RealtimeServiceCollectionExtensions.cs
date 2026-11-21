@@ -59,7 +59,14 @@ internal static class RealtimeServiceCollectionExtensions
             .Validate(value => value.SecurityBackstopInterval > TimeSpan.Zero && value.SecurityBackstopInterval <= TimeSpan.FromSeconds(30),
                 "Realtime:SecurityBackstopInterval must be greater than zero and at most 30 seconds.").ValidateOnStart();
         services.TryAddSingleton<LiveStreamSecurityRegistry>();
-        services.TryAddSingleton<RealtimeDispatcher>();
+        services.TryAddSingleton(provider => new RealtimeDispatcher(
+            provider.GetRequiredService<PostgresRealtimeEventLog>(),
+            provider.GetServices<IRealtimeFamilySource>(),
+            provider.GetRequiredService<IOptions<RealtimeOptions>>(),
+            provider.GetRequiredService<ILogger<RealtimeDispatcher>>())
+        {
+            Security = provider.GetService<LiveStreamSecurityRegistry>()
+        });
         services.TryAddSingleton<IRealtimeTransactionWriter, RealtimeTransactionWriter>();
         services.TryAddSingleton<IRealtimeWakeSignal>(provider => provider.GetRequiredService<RealtimeDispatcher>());
         services.TryAddSingleton<RealtimePresenceBatcher>();

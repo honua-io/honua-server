@@ -24,9 +24,11 @@ internal sealed partial class RealtimeDispatcher(
     PostgresRealtimeEventLog log,
     IEnumerable<IRealtimeFamilySource> sources,
     IOptions<RealtimeOptions> options,
-    ILogger<RealtimeDispatcher> logger,
-    LiveStreamSecurityRegistry? security = null) : IRealtimeWakeSignal
+    ILogger<RealtimeDispatcher> logger) : IRealtimeWakeSignal
 {
+    // Consumes security and catalog events on every task, before data families are dispatched.
+    internal LiveStreamSecurityRegistry? Security { get; init; }
+
     private readonly Dictionary<string, IRealtimeFamilySource> _sources =
         sources.ToDictionary(source => source.Family.Name, StringComparer.Ordinal);
     private readonly Lock _gate = new();
@@ -50,7 +52,7 @@ internal sealed partial class RealtimeDispatcher(
             : log.ReadAfterAsync(new(request.Family, request.After, request.Limit, request.ScopeKeys), cancellationToken);
 
     internal Task RefreshReplaySecurityAsync(CancellationToken cancellationToken)
-        => security?.RefreshAsync(null, cancellationToken) ?? Task.CompletedTask;
+        => Security?.RefreshAsync(null, cancellationToken) ?? Task.CompletedTask;
 
     public Task<RealtimeLogWindow> ReadWindowAsync(string family, CancellationToken cancellationToken)
         => _sources.TryGetValue(family, out var source)
@@ -133,9 +135,9 @@ internal sealed partial class RealtimeDispatcher(
                     .Min()
                 : entry.Value,
             StringComparer.Ordinal);
-        if (security is not null)
+        if (Security is not null)
         {
-            await security.RefreshAsync(null, cancellationToken).ConfigureAwait(false);
+            await Security.RefreshAsync(null, cancellationToken).ConfigureAwait(false);
         }
 
         lock (_gate)
@@ -170,8 +172,8 @@ internal sealed partial class RealtimeDispatcher(
     private async Task<int> DispatchFamilyAsync(string family, long head, CancellationToken cancellationToken)
     {
         var delivered = 0;
-        var internalFamily = security is not null && InternalPriority(family) < 2;
-        var dispatched = GetDispatchStart(family, head, internalFamily);
+        var internalFamily = ConsumesSecurity(family);
+        var dispatched = GetDispatchStart(family, head);
         var currentHead = head;
         RecordPosition(family, head, dispatched);
         RealtimeMetrics.DispatchLagEvents.Record(Math.Max(0, head - dispatched), new KeyValuePair<string, object?>("family", family));
@@ -191,7 +193,7 @@ internal sealed partial class RealtimeDispatcher(
             if (IsContiguous(family) && (batch.Length == 0 || batch[0].Sequence != dispatched + 1))
             {
                 currentHead = await DeliverRetentionGapAsync(
-                    new(family, batch, subscribers, head) { RefreshesSecurity = internalFamily }, cancellationToken).ConfigureAwait(false);
+                    new(family, batch, subscribers) { ProbedHead = head }, cancellationToken).ConfigureAwait(false);
                 if (batch.Length == 0)
                 {
                     // Appends after the empty read belong to the next probe.
@@ -238,14 +240,14 @@ internal sealed partial class RealtimeDispatcher(
         }
     }
 
-    private long GetDispatchStart(string family, long head, bool internalFamily)
+    private long GetDispatchStart(string family, long head)
     {
         long dispatched;
         lock (_gate)
         {
             dispatched = _dispatched.GetValueOrDefault(family, head);
             var subscribers = _subscriptions.GetValueOrDefault(family) ?? [];
-            if (head <= dispatched || (subscribers.Length == 0 && !internalFamily))
+            if (head <= dispatched || (subscribers.Length == 0 && !ConsumesSecurity(family)))
             {
                 // Nobody here listens, so nothing is read; a later subscriber replays from the table.
                 _dispatched[family] = Math.Max(dispatched, head);
@@ -256,18 +258,17 @@ internal sealed partial class RealtimeDispatcher(
         return dispatched;
     }
 
-    private sealed record RetentionGap(
-        string Family, IReadOnlyList<RealtimeEvent> Batch, RealtimeSubscription[] Subscribers, long ProbedHead)
+    private sealed record RetentionGap(string Family, IReadOnlyList<RealtimeEvent> Batch, RealtimeSubscription[] Subscribers)
     {
-        public bool RefreshesSecurity { get; init; }
+        public required long ProbedHead { get; init; }
     }
 
     private async Task<long> DeliverRetentionGapAsync(RetentionGap gap, CancellationToken cancellationToken)
     {
-        if (gap.RefreshesSecurity)
+        if (ConsumesSecurity(gap.Family))
         {
             // Swept security events cannot be replayed, so every stream is re-evaluated.
-            await security!.RefreshAsync(null, cancellationToken).ConfigureAwait(false);
+            await Security!.RefreshAsync(null, cancellationToken).ConfigureAwait(false);
         }
 
         var window = await ReadWindowAsync(gap.Family, cancellationToken).ConfigureAwait(false);
