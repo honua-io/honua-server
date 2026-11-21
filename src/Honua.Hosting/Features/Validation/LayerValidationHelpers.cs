@@ -545,7 +545,7 @@ internal static partial class LayerValidationHelpers
         MetadataV2GraphSnapshot snapshot,
         StorageCollectionAccess request)
     {
-        var collections = new Dictionary<int, MetadataV2ValidationResult>();
+        var collections = new Dictionary<int, (MetadataV2ValidationResult Result, AccessDecision Decision)>();
         foreach (var publication in snapshot.Graph.Publications)
         {
             request.Access.CancellationToken.ThrowIfCancellationRequested();
@@ -561,16 +561,53 @@ internal static partial class LayerValidationHelpers
                 continue;
             }
             var resource = snapshot.ResolveResource(publication)!;
-            var candidate = await AuthorizeResolvedResourceAsync(request.Access,
+            var (candidate, decision) = await EvaluateStoragePublicationAccessAsync(
+                request.Access,
                 new(true, publication, resource, service, null, snapshot)).ConfigureAwait(false);
             if (!collections.TryGetValue(id.Value, out var existing) ||
-                (candidate.IsValid && !existing.IsValid) ||
-                (candidate.IsValid == existing.IsValid && publication.IsPrimary && !existing.Publication!.IsPrimary))
+                (candidate.IsValid && !existing.Result.IsValid) ||
+                (candidate.IsValid == existing.Result.IsValid && publication.IsPrimary && !existing.Result.Publication!.IsPrimary))
             {
-                collections[id.Value] = candidate;
+                collections[id.Value] = (candidate, decision);
             }
         }
-        return collections;
+
+        return FinalizeStorageCollectionResults(request, collections);
+    }
+
+    private static async Task<(MetadataV2ValidationResult Result, AccessDecision Decision)> EvaluateStoragePublicationAccessAsync(
+        ResourceAccessContext access,
+        MetadataV2ValidationResult candidate)
+    {
+        var resource = candidate.Resource!;
+        var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
+            access.Context, resource, candidate.Service, access.Operation, access.CancellationToken).ConfigureAwait(false);
+        if (decision.IsAllowed)
+        {
+            ValidatedMetadataSnapshot.Remember(access.Context, resource, candidate.Snapshot!);
+        }
+        return (candidate with { IsValid = decision.IsAllowed, ErrorResult = null }, decision);
+    }
+
+    private static Dictionary<int, MetadataV2ValidationResult> FinalizeStorageCollectionResults(
+        StorageCollectionAccess request,
+        Dictionary<int, (MetadataV2ValidationResult Result, AccessDecision Decision)> collections)
+    {
+        // Listing callers (!StorageLayerId.HasValue) filter denied entries out of a 200 OK response,
+        // so they must not call CreateAccessDeniedResult (which writes WWW-Authenticate and Restricted).
+        if (!request.StorageLayerId.HasValue)
+        {
+            return collections.ToDictionary(static entry => entry.Key, static entry => entry.Value.Result);
+        }
+
+        var results = new Dictionary<int, MetadataV2ValidationResult>(collections.Count);
+        foreach (var (id, (result, decision)) in collections)
+        {
+            var errorResult = AccessPolicyHelpers.CreateAccessDeniedResult(request.Access.Context, decision);
+            results[id] = result with { IsValid = errorResult is null, ErrorResult = errorResult };
+        }
+
+        return results;
     }
 
     internal readonly record struct LayerReadAccessResult(

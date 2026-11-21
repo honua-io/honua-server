@@ -70,7 +70,7 @@ public static class PortalTokenAuthenticationExtensions
                 return;
             }
 
-            context.Response.Headers.Append("WWW-Authenticate", "Bearer");
+            AuthenticationChallenge.AppendUniqueChallenge(context, "Bearer");
             await StandardErrorHelpers.CreateInvalidToken(context).ExecuteAsync(context).ConfigureAwait(false);
         });
     }
