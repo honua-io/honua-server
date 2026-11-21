@@ -2,8 +2,10 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using FluentAssertions;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Microsoft.AspNetCore.Http;
@@ -67,6 +69,320 @@ public sealed partial class PbfQueryFormatterTests
         body.Length.Should().BeGreaterThan(100_000_000);
         body.LargestWrite.Should().BeLessThanOrEqualTo(64 * 1024);
         GC.KeepAlive(query);
+    }
+
+    [Fact]
+    public async Task FormatAsPbfStream_SmallPayload_StaysInMemoryWithoutScratchFile()
+    {
+        var layer = CreatePointLayer();
+        var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty.Add("name", "small"));
+        var query = QueryResult<Feature>.Create(1, [feature]);
+        var (expected, _) = _sut.FormatAsPbf(query, layer, false, null, false, false, null, null, null);
+        PbfFeatureSpool? capturedSpool = null;
+        var (response, contentType) = _sut.FormatAsPbfStream(query, layer, new PbfStreamEncodingOptions
+        {
+            ReturnGeometry = false
+        }, () => capturedSpool = new PbfFeatureSpool());
+
+        capturedSpool.Should().NotBeNull();
+        capturedSpool!.UsedScratchFile.Should().BeFalse();
+
+        using var body = new BinaryWriteDigest();
+        var context = new DefaultHttpContext();
+        context.Response.Body = body;
+        await response.ExecuteAsync(context);
+
+        contentType.Should().Be("application/x-protobuf");
+        context.Response.ContentLength.Should().Be(expected.Length);
+        body.Length.Should().Be(expected.Length);
+        body.Digest().Should().Equal(SHA256.HashData(expected));
+    }
+
+    [Fact]
+    public async Task FormatAsPbfStream_LargePayload_SpillsToScratchAndDeletesOnComplete()
+    {
+        var layer = CreatePointLayer();
+        var feature = Feature.Create(7, null, ImmutableDictionary<string, object?>.Empty
+            .Add("name", new string('z', 200_000)));
+        var query = QueryResult<Feature>.Create(1, [feature]);
+        var (expected, _) = _sut.FormatAsPbf(query, layer, false, null, false, false, null, null, null);
+        PbfFeatureSpool? capturedSpool = null;
+        var (response, _) = _sut.FormatAsPbfStream(query, layer, new PbfStreamEncodingOptions
+        {
+            ReturnGeometry = false
+        }, () => capturedSpool = new PbfFeatureSpool());
+
+        capturedSpool.Should().NotBeNull();
+        capturedSpool!.UsedScratchFile.Should().BeTrue();
+        var scratchPath = capturedSpool.ScratchPath;
+        scratchPath.Should().NotBeNullOrWhiteSpace();
+        File.Exists(scratchPath!).Should().BeTrue();
+
+        using var body = new BinaryWriteDigest();
+        var context = new DefaultHttpContext();
+        context.Response.Body = body;
+        await response.ExecuteAsync(context);
+
+        File.Exists(scratchPath!).Should().BeFalse();
+        body.Length.Should().Be(expected.Length);
+        body.Digest().Should().Equal(SHA256.HashData(expected));
+    }
+
+    [Fact]
+    public async Task FormatAsPbfStream_DoesNotRetainMaterializedFeaturesWhileWaitingToDrain()
+    {
+        var layer = CreatePointLayer();
+        var (response, weakFeature) = CreateSpooledResultWithoutKeepingFeatures(layer);
+
+        for (var i = 0; i < 3 && weakFeature.IsAlive; i++)
+        {
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+            GC.WaitForPendingFinalizers();
+        }
+
+        weakFeature.IsAlive.Should().BeFalse(
+            "the spooled PBF result must not retain the materialized Feature page while waiting for a slow client");
+
+        using var body = new BinaryWriteDigest();
+        var context = new DefaultHttpContext();
+        context.Response.Body = body;
+        await response.ExecuteAsync(context);
+        body.Length.Should().BeGreaterThan(200_000);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private (IResult Response, WeakReference WeakFeature) CreateSpooledResultWithoutKeepingFeatures(
+        Honua.Core.Features.Metadata.Domain.V2.MetadataV2Object layer)
+    {
+        var feature = Feature.Create(99, null, ImmutableDictionary<string, object?>.Empty
+            .Add("name", new string('a', 200_000)));
+        var weak = new WeakReference(feature);
+        var query = QueryResult<Feature>.Create(1, [feature]);
+        var (response, _) = _sut.FormatAsPbfStream(query, layer, new PbfStreamEncodingOptions
+        {
+            ReturnGeometry = false
+        });
+        return (response, weak);
+    }
+
+    [Fact]
+    public async Task FormatAsPbfStream_CancelledDuringDrain_DeletesScratchFile()
+    {
+        var layer = CreatePointLayer();
+        var feature = Feature.Create(5, null, ImmutableDictionary<string, object?>.Empty
+            .Add("name", new string('c', 200_000)));
+        var query = QueryResult<Feature>.Create(1, [feature]);
+        PbfFeatureSpool? capturedSpool = null;
+        var (response, _) = _sut.FormatAsPbfStream(query, layer, new PbfStreamEncodingOptions
+        {
+            ReturnGeometry = false
+        }, () => capturedSpool = new PbfFeatureSpool());
+
+        var scratchPath = capturedSpool!.ScratchPath!;
+        File.Exists(scratchPath).Should().BeTrue();
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var context = new DefaultHttpContext
+        {
+            RequestAborted = cts.Token
+        };
+        context.Response.Body = new BinaryWriteDigest();
+
+        var act = async () => await response.ExecuteAsync(context);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        File.Exists(scratchPath).Should().BeFalse();
+    }
+
+    [Fact]
+    public Task StreamAsPbfAsync_WithNoMoreResults_MatchesFormatAsPbfByteForByte()
+    {
+        var items = CreateParityItems();
+        return AssertStreamAsPbfMatchesFormatAsPbfAsync(QueryResult<Feature>.Create(items.Length, items, hasMoreResults: false));
+    }
+
+    [Fact]
+    public Task StreamAsPbfAsync_WithMoreResults_MatchesFormatAsPbfByteForByte()
+    {
+        var items = CreateParityItems();
+        return AssertStreamAsPbfMatchesFormatAsPbfAsync(QueryResult<Feature>.Create(items.Length, items, hasMoreResults: true));
+    }
+
+    private static ImmutableArray<Feature> CreateParityItems()
+        =>
+        [
+            Feature.Create(1, CreatePointWkb(-122.4194, 37.7749), ImmutableDictionary<string, object?>.Empty.Add("name", "SF")),
+            Feature.Create(2, CreatePointWkb(-157.8583, 21.3069), ImmutableDictionary<string, object?>.Empty.Add("name", "HNL"))
+        ];
+
+    private async Task AssertStreamAsPbfMatchesFormatAsPbfAsync(QueryResult<Feature> query)
+    {
+        var layer = CreateLayerWithStringField();
+        var (expected, _) = _sut.FormatAsPbf(query, layer, true, 4326, false, false, null, null, ["name"]);
+
+        using var body = new BinaryWriteDigest();
+        var context = new DefaultHttpContext();
+        context.Response.Body = body;
+
+        await _sut.StreamAsPbfAsync(
+            new PbfStreamSource
+            {
+                Features = ToAsyncEnumerable(query.Items),
+                HasMoreResults = () => query.HasMoreResults,
+                Resource = layer,
+                Options = new PbfStreamEncodingOptions
+                {
+                    ReturnGeometry = true,
+                    OutputSrid = 4326,
+                    ReturnZ = false,
+                    ReturnM = false,
+                    OutFields = ["name"]
+                }
+            },
+            context,
+            CancellationToken.None);
+
+        context.Response.ContentType.Should().Be("application/x-protobuf");
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.Response.ContentLength.Should().Be(expected.Length);
+        body.Length.Should().Be(expected.Length);
+        body.Digest().Should().Equal(SHA256.HashData(expected));
+    }
+
+    [Fact]
+    public async Task StreamAsPbfAsync_HundredThousandFreshFeatures_KeepsManagedHeapBoundedAndDeletesScratch()
+    {
+        const int count = 100_000;
+        var layer = CreateLayerWithStringField();
+        PbfFeatureSpool? capturedSpool = null;
+
+        var baseline = GC.GetTotalMemory(true);
+        using var body = new BinaryWriteDigest();
+        var context = new DefaultHttpContext();
+        context.Response.Body = body;
+
+        await _sut.StreamAsPbfAsync(
+            new PbfStreamSource
+            {
+                Features = GenerateFreshFeaturesAsync(count),
+                HasMoreResults = static () => true,
+                Resource = layer,
+                Options = new PbfStreamEncodingOptions
+                {
+                    ReturnGeometry = false
+                },
+                SpoolFactory = () =>
+                {
+                    capturedSpool = new PbfFeatureSpool();
+                    return capturedSpool;
+                }
+            },
+            context,
+            CancellationToken.None);
+
+        (GC.GetTotalMemory(true) - baseline).Should().BeLessThan(8 * 1024 * 1024);
+        capturedSpool.Should().NotBeNull();
+        capturedSpool!.UsedScratchFile.Should().BeTrue();
+        var scratchPath = capturedSpool.ScratchPath;
+        scratchPath.Should().NotBeNullOrWhiteSpace();
+        File.Exists(scratchPath!).Should().BeFalse();
+        body.Length.Should().BeGreaterThan(100_000_000);
+        body.LargestWrite.Should().BeLessThanOrEqualTo(64 * 1024);
+    }
+
+    [Fact]
+    public async Task StreamAsPbfAsync_ScratchFullOnFinalFlush_ThrowsServiceUnavailableWithZeroBytesWritten()
+    {
+        var layer = CreateLayerWithStringField();
+        var items = ImmutableArray.Create(
+            Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty.Add("name", new string('f', 128))));
+
+        using var body = new BinaryWriteDigest();
+        var context = new DefaultHttpContext();
+        context.Response.Body = body;
+
+        var act = async () => await _sut.StreamAsPbfAsync(
+            new PbfStreamSource
+            {
+                Features = ToAsyncEnumerable(items),
+                HasMoreResults = static () => false,
+                Resource = layer,
+                Options = new PbfStreamEncodingOptions { ReturnGeometry = false },
+                SpoolFactory = () => new PbfFeatureSpool(16, () => new FailingFlushStream(28))
+            },
+            context,
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<ServiceUnavailableException>()
+            .Where(ex => ex.RetryAfterSeconds == PbfFeatureSpool.ScratchFullRetryAfterSeconds);
+        body.Length.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(28)]  // ENOSPC
+    [InlineData(122)] // EDQUOT
+    public void PbfFeatureSpool_ScratchFullOnCreateOrWrite_ThrowsServiceUnavailableWithRetryAfter(int hresult)
+    {
+        using (var createSpool = new PbfFeatureSpool(16, () => throw new IOException("No space left on device", hresult)))
+        {
+            var createAct = () => createSpool.Write(new byte[32]);
+            createAct.Should().Throw<ServiceUnavailableException>()
+                .Where(ex => ex.RetryAfterSeconds == PbfFeatureSpool.ScratchFullRetryAfterSeconds);
+        }
+
+        using (var writeSpool = new PbfFeatureSpool(16, () => new FailingWriteStream(hresult)))
+        {
+            var writeAct = () => writeSpool.Write(new byte[32]);
+            writeAct.Should().Throw<ServiceUnavailableException>()
+                .Where(ex => ex.RetryAfterSeconds == PbfFeatureSpool.ScratchFullRetryAfterSeconds);
+        }
+    }
+
+    private static async IAsyncEnumerable<Feature> ToAsyncEnumerable(
+        ImmutableArray<Feature> items,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        foreach (var item in items)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return item;
+        }
+
+        await Task.CompletedTask;
+    }
+
+    private static async IAsyncEnumerable<Feature> GenerateFreshFeaturesAsync(
+        int count,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var payload = new string('x', 1024);
+        for (var id = 1; id <= count; id++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return Feature.Create(id, null, ImmutableDictionary<string, object?>.Empty.Add("name", payload));
+        }
+
+        await Task.CompletedTask;
+    }
+
+    private sealed class FailingWriteStream(int hresult) : Stream
+    {
+        public override bool CanRead => false;
+        public override bool CanSeek => true;
+        public override bool CanWrite => true;
+        public override long Length => 0;
+        public override long Position { get; set; }
+        public override void Flush() => throw new IOException("No space left on device", hresult);
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => 0;
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new IOException("No space left on device", hresult);
+        public override void Write(ReadOnlySpan<byte> buffer) => throw new IOException("No space left on device", hresult);
+    }
+
+    private sealed class FailingFlushStream(int hresult) : MemoryStream
+    {
+        public override void Flush() => throw new IOException("No space left on device", hresult);
     }
 
     private sealed class BinaryWriteDigest : Stream
