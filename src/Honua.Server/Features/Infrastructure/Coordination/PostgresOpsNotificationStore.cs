@@ -143,9 +143,9 @@ internal sealed class PostgresOpsNotificationStore(
                     first_seen_at = CASE WHEN schedule.closed_at IS NOT NULL THEN @now ELSE schedule.first_seen_at END,
                     notice_number = CASE WHEN schedule.closed_at IS NOT NULL THEN 0 ELSE schedule.notice_number END,
                     next_notice_at = CASE
-                        -- A Warning that reopens after it already notified keeps that notice's daily cadence,
-                        -- so a flapping alarm sends at most one Warning a day.
-                        WHEN schedule.closed_at IS NOT NULL AND @first_notice > @now AND schedule.notice_number > 0
+                        -- A reopened Warning waits for the settle window and for any notice still pending from an
+                        -- earlier episode's daily cadence, so a flapping alarm sends at most one Warning a day.
+                        WHEN schedule.closed_at IS NOT NULL AND @first_notice > @now
                             THEN GREATEST(@first_notice, schedule.next_notice_at)
                         WHEN schedule.closed_at IS NOT NULL THEN @first_notice
                         WHEN @severity > schedule.severity THEN @now
