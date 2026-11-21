@@ -156,6 +156,14 @@ public sealed partial class NightlyImageCertificationTests
         require.Should().Contain("exit 1");
         require.Should().NotContain("secrets.HONUA_RELEASE_APP_PRIVATE_KEY }}", "the key never enters the guard's environment");
 
+        // The app key is an environment secret of bot-app, which deploys only from trunk.
+        // Only a trunk run hands off; tag and branch-proof runs never enter the environment.
+        select.Should().Contain("    environment: ${{ github.ref_type == 'branch' && github.ref_name == 'trunk' && 'bot-app' || '' }}\n",
+            "a branch workflow cannot read the release App key");
+        require.Should().Contain("are not set in the trunk-only bot-app environment");
+        Regex.Count(select, @"secrets\.HONUA_RELEASE_APP_").Should().Be(Regex.Count(nightly, @"secrets\.HONUA_RELEASE_APP_"),
+            "only select-candidate reads the key");
+
         mint.Should().Contain("id: handoff-token");
         mint.Should().Contain("uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0");
         mint.Should().Contain("app-id: ${{ secrets.HONUA_RELEASE_APP_ID }}");

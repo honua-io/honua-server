@@ -956,6 +956,9 @@ helper checks out no contributor code and queues without cancellation. It runs o
 version of the file, and the environment's trunk-only rule guards the bot App key
 once the key moves there from the repository secrets.
 Conflicted PRs are not armed; they are armed after the branch is updated.
+The release App key (`HONUA_RELEASE_APP_ID`, `HONUA_RELEASE_APP_PRIVATE_KEY`) is held the
+same way: only the trunk run of the nightly `select-candidate` job and the normalization
+consumer's `validate` job enter `bot-app`.
 
 Admission requires both the triggering event and the live PR to be non-draft and
 free of `hold`, `train:hold` and `train:escalated`. A queued held/draft event cannot

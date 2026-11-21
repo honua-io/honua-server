@@ -72,6 +72,10 @@ jobs:
   select-candidate:
     name: Select certified trunk candidate
     runs-on: ubuntu-24.04
+    # The release App key is an environment secret of bot-app, which deploys only from
+    # trunk, so a branch workflow cannot read it. Only a trunk run hands off; tag and
+    # branch-proof runs run outside the environment.
+    environment: ${{ github.ref_type == 'branch' && github.ref_name == 'trunk' && 'bot-app' || '' }}
     timeout-minutes: 30
     permissions:
       # The Actions token only reads here: run lists, check runs and the tag lookup.
@@ -218,7 +222,7 @@ jobs:
           [ "${HAS_APP_ID}" = true ] || missing+=(HONUA_RELEASE_APP_ID)
           [ "${HAS_APP_PRIVATE_KEY}" = true ] || missing+=(HONUA_RELEASE_APP_PRIVATE_KEY)
           if [ "${#missing[@]}" -ne 0 ]; then
-            echo "::error::Nightly candidate hand-off needs the honua-release GitHub App, but repository secret(s) ${missing[*]} are not set. Setup: create a GitHub App on the honua-io org with repository permissions Contents: write, Workflows: write and Actions: write; install it on honua-server only; then add its App ID as HONUA_RELEASE_APP_ID and its private key (PEM) as HONUA_RELEASE_APP_PRIVATE_KEY in honua-server's Actions secrets. See honua-io/honua-server#6613. The Actions token is not used as a fallback: it cannot create this tag."
+            echo "::error::Nightly candidate hand-off needs the honua-release GitHub App, but secret(s) ${missing[*]} are not set in the trunk-only bot-app environment. Setup: create a GitHub App on the honua-io org with repository permissions Contents: write, Workflows: write and Actions: write; install it on honua-server only; then add its App ID as HONUA_RELEASE_APP_ID and its private key (PEM) as HONUA_RELEASE_APP_PRIVATE_KEY as secrets of honua-server's bot-app environment. See honua-io/honua-server#6613. The Actions token is not used as a fallback: it cannot create this tag."
             exit 1
           fi
 
