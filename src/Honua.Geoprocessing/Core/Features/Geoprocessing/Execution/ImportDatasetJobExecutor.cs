@@ -94,7 +94,7 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
         if (!TryReadInputs(inputs, out var request, out var inputError))
         {
             Log.InvalidInputs(_logger, job.OperationId, inputError);
-            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid {HandledProcessId} inputs: {inputError}");
         }
 
         var startedAt = DateTimeOffset.UtcNow;
@@ -114,7 +114,7 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
             if (!IsSafeTenantDirectorySegment(tenantId))
             {
                 Log.PathTraversalRejected(_logger, job.OperationId, request.SourcePath);
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid {HandledProcessId} inputs: active tenant identifier is not valid for staging partitioning.");
             }
 
@@ -132,20 +132,20 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
         if (!resolvedSourcePath.StartsWith(stagingRootWithSep, comparison))
         {
             Log.PathTraversalRejected(_logger, job.OperationId, request.SourcePath);
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 $"Invalid {HandledProcessId} inputs: source path is not within the permitted staging directory.");
         }
 
         if (!File.Exists(resolvedSourcePath))
         {
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 $"Invalid {HandledProcessId} inputs: staged source file was not found.");
         }
 
         if (ContainsSymlinkOrReparsePoint(resolvedSourcePath, stagingRoot, comparison))
         {
             Log.PathTraversalRejected(_logger, job.OperationId, request.SourcePath);
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 $"Invalid {HandledProcessId} inputs: symbolic links and reparse points are not permitted in staged import paths.");
         }
 

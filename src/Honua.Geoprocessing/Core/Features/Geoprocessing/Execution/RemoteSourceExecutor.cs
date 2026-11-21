@@ -82,7 +82,7 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         {
             if (!inputs.TryGet("serviceUrl", out var rawServiceUrl) || string.IsNullOrWhiteSpace(rawServiceUrl))
             {
-                return JobExecutionResult.Failed($"Invalid {_processId} inputs: serviceUrl is required.");
+                return JobExecutionResult.InvalidInput($"Invalid {_processId} inputs: serviceUrl is required.");
             }
 
             var ssrfResult = await OutboundHttpUrlValidator.ValidateAsync(rawServiceUrl, cancellationToken)
@@ -90,7 +90,7 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
             if (!ssrfResult.IsValid)
             {
                 Log.SsrfRejected(_logger, job.OperationId, _processId, ssrfResult.ErrorMessage ?? "blocked URL");
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid {_processId} inputs: serviceUrl {ssrfResult.ErrorMessage}");
             }
         }
@@ -116,7 +116,7 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         catch (TransformInputException ex)
         {
             Log.InvalidInputs(_logger, job.OperationId, _processId, ex.PublicMessage, ex.InnerException);
-            return JobExecutionResult.Failed($"Invalid {_processId} inputs: {ex.PublicMessage}");
+            return JobExecutionResult.InvalidInput($"Invalid {_processId} inputs: {ex.PublicMessage}");
         }
 
         cancellationToken.ThrowIfCancellationRequested();

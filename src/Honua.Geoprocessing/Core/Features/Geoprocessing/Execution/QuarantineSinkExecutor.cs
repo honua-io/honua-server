@@ -60,12 +60,12 @@ internal sealed partial class QuarantineSinkExecutor : IProcessExecutor
         var inputs = new StepInputReader(job.Spec.Parameters);
         if (!inputs.TryGetRequired("input", out var inputUri, out var inputError))
         {
-            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid {HandledProcessId} inputs: {inputError}");
         }
 
         if (!inputs.TryGetRequired("path", out var path, out var pathError))
         {
-            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {pathError}");
+            return JobExecutionResult.InvalidInput($"Invalid {HandledProcessId} inputs: {pathError}");
         }
 
         var outputRoot = _options.CurrentValue.OutputRootDirectory;
@@ -76,7 +76,7 @@ internal sealed partial class QuarantineSinkExecutor : IProcessExecutor
             out var resolvedPath,
             out var pathResolutionError))
         {
-            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {pathResolutionError}");
+            return JobExecutionResult.InvalidInput($"Invalid {HandledProcessId} inputs: {pathResolutionError}");
         }
 
         // Stream the input so a large dead-letter set writes incrementally without
@@ -86,7 +86,7 @@ internal sealed partial class QuarantineSinkExecutor : IProcessExecutor
                 inputUri, out var parseError, out var source, _options.CurrentValue.MaxArtifactBytes,
                 _options.CurrentValue.OutputRootDirectory, context))
         {
-            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
+            return JobExecutionResult.InvalidInput($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
         }
 
         var reasonField = inputs.GetOrDefault("reasonField", DefaultReasonField);
