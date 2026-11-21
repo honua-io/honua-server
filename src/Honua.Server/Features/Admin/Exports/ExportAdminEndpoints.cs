@@ -25,18 +25,22 @@ internal static class ExportAdminEndpoints
             .WithTags("Admin", "Exports")
             .RequireAdminAuthorization();
 
-        MapOperation(group, "admin.exports.list", ListAsync, "List Exports");
-        MapOperation(group, "admin.exports.get", GetAsync, "Get an Export with its Versions and URLs");
-        MapOperation(group, "admin.exports.create", CreateAsync, "Export a Layer as files");
-        MapOperation(group, "admin.exports.delete", DeleteAsync, "Unpublish an Export");
-    }
-
-    private static void MapOperation(RouteGroupBuilder group, string operationId, Delegate handler, string summary)
-    {
-        var binding = AdminHttpOperationRouteBinding.ForOperate(operationId, "/exports");
-        _ = group.MapMethods(binding.RoutePattern, binding.Methods, handler)
-            .WithAdminOperation(binding.Definition)
-            .WithSummary(summary);
+        var list = AdminHttpOperationRouteBinding.ForOperate("admin.exports.list", "/exports");
+        group.MapMethods(list.RoutePattern, list.Methods, ListAsync)
+            .WithAdminOperation(list.Definition)
+            .WithSummary("List Exports");
+        var get = AdminHttpOperationRouteBinding.ForOperate("admin.exports.get", "/exports");
+        group.MapMethods(get.RoutePattern, get.Methods, GetAsync)
+            .WithAdminOperation(get.Definition)
+            .WithSummary("Get an Export with its Versions and URLs");
+        var create = AdminHttpOperationRouteBinding.ForOperate("admin.exports.create", "/exports");
+        group.MapMethods(create.RoutePattern, create.Methods, CreateAsync)
+            .WithAdminOperation(create.Definition)
+            .WithSummary("Export a Layer as files");
+        var delete = AdminHttpOperationRouteBinding.ForOperate("admin.exports.delete", "/exports");
+        group.MapMethods(delete.RoutePattern, delete.Methods, DeleteAsync)
+            .WithAdminOperation(delete.Definition)
+            .WithSummary("Unpublish an Export");
     }
 
     private static async Task<IResult> ListAsync(HttpContext context, CancellationToken cancellationToken)
