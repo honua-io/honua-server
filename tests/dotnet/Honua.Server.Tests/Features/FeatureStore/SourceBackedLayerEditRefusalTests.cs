@@ -85,30 +85,8 @@ public sealed class SourceBackedLayerEditRefusalTests : IAsyncLifetime
         var open = new AccessPolicy { AllowAnonymous = true, AllowAnonymousWrite = true };
 
         return new TestMetadataV2GraphBuilder()
-            .AddResource(
-                resourceId,
-                "source_edits",
-                MetadataV2ObjectType.FeatureDataset,
-                accessPolicy: open,
-                fields:
-                [
-                    new MetadataV2Field
-                    {
-                        Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false, SemanticRoles = ["id.primary"]
-                    },
-                    new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = false },
-                    new MetadataV2Field
-                    {
-                        Name = "geom", Type = MetadataV2FieldType.Geometry, Nullable = false, SemanticRoles = ["geometry.primary"]
-                    }
-                ],
-                spatial: new MetadataV2ObjectSpatial
-                {
-                    SpatialReference = MetadataV2SpatialReference.Wgs84,
-                    GeometryType = MetadataV2GeometryType.Point,
-                    PrimaryGeometryField = "geom",
-                    SupportedCrs = [MetadataV2SpatialReference.Wgs84]
-                })
+            .AddResource(resourceId, "source_edits", MetadataV2ObjectType.FeatureDataset, accessPolicy: open,
+                fields: Fields(), spatial: PointSpatial())
             .AddStorageBinding(
                 bindingId,
                 resourceId,
@@ -135,4 +113,19 @@ public sealed class SourceBackedLayerEditRefusalTests : IAsyncLifetime
                 publicationType: MetadataV2LayerType.EsriFeatureLayer)
             .Build();
     }
+
+    private static MetadataV2Field[] Fields() =>
+    [
+        new() { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false, SemanticRoles = ["id.primary"] },
+        new() { Name = "name", Type = MetadataV2FieldType.String, Nullable = false },
+        new() { Name = "geom", Type = MetadataV2FieldType.Geometry, Nullable = false, SemanticRoles = ["geometry.primary"] }
+    ];
+
+    private static MetadataV2ObjectSpatial PointSpatial() => new()
+    {
+        SpatialReference = MetadataV2SpatialReference.Wgs84,
+        GeometryType = MetadataV2GeometryType.Point,
+        PrimaryGeometryField = "geom",
+        SupportedCrs = [MetadataV2SpatialReference.Wgs84]
+    };
 }
