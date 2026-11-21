@@ -121,7 +121,7 @@ public sealed class DeployPreflightProbeTests
     [UnitTest]
     public async Task ProbeAsync_BackgroundCallers_ReuseAFreshPlanUntilItAgesOrMigrationsRun()
     {
-        var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider();
+        var clock = new ManualClock();
         var migrationRunner = new CapturingMigrationRunner();
         var migrationState = new MigrationState();
         migrationState.MarkSucceeded();
@@ -147,7 +147,7 @@ public sealed class DeployPreflightProbeTests
         var migrationRunner = new CapturingMigrationRunner();
         var migrationState = new MigrationState();
         migrationState.MarkSucceeded();
-        var cache = new DeployPreflightMigrationPlanCache(new Microsoft.Extensions.Time.Testing.FakeTimeProvider());
+        var cache = new DeployPreflightMigrationPlanCache(new ManualClock());
 
         await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync(DeployPreflightProbe.BackgroundMigrationPlanMaxAge);
         await CachingProbe(migrationRunner, migrationState, cache).ProbeAsync();
@@ -173,6 +173,15 @@ public sealed class DeployPreflightProbeTests
             new DatabaseCompatibilityState(),
             NullLogger<DeployPreflightProbe>.Instance,
             migrationPlanCache: cache);
+
+    private sealed class ManualClock : TimeProvider
+    {
+        private DateTimeOffset _now = new(2026, 11, 21, 0, 0, 0, TimeSpan.Zero);
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        public void Advance(TimeSpan by) => _now += by;
+    }
 
     private sealed class StubReadinessCheckService : IReadinessCheckService
     {
