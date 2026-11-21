@@ -230,6 +230,31 @@ public sealed partial class LayerSourceExecutionProofTests
     }
 
     [IntegrationTest]
+    public async Task LayerSelection_SinceWatermark_SelectsOnlyRowsAtOrAfterTheWatermark()
+    {
+        var layerId = await EnsureSelectionLayerAsync();
+        using var provider = SelectionServices();
+        var executor = new LayerSimplifyExecutor(provider.GetRequiredService<IServiceScopeFactory>(),
+            ExecutorOptions(), NullLogger<LayerSimplifyExecutor>.Instance);
+
+        (string Name, string Value)[] incremental =
+            [("layerId", layerId.ToString(CultureInfo.InvariantCulture)), ("tolerance", "0.000001"),
+                ("since", "2026-01-03T00:00:00Z"), ("watermarkField", "observed")];
+
+        using (var output = await Execute(executor, "generalization.simplify-layer", incremental))
+        {
+            SelectedPops(output.RootElement).Should().BeEquivalentTo(new[] { 7, 100, 13 },
+                "an incremental read returns only the rows observed at or after the watermark");
+        }
+
+        // pop 5 is in zone a and observed before the watermark: the watermark must bound the
+        // whole caller predicate, not only its last OR branch.
+        using var grouped = await Execute(executor, "generalization.simplify-layer",
+            [.. incremental, ("where", "pop = 5 OR zone = 'b'")]);
+        SelectedPops(grouped.RootElement).Should().BeEquivalentTo(new[] { 100 });
+    }
+
+    [IntegrationTest]
     public async Task LayerSelection_TimeOnNonTemporalLayer_FailsClosedWithTheCanonicalError()
     {
         var layerId = await EnsureSelectionLayerAsync(timeAware: false);

@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using System.Threading;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -18,7 +19,7 @@ using NetTopologySuite.IO;
 
 namespace Honua.Db.Postgres.Features.Geoprocessing;
 
-internal sealed class HonuaLayerDagSource : IDagFeatureSource
+internal sealed partial class HonuaLayerDagSource : IDagFeatureSource
 {
     private readonly IStreamingFeatureStore _streamingStore;
     private readonly IMetadataV2GraphProvider? _metadata;
@@ -75,7 +76,7 @@ internal sealed class HonuaLayerDagSource : IDagFeatureSource
             query = query with { SpatialReferenceSrid = snapshot.ResolveStorageSrid(layerId) };
         }
 
-        if (request.HasCanonicalSelectors)
+        if (request.HasCanonicalSelectors || HasWatermark(request))
         {
             query = await ApplyCanonicalSelectionAsync(request, resource, query, cancellationToken).ConfigureAwait(false);
         }
@@ -119,8 +120,8 @@ internal sealed class HonuaLayerDagSource : IDagFeatureSource
             // Never drop a selector the caller supplied: reading without it would return a
             // broader feature set than requested.
             throw new DagSourceSelectionException(
-                "'geometry' and 'time' selection filters need the canonical layer selection translator and catalog " +
-                "metadata, which are not configured in this deployment; narrow the input with 'where' or 'objectIds' instead.");
+                "'geometry', 'time' and 'since' selection filters need the canonical layer selection translator and catalog " +
+                "metadata, which are not configured in this deployment; narrow the input with 'where' or 'objectIds', and read without 'since'.");
         }
 
         if (!string.IsNullOrWhiteSpace(request.Bbox) && !string.IsNullOrWhiteSpace(request.Geometry))
@@ -200,19 +201,27 @@ internal sealed class HonuaLayerDagSource : IDagFeatureSource
 
     private static string? BuildWhereClause(DagSourceRequest request)
     {
-        var clauses = new List<string>(2);
-        if (!string.IsNullOrWhiteSpace(request.Where))
+        if (!HasWatermark(request))
         {
-            clauses.Add(request.Where);
+            return string.IsNullOrWhiteSpace(request.Where) ? null : request.Where;
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Since) && !string.IsNullOrWhiteSpace(request.WatermarkField))
+        if (!WatermarkFieldPattern().IsMatch(request.WatermarkField!))
         {
-            clauses.Add($"{request.WatermarkField} >= TIMESTAMP '{request.Since!.Replace("'", "''", StringComparison.Ordinal)}'");
+            throw new DagSourceSelectionException("'watermarkField' must name a single layer field.");
         }
 
-        return clauses.Count == 0 ? null : string.Join(" AND ", clauses);
+        var watermark = $"{request.WatermarkField} >= TIMESTAMP '{request.Since!.Replace("'", "''", StringComparison.Ordinal)}'";
+        return string.IsNullOrWhiteSpace(request.Where) ? watermark : $"({request.Where}) AND {watermark}";
     }
+
+    // The storage WHERE grammar has no TIMESTAMP literal, so the watermark predicate is only
+    // applied through the canonical translator, which binds it as a typed timestamp parameter.
+    private static bool HasWatermark(DagSourceRequest request)
+        => !string.IsNullOrWhiteSpace(request.Since) && !string.IsNullOrWhiteSpace(request.WatermarkField);
+
+    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant)]
+    private static partial Regex WatermarkFieldPattern();
 
     private static SpatialFilter? BuildSpatialFilter(DagSourceRequest request)
     {
