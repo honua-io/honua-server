@@ -16,6 +16,7 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Protocols.Tiles;
 
 [Collection("Database")]
+[Protocol(TestProtocols.Mvt)]
 public sealed class TileJsonDegenerateBoundsTests : IAsyncLifetime
 {
     private readonly IFeatureReader _reader = Substitute.For<IFeatureReader>();
