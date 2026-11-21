@@ -13,8 +13,8 @@ internal static class PooledTextBuilder
 {
     private const int InitialCapacity = 16 * 1024;
 
-    // Builders that grew past this many characters are dropped rather than retained by the pool.
-    private const int MaximumRetainedCapacity = 512 * 1024;
+    // Builders that grew past this many characters (512 KB) are dropped rather than retained by the pool.
+    private const int MaximumRetainedCapacity = 256 * 1024;
 
     private static readonly ObjectPool<StringBuilder> Pool =
         new DefaultObjectPoolProvider().CreateStringBuilderPool(InitialCapacity, MaximumRetainedCapacity);

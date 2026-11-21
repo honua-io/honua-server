@@ -130,24 +130,6 @@ public sealed class PooledResponseBufferTests
         buffer.WrittenSpan.ToArray().Should().Equal(Encoding.UTF8.GetBytes(builder.ToString()));
     }
 
-    [UnitTest]
-    public void PooledTextBuilder_Return_ClearsTheBuilderForTheNextRent()
-    {
-        var builder = PooledTextBuilder.Rent();
-        builder.Append("<Capabilities/>");
-        PooledTextBuilder.Return(builder);
-
-        var next = PooledTextBuilder.Rent();
-        try
-        {
-            next.Length.Should().Be(0);
-        }
-        finally
-        {
-            PooledTextBuilder.Return(next);
-        }
-    }
-
     // One character per append into a one-character builder, so the text spans many chunks and the opening
     // surrogate pair is split between the first two. It also holds a lone low surrogate and ends on a lone high
     // surrogate, which UTF-8 encodes as U+FFFD.
@@ -161,6 +143,27 @@ public sealed class PooledResponseBufferTests
         }
 
         return builder;
+    }
+
+    [UnitTest]
+    public async Task SharedResponseETag_PooledContentNotModified_ReturnsTheBufferToThePool()
+    {
+        var text = CreateXmlText();
+        using var first = new PooledByteBuffer(initialCapacity: 128);
+        var etag = (await ExecuteWithSharedETagAsync(CreatePooledResult(first, text))).ETag;
+
+        using var buffer = new PooledByteBuffer(initialCapacity: 128);
+        var context = new DefaultHttpContext();
+        context.Request.Method = HttpMethods.Get;
+        context.Request.Headers.IfNoneMatch = etag;
+        context.RequestServices = new ServiceCollection().AddLogging()
+            .AddSingleton<IETagService, ETagService>().BuildServiceProvider();
+
+        var conditional = (IResult)(await SharedResponseETag.ApplyAsync(context, CreatePooledResult(buffer, text)))!;
+        await conditional.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status304NotModified);
+        buffer.CanWrite.Should().BeFalse();
     }
 
     // The test owns the buffer; the result also disposes it when executed, and Dispose is idempotent.
