@@ -15,6 +15,13 @@ internal sealed partial class GeoServerRestClient
         Elevation
     }
 
+    private sealed record LayerDimensionRequest
+    {
+        public required string BaseUrl { get; init; }
+        public required string WorkspaceName { get; init; }
+        public required JsonElement LayerElement { get; init; }
+    }
+
     private sealed record LayerResourceReference
     {
         public required string BaseUrl { get; init; }
@@ -29,23 +36,21 @@ internal sealed partial class GeoServerRestClient
         GeoServerDimensionInfo? Elevation);
 
     private async Task<LayerDimensions> GetLayerDimensionsAsync(
-        string baseUrl,
-        string workspaceName,
-        JsonElement layerElement,
+        LayerDimensionRequest request,
         CancellationToken cancellationToken)
     {
-        var fromLayer = ExtractDimensionsFromMetadata(layerElement);
+        var fromLayer = ExtractDimensionsFromMetadata(request.LayerElement);
         if (fromLayer.Time != null || fromLayer.Elevation != null)
         {
             return fromLayer;
         }
 
-        var (dataStoreName, coverageStoreName) = ExtractStoreNames(layerElement);
-        var resolvedLayerName = layerElement.GetProperty("name").GetString() ?? string.Empty;
+        var (dataStoreName, coverageStoreName) = ExtractStoreNames(request.LayerElement);
+        var resolvedLayerName = request.LayerElement.GetProperty("name").GetString() ?? string.Empty;
         var reference = new LayerResourceReference
         {
-            BaseUrl = baseUrl,
-            WorkspaceName = workspaceName,
+            BaseUrl = request.BaseUrl,
+            WorkspaceName = request.WorkspaceName,
             ResourceName = resolvedLayerName,
             DataStoreName = dataStoreName,
             CoverageStoreName = coverageStoreName

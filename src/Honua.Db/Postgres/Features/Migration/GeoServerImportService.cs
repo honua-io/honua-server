@@ -566,60 +566,6 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         }
     }
 
-    private sealed record DryRunCompletionContext
-    {
-        public required string JobId { get; init; }
-        public required GeoServerServiceInfo ServiceInfo { get; init; }
-        public required FilteredResources FilteredResources { get; init; }
-        public required GeoServerImportRequest Request { get; init; }
-        public required GeoServerImportProgress CurrentProgress { get; init; }
-        public IProgress<GeoServerImportProgress>? Progress { get; init; }
-        public required MigrationRunMetricsRecorder MetricsRecorder { get; init; }
-        public required TimeSpan Elapsed { get; init; }
-    }
-
-    private async Task<GeoServerImportResult> CompleteDryRunAsync(
-        DryRunCompletionContext context,
-        CancellationToken cancellationToken)
-    {
-        MigrationApplyPlanArtifact dryRunApplyPlan;
-        using (context.MetricsRecorder.BeginPhase(MigrationCostPerformancePhases.Manifest))
-        {
-            dryRunApplyPlan = await CreateApplyPlanAsync(
-                    context.ServiceInfo,
-                    context.FilteredResources,
-                    context.Request,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            context.MetricsRecorder.RecordResourceCount(dryRunApplyPlan.Summary.TotalStepCount);
-            context.MetricsRecorder.RecordManualReview(
-                dryRunApplyPlan.Summary.ManualReviewStepCount,
-                dryRunApplyPlan.Summary.TotalStepCount);
-            context.MetricsRecorder.SampleResources();
-        }
-
-        var dryRunMetrics = BuildRunMetricsArtifact(
-            context.MetricsRecorder,
-            context.ServiceInfo,
-            context.JobId,
-            "geoserver dry run");
-        EmitRunMetrics(dryRunMetrics);
-        context.Progress?.Report(context.CurrentProgress with
-        {
-            Status = GeoServerImportStatus.Completed,
-            CompletedAt = DateTimeOffset.UtcNow,
-            CurrentPhase = "Dry run completed",
-            ApplyPlan = dryRunApplyPlan,
-            RunMetrics = dryRunMetrics
-        });
-
-        return CreateDryRunResult(context.ServiceInfo, context.FilteredResources, context.Request, context.Elapsed) with
-        {
-            ApplyPlan = dryRunApplyPlan,
-            RunMetrics = dryRunMetrics
-        };
-    }
-
     private GeoServerImportResult CreateDryRunResult(GeoServerServiceInfo serviceInfo, FilteredResources resources, GeoServerImportRequest request, TimeSpan duration)
     {
         var importedResources = new List<GeoServerImportedResource>();

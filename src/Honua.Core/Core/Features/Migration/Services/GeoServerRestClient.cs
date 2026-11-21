@@ -510,7 +510,9 @@ internal sealed partial class GeoServerRestClient
             }
 
             var (dataStoreName, coverageStoreName) = ExtractStoreNames(layerElement);
-            var dimensions = await GetLayerDimensionsAsync(baseUrl, workspaceName, layerElement, cancellationToken).ConfigureAwait(false);
+            var dimensions = await GetLayerDimensionsAsync(
+                new LayerDimensionRequest { BaseUrl = baseUrl, WorkspaceName = workspaceName, LayerElement = layerElement },
+                cancellationToken).ConfigureAwait(false);
             var compatibility = AssessLayerCompatibility(layerElement);
 
             return new GeoServerLayerInfo
