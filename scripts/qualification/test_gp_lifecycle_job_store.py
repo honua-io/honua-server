@@ -87,18 +87,19 @@ grep -q "'currentPhase', current_phase" calls || exit 64
                 + "insert_poison_job poison-1 \"gp-1'\" && exit 71\n[[ ! -e calls ]] || exit 72\n", directory)
             self.assertEqual(0, completed.returncode, completed.stderr)
 
-    def test_stranded_claim_spends_the_only_attempt_on_a_dead_worker(self):
+    def test_stranded_claim_exhausts_attempts_without_rewriting_record_json(self):
         functions = "\n".join(harness_function(name) for name in ("job_sql", "job_id_is_safe", "strand_exhausted_claim"))
         with tempfile.TemporaryDirectory() as directory:
             completed = run_bash(functions + r'''
 compose() { printf '%s\n' "$*" >> calls; echo gp-1; }
 strand_exhausted_claim gp-1 || exit 61
-grep -q "jsonb_build_object('maxAttempts', 1)" calls || exit 62
-grep -q "status = 'Running'.*attempt_count = 1, claimed_by = 'dead-worker'" calls || exit 63
-grep -q "queue_visible_at = NULL, queue_priority = NULL" calls || exit 64
-grep -q "WHERE operation_id = 'gp-1' AND status = 'Queued'" calls || exit 65
+grep -q "SET record =" calls && exit 62
+grep -q "COALESCE((record::jsonb->'retryPolicy'->>'maxAttempts')::int, 3)" calls || exit 63
+grep -q "claimed_by = 'dead-worker', claimed_at = now(), last_heartbeat_at = '2000-01-01T00:00:00Z'" calls || exit 64
+grep -q "queue_visible_at = NULL, queue_priority = NULL" calls || exit 65
+grep -q "WHERE operation_id = 'gp-1' AND status = 'Queued'" calls || exit 66
 compose() { echo other; }
-strand_exhausted_claim gp-1 && exit 66
+strand_exhausted_claim gp-1 && exit 67
 exit 0
 ''', directory)
             self.assertEqual(0, completed.returncode, completed.stderr)
