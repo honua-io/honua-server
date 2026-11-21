@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Microsoft.Extensions.Options;
 
@@ -38,7 +39,11 @@ internal static partial class MapServerEndpoints
     {
         var options = context.RequestServices
             .GetRequiredService<IOptions<MapServerDynamicLayersOptions>>().Value;
-        return new DynamicLayerSourceResolver(snapshot, candidates, options);
+        var candidateList = candidates as IReadOnlyList<DynamicLayerCandidate> ?? candidates.ToArray();
+        return new DynamicLayerSourceResolver(snapshot, candidateList, options)
+        {
+            MaxLayers = MapLayerRequestLimit.ResolveForService(context.RequestServices, candidateList.Count),
+        };
     }
 
     private sealed class DynamicLayerSourceResolver
@@ -47,6 +52,8 @@ internal static partial class MapServerEndpoints
         private readonly IReadOnlyList<DynamicLayerCandidate> _candidates;
         private readonly HashSet<int> _knownLayerIds;
         private readonly MapServerDynamicLayersOptions _options;
+
+        public int MaxLayers { get; init; } = QueryLimits.DefaultMaxMapLayersPerRequest;
 
         public DynamicLayerSourceResolver(
             MetadataV2GraphSnapshot snapshot,

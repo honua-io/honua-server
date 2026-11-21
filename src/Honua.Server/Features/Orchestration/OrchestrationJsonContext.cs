@@ -16,6 +16,9 @@ namespace Honua.Server.Features.Orchestration;
 [JsonSerializable(typeof(WorkflowDefinition))]
 [JsonSerializable(typeof(WorkflowRun))]
 [JsonSerializable(typeof(WorkflowStepState))]
+[JsonSerializable(typeof(IReadOnlyList<WorkflowStepDefinition>))]
+[JsonSerializable(typeof(WorkflowTrigger))]
+[JsonSerializable(typeof(Honua.Core.Features.Geoprocessing.Domain.AnalysisPlan))]
 internal sealed partial class OrchestrationJsonContext : JsonSerializerContext
 {
 }

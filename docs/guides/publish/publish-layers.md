@@ -137,12 +137,15 @@ HTTP 202 response for these publications and subsequent polling.
 
 Tables above `LayerPublishing:AsyncPublishRowThreshold` (10,000 rows by default)
 return HTTP 202 with a job handle instead of holding the request open for the
-snapshot copy. The response's `data` contains `jobId`, `statusUrl`, `rowsTotal`,
+snapshot copy. A table that already has a published layer is refused with `409` before
+any job is accepted, as on the synchronous path. The response's `data` contains `jobId`, `statusUrl`, `rowsTotal`,
 and `status`. Follow that same-origin relative status URL with the accepting
 tenant's admin credentials. Each poll returns `jobId`, `status`,
 `rowsMaterialized`, `rowsTotal`, `storageLayerId`, and `errorMessage` in `data`.
 `Queued` and `Processing` are pending states; `Completed`, `Failed`, and
-`Cancelled` are terminal. Use the completed `storageLayerId` for subsequent queries.
+`Cancelled` are terminal. Use the completed `storageLayerId` for subsequent queries;
+a `Failed` job has no `storageLayerId`. Two concurrent publications of the same table
+can both be accepted; one completes and the other ends `Failed` with the conflict.
 Do not treat acceptance as publication completion.
 
 Accepted work uses its own publication budget and survives a disconnected

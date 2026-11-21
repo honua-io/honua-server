@@ -37,7 +37,7 @@ import httpx
 
 from capacity_evidence import assert_candidate, digest
 import envelope_config
-from drive_soak import SoakDriver
+from drive_soak import SoakDriver, is_single_tenant
 
 
 # Workload/metric samples are taken on this fixed cadence from the window start. The release
@@ -290,7 +290,7 @@ class Collector:
         metric = dict(worker=None, database=None, queueAgeSeconds=None)
         try:
             await self.driver.observe_deployment(client)
-            dimensions["tenants"] = 1 if self.driver.deployment["tenantSource"] == "Default" and not self.driver._capabilities.get("admin.multi-tenancy", {}).get("available") else None
+            dimensions["tenants"] = 1 if is_single_tenant(self.driver.deployment, self.driver._capabilities) else None
             catalog = await self.driver._get_json(client, "/rest/services?f=json")
             # Multiple protocol adapters may list the same logical service, and the catalogue
             # also lists built-in services (Utilities/PrintingTools, the geocode locator).

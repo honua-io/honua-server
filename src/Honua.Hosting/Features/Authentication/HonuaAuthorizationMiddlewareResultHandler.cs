@@ -146,7 +146,7 @@ internal sealed class HonuaAuthorizationMiddlewareResultHandler : IAuthorization
             ActorType = actorType,
             ActorAgent = AuditContextResolver.ResolveAgent(context),
             ResourceType = "studio",
-            ResourceId = context.Request.Path.HasValue ? context.Request.Path.Value : null,
+            ResourceId = AuditResourcePath.Resolve(context),
             Action = "studio.lifecycle",
             Outcome = AuditOutcome.Denied,
             CorrelationId = AuditContextResolver.ResolveCorrelationId(context),

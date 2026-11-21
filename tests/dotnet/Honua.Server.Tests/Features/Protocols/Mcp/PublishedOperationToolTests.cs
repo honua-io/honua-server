@@ -233,29 +233,30 @@ public sealed partial class PublishedOperationToolTests
     }
 
     [UnitTest]
-    public async Task Invoke_ConnectionCreateWithSecretReference_PreservesReferenceAndType()
+    public async Task Invoke_ConnectionCreateWithSecretReference_FilesAProposalThatKeepsTheReference()
     {
         var descriptor = AdminConnectImportOperationCatalog.Descriptors.Single(
             operation => operation.OperationId == "admin.connections.create");
+        var executor = new RecordingExecutor(descriptor.OperationId);
+        var bridge = new CapturingProposalBridge();
+        using var catalog = new OperationCatalog([new AdminConnectImportOperationDescriptorProvider()], TimeProvider.System);
+        var dispatcher = new OperationDispatcher(
+            catalog, [executor],
+            new AllowAllPolicyDecisionPoint(), TimeProvider.System, bridge);
         var tool = new PublishedOperationTool(descriptor, "cat-v1", NullLogger.Instance);
-        var invoker = new CountingInvoker(request =>
-        {
-            request.Parameters["secretReference"].Should().Be("env:HONUA_TEST_CONNECTION");
-            request.Parameters["secretType"].Should().Be("env");
-            request.Parameters.Should().NotContainKey("password");
-            return CompletedHandle(descriptor.OperationId);
-        });
-        var authorization = Substitute.For<IAuthorizationService>();
-        authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object>(), AuthenticationExtensions.AdminPolicy)
-            .Returns(AuthorizationResult.Success());
 
         var result = await tool.InvokeAsync(
-            Context(invoker, authorization: authorization, roles: ["admin"]),
+            Context(dispatcher, authorization: ProposalAuthorization(), roles: ["admin"]),
             Args("""{"name":"reference-only","secretReference":"env:HONUA_TEST_CONNECTION","secretType":"env"}"""),
             CancellationToken.None);
 
         result.IsError.Should().BeFalse();
-        invoker.SubmitCount.Should().Be(1);
+        result.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("RequiresApproval");
+        executor.SubmitCount.Should().Be(0);
+        bridge.Calls.Should().Be(1);
+        bridge.Request!.Parameters["secretReference"].Should().Be("env:HONUA_TEST_CONNECTION");
+        bridge.Request.Parameters["secretType"].Should().Be("env");
+        bridge.Request.Parameters.Should().NotContainKey("password");
     }
 
     // ---- Governance through the policy decision point --------------------------

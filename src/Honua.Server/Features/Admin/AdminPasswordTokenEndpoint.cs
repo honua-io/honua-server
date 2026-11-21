@@ -60,8 +60,11 @@ internal sealed class AdminPasswordTokenEndpoint(
             return AdminPasswordAuthenticator.Reject(context, validation);
         }
 
+        // The password just matched the configured one, so its marker is the configured password's:
+        // rotating the password then revokes this bearer (OperatorBearerAuthenticationHandler).
         var issuance = bearerTokenService.Issue(AdminPasswordAuthenticator.CreateClaims(principal),
-            DateTimeOffset.UtcNow.AddMinutes(30));
+            DateTimeOffset.UtcNow.AddMinutes(30),
+            new OperatorBearerBinding(AdminPasswordVersion: PortalCredentialSourceVersion.ForAdminPassword(request.Password)));
         if (issuance is null)
         {
             return StandardErrorHelpers.CreateServiceUnavailable(context,

@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.ControlPlane.Abstractions;
 using NetTopologySuite.Features;
 using NetTopologySuite.Operation.Union;
 using NtsGeometry = NetTopologySuite.Geometries.Geometry;
@@ -9,12 +10,31 @@ namespace Honua.Geoprocessing.Execution;
 
 internal static class OverlayExecutorSupport
 {
-    public static FeatureCollection ReadLayer(StepInputReader inputs, string name, long maxBytes)
+    public static async Task<FeatureCollection> ReadLayerAsync(
+        StepInputReader inputs,
+        string name,
+        long maxBytes,
+        string? outputRootDirectory = null,
+        IJobExecutionContext? executionContext = null,
+        CancellationToken cancellationToken = default)
     {
         var uri = inputs.Require(name);
-        if (!FeatureCollectionArtifact.TryParseDataUri(uri, out var features, out var error, maxBytes))
+        if (!FeatureStreamArtifact.TryOpenRead(
+                uri,
+                out var error,
+                out var stream,
+                maxBytes,
+                outputRootDirectory,
+                executionContext))
         {
             throw new TransformInputException($"'{name}' {error}");
+        }
+
+        var features = new FeatureCollection();
+        await foreach (var feature in stream.WithCancellation(cancellationToken).ConfigureAwait(false))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            features.Add(feature);
         }
 
         return features;

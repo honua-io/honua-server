@@ -33,14 +33,18 @@ MIGRATION_SERVER_IMAGE="${HONUA_SDK_MIGRATION_SERVER_IMAGE:-}"
 COMPAT_SERVER_LABEL="${HONUA_SDK_COMPAT_SERVER_LABEL:-unknown-server}"
 COMPAT_SDK_LABEL="${HONUA_SDK_COMPAT_SDK_LABEL:-unknown-sdk}"
 
-OWNED_SERVER="$ROOT_DIR/scripts/ci/owned-server.py"
-if [[ -z "${HONUA_SDK_MIGRATION_SERVER_BASE_URL:-}" ]]; then
-    MIGRATION_SERVER_BASE_URL="http://127.0.0.1:$(python3 "$OWNED_SERVER" port --variable HONUA_SDK_MIGRATION_SERVER_PORT --ci-default 5001)"
+OWNED_SERVER="${HONUA_SDK_OWNED_SERVER_SCRIPT:-$ROOT_DIR/scripts/ci/owned-server.py}"
+if [[ "$MIGRATION_AUTOMATION_REQUIRED" == "true" ]]; then
+    if [[ -z "${HONUA_SDK_MIGRATION_SERVER_BASE_URL:-}" ]]; then
+        MIGRATION_SERVER_BASE_URL="http://127.0.0.1:$(python3 "$OWNED_SERVER" port --variable HONUA_SDK_MIGRATION_SERVER_PORT --ci-default 5001)"
+    fi
+    if [[ -z "${HONUA_SDK_MIGRATION_GEOSERVER_URL:-}" ]]; then
+        MIGRATION_GEOSERVER_URL="http://127.0.0.1:$(python3 "$OWNED_SERVER" port --variable HONUA_SDK_MIGRATION_GEOSERVER_PORT --ci-default 5011)/geoserver/rest"
+    fi
+    MIGRATION_GRPC_PORT="$(python3 "$OWNED_SERVER" port --variable HONUA_SDK_MIGRATION_GRPC_PORT --ci-default 5002)"
+else
+    MIGRATION_GRPC_PORT="${HONUA_SDK_MIGRATION_GRPC_PORT:-5002}"
 fi
-if [[ -z "${HONUA_SDK_MIGRATION_GEOSERVER_URL:-}" ]]; then
-    MIGRATION_GEOSERVER_URL="http://127.0.0.1:$(python3 "$OWNED_SERVER" port --variable HONUA_SDK_MIGRATION_GEOSERVER_PORT --ci-default 5011)/geoserver/rest"
-fi
-MIGRATION_GRPC_PORT="$(python3 "$OWNED_SERVER" port --variable HONUA_SDK_MIGRATION_GRPC_PORT --ci-default 5002)"
 
 cleanup_pids=()
 cleanup_containers=()
@@ -747,7 +751,7 @@ require_dir "$DOTNET_DIR" "honua-sdk-dotnet"
         cp "$dotnet_global_json" "$smoke_dir/global.json"
     fi
     cd "$smoke_dir"
-    dotnet new console --framework net10.0 --output "$smoke_dir" >/dev/null
+    dotnet new console --framework net11.0 --output "$smoke_dir" >/dev/null
     smoke_project="$(find "$smoke_dir" -maxdepth 1 -name '*.csproj' -print -quit)"
     dotnet add "$smoke_project" reference "$dotnet_admin_project" >/dev/null
     cat > "$smoke_dir/Program.cs" <<'CS'

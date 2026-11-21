@@ -85,6 +85,21 @@ public sealed class AdminListQueryTests
         Rejects(Query(("page", "one")), "page");
     }
 
+    [UnitTheory]
+    [InlineData("connectionId=not-a-guid&storageLayerId=0")]
+    [InlineData("connectionId=11111111-1111-1111-1111-111111111111")]
+    [InlineData("storageLayerId=0")]
+    [InlineData("connectionId=&storageLayerId=0")]
+    [InlineData("connectionId=11111111-1111-1111-1111-111111111111&storageLayerId=-1")]
+    [InlineData("connectionId=11111111-1111-1111-1111-111111111111&storageLayerId=one")]
+    [InlineData("connectionId=11111111-1111-1111-1111-111111111111&storageLayerId=0&storageLayerId=1")]
+    public void InvalidLayerScope_IsRejected(string query)
+    {
+        var values = new QueryCollection(Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(query));
+        AdminListQueryParser.TryParse(values, out _, out var error).Should().BeFalse();
+        error.Should().NotBeEmpty();
+    }
+
     private static AdminListQuery Parse(IQueryCollection query)
     {
         AdminListQueryParser.TryParse(query, out var parsed, out var error).Should().BeTrue(error);

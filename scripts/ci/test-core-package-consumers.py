@@ -25,11 +25,19 @@ def consumer_script():
     return script
 
 
+def write_framework_helper(root):
+    helper = root / 'scripts' / 'ci' / 'honua-target-framework.sh'
+    helper.parent.mkdir(parents=True)
+    helper.write_text("#!/bin/sh\nprintf '%s\\n' net11.0\n")
+    helper.chmod(0o755)
+
+
 class PackageConsumers(unittest.TestCase):
-    def test_both_frameworks_build_against_package_without_templates(self):
+    def test_package_consumer_builds_against_the_pinned_framework(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'packages').mkdir()
+            write_framework_helper(root)
             shim = root / 'dotnet'
             shim.write_text('''#!/usr/bin/env python3
 import json
@@ -41,7 +49,7 @@ args = sys.argv[1:]
 assert args[0] != 'new', 'SDK 11 templates reject net10.0'
 project, = Path.cwd().glob('*.csproj')
 framework = ET.parse(project).findtext('./PropertyGroup/TargetFramework')
-assert framework in ('net10.0', 'net11.0'), framework
+assert framework == 'net11.0', framework
 assert ET.parse(project).findtext('./PropertyGroup/OutputType') == 'Exe'
 if args[0] == 'add':
     assert args == ['add', 'package', 'Honua.Core', '--version', '0.0.0-ci.42.1']
@@ -62,8 +70,7 @@ with open(os.environ['CONSUMER_CALLS'], 'a') as output:
             subprocess.run(['bash', '-euo', 'pipefail', '-c', consumer_script()],
                            cwd=root, env=environment, check=True, capture_output=True, text=True)
             self.assertEqual([json.loads(line) for line in calls.read_text().splitlines()],
-                             [['add', 'net10.0'], ['build', 'net10.0'],
-                              ['add', 'net11.0'], ['build', 'net11.0']])
+                             [['add', 'net11.0'], ['build', 'net11.0']])
 
 
 if __name__ == '__main__':

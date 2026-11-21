@@ -18,24 +18,29 @@ namespace Honua.Server.Tests.Import;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
-public sealed class ToolboxTranslationEndpointTests : IAsyncLifetime
+public sealed class ToolboxTranslationEndpointTests(ToolboxTranslationEndpointTests.TranslationHost host)
+    : IClassFixture<ToolboxTranslationEndpointTests.TranslationHost>
 {
-    private readonly WebAppFixture _fixture = new();
-    private HttpClient _client = null!;
+    private readonly HttpClient _client = host.Fixture.Client;
 
-    public async Task InitializeAsync()
+    // Validation reads only the process catalog and stores nothing, so one host serves every case.
+    public sealed class TranslationHost : IAsyncLifetime
     {
-        // A small edit payload cap keeps the oversized-body case cheap to exercise.
-        _fixture.ReplaceService<IOptions<LimitsOptions>>(Options.Create(new LimitsOptions
+        internal WebAppFixture Fixture { get; } = new();
+
+        public async Task InitializeAsync()
         {
-            Edits = new EditLimits { MaxPayloadSize = 1048576 }
-        }));
+            // A small edit payload cap keeps the oversized-body case cheap to exercise.
+            Fixture.ReplaceService<IOptions<LimitsOptions>>(Options.Create(new LimitsOptions
+            {
+                Edits = new EditLimits { MaxPayloadSize = 1048576 }
+            }));
 
-        await _fixture.InitializeAsync();
-        _client = _fixture.Client;
+            await Fixture.InitializeAsync();
+        }
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
     }
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/toolbox/translation/validate")]

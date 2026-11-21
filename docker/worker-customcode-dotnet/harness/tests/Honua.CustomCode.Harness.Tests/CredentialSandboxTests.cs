@@ -15,6 +15,7 @@ public sealed class CredentialSandboxTests
         var env = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             ["HONUA_JOB_TOKEN"] = "scoped",
+            ["HONUA_JOB_REDEMPTION_CODE"] = "spent-code",
             ["AWS_CONTAINER_CREDENTIALS_RELATIVE_URI"] = "/v2/credentials/abc",
             ["ECS_CONTAINER_METADATA_URI_V4"] = "http://169.254.170.2/v4",
             ["AWS_ACCESS_KEY_ID"] = "AKIA...",
@@ -27,11 +28,12 @@ public sealed class CredentialSandboxTests
         removed.Should().Contain(new[]
         {
             "HONUA_JOB_TOKEN",
+            "HONUA_JOB_REDEMPTION_CODE",
             "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
             "ECS_CONTAINER_METADATA_URI_V4",
             "AWS_ACCESS_KEY_ID",
         });
-        env.Should().NotContainKeys("HONUA_JOB_TOKEN", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "ECS_CONTAINER_METADATA_URI_V4", "AWS_ACCESS_KEY_ID");
+        env.Should().NotContainKeys("HONUA_JOB_TOKEN", "HONUA_JOB_REDEMPTION_CODE", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "ECS_CONTAINER_METADATA_URI_V4", "AWS_ACCESS_KEY_ID");
         env.Should().ContainKey("HONUA_BASE_URL");
         env.Should().ContainKey("PATH");
     }

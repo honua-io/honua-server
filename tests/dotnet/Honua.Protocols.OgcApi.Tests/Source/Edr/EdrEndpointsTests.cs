@@ -7,6 +7,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Protocols.Ogc.Common;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -274,8 +275,11 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
             Extent = new RasterExtent { XMin = minX, YMin = minY, XMax = maxX, YMax = maxY, Srid = 3857 }
         });
 
+        // The advertised box is the reprojected extent grown outward by the extent margin.
+        var margin = OgcExtentTransformer.ReprojectedExtentMarginDegrees;
         var (minLon, minLat) = InverseWebMercator(minX, minY);
         var (maxLon, maxLat) = InverseWebMercator(maxX, maxY);
+        (minLon, minLat, maxLon, maxLat) = (minLon - margin, minLat - margin, maxLon + margin, maxLat + margin);
 
         using (var collectionDoc = await GetJsonAsync($"/edr/collections/{WebAppFixture.TestLayerId}"))
         {

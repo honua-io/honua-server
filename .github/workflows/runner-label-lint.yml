@@ -6,11 +6,16 @@ name: Runner label lint
 # pull_request_target keeps this caller on the base branch's version; the
 # shared workflow checks out only the PR's .github/workflows (merge ref, else head), without
 # credentials, and reads it as data.
+# The lint reads only .github/workflows, so other changes cannot alter its result.
 on:
   push:
     branches: [trunk]
+    paths:
+      - '.github/workflows/**'
   pull_request_target:
     types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/**'
 
 permissions:
   contents: read
@@ -21,4 +26,4 @@ concurrency:
 
 jobs:
   runner-label-lint:
-    uses: honua-io/.github/.github/workflows/runner-label-lint.yml@d05acacf878e6abe755cab07bbb8f127d3802ac3 # runner-label lint
+    uses: honua-io/.github/.github/workflows/runner-label-lint.yml@fe9517f40a39eaea9caee394ba867522d9ef0d7f # runner-label lint

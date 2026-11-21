@@ -13,17 +13,17 @@
     },
     {
       "label": "trunk-previous-1",
-      "ref": "f04c09c0b33a4986d017ea5e1f8c3f1481034fef",
+      "ref": "de512e8123bdfbfbe20f692b236e37853b4f8294",
       "channel": "preview",
       "capabilities": { "migrationAutomation": false },
-      "description": "Previous trunk commit retained until tagged server releases are available."
+      "description": "Previous green full-CI trunk commit (2026.1.1 CalVer floor) retained until tagged server releases are available."
     },
     {
       "label": "trunk-previous-2",
-      "ref": "297936162efab3a0d7cdd7e6e8d0031e018c0ecd",
+      "ref": "7c39ac1698f520f804f5f76751df304c7c181e41",
       "channel": "preview",
       "capabilities": { "migrationAutomation": false },
-      "description": "Second previous trunk commit retained until tagged server releases are available."
+      "description": "Second previous green full-CI trunk commit (2026.1.1 CalVer floor) retained until tagged server releases are available."
     }
   ],
   "sdkSetVersions": [

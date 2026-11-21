@@ -18,10 +18,13 @@ namespace Honua.Server.Tests.Features.Security;
 // that require administrator authority) refuses an agent, except the routes in the committed
 // agent-route-rules.txt, which apply their own agent rule. A new route is refused without being
 // listed; giving one its own rule fails this test until its line, with the reason, is added.
+// agent-change-routes.txt lists every governed change route, so a release walk can call each one
+// as an agent without booting the host's route table.
 [Collection("Database")]
 public sealed class AgentChangeRouteInventoryTests : IAsyncLifetime
 {
     private const string AllowListFileName = "agent-route-rules.txt";
+    private const string InventoryFileName = "agent-change-routes.txt";
     private readonly WebAppFixture _fixture = new();
 
     public Task InitializeAsync() => _fixture.InitializeAsync();
@@ -38,16 +41,31 @@ public sealed class AgentChangeRouteInventoryTests : IAsyncLifetime
             .Order(StringComparer.Ordinal)
             .ToArray();
 
-        var committed = File.ReadAllLines(Path.Join(RepositoryRoot(), "tests", "dotnet", "Honua.Server.Tests", "Features", "Security", AllowListFileName))
-            .Where(line => line.Trim().Length > 0 && !line.TrimStart().StartsWith('#'))
-            .Select(line => line.Trim())
-            .ToArray();
+        var committed = ReadCommittedList(AllowListFileName);
 
         committed.Should().BeInAscendingOrder(StringComparer.Ordinal).And.OnlyHaveUniqueItems();
         allowed.Should().Equal(committed,
             "{0} must list every governed change route that applies its own agent rule, with its reason. Expected content:\n{1}",
             AllowListFileName,
             string.Join('\n', allowed));
+    }
+
+    [Fact]
+    [Trait("Category", "Architecture")]
+    public void GovernedChangeRoutes_MatchTheCommittedInventory()
+    {
+        var governed = GovernedChangeRoutes()
+            .Select(route => $"{route.Method} {route.Pattern}")
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        var committed = ReadCommittedList(InventoryFileName);
+
+        committed.Should().BeInAscendingOrder(StringComparer.Ordinal).And.OnlyHaveUniqueItems();
+        governed.Should().Equal(committed,
+            "{0} must list every governed change route. Expected content:\n{1}",
+            InventoryFileName,
+            string.Join('\n', governed));
     }
 
     [Fact]
@@ -119,6 +137,12 @@ public sealed class AgentChangeRouteInventoryTests : IAsyncLifetime
                 .Where(method => method == "ANY" || AgentChangeRoutes.IsChange(method))
                 .Select(method => (method.ToUpperInvariant(), endpoint.RoutePattern.RawText!, endpoint)))
             .DistinctBy(route => (route.Item1, route.Item2));
+
+    private static string[] ReadCommittedList(string fileName)
+        => File.ReadAllLines(Path.Join(RepositoryRoot(), "tests", "dotnet", "Honua.Server.Tests", "Features", "Security", fileName))
+            .Where(line => line.Trim().Length > 0 && !line.TrimStart().StartsWith('#'))
+            .Select(line => line.Trim())
+            .ToArray();
 
     private static string RepositoryRoot()
     {

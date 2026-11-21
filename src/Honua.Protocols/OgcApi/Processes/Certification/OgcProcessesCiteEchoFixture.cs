@@ -30,6 +30,7 @@ internal static class OgcProcessesCiteEchoFixture
         Title = "CITE Echo",
         Description = "Deterministically echoes the pinned OGC API Processes ETS input families.",
         Category = "certification",
+        SupportedExecutionModes = ProcessExecutionModes.Async | ProcessExecutionModes.Sync,
         Parameters =
         [
             Parameter("literal", "Literal", "Plain string value.", required: true),
@@ -87,7 +88,7 @@ internal static class OgcProcessesCiteEchoFixture
             Description = "Test-only suite-owned echo fixture for the pinned OGC API Processes ETS. "
                           + "It is absent unless the explicit certification profile is active.",
             Version = "1.0.0",
-            JobControlOptions = ImmutableArray.Create("async-execute"),
+            JobControlOptions = ImmutableArray.Create("async-execute", "sync-execute"),
             OutputTransmission = ImmutableArray.Create("value"),
             Inputs = BuildInputs(),
             Outputs = BuildOutputs(),

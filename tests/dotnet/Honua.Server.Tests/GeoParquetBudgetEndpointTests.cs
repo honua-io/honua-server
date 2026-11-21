@@ -9,6 +9,7 @@ using Honua.Infrastructure.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Tests.ParquetUnitSupport;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests;
@@ -67,7 +68,7 @@ public sealed class GeoParquetBudgetEndpointTests
             accepted.StatusCode.Should().Be(HttpStatusCode.OK);
             accepted.Content.Headers.ContentType!.MediaType.Should().Be("application/vnd.apache.parquet");
             using var payload = new MemoryStream(await accepted.Content.ReadAsByteArrayAsync());
-            using var reader = new ParquetSharp.Arrow.FileReader(payload);
+            using var reader = ArrowParquetTestReader.Open(payload);
             reader.NumRowGroups.Should().BeGreaterThan(0);
         }
         finally

@@ -5,6 +5,7 @@ using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
@@ -218,7 +219,7 @@ internal sealed partial class GeoServerImportService
 
         try
         {
-            var document = XDocument.Parse(sldContent, LoadOptions.None);
+            var document = RemoteXmlDocumentParser.Parse(sldContent, LoadOptions.None);
 
             return document
                 .Descendants()

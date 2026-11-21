@@ -13,14 +13,12 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps;
 
 [Collection("Database.OgcApiTiles")]
 [Protocol(TestProtocols.OgcApiMaps)]
-public class OgcMapsErrorHandlingTests : IAsyncLifetime
+// Every case only renders or reads with GET on the shared default host, so one host serves them all.
+public sealed class OgcMapsErrorHandlingTests(WebAppFixture fixture) : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = fixture;
     private const int TestLayerId = 0;
     private const int NonExistentLayerId = 99999;
-
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     #region Collection ID Validation
 

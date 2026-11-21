@@ -19,6 +19,10 @@ public sealed class RlsPolicy
 
     public RlsComparison Comparison { get; init; } = RlsComparison.In;
 
+    public string? FilterExpression { get; init; }
+
+    public string? AreaGeometry { get; init; }
+
     public string? Description { get; init; }
 
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;

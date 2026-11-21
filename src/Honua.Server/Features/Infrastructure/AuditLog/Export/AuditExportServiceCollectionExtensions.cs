@@ -4,6 +4,7 @@
 using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Export;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.ObjectStorage;
 using Honua.Db.Postgres.Features.AuditLog;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,6 +26,7 @@ internal static class AuditExportServiceCollectionExtensions
 
         var section = configuration.GetSection(AuditExportOptions.SectionName);
         services.Configure<AuditExportOptions>(section);
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IObjectStorageServerFolders, AuditExportServerFolders>());
 
         var options = new AuditExportOptions();
         section.Bind(options);

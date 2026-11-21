@@ -143,6 +143,18 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
     }
 
     [UnitTest]
+    public async Task StreamAsync_OverlongStreamLine_EndsWithSingleStreamError()
+    {
+        var overlong = "data: " + new string('x', StudioAiProxyHttpStreamHelpers.MaximumStreamLineChars) + "\n";
+        var adapter = CreateAdapter(overlong);
+        var events = await CollectAsync(adapter, ToolFreeRequest());
+
+        events.Should().ContainSingle();
+        events[0].Type.Should().Be(StudioAiChatEventType.Error);
+        events[0].ErrorMessage.Should().Be("Provider stream ended unexpectedly.");
+    }
+
+    [UnitTest]
     public async Task StreamAsync_DrippingErrorBody_IsDeadlineBoundDisposedAndNextRequestRecovers()
     {
         var stalled = new StudioAiProxyStallingStream("provider-secret prompt tool-arguments");

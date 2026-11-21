@@ -119,7 +119,7 @@ internal sealed partial class PostgresFieldProfilingService : IFieldProfilingSer
         var textPath = DatabaseSchema.BuildJsonPath(field.Name);
         var jsonbPath = DatabaseSchema.BuildJsonbAccessor(field.Name);
         var isNumeric = field.Type is MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger
-            or MetadataV2FieldType.Double or MetadataV2FieldType.Float;
+            or MetadataV2FieldType.Double or MetadataV2FieldType.Float or MetadataV2FieldType.Decimal;
 
         // Build statistics query — CTE bounds the scan to sampleLimit rows.
         // Aggregates on the sample are approximate but sufficient for styling decisions.

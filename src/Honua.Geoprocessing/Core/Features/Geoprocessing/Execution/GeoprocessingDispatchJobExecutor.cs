@@ -160,6 +160,14 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             return (null, context, null, true);
         }
 
+        // The owner comes from the submitter snapshot; without one the stored requester alone does
+        // not establish whose workspace this is, so the job is refused rather than routed to it.
+        if (job.Audit.SubmitterSecurityContext is not { } submitter)
+        {
+            return (null, context,
+                $"env:workspace='{requestedLabel}' was requested but the job carries no submitter security context.", false);
+        }
+
         var scope = _serviceScopeFactory?.CreateScope();
         var workspaceLifecycle = scope?.ServiceProvider.GetService<IWorkspaceLifecycleService>();
         if (workspaceLifecycle is null)
@@ -169,13 +177,13 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
                 $"env:workspace='{requestedLabel}' was requested but no workspace storage provider is configured for this deployment.", false);
         }
 
-        var workspaceOwner = job.Audit.SubmitterSecurityContext?.WorkspaceOwnerId ?? job.Audit.RequestedBy;
+        var workspaceOwner = submitter.WorkspaceOwnerId ?? job.Audit.RequestedBy;
         var ownerId = string.IsNullOrWhiteSpace(workspaceOwner) ? "anonymous" : workspaceOwner;
 
         Workspace resolvedWorkspace;
         try
         {
-            var scopeId = job.Audit.SubmitterSecurityContext?.TenantId;
+            var scopeId = submitter.TenantId;
             resolvedWorkspace = scopeId is null
                 ? await workspaceLifecycle.GetOrCreateNamedWorkspaceAsync(ownerId, requestedLabel, cancellationToken).ConfigureAwait(false)
                 : await workspaceLifecycle.GetOrCreateScopedWorkspaceAsync(ownerId, requestedLabel, scopeId, cancellationToken).ConfigureAwait(false);

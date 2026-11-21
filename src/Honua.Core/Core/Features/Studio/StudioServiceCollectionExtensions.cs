@@ -7,6 +7,7 @@ using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Drafts;
 using Honua.Core.Features.Studio.Services;
 using Honua.Core.Features.Studio.Services.Bridging;
+using Honua.Core.Features.Styling.Abstractions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -29,6 +30,7 @@ public static class StudioServiceCollectionExtensions
         services.AddStudioDraftFactories();
 
         services.TryAddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
+        services.TryAddScoped<ISharedStyleConsumerIndex, StoreSharedStyleConsumerIndex>();
         // ADR-0069: the catalog decides at resolve time which family
         // persistence bridges are available (native forms/analysis stores may be registered
         // before or after this call depending on the host), and the lifecycle service and

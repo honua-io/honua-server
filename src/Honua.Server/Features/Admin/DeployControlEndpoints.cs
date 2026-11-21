@@ -26,7 +26,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin;
 
-internal static class DeployControlEndpoints
+internal static partial class DeployControlEndpoints
 {
     private const string DeployControlUnavailableMessage = "Deploy control is temporarily unavailable.";
     private const string DeployConflictMessage = "The requested deploy action conflicts with the current operation state.";
@@ -65,13 +65,22 @@ internal static class DeployControlEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<DeployOperationResponse>();
 
+        group.MapGet("/operations/{operationId}/approval-review/{action}", HandleReviewDeployOperation)
+            .RequireAdminApproveAuthorization()
+            .WithMetadata(AdminHumanApprovalEndpointMetadata.Review)
+            .ExcludeFromDescription();
+
         group.MapPost("/operations/{operationId}/submit", HandleSubmitDeployOperation)
             .WithDisplayName("Submit Deploy Operation")
+            .RequireAdminApproveAuthorization()
+            .WithMetadata(AdminHumanApprovalEndpointMetadata.Approve)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<DeployOperationResponse>();
 
         group.MapPost("/operations/{operationId}/promote", HandlePromoteDeployOperation)
             .WithDisplayName("Promote Deploy Operation")
+            .RequireAdminApproveAuthorization()
+            .WithMetadata(AdminHumanApprovalEndpointMetadata.Approve)
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<DeployOperationResponse>()
             .ProducesProblem(StatusCodes.Status409Conflict);
@@ -104,6 +113,11 @@ internal static class DeployControlEndpoints
         [FromServices] IOptionsMonitor<ControlPlaneOptions> controlPlaneOptions,
         HttpContext context)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         var snapshot = await deployPreflightProbe.ProbeAsync(context.RequestAborted).ConfigureAwait(false);
         var includeDiagnostics = ShouldIncludeDiagnostics(context);
         var observer = includeDiagnostics ? context.RequestServices.GetService<IManagedComposeObserver>() : null;
@@ -314,6 +328,11 @@ internal static class DeployControlEndpoints
         [FromServices] DeployWorkflowService deployWorkflowService,
         CancellationToken cancellationToken)
     {
+        if (PlatformDeployAuthority.Deny(request.HttpContext) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         var query = request.Query;
         var redactRecoveryGrantIdentity = ShouldRedactRecoveryGrantIdentity(request.HttpContext);
 
@@ -419,6 +438,11 @@ internal static class DeployControlEndpoints
         HttpContext context,
         [FromServices] IWorkflowOperationReconciler? reconciler = null)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         try
         {
             var operation = await deployWorkflowService.GetAsync(operationId, context.RequestAborted).ConfigureAwait(false);
@@ -461,15 +485,11 @@ internal static class DeployControlEndpoints
             return platformDenied;
         }
 
-        // Submit is the manual approval action — an operator explicitly advancing an
-        // AwaitingApproval operation. Re-gating here would make approval-gated deploys
-        // permanently unsubmittable. Rollback retains its own destructive-action gate.
-
         try
         {
             var operation = await deployWorkflowService.SubmitAsync(
                     operationId,
-                    ResolveRequestedBy(context),
+                    Honua.Infrastructure.Security.CanonicalSecurityActor.Resolve(context.User)?.ActorId,
                     request?.Reason,
                     context.RequestAborted)
                 .ConfigureAwait(false);
@@ -483,6 +503,10 @@ internal static class DeployControlEndpoints
             }
 
             return Results.Json(MapOperationResponse(operation), DeployControlJsonContext.Default.DeployOperationResponse);
+        }
+        catch (HumanApprovalRequiredException exception)
+        {
+            return DeployHumanApprovalDenied(exception);
         }
         catch (ResourceConflictException)
         {
@@ -511,15 +535,11 @@ internal static class DeployControlEndpoints
             return platformDenied;
         }
 
-        // Manual promotion is the operator escape hatch for a deploy parked awaiting promotion (for
-        // example an on-prem rolling deploy with no telemetry gate to auto-clear). It is a forward,
-        // non-destructive cutover, so it rides the group-level admin authorization plus audit logging
-        // rather than the rollback destructive-action gate — the whole point is that it stays reachable.
         try
         {
             var result = await deployWorkflowService.PromoteAsync(
                     operationId,
-                    ResolveRequestedBy(context),
+                    Honua.Infrastructure.Security.CanonicalSecurityActor.Resolve(context.User)?.ActorId,
                     request?.Reason,
                     context.RequestAborted)
                 .ConfigureAwait(false);
@@ -541,6 +561,10 @@ internal static class DeployControlEndpoints
                         MapOperationResponse(result.Operation!),
                         DeployControlJsonContext.Default.DeployOperationResponse);
             }
+        }
+        catch (HumanApprovalRequiredException exception)
+        {
+            return DeployHumanApprovalDenied(exception);
         }
         catch (ResourceConflictException)
         {

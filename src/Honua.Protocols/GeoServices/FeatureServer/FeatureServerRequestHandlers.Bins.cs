@@ -272,7 +272,8 @@ internal static partial class FeatureServerEndpoints
 
         if (parseResult.Expression != null)
         {
-            var translationResult = filterService.Translate(parseResult.Expression, resource);
+            // The caller's where may not name a hidden field; it is refused like an undeclared one.
+            var translationResult = filterService.Translate(parseResult.Expression, resource.WithoutHiddenSchemaFields());
             if (!translationResult.IsSuccess)
             {
                 errorResult = StandardErrorHelpers.CreateBadRequest(context,
@@ -428,6 +429,13 @@ internal static partial class FeatureServerEndpoints
         if (numBins <= 0)
         {
             error = "autoIntervalBin.numBins must be a positive integer.";
+            return false;
+        }
+
+        // A requested bin count shares the fixed-boundary cap, so either bin form yields at most that many rows.
+        if (numBins > MaxFixedBoundaryCount)
+        {
+            error = $"autoIntervalBin.numBins cannot be more than {MaxFixedBoundaryCount}.";
             return false;
         }
 

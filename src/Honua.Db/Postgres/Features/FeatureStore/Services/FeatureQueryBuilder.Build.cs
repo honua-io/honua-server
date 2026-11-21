@@ -69,8 +69,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             else if (query.OutputSrid.HasValue &&
                 (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
             {
-                pointGeometry = DatumTransformSql.BuildTransformExpression(
-                    pointGeometry, query.OutputSrid.Value, query.OutputDatumTransformation, query.SpatialReferenceSrid);
+                pointGeometry = DatumTransformSql.TransformToOutputSrid(pointGeometry, query);
             }
 
             if (query.RasterPointGrid is { } pointGrid)
@@ -163,7 +162,6 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         FeatureQuery query,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
-        var spatialFilter = query.SpatialFilter;
         var sql = _stringBuilderPool.Get();
         try
         {
@@ -174,8 +172,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             if (query.OutputSrid.HasValue &&
                 (!query.SpatialReferenceSrid.HasValue || query.OutputSrid.Value != query.SpatialReferenceSrid.Value))
             {
-                pointGeometry = DatumTransformSql.BuildTransformExpression(
-                    pointGeometry, query.OutputSrid.Value, query.OutputDatumTransformation, query.SpatialReferenceSrid);
+                pointGeometry = DatumTransformSql.TransformToOutputSrid(pointGeometry, query);
             }
 
             var pointX = BuildPointCoordinateExpression(pointGeometry, "X");
@@ -188,7 +185,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             AppendTemporalFilter(sql, query, ref paramIndex, parameters);
             AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
             AppendOrderByClause(sql, query, ref paramIndex, parameters);
-            AppendPagination(sql, isKnnQuery: false, query, spatialFilter, ref paramIndex);
+            AppendPagination(sql, isKnnQuery: false, query, ref paramIndex);
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }
@@ -252,7 +249,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                 AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
                 sql.Append(") AS distinct_values");
                 AppendDistinctOrderByClause(sql, query, ref paramIndex, parameters);
-                AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
+                AppendPagination(sql, isKnnQuery, query, ref paramIndex);
             }
             else
             {
@@ -262,7 +259,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                 AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
                 AppendOrderByClause(sql, query, ref paramIndex, parameters);
                 AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, geometryStorageType, ref paramIndex);
-                AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
+                AppendPagination(sql, isKnnQuery, query, ref paramIndex);
             }
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
@@ -354,7 +351,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
             AppendOrderByClause(sql, query, ref paramIndex, parameters);
             AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, geometryStorageType, ref paramIndex);
-            AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
+            AppendPagination(sql, isKnnQuery, query, ref paramIndex);
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }
@@ -484,11 +481,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         if (effectiveQuery.OutputSrid.HasValue &&
             effectiveQuery.OutputSrid != effectiveQuery.SpatialReferenceSrid)
         {
-            extentExpression = DatumTransformSql.BuildTransformExpression(
-                extentExpression,
-                effectiveQuery.OutputSrid.Value,
-                effectiveQuery.OutputDatumTransformation,
-                effectiveQuery.SpatialReferenceSrid);
+            extentExpression = DatumTransformSql.TransformToOutputSrid(extentExpression, effectiveQuery);
         }
 
         var sql = _stringBuilderPool.Get();
@@ -686,8 +679,9 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                     // cannot abort the Web Mercator tile statement. The catalog
                     // selection is the grid whose area contains this tile.
                     var selection = TileDatumSelection(query, layerSrid, targetTileSrid, tileBounds);
-                    geometryForTile = DatumTransformSql.BuildTransformExpression(
-                        geometryOperand, targetTileSrid, selection, layerSrid);
+                    geometryForTile = selection is null
+                        ? DatumTransformSql.CachedTransformExpression(geometryOperand, layerSrid, targetTileSrid)
+                        : DatumTransformSql.BuildTransformExpression(geometryOperand, targetTileSrid, selection, layerSrid);
                     tileEnvelopeForFilter = selection is null
                         ? $"ST_Transform({tileEnvelopeWithBuffer}, {layerSrid})"
                         : DatumTransformSql.BuildTransformExpression(
@@ -700,7 +694,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             else
             {
                 // Layer SRID unknown: clamp geographic rows by their runtime SRID.
-                geometryForTile = DatumTransformSql.BuildTransformExpressionForRuntimeSrid(geometryOperand, targetTileSrid);
+                geometryForTile = DatumTransformSql.CachedTransformExpressionForRuntimeSrid(geometryOperand, targetTileSrid);
                 filterGeometryOperand = geometryForTile;
             }
 
@@ -835,9 +829,10 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             // The catalog selection matches feature query output.
             var selection = TileDatumSelection(query, query?.SpatialReferenceSrid, targetTileSrid, tileBounds);
             var geometryForTile = query?.SpatialReferenceSrid is { } storageSrid
-                ? DatumTransformSql.BuildTransformExpression(
-                    geometryOperand, targetTileSrid, selection, storageSrid)
-                : DatumTransformSql.BuildTransformExpressionForRuntimeSrid(geometryOperand, targetTileSrid);
+                ? selection is null
+                    ? DatumTransformSql.CachedTransformExpression(geometryOperand, storageSrid, targetTileSrid)
+                    : DatumTransformSql.BuildTransformExpression(geometryOperand, targetTileSrid, selection, storageSrid)
+                : DatumTransformSql.CachedTransformExpressionForRuntimeSrid(geometryOperand, targetTileSrid);
             string filterGeometryOperand;
             string tileEnvelopeForFilter;
             if (query.HasValue && query.Value.SpatialReferenceSrid is { } layerSrid && layerSrid != targetTileSrid)

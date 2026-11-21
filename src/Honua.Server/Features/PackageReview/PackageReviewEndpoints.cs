@@ -145,7 +145,7 @@ internal static partial class PackageReviewEndpoints
             Envelope = new StudioPackageEnvelope
             {
                 Family = StudioPackageFamily.Map,
-                SchemaVersion = "studio_map.v1",
+                SchemaVersion = "1.0",
                 Format = request.Package.Format,
                 Body = packageJson,
                 PublicationIntent = request.Intent

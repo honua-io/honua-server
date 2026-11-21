@@ -67,7 +67,7 @@ PUT /api/v{version:apiVersion}/admin/roles/{id:guid} | Its own agent rule decide
 PUT /api/v{version:apiVersion}/admin/roles/{id:guid}/permissions | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 PUT /api/v{version:apiVersion}/admin/scenes/{id:guid} | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 PUT /api/v{version:apiVersion}/admin/services/{serviceName}/access-policy | Its own agent rule decides (AgentApprovalFilter.AccessPolicy).
-PUT /api/v{version:apiVersion}/admin/services/{serviceName}/layers/{serviceLayerIndex:int}/metadata | Its own agent rule decides (AgentApprovalFilter.LayerMetadataAccessPolicy).
+PUT /api/v{version:apiVersion}/admin/services/{serviceName}/layers/{serviceLayerIndex:int}/metadata | Its own agent rule decides (AgentApprovalFilter.LayerMetadata).
 PUT /api/v{version:apiVersion}/admin/services/{serviceName}/protocols | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 PUT /api/v{version:apiVersion}/console/access/{environmentId}/roles/{roleId:guid} | Its own agent rule decides (AgentApprovalFilter.AccessGrants).
 PUT /api/v{version:apiVersion}/console/content/{id} | Its own agent rule decides (AgentApprovalFilter.ContentVisibility).

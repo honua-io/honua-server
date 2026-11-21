@@ -155,6 +155,13 @@ internal static partial class CustomCodeSubmitValidator
             return false;
         }
 
+        // Credentials embedded in the URL would be stored with the job and logged by the worker.
+        if (!string.IsNullOrEmpty(uri.UserInfo))
+        {
+            rejection = "Custom-code repo_url must not embed credentials.";
+            return false;
+        }
+
         repoUri = uri;
 
         switch (options.RepoPolicy)

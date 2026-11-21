@@ -62,6 +62,35 @@ class ConsoleEdgeTests(QuickstartFixture, unittest.TestCase):
             self.assertEqual('https://localhost:28443',
                              json.loads(custom.stdout)['services']['honua']['environment']['PUBLIC_BASE_URL'])
 
+    def test_console_allows_its_https_origin_for_browser_mcp_requests(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, rendered, _ = self.packaged_console_install(Path(directory))
+            env = rendered['services']['honua']['environment']
+            self.assertEqual('http://localhost:18080', env['Cors__AllowedOrigins__0'])
+            self.assertEqual('https://localhost:18083', env.get('HONUA_ADMIN_UI_CORS_ORIGINS'))
+
+            # A customer adding Cors__AllowedOrigins__1 (e.g. first-map.md) must not clobber the Console origin,
+            # and changing HONUA_CONSOLE_PORT must update the allowed Console origin.
+            env_file = path / '.env'
+            env_file.write_text(env_file.read_text().replace('HONUA_CONSOLE_PORT=18083', 'HONUA_CONSOLE_PORT=28443'))
+            (path / 'customer.yaml').write_text('services:\n  honua:\n    environment:\n'
+                                                '      Cors__AllowedOrigins__1: http://localhost:3000\n')
+            custom = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                    cwd=path, env=self.compose_env(path), capture_output=True, text=True)
+            self.assertEqual(0, custom.returncode, custom.stderr)
+            custom_env = json.loads(custom.stdout)['services']['honua']['environment']
+            self.assertEqual('http://localhost:3000', custom_env['Cors__AllowedOrigins__1'])
+            self.assertEqual('https://localhost:28443', custom_env.get('HONUA_ADMIN_UI_CORS_ORIGINS'))
+
+            # A customer with a different public Console origin can override it cleanly.
+            (path / 'customer.yaml').write_text('services:\n  honua:\n    environment:\n'
+                                                '      HONUA_ADMIN_UI_CORS_ORIGINS: https://maps.example.com\n')
+            overridden = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                        cwd=path, env=self.compose_env(path), capture_output=True, text=True)
+            self.assertEqual(0, overridden.returncode, overridden.stderr)
+            self.assertEqual('https://maps.example.com',
+                             json.loads(overridden.stdout)['services']['honua']['environment'].get('HONUA_ADMIN_UI_CORS_ORIGINS'))
+
     def test_customer_public_origin_overrides_the_console_default(self):
         with tempfile.TemporaryDirectory() as directory:
             path, _, _ = self.packaged_console_install(Path(directory))

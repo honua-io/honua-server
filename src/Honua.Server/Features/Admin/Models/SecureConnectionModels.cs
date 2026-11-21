@@ -39,6 +39,19 @@ public class SecureConnectionSummary
     public DateTimeOffset CreatedAt { get; init; }
 
     public required string CreatedBy { get; init; }
+
+    // Set for object storage connections only; database rows leave these null.
+    public string? Kind { get; init; }
+
+    public string? Bucket { get; init; }
+
+    public string? Prefix { get; init; }
+
+    public string? Region { get; init; }
+
+    public string? RoleArn { get; init; }
+
+    public bool? BuiltIn { get; init; }
 }
 
 // The connection detail never includes credentials.
@@ -96,6 +109,21 @@ public sealed class CreateSecureConnectionRequest
     [Required]
     public string SslMode { get; init; } = "Require";
 
+    // "object-storage" selects the object storage fields below; anything else is a database connection.
+    [StringLength(32)]
+    public string? Kind { get; init; }
+
+    public string? Bucket { get; init; }
+
+    public string? Prefix { get; init; }
+
+    public string? Region { get; init; }
+
+    public string? RoleArn { get; init; }
+
+    // Must be the value minted by the object storage setup endpoint.
+    public string? ExternalId { get; init; }
+
     // A connection has a password or a secret reference, not both.
     public bool IsValid(out string? validationError)
     {
@@ -140,6 +168,20 @@ public sealed class CreateSecureConnectionRequest
 
 public sealed class UpdateSecureConnectionRequest
 {
+    // Object storage connections only: name, region and role ARN may change; bucket, prefix and external id may not.
+    [StringLength(64, MinimumLength = 1)]
+    public string? Name { get; init; }
+
+    public string? Bucket { get; init; }
+
+    public string? Prefix { get; init; }
+
+    public string? Region { get; init; }
+
+    public string? RoleArn { get; init; }
+
+    public string? ExternalId { get; init; }
+
     [StringLength(1000)]
     public string? Description { get; init; }
 

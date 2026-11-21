@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Forms.Packages;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -43,7 +44,10 @@ internal sealed class FormTargetMetadataResolver(IMetadataV2GraphProvider metada
             ? null
             : snapshot.ResolveStorageLayerId(publication);
 
-        return new FormTargetMetadataResolution(service, publication, resource, storageLayerId);
+        return new FormTargetMetadataResolution(service, publication, resource, storageLayerId)
+        {
+            ServedFromSourceTable = publication is not null && ManagedWriteStorage.SourceTableOf(snapshot, publication) is not null
+        };
     }
 
     private static MetadataV2Service? ResolveService(MetadataV2GraphSnapshot snapshot, string serviceId)

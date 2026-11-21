@@ -46,10 +46,28 @@ public interface IStyleCatalog
         string? changeSummary = null,
         CancellationToken cancellationToken = default);
 
+    // Stores only while style_version still equals write.ExpectedVersion, in one statement, so two
+    // saves that passed the same precondition cannot both land. Null when the style moved on or is gone.
+    Task<StyleCatalogRecord?> UpdateStyleIfVersionAsync(
+        string styleId,
+        ConditionalStyleWrite write,
+        CancellationToken cancellationToken = default);
+
     Task<StyleCatalogDeleteResult> DeleteStyleAsync(
         string styleId,
         int? protectedLayerId = null,
         CancellationToken cancellationToken = default);
 
     Task<bool> AssociateLayerAsync(int layerId, string styleId, int ordinal = 0, CancellationToken cancellationToken = default);
+}
+
+// A style document stored only while the stored revision is still ExpectedVersion.
+public sealed record ConditionalStyleWrite
+{
+    public required string MapLibreStyleJson { get; init; }
+
+    // Stored with the style; null clears the cached Esri drawingInfo.
+    public string? DrawingInfoJson { get; init; }
+
+    public required int ExpectedVersion { get; init; }
 }

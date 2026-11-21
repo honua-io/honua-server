@@ -21,19 +21,10 @@ namespace Honua.Server.Tests.Features.Admin;
 // must not hide healthy operations or leak serializer details through the admin endpoints.
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.OperationsProgress)]
-public sealed class PersistedExportProgressTests(DatabaseFixtureAdapter database)
-    : IClassFixture<DatabaseFixtureAdapter>, IAsyncLifetime
+public sealed class PersistedExportProgressTests(PersistedExportProgressTests.ProgressHost host)
+    : IClassFixture<PersistedExportProgressTests.ProgressHost>
 {
-    private ControlPlaneStateHarness _harness = null!;
-    private Honua.Server.Features.Infrastructure.Progress.PostgresUniversalProgressStore _store = null!;
-
-    public async Task InitializeAsync()
-    {
-        _harness = await ControlPlaneStateHarness.CreateAsync(database, nameof(PersistedExportProgressTests));
-        _store = _harness.CreateProgressStore();
-    }
-
-    public async Task DisposeAsync() => await _harness.DisposeAsync();
+    private Honua.Server.Features.Infrastructure.Progress.PostgresUniversalProgressStore Store => host.Store;
 
     [IntegrationTheory]
     [InlineData(true)]
@@ -44,31 +35,23 @@ public sealed class PersistedExportProgressTests(DatabaseFixtureAdapter database
     {
         var invalidId = await SeedInvalidExportAsync(legacyShape);
         var printId = NewId();
-        await _store.SetProgressAsync(printId, PrintProgress.CreateInitial(printId, "pdf", "map", 1));
+        await Store.SetProgressAsync(printId, PrintProgress.CreateInitial(printId, "pdf", "map", 1));
         var exportId = NewId();
-        await _store.SetProgressAsync(exportId, ExportProgress.CreateInitial(exportId, "csv", "svc", 3, 1));
-        var fixture = new WebAppFixture().ReplaceRequestService<IUniversalProgressStore>(_store);
-        await fixture.InitializeAsync();
-        try
+        await Store.SetProgressAsync(exportId, ExportProgress.CreateInitial(exportId, "csv", "svc", 3, 1));
+        var fixture = await host.GetApplicationAsync();
+        foreach (var path in new[] { "active", "active?type=Export", "type/Export", "type/Print" })
         {
-            foreach (var path in new[] { "active", "active?type=Export", "type/Export", "type/Print" })
+            var response = await fixture.Client.GetAsync($"/api/v1/admin/operations/{path}");
+            response.StatusCode.Should().Be(HttpStatusCode.OK, path);
+            var json = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+            var operations = json["Operations"]!.AsArray();
+            var body = operations.ToJsonString();
+            body.Should().NotContain(invalidId);
+            body.Should().Contain(path == "type/Print" ? printId : exportId);
+            if (path == "active")
             {
-                var response = await fixture.Client.GetAsync($"/api/v1/admin/operations/{path}");
-                response.StatusCode.Should().Be(HttpStatusCode.OK, path);
-                var json = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
-                var operations = json["Operations"]!.AsArray();
-                var body = operations.ToJsonString();
-                body.Should().NotContain(invalidId);
-                body.Should().Contain(path == "type/Print" ? printId : exportId);
-                if (path == "active")
-                {
-                    body.Should().Contain(printId);
-                }
+                body.Should().Contain(printId);
             }
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
         }
     }
 
@@ -82,23 +65,15 @@ public sealed class PersistedExportProgressTests(DatabaseFixtureAdapter database
     public async Task ReadOperation_InvalidExportRecord_ReturnsSafeRecordProblem(bool legacyShape, bool cancel)
     {
         var invalidId = await SeedInvalidExportAsync(legacyShape);
-        var fixture = new WebAppFixture().ReplaceRequestService<IUniversalProgressStore>(_store);
-        await fixture.InitializeAsync();
-        try
-        {
-            var path = $"/api/v1/admin/operations/{invalidId}";
-            var response = cancel
-                ? await fixture.Client.PostAsync($"{path}/cancel", null)
-                : await fixture.Client.GetAsync(path);
-            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
-            var body = await response.Content.ReadAsStringAsync();
-            body.Should().Contain("Persisted export progress is invalid. Submit a new export request.");
-            body.Should().NotContain("JsonException").And.NotContain("System.Text.Json");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        var fixture = await host.GetApplicationAsync();
+        var path = $"/api/v1/admin/operations/{invalidId}";
+        var response = cancel
+            ? await fixture.Client.PostAsync($"{path}/cancel", null)
+            : await fixture.Client.GetAsync(path);
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("Persisted export progress is invalid. Submit a new export request.");
+        body.Should().NotContain("JsonException").And.NotContain("System.Text.Json");
     }
 
     [IntegrationTheory]
@@ -109,9 +84,9 @@ public sealed class PersistedExportProgressTests(DatabaseFixtureAdapter database
     {
         var invalidId = await SeedInvalidExportAsync(legacyShape);
         var healthyId = NewId();
-        await _store.SetProgressAsync(healthyId, ExportProgress.CreateInitial(healthyId, "csv", "svc", 3, 1));
+        await Store.SetProgressAsync(healthyId, ExportProgress.CreateInitial(healthyId, "csv", "svc", 3, 1));
 
-        var operations = await _store.GetActiveOperationsAsync<ExportProgress>(OperationType.Export);
+        var operations = await Store.GetActiveOperationsAsync<ExportProgress>(OperationType.Export);
 
         operations.Should().Contain(p => p.JobId == healthyId).And.NotContain(p => p.JobId == invalidId);
     }
@@ -121,10 +96,10 @@ public sealed class PersistedExportProgressTests(DatabaseFixtureAdapter database
     private async Task<string> SeedInvalidExportAsync(bool legacyShape)
     {
         var id = NewId();
-        await _store.SetProgressAsync(id, ExportProgress.CreateInitial(id, "csv", "svc", 3, 1));
-        var table = _harness.Table("operation_progress");
+        await Store.SetProgressAsync(id, ExportProgress.CreateInitial(id, "csv", "svc", 3, 1));
+        var table = host.Harness.Table("operation_progress");
         var idParameter = new NpgsqlParameter("id", id);
-        var json = JsonNode.Parse((await _harness.ScalarAsync<string>(
+        var json = JsonNode.Parse((await host.Harness.ScalarAsync<string>(
             $"SELECT payload FROM {table} WHERE operation_id = @id", idParameter))!)!;
         var progress = json["Data"]!.AsObject();
         if (legacyShape)
@@ -136,10 +111,77 @@ public sealed class PersistedExportProgressTests(DatabaseFixtureAdapter database
         {
             progress["ServiceLayerIndex"] = "invalid";
         }
-        await _harness.ExecuteAsync(
+        await host.Harness.ExecuteAsync(
             $"UPDATE {table} SET payload = @payload WHERE operation_id = @id",
             new NpgsqlParameter("payload", json.ToJsonString()),
             new NpgsqlParameter("id", id));
         return id;
+    }
+
+    // One harness and one host for the class. Every case seeds records under its own ids and
+    // asserts only on those ids, so records an earlier case left behind do not change what a case
+    // proves. The host starts on first use, so a filtered run of the store-only cases skips it.
+    public sealed class ProgressHost : IAsyncLifetime
+    {
+        private readonly DatabaseFixtureAdapter _database = new();
+        private ControlPlaneStateHarness? _harness;
+        private WebAppFixture? _application;
+
+        internal ControlPlaneStateHarness Harness
+            => _harness ?? throw new InvalidOperationException("The host must be initialized first.");
+
+        internal Honua.Server.Features.Infrastructure.Progress.PostgresUniversalProgressStore Store { get; private set; } = null!;
+
+        public async Task InitializeAsync()
+        {
+            await _database.InitializeAsync();
+            _harness = await ControlPlaneStateHarness.CreateAsync(_database, nameof(PersistedExportProgressTests));
+            Store = _harness.CreateProgressStore();
+        }
+
+        public async Task<WebAppFixture> GetApplicationAsync()
+        {
+            if (_application is null)
+            {
+                var application = new WebAppFixture().ReplaceRequestService<IUniversalProgressStore>(Store);
+                try
+                {
+                    await application.InitializeAsync();
+                }
+                catch
+                {
+                    await application.DisposeAsync();
+                    throw;
+                }
+
+                _application = application;
+            }
+
+            return _application;
+        }
+
+        public async Task DisposeAsync()
+        {
+            try
+            {
+                await (_application?.DisposeAsync() ?? Task.CompletedTask);
+            }
+            finally
+            {
+                await DisposeStorageAsync();
+            }
+        }
+
+        private async Task DisposeStorageAsync()
+        {
+            try
+            {
+                await (_harness?.DisposeAsync() ?? ValueTask.CompletedTask);
+            }
+            finally
+            {
+                await _database.DisposeAsync();
+            }
+        }
     }
 }

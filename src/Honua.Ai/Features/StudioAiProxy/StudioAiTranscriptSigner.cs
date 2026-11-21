@@ -88,6 +88,11 @@ internal sealed class StudioAiTranscriptSigner(
         string model,
         IReadOnlyList<StudioAiChatEvent> events)
     {
+        if (string.IsNullOrWhiteSpace(request.Certification?.RequestedBy))
+        {
+            throw new InvalidOperationException("A certified transcript requires the server-resolved requesting actor.");
+        }
+
         ValidateGovernedToolTargets(request.Certification!, events);
         var issuedAt = timeProvider.GetUtcNow();
         var requestBytes = Canonicalize(request.AcceptedRequestJson ?? JsonSerializer.SerializeToUtf8Bytes(
@@ -115,6 +120,7 @@ internal sealed class StudioAiTranscriptSigner(
             writer.WriteBase64String("providerEvents", eventBytes);
             writer.WriteString("releaseId", binding.ReleaseId);
             writer.WriteBase64String("request", requestBytes);
+            writer.WriteString("requestedBy", binding.RequestedBy);
             writer.WriteString("runNonce", binding.RunNonce);
             writer.WriteString("schemaVersion", "honua.studio-ai.transcript.v1");
             writer.WriteString("selectedResponse", selectedResponse);

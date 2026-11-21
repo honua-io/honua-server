@@ -139,4 +139,24 @@ public sealed class FeatureServerQueryBinsTests : IClassFixture<WebAppFixture>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         (await response.Content.ReadAsStringAsync()).Should().Contain("cannot contain more than 1000");
     }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryBins)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryBins")]
+    public async Task AutoIntervalBinCountOverLimit_ReturnsValidationError()
+    {
+        var bin = JsonSerializer.Serialize(new
+        {
+            autoIntervalBin = new { field = "objectid", numBins = 1001 }
+        });
+        var payload = JsonSerializer.Serialize(new { bin, f = "json" });
+
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBins",
+            payloadContent);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("numBins cannot be more than 1000");
+    }
 }

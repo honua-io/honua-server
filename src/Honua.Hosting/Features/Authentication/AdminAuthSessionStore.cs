@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Exceptions;
@@ -124,6 +125,8 @@ internal sealed partial class AdminAuthSessionStore(
         {
             await tokens.RevokeAsync(new SecurityTokenKey(SecurityTokenKind.AdminSession, sessionId), cancellationToken)
                 .ConfigureAwait(false);
+            await tokens.RevokeAsync(BearerBindingKey(DeriveBearerBinding(sessionId)), cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (Exception storeFailure) when (storeFailure is not OutOfMemoryException and not OperationCanceledException)
         {
@@ -132,6 +135,47 @@ internal sealed partial class AdminAuthSessionStore(
             throw new ServiceUnavailableException("The shared admin session could not be revoked.", storeFailure);
         }
     }
+
+    // Operator bearers minted from a session carry this binding, so ending the session ends them too.
+    // The binding is a one-way derivation: a bearer holder cannot recover the session cookie from it.
+    public async Task<string> BindOperatorBearerAsync(
+        string sessionId, DateTimeOffset sessionExpiresAt, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        var binding = DeriveBearerBinding(sessionId);
+        try
+        {
+            await tokens.StoreAsync(BearerBindingKey(binding), ReadOnlyMemory<byte>.Empty,
+                sessionExpiresAt - DateTimeOffset.UtcNow, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception storeFailure) when (storeFailure is not OutOfMemoryException and not OperationCanceledException)
+        {
+            // A bearer that sign-out could not end must not be issued.
+            throw new ServiceUnavailableException("The shared admin session could not be updated.", storeFailure);
+        }
+
+        return binding;
+    }
+
+    public async Task<bool> IsOperatorBearerBindingLiveAsync(string binding, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await tokens.FindAsync(BearerBindingKey(binding), cancellationToken).ConfigureAwait(false) is not null;
+        }
+        catch (Exception storeFailure) when (storeFailure is not OutOfMemoryException and not OperationCanceledException)
+        {
+            // A binding that cannot be read is an outage, not a revoked bearer.
+            throw new ServiceUnavailableException("The shared admin session could not be read.", storeFailure);
+        }
+    }
+
+    internal static string DeriveBearerBinding(string sessionId)
+        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("honua-operator-bearer-binding:" + sessionId)))
+            .ToLowerInvariant();
+
+    private static SecurityTokenKey BearerBindingKey(string binding)
+        => new(SecurityTokenKind.AdminSessionBearerBinding, binding);
 
     public async Task<AdminAuthAuthenticatedSession?> GetInteractiveSessionForApprovalAsync(
         string? sessionId, CancellationToken cancellationToken)

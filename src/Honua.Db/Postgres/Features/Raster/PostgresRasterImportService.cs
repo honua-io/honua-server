@@ -88,10 +88,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             ReportProgress(progress, operationId, startedAt, RasterImportPhase.Ingesting, OperationStatus.Processing, "Loading raster into PostGIS");
 
             await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-            await _schemaGuard.VerifyRequirementAsync(
-                connection,
-                DatabaseSchemaRequirement.RasterExternalStorage,
-                cancellationToken).ConfigureAwait(false);
+            await EnsureRasterStorageAsync(connection, cancellationToken).ConfigureAwait(false);
             await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
 
             long rasterId;
@@ -135,7 +132,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                     connection, transaction, request.LayerId, rasterId, srid, bandCount, cancellationToken).ConfigureAwait(false);
                 if (homogeneityError != null)
                 {
-                    throw new ArgumentException(homogeneityError);
+                    throw new RasterImportRequestException(homogeneityError);
                 }
 
                 // Phase 3: Compute band statistics
@@ -234,14 +231,15 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             // Validation / user-input errors â€” return a failure result so the endpoint can map to 400.
             stopwatch.Stop();
             PostgresRasterImportLog.ImportFailed(_logger, ex, request.LayerId, request.FileName);
+            var detail = ex is RasterImportRequestException refused ? refused.Detail : "Import failed.";
 
             ReportProgress(progress, operationId, startedAt, RasterImportPhase.Failed, OperationStatus.Failed,
-                "Import failed.", completedAt: DateTimeOffset.UtcNow,
-                errorMessage: "Import failed.", warnings: warnings);
+                detail, completedAt: DateTimeOffset.UtcNow,
+                errorMessage: detail, warnings: warnings);
 
             return RasterImportResult.CreateFailure(
                 request.LayerId, request.Name, request.Format,
-                "Import failed.", stopwatch.Elapsed, warnings);
+                detail, stopwatch.Elapsed, warnings);
         }
         catch (Exception ex)
         {
@@ -250,12 +248,29 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             stopwatch.Stop();
             PostgresRasterImportLog.ImportFailed(_logger, ex, request.LayerId, request.FileName);
 
+            // A missing raster storage names the operator action; anything else stays generic.
+            var unavailable = ex is RasterStorageUnavailableException ? ex.Message : null;
             ReportProgress(progress, operationId, startedAt, RasterImportPhase.Failed, OperationStatus.Failed,
-                "Import failed due to an internal error", completedAt: DateTimeOffset.UtcNow,
-                errorMessage: "Internal server error", warnings: warnings);
+                unavailable ?? "Import failed due to an internal error", completedAt: DateTimeOffset.UtcNow,
+                errorMessage: unavailable ?? "Internal server error", warnings: warnings);
 
             throw;
         }
+    }
+
+    // A feature-only install has no raster tables: refuse with the operator action before
+    // the schema floor, which would otherwise report them as missing schema.
+    private async Task EnsureRasterStorageAsync(DbConnection connection, CancellationToken cancellationToken)
+    {
+        if (!await PostgresRasterStorageProbe.IsInstalledAsync(connection, cancellationToken).ConfigureAwait(false))
+        {
+            throw new RasterStorageUnavailableException();
+        }
+
+        await _schemaGuard.VerifyRequirementAsync(
+            connection,
+            DatabaseSchemaRequirement.RasterExternalStorage,
+            cancellationToken).ConfigureAwait(false);
     }
 
     // =============================================================================
@@ -266,7 +281,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
     {
         if (string.IsNullOrWhiteSpace(request.FilePath))
         {
-            throw new ArgumentException("File path is required.");
+            throw new RasterImportRequestException("File path is required.");
         }
 
         if (!File.Exists(request.FilePath))
@@ -276,7 +291,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
 
         if (string.IsNullOrWhiteSpace(request.Name))
         {
-            throw new ArgumentException("Raster name is required.");
+            throw new RasterImportRequestException("Raster name is required.");
         }
 
         // World-file formats always require a world file for the geotransform.
@@ -286,7 +301,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         if (request.Format is SupportedRasterFormat.PngWorldFile or SupportedRasterFormat.JpegWorldFile &&
             string.IsNullOrWhiteSpace(request.WorldFileContent))
         {
-            throw new ArgumentException(
+            throw new RasterImportRequestException(
                 $"{request.Format} imports require a world file (.pgw/.jgw/.tfw) for georeferencing. " +
                 "An explicit SRID can optionally accompany the world file to override CRS detection.");
         }

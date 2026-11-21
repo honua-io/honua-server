@@ -131,7 +131,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if ! command -v dotnet &> /dev/null; then
-    echo "dotnet CLI not found. Install .NET 10.0+ to run load tests."
+    echo "dotnet CLI not found. Install the .NET 11 SDK pinned in global.json to run load tests."
     exit 1
 fi
 

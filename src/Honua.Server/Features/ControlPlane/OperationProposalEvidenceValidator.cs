@@ -115,14 +115,22 @@ internal sealed class OperationProposalEvidenceValidator(
         using var metadata = JsonDocument.Parse(
             $$"""{"{{ProposalEvidenceVerifier.MetaProperty}}":{{signedJson}}}""");
         using var callId = JsonDocument.Parse(evidence.McpCallId);
-        var verified = await verifier.VerifyAsync(
-            tool,
-            arguments.RootElement,
-            metadata.RootElement,
-            approval.TenantId,
-            evidence.McpSessionId,
-            callId.RootElement,
-            cancellationToken).ConfigureAwait(false);
+        OperationProposalEvidence verified;
+        try
+        {
+            verified = await verifier.VerifyAsync(
+                tool,
+                arguments.RootElement,
+                metadata.RootElement,
+                new ProposalEvidenceCaller(approval.TenantId, proposal.RequestedBy, evidence.McpSessionId),
+                callId.RootElement,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Honua.Geoprocessing.GeoprocessingValidationException ex)
+        {
+            // The approval boundary records every evidence refusal as an evidence_invalid denial.
+            throw new InvalidOperationException(ex.Message, ex);
+        }
         if (verified with
         {
             PolicyRevision = evidence.PolicyRevision,

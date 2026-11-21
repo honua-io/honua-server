@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using Honua.Infrastructure.Logging;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -22,6 +23,29 @@ namespace Honua.Server.Tests.Infrastructure;
 [Trait("Tier", "Fast")]
 public sealed class RequestLogRedactionTests
 {
+    [UnitTest]
+    public void Enrich_KeepsUnchangedValuesAndRedactsTheRest()
+    {
+        var path = new ScalarValue("/rest/services/demo/FeatureServer/0/query");
+        var status = new ScalarValue(200);
+        var logEvent = new LogEvent(DateTimeOffset.UnixEpoch, LogEventLevel.Information, null, MessageTemplate.Empty,
+        [
+            new LogEventProperty("RequestPath", path),
+            new LogEventProperty("StatusCode", status),
+            new LogEventProperty("QueryString", new ScalarValue("?where=1=1")),
+            new LogEventProperty("ApiKey", new ScalarValue("secret-marker")),
+            new LogEventProperty("RequestUrl", new ScalarValue("/x?token=t-marker&f=json")),
+        ]);
+
+        new RequestLogRedaction().Enrich(logEvent, null!);
+
+        Assert.Same(path, logEvent.Properties["RequestPath"]);
+        Assert.Same(status, logEvent.Properties["StatusCode"]);
+        Assert.Equal("\"[REDACTED]\"", logEvent.Properties["QueryString"].ToString());
+        Assert.Equal("\"[REDACTED]\"", logEvent.Properties["ApiKey"].ToString());
+        Assert.Equal("\"/x?token=[REDACTED]&f=json\"", logEvent.Properties["RequestUrl"].ToString());
+    }
+
     [Theory]
     [InlineData("/rest/services/demo/FeatureServer/0/query", "GET")]
     [InlineData("/api/v1/console/share/link/path-marker", "GET")]

@@ -1447,6 +1447,8 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         insertResponse.StatusCode.Should().Be(
             HttpStatusCode.NotImplemented,
             $"the declared capability is satisfied but the storage cannot be written through; response: {insertPayload}");
+        insertPayload.Should().NotContain(_tableName, "the refusal must not name the storage table")
+            .And.NotContain($"{_schema}.", "the refusal must not name the storage schema");
 
         (await GetSourceRowCountAsync()).Should().Be(1);
         (await GetSourceRowCountAsync("Phantom Feature")).Should().Be(0);

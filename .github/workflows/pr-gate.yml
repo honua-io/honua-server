@@ -1015,6 +1015,7 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           artifact-sdk-version: ${{ needs.server-test-producer.outputs.managed-sdk-version }}
+          host-package-fallback: 'true'
 
       - name: Wait for free disk space
         run: scripts/ci/server-test-shard-free-disk.sh --await

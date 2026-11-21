@@ -111,7 +111,7 @@ public sealed partial class ProposalEndpointsTests
     public async Task ApproveProposal_ConcurrentVersionWrite_RequiresFreshReviewWithoutSecurityDenial()
     {
         var proposal = await SeedProposalAsync();
-        using var human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider);
+        using var human = await SignInAsync();
         var review = await human.OpenReviewAsync(proposal.ProposalId);
         _proposalStore.AdvanceVersionOnNextClaim = true;
 
@@ -141,7 +141,7 @@ public sealed partial class ProposalEndpointsTests
     public async Task OpenApprovalReview_ProjectsTheAuthoritativeTenantForThePrivateConsoleBinding()
     {
         var proposal = await SeedProposalAsync();
-        using var human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider);
+        using var human = await SignInAsync();
 
         var review = await human.OpenReviewAsync(proposal.ProposalId);
 
@@ -192,7 +192,7 @@ public sealed partial class ProposalEndpointsTests
     public async Task RejectProposal_PasswordSession_MarksRejected()
     {
         var proposal = await SeedProposalAsync(requestedBy: "agent:proposer");
-        using var human = await HumanApprovalHttpClient.AuthenticateWithPasswordAsync(_fixture, AdminPassword);
+        using var human = await SignInWithPasswordAsync();
 
         using var response = await human.Client.PostAsJsonAsync(
             $"/api/v1/admin/proposals/{proposal.ProposalId}/reject",

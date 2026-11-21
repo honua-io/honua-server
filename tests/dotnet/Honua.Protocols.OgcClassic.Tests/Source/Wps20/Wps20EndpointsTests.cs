@@ -208,6 +208,9 @@ public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixt
             Title = "Echo",
             Description = "Echoes a literal value.",
             Category = "test",
+            ExecutionKind = ProcessExecutionKind.Job,
+            SupportedExecutionModes = ProcessExecutionModes.Async | ProcessExecutionModes.Sync,
+            SupportedEntryPoints = ProcessEntryPoints.Job,
             Parameters = [new ProcessParameterSpec { Name = "value", DisplayName = "Value", Description = "Value to echo.", ValueType = ProcessParameterValueType.Text, Required = true }],
             OutputArtifactKinds = []
         });
@@ -253,6 +256,9 @@ public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixt
             Title = "Echo",
             Description = "Echoes a literal value.",
             Category = "test",
+            ExecutionKind = ProcessExecutionKind.Job,
+            SupportedExecutionModes = ProcessExecutionModes.Async | ProcessExecutionModes.Sync,
+            SupportedEntryPoints = ProcessEntryPoints.Job,
             Parameters = [new ProcessParameterSpec { Name = "value", DisplayName = "Value", Description = "Value to echo.", ValueType = ProcessParameterValueType.Text, Required = true }],
             OutputArtifactKinds = []
         });
@@ -811,6 +817,9 @@ public sealed class Wps20EndpointsTests : IClassFixture<Wps20EndpointsTests.Fixt
             Title = "Canonical",
             Description = "Test process.",
             Category = "test",
+            ExecutionKind = ProcessExecutionKind.Job,
+            SupportedExecutionModes = ProcessExecutionModes.Async | ProcessExecutionModes.Sync,
+            SupportedEntryPoints = ProcessEntryPoints.Job,
             Parameters = [],
             OutputArtifactKinds = []
         });

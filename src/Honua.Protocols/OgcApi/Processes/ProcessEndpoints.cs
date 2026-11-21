@@ -591,7 +591,7 @@ internal static class ProcessEndpoints
                         ? await JobEndpoints.BuildRawResultsResponseAsync(
                                 terminal.Job ?? jobRecord, context, terminal.ResultPackage!)
                             .ConfigureAwait(false)
-                        : await JobEndpoints.BuildValueResultsResponseAsync(
+                        : await JobEndpoints.BuildSyncDocumentResultsResponseAsync(
                                 terminal.Job ?? jobRecord, context, terminal.ResultPackage!)
                             .ConfigureAwait(false),
                     GeoprocessingTerminalResultOutcome.Failed => JobEndpoints.BuildJobFailedResult(

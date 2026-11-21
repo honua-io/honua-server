@@ -193,6 +193,7 @@ The mode covers the `DefaultConnection` data source only, whose role the startup
 | `Limits__Connections__StatementTimeout` / `LockTimeout` | `00:00:30` | Server-side statement and lock timeouts. |
 | `Limits__Connections__IdleInTransactionTimeout` | `00:01:00` | Idle-in-transaction timeout. |
 | `Limits__Connections__AdaptiveConcurrencyEnabled` | `false` | Adaptive query admission below the concurrency ceiling. |
+| `Limits__Connections__AnonymousPressureAdmissionEnabled` | `true` | Refuse anonymous expensive reads with a retryable 503 while the query gate is under pressure. Set `false` to queue them instead, for example behind an edge that already admits traffic. |
 | `Limits__Connections__Multiplexing` | `false` | Npgsql multiplexing (`false`, `true`, or `auto`). Incompatible with RDS Proxy and transaction-mode poolers — see [Connection poolers and proxies](#connection-poolers-and-proxies-rds-proxy-pgbouncer). |
 | `Database__SessionSettings__Mode` | `connection` | `connection` sets the session timeouts and default `search_path` on every connection; `role-defaults` issues no session `SET` and relies on `ALTER ROLE` defaults — see [Role defaults instead of per-connection SET](#role-defaults-instead-of-per-connection-set). |
 
@@ -276,13 +277,14 @@ When `Database__PreferSerialBoundedSpatialReads` is unset, Honua automatically
 uses a narrow serial-planner policy for source-backed PostGIS point layers.
 Set it to `false` to retain PostgreSQL planning for these reads, or `true` to
 explicitly enable the same bounded policy. Eligible reads have a simple
-intersects/envelope bbox, an effective first-page limit of
-1–100 features before the extra pagination probe row, default ordering (including
+intersects/envelope bbox, an effective limit of
+1–1,000 features before the extra pagination probe row, an offset of at most 1,000
+(next-link pages), default ordering (including
 the normalized ascending primary-ID sort), and no distinct, branch-version or null-geometry request.
 Unknown geometry types, ambient transactions and borrowed mutation transactions
 retain ordinary planning.
-This option does not change counts, statistics, streaming, tiles, larger pages,
-later pages or custom sorts. Count planning has separate options below.
+This option does not change counts, statistics, streaming, tiles, pages over
+1,000 features, offsets beyond 1,000 or custom sorts. Count planning has separate options below.
 
 For an eligible read, Honua batches a transaction-local
 `max_parallel_workers_per_gather=0` setting with the original parameterized
@@ -324,11 +326,11 @@ defaults in benchmark reports.
 
 When `Database__PreferSerialSourceSpatialCounts` is unset, Honua automatically
 uses serial plans only for exact counts associated with the bounded reads
-described above. The count retains the originating query's eligibility limits:
-first page, limit 1–100, ascending primary-ID/default order, simple point bbox,
-and no distinct, branch-version or null-geometry request. Standalone counts
-retain PostgreSQL planning even if their query includes an eligible limit.
-Unbounded, larger-page and later-page reads also retain ordinary count planning.
+described above, and only for a first page: limit 1–100, offset 0, ascending
+primary-ID/default order, simple point bbox, and no distinct, branch-version or
+null-geometry request. Standalone counts retain PostgreSQL planning even if their
+query includes an eligible limit. Unbounded, larger-page and later-page reads
+retain ordinary count planning, even when the page itself is planned serially.
 
 Set `Database__PreferSerialSourceSpatialCounts=false` to opt out of serial counts.
 Set it to `true` to explicitly enable serial plans for all eligible source-backed

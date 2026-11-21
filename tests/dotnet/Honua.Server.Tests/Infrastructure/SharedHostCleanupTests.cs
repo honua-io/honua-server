@@ -32,6 +32,8 @@ public sealed partial class SharedHostCleanupTests
 
     private static async Task AssertFailedStartupReleasesResourcesAsync(StartupFailureFactory failedFactory)
     {
+        // A host the previous collection released may still be inside its idle grace.
+        await WebAppFixtureSharedBootstrapMixin.ReleaseIdleNowAsync();
         await using var postgresAnchor = new AsyncDisposalScope(new PostgresFixture());
         await postgresAnchor.Fixture.InitializeAsync();
         var referencesBefore = PostgresReferenceCount();
@@ -72,7 +74,53 @@ public sealed partial class SharedHostCleanupTests
                 await WebAppFixtureSharedBootstrapMixin.ReleaseAsync();
             }
         }
+        await AssertUnreferencedHostIsReusedAsync(referencesBefore);
+        await WebAppFixtureSharedBootstrapMixin.ReleaseIdleNowAsync();
+        Assert.Throws<InvalidOperationException>(() => WebAppFixtureSharedBootstrapMixin.Factory);
         Assert.Equal(referencesBefore, PostgresReferenceCount());
+    }
+
+    // The last release keeps the host for the idle grace; the next caller gets the same host.
+    private static async Task AssertUnreferencedHostIsReusedAsync(int referencesBefore)
+    {
+        var provider = WebAppFixtureSharedBootstrapMixin.Factory.Services;
+        Assert.Equal(referencesBefore + 1, PostgresReferenceCount());
+        await WebAppFixtureSharedBootstrapMixin.EnsureInitializedAsync(WebAppFixture.SharedAdminPassword);
+        try
+        {
+            Assert.Same(provider, WebAppFixtureSharedBootstrapMixin.Factory.Services);
+        }
+        finally
+        {
+            await WebAppFixtureSharedBootstrapMixin.ReleaseAsync();
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ReleaseAsync_LastReference_DisposesHostAfterIdleGrace()
+    {
+        await WebAppFixtureSharedBootstrapMixin.ReleaseIdleNowAsync();
+        await using var anchor = new AsyncDisposalScope(new PostgresFixture());
+        await anchor.Fixture.InitializeAsync();
+        var referencesBefore = PostgresReferenceCount();
+        var grace = WebAppFixtureSharedBootstrapMixin.IdleReleaseDelay;
+        WebAppFixtureSharedBootstrapMixin.IdleReleaseDelay = TimeSpan.FromMilliseconds(100);
+        try
+        {
+            await WebAppFixtureSharedBootstrapMixin.EnsureInitializedAsync(WebAppFixture.SharedAdminPassword);
+            await WebAppFixtureSharedBootstrapMixin.ReleaseAsync();
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
+            while (PostgresReferenceCount() != referencesBefore && DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(50);
+            }
+        }
+        finally
+        {
+            WebAppFixtureSharedBootstrapMixin.IdleReleaseDelay = grace;
+        }
+        Assert.Equal(referencesBefore, PostgresReferenceCount());
+        Assert.Throws<InvalidOperationException>(() => WebAppFixtureSharedBootstrapMixin.Factory);
     }
 
     [IntegrationTest]

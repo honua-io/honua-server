@@ -6,6 +6,7 @@ public sealed class LimitsOptionsValidator : OptionsValidator<LimitsOptions>
     {
         ValidateDataAnnotations(options.Query, failures, "Query");
         ValidateDataAnnotations(options.GeoParquet, failures, "GeoParquet");
+        ValidateGeoParquetLimits(options.GeoParquet, failures);
         ValidateDataAnnotations(options.Geometry, failures, "Geometry");
         ValidateDataAnnotations(options.Edits, failures, "Edits");
         ValidateDataAnnotations(options.Attachments, failures, "Attachments");
@@ -39,6 +40,22 @@ public sealed class LimitsOptionsValidator : OptionsValidator<LimitsOptions>
             "Elevation.MinIntervalMeters",
             "Elevation.MaxIntervalMeters",
             failures);
+    }
+
+    internal static void ValidateGeoParquetLimits(GeoParquetLimits limits, List<string> failures)
+    {
+        if (limits.RowsPerRowGroup is < 1 or > GeoParquetLimits.SpecMaxRowsPerRowGroup)
+        {
+            failures.Add(
+                $"GeoParquet.RowsPerRowGroup must be between 1 and {GeoParquetLimits.SpecMaxRowsPerRowGroup}.");
+        }
+
+        if (limits.MaxArtifactBytes is long artifactBytes &&
+            (artifactBytes < 1 || artifactBytes > Array.MaxLength))
+        {
+            failures.Add(
+                $"GeoParquet.MaxArtifactBytes must be between 1 and {Array.MaxLength}.");
+        }
     }
 
     internal static void ValidateQueryLimits(QueryLimits limits, List<string> failures)

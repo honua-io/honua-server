@@ -92,3 +92,21 @@ public sealed class ConsoleDcatExportResponse
     [JsonPropertyName("validation")]
     public required ConsoleOpenDataValidationResult Validation { get; init; }
 }
+
+public sealed class ConsoleOpenDataDatasetListResponse
+{
+    [JsonPropertyName("items")]
+    public required IReadOnlyList<ConsoleOpenDataDatasetListItem> Items { get; init; }
+
+    [JsonPropertyName("nextCursor")]
+    public string? NextCursor { get; init; }
+}
+
+public sealed class ConsoleOpenDataDatasetListItem
+{
+    [JsonPropertyName("itemType")]
+    public required ConsoleContentItemType ItemType { get; init; }
+
+    [JsonPropertyName("page")]
+    public required ConsoleOpenDataPage Page { get; init; }
+}

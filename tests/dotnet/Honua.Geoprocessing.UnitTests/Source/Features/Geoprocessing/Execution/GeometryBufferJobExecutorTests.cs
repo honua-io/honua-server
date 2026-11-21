@@ -94,21 +94,29 @@ public sealed class GeometryBufferJobExecutorTests
     }
 
     [UnitTest]
-    public async Task ExecuteAsync_GeodesicRequested_RejectsAsManualReview()
+    public async Task ExecuteAsync_GeodesicRequested_SucceedsWithMetricBuffer()
     {
         var executor = CreateExecutor(out _);
         var context = Substitute.For<IJobExecutionContext>();
         context.OperationId.Returns("op-geo");
 
+        string? publishedUri = null;
+        context
+            .When(c => c.PublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
+            .Do(call => publishedUri = call.ArgAt<string>(0));
+
         var record = CreateJobRecord(
             processId: GeometryBufferJobExecutor.HandledProcessId,
             includeInputs: true,
-            geodesic: "true");
+            distance: "1000",
+            geodesic: "true",
+            srid: "4326");
 
         var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
 
-        result.Status.Should().Be(ExecutionJobStatus.Failed);
-        result.ErrorMessage.Should().Contain("Geodesic", "the first-slice executor only supports CRS-units buffering");
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+        publishedUri.Should().NotBeNull();
+        publishedUri!.Should().StartWith("data:application/geo+json;base64,");
     }
 
     [UnitTest]

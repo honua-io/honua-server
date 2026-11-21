@@ -25,6 +25,10 @@ public sealed class UserProjectBuilder
 {
     private readonly Func<IReadOnlyList<string>, string?, ProcessResult> _runner;
 
+    // The image's warm NuGet package folder, the user build's only package source.
+    internal static string WarmPackageSource { get; } =
+        Environment.GetEnvironmentVariable("NUGET_PACKAGES") is { Length: > 0 } configured ? configured : "/opt/nuget/packages";
+
     /// <summary>Creates a project builder.</summary>
     /// <param name="dotnetRunner">An injectable <c>dotnet</c> runner (for tests); defaults to invoking the real SDK.</param>
     public UserProjectBuilder(Func<IReadOnlyList<string>, string?, ProcessResult>? dotnetRunner = null)
@@ -71,15 +75,21 @@ public sealed class UserProjectBuilder
 
         Directory.CreateDirectory(outputDirectory);
 
-        // --offline so the warm cache is authoritative for the common case and a tool
-        // cannot silently pull arbitrary packages at job time; if a tool genuinely needs
-        // an extra package the operator widens the cache, not the network at runtime.
+        // Package restore uses only the warm cache baked into the image: --source overrides any
+        // nuget.config in the user's repository, and the empty properties override feeds a user
+        // project adds itself. A tool that needs another package gets it from a wider cache, not
+        // the network. (Build targets can still run commands, so egress policy remains the
+        // network control.)
         var args = new List<string>
         {
             "build",
             project,
             "--configuration", "Release",
             "--nologo",
+            "--source", WarmPackageSource,
+            "-p:RestoreIgnoreFailedSources=false",
+            "-p:RestoreAdditionalProjectSources=",
+            "-p:RestoreAdditionalProjectFallbackFolders=",
             "--output", outputDirectory,
             "-p:TreatWarningsAsErrors=false",
             "-p:NuGetAudit=false",
@@ -114,11 +124,22 @@ public sealed class UserProjectBuilder
             psi.ArgumentList.Add(arg);
         }
 
+        RemoveCredentials(psi);
         using var process = Process.Start(psi)
             ?? throw new UserBuildException("failed to start dotnet.");
         var stdout = process.StandardOutput.ReadToEnd();
         var stderr = process.StandardError.ReadToEnd();
         process.WaitForExit();
         return new ProcessResult(process.ExitCode, stdout, stderr);
+    }
+
+    // The build runs the user's MSBuild targets before the harness scrubs its own environment,
+    // so the dotnet process starts without the job credentials.
+    internal static void RemoveCredentials(ProcessStartInfo psi)
+    {
+        foreach (var name in CredentialSandbox.StrippedEnvVars)
+        {
+            psi.Environment.Remove(name);
+        }
     }
 }

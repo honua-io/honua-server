@@ -116,7 +116,7 @@ def prove() -> dict:
             cache.mkdir()
             project = cache / "Probe.csproj"
             project.write_text('<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>'
-                               '<TargetFramework>net10.0</TargetFramework><EnableDefaultCompileItems>false</EnableDefaultCompileItems>'
+                               '<TargetFramework>net11.0</TargetFramework><EnableDefaultCompileItems>false</EnableDefaultCompileItems>'
                                '</PropertyGroup><ItemGroup><PackageReference Include="' + PACKAGE + '" Version="' + version + '" />'
                                '</ItemGroup></Project>')
             execution = restore(project, config, cache, value)

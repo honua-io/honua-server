@@ -12,6 +12,13 @@ internal static class OgcExtentTransformer
     private const double EarthRadius = SpatialConstants.EarthRadius;
     private const double MaxLatitude = SpatialConstants.WebMercatorMaxLatitude;
 
+    // Feature coordinates are rounded to the server's coordinate precision (8 decimal
+    // degrees by default) and a projected box is reprojected again when a client sends
+    // the advertised extent back as bbox. One 1e-7 degree (~1 cm) outward step covers
+    // that rounding and the forward/inverse disagreement, so bbox=<advertised extent>
+    // still contains every feature. Identity CRS84 extents are left exact.
+    internal const double ReprojectedExtentMarginDegrees = 1e-7;
+
     public static bool TryTransformToCrs84(double x, double y, int fromSrid, out (double Lon, double Lat) coordinate)
     {
         if (fromSrid == 4326)
@@ -50,7 +57,7 @@ internal static class OgcExtentTransformer
                 new SkiaMapRenderer.RenderExtent(minX, minY, maxX, maxY),
                 fromSrid,
                 4326);
-            return (transformed.MinX, transformed.MinY, transformed.MaxX, transformed.MaxY);
+            return ExpandReprojectedCrs84(transformed.MinX, transformed.MinY, transformed.MaxX, transformed.MaxY);
         }
         catch (NotSupportedException)
         {
@@ -62,10 +69,28 @@ internal static class OgcExtentTransformer
             var transformed = await transformService
                 .TransformExtentAsync(minX, minY, maxX, maxY, fromSrid, 4326, cancellationToken)
                 .ConfigureAwait(false);
-            return transformed.HasValue
-                ? (transformed.Value.MinX, transformed.Value.MinY, transformed.Value.MaxX, transformed.Value.MaxY)
+            return transformed is { } box
+                ? ExpandReprojectedCrs84(box.MinX, box.MinY, box.MaxX, box.MaxY)
                 : null;
         }
+    }
+
+    // Grows a geographic box that was produced by reprojecting a storage extent.
+    // A dateline-crossing box (minLon > maxLon) keeps its longitude edges; widening
+    // those would either unwrap it or swallow the complementary hemisphere.
+    internal static (double MinLon, double MinLat, double MaxLon, double MaxLat) ExpandReprojectedCrs84(
+        double minLon,
+        double minLat,
+        double maxLon,
+        double maxLat)
+    {
+        var margin = ReprojectedExtentMarginDegrees;
+        var crossesAntimeridian = minLon > maxLon;
+        var west = crossesAntimeridian ? minLon : Math.Max(-180d, minLon - margin);
+        var east = crossesAntimeridian ? maxLon : Math.Min(180d, maxLon + margin);
+        var south = Math.Max(-90d, minLat - margin);
+        var north = Math.Min(90d, maxLat + margin);
+        return (west, south, east, north);
     }
 
     private static bool IsWebMercatorSrid(int srid)

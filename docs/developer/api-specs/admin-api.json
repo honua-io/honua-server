@@ -220,7 +220,7 @@
     },
     {
       "name": "Tile Operations",
-      "description": "Asynchronous tile cache seed/warm/invalidate/purge/archive/publish jobs. Response payloads on this surface use PascalCase property names."
+      "description": "Asynchronous tile cache seed/warm/invalidate/purge/archive/publish jobs. Response payloads on this surface use camelCase property names."
     },
     {
       "name": "Field Mask Policies",
@@ -351,6 +351,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -2832,7 +2835,7 @@
           "Import"
         ],
         "summary": "Import a Geospatial File from Object Storage",
-        "description": "Imports one supported object from an allow-listed s3:// bucket using the host identity. The request carries no credentials. Large objects return a background job without an in-request download.",
+        "description": "Imports one supported object through an object storage connection. The key must lie under the connection prefix; raw s3:// sources are refused. Large objects return a background job without an in-request download.",
         "operationId": "uploadImportFileFromObjectStore",
         "requestBody": {
           "required": true,
@@ -3745,6 +3748,27 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "connectionId",
+            "in": "query",
+            "required": false,
+            "description": "Connection UUID; supply with storageLayerId to select services exposing that storage layer. Filtering happens before pagination.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "storageLayerId",
+            "in": "query",
+            "required": false,
+            "description": "Nonnegative storage layer ID; supply with connectionId. Both filters must have exactly one value.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
           }
         ],
         "responses": {
@@ -4114,6 +4138,16 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "description": "The extrusion block is invalid. The problem's `code` is the first stable EXTRUSION_* code; `detail` lists every code.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -13668,6 +13702,17 @@
             }
           },
           {
+            "name": "layerId",
+            "in": "query",
+            "required": false,
+            "deprecated": true,
+            "description": "Deprecated alias of serviceLayerIndex, accepted from published clients. When both are sent they must agree.",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
             "name": "destinationType",
             "in": "query",
             "required": false,
@@ -16267,6 +16312,106 @@
         }
       }
     },
+    "/forms/import": {
+      "post": {
+        "tags": [
+          "Forms"
+        ],
+        "summary": "Import Form From XLSForm",
+        "description": "Imports an XLSForm workbook (`survey`, `choices` and `settings` sheets) as a new Form Draft bound to the target service layer. Questions bind to the layer attribute of the same name; numeric questions become `integer` or `number` by that attribute type. Import never publishes. A workbook with an unsupported question type, structure or cell returns `400` with one diagnostic per blocking cell and creates no Draft. The action is audited as `forms.package.import_xlsform`.",
+        "operationId": "importFormXlsForm",
+        "parameters": [
+          {
+            "name": "serviceId",
+            "in": "query",
+            "required": true,
+            "description": "Target service identifier or name.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "layerId",
+            "in": "query",
+            "required": true,
+            "description": "Target layer identifier within the service.",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "XLSForm `.xlsx` workbook of at most 8388608 bytes."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Form Draft created from the workbook.",
+            "headers": {
+              "ETag": {
+                "description": "Concurrency token for the created Draft.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormsPackageVersion"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing target, unreadable upload, or workbook diagnostics. Workbook problems carry a `diagnostics` array; no Draft is created.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormsXlsFormProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "413": {
+            "description": "The workbook exceeds 8388608 bytes.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormsProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/forms/{formId}": {
       "get": {
         "tags": [
@@ -16316,6 +16461,62 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/forms/{formId}/export": {
+      "get": {
+        "tags": [
+          "Forms"
+        ],
+        "summary": "Export Form As XLSForm",
+        "description": "Exports the current Released Form Version as an XLSForm workbook. Drafts are not exported. Submit, attachment, privacy and offline policies are server configuration and are not part of the workbook. A Form whose fields carry behavior XLSForm cannot represent returns `422` with diagnostics instead of a workbook that omits it.",
+        "operationId": "exportFormXlsForm",
+        "parameters": [
+          {
+            "name": "formId",
+            "in": "path",
+            "required": true,
+            "description": "Stable Form identifier.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "XLSForm workbook for the current Released Version.",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "description": "The Released Version uses behavior XLSForm cannot represent; `diagnostics` names the survey row of each field.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormsXlsFormProblem"
+                }
+              }
+            }
           }
         }
       }
@@ -21429,7 +21630,7 @@
           "Tile Operations"
         ],
         "summary": "List Tile Operation Jobs",
-        "description": "Lists tile operation jobs. By default only active (queued/processing) jobs are returned; pass `activeOnly=false` to include completed, failed, and cancelled jobs. Response property names are PascalCase.",
+        "description": "Lists tile operation jobs. By default only active (queued/processing) jobs are returned; pass `activeOnly=false` to include completed, failed, and cancelled jobs. Response property names are camelCase.",
         "operationId": "listTileOperationJobs",
         "parameters": [
           {
@@ -21470,7 +21671,7 @@
           "Tile Operations"
         ],
         "summary": "Start Tile Operation Job",
-        "description": "Queues a tile operation for asynchronous execution and returns 202 with the job id and status/cancel URLs. `operation` is required; `seed`/`warm` require `layerId` or `serviceId`; `archive` and `publish` require `layerId`; `bbox`, when supplied, must contain exactly four values `[minLon, minLat, maxLon, maxLat]` and `minZoom` must not exceed `maxZoom`. Every operation is submitted as a TileCache execution job, run once by whichever node claims it, on the configured batch backend or the `local` job worker. Response property names are PascalCase.",
+        "description": "Queues a tile operation for asynchronous execution and returns 202 with the job id and status/cancel URLs. `operation` is required; `seed`/`warm` require `layerId` or `serviceId`; `archive` and `publish` require `layerId`; `bbox`, when supplied, must contain exactly four values `[minLon, minLat, maxLon, maxLat]` and `minZoom` must not exceed `maxZoom`. Every operation is submitted as a TileCache execution job, run once by whichever node claims it, on the configured batch backend or the `local` job worker. Response property names are camelCase.",
         "operationId": "startTileOperationJob",
         "requestBody": {
           "required": true,
@@ -21524,7 +21725,7 @@
           "Tile Operations"
         ],
         "summary": "Get Tile Operation Job Status",
-        "description": "Returns progress and status details for a tile operation job. Response property names are PascalCase and `Status` is the numeric `OperationStatus` value.",
+        "description": "Returns progress and status details for a tile operation job. Response property names are camelCase and `status` is the numeric `OperationStatus` value.",
         "operationId": "getTileOperationJob",
         "parameters": [
           {
@@ -24350,6 +24551,138 @@
           }
         }
       }
+    },
+    "/connections/object-storage/setup": {
+      "post": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "Start an Object Storage Connection",
+        "description": "Mints a single-use external id, bound to the caller, for the customer role that will grant Honua read-only access to one bucket prefix, with an optional CloudFormation quick-create link.",
+        "operationId": "createObjectStorageConnectionSetup",
+        "parameters": [
+          {
+            "name": "bucket",
+            "in": "query",
+            "required": true,
+            "description": "S3 bucket name",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "prefix",
+            "in": "query",
+            "required": false,
+            "description": "Key prefix",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Setup values",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseObjectStorageSetupResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "No object storage connection store on this host.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/connections/{id}/objects": {
+      "get": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "Browse Connection Objects",
+        "description": "Lists one folder level (delimiter '/') under an object storage connection, up to 200 entries, with each object's kind detected from its first bytes.",
+        "operationId": "listConnectionObjects",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Connection UUID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "prefix",
+            "in": "query",
+            "required": false,
+            "description": "Folder under the connection prefix; defaults to the connection prefix.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One folder level",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseObjectStorageBrowseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "description": "Object storage is not available on this host.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -24876,17 +25209,28 @@
       "ImportFileFromObjectStoreRequest": {
         "type": "object",
         "required": [
-          "sourceUri",
           "tableName"
         ],
         "properties": {
+          "connectionId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Object storage connection to read from."
+          },
+          "key": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "Object key; must lie under the connection prefix."
+          },
           "sourceUri": {
             "type": "string",
-            "description": "s3://bucket/key object to import. Credentials, queries, and fragments are rejected."
+            "deprecated": true,
+            "description": "Not accepted. Import through a connection with connectionId and key."
           },
           "assumeRoleArn": {
             "type": "string",
-            "description": "Optional allow-listed role ARN. The host assumes it with the configured external id. Omit to use the host identity."
+            "deprecated": true,
+            "description": "Not accepted. The connection carries its role."
           },
           "tableName": {
             "type": "string",
@@ -25930,6 +26274,30 @@
           "createdBy": {
             "type": "string",
             "description": "Creator identity"
+          },
+          "kind": {
+            "type": "string",
+            "description": "object-storage for S3 connections; omitted for database connections."
+          },
+          "bucket": {
+            "type": "string",
+            "description": "Object storage: bucket name."
+          },
+          "prefix": {
+            "type": "string",
+            "description": "Object storage: key prefix the connection is limited to."
+          },
+          "region": {
+            "type": "string",
+            "description": "Object storage: AWS region."
+          },
+          "roleArn": {
+            "type": "string",
+            "description": "Object storage: customer role assumed for reads; omitted for built-in connections."
+          },
+          "builtIn": {
+            "type": "boolean",
+            "description": "Object storage: true for the installation's own read-only data and public prefixes."
           }
         }
       },
@@ -26629,6 +26997,37 @@
             ],
             "default": "Require",
             "description": "SSL mode"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "database",
+              "object-storage"
+            ],
+            "description": "object-storage creates an S3 connection from bucket, prefix, region, roleArn and externalId; other fields are ignored."
+          },
+          "bucket": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 63,
+            "description": "Object storage: S3 bucket name."
+          },
+          "prefix": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "Object storage: key prefix the connection is limited to."
+          },
+          "region": {
+            "type": "string",
+            "description": "Object storage: AWS region of the bucket."
+          },
+          "roleArn": {
+            "type": "string",
+            "description": "Object storage: arn:aws:iam::<account>:role/honua-connection-*."
+          },
+          "externalId": {
+            "type": "string",
+            "description": "Object storage: the external id returned by the setup endpoint. Single use; it cannot be changed later."
           }
         }
       },
@@ -26702,6 +27101,12 @@
             "type": "integer",
             "format": "int32",
             "description": "Layer ID"
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
           },
           "layerName": {
             "type": "string",
@@ -26974,6 +27379,11 @@
             "type": "boolean",
             "default": false,
             "description": "Declares attachment support for the published resource. Does not enable editing."
+          },
+          "exactTypes": {
+            "type": "boolean",
+            "default": false,
+            "description": "Opt in to exact decimal and offset-timestamp field types. The primary key and temporal column stay on the default mapping."
           },
           "folderId": {
             "type": "string",
@@ -28188,6 +28598,20 @@
           "isActive": {
             "type": "boolean",
             "description": "Whether connection is active"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Object storage: new display name."
+          },
+          "region": {
+            "type": "string",
+            "description": "Object storage: AWS region of the bucket."
+          },
+          "roleArn": {
+            "type": "string",
+            "description": "Object storage: arn:aws:iam::<account>:role/honua-connection-*."
           }
         }
       },
@@ -28678,6 +29102,14 @@
             },
             "default": []
           },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "agent"
+            ],
+            "description": "Key type, lowercase. An `agent` key always carries the `agent` grant, which is added when missing. Omitted, the type follows the grants. An API key issued to an agent caller, or from a proposal an agent made, is always an agent key, and `standard` is refused for it."
+          },
           "expiresAt": {
             "type": "string",
             "format": "date-time",
@@ -28758,6 +29190,14 @@
           "keyPrefix": {
             "type": "string",
             "description": "Non-secret prefix used to recognize the key."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "agent"
+            ],
+            "description": "`agent` when the key carries the `agent` grant, otherwise `standard`."
           },
           "permissions": {
             "type": "array",
@@ -28862,6 +29302,14 @@
               "expired",
               "revoked"
             ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "agent"
+            ],
+            "description": "`agent` when the key carries the `agent` grant, otherwise `standard`."
           },
           "permissions": {
             "type": "array",
@@ -29243,6 +29691,12 @@
             "type": "integer",
             "format": "int32"
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of serviceLayerIndex. Published clients still read this name.",
+            "deprecated": true
+          },
           "layerName": {
             "type": "string"
           },
@@ -29277,6 +29731,9 @@
           },
           "editing": {
             "$ref": "#/components/schemas/MetadataV2ResourceEditing"
+          },
+          "extrusion": {
+            "$ref": "#/components/schemas/LayerExtrusion"
           }
         }
       },
@@ -29454,6 +29911,9 @@
           },
           "editing": {
             "$ref": "#/components/schemas/MetadataV2EditingPatch"
+          },
+          "extrusion": {
+            "$ref": "#/components/schemas/LayerExtrusion"
           }
         }
       },
@@ -39821,6 +40281,12 @@
             "format": "int32",
             "description": "Layer identifier."
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "document": {
             "allOf": [
               {
@@ -39882,6 +40348,12 @@
             "format": "int32",
             "description": "Global storage-layer id of the related resource, distinct from its service-local publication index. Returns -1 if no storage-layer handle exists."
           },
+          "relatedLayerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of relatedStorageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "role": {
             "type": "string",
             "description": "Relationship role, typically origin or destination."
@@ -39925,6 +40397,12 @@
             "format": "int32",
             "description": "Layer identifier."
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "relationships": {
             "type": "array",
             "description": "Persisted relationships.",
@@ -39960,7 +40438,6 @@
         "required": [
           "id",
           "name",
-          "relatedStorageLayerId",
           "originField",
           "destinationField"
         ],
@@ -39981,7 +40458,13 @@
           "relatedStorageLayerId": {
             "type": "integer",
             "format": "int32",
-            "description": "Global storage-layer id of the related resource, distinct from its service-local publication index."
+            "description": "Global storage-layer id of the related resource, distinct from its service-local publication index. Required, under this name or its deprecated alias relatedLayerId."
+          },
+          "relatedLayerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated input alias of relatedStorageLayerId, accepted from published clients. Send relatedStorageLayerId; when both are sent they must agree.",
+            "deprecated": true
           },
           "role": {
             "type": "string",
@@ -40129,6 +40612,12 @@
             "format": "int32",
             "description": "Layer identifier."
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "fields": {
             "type": "array",
             "description": "Field configurations in resource schema-field order.",
@@ -40238,6 +40727,12 @@
             "format": "int32",
             "description": "Layer identifier."
           },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
+          },
           "permanentFilter": {
             "allOf": [
               {
@@ -40329,6 +40824,12 @@
             "type": "integer",
             "format": "int32",
             "description": "Layer identifier."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
           },
           "layerName": {
             "type": "string",
@@ -43419,7 +43920,6 @@
         "description": "Create/replace payload for a scheduled Share export definition.",
         "required": [
           "serviceName",
-          "serviceLayerIndex",
           "destinationType",
           "format",
           "schedule"
@@ -43438,7 +43938,13 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0,
-            "description": "Service-local layer id. Must be zero or greater."
+            "description": "Service-local layer id. Must be zero or greater. Required, under this name or its deprecated alias layerId."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated input alias of serviceLayerIndex, accepted from published clients. Send serviceLayerIndex; when both are sent they must agree.",
+            "deprecated": true
           },
           "displayName": {
             "type": "string",
@@ -43498,6 +44004,12 @@
           "serviceLayerIndex": {
             "type": "integer",
             "format": "int32"
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of serviceLayerIndex. Published clients still read this name.",
+            "deprecated": true
           },
           "displayName": {
             "type": "string",
@@ -43670,6 +44182,12 @@
           "serviceLayerIndex": {
             "type": "integer",
             "format": "int32"
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated alias of serviceLayerIndex. Published clients still read this name.",
+            "deprecated": true
           }
         }
       },
@@ -45723,6 +46241,10 @@
             "nullable": true,
             "description": "Package description."
           },
+          "expressionLanguage": {
+            "type": "string",
+            "description": "Language of the field expressions, such as `xlsform` for imported workbooks. Validation and publish reject packages that carry expressions until an evaluation policy for the language is registered."
+          },
           "target": {
             "$ref": "#/components/schemas/FormsTargetDefinition"
           },
@@ -45883,6 +46405,22 @@
           },
           "visibility": {
             "$ref": "#/components/schemas/FormsConditionalRule"
+          },
+          "relevanceExpression": {
+            "type": "string",
+            "description": "Relevance expression in the package expression language; the field applies only when it evaluates true."
+          },
+          "constraintExpression": {
+            "type": "string",
+            "description": "Constraint expression in the package expression language; a value is accepted only when it evaluates true."
+          },
+          "constraintMessage": {
+            "type": "string",
+            "description": "Message reported when the constraint expression rejects a value."
+          },
+          "calculatedExpression": {
+            "type": "string",
+            "description": "Expression in the package expression language that computes the field value."
           }
         }
       },
@@ -50202,60 +50740,60 @@
       },
       "TileOperationStartResult": {
         "type": "object",
-        "description": "Response property names are PascalCase.",
+        "description": "Response property names are camelCase.",
         "properties": {
-          "JobId": {
+          "jobId": {
             "type": "string"
           },
-          "Message": {
+          "message": {
             "type": "string"
           },
-          "StatusUrl": {
+          "statusUrl": {
             "type": "string"
           },
-          "CancelUrl": {
+          "cancelUrl": {
             "type": "string"
           }
         }
       },
       "TileOperationCancelResult": {
         "type": "object",
-        "description": "Response property names are PascalCase.",
+        "description": "Response property names are camelCase.",
         "properties": {
-          "JobId": {
+          "jobId": {
             "type": "string"
           },
-          "Message": {
+          "message": {
             "type": "string"
           }
         }
       },
       "TileOperationRetryResult": {
         "type": "object",
-        "description": "Response property names are PascalCase.",
+        "description": "Response property names are camelCase.",
         "properties": {
-          "OriginalJobId": {
+          "originalJobId": {
             "type": "string"
           },
-          "RetryJobId": {
+          "retryJobId": {
             "type": "string"
           },
-          "StatusUrl": {
+          "statusUrl": {
             "type": "string"
           }
         }
       },
       "TileOperationListResult": {
         "type": "object",
-        "description": "Response property names are PascalCase.",
+        "description": "Response property names are camelCase.",
         "properties": {
-          "Jobs": {
+          "jobs": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TileOperationProgressView"
             }
           },
-          "TotalCount": {
+          "totalCount": {
             "type": "integer",
             "format": "int32"
           }
@@ -50263,28 +50801,28 @@
       },
       "TileOperationProgressView": {
         "type": "object",
-        "description": "Progress record for an asynchronous tile lifecycle operation. Property names are PascalCase.",
+        "description": "Progress record for an asynchronous tile lifecycle operation. Property names are camelCase.",
         "properties": {
-          "JobId": {
+          "jobId": {
             "type": "string"
           },
-          "Operation": {
+          "operation": {
             "type": "string"
           },
-          "ServiceId": {
+          "serviceId": {
             "type": "string",
             "nullable": true
           },
-          "LayerId": {
+          "layerId": {
             "type": "integer",
             "format": "int32",
             "nullable": true
           },
-          "TileMatrixSetId": {
+          "tileMatrixSetId": {
             "type": "string",
             "nullable": true
           },
-          "Status": {
+          "status": {
             "type": "integer",
             "format": "int32",
             "enum": [
@@ -50296,75 +50834,75 @@
             ],
             "description": "Numeric OperationStatus: 0 Queued, 1 Processing, 2 Completed, 3 Failed, 4 Cancelled."
           },
-          "TotalTiles": {
+          "totalTiles": {
             "type": "integer",
             "format": "int64"
           },
-          "ProcessedTiles": {
+          "processedTiles": {
             "type": "integer",
             "format": "int64"
           },
-          "SuccessfulTiles": {
+          "successfulTiles": {
             "type": "integer",
             "format": "int64"
           },
-          "FailedTiles": {
+          "failedTiles": {
             "type": "integer",
             "format": "int64"
           },
-          "ArchiveSizeBytes": {
+          "archiveSizeBytes": {
             "type": "integer",
             "format": "int64"
           },
-          "ArchiveFileId": {
+          "archiveFileId": {
             "type": "string",
             "nullable": true
           },
-          "TileCompression": {
+          "tileCompression": {
             "type": "string",
             "nullable": true,
             "description": "Tile compression written to the PMTiles header (`none` or `gzip`) for archive and publish jobs; null for other operations."
           },
-          "DownloadUrl": {
+          "downloadUrl": {
             "type": "string",
             "nullable": true
           },
-          "PublishedArtifact": {
+          "publishedArtifact": {
             "$ref": "#/components/schemas/TileOpsPublishedArtifact"
           },
-          "PublishedPublication": {
+          "publishedPublication": {
             "$ref": "#/components/schemas/TileOpsPublishedPublication"
           },
-          "StartedAt": {
+          "startedAt": {
             "type": "string",
             "format": "date-time"
           },
-          "CompletedAt": {
+          "completedAt": {
             "type": "string",
             "format": "date-time",
             "nullable": true
           },
-          "ErrorMessage": {
+          "errorMessage": {
             "type": "string",
             "nullable": true
           },
-          "Warnings": {
+          "warnings": {
             "type": "array",
             "items": {
               "type": "string"
             }
           },
-          "CurrentPhase": {
+          "currentPhase": {
             "type": "string",
             "nullable": true
           },
-          "PercentComplete": {
+          "percentComplete": {
             "type": "number",
             "format": "double",
             "nullable": true,
             "description": "Computed completion percentage; null while the total tile count is unknown."
           },
-          "Duration": {
+          "duration": {
             "type": "string",
             "description": "Elapsed time serialized as a .NET TimeSpan string (for example `00:01:23.4560000`)."
           }
@@ -50373,23 +50911,23 @@
       "TileOpsPublishedPublication": {
         "type": "object",
         "nullable": true,
-        "description": "The version a completed `paired-publish` activated. Property names are PascalCase.",
+        "description": "The version a completed `paired-publish` activated. Property names are camelCase.",
         "properties": {
-          "PublicationId": {
+          "publicationId": {
             "type": "string"
           },
-          "Version": {
+          "version": {
             "type": "string"
           },
-          "CaptureId": {
+          "captureId": {
             "type": "string",
             "description": "Embedded in both artifacts' metadata as `honua:captureId`."
           },
-          "DescriptorKey": {
+          "descriptorKey": {
             "type": "string",
-            "description": "Storage key of the version's publication descriptor (publication-descriptor v1)."
+            "description": "Storage key of the version's STAC collection document (collection.json)."
           },
-          "PointerKey": {
+          "pointerKey": {
             "type": "string",
             "description": "Storage key of the publication's current-version pointer."
           }
@@ -50398,57 +50936,65 @@
       "TileOpsPublishedArtifact": {
         "type": "object",
         "nullable": true,
-        "description": "PMTiles artifact descriptor emitted by a `publish` operation. Property names are PascalCase.",
+        "description": "PMTiles artifact descriptor emitted by a `publish` operation. Property names are camelCase.",
         "properties": {
-          "ArtifactId": {
+          "artifactId": {
             "type": "string"
           },
-          "StorageProvider": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Numeric CloudStorageProvider value."
+          "storageProvider": {
+            "type": "string",
+            "enum": [
+              "Local",
+              "AwsS3",
+              "AzureBlob"
+            ],
+            "description": "CloudStorageProvider name."
           },
-          "Bucket": {
+          "bucket": {
             "type": "string"
           },
-          "ObjectKey": {
+          "objectKey": {
             "type": "string"
           },
-          "ContentType": {
+          "contentType": {
             "type": "string",
             "example": "application/vnd.pmtiles"
           },
-          "SizeBytes": {
+          "sizeBytes": {
             "type": "integer",
             "format": "int64"
           },
-          "UrlStrategy": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Numeric PMTilesUrlStrategy value (public URL, signed URL, or range proxy)."
+          "urlStrategy": {
+            "type": "string",
+            "enum": [
+              "PublicUrl",
+              "SignedUrl",
+              "RangeProxy"
+            ],
+            "description": "PMTilesUrlStrategy name."
           },
-          "AccessUrl": {
+          "accessUrl": {
             "type": "string",
             "description": "Absolute public/presigned URL, or the root-relative `/api/v1/tiles/pmtiles/{artifactId}` proxy path."
           },
-          "AccessUrlExpiresAt": {
+          "accessUrlExpiresAt": {
             "type": "string",
             "format": "date-time",
             "nullable": true
           },
-          "PublishedAt": {
+          "publishedAt": {
             "type": "string",
             "format": "date-time"
           },
-          "MinZoom": {
+          "minZoom": {
             "type": "integer",
             "format": "int32"
           },
-          "MaxZoom": {
+          "maxZoom": {
             "type": "integer",
             "format": "int32"
           },
-          "Bounds": {
+          "bounds": {
             "type": "array",
             "nullable": true,
             "items": {
@@ -50457,12 +51003,12 @@
             },
             "description": "WGS84 bounding box as [west, south, east, north]."
           },
-          "LayerId": {
+          "layerId": {
             "type": "integer",
             "format": "int32",
             "nullable": true
           },
-          "ServiceId": {
+          "serviceId": {
             "type": "string",
             "nullable": true
           }
@@ -50518,6 +51064,11 @@
               "type": "string"
             },
             "description": "Attribute fields to publish. Empty means all discovered columns."
+          },
+          "exactTypes": {
+            "type": "boolean",
+            "default": false,
+            "description": "Preview the exact decimal and offset-timestamp field types."
           }
         }
       },
@@ -50714,9 +51265,16 @@
       "LayerExtentRefreshLayerSummary": {
         "type": "object",
         "properties": {
+          "storageLayerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Layer ID"
+          },
           "layerId": {
             "type": "integer",
-            "format": "int32"
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
           },
           "layerName": {
             "type": "string"
@@ -50753,9 +51311,16 @@
       "MaterializedFeatureRefreshSummary": {
         "type": "object",
         "properties": {
+          "storageLayerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Layer ID"
+          },
           "layerId": {
             "type": "integer",
-            "format": "int32"
+            "format": "int32",
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
           },
           "layerName": {
             "type": "string"
@@ -50944,6 +51509,20 @@
             ],
             "description": "Normalized comparison applied between the attribute and the claim value(s)."
           },
+          "filterExpression": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Additional CQL2 text predicate combined with the claim constraint."
+          },
+          "areaGeometry": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 65536,
+            "description": "WGS84 GeoJSON polygon or multipolygon text constraining readable geometry."
+          },
           "description": {
             "type": "string",
             "nullable": true
@@ -51001,6 +51580,20 @@
             "nullable": true,
             "maxLength": 16,
             "description": "Accepts `in` (default when omitted or blank), `equals`, `eq`, or `=`. Any other value returns 400."
+          },
+          "filterExpression": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Additional CQL2 text predicate combined with the claim constraint."
+          },
+          "areaGeometry": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 65536,
+            "description": "WGS84 GeoJSON polygon or multipolygon text constraining readable geometry."
           },
           "description": {
             "type": "string",
@@ -51788,6 +52381,7 @@
       "MetadataV2EditingPatch": {
         "type": "object",
         "nullable": true,
+        "additionalProperties": false,
         "properties": {
           "globalIdField": {
             "type": "string",
@@ -51813,6 +52407,26 @@
             "type": "boolean",
             "nullable": true,
             "description": "Delete policy for the selected publication; null preserves it."
+          },
+          "creatorField": {
+            "type": "string",
+            "nullable": true,
+            "description": "String field that records the creating user; null preserves it and an empty string clears it."
+          },
+          "createdAtField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Date, DateTime, String, BigInteger or Double field that records the creation time; null preserves it and an empty string clears it."
+          },
+          "editorField": {
+            "type": "string",
+            "nullable": true,
+            "description": "String field that records the last editing user; null preserves it and an empty string clears it."
+          },
+          "updatedAtField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Date, DateTime, String, BigInteger or Double field that records the last edit time; null preserves it and an empty string clears it."
           }
         }
       },
@@ -51904,14 +52518,18 @@
       },
       "LayerRelationshipBatchUpdateItem": {
         "type": "object",
-        "required": [
-          "storageLayerId"
-        ],
         "description": "Complete desired relationship set for one global storage-layer id.",
         "properties": {
           "storageLayerId": {
             "type": "integer",
-            "format": "int32"
+            "format": "int32",
+            "description": "Required, under this name or its deprecated alias layerId."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deprecated input alias of storageLayerId, accepted from published clients. Send storageLayerId; when both are sent they must agree.",
+            "deprecated": true
           },
           "relationships": {
             "type": "array",
@@ -52036,7 +52654,14 @@
             "type": "integer",
             "format": "int32",
             "nullable": true,
-            "description": "Published layer identifier after the transaction commits."
+            "description": "Published layer identifier after the transaction commits. Null on a Failed job."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "description": "Deprecated alias of storageLayerId. Published clients still read this name.",
+            "deprecated": true
           },
           "errorMessage": {
             "type": "string",
@@ -54030,6 +54655,230 @@
           "timestamp": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "FormsXlsFormDiagnostic": {
+        "type": "object",
+        "description": "One workbook cell that blocks an XLSForm import or export.",
+        "properties": {
+          "sheet": {
+            "type": "string",
+            "description": "Worksheet name: `survey`, `choices`, `settings`, or `workbook` for archive-level problems."
+          },
+          "row": {
+            "type": "integer",
+            "description": "One-based spreadsheet row number, counting the header row."
+          },
+          "column": {
+            "type": "string",
+            "description": "XLSForm column name, such as `type` or `name`."
+          },
+          "message": {
+            "type": "string",
+            "description": "Why the cell cannot be converted."
+          }
+        }
+      },
+      "FormsXlsFormProblem": {
+        "type": "object",
+        "description": "Problem document that lists every workbook cell blocking an XLSForm import or export.",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Problem type URI."
+          },
+          "title": {
+            "type": "string",
+            "description": "Short problem title."
+          },
+          "status": {
+            "type": "integer",
+            "description": "HTTP status code."
+          },
+          "detail": {
+            "type": "string",
+            "description": "Human-readable explanation."
+          },
+          "instance": {
+            "type": "string",
+            "description": "Request path the problem occurred on."
+          },
+          "correlationId": {
+            "type": "string",
+            "description": "Request correlation identifier."
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FormsXlsFormDiagnostic"
+            }
+          }
+        }
+      },
+      "ObjectStorageSetupResponse": {
+        "type": "object",
+        "required": [
+          "externalId",
+          "roleNamePrefix"
+        ],
+        "properties": {
+          "externalId": {
+            "type": "string",
+            "description": "Single-use external id for the customer role trust policy. Expires after 24 hours unless used by create."
+          },
+          "quickCreateUrl": {
+            "type": "string",
+            "nullable": true,
+            "description": "CloudFormation quick-create link for the read-only role, when a template URL is configured."
+          },
+          "roleNamePrefix": {
+            "type": "string",
+            "description": "Required name prefix of the customer role.",
+            "example": "honua-connection-"
+          }
+        }
+      },
+      "ApiResponseObjectStorageSetupResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ObjectStorageSetupResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ObjectStorageObject": {
+        "type": "object",
+        "required": [
+          "key",
+          "kind"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cog",
+              "geotiff",
+              "pmtiles",
+              "geoparquet",
+              "other"
+            ],
+            "description": "Detected from the first bytes of the object."
+          },
+          "lastModified": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "ObjectStorageBrowseResponse": {
+        "type": "object",
+        "required": [
+          "bucket",
+          "prefix",
+          "folders",
+          "objects",
+          "truncated"
+        ],
+        "properties": {
+          "bucket": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "folders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "objects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ObjectStorageObject"
+            }
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the folder holds more than one page (200 entries)."
+          }
+        }
+      },
+      "ApiResponseObjectStorageBrowseResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ObjectStorageBrowseResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "LayerExtrusion": {
+        "type": "object",
+        "nullable": true,
+        "description": "3D extrusion for scene generation and FeatureServer extrusionInfo. An invalid block is rejected with 422 and stable EXTRUSION_* codes.",
+        "required": [
+          "heightField"
+        ],
+        "properties": {
+          "heightField": {
+            "type": "string",
+            "description": "Numeric field holding the feature height."
+          },
+          "baseHeightField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional numeric field holding the base elevation."
+          },
+          "unit": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "meters",
+              "feet",
+              "usSurveyFeet"
+            ],
+            "description": "Vertical unit; defaults to meters."
+          },
+          "defaultHeight": {
+            "type": "number",
+            "format": "double",
+            "nullable": true,
+            "minimum": 0,
+            "description": "Height used when the height field is null."
+          },
+          "materialHint": {
+            "type": "string",
+            "nullable": true
           }
         }
       }

@@ -45,6 +45,8 @@ public class DataConnection
 
     public string CreatedBy { get; set; } = string.Empty;
 
+    public string? TenantId { get; set; }
+
     public bool SslRequired { get; set; }
 
     public SslMode SslMode { get; set; }

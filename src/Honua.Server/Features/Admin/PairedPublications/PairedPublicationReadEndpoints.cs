@@ -5,6 +5,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Publishing.Descriptors;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
@@ -39,7 +40,7 @@ internal static class PairedPublicationReadEndpoints
         var target = await reader.ResolveCurrentAsync(publicationId, cancellationToken).ConfigureAwait(false);
         var error = await RequireAccessAsync(context, target, cancellationToken).ConfigureAwait(false);
         return error ?? Results.Redirect(
-            $"{context.Request.PathBase}/api/v1/publications/{publicationId}/{target!.Descriptor.Version}/descriptor.json",
+            $"{context.Request.PathBase}/api/v1/publications/{publicationId}/{target!.Descriptor.Version}/{ExportCollectionDocument.FileName}",
             permanent: false, preserveMethod: true);
     }
 

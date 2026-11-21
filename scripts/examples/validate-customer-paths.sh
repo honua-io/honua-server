@@ -56,12 +56,14 @@ run_gp_local_dev() {
     return 2
   fi
   local project="honua-examples-gp-$$" http grpc postgres
+  local admin_key
+  admin_key="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
   http="$(python3 "$OWNED_SERVER" port --variable HONUA_EXAMPLES_GP_HTTP_PORT --ci-default 18084)"
   grpc="$(python3 "$OWNED_SERVER" port --variable HONUA_EXAMPLES_GP_GRPC_PORT --ci-default 18085)"
   postgres="$(python3 "$OWNED_SERVER" port --variable HONUA_EXAMPLES_GP_POSTGRES_PORT --ci-default 55434)"
   compose() {
     COMPOSE_PROJECT_NAME="${project}" HONUA_HTTP_PORT="$http" HONUA_GRPC_PORT="$grpc" POSTGRES_PORT="$postgres" \
-      docker compose -f "${ROOT_DIR}/docker/compose/docker-compose.gp-dev.yml" --project-directory "${ROOT_DIR}" "$@"
+      HONUA_ADMIN_PASSWORD="${admin_key}" docker compose -f "${ROOT_DIR}/docker/compose/docker-compose.gp-dev.yml" --project-directory "${ROOT_DIR}" "$@"
   }
   trap 'compose down --remove-orphans --volumes >/dev/null 2>&1 || true' RETURN
   if [[ -n "${CANDIDATE_IMAGE}" ]]; then
@@ -72,7 +74,7 @@ run_gp_local_dev() {
   python3 "$OWNED_SERVER" wait --container "$(compose ps -q honua)" --container-port 8080 \
     --url "http://127.0.0.1:$http/healthz/ready" --body Ready --timeout 180
   mkdir -p "$(dirname "${output}")"
-  BASE="http://127.0.0.1:$http" bash "${sample_root}/samples/gp-local-dev/submit-buffer.sh" \
+  BASE="http://127.0.0.1:$http" KEY="${admin_key}" bash "${sample_root}/samples/gp-local-dev/submit-buffer.sh" \
     | tee "${output}"
   grep -q 'successful' "${output}"
 }

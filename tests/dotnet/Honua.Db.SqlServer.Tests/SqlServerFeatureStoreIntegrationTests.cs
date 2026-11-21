@@ -63,7 +63,7 @@ public sealed class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
             options,
             NullLogger<SqlServerFeatureDataAccess>.Instance);
 
-        var provider = new SqlServerFeatureStore(dataAccess);
+        var provider = new SqlServerFeatureStore(dataAccess, v2Provider: null, new LayerReadSecurityResolver(null, null, null, null));
         var binding = CreateBinding(provider, _tableName);
         _store = ((IBindableFeatureDataProvider)provider).CreateReaderForBinding(binding);
     }

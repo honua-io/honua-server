@@ -90,14 +90,18 @@ internal static partial class MapServerEndpoints
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
                 .CreateLogger("Honua.Server.MapServerEndpoints");
-            var timeInfos = await Task.WhenAll(visibleLayers.Select(layer =>
-                BuildTimeInfoSafeAsync(
-                    layer.Resource,
-                    layer.Publication,
-                    snapshot,
-                    featureReader,
-                    logger,
-                    cancellationToken))).ConfigureAwait(false);
+            // A layer's time extent over a hidden or masked field is left out of the service extent.
+            var timeInfos = await Task.WhenAll(visibleLayers.Select(async layer =>
+                GeoServicesWithheldFields.WithoutWithheldTimeFields(
+                    await GeoServicesWithheldFields.HideMaskedFieldsAsync(context, layer.Resource, cancellationToken)
+                        .ConfigureAwait(false),
+                    await BuildTimeInfoSafeAsync(
+                        layer.Resource,
+                        layer.Publication,
+                        snapshot,
+                        featureReader,
+                        logger,
+                        cancellationToken).ConfigureAwait(false)))).ConfigureAwait(false);
             var transformService = context.RequestServices.GetRequiredService<ICoordinateTransformService>();
             var serviceExtent = await ResolveCachedServiceExtentAsync(
                 service,
@@ -190,17 +194,19 @@ internal static partial class MapServerEndpoints
 
             var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var drawingInfo = ResolveMapServerDrawingInfo(resource, snapshot);
+            var schemaResource = await GeoServicesWithheldFields.HideMaskedFieldsAsync(
+                context, resource, cancellationToken).ConfigureAwait(false);
+            var drawingInfo = ResolveVisibleMapServerDrawingInfo(resource, schemaResource, snapshot);
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
                 .CreateLogger("Honua.Server.MapServerEndpoints");
-            var timeInfo = await BuildTimeInfoSafeAsync(
+            var timeInfo = GeoServicesWithheldFields.WithoutWithheldTimeFields(schemaResource, await BuildTimeInfoSafeAsync(
                 resource,
                 publication,
                 snapshot,
                 featureReader,
                 logger,
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false));
 
             var mapExtent = await ResolveCachedExtentAsync(
                 service, [resource],
@@ -209,7 +215,7 @@ internal static partial class MapServerEndpoints
             var response = MapLayerToMapServerLayerResponse(
                 service,
                 publication,
-                resource,
+                schemaResource,
                 snapshot,
                 limitsOptions.Query.MaxRecordCount,
                 mapExtent,
@@ -466,7 +472,7 @@ internal static partial class MapServerEndpoints
             ObjectIdField = objectIdField,
             Fields =
             [
-                .. resource.SchemaFields.Select(field => MapFieldInfoV2(field, objectIdField)),
+                .. resource.VisibleSchemaFields().Select(field => MapFieldInfoV2(field, objectIdField)),
                 .. extraFields ?? [],
             ],
             Capabilities = layerCapabilities,
@@ -767,6 +773,13 @@ internal static partial class MapServerEndpoints
 
         return string.Join(',', capabilities.Distinct(StringComparer.OrdinalIgnoreCase));
     }
+
+    // A saved renderer that names a hidden or masked field is not served, as the field is not listed.
+    private static JsonElement? ResolveVisibleMapServerDrawingInfo(
+        MetadataV2Object resource,
+        MetadataV2Object schemaResource,
+        MetadataV2GraphSnapshot snapshot)
+        => GeoServicesWithheldFields.WithoutWithheldReferences(ResolveMapServerDrawingInfo(resource, snapshot), schemaResource);
 
     private static JsonElement? ResolveMapServerDrawingInfo(
         MetadataV2Object resource,

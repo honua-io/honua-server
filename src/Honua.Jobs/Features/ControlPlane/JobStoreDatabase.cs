@@ -23,6 +23,9 @@ internal sealed class JobStoreDatabase(NpgsqlDataSource dataSource, string? sche
     private readonly string _quotedSchema = QuoteIdentifier(
         string.IsNullOrWhiteSpace(schemaName) ? DefaultSchemaName : schemaName);
 
+    // Applied to credential-bearing parameters whenever an execution record is written or read.
+    public IExecutionJobSecretProtector Secrets { get; init; } = UnprotectedExecutionJobSecrets.Instance;
+
     public string Table(string tableName) => $"{_quotedSchema}.{tableName}";
 
     internal static string QuoteIdentifier(string identifier)

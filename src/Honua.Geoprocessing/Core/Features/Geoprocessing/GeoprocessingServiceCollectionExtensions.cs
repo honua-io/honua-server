@@ -117,6 +117,7 @@ internal static class GeoprocessingServiceCollectionExtensions
         // principal over a fresh scope rather than denied outright.
         services.AddHttpContextAccessor();
         services.TryAddSingleton<GeoprocessingLayerAccessGuard>();
+        services.TryAddSingleton<GeoprocessApprovalServices>();
         services.TryAddSingleton<GeoprocessingJobDispatcher>();
         services.TryAddSingleton<CustomCodeJobSubmissionGate>();
         services.TryAddSingleton<ICustomCodeArtifactIngestor, CustomCodeArtifactIngestor>();

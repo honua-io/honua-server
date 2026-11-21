@@ -119,14 +119,27 @@ public static partial class GeoParquetFeatureWriter
         _ = ResolveGeoParquetCrsProjJson(includeGeometry, srid);
         EnsureSupportedCloudNativeGeometryMeasures(includeGeometry, returnM, "GeoParquet");
 
-        var batches = PlanBatches(features, encodingLimits);
+        // Admit the page before Hilbert decoding so an over-budget result is refused as a limit,
+        // including when its WKB would not decode. Windows are planned again after the sort.
+        _ = PlanBatches(features, encodingLimits);
+        if (encodingLimits.OrderByBboxHilbert && includeGeometry && features.Length > 1)
+        {
+            features = OrderByBboxCenterHilbert(features, new HilbertPass
+            {
+                Srid = srid,
+                GeometryLimits = geometryLimits,
+                ReturnZ = returnZ,
+                ReturnM = returnM,
+                Logger = logger,
+            });
+        }
         if (features.Length == 0)
         {
             return CreateEmptyGeoParquet(resource, objectIdFieldName, returnGeometry, outFields, outputSrid, encodingLimits, fileMetadata);
         }
 
         var runtimeFields = DetectRuntimeFields(features, resource);
-        batches = PlanBatches(features, encodingLimits, resource.SchemaFields.Count + runtimeFields.Count + 6);
+        var batches = PlanBatches(features, encodingLimits, resource.SchemaFields.Count + runtimeFields.Count + 6);
         // A small type set is all the metadata pass retains. Encoding each batch later keeps
         // Arrow buffers bounded while still describing types found in the final batch.
         var geometryTypes = new HashSet<string>(StringComparer.Ordinal);
@@ -156,7 +169,12 @@ public static partial class GeoParquetFeatureWriter
         var (schema, fieldsToInclude, resolvedObjectIdFieldName, geometryColumnName, bboxColumnName) = BuildSchema(
             resource, objectIdFieldName, returnGeometry, outFields, outputSrid,
             runtimeFields, geometryTypes, includeCovering: includeCovering);
-        schema = WithFileMetadata(schema, fileMetadata);
+        schema = DocumentedSchema(schema, new ArtifactNotes
+        {
+            FileMetadata = fileMetadata,
+            Limits = encodingLimits,
+            RowOrder = encodingLimits.OrderByBboxHilbert && includeGeometry ? HilbertBboxCenterOrder : SourceOrder,
+        });
 
         return (WriteArrowParquet(schema, writer =>
         {
@@ -179,8 +197,16 @@ public static partial class GeoParquetFeatureWriter
                 var arrays = BuildArrays(batchFeatures, schema, returnGeometry, geometryArray,
                     bboxArray, resolvedObjectIdFieldName, fieldsToInclude, geometryColumnName, bboxColumnName, logger);
                 using var recordBatch = new RecordBatch(schema, arrays, count);
-                // This API flushes a new row group for each batch; do not use the buffered API.
-                writer.WriteRecordBatch(recordBatch, encodingLimits.MaxRowsPerBatch);
+                if (encodingLimits.RowsPerRowGroup is null)
+                {
+                    // One row group per response batch. Artifact row groups use the buffered API
+                    // so several batches share a group sized by RowsPerRowGroup.
+                    writer.WriteRecordBatch(recordBatch, encodingLimits.MaxRowsPerBatch);
+                }
+                else
+                {
+                    writer.WriteBufferedRecordBatch(recordBatch);
+                }
             }
         }, encodingLimits), ContentType);
     }
@@ -197,62 +223,26 @@ public static partial class GeoParquetFeatureWriter
         BoundedParquetStream stream;
         try
         {
-            stream = new BoundedParquetStream(limits.MaxResponseBytes);
+            stream = new BoundedParquetStream(checked((int)OutputByteCap(limits)));
         }
         catch (IOException ex) when (IsStorageFull(ex))
         {
             throw new ServiceUnavailableException(ScratchFullClientMessage, ScratchFullRetryAfterSeconds);
         }
 
-        return WriteArrowParquet(schema, writeBatches, stream);
+        return WriteEncoded(new ArrowEncode
+        {
+            Schema = schema,
+            WriteBatches = writeBatches,
+            Stream = stream,
+            Limits = limits,
+        });
     }
 
     // Encodes into a caller-supplied spool. A refused budget becomes 413, a full scratch
     // volume becomes a retryable 503, and the spool is disposed on every failure.
     internal static BoundedParquetStream WriteArrowParquet(Schema schema, Action<FileWriter>? writeBatches, BoundedParquetStream stream)
-    {
-        try
-        {
-            EncodeArrowParquet(schema, writeBatches, stream);
-            stream.Position = 0;
-            return stream;
-        }
-        catch (Exception) when (stream.LimitExceeded)
-        {
-            // The native callback can wrap a managed Stream exception. Keep the shared
-            // budget contract even when the refusal occurs while writing the footer.
-            stream.Dispose();
-            throw new GeoParquetLimitExceededException();
-        }
-        catch (Exception ex) when (stream.StorageFull || IsStorageFull(ex))
-        {
-            stream.Dispose();
-            throw new ServiceUnavailableException(ScratchFullClientMessage, ScratchFullRetryAfterSeconds);
-        }
-        catch (Exception ex) when (ParquetRuntimeUnavailableException.IsNativeLoadFailure(ex))
-        {
-            stream.Dispose();
-            throw new ParquetRuntimeUnavailableException(ex);
-        }
-        catch
-        {
-            stream.Dispose();
-            throw;
-        }
-    }
-
-    private static void EncodeArrowParquet(Schema schema, Action<FileWriter>? writeBatches, BoundedParquetStream stream)
-    {
-        // Construct and dispose the builder itself explicitly (rather than chaining off
-        // the fluent StoreSchema() return value) so the builder instance is always
-        // disposed even if StoreSchema() were ever changed to return a different object.
-        using var arrowWriterPropertiesBuilder = new ArrowWriterPropertiesBuilder();
-        arrowWriterPropertiesBuilder.StoreSchema();
-        using var arrowWriterProperties = arrowWriterPropertiesBuilder.Build();
-        using var writer = new FileWriter(stream, schema, null, arrowWriterProperties, true);
-        writeBatches?.Invoke(writer);
-        writer.Close();
-    }
+        => WriteEncoded(new ArrowEncode { Schema = schema, WriteBatches = writeBatches, Stream = stream });
 
     public static List<MetadataV2Field> ResolveSelectedFields(
         MetadataV2Object resource,
@@ -303,7 +293,15 @@ public static partial class GeoParquetFeatureWriter
         var (schema, _, _, _, _) = BuildSchema(
             resource, objectIdFieldName, returnGeometry, outFields, outputSrid, isEmpty: true);
 
-        return (WriteArrowParquet(WithFileMetadata(schema, fileMetadata), writeBatches: null, encodingLimits), ContentType);
+        var includeGeometry = returnGeometry && resource.HasGeometry();
+        return (WriteArrowParquet(
+            DocumentedSchema(schema, new ArtifactNotes
+            {
+                FileMetadata = fileMetadata,
+                Limits = encodingLimits,
+                RowOrder = encodingLimits.OrderByBboxHilbert && includeGeometry ? HilbertBboxCenterOrder : SourceOrder,
+            }),
+            writeBatches: null, encodingLimits), ContentType);
     }
 
     private static Schema WithFileMetadata(Schema schema, IReadOnlyDictionary<string, string>? fileMetadata)
@@ -643,9 +641,10 @@ public static partial class GeoParquetFeatureWriter
             MetadataV2FieldType.Integer => "INTEGER",
             MetadataV2FieldType.BigInteger => "BIGINT",
             MetadataV2FieldType.Double => "DOUBLE PRECISION",
+            MetadataV2FieldType.Decimal => "NUMERIC",
             MetadataV2FieldType.Float => "REAL",
             MetadataV2FieldType.Boolean => "BOOLEAN",
-            MetadataV2FieldType.DateTime => "TIMESTAMP WITH TIME ZONE",
+            MetadataV2FieldType.DateTime or MetadataV2FieldType.TimestampOffset => "TIMESTAMP WITH TIME ZONE",
             MetadataV2FieldType.Date => "DATE",
             MetadataV2FieldType.Time => "TIME",
             MetadataV2FieldType.Json => "JSONB",
@@ -1064,7 +1063,7 @@ public static partial class GeoParquetFeatureWriter
     private static DoubleArray BuildDoubleAttributeArray(ImmutableArray<Feature> features, string fieldName, ILogger? logger = null)
     {
         var builder = new DoubleArray.Builder();
-        ForEachAttribute(features, fieldName, v => builder.Append(Convert.ToDouble(v)), () => builder.AppendNull(), logger);
+        ForEachAttribute(features, fieldName, v => builder.Append(Convert.ToDouble(v, CultureInfo.InvariantCulture)), () => builder.AppendNull(), logger);
         return builder.Build();
     }
 

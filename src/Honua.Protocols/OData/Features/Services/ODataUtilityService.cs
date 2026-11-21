@@ -500,6 +500,31 @@ internal static class ODataUtilityService
         return payload;
     }
 
+    // Builds the payload straight from the stored attributes, normalizing each value as
+    // ODataAttributeSerializer.Serialize does, without the intermediate copy.
+    public static Dictionary<string, object?> BuildFeaturePayload(
+        int layerId,
+        Feature feature,
+        ODataSpatialGeometry? geometry)
+    {
+        var payload = new Dictionary<string, object?>(feature.Attributes.Count + 3, StringComparer.OrdinalIgnoreCase)
+        {
+            ["ObjectId"] = feature.Id,
+            ["LayerId"] = layerId,
+            ["Geometry"] = geometry
+        };
+
+        foreach (var (key, value) in feature.Attributes)
+        {
+            if (!IsReservedFeatureProperty(key))
+            {
+                payload[key] = ODataAttributeSerializer.NormalizeODataValue(value);
+            }
+        }
+
+        return payload;
+    }
+
     public static Dictionary<string, object?> BuildLayerPayload(
         MetadataV2Object resource,
         int layerIndex)

@@ -72,4 +72,11 @@ internal sealed class GdalWorkerOptions
 
     [Range(1L, long.MaxValue, ErrorMessage = "MaxKrigingPredictionWork must be a positive evaluation count")]
     public long MaxKrigingPredictionWork { get; set; } = 250_000_000L;
+
+    [Range(1L, long.MaxValue, ErrorMessage = "MaxPointCloudPoints must be a positive point count")]
+    public long MaxPointCloudPoints { get; set; } = 10_000_000L;
+
+    public string? LocalCoverageRoot { get; set; }
+
+    public IList<string> AllowedCoverageBuckets { get; set; } = new List<string>();
 }

@@ -25,7 +25,7 @@ internal static partial class GPServerEndpoints
 {
     private const string RouteBase = "/rest/services/{serviceId}/GPServer";
     private const string ProtocolName = "GPServer";
-    private static readonly string[] SpatialReferenceParameterKeys = ["srid", "toSrid", "targetSrid", "outSr"];
+    private static readonly string[] SpatialReferenceParameterKeys = ["toSrid", "targetSrid", "outSr", "srid"];
     private static readonly HashSet<string> FormContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "application/x-www-form-urlencoded",
@@ -1606,7 +1606,7 @@ internal static partial class GPServerEndpoints
         return false;
     }
 
-    private static bool TryParseSpatialReferenceValue(string? value, out int? srid)
+    internal static bool TryParseSpatialReferenceValue(string? value, out int? srid)
     {
         srid = null;
         if (string.IsNullOrWhiteSpace(value))
@@ -1618,6 +1618,11 @@ internal static partial class GPServerEndpoints
         if (int.TryParse(trimmed, System.Globalization.NumberStyles.Integer,
                 System.Globalization.CultureInfo.InvariantCulture, out var bare))
         {
+            if (bare <= 0)
+            {
+                return false;
+            }
+
             srid = bare;
             return true;
         }
@@ -1636,6 +1641,11 @@ internal static partial class GPServerEndpoints
                         wkid.ValueKind == System.Text.Json.JsonValueKind.Number &&
                         wkid.TryGetInt32(out var wkidValue))
                     {
+                        if (wkidValue <= 0)
+                        {
+                            return false;
+                        }
+
                         srid = wkidValue;
                         return true;
                     }
@@ -1644,6 +1654,11 @@ internal static partial class GPServerEndpoints
                         latest.ValueKind == System.Text.Json.JsonValueKind.Number &&
                         latest.TryGetInt32(out var latestValue))
                     {
+                        if (latestValue <= 0)
+                        {
+                            return false;
+                        }
+
                         srid = latestValue;
                         return true;
                     }
@@ -1944,7 +1959,7 @@ internal static partial class GPServerEndpoints
             RoutingProcessDefinitions.Handles(definition.ProcessId) ? null : featureSchema);
     }
 
-    private static int ResolveWorkingSrid(
+    internal static int ResolveWorkingSrid(
         IReadOnlyDictionary<string, string> rawParameters,
         int? derivedSrid)
     {

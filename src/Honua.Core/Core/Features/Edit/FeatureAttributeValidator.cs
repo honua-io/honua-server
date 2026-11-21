@@ -76,6 +76,10 @@ public static partial class FeatureAttributeValidator
                 return;
             }
             var normalizedValue = NormalizeAttributeValue(rawValue);
+            if (_options.Coercion == ExactValueCoercion.CanonicalText)
+            {
+                normalizedValue = CoerceExactNumber(field, rawValue, normalizedValue);
+            }
             var error = ValidateAttributeValue(field, normalizedValue, _options.Profile);
             if (error != null)
             {
@@ -139,6 +143,19 @@ public static partial class FeatureAttributeValidator
 
         return value;
     }
+
+    // Clients without an exact wire type send numbers; the stored value stays canonical text.
+    // A JSON number keeps its own digits. Anything that is not a finite number stays unchanged
+    // so the type check still rejects it.
+    private static object? CoerceExactNumber(MetadataV2Field field, object? rawValue, object? normalizedValue)
+        => field.Type switch
+        {
+            MetadataV2FieldType.Decimal => ExactAttributeValues.FormatDecimalNumber(
+                rawValue is JsonElement ? rawValue : normalizedValue) ?? normalizedValue,
+            MetadataV2FieldType.TimestampOffset => ExactAttributeValues.FormatEpochMilliseconds(normalizedValue)
+                ?? normalizedValue,
+            _ => normalizedValue
+        };
 
     private static string? ValidateAttributeValue(
         MetadataV2Field field,

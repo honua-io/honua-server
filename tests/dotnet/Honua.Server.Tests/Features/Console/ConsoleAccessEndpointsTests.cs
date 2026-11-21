@@ -220,6 +220,21 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
         Assert.DoesNotContain(otherOverview.Roles, role => role.Id == created.Id);
     }
 
+    [IntegrationTheory]
+    [Endpoint("POST /api/v1/console/access/{environmentId}/roles")]
+    [InlineData("scoped-api-key")]
+    [InlineData("Agent")]
+    [InlineData("viewer")]
+    public async Task ConsoleAccess_ServerAssignedRoleName_IsTaken(string name)
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/console/access/reserved-names/roles",
+            new ConsoleRoleWriteRequest { Name = name, Grants = [] },
+            JsonOptions);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
     [IntegrationTest]
     [Endpoint("POST /api/v1/console/access/{environmentId}/roles")]
     [Endpoint("PUT /api/v1/console/access/{environmentId}/roles/{roleId}")]

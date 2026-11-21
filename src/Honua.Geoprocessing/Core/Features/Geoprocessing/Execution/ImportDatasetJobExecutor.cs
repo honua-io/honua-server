@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FileImport.Abstractions;
@@ -13,6 +14,7 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
 using Honua.ControlPlane;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -103,16 +105,31 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
         cancellationToken.ThrowIfCancellationRequested();
         await context.ReportProgressAsync(5, "Staging source", cancellationToken).ConfigureAwait(false);
 
-        // BH3-027: Validate that the caller-supplied sourcePath is contained within the
-        // configured staging root before any filesystem access. Path.GetFullPath resolves
-        // ".." segments and symlink-style escapes; the StartsWith check on the canonical
-        // form then prevents traversal to arbitrary server paths (e.g. /etc/shadow).
-        var stagingRoot = Path.GetFullPath(_executorOptions.CurrentValue.ImportStagingDirectory);
+        var baseStagingRoot = Path.GetFullPath(_executorOptions.CurrentValue.ImportStagingDirectory);
+        var submitterContext = JobSecurityScope.Current?.Submitter ?? job.Audit?.SubmitterSecurityContext;
+        var tenantId = submitterContext?.TenantId;
+        var stagingRoot = baseStagingRoot;
+        if (!string.IsNullOrWhiteSpace(tenantId))
+        {
+            if (!IsSafeTenantDirectorySegment(tenantId))
+            {
+                Log.PathTraversalRejected(_logger, job.OperationId, request.SourcePath);
+                return JobExecutionResult.Failed(
+                    $"Invalid {HandledProcessId} inputs: active tenant identifier is not valid for staging partitioning.");
+            }
+
+            // Partition staged imports by tenant so one tenant cannot read another tenant's staged files.
+            stagingRoot = Path.GetFullPath(Path.Join(baseStagingRoot, tenantId));
+        }
+
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
         var resolvedSourcePath = Path.GetFullPath(request.SourcePath);
         var stagingRootWithSep = stagingRoot.EndsWith(Path.DirectorySeparatorChar)
             ? stagingRoot
             : stagingRoot + Path.DirectorySeparatorChar;
-        if (!resolvedSourcePath.StartsWith(stagingRootWithSep, StringComparison.OrdinalIgnoreCase))
+        if (!resolvedSourcePath.StartsWith(stagingRootWithSep, comparison))
         {
             Log.PathTraversalRejected(_logger, job.OperationId, request.SourcePath);
             return JobExecutionResult.Failed(
@@ -123,6 +140,13 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
         {
             return JobExecutionResult.Failed(
                 $"Invalid {HandledProcessId} inputs: staged source file was not found.");
+        }
+
+        if (ContainsSymlinkOrReparsePoint(resolvedSourcePath, stagingRoot, comparison))
+        {
+            Log.PathTraversalRejected(_logger, job.OperationId, request.SourcePath);
+            return JobExecutionResult.Failed(
+                $"Invalid {HandledProcessId} inputs: symbolic links and reparse points are not permitted in staged import paths.");
         }
 
         using var scope = _serviceScopeFactory.CreateScope();
@@ -137,6 +161,11 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
         string connectionString;
         try
         {
+            using var jobScope = JobSecurityScope.Current is null && submitterContext is not null
+                ? JobSecurityScope.Begin(submitterContext)
+                : null;
+            await EnsureConnectionScopeAsync(services, request.ConnectionRef, submitterContext?.TenantId, cancellationToken)
+                .ConfigureAwait(false);
             connectionString = Guid.TryParse(request.ConnectionRef, out var connectionId)
                 ? await connectionResolver.ResolveConnectionStringAsync(connectionId, cancellationToken).ConfigureAwait(false)
                 : await connectionResolver.ResolveConnectionStringAsync(request.ConnectionRef, cancellationToken).ConfigureAwait(false);
@@ -323,7 +352,8 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
                         Log.TileFailed(_logger, job.OperationId, ex);
-                        return JobExecutionResult.Failed($"{HandledProcessId} failed during raster tiling: {ex.GetType().Name}.");
+                        var reason = ex is RasterStorageUnavailableException ? ex.Message : ex.GetType().Name;
+                        return JobExecutionResult.Failed($"{HandledProcessId} failed during raster tiling: {reason.TrimEnd('.')}.");
                     }
                 }
             }
@@ -482,6 +512,74 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
         return string.IsNullOrWhiteSpace(configured) ? defaultDataSchema : configured.Trim();
     }
 
+    private static bool IsSafeTenantDirectorySegment(string tenantId)
+        => tenantId.Length is > 0 and <= 128
+            && tenantId is not "." and not ".."
+            && !tenantId.Contains('/')
+            && !tenantId.Contains('\\')
+            && !tenantId.Contains("..", StringComparison.Ordinal)
+            && tenantId.All(ch => !char.IsControl(ch));
+
+    private static bool ContainsSymlinkOrReparsePoint(string resolvedFilePath, string stagingRoot, StringComparison comparison)
+    {
+        var fileInfo = new FileInfo(resolvedFilePath);
+        if (fileInfo.Attributes.HasFlag(FileAttributes.ReparsePoint)
+            || fileInfo.ResolveLinkTarget(returnFinalTarget: true) is not null)
+        {
+            return true;
+        }
+
+        var normalizedRoot = stagingRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var current = fileInfo.Directory;
+        while (current is not null)
+        {
+            var currentPath = current.FullName.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (current.Attributes.HasFlag(FileAttributes.ReparsePoint)
+                || current.ResolveLinkTarget(returnFinalTarget: true) is not null)
+            {
+                return true;
+            }
+
+            if (string.Equals(currentPath, normalizedRoot, comparison))
+            {
+                break;
+            }
+
+            current = current.Parent;
+        }
+
+        return false;
+    }
+
+    private static async Task EnsureConnectionScopeAsync(
+        IServiceProvider services,
+        string connectionRef,
+        string? callerTenantId,
+        CancellationToken cancellationToken)
+    {
+        var registry = services.GetService<ISecureConnectionRegistry>();
+        if (registry is null)
+        {
+            return;
+        }
+
+        DataConnection? connection = Guid.TryParse(connectionRef, out var connectionId)
+            ? await registry.GetConnectionAsync(connectionId, cancellationToken).ConfigureAwait(false)
+            : await registry.GetConnectionByNameAsync(connectionRef, cancellationToken).ConfigureAwait(false);
+        if (connection is null)
+        {
+            return;
+        }
+
+        var connectionTenant = connection.TenantId
+            ?? (connection.Properties.TryGetValue("tenantId", out var t) ? t as string : null);
+        if (!string.IsNullOrWhiteSpace(connectionTenant)
+            && !string.Equals(connectionTenant, callerTenantId, StringComparison.Ordinal))
+        {
+            throw new UnauthorizedAccessException("Connection is not accessible in the active tenant scope.");
+        }
+    }
+
     private static string BuildProvenance(
         string operationId,
         ImportDatasetInputs request,
@@ -574,7 +672,7 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
         public static partial void UnsupportedProcessId(ILogger logger, string operationId, string processId);
 
         [LoggerMessage(9207, LogLevel.Warning,
-            "Import dataset executor rejected job {OperationId}: source path '{SourcePath}' is outside the permitted staging directory (BH3-027)")]
+            "Import dataset executor rejected job {OperationId}: source path '{SourcePath}' is outside the permitted staging directory")]
         public static partial void PathTraversalRejected(ILogger logger, string operationId, string sourcePath);
 
         [LoggerMessage(9201, LogLevel.Warning,

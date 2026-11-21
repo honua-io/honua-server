@@ -14,7 +14,12 @@ namespace Honua.Infrastructure.Monitoring;
 
 internal interface IDeployPreflightProbe
 {
+    // Probes with a freshly read migration plan (deploy decisions).
     Task<DeployPreflightSnapshot> ProbeAsync(CancellationToken cancellationToken = default);
+
+    // Probes, reusing a migration plan read within maxMigrationPlanAge. For
+    // periodic evaluators, which would otherwise scan every migration journal on each pass.
+    Task<DeployPreflightSnapshot> ProbeAsync(TimeSpan maxMigrationPlanAge, CancellationToken cancellationToken = default);
 }
 
 internal sealed class DeployPreflightProbe(
@@ -27,14 +32,21 @@ internal sealed class DeployPreflightProbe(
     IConnectionSecretResolver? secretResolver = null,
     IOptions<MigrationSafetyOptions>? migrationSafetyOptions = null,
     MigrationBackupHookState? backupHookState = null,
-    DatabaseSessionSettingsState? sessionSettingsState = null) : IDeployPreflightProbe
+    DatabaseSessionSettingsState? sessionSettingsState = null,
+    DeployPreflightMigrationPlanCache? migrationPlanCache = null) : IDeployPreflightProbe
 {
     private const string MigrationPlanUnavailableMessage = "Migration planning is temporarily unavailable.";
 
-    public async Task<DeployPreflightSnapshot> ProbeAsync(CancellationToken cancellationToken = default)
+    // How stale a migration plan periodic evaluators accept.
+    internal static readonly TimeSpan BackgroundMigrationPlanMaxAge = TimeSpan.FromMinutes(5);
+
+    public Task<DeployPreflightSnapshot> ProbeAsync(CancellationToken cancellationToken = default)
+        => ProbeAsync(TimeSpan.Zero, cancellationToken);
+
+    public async Task<DeployPreflightSnapshot> ProbeAsync(TimeSpan maxMigrationPlanAge, CancellationToken cancellationToken = default)
     {
         var readiness = await readinessCheckService.CheckReadinessAsync(cancellationToken).ConfigureAwait(false);
-        var migration = await BuildMigrationSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        var migration = await BuildMigrationSnapshotAsync(maxMigrationPlanAge, cancellationToken).ConfigureAwait(false);
         var compatibilitySnapshot = BuildDatabaseCompatibilitySnapshot();
 
         // null = check not applicable (no connection string); treat as compatible
@@ -64,7 +76,9 @@ internal sealed class DeployPreflightProbe(
         };
     }
 
-    private async Task<DeployPreflightMigrationSnapshot> BuildMigrationSnapshotAsync(CancellationToken cancellationToken)
+    private async Task<DeployPreflightMigrationSnapshot> BuildMigrationSnapshotAsync(
+        TimeSpan maxMigrationPlanAge,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -85,9 +99,9 @@ internal sealed class DeployPreflightProbe(
                 };
             }
 
-            DatabaseMigrationPlan plan = await migrationRunner.PlanMigrationsAsync(
+            DatabaseMigrationPlan plan = await PlanMigrationsAsync(
                 connectionString,
-                typeof(Program).Assembly,
+                maxMigrationPlanAge,
                 cancellationToken).ConfigureAwait(false);
             var backupHook = plan.Successful
                 ? MigrationBackupHookStatusMapper.Build(
@@ -130,6 +144,28 @@ internal sealed class DeployPreflightProbe(
                 PlanError = "Migration planning is temporarily unavailable."
             };
         }
+    }
+
+    private async Task<DatabaseMigrationPlan> PlanMigrationsAsync(
+        string connectionString,
+        TimeSpan maxMigrationPlanAge,
+        CancellationToken cancellationToken)
+    {
+        // Read before planning: a migration that finishes while this plan is read leaves the
+        // stored entry one transition behind, so the next caller reads again.
+        var transitions = migrationState.Transitions;
+        if (maxMigrationPlanAge > TimeSpan.Zero
+            && migrationPlanCache?.TryGet(connectionString, transitions, maxMigrationPlanAge) is { } cached)
+        {
+            return cached;
+        }
+
+        var plan = await migrationRunner.PlanMigrationsAsync(
+            connectionString,
+            typeof(Program).Assembly,
+            cancellationToken).ConfigureAwait(false);
+        migrationPlanCache?.Store(connectionString, transitions, plan);
+        return plan;
     }
 
     private static string BuildPreflightMessage(

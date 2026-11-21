@@ -9,6 +9,7 @@ using System.Xml.Linq;
 using System.Globalization;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Logging;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
@@ -188,7 +189,7 @@ internal sealed partial class GeoServerRestClient
         try
         {
             var response = await GetStringAsync(BuildXmlUrl(baseUrl, "about/version"), cancellationToken).ConfigureAwait(false);
-            var doc = XDocument.Parse(response);
+            var doc = RemoteXmlDocumentParser.Parse(response);
 
             var aboutElement = doc.Root?.Name.LocalName == "about"
                 ? doc.Root

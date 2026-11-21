@@ -165,8 +165,9 @@ internal static partial class LayerPublishJobWork
         catch (LayerPublishingException exception)
         {
             Log.PublishFaulted(logger, jobId, exception);
+            // A failed job created no layer; the exception's id can name an existing one.
             await WriteTerminalAsync(
-                progressStore, jobId, OperationStatus.Failed, exception.LayerId, exception.Message)
+                progressStore, jobId, OperationStatus.Failed, null, exception.Message)
                 .ConfigureAwait(false);
             return NonRetryable(exception.Message);
         }

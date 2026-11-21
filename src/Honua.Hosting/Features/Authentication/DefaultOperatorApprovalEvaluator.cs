@@ -70,7 +70,9 @@ internal sealed class DefaultOperatorApprovalEvaluator(
             return result;
         }
 
-        if (request.IsDestructive && options.Value.DestructiveActionsRequireApproval)
+        // An agent's destructive change needs a person whatever the operator option says,
+        // matching the agent approval rule for operations.
+        if (request.IsDestructive && (options.Value.DestructiveActionsRequireApproval || AgentPrincipal.IsAgent(principal)))
         {
             // Resource-qualified policy ref: include the resource family so downstream consumers
             // get inspectable reason codes per resource type.

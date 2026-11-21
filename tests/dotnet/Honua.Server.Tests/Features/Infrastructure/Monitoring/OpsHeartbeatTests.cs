@@ -55,7 +55,7 @@ public sealed class OpsHeartbeatTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task PublishAsync_PublicationFails_RestartCannotPublishAgainWithinWindow()
+    public async Task PublishAsync_PublicationFails_ReleasesLeaseSoRetryCanPublish()
     {
         var stack = $"heartbeat-{Guid.NewGuid():N}";
         var publisher = new RecordingPublisher { Fail = true };
@@ -66,9 +66,6 @@ public sealed class OpsHeartbeatTests : IAsyncLifetime
         publisher.Fail = false;
         await new OpsHeartbeatCoordinator(CreateStore(), publisher).PublishAsync(stack, CancellationToken.None);
 
-        publisher.Count.Should().Be(1);
-        await ExpireLeaseAsync(stack);
-        await new OpsHeartbeatCoordinator(CreateStore(), publisher).PublishAsync(stack, CancellationToken.None);
         publisher.Count.Should().Be(2);
     }
 

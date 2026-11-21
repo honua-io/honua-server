@@ -135,6 +135,8 @@ public sealed class PatchConsoleContentItemRequest
 
     [JsonPropertyName("visibility")]
     public ConsoleVisibility? Visibility { get; init; }
+
+    internal string? AuthorizedPersonalOwnerId { get; set; }
 }
 
 public sealed class ConsoleContentListResponse

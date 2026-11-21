@@ -142,6 +142,33 @@ do not fall back; they propagate as transient failures. Operators using a non-qu
 republish scheduled workflows and resubmit pending approvals after role revocation, because the
 old snapshot otherwise remains authoritative.
 
+### Sealed at rest
+
+The snapshot decides what a job may read, so a writer of the job store must not be able to
+grant itself claims, or reuse a valid snapshot for other work. Every stored copy carries a seal
+made with the shared data-protection key ring over one canonical digest
+(`JobSecurityContextDigest`): the snapshot's fields and a binding to the record and the work it
+authorizes, each part length-prefixed.
+
+| Stored copy | Bound to | Sealed and verified in |
+| --- | --- | --- |
+| Execution job record | operation id, requester, job spec | `ExecutionJobRow.From` / `TryRead` |
+| Approval proposal | requester, idempotency key, whole plan | `GeoprocessingJobDispatcher` (`IJobSecurityContextSealer`) |
+| Workflow run | run id, requester, each step's authorized plan | `PostgresWorkflowRunStore` |
+| Workflow definition | workflow id, steps, trigger | `PostgresWorkflowDefinitionStore` |
+
+A snapshot without a valid seal is not used: the work has no submitter context and the
+fail-closed guards above refuse it (an approval resume treats it as missing). The unverified
+snapshot is kept and written back unchanged, so a node without the key ring does not erase what
+it cannot check. Seals are recomputed on every write by a node that holds the ring.
+
+The key ring is stored wrapped by the key-ring protector, so database access alone cannot forge
+a seal. Restoring an earlier definition record with its own seal still verifies; that restores
+what its author published. Jobs queued, approvals pending and workflow runs started by a build
+without seals are refused after the upgrade and must be resubmitted with a new idempotency key
+(a reused key returns the refused record); workflow definitions stored before seals must be
+republished before their scheduled or triggered runs resume.
+
 ## Consequences
 
 - Job output for RLS/field-mask-restricted callers shrinks to match the synchronous

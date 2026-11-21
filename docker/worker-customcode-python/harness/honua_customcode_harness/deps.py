@@ -9,9 +9,12 @@ SDK/geo packages destructively beyond what the user explicitly requests.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+from .sandbox import strip_credential_env
 
 
 class DepsRestoreError(RuntimeError):
@@ -52,7 +55,11 @@ def restore_requirements(
         "-r",
         str(manifest),
     ]
-    proc = runner(cmd, capture_output=True, text=True, check=False)
+    # The install runs code from the user's packages before the harness scrubs its own
+    # environment, so pip gets a copy without the job credentials.
+    restore_env = dict(os.environ)
+    strip_credential_env(restore_env)
+    proc = runner(cmd, capture_output=True, text=True, check=False, env=restore_env)
     if proc.returncode != 0:
         raise DepsRestoreError(
             f"pip install -r {manifest} failed ({proc.returncode}): "
