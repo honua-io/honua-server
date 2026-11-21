@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Honua OGC API Features",
-    "description": "OGC API Features implementation for geospatial data access\n\nCompliance: OGC CITE 1138/1138 across 14 conformance suites; WFS 2.0 basic is 167/167 — see docs/cite-status.md and run 33583116921.",
+    "description": "OGC API Features implementation for geospatial data access\n\nCompliance: OGC CITE 1138/1138 across 14 conformance suites; WFS 2.0 basic is 167/167 — see docs/cite-status.md and run 44766846845.",
     "version": "1.0.0",
     "contact": {
       "name": "Honua Server"
@@ -15,10 +15,10 @@
         "skipped": 0,
         "cantTell": 0
       },
-      "lastEvidenceRun": "2026-09-02",
+      "lastEvidenceRun": "2026-11-20",
       "evidenceRuns": {
-        "aggregate": "https://github.com/honua-io/honua-server/actions/runs/33205558805",
-        "wfs20Basic": "https://github.com/honua-io/honua-server/actions/runs/33583116921"
+        "aggregate": "https://github.com/honua-io/honua-server/actions/runs/44766846845",
+        "wfs20Basic": "https://github.com/honua-io/honua-server/actions/runs/44766846845"
       },
       "evidenceWorkflow": "https://github.com/honua-io/honua-server/actions/workflows/cite-evidence-report.yml",
       "authoritativeSource": "docs/cite-status.md",

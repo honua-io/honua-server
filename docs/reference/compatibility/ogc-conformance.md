@@ -66,9 +66,10 @@ Each OGC API surface declares its implemented conformance classes at runtime:
 | OGC API Styles | `GET /ogc/styles/conformance` |
 | STAC API | `GET /stac/conformance` |
 
-The runtime OpenAPI documents carry the same CITE totals in an
-`x-honua-cite-compliance` vendor extension on the `info` object, and a build gate keeps
-them in step with the CITE status page.
+The runtime OpenAPI documents for Features (`/openapi.json`), Tiles, Maps, Processes
+and Coverages carry the same CITE totals in an `x-honua-cite-compliance` vendor
+extension on the `info` object, and a build gate keeps them in step with the CITE
+status page. The Records, Styles and STAC OpenAPI documents do not carry it.
 
 ## API versioning in one paragraph
 
