@@ -4,9 +4,6 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
-using Honua.Core.Features.Admin.Domain;
-using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
@@ -27,16 +24,6 @@ internal sealed partial class GeoServerImportService
         public required Stopwatch Stopwatch { get; init; }
     }
 
-    private sealed record LayerPublishBuildContext
-    {
-        public required MigrationApplyPlanStep Step { get; init; }
-        public required GeoServerLayerInfo Layer { get; init; }
-        public required string Schema { get; init; }
-        public required string Table { get; init; }
-        public required GeoServerSecurityRule[] SecurityRules { get; init; }
-        public required GeoServerImportRequest Request { get; init; }
-    }
-
     private sealed record RunCompletionRecord
     {
         public required string RunId { get; init; }
@@ -44,6 +31,21 @@ internal sealed partial class GeoServerImportService
         public required GeoServerReconciliationBundle Bundle { get; init; }
         public required string StatusNote { get; init; }
     }
+
+    private sealed record ApplyFlowOutcome(
+        string MigrationRunId,
+        MigrationApplyPlanArtifact ApplyPlan,
+        MigrationApplyExecutionArtifact ApplyExecution);
+
+    private sealed record ApplyCompletionContext(
+        ImportFlowContext Flow,
+        ApplyFlowOutcome Outcome,
+        ApplyFinalArtifacts Artifacts);
+
+    private sealed record ApplyFinalArtifacts(
+        List<string> Warnings,
+        MigrationRunMetricsArtifact RunMetrics,
+        GeoServerReconciliationBundle Bundle);
 
     private async Task<GeoServerImportResult> CompleteDryRunAsync(
         ImportFlowContext flow,
@@ -112,11 +114,6 @@ internal sealed partial class GeoServerImportService
             .ConfigureAwait(false);
     }
 
-    private sealed record ApplyFlowOutcome(
-        string MigrationRunId,
-        MigrationApplyPlanArtifact ApplyPlan,
-        MigrationApplyExecutionArtifact ApplyExecution);
-
     private async Task<GeoServerImportResult> FinalizeApplyFlowAsync(
         ImportFlowContext flow,
         ApplyFlowOutcome outcome,
@@ -138,298 +135,85 @@ internal sealed partial class GeoServerImportService
                 ApplyPlan = outcome.ApplyPlan,
                 ApplyExecution = outcome.ApplyExecution
             });
-
-        if (outcome.ApplyExecution.Summary.FailedStepCount > 0)
-        {
-            return await CompleteFailedApplyAsync(flow, outcome, new ApplyFinalArtifacts(warnings, runMetrics, bundle), cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        return await CompleteSucceededApplyAsync(flow, outcome, new ApplyFinalArtifacts(warnings, runMetrics, bundle), cancellationToken)
-            .ConfigureAwait(false);
+        var completion = new ApplyCompletionContext(flow, outcome, new ApplyFinalArtifacts(warnings, runMetrics, bundle));
+        return outcome.ApplyExecution.Summary.FailedStepCount > 0
+            ? await CompleteFailedApplyAsync(completion, cancellationToken).ConfigureAwait(false)
+            : await CompleteSucceededApplyAsync(completion, cancellationToken).ConfigureAwait(false);
     }
 
-    private sealed record ApplyFinalArtifacts(
-        List<string> Warnings,
-        MigrationRunMetricsArtifact RunMetrics,
-        GeoServerReconciliationBundle Bundle);
-
     private async Task<GeoServerImportResult> CompleteFailedApplyAsync(
-        ImportFlowContext flow,
-        ApplyFlowOutcome outcome,
-        ApplyFinalArtifacts artifacts,
+        ApplyCompletionContext ctx,
         CancellationToken cancellationToken)
     {
-        var failureMessage = BuildApplyFailureMessage(outcome.ApplyExecution);
-        await TryRecordMigrationRunCompletedAsync(
-                new RunCompletionRecord
-                {
-                    RunId = outcome.MigrationRunId,
-                    Status = MigrationRunStatus.Failed,
-                    Bundle = artifacts.Bundle,
-                    StatusNote = failureMessage
-                },
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        flow.Progress?.Report(flow.CurrentProgress with
+        var failureMessage = BuildApplyFailureMessage(ctx.Outcome.ApplyExecution);
+        var record = new RunCompletionRecord
         {
-            Status = GeoServerImportStatus.Failed,
-            ResourcesProcessed = outcome.ApplyPlan.Summary.TotalStepCount,
-            CompletedAt = DateTimeOffset.UtcNow,
-            CurrentPhase = "Apply plan failed",
-            ErrorMessage = failureMessage,
-            Warnings = artifacts.Warnings,
-            ApplyPlan = outcome.ApplyPlan,
-            ApplyExecution = outcome.ApplyExecution,
-            RunMetrics = artifacts.RunMetrics,
-            MigrationRunId = outcome.MigrationRunId,
-            ReconciliationBundle = artifacts.Bundle
-        });
-
+            RunId = ctx.Outcome.MigrationRunId,
+            Status = MigrationRunStatus.Failed,
+            Bundle = ctx.Artifacts.Bundle,
+            StatusNote = failureMessage
+        };
+        await TryRecordMigrationRunCompletedAsync(record, cancellationToken).ConfigureAwait(false);
+        ReportTerminalApplyProgress(ctx, new TerminalProgressUpdate(GeoServerImportStatus.Failed, "Apply plan failed", failureMessage));
         return CreateFailedApplyPlanResult(
-                flow.ServiceInfo, outcome.ApplyPlan, outcome.ApplyExecution, flow.Request, flow.Stopwatch.Elapsed, artifacts.Warnings, failureMessage) with
+                ctx.Flow.ServiceInfo, ctx.Outcome.ApplyPlan, ctx.Outcome.ApplyExecution,
+                ctx.Flow.Request, ctx.Flow.Stopwatch.Elapsed, ctx.Artifacts.Warnings, failureMessage) with
         {
-            RunMetrics = artifacts.RunMetrics,
-            MigrationRunId = outcome.MigrationRunId,
-            ReconciliationBundle = artifacts.Bundle
+            RunMetrics = ctx.Artifacts.RunMetrics,
+            MigrationRunId = ctx.Outcome.MigrationRunId,
+            ReconciliationBundle = ctx.Artifacts.Bundle
         };
     }
 
     private async Task<GeoServerImportResult> CompleteSucceededApplyAsync(
-        ImportFlowContext flow,
-        ApplyFlowOutcome outcome,
-        ApplyFinalArtifacts artifacts,
+        ApplyCompletionContext ctx,
         CancellationToken cancellationToken)
     {
-        await TryRecordMigrationRunCompletedAsync(
-                new RunCompletionRecord
-                {
-                    RunId = outcome.MigrationRunId,
-                    Status = MigrationRunStatus.Succeeded,
-                    Bundle = artifacts.Bundle,
-                    StatusNote = "GeoServer apply plan executed."
-                },
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        flow.Progress?.Report(flow.CurrentProgress with
+        var record = new RunCompletionRecord
         {
-            Status = GeoServerImportStatus.Completed,
-            ResourcesProcessed = outcome.ApplyPlan.Summary.TotalStepCount,
-            CompletedAt = DateTimeOffset.UtcNow,
-            CurrentPhase = "Apply plan executed",
-            Warnings = artifacts.Warnings,
-            ApplyPlan = outcome.ApplyPlan,
-            ApplyExecution = outcome.ApplyExecution,
-            RunMetrics = artifacts.RunMetrics,
-            MigrationRunId = outcome.MigrationRunId,
-            ReconciliationBundle = artifacts.Bundle
-        });
-
+            RunId = ctx.Outcome.MigrationRunId,
+            Status = MigrationRunStatus.Succeeded,
+            Bundle = ctx.Artifacts.Bundle,
+            StatusNote = "GeoServer apply plan executed."
+        };
+        await TryRecordMigrationRunCompletedAsync(record, cancellationToken).ConfigureAwait(false);
+        ReportTerminalApplyProgress(ctx, new TerminalProgressUpdate(GeoServerImportStatus.Completed, "Apply plan executed", null));
         Log.ApplyPlanExecuted(
             _logger,
-            outcome.ApplyPlan.Summary.TotalStepCount,
-            outcome.ApplyExecution.Summary.AppliedStepCount,
-            outcome.ApplyExecution.Summary.AlreadyAppliedStepCount,
-            outcome.ApplyExecution.Summary.ManualReviewStepCount,
-            outcome.ApplyExecution.Summary.UnsupportedStepCount);
+            ctx.Outcome.ApplyPlan.Summary.TotalStepCount,
+            ctx.Outcome.ApplyExecution.Summary.AppliedStepCount,
+            ctx.Outcome.ApplyExecution.Summary.AlreadyAppliedStepCount,
+            ctx.Outcome.ApplyExecution.Summary.ManualReviewStepCount,
+            ctx.Outcome.ApplyExecution.Summary.UnsupportedStepCount);
 
         return CreateApplyPlanResult(
-                flow.ServiceInfo, outcome.ApplyPlan, outcome.ApplyExecution, flow.Request, flow.Stopwatch.Elapsed, artifacts.Warnings) with
+                ctx.Flow.ServiceInfo, ctx.Outcome.ApplyPlan, ctx.Outcome.ApplyExecution,
+                ctx.Flow.Request, ctx.Flow.Stopwatch.Elapsed, ctx.Artifacts.Warnings) with
         {
-            RunMetrics = artifacts.RunMetrics,
-            MigrationRunId = outcome.MigrationRunId,
-            ReconciliationBundle = artifacts.Bundle
+            RunMetrics = ctx.Artifacts.RunMetrics,
+            MigrationRunId = ctx.Outcome.MigrationRunId,
+            ReconciliationBundle = ctx.Artifacts.Bundle
         };
     }
 
-    private MigrationApplyPlanArtifact EnrichApplyPlan(
-        MigrationApplyPlanArtifact plan,
-        GeoServerServiceInfo serviceInfo,
-        FilteredResources filteredResources)
+    private sealed record TerminalProgressUpdate(GeoServerImportStatus Status, string Phase, string? ErrorMessage);
+
+    private static void ReportTerminalApplyProgress(ApplyCompletionContext ctx, TerminalProgressUpdate update)
     {
-        var layersById = filteredResources.Layers.ToDictionary(GetLayerId, StringComparer.Ordinal);
-        var stylesById = filteredResources.Styles.ToDictionary(GetStyleId, StringComparer.Ordinal);
-        var styleIdsByReference = BuildStyleReferenceLookup(filteredResources.Styles);
-        var extraReview = new List<MigrationManifestReviewItem>();
-        var updatedSteps = new MigrationApplyPlanStep[plan.Steps.Length];
-        var anyChanged = false;
-
-        for (var i = 0; i < plan.Steps.Length; i++)
+        ctx.Flow.Progress?.Report(ctx.Flow.CurrentProgress with
         {
-            var (updated, changed) = EnrichLayerStep(
-                plan.Steps[i],
-                new StepEnrichmentContext
-                {
-                    LayersById = layersById,
-                    StylesById = stylesById,
-                    StyleIdsByReference = styleIdsByReference,
-                    SecurityRules = serviceInfo.SecurityRules,
-                    ExtraReview = extraReview
-                });
-            updatedSteps[i] = updated;
-            anyChanged |= changed;
-        }
-
-        extraReview.AddRange(GeoServerSecurityRuleTranslator.CollectUnmatchedUnexpressedRules(serviceInfo.SecurityRules, filteredResources.Layers));
-        if (!anyChanged && extraReview.Count == 0)
-        {
-            return plan;
-        }
-
-        return plan with
-        {
-            Steps = updatedSteps,
-            ManualReviewItems = plan.ManualReviewItems
-                .Concat(extraReview)
-                .OrderBy(static item => item.SourceId, StringComparer.Ordinal)
-                .ThenBy(static item => item.Code, StringComparer.Ordinal)
-                .ToArray()
-        };
-    }
-
-    private sealed record StepEnrichmentContext
-    {
-        public required Dictionary<string, GeoServerLayerInfo> LayersById { get; init; }
-        public required Dictionary<string, GeoServerStyleInfo> StylesById { get; init; }
-        public required Dictionary<StyleReferenceKey, string[]> StyleIdsByReference { get; init; }
-        public required GeoServerSecurityRule[] SecurityRules { get; init; }
-        public required List<MigrationManifestReviewItem> ExtraReview { get; init; }
-    }
-
-    private (MigrationApplyPlanStep Step, bool Changed) EnrichLayerStep(
-        MigrationApplyPlanStep step,
-        StepEnrichmentContext context)
-    {
-        if (!string.Equals(step.Kind, "layer", StringComparison.Ordinal) ||
-            !context.LayersById.TryGetValue(step.SourceId, out var layer))
-        {
-            return (step, false);
-        }
-
-        var layerStyles = ResolveLayerStyles(layer, context.StylesById, context.StyleIdsByReference);
-        var styleDiff = GeoServerStyleDiffBuilder.BuildForLayer(step.SourceId, layerStyles, _sldConverter);
-        var security = GeoServerSecurityRuleTranslator.TranslateForLayer(layer, context.SecurityRules, step.SourceId);
-        if (styleDiff.Diffs.Length == 0 && security.Dispositions.Length == 0)
-        {
-            return (step, false);
-        }
-
-        context.ExtraReview.AddRange(styleDiff.ReviewItems);
-        context.ExtraReview.AddRange(security.ReviewItems);
-        var reviewCodes = step.ReviewCodes
-            .Concat(styleDiff.ReviewItems.Select(static item => item.Code))
-            .Concat(security.ReviewItems.Select(static item => item.Code))
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(static code => code, StringComparer.Ordinal)
-            .ToArray();
-
-        return (step with
-        {
-            ReviewCodes = reviewCodes,
-            StyleDiffs = styleDiff.Diffs.Length > 0 ? styleDiff.Diffs : null,
-            SecurityRules = security.Dispositions.Length > 0 ? security.Dispositions : null
-        }, true);
-    }
-
-    private static List<(string StyleId, GeoServerStyleInfo Style)> ResolveLayerStyles(
-        GeoServerLayerInfo layer,
-        Dictionary<string, GeoServerStyleInfo> stylesById,
-        Dictionary<StyleReferenceKey, string[]> styleIdsByReference)
-    {
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        var resolved = new List<(string StyleId, GeoServerStyleInfo Style)>();
-        var references = layer.AlternativeStyles.Prepend(layer.DefaultStyle);
-
-        foreach (var styleReference in references)
-        {
-            foreach (var styleId in ResolveStyleIds(styleIdsByReference, layer.WorkspaceName, styleReference))
-            {
-                if (seen.Add(styleId) && stylesById.TryGetValue(styleId, out var style))
-                {
-                    resolved.Add((styleId, style));
-                }
-            }
-        }
-
-        return resolved;
-    }
-
-    private static LayerPublishRequest BuildLayerPublishRequest(LayerPublishBuildContext ctx)
-    {
-        var temporalInfo = BuildLayerTemporalInfo(ctx.Layer);
-        var security = GeoServerSecurityRuleTranslator.TranslateForLayer(ctx.Layer, ctx.SecurityRules, ctx.Step.SourceId);
-        return new LayerPublishRequest
-        {
-            Schema = ctx.Schema,
-            Table = ctx.Table,
-            LayerName = ctx.Step.TargetResourceName ?? ctx.Layer.Name,
-            Description = ctx.Layer.Abstract,
-            Srid = ctx.Request.TargetSrid ?? ResolveSrid(ctx.Layer.SRS),
-            TemporalColumn = temporalInfo?.StartTimeField,
-            Temporal = temporalInfo,
-            AccessPolicy = security.AccessPolicy,
-            Extensions = BuildLayerDimensionExtensions(ctx.Layer),
-            Fields = [],
-            ServiceName = ctx.Step.TargetServiceName,
-            Enabled = ctx.Request.AutoPublishLayers && ctx.Layer.Enabled
-        };
-    }
-
-    private static MetadataV2ObjectTemporal? BuildLayerTemporalInfo(GeoServerLayerInfo layer)
-    {
-        if (layer.TimeDimension is not { Enabled: true } timeDim || string.IsNullOrWhiteSpace(timeDim.Attribute))
-        {
-            return null;
-        }
-
-        return new MetadataV2ObjectTemporal
-        {
-            StartTimeField = timeDim.Attribute.Trim(),
-            EndTimeField = string.IsNullOrWhiteSpace(timeDim.EndAttribute) ? null : timeDim.EndAttribute.Trim()
-        };
-    }
-
-    private static Dictionary<string, JsonElement>? BuildLayerDimensionExtensions(GeoServerLayerInfo layer)
-    {
-        if (layer.ElevationDimension is not { Enabled: true } elevDim)
-        {
-            return null;
-        }
-
-        using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream))
-        {
-            WriteElevationDimensionExtension(writer, elevDim);
-        }
-
-        using var doc = JsonDocument.Parse(stream.ToArray());
-        return new Dictionary<string, JsonElement>(StringComparer.Ordinal) { ["wms"] = doc.RootElement.Clone() };
-    }
-
-    private static void WriteElevationDimensionExtension(Utf8JsonWriter writer, GeoServerDimensionInfo elevDim)
-    {
-        writer.WriteStartObject();
-        writer.WriteStartArray("dimensions");
-        writer.WriteStartObject();
-        writer.WriteString("name", "elevation");
-        writer.WriteString("units", string.IsNullOrWhiteSpace(elevDim.Units) ? "EPSG:5030" : elevDim.Units);
-        if (!string.IsNullOrWhiteSpace(elevDim.UnitSymbol))
-        {
-            writer.WriteString("unitSymbol", elevDim.UnitSymbol);
-        }
-
-        writer.WriteBoolean("nearestValue", elevDim.NearestMatchEnabled);
-        if (!string.IsNullOrWhiteSpace(elevDim.DefaultValueReference))
-        {
-            writer.WriteString("default", elevDim.DefaultValueReference);
-        }
-
-        writer.WriteString("extent", !string.IsNullOrWhiteSpace(elevDim.Attribute) ? elevDim.Attribute! : (elevDim.DefaultValueReference ?? string.Empty));
-        writer.WriteEndObject();
-        writer.WriteEndArray();
-        writer.WriteEndObject();
+            Status = update.Status,
+            ResourcesProcessed = ctx.Outcome.ApplyPlan.Summary.TotalStepCount,
+            CompletedAt = DateTimeOffset.UtcNow,
+            CurrentPhase = update.Phase,
+            ErrorMessage = update.ErrorMessage,
+            Warnings = ctx.Artifacts.Warnings,
+            ApplyPlan = ctx.Outcome.ApplyPlan,
+            ApplyExecution = ctx.Outcome.ApplyExecution,
+            RunMetrics = ctx.Artifacts.RunMetrics,
+            MigrationRunId = ctx.Outcome.MigrationRunId,
+            ReconciliationBundle = ctx.Artifacts.Bundle
+        });
     }
 
     private async Task TryRecordMigrationRunStartedAsync(

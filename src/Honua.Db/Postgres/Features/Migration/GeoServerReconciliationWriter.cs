@@ -32,8 +32,6 @@ internal static class GeoServerReconciliationWriter
             .Where(static s => s.Outcome is "applied" or "already-applied")
             .ToArray();
 
-        var sourceCounts = BuildSourceCounts(input);
-        var targetCounts = BuildTargetCounts(appliedSteps);
         var (sourceSchemas, targetSchemas, sourceExtents, targetExtents) = BuildLayerSnapshotMaps(input.Layers, appliedSteps);
         var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -48,32 +46,34 @@ internal static class GeoServerReconciliationWriter
             PlanId = planId,
             PlanDigest = planDigest,
             Service = "geoserver",
-            SourceSnapshot = new GeoServerReconciliationSnapshot
-            {
-                RunId = input.RunId,
-                PlanId = planId,
-                PlanDigest = planDigest,
-                Service = "geoserver",
-                Counts = sourceCounts,
-                Schemas = sourceSchemas,
-                Extents = sourceExtents,
-                Metadata = metadata,
-                SupportedMetadata = SupportedMetadataKeys
-            },
-            TargetSnapshot = new GeoServerReconciliationSnapshot
-            {
-                RunId = input.RunId,
-                PlanId = planId,
-                PlanDigest = planDigest,
-                Service = "geoserver",
-                Counts = targetCounts,
-                Schemas = targetSchemas,
-                Extents = targetExtents,
-                Metadata = metadata,
-                SupportedMetadata = SupportedMetadataKeys
-            }
+            SourceSnapshot = CreateSnapshot(new SnapshotPart(input.RunId, planId, planDigest), BuildSourceCounts(input), new SnapshotDetails(sourceSchemas, sourceExtents, metadata)),
+            TargetSnapshot = CreateSnapshot(new SnapshotPart(input.RunId, planId, planDigest), BuildTargetCounts(appliedSteps), new SnapshotDetails(targetSchemas, targetExtents, metadata))
         };
     }
+
+    private sealed record SnapshotPart(string RunId, string PlanId, string PlanDigest);
+
+    private sealed record SnapshotDetails(
+        Dictionary<string, string[]> Schemas,
+        Dictionary<string, GeoServerReconciliationExtent> Extents,
+        Dictionary<string, string> Metadata);
+
+    private static GeoServerReconciliationSnapshot CreateSnapshot(
+        SnapshotPart id,
+        Dictionary<string, int> counts,
+        SnapshotDetails details)
+        => new()
+        {
+            RunId = id.RunId,
+            PlanId = id.PlanId,
+            PlanDigest = id.PlanDigest,
+            Service = "geoserver",
+            Counts = counts,
+            Schemas = details.Schemas,
+            Extents = details.Extents,
+            Metadata = details.Metadata,
+            SupportedMetadata = SupportedMetadataKeys
+        };
 
     public static string SerializeBundle(GeoServerReconciliationBundle bundle)
     {

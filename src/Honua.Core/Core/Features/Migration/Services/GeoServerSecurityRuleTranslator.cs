@@ -68,6 +68,21 @@ internal static class GeoServerSecurityRuleTranslator
             }
         }
 
+        public void RecordTranslated(GeoServerSecurityRule rule, string mode, RoleClassification classification)
+        {
+            Apply(mode, classification);
+            Dispositions.Add(new MigrationSecurityRuleDisposition
+            {
+                RuleKey = rule.RuleKey,
+                Mode = mode,
+                Roles = rule.Roles,
+                Status = "translated",
+                Reason = mode == "r"
+                    ? "Translated into Honua per-layer read access policy."
+                    : "Translated into Honua per-layer write access policy."
+            });
+        }
+
         public AccessPolicy? BuildPolicy()
         {
             if (!HasRead && !HasWrite)
@@ -139,20 +154,14 @@ internal static class GeoServerSecurityRuleTranslator
 
         if (match == LayerRuleMatch.Wildcard)
         {
-            RecordUnexpressed(
-                accumulator,
-                rule,
-                $"Wildcard security rule '{rule.RuleKey}' cannot be expressed as a per-layer Honua access policy without risking a broader grant; review and apply explicitly.");
+            RecordUnexpressed(accumulator, rule, $"Wildcard security rule '{rule.RuleKey}' cannot be expressed as a per-layer Honua access policy without risking a broader grant; review and apply explicitly.");
             return;
         }
 
         var mode = rule.Mode.Trim().ToLowerInvariant();
         if (mode is not ("r" or "w"))
         {
-            RecordUnexpressed(
-                accumulator,
-                rule,
-                $"GeoServer security rule '{rule.RuleKey}' with mode '{rule.Mode}' cannot be expressed as a Honua read/write access policy; not applied as a broader grant.");
+            RecordUnexpressed(accumulator, rule, $"GeoServer security rule '{rule.RuleKey}' with mode '{rule.Mode}' cannot be expressed as a Honua read/write access policy; not applied as a broader grant.");
             return;
         }
 
@@ -163,17 +172,7 @@ internal static class GeoServerSecurityRuleTranslator
             return;
         }
 
-        accumulator.Apply(mode, classification);
-        accumulator.Dispositions.Add(new MigrationSecurityRuleDisposition
-        {
-            RuleKey = rule.RuleKey,
-            Mode = mode,
-            Roles = rule.Roles,
-            Status = "translated",
-            Reason = mode == "r"
-                ? "Translated into Honua per-layer read access policy."
-                : "Translated into Honua per-layer write access policy."
-        });
+        accumulator.RecordTranslated(rule, mode, classification);
     }
 
     private static LayerRuleMatch MatchRuleToLayer(GeoServerSecurityRule rule, GeoServerLayerInfo layer)
@@ -229,20 +228,19 @@ internal static class GeoServerSecurityRuleTranslator
             }
         }
 
-        return ValidateRoleCombination(hasAnonymous, hasAuthenticated, namedRoles);
+        return ValidateRoleCombination(new ParsedRoleTokens(hasAnonymous, hasAuthenticated, namedRoles));
     }
 
-    private static RoleClassification ValidateRoleCombination(
-        bool hasAnonymous,
-        bool hasAuthenticated,
-        List<string> namedRoles)
+    private sealed record ParsedRoleTokens(bool HasAnonymous, bool HasAuthenticated, List<string> NamedRoles);
+
+    private static RoleClassification ValidateRoleCombination(ParsedRoleTokens parsed)
     {
-        if (hasAnonymous && (hasAuthenticated || namedRoles.Count > 0))
+        if (parsed.HasAnonymous && (parsed.HasAuthenticated || parsed.NamedRoles.Count > 0))
         {
             return InvalidRoles("Security rule mixes anonymous wildcard access with restricted roles; kept for manual review instead of widening access.");
         }
 
-        if (hasAuthenticated && namedRoles.Count > 0)
+        if (parsed.HasAuthenticated && parsed.NamedRoles.Count > 0)
         {
             return InvalidRoles("Security rule mixes ROLE_AUTHENTICATED with specific roles; kept for manual review instead of widening access.");
         }
@@ -250,9 +248,9 @@ internal static class GeoServerSecurityRuleTranslator
         return new RoleClassification
         {
             IsValid = true,
-            IsAnonymous = hasAnonymous,
-            IsAuthenticatedOnly = hasAuthenticated,
-            NamedRoles = [.. namedRoles]
+            IsAnonymous = parsed.HasAnonymous,
+            IsAuthenticatedOnly = parsed.HasAuthenticated,
+            NamedRoles = [.. parsed.NamedRoles]
         };
     }
 
