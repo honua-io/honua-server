@@ -7,11 +7,11 @@
     "capabilities": "docs/gis/data/feature-catalog.json"
   },
   "summary": {
-    "operationCount": 533,
-    "unresolvedCount": 2,
+    "operationCount": 535,
+    "unresolvedCount": 0,
     "capabilityCount": 23,
     "perSpec": {
-      "admin-api": 439,
+      "admin-api": 441,
       "ogc-api-coverages": 8,
       "ogc-api-features": 19,
       "ogc-api-maps": 10,
@@ -25,7 +25,7 @@
       "admin.multi-tenancy": 7,
       "alerts.evaluation": 18,
       "analytics.h3": 1,
-      "fieldops.forms": 16,
+      "fieldops.forms": 18,
       "fieldops.offline-sync": 5,
       "geocoding.forward": 4,
       "identity.mtls-client-certificate": 13,
@@ -1179,6 +1179,16 @@
     },
     {
       "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/forms/import",
+      "operationId": "importFormXlsForm",
+      "capability": "fieldops.forms",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-forms-import"
+    },
+    {
+      "spec": "admin-api",
       "method": "GET",
       "path": "/api/v1/admin/forms/{formId}",
       "operationId": "getCurrentForm",
@@ -1186,6 +1196,16 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "get-api-v1-admin-forms-formid"
+    },
+    {
+      "spec": "admin-api",
+      "method": "GET",
+      "path": "/api/v1/admin/forms/{formId}/export",
+      "operationId": "exportFormXlsForm",
+      "capability": "fieldops.forms",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-admin-forms-formid-export"
     },
     {
       "spec": "admin-api",
@@ -5378,18 +5398,5 @@
       "catalogEntryId": "post-api-v1-studio-kind-id-export"
     }
   ],
-  "unresolved": [
-    {
-      "spec": "admin-api",
-      "method": "POST",
-      "path": "/api/v1/admin/forms/import",
-      "operationId": "importFormXlsForm"
-    },
-    {
-      "spec": "admin-api",
-      "method": "GET",
-      "path": "/api/v1/admin/forms/{formId}/export",
-      "operationId": "exportFormXlsForm"
-    }
-  ]
+  "unresolved": []
 }
