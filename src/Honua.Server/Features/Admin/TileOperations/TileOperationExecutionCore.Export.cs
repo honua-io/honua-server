@@ -386,12 +386,7 @@ internal sealed partial class TileOperationExecutionCore
         await context.Store.PutJsonOnceAsync(collectionKey, ExportVersionFactory.Collection(companions),
             ExportVersionJsonContext.Default.JsonObject, cancellationToken).ConfigureAwait(false);
 
-        var currentUnpublishedETag = await context.Store.ReadUnpublishedETagAsync(cancellationToken).ConfigureAwait(false);
-        if (currentUnpublishedETag is not null
-            && !string.Equals(currentUnpublishedETag, context.UnpublishedETag, StringComparison.Ordinal))
-        {
-            throw new ExportException("This Export was unpublished while the job was running; its version was not activated.");
-        }
+        await RequireNotUnpublishedAsync(context.Store, context.UnpublishedETag, cancellationToken).ConfigureAwait(false);
 
         await SwitchPointerAsync(context.Store, context.Run, context.PointerETag).ConfigureAwait(false);
         if (context.UnpublishedETag is not null)
@@ -409,6 +404,17 @@ internal sealed partial class TileOperationExecutionCore
             ErrorMessage = null,
             CurrentPhase = "Export completed"
         };
+    }
+
+    internal static async Task RequireNotUnpublishedAsync(
+        ExportStore store, string? initialUnpublishedETag, CancellationToken cancellationToken)
+    {
+        var currentUnpublishedETag = await store.ReadUnpublishedETagAsync(cancellationToken).ConfigureAwait(false);
+        if (currentUnpublishedETag is not null
+            && !string.Equals(currentUnpublishedETag, initialUnpublishedETag, StringComparison.Ordinal))
+        {
+            throw new ExportException("This Export was unpublished while the job was running; its version was not activated.");
+        }
     }
 
     private static async Task TryClearUnpublishedAsync(ExportStore store)

@@ -39,9 +39,14 @@ internal sealed class ExportStore
     {
         var root = PMTilesPublishKeyRoot.Resolve(options);
         var exportKey = string.IsNullOrEmpty(root) ? $"exports/{exportId}" : $"{root}/exports/{exportId}";
+        return new ExportStore(storage, exportKey, ListFolder(options, exportId));
+    }
+
+    public static string ListFolder(CloudStorageOptions options, string? exportId = null)
+    {
         var publishPrefix = options.PMTilesPublish?.KeyPrefix?.Trim().Trim('/');
-        var listPrefix = string.IsNullOrEmpty(publishPrefix) ? $"exports/{exportId}" : $"{publishPrefix}/exports/{exportId}";
-        return new ExportStore(storage, exportKey, listPrefix);
+        var root = string.IsNullOrEmpty(publishPrefix) ? "exports" : $"{publishPrefix}/exports";
+        return string.IsNullOrEmpty(exportId) ? root : $"{root}/{exportId}";
     }
 
     public string VersionKey(string version, string fileName) => $"{_exportKey}/{version}/{fileName}";

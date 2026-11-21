@@ -25,6 +25,11 @@ internal static partial class ExportRequestRules
             return "Property 'identityField' must name the layer's public text identity field.";
         }
 
+        if (request.MaxTiles is <= 0)
+        {
+            return "Property 'maxTiles' must be a positive integer.";
+        }
+
         // Both artifacts must hold the same features; a tile window would clip only one of them.
         return request.Bbox is null
             ? null

@@ -97,6 +97,15 @@ public sealed partial class ExportEndpointTests
         var store = ExportStore.Create(Storage, _fixture.GetOptionalService<IOptions<CloudStorageOptions>>()!.Value, _exportId);
         var etagBefore = await store.ReadUnpublishedETagAsync(CancellationToken.None);
         etagBefore.Should().NotBeNullOrWhiteSpace();
+
+        // A job that started before DELETE (null initial tag) is fenced from activating after DELETE.
+        var midJobFence = () => TileOperationExecutionCore.RequireNotUnpublishedAsync(store, initialUnpublishedETag: null, CancellationToken.None);
+        await midJobFence.Should().ThrowAsync<ExportException>().WithMessage("*unpublished while the job was running*");
+
+        // A republish started after DELETE sees the current tag, activates, and clears the marker.
+        await TileOperationExecutionCore.RequireNotUnpublishedAsync(store, etagBefore, CancellationToken.None);
+        await PublishAsync(IdentityField);
+        (await store.ReadUnpublishedETagAsync(CancellationToken.None)).Should().BeNull();
     }
 
     [IntegrationTest]
@@ -128,9 +137,25 @@ public sealed partial class ExportEndpointTests
     public async Task ListExports_RespectsLimitAndOffset()
     {
         await PublishAsync(IdentityField);
+        using var secondCreate = await _client.PostAsJsonAsync(ExportsRoute, new
+        {
+            source = new { kind = "layer", serviceId = WebAppFixture.TestServiceId, layerId = WebAppFixture.TestLayerId },
+            exportId = $"{_exportId}-b",
+            identityField = IdentityField,
+            minZoom = 0,
+            maxZoom = 0
+        });
+        secondCreate.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        using var secondBody = JsonDocument.Parse(await secondCreate.Content.ReadAsStringAsync());
+        await WaitForJobAsync(Text(secondBody.RootElement.GetProperty("data"), "jobId"));
 
-        using var page = JsonDocument.Parse(await _client.GetStringAsync($"{ExportsRoute}?limit=1&offset=0"));
-        page.RootElement.GetProperty("data").GetProperty("items").GetArrayLength().Should().BeLessThanOrEqualTo(1);
+        using var firstPage = JsonDocument.Parse(await _client.GetStringAsync($"{ExportsRoute}?limit=1&offset=0"));
+        using var secondPage = JsonDocument.Parse(await _client.GetStringAsync($"{ExportsRoute}?limit=1&offset=1"));
+        var firstItems = firstPage.RootElement.GetProperty("data").GetProperty("items");
+        var secondItems = secondPage.RootElement.GetProperty("data").GetProperty("items");
+        firstItems.GetArrayLength().Should().Be(1);
+        secondItems.GetArrayLength().Should().Be(1);
+        Text(firstItems[0], "id").Should().NotBe(Text(secondItems[0], "id"));
     }
 
     [IntegrationTest]

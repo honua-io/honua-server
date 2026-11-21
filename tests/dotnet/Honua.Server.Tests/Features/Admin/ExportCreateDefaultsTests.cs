@@ -67,6 +67,21 @@ public sealed class ExportCreateDefaultsTests
         ExportFields.Resolve(resource, overridden.Start.IdentityField!).Stable.Should().BeFalse();
     }
 
+    [UnitTest]
+    public void Resolve_MaxTiles_DefaultsToLocalCeilingPassesThroughAndRefusesNonPositive()
+    {
+        var resource = Layer("Parcels", Field("tmk", MetadataV2FieldType.String) with { SemanticRoles = ["id.primary"] });
+        var snapshot = Snapshot(resource);
+
+        ExportCreateDefaults.Resolve(Request(), snapshot).Start!.MaxTiles
+            .Should().Be(Honua.Server.Features.Admin.TileOperations.TileCacheJobExecutor.LocalMaxTiles);
+        ExportCreateDefaults.Resolve(Request() with { MaxTiles = 1200 }, snapshot).Start!.MaxTiles
+            .Should().Be(1200);
+        var invalid = ExportCreateDefaults.Resolve(Request() with { MaxTiles = 0 }, snapshot);
+        invalid.Problem.Should().Contain("maxTiles");
+        invalid.StatusCode.Should().Be(400);
+    }
+
     private static ExportCreateRequest Request() => new()
     {
         Source = new ExportSourceRequest { Kind = "layer", ServiceId = "roads", LayerId = 3 }

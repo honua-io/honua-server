@@ -238,12 +238,7 @@ internal sealed partial class ExportCatalog(
 
     // Listing prefixes the provider's own key prefix, so it takes the folder below it.
     private Task<IReadOnlyList<CloudFile>> ListFilesAsync(string? subFolder, CancellationToken cancellationToken)
-    {
-        var publishPrefix = options.Value.PMTilesPublish?.KeyPrefix?.Trim().Trim('/');
-        var root = string.IsNullOrEmpty(publishPrefix) ? "exports" : $"{publishPrefix}/exports";
-        var folder = string.IsNullOrEmpty(subFolder) ? root : $"{root}/{subFolder}";
-        return storage.ListFilesAsync(folder, int.MaxValue, includeMetadata: false, cancellationToken);
-    }
+        => storage.ListFilesAsync(ExportStore.ListFolder(options.Value, subFolder), int.MaxValue, includeMetadata: false, cancellationToken);
 
     private static (string? ExportId, string? Version) Match(CloudFile file)
     {
