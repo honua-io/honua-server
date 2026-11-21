@@ -2391,7 +2391,7 @@ internal static class WmtsRequestHandlers
             return null;
         }
 
-        var extent = OgcTileExtent.ExpandDegenerateAxes(transformedExtent.Value, ResolveWmtsMaxZoom(context));
+        var extent = TileExtent.ExpandDegenerateAxes(transformedExtent.Value, ResolveWmtsMaxZoom(context));
         var minLon = Math.Min(extent.MinLon, extent.MaxLon);
         var minLat = Math.Min(extent.MinLat, extent.MaxLat);
         var maxLon = Math.Max(extent.MinLon, extent.MaxLon);

@@ -1,11 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.Core.Features.Tiles;
+namespace Honua.Core.Features.Tiles;
 
-namespace Honua.Protocols.Ogc.Common;
-
-internal static class OgcTileExtent
+// Shared by OGC API Tiles, WMTS and TileJSON discovery so every surface advertises the same bounds.
+public static class TileExtent
 {
     public static (double MinLon, double MinLat, double MaxLon, double MaxLat) ExpandDegenerateAxes(
         (double MinLon, double MinLat, double MaxLon, double MaxLat) extent, int maxZoom)
@@ -19,8 +18,8 @@ internal static class OgcTileExtent
 
     // Any axis narrower than one finest-zoom tile (a single point, a reprojected point padded
     // by the extent margin, or a line whose stored float bbox is a few millionths wide) becomes
-    // one tile centred on it. A dateline-crossing longitude (min > max) keeps its edges, as
-    // OgcExtentTransformer.ExpandReprojectedCrs84 does.
+    // one tile centred on it. A dateline-crossing longitude (min > max) keeps its edges, as the
+    // OGC extent reprojection does.
     private static (double Min, double Max) ExpandAxis((double Min, double Max) axis, double span, double limit)
     {
         var width = Math.Min(span, 2 * limit);

@@ -6,12 +6,12 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Tiles;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Styling;
 using Honua.Infrastructure.Validation;
-using Honua.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Honua.Infrastructure.SharedCaching;
@@ -125,7 +125,7 @@ internal static class TileJsonEndpoints
     // need west < east, so a dateline-crossing extent advertises the full longitude range.
     private static double[] ToTileBounds(FeatureExtent extent, int maxZoom)
     {
-        var (west, south, east, north) = OgcTileExtent.ExpandDegenerateAxes(
+        var (west, south, east, north) = TileExtent.ExpandDegenerateAxes(
             (extent.MinX, extent.MinY, extent.MaxX, extent.MaxY), maxZoom);
         return west > east ? [-180, south, 180, north] : [west, south, east, north];
     }
