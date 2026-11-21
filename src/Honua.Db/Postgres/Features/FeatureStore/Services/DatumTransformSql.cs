@@ -60,16 +60,26 @@ internal static class DatumTransformSql
         return $"ST_Transform({transformedOperand}, {toSrid})";
     }
 
-    // Tile statements rebuild the same clamped transform for every tile. Without a catalog
-    // selection the text depends only on the operand and both SRIDs, a set bounded by the
-    // layers' geometry columns and SRIDs, so each is built once.
+    // Tile and feature statements rebuild the same transform for every request. Without a catalog
+    // selection the text depends only on the operand and both SRIDs, so each is built once. Target
+    // SRIDs come from requests (outSR, crs), so the cache stops growing at a fixed size and builds
+    // past it rather than relying on every protocol validating the SRID first.
+    internal const int MaxCachedTransforms = 4096;
+
     private static readonly ConcurrentDictionary<(string Operand, int FromSrid, int ToSrid), string> KnownSridTransforms = new();
     private static readonly ConcurrentDictionary<(string Operand, int ToSrid), string> RuntimeSridTransforms = new();
 
     public static string CachedTransformExpression(string operand, int fromSrid, int toSrid)
-        => KnownSridTransforms.GetOrAdd(
-            (operand, fromSrid, toSrid),
-            static key => BuildTransformExpression(key.Operand, key.ToSrid, selection: null, key.FromSrid));
+    {
+        var key = (operand, fromSrid, toSrid);
+        if (KnownSridTransforms.TryGetValue(key, out var cached))
+        {
+            return cached;
+        }
+
+        var built = BuildTransformExpression(operand, toSrid, selection: null, fromSrid);
+        return KnownSridTransforms.Count < MaxCachedTransforms ? KnownSridTransforms.GetOrAdd(key, built) : built;
+    }
 
     // Same text as BuildTransformExpression(operand, query.OutputSrid, query.OutputDatumTransformation,
     // query.SpatialReferenceSrid). Pass only column operands (GeometryProcessor.GetGeometryOperand): a plain

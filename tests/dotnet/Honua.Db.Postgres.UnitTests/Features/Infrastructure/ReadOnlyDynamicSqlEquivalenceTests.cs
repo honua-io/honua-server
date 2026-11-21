@@ -45,6 +45,11 @@ public sealed class ReadOnlyDynamicSqlEquivalenceTests
         "_private_fn(1)",
         "SELECT ÄÖ, é_1 FROM données",
         "WITH x AS (SELECT 1) INSERT INTO t SELECT * FROM x",
+        "SELECT 1 /",
+        "SELECT 1 -\0-",
+        "SELECT 𝔘pdate, x𝔘 FROM t",
+        "SELECT \"\"",
+        "SELECT ''",
     };
 
     [UnitTheory]

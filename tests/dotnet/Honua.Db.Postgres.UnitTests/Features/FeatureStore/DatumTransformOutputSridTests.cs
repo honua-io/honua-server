@@ -28,6 +28,16 @@ public sealed class DatumTransformOutputSridTests
     }
 
     [UnitTest]
+    public void CachedTransformExpression_PastTheCap_StillReturnsTheBuiltExpression()
+    {
+        for (var srid = 100_000; srid < 100_000 + DatumTransformSql.MaxCachedTransforms + 10; srid++)
+        {
+            DatumTransformSql.CachedTransformExpression("cap_probe", 4326, srid)
+                .Should().Be(DatumTransformSql.BuildTransformExpression("cap_probe", srid, selection: null, 4326));
+        }
+    }
+
+    [UnitTest]
     public void TransformToOutputSrid_UnknownSourceSrid_MatchesTheBuiltExpression()
     {
         var expected = DatumTransformSql.BuildTransformExpression("geometry", 3857, selection: null, fromSrid: null);
