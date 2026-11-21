@@ -16,7 +16,12 @@ Honua serves OGC 3D Tiles through `/scenes/{sceneId}/...` so CesiumJS resolves e
 
 **Edition and lifecycle:** Existing serving, discovery, elevation and generation from feature layers remain Community. Specialised CityGML/BIM and point-cloud ingest and I3S remain Enterprise. 3D is Experimental in 2026.1; this guide is for evaluation, with no production commitment. See [commercial boundaries](../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261).
 
-The scene routes are off by default and return `404` until you enable their experimental capabilities (at least `scene.catalog` and `serve.3d-tiles-scene`); see [enable the 3D surfaces](../../reference/protocols/3d-tiles-and-scenes.md#enable-the-3d-surfaces).
+The scene routes are off by default: on a default install they are not mapped and return `404` with an empty body. Before step 1, set both experimental capabilities and restart the server:
+
+- `Capabilities__Experimental__scene.catalog__Enabled=true` for the scene registry (`/api/v1/admin/scenes`) and scene discovery.
+- `Capabilities__Experimental__serve.3d-tiles-scene__Enabled=true` for `POST /api/v1/admin/scenes/generate` and 3D Tiles serving under `/scenes/{sceneId}/...`.
+
+See [enable the 3D surfaces](../../reference/protocols/3d-tiles-and-scenes.md#enable-the-3d-surfaces) for the other scene capabilities.
 
 ## Steps
 
@@ -112,6 +117,7 @@ The response omits filesystem paths and underlying exception details.
 
 ## Troubleshoot
 
+- **Bare `404` with an empty body on `/api/v1/admin/scenes`, `/api/v1/admin/scenes/generate` or `/scenes/{sceneId}/tileset.json`** — the experimental scene capabilities are off; set both variables listed under **Prerequisites** and restart the server.
 - **`SCENE_FEATURE_LIMIT_EXCEEDED` (400)** — the layer exceeds `SceneGeneration:MaxFeatureCount`; raise the cap or pass a smaller `maxFeatureCount` with a filtered source layer.
 - **`SCENE_REGISTRATION_CONFLICT` (409)** — the `sceneId` or display name collides with an existing (active or inactive) registration; pick a new id and name. `DELETE /api/v1/admin/scenes/{datasetId}` only deactivates a record, so it keeps its id and name.
 - **Output is flat at Z=0** — the layer has no Z values and no `extrusion` block; configure step 2 and regenerate.
