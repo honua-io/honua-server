@@ -67,8 +67,6 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
         }.Uri;
         using var message = new HttpRequestMessage(_definition.Method, uri);
         message.Headers.Host = current.Request.Host.Value;
-        // The replay reads the caller's isolated test schema; hosts honor the header only with HONUA_TEST_SCHEMA_HEADERS on.
-        CopyHeader(current, message, "X-Honua-Test-Schema");
         AdminOperationLoopbackTls.PinServedCertificate(message, current);
         if (request.Parameters.TryGetValue("If-Match", out var expectedEtag))
             message.Headers.TryAddWithoutValidation("If-Match", expectedEtag);

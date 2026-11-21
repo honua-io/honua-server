@@ -218,8 +218,6 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor, IOpera
         using var message = new HttpRequestMessage(method, uri);
         OperationLineageHeaders.Apply(message, new OperationLoopbackHop(context, current), _lineageAttestationStore);
         message.Headers.Host = current.Request.Host.Value;
-        // The replay reads the caller's isolated test schema; hosts honor the header only with HONUA_TEST_SCHEMA_HEADERS on.
-        CopyHeader(current, message, "X-Honua-Test-Schema");
         AdminOperationLoopbackTls.PinServedCertificate(message, current);
         AdminApiKeyRecord? executionCredential = null;
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
