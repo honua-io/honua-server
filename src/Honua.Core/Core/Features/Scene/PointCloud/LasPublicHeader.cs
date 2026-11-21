@@ -25,4 +25,30 @@ public readonly record struct LasPublicHeader(byte VersionMajor, byte VersionMin
             BinaryPrimitives.ReadUInt16LittleEndian(source.Slice(94, 2)), source[104]);
         return true;
     }
+
+    public static bool TryReadPointCount(
+        ReadOnlySpan<byte> source,
+        out ulong pointCount,
+        out ushort pointRecordLength)
+    {
+        pointCount = 0;
+        pointRecordLength = 0;
+
+        if (!TryRead(source, out var header) || source.Length < 111)
+        {
+            return false;
+        }
+
+        pointRecordLength = BinaryPrimitives.ReadUInt16LittleEndian(source.Slice(105, 2));
+        ulong legacyCount = BinaryPrimitives.ReadUInt32LittleEndian(source.Slice(107, 4));
+        if (header.VersionMajor == 1 && header.VersionMinor >= 4 && source.Length >= 255)
+        {
+            var extendedCount = BinaryPrimitives.ReadUInt64LittleEndian(source.Slice(247, 8));
+            pointCount = extendedCount > 0 ? extendedCount : legacyCount;
+            return true;
+        }
+
+        pointCount = legacyCount;
+        return true;
+    }
 }

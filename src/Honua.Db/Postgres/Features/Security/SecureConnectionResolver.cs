@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Authorization;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
@@ -76,6 +78,7 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver, IRes
     // string names. Null in minimal compositions that register no policy.
     private readonly IConnectionHostAllowlist? _hostAllowlist;
     private readonly PostgresSchemaConfiguration _schemaConfiguration;
+    private readonly ITenantContext? _tenantContext;
 
     public SecureConnectionResolver(
         ISecureConnectionRegistry registry,
@@ -84,7 +87,8 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver, IRes
         ILogger<SecureConnectionResolver> logger,
         Honua.Core.Features.Security.Abstractions.IConnectionDriverRegistry? connectionDriverRegistry = null,
         IConnectionHostAllowlist? hostAllowlist = null,
-        PostgresSchemaConfiguration? schemaConfiguration = null)
+        PostgresSchemaConfiguration? schemaConfiguration = null,
+        ITenantContext? tenantContext = null)
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _encryptionService = encryptionService ?? throw new ArgumentNullException(nameof(encryptionService));
@@ -96,6 +100,7 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver, IRes
             PostgresSchemaConfiguration.DefaultMetadataSchema,
             PostgresSchemaConfiguration.DefaultDataSchema,
             [PostgresSchemaConfiguration.DefaultDataSchema, "public"]);
+        _tenantContext = tenantContext;
     }
 
     public async Task<string> ResolveConnectionStringAsync(string connectionName, CancellationToken cancellationToken = default)
@@ -183,6 +188,8 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver, IRes
 
     private async Task<string> ResolveConnectionStringInternalAsync(DataConnection connection, CancellationToken cancellationToken)
     {
+        EnsureCallerScopeAuthorized(connection);
+
         // Check if connection is active
         if (!connection.IsActive)
         {
@@ -228,6 +235,10 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver, IRes
 
             _logConnectionStringResolved(_logger, connection.Name, null);
             return connectionString;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            throw;
         }
         catch (InvalidOperationException ex)
         {
@@ -449,5 +460,56 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver, IRes
 
             return false;
         }
+    }
+
+    private void EnsureCallerScopeAuthorized(DataConnection connection)
+    {
+        var jobScope = JobSecurityScope.Current;
+        var callerTenantId = !string.IsNullOrWhiteSpace(jobScope?.Submitter?.TenantId)
+            ? jobScope.Submitter.TenantId
+            : _tenantContext?.TenantId;
+        var connectionTenantId = ResolveConnectionTenantId(connection);
+
+        // A tenant-scoped connection may only be resolved within that exact tenant.
+        if (!string.IsNullOrWhiteSpace(connectionTenantId)
+            && !string.Equals(callerTenantId, connectionTenantId, StringComparison.Ordinal))
+        {
+            throw new UnauthorizedAccessException(
+                $"Connection '{connection.Name}' is not accessible in the active tenant scope.");
+        }
+
+        // Enforce optional caller/owner restriction when executing inside a job security scope.
+        if (jobScope?.Submitter is { } submitter
+            && connection.Properties.TryGetValue("ownerPrincipalId", out var ownerRaw)
+            && ownerRaw is string ownerPrincipalId
+            && !string.IsNullOrWhiteSpace(ownerPrincipalId))
+        {
+            var callerPrincipal = submitter.OwnerActorId ?? submitter.PrincipalId;
+            if (!string.Equals(callerPrincipal, ownerPrincipalId, StringComparison.Ordinal))
+            {
+                throw new UnauthorizedAccessException(
+                    $"Connection '{connection.Name}' is not accessible to the job submitter.");
+            }
+        }
+    }
+
+    private static string? ResolveConnectionTenantId(DataConnection connection)
+    {
+        if (!string.IsNullOrWhiteSpace(connection.TenantId))
+        {
+            return connection.TenantId;
+        }
+
+        if (connection.Properties.TryGetValue("tenantId", out var raw) && raw is string tenant && !string.IsNullOrWhiteSpace(tenant))
+        {
+            return tenant;
+        }
+
+        if (connection.Properties.TryGetValue("TenantId", out var pascalRaw) && pascalRaw is string pascalTenant && !string.IsNullOrWhiteSpace(pascalTenant))
+        {
+            return pascalTenant;
+        }
+
+        return null;
     }
 }

@@ -614,7 +614,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
             cancellationToken.ThrowIfCancellationRequested();
             output.Add(SpatialJoinSupport.Join(
                 target, index, plan.Predicate, plan.Distance, plan.CarryFields, plan.Stats, budget,
-                cancellationToken));
+                cancellationToken: cancellationToken));
         }
 
         return output;
