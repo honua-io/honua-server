@@ -82,7 +82,8 @@ public sealed class FeatureStreamReplayTests
 
         Assert.Equal(1, replayed);
         context.Response.Body.Position = 0;
-        var body = await new StreamReader(context.Response.Body).ReadToEndAsync();
+        using var reader = new StreamReader(context.Response.Body);
+        var body = await reader.ReadToEndAsync();
         Assert.Contains("feature-change", body);
         Assert.DoesNotContain("private", body);
     }

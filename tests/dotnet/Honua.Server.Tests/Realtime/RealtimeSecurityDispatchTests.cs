@@ -148,7 +148,10 @@ public sealed class RealtimeSecurityDispatchTests(DatabaseFixtureAdapter databas
         using var registry = new LiveStreamSecurityRegistry();
         var source = CreateEmptyFeatureSource();
         var dispatcher = new RealtimeDispatcher(harness.Log, [source], Options.Create(new RealtimeOptions()),
-            NullLogger<RealtimeDispatcher>.Instance) { Security = registry };
+            NullLogger<RealtimeDispatcher>.Instance)
+        {
+            Security = registry
+        };
         await dispatcher.InitializeAsync(CancellationToken.None);
         var refreshed = false;
         using var stream = registry.Register(new("alice", null), _ =>
@@ -194,7 +197,7 @@ public sealed class RealtimeSecurityDispatchTests(DatabaseFixtureAdapter databas
         return subscription;
     }
 
-    private static Task AppendAdminChangeAsync(RealtimeLogHarness harness, CancellationToken cancellationToken)
+    private static Task<long> AppendAdminChangeAsync(RealtimeLogHarness harness, CancellationToken cancellationToken)
         => harness.Log.AppendAsync(RealtimeLogFamilies.Admin,
             [new RealtimeLogRow("proposals", "changed", RealtimeLogHarness.Payload(new { }))], null, cancellationToken);
 

@@ -11,7 +11,7 @@ public sealed class LiveStreamSecurityRegistryTests
     [UnitTest]
     public async Task PrincipalAndCredentialInvalidationsOnlyRefreshAffectedSubscribers()
     {
-        var registry = new LiveStreamSecurityRegistry();
+        using var registry = new LiveStreamSecurityRegistry();
         var alice = 0;
         var bob = 0;
         using var first = registry.Register(new("alice", new("PortalToken", "a")), _ =>
@@ -51,7 +51,7 @@ public sealed class LiveStreamSecurityRegistryTests
     [UnitTest]
     public async Task RefreshBarrierWaitsForPolicyReplacementAndSerializesBackstop()
     {
-        var registry = new LiveStreamSecurityRegistry();
+        using var registry = new LiveStreamSecurityRegistry();
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var active = 0;
@@ -76,7 +76,7 @@ public sealed class LiveStreamSecurityRegistryTests
     [UnitTest]
     public async Task DisposedSubscriberIsNotRefreshedAndAnonymousSubscriberReceivesPolicyChanges()
     {
-        var registry = new LiveStreamSecurityRegistry();
+        using var registry = new LiveStreamSecurityRegistry();
         var count = 0;
         var subscription = registry.Register(new(null, null), _ =>
         {
