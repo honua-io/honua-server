@@ -18,6 +18,9 @@ internal static class StacV2Lookups
         MetadataV2GraphSnapshot Snapshot)
     {
         public int? StorageLayerId => Snapshot.ResolveStorageLayerId(Publication, Resource);
+
+        // The advertised collection id: unique across services, unlike the per-service LayerIndex.
+        public int CollectionNumber => StorageLayerId ?? LayerIndex;
     }
 
     public static async Task<ResolvedStacPublication[]> ResolveVisibleStacPublicationsAsync(

@@ -522,8 +522,36 @@ internal sealed partial class ODataSearchService
         var (layerId, context, requireCount, requireTextSearch) = request;
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var tenantId = context is null ? null : TenantScopeHelpers.ResolveRequestTenantId(context);
-        var candidates = SelectODataLayerCandidates(snapshot, layerId, tenantId);
+        var (candidates, matchedByLayerIndex) = SelectODataLayerCandidates(snapshot, layerId, tenantId);
+        var accessible = await CollectAccessibleLayersAsync(snapshot, candidates, context, cancellationToken)
+            .ConfigureAwait(false);
 
+        // Only layers the caller may read count towards ambiguity, so a hidden layer is never disclosed.
+        if (matchedByLayerIndex && accessible.Select(static a => a.Resource.Metadata.Id).Distinct(StringComparer.Ordinal).Skip(1).Any())
+        {
+            throw new Honua.Core.Exceptions.ResourceConflictException(
+                $"Layer index {layerId} is ambiguous across multiple OData services. Use the storage layer id.");
+        }
+
+        if (accessible.Count == 0)
+        {
+            throw new ResourceNotFoundException($"Layer {layerId} not found");
+        }
+
+        var selected = accessible[0];
+        var reader = await _providerResolver.ResolveQueryReaderAsync(
+            snapshot, selected.Service, selected.Resource, selected.Publication, selected.StorageLayerId,
+            requireCount, requireTextSearch, cancellationToken).ConfigureAwait(false);
+        return new ResolvedODataLayer(reader, selected.Publication, selected.Resource, layerId, selected.StorageLayerId);
+    }
+
+    private static async Task<List<AccessibleODataLayer>> CollectAccessibleLayersAsync(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Layer[] candidates,
+        HttpContext? context,
+        CancellationToken cancellationToken)
+    {
+        var accessible = new List<AccessibleODataLayer>();
         foreach (var publication in candidates)
         {
             var service = snapshot.Index.ServicesById[publication.ServiceId];
@@ -541,22 +569,16 @@ internal sealed partial class ODataSearchService
 
             var storageLayerId = snapshot.ResolveStorageLayerId(publication)
                 ?? snapshot.ResolveStorageLayerId(resource);
-            if (!storageLayerId.HasValue)
+            if (storageLayerId.HasValue)
             {
-                continue;
+                accessible.Add(new AccessibleODataLayer(publication, service, resource, storageLayerId.Value));
             }
-
-            var reader = await _providerResolver.ResolveQueryReaderAsync(
-                snapshot, service, resource, publication, storageLayerId.Value,
-                requireCount, requireTextSearch, cancellationToken).ConfigureAwait(false);
-
-            return new ResolvedODataLayer(reader, publication, resource, layerId, storageLayerId.Value);
         }
 
-        throw new ResourceNotFoundException($"Layer {layerId} not found");
+        return accessible;
     }
 
-    private static MetadataV2Layer[] SelectODataLayerCandidates(
+    private static (MetadataV2Layer[] Candidates, bool MatchedByLayerIndex) SelectODataLayerCandidates(
         MetadataV2GraphSnapshot snapshot,
         int layerId,
         string? tenantId)
@@ -571,22 +593,19 @@ internal sealed partial class ODataSearchService
         var candidates = visiblePublications
             .Where(p => snapshot.ResolveStorageLayerId(p) == layerId)
             .ToArray();
-        if (candidates.Length == 0)
+        var matchedByLayerIndex = candidates.Length == 0;
+        if (matchedByLayerIndex)
         {
             candidates = visiblePublications
                 .Where(p => p.LayerIndex == layerId)
                 .ToArray();
-            if (candidates.Select(static p => p.ResourceId).Distinct(StringComparer.Ordinal).Skip(1).Any())
-            {
-                throw new InvalidOperationException(
-                    $"Layer index {layerId} is ambiguous across multiple OData services. Use the storage layer id.");
-            }
         }
 
-        return candidates
+        var ordered = candidates
             .OrderByDescending(p => p.IsPrimary)
             .ThenBy(p => ResolveServiceName(snapshot, p), StringComparer.OrdinalIgnoreCase)
             .ToArray();
+        return (ordered, matchedByLayerIndex);
     }
 
     private static ResolvedRelatedResource? ResolveRelatedResource(
@@ -647,7 +666,7 @@ internal sealed partial class ODataSearchService
 
             return new ResolvedRelatedResource(
                 resource,
-                publication.LayerIndex.Value,
+                storageLayerId.Value,
                 storageLayerId.Value);
         }
 
@@ -668,6 +687,12 @@ internal sealed partial class ODataSearchService
         return service.Protocols.Any(protocol =>
             string.Equals(protocol, ODataProtocol, StringComparison.OrdinalIgnoreCase));
     }
+
+    private sealed record AccessibleODataLayer(
+        MetadataV2Layer Publication,
+        MetadataV2Service Service,
+        MetadataV2Object Resource,
+        int StorageLayerId);
 
     private sealed record ResolvedODataLayer(
         IFeatureReader Reader,

@@ -44,7 +44,7 @@ internal sealed class StacMappingService
         var baseUrl = context.BaseUrl;
         var descriptive = DescriptiveMetadataResolver.ForDataset(
             resolved.Snapshot.Graph, new(resource, resolved.Service, publication));
-        var collectionId = layerIndex.ToString(CultureInfo.InvariantCulture);
+        var collectionId = resolved.CollectionNumber.ToString(CultureInfo.InvariantCulture);
         var stacBase = $"{baseUrl}/stac";
         var displayName = ResolveDisplayName(publication, resource, layerIndex);
         var governance = resource.WithStacServiceGovernanceFallbacks(

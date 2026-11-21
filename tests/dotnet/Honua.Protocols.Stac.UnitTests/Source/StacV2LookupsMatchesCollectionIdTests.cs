@@ -107,6 +107,38 @@ public sealed class StacV2LookupsMatchesCollectionIdTests
     [UnitTest]
     public async Task ResolveStacPublicationResultAsync_TwoServicesWithLayerZero_ResolvesByStorageIdAndRejectsAmbiguousZero()
     {
+        var context = BuildTwoServiceLayerZeroContext();
+
+        var byStorage = await StacV2Lookups.ResolveStacPublicationResultAsync(context, "11", CancellationToken.None);
+        byStorage.AmbiguityError.Should().BeNull();
+        byStorage.Publication.Should().NotBeNull();
+        byStorage.Publication!.Value.Resource.Metadata.Id.Should().Be("res-b");
+
+        var ambiguous = await StacV2Lookups.ResolveStacPublicationResultAsync(context, "0", CancellationToken.None);
+        ambiguous.Publication.Should().BeNull();
+        ambiguous.AmbiguityError.Should().NotBeNull().And.Contain("svc-a").And.Contain("svc-b");
+    }
+
+    [UnitTest]
+    public async Task ResolveVisibleStacPublicationsAsync_TwoServicesWithLayerZero_AdvertisesResolvableStorageIds()
+    {
+        var context = BuildTwoServiceLayerZeroContext();
+
+        var visible = await StacV2Lookups.ResolveVisibleStacPublicationsAsync(context, CancellationToken.None);
+
+        visible.Select(static v => v.CollectionNumber).Should().BeEquivalentTo([10, 11]);
+        foreach (var advertised in visible)
+        {
+            var resolved = await StacV2Lookups.ResolveStacPublicationResultAsync(
+                context,
+                advertised.CollectionNumber.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                CancellationToken.None);
+            resolved.Publication!.Value.Resource.Metadata.Id.Should().Be(advertised.Resource.Metadata.Id);
+        }
+    }
+
+    private static DefaultHttpContext BuildTwoServiceLayerZeroContext()
+    {
         var graph = new TestMetadataV2GraphBuilder()
             .AddService("svc-a", "svc-a", protocols: ["Stac"])
             .AddService("svc-b", "svc-b", protocols: ["Stac"])
@@ -120,14 +152,6 @@ public sealed class StacV2LookupsMatchesCollectionIdTests
         var services = new ServiceCollection();
         services.AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph));
         var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
-
-        var byStorage = await StacV2Lookups.ResolveStacPublicationResultAsync(context, "11", CancellationToken.None);
-        byStorage.AmbiguityError.Should().BeNull();
-        byStorage.Publication.Should().NotBeNull();
-        byStorage.Publication!.Value.Resource.Metadata.Id.Should().Be("res-b");
-
-        var ambiguous = await StacV2Lookups.ResolveStacPublicationResultAsync(context, "0", CancellationToken.None);
-        ambiguous.Publication.Should().BeNull();
-        ambiguous.AmbiguityError.Should().NotBeNull().And.Contain("svc-a").And.Contain("svc-b");
+        return context;
     }
 }

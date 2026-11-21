@@ -92,6 +92,12 @@ internal sealed partial class ODataAdvancedQueryHandler(
         {
             throw;
         }
+        catch (Honua.Core.Exceptions.ResourceConflictException ex)
+        {
+            HonuaTelemetry.RecordException(activity, ex);
+            Log.InvalidApplyExpression(_logger, layerId, ex);
+            return ODataUtilityService.CreateODataError(context, "AmbiguousIdentifier", ex.Message, 409);
+        }
         catch (Honua.Core.Exceptions.ResourceNotFoundException ex)
         {
             HonuaTelemetry.RecordException(activity, ex);
@@ -241,6 +247,12 @@ internal sealed partial class ODataAdvancedQueryHandler(
             when (ODataUtilityService.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
         {
             throw;
+        }
+        catch (Honua.Core.Exceptions.ResourceConflictException ex)
+        {
+            HonuaTelemetry.RecordException(activity, ex);
+            Log.SearchFailed(_logger, layerId, ex);
+            return ODataUtilityService.CreateODataError(context, "AmbiguousIdentifier", ex.Message, 409);
         }
         catch (Honua.Core.Exceptions.ResourceNotFoundException ex)
         {

@@ -105,9 +105,10 @@ internal static class ItemEndpoints
                 ?? throw new InvalidOperationException(
                     $"Publication {publication.Metadata.Id} is not bound to feature storage; the STAC items handler requires a storage layer.");
 
-            // Item collection ids, links and COG artifacts are keyed on the collection's
-            // protocol-facing layer index; reads go to readerResolution.StorageLayerId.
+            // COG artifacts are keyed on the layer index; item collection ids and links use the
+            // advertised collection number; reads go to readerResolution.StorageLayerId.
             var layerId = publication.LayerIndex ?? readerResolution.StorageLayerId;
+            var collectionNumber = snapshot.ResolveStorageLayerId(publication, resource) ?? layerId;
 
             // Reject limit < 1 with 400 to match the canonical POST /search surface
             // (SearchEndpoints), which 400s on limit < 1, so the two STAC item-listing
@@ -174,7 +175,7 @@ internal static class ItemEndpoints
                     .ConfigureAwait(false);
             var items = result.Items
                 .Select(f => StacMappingService.MapFeatureToItem(f, resource, publication,
-                    layerId, baseUrl, geometrySrid: Wgs84Srid, cogArtifact: cogArtifact))
+                    collectionNumber, baseUrl, geometrySrid: Wgs84Srid, cogArtifact: cogArtifact))
                 .ToImmutableArray();
 
             var stacBase = $"{baseUrl}/stac";
@@ -289,9 +290,10 @@ internal static class ItemEndpoints
                 ?? throw new InvalidOperationException(
                     $"Publication {publication.Metadata.Id} is not bound to feature storage; the STAC item handler requires a storage layer.");
 
-            // Item collection ids, links and COG artifacts are keyed on the collection's
-            // protocol-facing layer index; reads go to readerResolution.StorageLayerId.
+            // COG artifacts are keyed on the layer index; item collection ids and links use the
+            // advertised collection number; reads go to readerResolution.StorageLayerId.
             var layerId = publication.LayerIndex ?? readerResolution.StorageLayerId;
+            var collectionNumber = snapshot.ResolveStorageLayerId(publication, resource) ?? layerId;
 
             var isStorageBound = !string.IsNullOrEmpty(publication.StorageBindingId);
             var hasNumericItemId = long.TryParse(
@@ -361,7 +363,7 @@ internal static class ItemEndpoints
                 ? null
                 : await cogArtifactLocator.TryResolveAsync(layerId, cancellationToken).ConfigureAwait(false);
             var item = StacMappingService.MapFeatureToItem(feature.Value, resource, publication,
-                layerId, baseUrl, geometrySrid: Wgs84Srid, cogArtifact: cogArtifact);
+                collectionNumber, baseUrl, geometrySrid: Wgs84Srid, cogArtifact: cogArtifact);
 
             StacTelemetry.SetResultCount(activity, 1);
             return Results.Json(item, StacJsonContext.Default.StacItem, MediaTypes.GeoJson);

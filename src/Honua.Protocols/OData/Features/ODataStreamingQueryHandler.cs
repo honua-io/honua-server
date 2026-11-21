@@ -388,11 +388,11 @@ internal sealed partial class ODataStreamingQueryHandler(
                 return layerValidation.ErrorResult!;
             }
             var resource = layerValidation.Resource!;
-            var publicLayerId = layerValidation.Publication?.LayerIndex ?? layerId.Value;
             var storageLayerId = ODataV2Lookups.ResolveStorageLayerId(
                 layerValidation.Snapshot!,
                 layerValidation.Publication,
                 resource);
+            var publicLayerId = storageLayerId ?? layerValidation.Publication?.LayerIndex ?? layerId.Value;
             if (!storageLayerId.HasValue)
             {
                 return ODataUtilityService.CreateODataError(
@@ -1068,11 +1068,11 @@ internal sealed partial class ODataStreamingQueryHandler(
                 return layerValidation.ErrorResult!;
             }
             var resource = layerValidation.Resource!;
-            var publicLayerId = layerValidation.Publication?.LayerIndex ?? layerId.Value;
             var storageLayerId = ODataV2Lookups.ResolveStorageLayerId(
                 layerValidation.Snapshot!,
                 layerValidation.Publication,
                 resource);
+            var publicLayerId = storageLayerId ?? layerValidation.Publication?.LayerIndex ?? layerId.Value;
             if (!storageLayerId.HasValue)
             {
                 return ODataUtilityService.CreateODataError(

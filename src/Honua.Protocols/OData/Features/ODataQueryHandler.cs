@@ -118,7 +118,7 @@ internal sealed partial class ODataQueryHandler(
 
             // Apply filtering and processing
             IEnumerable<Dictionary<string, object?>> layerQuery = visibleLayers
-                .Select(layer => ODataUtilityService.BuildLayerPayload(layer.Resource, layer.LayerIndex))
+                .Select(layer => ODataUtilityService.BuildLayerPayload(layer.Resource, layer.StorageLayerId))
                 .ToArray();
             if (!string.IsNullOrWhiteSpace(filter))
             {
@@ -269,8 +269,13 @@ internal sealed partial class ODataQueryHandler(
                 return layerValidation.ErrorResult!;
             }
 
-            var layerIndex = layerValidation.Publication?.LayerIndex ?? layerId;
-            var payload = ODataUtilityService.BuildLayerPayload(layerValidation.Resource!, layerIndex);
+            var publicLayerId = ODataV2Lookups.ResolveStorageLayerId(
+                    layerValidation.Snapshot!,
+                    layerValidation.Publication,
+                    layerValidation.Resource!)
+                ?? layerValidation.Publication?.LayerIndex
+                ?? layerId;
+            var payload = ODataUtilityService.BuildLayerPayload(layerValidation.Resource!, publicLayerId);
             if (!string.IsNullOrWhiteSpace(select))
             {
                 var selected = _querySearchService.ApplyFieldSelection(new[] { payload }, select);
@@ -340,7 +345,7 @@ internal sealed partial class ODataQueryHandler(
             var visibleLayers = await GetVisibleODataLayersAsync(context, effectiveToken);
 
             IEnumerable<Dictionary<string, object?>> layerQuery = visibleLayers
-                .Select(layer => ODataUtilityService.BuildLayerPayload(layer.Resource, layer.LayerIndex))
+                .Select(layer => ODataUtilityService.BuildLayerPayload(layer.Resource, layer.StorageLayerId))
                 .ToArray();
             if (!string.IsNullOrWhiteSpace(filter))
             {
@@ -456,11 +461,11 @@ internal sealed partial class ODataQueryHandler(
                 return layerValidation.ErrorResult!;
             }
             var resource = layerValidation.Resource!;
-            var publicLayerId = layerValidation.Publication?.LayerIndex ?? layerId;
             var storageLayerId = ODataV2Lookups.ResolveStorageLayerId(
                 layerValidation.Snapshot!,
                 layerValidation.Publication,
                 resource);
+            var publicLayerId = storageLayerId ?? layerValidation.Publication?.LayerIndex ?? layerId;
             if (!storageLayerId.HasValue)
             {
                 return ODataUtilityService.CreateODataError(

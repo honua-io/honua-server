@@ -43,12 +43,12 @@ public sealed class LayerValidationHelpersV2Tests
         var ambiguousTiles = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
             context, layerId: 0, LayerValidationHelpers.ValidationProtocol.ProblemJson, AccessScope.Read);
         ambiguousTiles.IsValid.Should().BeFalse();
-        (ambiguousTiles.ErrorResult as IStatusCodeHttpResult)?.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        ambiguousTiles.ErrorResult.Should().BeAssignableTo<IStatusCodeHttpResult>().Which.StatusCode.Should().Be(StatusCodes.Status409Conflict);
 
         var ambiguousDefault = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
             context, layerId: 0, AccessScope.Read);
         ambiguousDefault.IsValid.Should().BeFalse();
-        (ambiguousDefault.ErrorResult as IStatusCodeHttpResult)?.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        ambiguousDefault.ErrorResult.Should().BeAssignableTo<IStatusCodeHttpResult>().Which.StatusCode.Should().Be(StatusCodes.Status409Conflict);
     }
 
     [UnitTest]
@@ -65,7 +65,7 @@ public sealed class LayerValidationHelpersV2Tests
         var ambiguous = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
             context, "0", AccessScope.Read, ServiceProtocols.OgcFeatures, preferAdvertisedCollectionId: true);
         ambiguous.IsValid.Should().BeFalse();
-        (ambiguous.ErrorResult as IStatusCodeHttpResult)?.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        ambiguous.ErrorResult.Should().BeAssignableTo<IStatusCodeHttpResult>().Which.StatusCode.Should().Be(StatusCodes.Status409Conflict);
 
         var snapshot = await context.RequestServices
             .GetRequiredService<IMetadataV2GraphProvider>()

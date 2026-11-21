@@ -397,7 +397,7 @@ internal static class SearchEndpoints
                     candidate.Feature,
                     candidate.Target.Resource,
                     candidate.Target.Publication,
-                    candidate.Target.LayerIndex,
+                    candidate.Target.CollectionNumber,
                     baseUrl,
                     candidate.Projection?.SelectedProperties,
                     geometrySrid: Wgs84Srid,
@@ -480,7 +480,7 @@ internal static class SearchEndpoints
                     geometryService,
                     filterProcessor,
                     defaultFilterLangIsText,
-                    target.LayerIndex.ToString(CultureInfo.InvariantCulture),
+                    target.CollectionNumber.ToString(CultureInfo.InvariantCulture),
                     isStorageBound,
                     crossCollectionResources,
                     cancellationToken);
@@ -508,6 +508,7 @@ internal static class SearchEndpoints
                 var query = layerQueryResult.Query;
                 var projection = layerQueryResult.Projection;
                 var layerId = target.LayerIndex;
+                var collectionNumber = target.CollectionNumber;
                 var resolvedOrder = query.OrderBy is { IsDefaultOrEmpty: false } orderBy
                     ? orderBy
                     : ImmutableArray<OrderByClause>.Empty;
@@ -573,7 +574,7 @@ internal static class SearchEndpoints
                                     f,
                                     target.Resource,
                                     target.Publication,
-                                    layerId,
+                                    collectionNumber,
                                     baseUrl,
                                     projection?.SelectedProperties,
                                     geometrySrid: Wgs84Srid,
@@ -687,7 +688,7 @@ internal static class SearchEndpoints
                         var pageCog = await CogForLayerAsync(layerId, cancellationToken);
                         allItems.AddRange(page.Items.Select(f => ApplyFieldProjection(
                             StacMappingService.MapFeatureToItem(
-                                f, target.Resource, target.Publication, layerId, baseUrl,
+                                f, target.Resource, target.Publication, collectionNumber, baseUrl,
                                 projection?.SelectedProperties, geometrySrid: Wgs84Srid,
                                 cogArtifact: pageCog), projection)));
                     }
@@ -719,7 +720,7 @@ internal static class SearchEndpoints
                                 f,
                                 target.Resource,
                                 target.Publication,
-                                layerId,
+                                collectionNumber,
                                 baseUrl,
                                 projection?.SelectedProperties,
                                 geometrySrid: Wgs84Srid,
@@ -741,7 +742,7 @@ internal static class SearchEndpoints
                                 f,
                                 target.Resource,
                                 target.Publication,
-                                layerId,
+                                collectionNumber,
                                 baseUrl,
                                 projection?.SelectedProperties,
                                 geometrySrid: Wgs84Srid,

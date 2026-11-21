@@ -154,7 +154,7 @@ internal static class CatalogEndpoints
             // Child collection links
             foreach (var resolved in visible)
             {
-                var collectionId = resolved.LayerIndex.ToString(CultureInfo.InvariantCulture);
+                var collectionId = resolved.CollectionNumber.ToString(CultureInfo.InvariantCulture);
                 var title = ResolveDisplayName(resolved);
                 links.Add(Link.Create(
                     href: $"{stacBase}/collections/{collectionId}",
@@ -400,7 +400,7 @@ internal static class CatalogEndpoints
             ?? (string.IsNullOrEmpty(resolved.Publication.Metadata.Name) ? null : resolved.Publication.Metadata.Name)
             ?? resolved.Resource.Metadata.Title
             ?? (string.IsNullOrEmpty(resolved.Resource.Metadata.Name) ? null : resolved.Resource.Metadata.Name)
-            ?? resolved.LayerIndex.ToString(CultureInfo.InvariantCulture);
+            ?? resolved.CollectionNumber.ToString(CultureInfo.InvariantCulture);
     }
 
     private static ImmutableArray<string> GetConformanceClasses()
