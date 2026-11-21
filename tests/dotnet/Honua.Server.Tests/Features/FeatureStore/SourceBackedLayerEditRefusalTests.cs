@@ -48,9 +48,8 @@ public sealed class SourceBackedLayerEditRefusalTests : IAsyncLifetime
         });
 
         using var client = _fixture.CreateAdminClient();
-        using var response = await client.PostAsync(
-            $"/rest/services/{ServiceName}/FeatureServer/1/applyEdits",
-            new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json", ["adds"] = adds }));
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json", ["adds"] = adds });
+        using var response = await client.PostAsync($"/rest/services/{ServiceName}/FeatureServer/1/applyEdits", content);
         var body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed, body);
