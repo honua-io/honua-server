@@ -217,7 +217,7 @@ jobs:
           for profile in "${ordered[@]}"; do
             for ((waited = 0; waited < 600; waited += 10)); do
               load1="$(cut -d ' ' -f1 /proc/loadavg)"
-              awk -v load="${load1}" -v limit="${settle_limit}" 'BEGIN { exit !(load <= limit) }' && break
+              awk -v current="${load1}" -v limit="${settle_limit}" 'BEGIN { exit !(current <= limit) }' && break
               sleep 10
             done
             echo "=== Pair ${PAIR_INDEX}: running profile=${profile} sizes=${SIZES} levels=${LEVELS} (load1 $(cut -d ' ' -f1 /proc/loadavg) after ${waited}s settle) ==="
