@@ -17,9 +17,9 @@ Read and manage styles through OGC API - Styles (Part 1).
 | Category | Styling |
 | Edition | Community |
 | Status | ga |
-| Surface maturity | 8 implemented |
-| Registry entries | 8 |
-| Proving tests | 76 |
+| Surface maturity | 9 implemented |
+| Registry entries | 9 |
+| Proving tests | 86 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

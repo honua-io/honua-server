@@ -19,7 +19,7 @@ Query and read features through WFS 2.0.
 | Status | ga |
 | Surface maturity | 2 implemented |
 | Registry entries | 2 |
-| Proving tests | 165 |
+| Proving tests | 168 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
