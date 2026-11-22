@@ -105,35 +105,46 @@ internal static class CollectionEndpoints
             var visible = await StacV2Lookups.ResolveVisibleStacPublicationsAsync(context, cancellationToken)
                 .ConfigureAwait(false);
 
-            var collections = await OgcCommonUtilities.ProjectWithLimitedConcurrencyAsync(
-                visible,
-                (resolved, ct) => StacMappingService.MapResourceToCollectionAsync(
-                    resolved,
-                    new(featureReader, baseUrl, coordinateTransformService),
-                    ct),
-                cancellationToken).ConfigureAwait(false);
+            var cacheKey = StacCollectionsCacheHelper.BuildCollectionsKey(baseUrl, visible);
+            var result = await MetadataDocumentByteCache.GetOrBuildJsonAsync(
+                context,
+                new JsonMetadataCacheRequest<StacCollectionsResponse>
+                {
+                    CacheKey = cacheKey,
+                    TypeInfo = StacJsonContext.Default.StacCollectionsResponse,
+                    BuildAsync = async () =>
+                    {
+                        var collections = await OgcCommonUtilities.ProjectWithLimitedConcurrencyAsync(
+                            visible,
+                            (resolved, ct) => StacMappingService.MapResourceToCollectionAsync(
+                                resolved,
+                                new(featureReader, baseUrl, coordinateTransformService),
+                                ct),
+                            cancellationToken).ConfigureAwait(false);
 
-            var links = ImmutableArray.Create(
-                Link.Create(
-                    href: $"{stacBase}/collections",
-                    rel: RelationTypes.Self,
-                    type: MediaTypes.Json,
-                    title: "Collections"),
-                Link.Create(
-                    href: stacBase,
-                    rel: StacConstants.StacRelations.Root,
-                    type: MediaTypes.Json,
-                    title: "STAC Catalog"));
+                        var links = ImmutableArray.Create(
+                            Link.Create(
+                                href: $"{stacBase}/collections",
+                                rel: RelationTypes.Self,
+                                type: MediaTypes.Json,
+                                title: "Collections"),
+                            Link.Create(
+                                href: stacBase,
+                                rel: StacConstants.StacRelations.Root,
+                                type: MediaTypes.Json,
+                                title: "STAC Catalog"));
 
-            var response = new StacCollectionsResponse
-            {
-                Collections = collections,
-                Links = links
-            };
+                        return new StacCollectionsResponse
+                        {
+                            Collections = collections,
+                            Links = links
+                        };
+                    }
+                }).ConfigureAwait(false);
 
-            StacLog.CollectionsReturned(logger, collections.Length);
-            StacTelemetry.SetResultCount(activity, collections.Length);
-            return Results.Json(response, StacJsonContext.Default.StacCollectionsResponse, MediaTypes.Json);
+            StacLog.CollectionsReturned(logger, visible.Length);
+            StacTelemetry.SetResultCount(activity, visible.Length);
+            return result;
         }
         catch (OperationCanceledException ex)
             when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
@@ -187,13 +198,22 @@ internal static class CollectionEndpoints
             }
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            var collection = await StacMappingService.MapResourceToCollectionAsync(
-                resolved.Value,
-                new(featureReader, baseUrl, coordinateTransformService),
-                cancellationToken).ConfigureAwait(false);
+            var resolvedEntry = resolved.Value;
+            var cacheKey = StacCollectionsCacheHelper.BuildCollectionKey(baseUrl, resolvedEntry);
+            var result = await MetadataDocumentByteCache.GetOrBuildJsonAsync(
+                context,
+                new JsonMetadataCacheRequest<StacCollection>
+                {
+                    CacheKey = cacheKey,
+                    TypeInfo = StacJsonContext.Default.StacCollection,
+                    BuildAsync = () => StacMappingService.MapResourceToCollectionAsync(
+                        resolvedEntry,
+                        new(featureReader, baseUrl, coordinateTransformService),
+                        cancellationToken)
+                }).ConfigureAwait(false);
 
             StacTelemetry.SetResultCount(activity, 1);
-            return Results.Json(collection, StacJsonContext.Default.StacCollection, MediaTypes.Json);
+            return result;
         }
         catch (OperationCanceledException ex)
             when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
