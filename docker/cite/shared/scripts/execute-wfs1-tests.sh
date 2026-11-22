@@ -230,6 +230,42 @@ extract_ctl_counts() {
     '
 }
 
+extract_uncounted_ctl_failures() {
+    logs_dir="$1"
+    result_prefix="$2"
+
+    find "$logs_dir" -name 'log.xml' -exec awk -v prefix="$result_prefix" '
+        BEGIN {
+            name = "";
+            result = "";
+            prefix = tolower(prefix);
+        }
+
+        function read_attr(line, attr_name, value) {
+            value = line;
+            sub("^.*" attr_name "=\"", "", value);
+            sub("\".*$", "", value);
+            return value;
+        }
+
+        /local-name=/ && name == "" {
+            name = read_attr($0, "local-name");
+        }
+
+        /<endtest result=/ {
+            result = read_attr($0, "result");
+        }
+
+        END {
+            if (name != "" && result == "6" && index(tolower(name), prefix) != 1) {
+                print name;
+            }
+        }
+    ' {} \; | sort -u
+}
+
+UNCOUNTED_FAILED=0
+UNCOUNTED_FAILURE_NAMES=""
 if [ -n "$TESTNG_RESULTS" ] && [ -f "$TESTNG_RESULTS" ]; then
     PASSED=$(extract_count "passed" "$TESTNG_RESULTS")
     FAILED=$(extract_count "failed" "$TESTNG_RESULTS")
@@ -241,6 +277,10 @@ else
     FAILED=$2
     SKIPPED=$3
     TOTAL=$4
+    UNCOUNTED_FAILURE_NAMES=$(extract_uncounted_ctl_failures "$TE_BASE_DIR/users/cite/logs" "$CTL_RESULT_PREFIX")
+    if [ -n "$UNCOUNTED_FAILURE_NAMES" ]; then
+        UNCOUNTED_FAILED=$(printf '%s\n' "$UNCOUNTED_FAILURE_NAMES" | wc -l | tr -d '[:space:]')
+    fi
 fi
 
 if [ "$TOTAL" -gt 0 ]; then
@@ -254,13 +294,18 @@ echo "CITE Tests Passed: $PASSED"
 echo "CITE Tests Failed: $FAILED"
 echo "CITE Tests Skipped: $SKIPPED"
 echo "Total CITE Tests: $TOTAL"
+echo "Uncounted CITE Tests Failed: $UNCOUNTED_FAILED"
+if [ "$UNCOUNTED_FAILED" -gt 0 ]; then
+    echo -e "${RED}Failed tests outside prefix '${CTL_RESULT_PREFIX}':${NC}"
+    printf '%s\n' "$UNCOUNTED_FAILURE_NAMES" | sed 's/^/  - /'
+fi
 
 if [ "$TOTAL" -le 0 ]; then
     echo -e "${RED}No authoritative CITE results were captured${NC}"
     exit 1
 fi
 
-if [ "$FAILED" -eq 0 ]; then
+if [ "$FAILED" -eq 0 ] && [ "$UNCOUNTED_FAILED" -eq 0 ]; then
     COMPLIANCE_STATUS="COMPLIANT"
 elif [ "$PASSED" -gt 0 ]; then
     COMPLIANCE_STATUS="PARTIAL"
@@ -276,6 +321,7 @@ cat > "$RESULTS_DIR/cite-compliance-report.xml" << EOF_REPORT
         <testsPassed>$PASSED</testsPassed>
         <testsFailed>$FAILED</testsFailed>
         <testsSkipped>$SKIPPED</testsSkipped>
+        <uncountedTestsFailed>$UNCOUNTED_FAILED</uncountedTestsFailed>
         <profile>$TEST_PROFILE</profile>
         <timestamp>$(date -Iseconds)</timestamp>
     </summary>
@@ -293,6 +339,7 @@ cat > "$RESULTS_DIR/$SUMMARY_FILE" << EOF_SUMMARY
 - **Failed**: $FAILED
 - **Skipped**: $SKIPPED
 - **CantTell**: 0
+- **Uncounted Failed**: $UNCOUNTED_FAILED
 - **Success Rate**: $SUCCESS_RATE%
 - **Compliance Status**: $COMPLIANCE_STATUS
 - **Generated**: $(date -Iseconds)
@@ -304,7 +351,7 @@ if [ -n "$HOST_UID" ] && [ -n "$HOST_GID" ]; then
     chown -R "$HOST_UID:$HOST_GID" "$RESULTS_DIR" 2>/dev/null || true
 fi
 
-if [ "$FAILED" -eq 0 ]; then
+if [ "$FAILED" -eq 0 ] && [ "$UNCOUNTED_FAILED" -eq 0 ]; then
     echo -e "${GREEN}${SUITE_LABEL} CITE gate passed with no failed tests${NC}"
     exit 0
 fi
