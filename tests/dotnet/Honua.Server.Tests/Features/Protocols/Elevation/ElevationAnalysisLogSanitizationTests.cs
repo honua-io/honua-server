@@ -11,6 +11,7 @@ using Honua.Core.Features.Raster;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Server.Features.Protocols.Elevation;
 using Honua.Server.Tests.Features.Admin;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,7 +22,7 @@ namespace Honua.Server.Tests.Features.Protocols.Elevation;
 
 public sealed class ElevationAnalysisLogSanitizationTests
 {
-    [Theory]
+    [UnitTheory]
     [InlineData("sun-shadow")]
     [InlineData("slice")]
     [InlineData("line-of-sight")]

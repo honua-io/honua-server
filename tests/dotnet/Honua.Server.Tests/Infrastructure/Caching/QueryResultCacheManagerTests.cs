@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Monitoring;
 using Honua.Server.Tests.Features.Admin;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -49,7 +50,7 @@ public sealed class QueryResultCacheManagerTests
         executions.Should().Be(1);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task InvalidateAsync_WithCrLfPattern_SanitizesPatternInLog()
     {
         using var memoryCache = new MemoryCache(new MemoryCacheOptions());
@@ -69,7 +70,7 @@ public sealed class QueryResultCacheManagerTests
         logCapture.Messages[0].Should().Contain("eval3-noop__[ERR] FORGED_CACHE_LINE");
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
@@ -82,7 +83,7 @@ public sealed class QueryResultCacheManagerTests
             .Should().NotBeNullOrWhiteSpace();
     }
 
-    [Fact]
+    [UnitTest]
     public void ValidateInvalidationPattern_RejectsOverlongPattern_AndAcceptsNormalPattern()
     {
         var tooLong = new string('a', EnhancedPerformanceEndpoints.MaxCacheInvalidationPatternLength + 1);
