@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics.CodeAnalysis;
 using Apache.Arrow;
 using Apache.Arrow.Types;
 
@@ -8,6 +9,8 @@ namespace Honua.Infrastructure.Services;
 
 public static partial class GeoParquetFeatureWriter
 {
+    [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope",
+        Justification = "RecordBatch owns the arrays after successful construction. Partial construction disposes each created array.")]
     private static RecordBatch CopyToUpgradedSchema(
         RecordBatch source, Schema targetSchema, Dictionary<string, int> sourceIndex)
     {
