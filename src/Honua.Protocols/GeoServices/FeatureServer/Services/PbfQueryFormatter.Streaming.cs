@@ -86,6 +86,7 @@ internal sealed partial class PbfQueryFormatter
         {
             Resource = headerOptions.Resource,
             Srid = headerOptions.Srid,
+            RequestedOutputSrid = headerOptions.RequestedOutputSrid,
             HasMoreResults = source.HasMoreResults(),
             Encoding = encoding
         });
@@ -147,7 +148,7 @@ internal sealed partial class PbfQueryFormatter
             {
                 writer.WriteEnum(7, MapPbfGeometryType(geometryType));
                 var sr = new ProtobufWriter(32);
-                sr.WriteUInt32(1, (uint)input.Srid);
+                sr.WriteUInt32(1, (uint)(input.RequestedOutputSrid ?? input.Srid));
                 sr.WriteUInt32(2, (uint)input.Srid);
                 writer.WriteMessage(8, ref sr);
                 sr.Dispose();
@@ -178,6 +179,7 @@ internal sealed partial class PbfQueryFormatter
     {
         public required MetadataV2Object Resource { get; init; }
         public int Srid { get; init; }
+        public int? RequestedOutputSrid { get; init; }
         public bool HasMoreResults { get; init; }
         public required FeatureEncoding Encoding { get; init; }
     }

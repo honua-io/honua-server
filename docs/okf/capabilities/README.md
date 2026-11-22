@@ -68,6 +68,7 @@ each page. Some entitlement keys are deliberately not published here at all.
 | [Field Collection Forms](fieldops.forms.md) | FieldOps | Community | ga |
 | [Offline/Field Sync](fieldops.offline-sync.md) | FieldOps | Pro | **preview** |
 | [GeoArrow Response Format](format.geoarrow.md) | Format | Community | **live** |
+| [GeoParquet Format](format.geoparquet.md) | Format | Community | **live** |
 | [Batch Geocoding](geocoding.batch.md) | Geocoding | Enterprise | ga |
 | [Provider Failover](geocoding.failover.md) | Geocoding | Pro | ga |
 | [Forward Geocoding](geocoding.forward.md) | Geocoding | Community | ga |

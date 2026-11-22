@@ -328,6 +328,14 @@
       "status": "live"
     },
     {
+      "key": "format.geoparquet",
+      "displayName": "GeoParquet Format",
+      "category": "Format",
+      "edition": "Community",
+      "description": "Import, export, and query features as GeoParquet 1.1.0 with WKB geometry and spatial covering metadata through the shared provider-neutral writer.",
+      "status": "live"
+    },
+    {
       "key": "geocoding.batch",
       "displayName": "Batch Geocoding",
       "category": "Geocoding",

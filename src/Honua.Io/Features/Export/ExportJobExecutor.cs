@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.Core.Configuration;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -9,8 +10,10 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Infrastructure.Progress;
+using Honua.Infrastructure.Services;
 using Honua.Io.Export.Writers;
 using Honua.ServiceDefaults;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Io.Export;
 
@@ -266,6 +269,24 @@ internal sealed class ExportJobExecutor(
                         $"{basePath}.gpkg", features, job.Fields, job.GeometryType, job.OutputSrid, srsName, srsWkt, cancellationToken).ConfigureAwait(false);
                     return new ExportFileResult($"{basePath}.gpkg", writtenCount, []);
                 }
+            case BuiltInExportFormat.GeoParquet:
+                {
+                    var limits = services.GetService<IOptions<LimitsOptions>>()?.Value ?? new LimitsOptions();
+                    var writtenCount = await GeoParquetExportWriter.WriteAsync(
+                        $"{basePath}.parquet",
+                        features,
+                        new GeoParquetExportRequest
+                        {
+                            LayerName = job.LayerName,
+                            Fields = job.Fields,
+                            GeometryType = job.GeometryType,
+                            OutputSrid = job.OutputSrid,
+                            Limits = limits,
+                            Logger = logger
+                        },
+                        cancellationToken).ConfigureAwait(false);
+                    return new ExportFileResult($"{basePath}.parquet", writtenCount, []);
+                }
             default:
                 throw new InvalidOperationException($"Unsupported export format: {job.Format}");
         }
@@ -295,6 +316,7 @@ internal sealed class ExportJobExecutor(
         "csv" => "text/csv",
         "shapefile" => "application/zip",
         "gpkg" => "application/geopackage+sqlite3",
+        "geoparquet" or "parquet" => GeoParquetFeatureWriter.ContentType,
         _ => "application/octet-stream"
     };
 

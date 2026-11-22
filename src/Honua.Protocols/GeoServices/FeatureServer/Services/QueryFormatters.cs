@@ -958,6 +958,10 @@ internal sealed class StreamingQueryFormatter
 
     internal PbfQueryFormatter PbfFormatter { get; }
 
+    internal GeometryLimits GeometryLimits => _geometryLimits;
+
+    internal GeoParquetLimits GeoParquetLimits => _geoParquetLimits;
+
     public Task StreamAsGeoServicesJsonAsync(
         IAsyncEnumerable<Feature> features,
         MetadataV2Object resource,

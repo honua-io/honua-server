@@ -974,7 +974,8 @@ internal sealed partial class FeatureServerQueryHandler(
             // quantization per feature inside PbfQueryFormatter and streams into a bounded spool
             // whenever Z/M detection and runtime-field discovery are not needed.
             var usePbfStreaming = isPbf && CanStreamPbf(queryLayer.Resource, validatedParams, effectiveLimit);
-            var useStreaming = usePbfStreaming || (effectiveLimit > StreamingThreshold && !isPbf && !isFgb && !isGeobuf && !isParquet && !isArrow
+            var useParquetStreaming = isParquet && CanStreamParquet(queryLayer.Resource, validatedParams, effectiveLimit);
+            var useStreaming = usePbfStreaming || useParquetStreaming || (effectiveLimit > StreamingThreshold && !isPbf && !isFgb && !isGeobuf && !isParquet && !isArrow
                 && quantizationTransform is null
                 // The materialized formatter discovers runtime fields (notably the
                 // returnDistance column) and emits pjson/102100 aliases consistently.
@@ -1240,9 +1241,11 @@ internal sealed partial class FeatureServerQueryHandler(
                 new StreamingQueryDispatch
                 {
                     UsePbfStreaming = usePbfStreaming,
+                    UseParquetStreaming = useParquetStreaming,
                     Query = query,
                     ValidatedParams = validatedParams,
                     OutputSrid = outputSrid,
+                    RequestedOutputSrid = requestedOutSrAlias,
                     QuantizationTransform = quantizationTransform,
                     Context = context,
                     Format = format

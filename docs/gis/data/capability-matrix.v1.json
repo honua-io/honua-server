@@ -911,6 +911,28 @@
       "geobench": []
     },
     {
+      "key": "format.geoparquet",
+      "displayName": "GeoParquet Format",
+      "category": "Format",
+      "edition": "Community",
+      "status": "live",
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": {
+        "capability": "format.geoparquet",
+        "reasonCode": "content-negotiation",
+        "reason": "GeoParquet is selected with f=parquet on FeatureServer, $format=parquet on OData, format=geoparquet on bulk export, and file upload import; it has no separate route.",
+        "category": "Format",
+        "edition": "Community"
+      },
+      "cite": [],
+      "parity": [],
+      "geoservicesAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
       "key": "geocoding.batch",
       "displayName": "Batch Geocoding",
       "category": "Geocoding",
