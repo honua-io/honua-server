@@ -465,7 +465,7 @@ internal static partial class FeatureStreamEndpoints
                 }
 
                 var nameKey = (service.Metadata.Name.ToUpperInvariant(), layer.LayerId);
-                if (RequireStreamLayerAccess(context, layer.Resource, service) is not null ||
+                if (!AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service) ||
                     !TenantScopeHelpers.IsTenantVisible(context, layer.Publication!, layer.Resource, service))
                 {
                     // Ambiguous display-name routes must not alias an inaccessible tenant.
