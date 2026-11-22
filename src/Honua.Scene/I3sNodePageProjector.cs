@@ -15,6 +15,8 @@ public static class I3sNodePageProjector
     public const string LodSelectionMetricType = "maxScreenThresholdSQ";
 
     private const double DegreesToRadians = Math.PI / 180d;
+    private const double ServingScreenSpaceErrorPixels = 16d;
+    private const double MinimumEffectiveGeometricErrorMeters = 1e-3d;
 
     public static IReadOnlyList<I3sNodePageDocument> BuildPages(Domain.TilesetDocument document)
     {
@@ -79,17 +81,17 @@ public static class I3sNodePageProjector
             childIdIndex++;
         }
 
+        var obb = ProjectObb(entry.Node.BoundingVolume);
         var node = new I3sNodePageEntry
         {
             Index = globalIndex,
             // The root selects unconditionally (threshold 0); descendants refine
-            // as the source geometric error tightens. I3S expresses finer LODs as
-            // larger thresholds, so invert the geometric error (coarse error ->
-            // low threshold) while keeping it monotone and non-negative.
-            LodThreshold = entry.Lod == 0 ? 0d : Math.Max(0d, entry.Node.GeometricError),
+            // according to I3S maxScreenThresholdSQ (projected bounding-sphere
+            // screen pixel area π * (r * SSE / ε)^2).
+            LodThreshold = entry.Lod == 0 ? 0d : ComputeMaxScreenThresholdSq(entry.Node.GeometricError, obb),
             ParentIndex = entry.Lod == 0 ? null : FindParentIndex(entry.NodeId, indexById),
             Children = children.Count > 0 ? children : null,
-            Obb = ProjectObb(entry.Node.BoundingVolume),
+            Obb = obb,
         };
 
         // Only content-bearing nodes advertise a fetchable mesh. The global index
@@ -159,7 +161,61 @@ public static class I3sNodePageProjector
                 Math.Abs(halfHeightMetres),
                 Math.Abs(halfElevationMetres),
             ],
-            Quaternion = [0d, 0d, 0d, 1d],
+            Quaternion = ComputeEnuToEcefQuaternion(centerLonRad, centerLatRad),
         };
+    }
+
+    private static double ComputeMaxScreenThresholdSq(double geometricError, I3sOrientedBoundingBox? obb)
+    {
+        var radiusSquared = 0d;
+        if (obb is { HalfSize.Count: >= 3 })
+        {
+            var hx = obb.HalfSize[0];
+            var hy = obb.HalfSize[1];
+            var hz = obb.HalfSize[2];
+            radiusSquared = (hx * hx) + (hy * hy) + (hz * hz);
+        }
+
+        if (radiusSquared <= 0d || !double.IsFinite(radiusSquared))
+        {
+            radiusSquared = 1d;
+        }
+
+        double effectiveError;
+        if (geometricError > 0d && double.IsFinite(geometricError))
+        {
+            effectiveError = geometricError;
+        }
+        else
+        {
+            // Terminal 3D Tiles leaf nodes often carry geometricError == 0.
+            // Derive a small positive refinement error from the node's extent
+            // so the leaf still advertises a positive maxScreenThresholdSQ.
+            var radius = Math.Sqrt(radiusSquared);
+            effectiveError = Math.Max(MinimumEffectiveGeometricErrorMeters, Math.Min(1d, radius * 0.01d));
+        }
+
+        var ratio = ServingScreenSpaceErrorPixels / effectiveError;
+        return Math.PI * radiusSquared * ratio * ratio;
+    }
+
+    public static double[] ComputeEnuToEcefQuaternion(double longitudeRadians, double latitudeRadians)
+    {
+        // Local ENU axes (+X East, +Y North, +Z Up) rotate into ECEF by composing
+        // half-angle rotations around Z (lon + pi/2) and X (pi/2 - lat), returning [x, y, z, w].
+        var halfAlpha = (Math.PI * 0.5d - latitudeRadians) * 0.5d;
+        var halfBeta = (longitudeRadians + Math.PI * 0.5d) * 0.5d;
+
+        var sinAlpha = Math.Sin(halfAlpha);
+        var cosAlpha = Math.Cos(halfAlpha);
+        var sinBeta = Math.Sin(halfBeta);
+        var cosBeta = Math.Cos(halfBeta);
+
+        var qx = cosBeta * sinAlpha;
+        var qy = sinBeta * sinAlpha;
+        var qz = sinBeta * cosAlpha;
+        var qw = cosBeta * cosAlpha;
+
+        return [qx, qy, qz, qw];
     }
 }

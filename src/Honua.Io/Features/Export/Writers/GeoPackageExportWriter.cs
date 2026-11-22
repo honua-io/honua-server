@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
@@ -328,9 +329,10 @@ internal static class GeoPackageExportWriter
     // GeoPackage geometry is a standard binary header plus WKB, per OGC 12-128r16 section 6.2.3.
     private static byte[] ToGpkgBinary(byte[] wkb, int srid)
     {
+        var standardWkb = WkbSridNormalizer.RemoveEmbeddedSrid(wkb);
         // GeoPackage binary header: GP (2 bytes) + version (1) + flags (1) + srs_id (4) + optional envelope + WKB
         // Minimal header with no envelope: 8 bytes
-        var result = new byte[8 + wkb.Length];
+        var result = new byte[8 + standardWkb.Length];
         result[0] = 0x47; // 'G'
         result[1] = 0x50; // 'P'
         result[2] = 0;    // version
@@ -342,7 +344,7 @@ internal static class GeoPackageExportWriter
         result[6] = (byte)((srid >> 16) & 0xFF);
         result[7] = (byte)((srid >> 24) & 0xFF);
 
-        Buffer.BlockCopy(wkb, 0, result, 8, wkb.Length);
+        Buffer.BlockCopy(standardWkb, 0, result, 8, standardWkb.Length);
         return result;
     }
 

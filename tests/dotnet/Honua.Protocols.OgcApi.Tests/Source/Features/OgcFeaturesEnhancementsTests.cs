@@ -256,7 +256,7 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime, IClassFixture
         var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/queryables");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/schema+json");
 
         var content = await response.Content.ReadAsStringAsync();
         var json = JsonDocument.Parse(content);

@@ -130,5 +130,15 @@ public sealed class SpatialCorrectnessUnitTests
         // Reading the coordinates back would require a full WKB parser test
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void CreateEnvelopeWkb_ProjectedSridWithInvertedMinMax_DoesNotSplitAtAntimeridian()
+    {
+        var wkb = SpatialFilterHelpers.CreateEnvelopeWkb(100, -10, -50, 10, srid: 3857);
+        var geometry = new WKBReader().Read(wkb);
+
+        geometry.Should().NotBeOfType<MultiPolygon>();
+    }
+
     #endregion
 }

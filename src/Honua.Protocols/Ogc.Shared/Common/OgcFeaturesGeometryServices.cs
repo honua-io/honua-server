@@ -24,7 +24,10 @@ internal sealed partial class OgcFeaturesGeometryServices
 
     // Registered scoped (per-request) and invoked sequentially within a request, so a single
     // reused GeoJsonWriter and WKBReader are safe and avoids allocating one per feature conversion (PA-101).
-    private readonly GeoJsonWriter _geoJsonWriter = new();
+    private readonly GeoJsonWriter _geoJsonWriter = new()
+    {
+        RingOrientationOption = RingOrientationOption.DoNotModify
+    };
     private readonly WKBReader _wkbReader = new();
 
     public OgcFeaturesGeometryServices(
@@ -285,16 +288,18 @@ internal sealed partial class OgcFeaturesGeometryServices
 
     private SimpleGeoJsonGeometry ConvertGeometryToSimpleGeometry(Geometry geometry, AxisOrder axisOrder)
     {
-        // Both callers decode the geometry themselves, so it is swapped and rounded in place.
+        // Apply simplification/precision limits and right-hand-rule ring normalization in
+        // canonical (East, North) space before swapping axes for NorthEast output.
+        geometry = GeometryOutputProcessor.ApplyLimitsInPlace(geometry, _geometryLimits) ?? geometry;
+        geometry = RingWindingNormalizer.NormalizeToRightHandRule(geometry);
+
         if (axisOrder == AxisOrder.NorthEast)
         {
             geometry.Apply(new AxisSwapCoordinateFilter());
             geometry.GeometryChanged();
         }
 
-        geometry = GeometryOutputProcessor.ApplyLimitsInPlace(geometry, _geometryLimits) ?? geometry;
-
-        var geoJson = RingWindingNormalizer.WriteGeoJson(_geoJsonWriter, geometry);
+        var geoJson = _geoJsonWriter.Write(geometry);
 
         using var document = JsonDocument.Parse(geoJson);
         var root = document.RootElement;

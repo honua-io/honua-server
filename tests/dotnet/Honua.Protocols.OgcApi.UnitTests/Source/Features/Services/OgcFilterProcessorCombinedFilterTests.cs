@@ -110,6 +110,58 @@ public sealed class OgcFilterProcessorCombinedFilterTests
         capturingService.LastParsedFilter.Should().Be("country = 'Japan'");
     }
 
+    [UnitTest]
+    public void TryValidateFilterGeometries_ProjectedAndNorthEastAndGeographicBbox_EnforcesCrsAwareBounds()
+    {
+        var parser = new Honua.Core.Queries.Filters.Cql2.Cql2Parser();
+
+        var projected = parser.Parse("S_INTERSECTS(geom, BBOX(385000, 5810000, 395000, 5820000))");
+        Honua.Infrastructure.Filtering.Cql2FilterProcessor.TryValidateFilterGeometries(projected, out var defaultCrsError)
+            .Should().BeFalse("projected coordinates are invalid when filter-crs remains geographic CRS84");
+        defaultCrsError.Should().Contain("Invalid BBOX");
+
+        var projectedWithCrs = Honua.Infrastructure.Filtering.Cql2FilterProcessor.ApplyFilterCrs(
+            projected,
+            new CrsDefinition("http://www.opengis.net/def/crs/EPSG/0/25833", 25833, AxisOrder.EastNorth, false));
+        Honua.Infrastructure.Filtering.Cql2FilterProcessor.TryValidateFilterGeometries(projectedWithCrs, out _)
+            .Should().BeTrue("projected coordinates are valid once filter-crs sets a projected SRID");
+
+        var northEast = parser.Parse("S_INTERSECTS(geom, BBOX(35, -120, 40, -115))");
+        var swapped = Honua.Infrastructure.Filtering.Cql2FilterProcessor.NormalizeFilterAxisOrder(
+            northEast,
+            AxisOrder.NorthEast);
+        Honua.Infrastructure.Filtering.Cql2FilterProcessor.TryValidateFilterGeometries(swapped, out _)
+            .Should().BeTrue("NorthEast (lat, lon) BBOX coordinates are valid after axis-order normalization");
+    }
+
+    [UnitTheory]
+    [InlineData("NaN,NaN,NaN,NaN")]
+    [InlineData("-180,-90,NaN,90")]
+    [InlineData("-Infinity,-90,180,90")]
+    [InlineData("-180,-90,Infinity,90")]
+    [InlineData("-180,-90,NaN,180,90,10")]
+    [InlineData("-180,-90,-Infinity,180,90,Infinity")]
+    public async Task ProcessFiltersAsync_NonFiniteBboxOrdinates_AreRejected(string bbox)
+    {
+        var processor = new OgcFilterProcessor(
+            new CapturingFilterService(),
+            new StubCrsRegistry(),
+            NullLogger<OgcFilterProcessor>.Instance);
+
+        var httpContext = new DefaultHttpContext();
+        var result = await processor.ProcessFiltersAsync(
+            httpContext.Request,
+            Resource,
+            filter: null,
+            bbox: bbox,
+            datetime: null,
+            crs: null,
+            CancellationToken.None);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("valid numbers");
+    }
+
     // -------------------------------------------------------------------------
     // Test helpers
     // -------------------------------------------------------------------------

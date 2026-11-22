@@ -2,13 +2,18 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Rendering;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -117,8 +122,16 @@ internal sealed class ImageServerCalculateVolumeHandler
                 return StandardErrorHelpers.CreateNotImplemented(context, NoDemMessage);
             }
 
-            // Pixel ground area = |det| of the geotransform's linear part (handles rotation/skew).
-            var pixelArea = Math.Abs((geoTransform[1] * geoTransform[5]) - (geoTransform[2] * geoTransform[4]));
+            // Pixel ground area = |det| of the geotransform's linear part (handles rotation/skew),
+            // converted from the DEM CRS's native units (degrees, Web Mercator meters, feet) to ground square meters.
+            var nativePixelArea = Math.Abs((geoTransform[1] * geoTransform[5]) - (geoTransform[2] * geoTransform[4]));
+            if (nativePixelArea <= 0d || double.IsNaN(nativePixelArea) || double.IsInfinity(nativePixelArea))
+            {
+                return StandardErrorHelpers.CreateNotImplemented(context, NoDemMessage);
+            }
+
+            var pixelArea = await ResolveGroundPixelAreaSquareMetersAsync(
+                context, demRaster, geoTransform, nativePixelArea, cancellationToken).ConfigureAwait(false);
             if (pixelArea <= 0d || double.IsNaN(pixelArea) || double.IsInfinity(pixelArea))
             {
                 return StandardErrorHelpers.CreateNotImplemented(context, NoDemMessage);
@@ -216,6 +229,74 @@ internal sealed class ImageServerCalculateVolumeHandler
             MaxZ = max,
             MeanZ = elevationSum / pixels.Count,
         };
+    }
+
+    private static async ValueTask<double> ResolveGroundPixelAreaSquareMetersAsync(
+        HttpContext context,
+        RasterInfo demRaster,
+        double[] geoTransform,
+        double nativePixelArea,
+        CancellationToken cancellationToken)
+    {
+        var centerY = demRaster.Extent is { } extent
+            ? (extent.YMin + extent.YMax) * 0.5d
+            : geoTransform[3] + (demRaster.Width * 0.5d * geoTransform[4]) + (demRaster.Height * 0.5d * geoTransform[5]);
+
+        if (demRaster.Srid is not int srid)
+        {
+            return nativePixelArea;
+        }
+
+        var classifier = context.RequestServices.GetService<IGeographicSridClassifier>();
+        var crsRegistry = context.RequestServices.GetService<ICrsRegistry>();
+        var crsDefinition = crsRegistry is not null
+            ? await crsRegistry.ResolveBySridAsync(srid, cancellationToken).ConfigureAwait(false)
+            : null;
+
+        bool isGeographic;
+        if (classifier is not null)
+        {
+            isGeographic = await classifier.IsGeographicForMeasurementAsync(srid, cancellationToken).ConfigureAwait(false);
+        }
+        else if (crsDefinition.HasValue)
+        {
+            isGeographic = crsDefinition.Value.IsGeographic;
+        }
+        else
+        {
+            isGeographic = ImageServerMensurationMath.IsGeographicSrid(srid);
+        }
+
+        var linearMetersPerUnit = 1d;
+        if (!isGeographic && SpatialReferenceExtensions.NormalizeWebMercatorSrid(srid) != 3857)
+        {
+            if (classifier is not null &&
+                await classifier.TryResolveLinearUnitFactorAsync(srid, cancellationToken).ConfigureAwait(false) is double classifiedFactor)
+            {
+                linearMetersPerUnit = classifiedFactor;
+            }
+            else if (crsDefinition?.LinearUnitFactor is double defFactor && defFactor > 0d && double.IsFinite(defFactor))
+            {
+                linearMetersPerUnit = defFactor;
+            }
+            else if (!string.IsNullOrWhiteSpace(crsDefinition?.Wkt))
+            {
+                linearMetersPerUnit = CrsLinearUnitFactor.Resolve(proj4Text: null, crsDefinition.Value.Wkt, isGeographic: false);
+            }
+            else
+            {
+                linearMetersPerUnit = srid is 2992 or 2994 or 2273
+                    ? CrsLinearUnitFactor.InternationalFootMeters
+                    : CoordinateTransformer.LinearUnitToMeters(srid);
+            }
+        }
+
+        return ImageServerMensurationMath.ComputeGroundPixelAreaSquareMeters(
+            nativePixelArea,
+            centerY,
+            srid,
+            isGeographic,
+            linearMetersPerUnit);
     }
 
     private static bool TryParseBaseType(string? raw, out int baseType, out string? error)

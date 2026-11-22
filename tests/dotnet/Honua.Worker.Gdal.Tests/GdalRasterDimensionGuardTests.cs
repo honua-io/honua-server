@@ -400,4 +400,25 @@ public sealed class GdalRasterDimensionGuardTests
         scaleX.Should().Be(1.0);
         scaleY.Should().Be(1.0);
     }
+
+    [UnitTest]
+    public void ReadGeoTiffPixelScale_ReadsModelTransformation_WhenModelPixelScaleAbsent()
+    {
+        // 30-degree rotated affine transform with scaleX = 10, scaleY = 20:
+        // m[0] = 10*cos(θ) = 8, m[4] = 10*sin(θ) = 6  => sqrt(8^2 + 6^2) = 10
+        // m[1] = -20*sin(θ) = -12, m[5] = -20*cos(θ) = -16 => sqrt(12^2 + 16^2) = 20
+        var matrix = new double[]
+        {
+            8.0, -12.0, 0.0, 500_000.0,
+            6.0, -16.0, 0.0, 4_100_000.0,
+            0.0,   0.0, 1.0,       0.0,
+            0.0,   0.0, 0.0,       1.0,
+        };
+        var tiff = TiffHeaderBuilder.ClassicWithModelTransformation(width: 512, height: 512, matrix16: matrix);
+
+        GdalRasterDimensionGuard.ReadGeoTiffPixelScale(tiff, out var scaleX, out var scaleY);
+
+        scaleX.Should().BeApproximately(10.0, 1e-12);
+        scaleY.Should().BeApproximately(20.0, 1e-12);
+    }
 }

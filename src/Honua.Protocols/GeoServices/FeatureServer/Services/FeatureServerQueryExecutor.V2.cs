@@ -642,7 +642,7 @@ internal sealed partial class FeatureServerQueryExecutor
         FeatureQuery query,
         CancellationToken cancellationToken)
     {
-        var ceiling = query.Limit is int limit && limit > 0 && limit < MaxNonStreamingObjectIds
+        var ceiling = query.Limit is int limit && limit >= 0 && limit < MaxNonStreamingObjectIds
             ? limit
             : MaxNonStreamingObjectIds;
         var ids = await reader

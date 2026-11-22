@@ -118,7 +118,7 @@ public sealed class WkbGeometryReaderTests
         // missing data).
         var buffer = new byte[1 + 4 + 4]; // header + count, no actual contents needed
         var span = buffer.AsSpan();
-        span[0] = 1; // little-endian
+        span[0] = 1;
         BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(1, 4), 7u); // GeometryCollection
         BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(5, 4), 0u);
 
@@ -163,6 +163,58 @@ public sealed class WkbGeometryReaderTests
         geometry.Vertices[1].Height.Should().Be(20.0);
     }
 
+    [Fact]
+    public void Parse_EwkbWithEmbeddedSrid_SkipsSridAndReadsCoordinates()
+    {
+        // EWKB PointZ with SRID flag (0x80000000 | 0x20000000 | 1 = 0xA0000001), SRID = 4326.
+        var buffer = new byte[1 + 4 + 4 + 24];
+        var span = buffer.AsSpan();
+        span[0] = 1;
+        BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(1, 4), 0xA0000001u);
+        BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(5, 4), 4326u);
+        BinaryPrimitives.WriteDoubleLittleEndian(span.Slice(9, 8), -122.4194);
+        BinaryPrimitives.WriteDoubleLittleEndian(span.Slice(17, 8), 37.7749);
+        BinaryPrimitives.WriteDoubleLittleEndian(span.Slice(25, 8), 42.5);
+
+        var geometry = WkbGeometryReader.Parse(buffer);
+
+        geometry.Should().NotBeNull();
+        geometry!.Kind.Should().Be(SceneGeometryKind.Point);
+        geometry.Vertices.Should().ContainSingle();
+        geometry.Vertices[0].Longitude.Should().BeApproximately(-122.4194, 1e-9);
+        geometry.Vertices[0].Latitude.Should().BeApproximately(37.7749, 1e-9);
+        geometry.Vertices[0].Height.Should().BeApproximately(42.5, 1e-9);
+    }
+
+    [Fact]
+    public void Parse_MultiGeometries_ReadsAllChildParts()
+    {
+        // MultiPoint with 2 points
+        var mp = new byte[1 + 4 + 4 + 2 * (1 + 4 + 16)];
+        var span = mp.AsSpan();
+        span[0] = 1;
+        BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(1, 4), 4u); // MultiPoint
+        BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(5, 4), 2u); // 2 child points
+        // child 0
+        span[9] = 1;
+        BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(10, 4), 1u);
+        BinaryPrimitives.WriteDoubleLittleEndian(span.Slice(14, 8), -122.5);
+        BinaryPrimitives.WriteDoubleLittleEndian(span.Slice(22, 8), 37.7);
+        // child 1
+        span[30] = 1;
+        BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(31, 4), 1u);
+        BinaryPrimitives.WriteDoubleLittleEndian(span.Slice(35, 8), -122.4);
+        BinaryPrimitives.WriteDoubleLittleEndian(span.Slice(43, 8), 37.8);
+
+        var parsedMp = WkbGeometryReader.Parse(mp);
+        parsedMp.Should().NotBeNull();
+        parsedMp!.Kind.Should().Be(SceneGeometryKind.Point);
+        parsedMp.Vertices.Should().HaveCount(2);
+        parsedMp.Parts.Should().HaveCount(2);
+        parsedMp.Vertices[1].Longitude.Should().BeApproximately(-122.4, 1e-9);
+        parsedMp.Vertices[1].Latitude.Should().BeApproximately(37.8, 1e-9);
+    }
+
     private static byte[] BuildLineString(
         (double X, double Y, double M)[] vertices,
         int? isoType = null,
@@ -174,7 +226,7 @@ public sealed class WkbGeometryReaderTests
         var size = 1 + 4 + 4 + vertices.Length * (16 + ordinates * 8);
         var buffer = new byte[size];
         var span = buffer.AsSpan();
-        span[0] = 1; // little-endian
+        span[0] = 1;
         var typeWord = ewkbType ?? (uint)isoType!.Value;
         BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(1, 4), typeWord);
         BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(5, 4), (uint)vertices.Length);
