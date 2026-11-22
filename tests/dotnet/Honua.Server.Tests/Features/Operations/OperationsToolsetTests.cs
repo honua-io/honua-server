@@ -19,6 +19,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
@@ -54,8 +55,8 @@ public sealed class OperationsToolsetTests
         services.AddSingleton(readiness);
         services.AddSingleton<IOperationPolicyDecisionPoint>(new AllowAllPolicyDecisionPoint());
         services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
-        // Deliberately leave IStudioPackageLifecycleService unresolved. Constructing its
-        // executor used to prevent even validation of an unrelated status operation.
+        // Leave IStudioPackageLifecycleService unresolved to verify that unrelated status
+        // validation does not construct the package executor.
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
         var invoker = scope.ServiceProvider.GetRequiredService<Honua.Core.Features.Operations.Abstractions.IOperationInvoker>();
@@ -101,6 +102,7 @@ public sealed class OperationsToolsetTests
             .Should().BeEquivalentTo(
                 StudioDraftOperations.Create,
                 StudioDraftOperations.Update,
+                StudioDraftOperations.RestoreRevision,
                 StudioDraftOperations.Delete,
                 StudioDraftOperations.Validate,
                 StudioDraftOperations.PreviewPlan,
@@ -206,7 +208,7 @@ public sealed class OperationsToolsetTests
     [UnitTest]
     public void AddOperationsToolset_WithoutProposalStore_UsesFailClosedReplayVerifierAndBoots()
     {
-        // Regression: the real replay verifier requires IOperationProposalStore in its
+        // The real replay verifier requires IOperationProposalStore in its
         // constructor and the dispatcher requires a verifier, so no-store hosts failed
         // ValidateOnBuild at boot (trunk red, run 33241561197). Degraded hosts must
         // compose, and replay verification must refuse without the durable authority.
@@ -243,7 +245,7 @@ public sealed class OperationsToolsetTests
     [UnitTest]
     public void AddOperationsToolset_StoreRegisteredAfterComposition_UsesDurableReplayVerifier()
     {
-        // The reviewer's exact scenario: fixtures add the proposal store AFTER
+        // Fixtures add the proposal store after
         // AddOperationsToolset (post-Program ConfigureServices). Resolution-time
         // selection must honor the final composition, not a registration snapshot.
         var services = new ServiceCollection();
@@ -290,14 +292,14 @@ public sealed class OperationsToolsetTests
             descriptor.ImplementationFactory != null).Should().Be(
                 AdminConnectImportOperationCatalog.Definitions.Count +
                 AdminApiOperationCatalog.Definitions.Count +
-                (AdminOperateOperationCatalog.Definitions.Count * 2) + 4 + 16 + 4,
-                "Lanes A and B are idempotent, Lane D composes on each call, and the four legacy adapters and sixteen typed actuators and four AI admission controls remain unique");
+                (AdminOperateOperationCatalog.Definitions.Count * 2) + 4 + 18 + 4,
+                "Lanes A and B are idempotent, Lane D composes on each call, and the four legacy adapters and eighteen typed actuators and four AI admission controls remain unique");
     }
 
     [UnitTest]
     public void AddOperationsToolset_WithControlPlaneExecutors_RegistersLegacyAdaptersWithoutThrowing()
     {
-        // Regression: the legacy adapters are factory descriptors, and registering
+        // The legacy adapters are factory descriptors, and registering
         // them via TryAddEnumerable threw ArgumentException ("indistinguishable
         // from other services") the moment a control-plane executor was present —
         // i.e. in every full host, but in no unit-scoped test host, which is how
@@ -316,16 +318,16 @@ public sealed class OperationsToolsetTests
                 descriptor.ServiceType == typeof(IOperationExecutor) &&
                 descriptor.ImplementationFactory != null)
             .Should().Be(
-                AdminOperateOperationCatalog.Definitions.Count + 4 + 16 + 4,
+                AdminOperateOperationCatalog.Definitions.Count + 4 + 18 + 4,
                 "each admin operation, legacy operation class, and typed actuator gets one deferred projection");
 
-        // Idempotence across repeated composition, previously TryAddEnumerable's job.
+        // Repeated composition must be idempotent.
         services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
         services.Count(descriptor =>
                 descriptor.ServiceType == typeof(IOperationExecutor) &&
                 descriptor.ImplementationFactory != null)
             .Should().Be(
-                (AdminOperateOperationCatalog.Definitions.Count * 2) + 4 + 16 + 4,
+                (AdminOperateOperationCatalog.Definitions.Count * 2) + 4 + 18 + 4,
                 "re-registration must not duplicate the legacy adapters even though admin executors are added again");
     }
 
@@ -418,7 +420,8 @@ public sealed class OperationsToolsetTests
         foreach (var descriptor in descriptors)
         {
             var projectedName = PublishedOperationTool.ProjectName(descriptor.OperationId);
-            if (descriptor.ApprovalModel == OperationApprovalModel.OperatorGate)
+            if (descriptor.ApprovalModel == OperationApprovalModel.OperatorGate ||
+                AgentApprovalRule.RequiresApproval(descriptor))
                 publishedNames.Should().NotContain(projectedName);
             else
                 publishedNames.Should().Contain(projectedName);
@@ -545,8 +548,7 @@ public sealed class OperationsToolsetTests
     [UnitTest]
     public async Task ScopeGovernedCaller_WithoutReadScope_CannotInvokeAccessReadOperations()
     {
-        // admin.api-key.list executes directly, so it never reaches the approved-replay branch
-        // where scope authority used to be the only thing enforced.
+        // admin.api-key.list executes directly and must enforce scope authority there.
         var handler = new CapturingOperationHandler(_ => Task.FromResult(
             // codeql[cs/local-not-disposed]: HttpClient disposes the response after the caller reads it
             new HttpResponseMessage(HttpStatusCode.OK)
@@ -696,11 +698,13 @@ public sealed class OperationsToolsetTests
             };
 
             var mapper = new AdminOperateOperationApprovalRequestMapper(definition, store);
-            var mapped = mapper.Map(
-                descriptor,
-                request,
-                context,
-                new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+            var mapped = mapper.Map(new OperationApprovalRequestContext
+            {
+                Descriptor = descriptor,
+                Request = request,
+                Context = context,
+                Decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval },
+            });
 
             mapped.ExecutionPayload.Should().NotContain(secret);
             mapped.Plan!.ExecutionPayload.Should().NotContain(secret);
@@ -730,9 +734,10 @@ public sealed class OperationsToolsetTests
             TenantId = "tenant-4187",
         };
 
-        new AdminOperateOperationApprovalRequestMapper(definition, store).Map(
-            descriptor,
-            new OperationRequest
+        new AdminOperateOperationApprovalRequestMapper(definition, store).Map(new OperationApprovalRequestContext
+        {
+            Descriptor = descriptor,
+            Request = new OperationRequest
             {
                 OperationId = definition.OperationId,
                 Parameters = new Dictionary<string, string?>
@@ -740,8 +745,9 @@ public sealed class OperationsToolsetTests
                     ["clientSecret"] = "secret-value",
                 },
             },
-            context,
-            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+            Context = context,
+            Decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval },
+        });
 
         store.LastTtl.Should().Be(TimeSpan.FromDays(30));
     }
@@ -916,11 +922,17 @@ public sealed class OperationsToolsetTests
             }
         };
 
-        var mapped = mapper.Map(descriptor, request, new OperationPolicyContext
+        var mapped = mapper.Map(new OperationApprovalRequestContext
         {
-            TenantId = "requester-tenant",
-            SchemaName = "tenant_schema"
-        }, new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+            Descriptor = descriptor,
+            Request = request,
+            Context = new OperationPolicyContext
+            {
+                TenantId = "requester-tenant",
+                SchemaName = "tenant_schema"
+            },
+            Decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval },
+        });
         var replay = mapper.MapReplay(mapped);
 
         replay.TenantId.Should().Be("requester-tenant");
@@ -990,8 +1002,6 @@ public sealed class OperationsToolsetTests
 
         handle.Status.Should().Be(OperationHandleStatus.Completed);
         executionAuthority.Should().NotBeNull();
-        // Approved replays must carry an exact method/path grant; the old broad admin:write
-        // assertion described the authorization bug this test is intended to prevent.
         executionAuthority!.Record.Permissions.Should().Equal(
             AdminApiKeyPermission.CreateApprovedOperationGrant(
                 definition.Method.Method,
@@ -1050,7 +1060,9 @@ public sealed class OperationsToolsetTests
             .ToDictionary(static group => group.Key, static group => group.Count(), StringComparer.Ordinal);
 
         var approvalGated = AdminOperateOperationCatalog.Descriptors
-            .Where(static descriptor => descriptor.ApprovalModel != OperationApprovalModel.None)
+            .Where(static descriptor =>
+                descriptor.ApprovalModel != OperationApprovalModel.None ||
+                AgentApprovalRule.RequiresApproval(descriptor))
             .Select(static descriptor => descriptor.OperationId)
             .ToArray();
         mapperCounts.Keys.Should().BeEquivalentTo(approvalGated);
@@ -1075,10 +1087,13 @@ public sealed class OperationsToolsetTests
                 descriptor => descriptor.OperationId == definition.OperationId);
             var request = new OperationRequest { OperationId = definition.OperationId };
             var mapped = new AdminOperateOperationApprovalRequestMapper(definition).Map(
-                descriptor,
-                request,
-                new OperationPolicyContext(),
-                new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+                new OperationApprovalRequestContext
+                {
+                    Descriptor = descriptor,
+                    Request = request,
+                    Context = new OperationPolicyContext(),
+                    Decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval },
+                });
 
             mapped.Kind.Should().Be(
                 metadataReleaseOperations.Contains(definition.OperationId)
@@ -1325,14 +1340,26 @@ public sealed class OperationsToolsetTests
         };
 
         var decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval };
-        var map = () => mapper.Map(descriptor, request, new OperationPolicyContext(), decision);
+        var map = () => mapper.Map(new OperationApprovalRequestContext
+        {
+            Descriptor = descriptor,
+            Request = request,
+            Context = new OperationPolicyContext(),
+            Decision = decision,
+        });
 
         map.Should().Throw<InvalidOperationException>().WithMessage("*secretReference*");
 
-        var safe = mapper.Map(descriptor, request with
+        var safe = mapper.Map(new OperationApprovalRequestContext
         {
-            Parameters = new Dictionary<string, string?> { ["secretReference"] = "vault://connection" }
-        }, new OperationPolicyContext(), decision);
+            Descriptor = descriptor,
+            Request = request with
+            {
+                Parameters = new Dictionary<string, string?> { ["secretReference"] = "vault://connection" }
+            },
+            Context = new OperationPolicyContext(),
+            Decision = decision,
+        });
         safe.OperationId.Should().Be(definition.OperationId);
     }
 
@@ -1444,7 +1471,7 @@ public sealed class OperationsToolsetTests
     [UnitTest]
     public async Task LaneA_Validation_RequiresSecretReference_ForConnectionDraftTest()
     {
-        // honua-server#4880: every connection operation requires a secret reference, including
+        // Every connection operation requires a secret reference, including
         // the read-only draft test, so a plaintext password never enters an operation request.
         var definition = AdminConnectImportOperationCatalog.Definitions.Single(
             item => item.OperationId == "admin.connections.test-draft");
@@ -1479,7 +1506,7 @@ public sealed class OperationsToolsetTests
     [UnitTest]
     public async Task LaneA_ReadOnlyPostOperation_ForReadScopedCaller_UsesCredentialBoundToTheExactRoute()
     {
-        // honua-server#4880: a read-only operation served by a POST route is authorized on its
+        // A read-only operation served by a POST route is authorized on its
         // semantic read class. The loopback call carries that decision with a single-use
         // credential bound to the one method and path, instead of the caller's read-only key.
         var credentialStore = new InMemoryAdminApiKeyStore(TimeProvider.System);

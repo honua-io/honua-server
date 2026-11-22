@@ -336,6 +336,9 @@ internal sealed class McpPublishServiceArgument
     [JsonPropertyName("primaryKey")]
     public string? PrimaryKey { get; set; }
 
+    [JsonPropertyName("exactTypes")]
+    public bool? ExactTypes { get; set; }
+
     [JsonPropertyName("fields")]
     public IReadOnlyList<string>? Fields { get; set; }
 }

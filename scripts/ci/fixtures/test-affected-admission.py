@@ -48,6 +48,18 @@ class AdmissionTests(unittest.TestCase):
         with patch.object(admission, "selection", side_effect=subprocess.CalledProcessError(1, "probe")):
             self.assertFalse(admission.admission("base", "head")[0])
 
+    def test_only_a_lasting_refusal_is_recorded_as_owed_to_full_ci(self):
+        cases = ((admission.UNAVAILABLE, "false"), ("Routing requires full coverage.", "true"))
+        with tempfile.TemporaryDirectory() as directory:
+            for reason, deferred in cases:
+                output = Path(directory) / "output"
+                output.write_text("")
+                environment = {"GITHUB_OUTPUT": str(output), "GITHUB_STEP_SUMMARY": f"{directory}/summary"}
+                with patch.dict(os.environ, environment), patch.object(sys, "argv", ["admission", "b", "h"]), \
+                        patch.object(admission, "admission", return_value=(False, reason)):
+                    admission.main()
+                self.assertIn(f"deferred={deferred}\n", output.read_text(), reason)
+
     def test_unknown_descriptor_defers(self):
         for descriptor in ({"shards": [], "run_all": "false"}, {"shards": "bad", "run_all": False}, {"shards": []}):
             with patch.object(admission, "selection", return_value=descriptor):
@@ -76,6 +88,11 @@ class AdmissionTests(unittest.TestCase):
         bound = 0
         for name, job in jobs.items():
             if name in excluded:
+                continue
+            if job.get("uses") == "./.github/workflows/advisory-runner-select.yml":
+                callee = yaml.safe_load((ROOT / ".github/workflows/advisory-runner-select.yml").read_text())
+                self.assertEqual(list(callee["jobs"]), ["select"], "the selector must stay one job")
+                bound += 1
                 continue
             self.assertNotIn("uses", job, "new reusable workflows need an explicit expanded bound")
             matrix = job.get("strategy", {}).get("matrix", {})

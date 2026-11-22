@@ -15,13 +15,10 @@ namespace Honua.Server.Tests.Features.StaticMap;
 
 [Collection("Database")]
 [Protocol(TestProtocols.StaticMap)]
-public sealed class StaticMapEndpointTests : IAsyncLifetime
+public sealed class StaticMapEndpointTests(WebAppFixture fixture) : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
-
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    // One default host per class: its cases only render. Cases that replace services build their own.
+    private readonly WebAppFixture _fixture = fixture;
 
     // --- Center+Zoom endpoint ---
 
@@ -353,7 +350,7 @@ public sealed class StaticMapEndpointTests : IAsyncLifetime
         }
     }
 
-    // --- Dimension entitlement band (honua-server#2945): 1280 (Community max) is the
+    // --- Dimension entitlement band: 1280 (Community max) is the
     // entitlement boundary, 4096 (Pro max) is the absolute hard cap. Everything strictly
     // between the two requires the "staticmap.large-dimensions" entitlement.
 
@@ -562,7 +559,7 @@ public sealed class StaticMapEndpointTests : IAsyncLifetime
     [Endpoint("GET /static/{serviceId}/{center}/{dimensions}.{format}")]
     public async Task CenterZoom_ProEditionHighDpi_ScalesOutputResolution()
     {
-        // honua-server#2945: prove the dpi parameter actually changes the rendered
+        // Prove the dpi parameter actually changes the rendered
         // pixel dimensions (dpiFactor = dpi/72), not just that the request succeeds.
         var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
         await fixture.InitializeAsync();

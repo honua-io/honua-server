@@ -233,6 +233,22 @@ internal sealed class ImageServerExportHandler
 
             if (selectedRasters.Length == 0)
             {
+                var cogExport = await ImageServerCogExport.TryRenderAsync(
+                    context,
+                    new(new(snapshot, resolvedLayer.Publication, []), request, exportQuery),
+                    cancellationToken).ConfigureAwait(false);
+                if (cogExport?.Image is { } cogImage)
+                {
+                    ImageServerLog.ExportImageCompleted(_logger, layerId, cogImage.Data.Length);
+                    scope.SetSuccess(1);
+                    return await RespondWithImageAsync(context, new(request, cogImage), cancellationToken).ConfigureAwait(false);
+                }
+
+                if (cogExport?.Refusal is { } cogRefusal)
+                {
+                    return cogRefusal;
+                }
+
                 ImageServerLog.NoRastersFound(_logger, layerId);
 
                 // Esri answers an exportImage whose extent holds no data with an empty image, not
@@ -261,35 +277,9 @@ internal sealed class ImageServerExportHandler
 
                     if (emptyResult.Data is { Length: > 0 })
                     {
-                        if (WantsInlineImageResponse(request.F))
-                        {
-                            ImageServerLog.ExportImageCompleted(_logger, layerId, emptyResult.Data.Length);
-                            scope.SetSuccess(1);
-                            return Results.File(emptyResult.Data, emptyResult.ContentType);
-                        }
-
-                        var emptyImageUrl = await _temporaryFileService.StoreTemporaryFileAsync(
-                            emptyResult.Data,
-                            emptyResult.ContentType,
-                            TimeSpan.FromHours(1),
-                            principal: context.User,
-                            cancellationToken: cancellationToken);
-
-                        var emptyResponse = new ExportImageResponse
-                        {
-                            Href = emptyImageUrl,
-                            Width = emptyResult.Width,
-                            Height = emptyResult.Height,
-                            Extent = BuildExtent(
-                                emptyResult.Extent,
-                                request.Bbox,
-                                bboxSrid: SpatialReferenceHelpers.TryParseSrid(request.BboxSr),
-                                emptyResult.Srid),
-                        };
-
                         ImageServerLog.ExportImageCompleted(_logger, layerId, emptyResult.Data.Length);
                         scope.SetSuccess(1);
-                        return Results.Json(emptyResponse, ImageServerJsonContext.Default.ExportImageResponse);
+                        return await RespondWithImageAsync(context, new(request, emptyResult), cancellationToken).ConfigureAwait(false);
                     }
                 }
 
@@ -615,6 +605,33 @@ internal sealed class ImageServerExportHandler
                 error = "The multidimensional Zarr slice could not be encoded in the requested output format.";
                 return false;
         }
+    }
+
+    // An image rendered without raster_data (an empty extent or composed COG tiles): inline
+    // bytes for f=image, otherwise a temporary file described by the export response.
+    private async Task<IResult> RespondWithImageAsync(HttpContext context, RenderedExport rendered, CancellationToken cancellationToken)
+    {
+        var (request, image) = rendered;
+        if (WantsInlineImageResponse(request.F))
+        {
+            return Results.File(image.Data, image.ContentType);
+        }
+
+        var imageUrl = await _temporaryFileService.StoreTemporaryFileAsync(
+            image.Data,
+            image.ContentType,
+            TimeSpan.FromHours(1),
+            principal: context.User,
+            cancellationToken: cancellationToken);
+
+        var response = new ExportImageResponse
+        {
+            Href = imageUrl,
+            Width = image.Width,
+            Height = image.Height,
+            Extent = BuildExtent(image.Extent, request.Bbox, bboxSrid: SpatialReferenceHelpers.TryParseSrid(request.BboxSr), image.Srid),
+        };
+        return Results.Json(response, ImageServerJsonContext.Default.ExportImageResponse);
     }
 
     // Builds the export response extent. Prefers a real extent from the raster store; when
@@ -958,6 +975,12 @@ internal sealed class ImageServerExportHandler
             return true;
         }
 
+        if (ImageServerRequestLimits.ExceedsListLimit(bandIds, ImageServerRequestLimits.MaxBandIds))
+        {
+            error = $"bandIds may list at most {ImageServerRequestLimits.MaxBandIds} bands.";
+            return false;
+        }
+
         var parts = bandIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (parts.Length == 0)
         {
@@ -1122,6 +1145,8 @@ internal sealed class ImageServerExportHandler
 
     private static bool WantsInlineImageResponse(string? format)
         => string.Equals(format, InlineImageFormat, StringComparison.OrdinalIgnoreCase);
+
+    private readonly record struct RenderedExport(ExportImageRequest Request, RasterResult Image);
 
     private readonly record struct ExportParameterParseError(string Detail, bool IsNotImplemented = false);
 }

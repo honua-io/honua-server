@@ -19,6 +19,11 @@ namespace Honua.Protocols.Ogc.Api.Styles;
 [JsonSerializable(typeof(StyleEntry))]
 [JsonSerializable(typeof(ImmutableArray<StyleEntry>))]
 [JsonSerializable(typeof(StyleMetadataResponse))]
+[JsonSerializable(typeof(SharedStyleImpactResponse))]
+[JsonSerializable(typeof(SharedStyleAssociationResponse))]
+[JsonSerializable(typeof(SharedStyleConsumerResponse))]
+[JsonSerializable(typeof(SharedStyleAssociationResponse[]))]
+[JsonSerializable(typeof(SharedStyleConsumerResponse[]))]
 internal sealed partial class OgcStylesJsonContext : JsonSerializerContext
 {
 }

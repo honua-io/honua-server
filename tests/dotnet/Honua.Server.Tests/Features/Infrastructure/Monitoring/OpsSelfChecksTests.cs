@@ -8,6 +8,8 @@ using Honua.Core.Features.Observability.Domain;
 using Honua.Infrastructure.Monitoring;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.Logging;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
@@ -256,6 +258,64 @@ public sealed class OpsSelfChecksTests
         Assert.Equal(clock.Now, recovered.Sources[0].ObservedAt);
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Release_FailedRead_RetriesWithBackoffAndClearsOnSuccess()
+    {
+        var clock = new TestClock();
+        var source = new FakeSource { ReleaseFailure = new HttpRequestException("feed down"), Release = new("2026.2", ReleaseNotes) };
+        using var checks = new OpsSelfChecks(clock, source);
+        Assert.Contains(await checks.EvaluateAsync(), finding => finding.Rule == OpsSelfChecks.CollectionRule);
+        clock.Advance(TimeSpan.FromMinutes(4));
+        await checks.EvaluateAsync();
+        Assert.Equal(1, source.ReleaseReads);
+
+        clock.Advance(TimeSpan.FromMinutes(1));
+        await checks.EvaluateAsync();
+        Assert.Equal(2, source.ReleaseReads);
+
+        source.ReleaseFailure = null;
+        clock.Advance(TimeSpan.FromMinutes(9));
+        await checks.EvaluateAsync();
+        Assert.Equal(2, source.ReleaseReads);
+        clock.Advance(TimeSpan.FromMinutes(1));
+        var findings = await checks.EvaluateAsync();
+
+        Assert.Equal(3, source.ReleaseReads);
+        Assert.DoesNotContain(findings, finding => finding.Rule == OpsSelfChecks.CollectionRule);
+        Assert.Contains(findings, finding => finding.Rule == OpsSelfChecks.ReleaseRule);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Release_FailedRead_LogsFailureClassWithoutMessage()
+    {
+        var logger = Substitute.For<ILogger<OpsSelfChecks>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var source = new FakeSource { ReleaseFailure = new HttpRequestException("token=secret", null, System.Net.HttpStatusCode.ServiceUnavailable) };
+        using var checks = new OpsSelfChecks(new TestClock(), source, logger);
+
+        await checks.EvaluateAsync();
+
+        var state = Assert.Single(logger.ReceivedCalls(), call => call.GetMethodInfo().Name == nameof(ILogger.Log)).GetArguments()[2]!;
+        var values = Assert.IsAssignableFrom<IReadOnlyList<KeyValuePair<string, object?>>>(state);
+        Assert.Contains(new KeyValuePair<string, object?>("Component", "public-release-feed"), values);
+        Assert.Contains(new KeyValuePair<string, object?>("FailureClass", "HTTP 503"), values);
+        Assert.DoesNotContain("secret", state.ToString(), StringComparison.Ordinal);
+    }
+
+    [UnitTheory]
+    [InlineData("dns", "HttpRequestException:NameResolutionError")]
+    [InlineData("timeout", "timeout")]
+    [Operation(Operations.TestInfrastructure)]
+    public void DescribeFailure_NamesClassOnly(string kind, string expected)
+    {
+        Exception exception = kind == "dns"
+            ? new HttpRequestException(HttpRequestError.NameResolutionError, "private-host.internal")
+            : new HttpRequestException("private-host.internal", new TimeoutException());
+        Assert.Equal(expected, OpsSelfChecks.DescribeFailure(exception));
+    }
+
     private static readonly Uri ReleaseNotes = new("https://github.com/honua-io/honua-server/releases/tag/v2026.2");
 
     private sealed class TestClock : TimeProvider
@@ -272,6 +332,7 @@ public sealed class OpsSelfChecksTests
         public IReadOnlyList<OpsIdentityProviderHealth> Providers { get; set; } = [];
         public OpsPublishedRelease? Release { get; set; }
         public Exception? ProviderFailure { get; set; }
+        public Exception? ReleaseFailure { get; set; }
         public TaskCompletionSource? ProbeGate { get; init; }
         public int ProviderReads { get; private set; }
         public int ReleaseReads { get; private set; }
@@ -293,7 +354,7 @@ public sealed class OpsSelfChecksTests
         public Task<OpsPublishedRelease?> ReadLatestReleaseAsync(CancellationToken cancellationToken)
         {
             ReleaseReads++;
-            return Task.FromResult(Release);
+            return ReleaseFailure is null ? Task.FromResult(Release) : Task.FromException<OpsPublishedRelease?>(ReleaseFailure);
         }
     }
 }

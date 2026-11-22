@@ -27,27 +27,30 @@ namespace Honua.Server.Tests;
 
 [Collection("Database.CoreEndpoints")]
 [Protocol(TestProtocols.FeatureServer)]
-public sealed class StreamingFeatureServerEndpointTests : IAsyncLifetime
+public sealed class StreamingFeatureServerEndpointTests
+    : IClassFixture<StreamingFeatureServerEndpointTests.StreamingHost>
 {
-    private readonly WebAppFixture _webAppFixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+    private readonly WebAppFixture _webAppFixture;
     private readonly ITestOutputHelper _output;
 
-    public StreamingFeatureServerEndpointTests(ITestOutputHelper output)
+    public StreamingFeatureServerEndpointTests(StreamingHost host, ITestOutputHelper output)
     {
+        ArgumentNullException.ThrowIfNull(host);
+        _webAppFixture = host.Application;
         _output = output ?? throw new ArgumentNullException(nameof(output));
     }
 
-    public async Task InitializeAsync()
+    public sealed class StreamingHost : IAsyncLifetime
     {
-        await _webAppFixture.InitializeAsync();
+        public WebAppFixture Application { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
-        // Ensure we have a large dataset for streaming tests
-        await _webAppFixture.EnsureLargeTestDatasetAsync();
-    }
+        public async Task InitializeAsync()
+        {
+            await Application.InitializeAsync();
+            await Application.EnsureLargeTestDatasetAsync();
+        }
 
-    public async Task DisposeAsync()
-    {
-        await _webAppFixture.DisposeAsync();
+        public Task DisposeAsync() => Application.DisposeAsync();
     }
 
     [IntegrationTest]
@@ -385,7 +388,7 @@ public sealed partial class FeatureServerEndpointTests
     public async Task GetLayerMetadata_WithSubtypes_ReturnsSubtypeFieldAndSubtypes()
     {
         await UseIsolatedApplicationAsync();
-        // honua-server#1378 (#1254): an Esri subtype set carried on the canonical
+        // An Esri subtype set carried on the canonical
         // resource must be served on the FeatureServer layer metadata as
         // subtypeField / subtypes / defaultSubtypeCode, reusing the shared domain mapper
         // for per-subtype field domains.
@@ -472,7 +475,7 @@ public sealed partial class FeatureServerEndpointTests
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task GetLayerMetadata_ObjectIdField_IsTypedEsriFieldTypeOid()
     {
-        // Regression for #1299: Esri clients (including the ArcGIS Python SDK) locate the
+        // Esri clients (including the ArcGIS Python SDK) locate the
         // object-id field by filtering fields for type == "esriFieldTypeOID". The field that
         // matches objectIdField must therefore be typed esriFieldTypeOID, and there must be
         // exactly one such field per layer.
@@ -501,7 +504,7 @@ public sealed partial class FeatureServerEndpointTests
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_ObjectIdField_IsTypedEsriFieldTypeOid()
     {
-        // Regression for #1299: the query response fields[] array must also type the
+        // The query response fields[] array must also type the
         // object-id field as esriFieldTypeOID so feature-returning queries resolve the OID.
 
         // Act
@@ -758,7 +761,6 @@ public sealed partial class FeatureServerEndpointTests
         capabilities.Should().Contain("Query");
     }
 
-    // Query endpoint tests (Issue #6)
 
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -787,10 +789,10 @@ public sealed partial class FeatureServerEndpointTests
         queryResponse.HasM.Should().BeFalse();
     }
 
-    // Regression: returnDistinctValues=true with a paramless WHERE clause (the canonical
-    // ArcGIS "where=1=1" select-all) plus a named outFields previously returned HTTP 500
-    // ("Parameter '' cannot be null") because the unlimited count path mis-bound parameters.
-    // See issue #1280 — ArcGIS Pro's Unique Values renderer relies on this exact request.
+    // returnDistinctValues=true with a paramless WHERE clause (the canonical ArcGIS
+    // "where=1=1" select-all) plus a named outFields must not return HTTP 500 ("Parameter ''
+    // cannot be null") from mis-bound parameters on the unlimited count path. ArcGIS Pro's
+    // Unique Values renderer relies on this exact request.
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
@@ -1003,7 +1005,7 @@ public sealed partial class FeatureServerEndpointTests
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnCountOnly=true&f=pbf")]
     public async Task QueryFeatures_WithReturnCountOnlyAndPbf_ReturnsProtobufCount()
     {
-        // Regression (#1775): the count-only path ignored f=pbf and returned JSON. It must
+        // The count-only path ignored f=pbf and returned JSON. It must
         // emit a protobuf-encoded count (CountResult arm of the FeatureCollectionPBuffer
         // QueryResult oneof) with Content-Type application/x-protobuf, mirroring the
         // feature query pbf path.
@@ -1031,7 +1033,7 @@ public sealed partial class FeatureServerEndpointTests
             ?? throw new Xunit.Sdk.XunitException("countResult.count (field 1) was not present");
     }
 
-    // Decodes the FeatureCollectionPBuffer ids-only response (#1824):
+    // Decodes the FeatureCollectionPBuffer ids-only response:
     //   QueryResult { ObjectIdsResult idsResult = 3; }
     //   ObjectIdsResult { string objectIdFieldName = 1; repeated uint64 objectIds = 3 [packed]; }
     private static (string? FieldName, List<ulong> Ids) DecodePbfIds(byte[] bytes)
@@ -1056,7 +1058,7 @@ public sealed partial class FeatureServerEndpointTests
         return (fieldName, ids);
     }
 
-    // Decodes the FeatureCollectionPBuffer extent-only response (#1824):
+    // Decodes the FeatureCollectionPBuffer extent-only response:
     //   QueryResult { ExtentCountResult extentCountResult = 4; }
     //   ExtentCountResult { Envelope extent = 1; uint64 count = 2; }
     //   Envelope { double XMin=1; YMin=2; XMax=3; YMax=4; SpatialReference SpatialReference=5; }
@@ -1197,9 +1199,9 @@ public sealed partial class FeatureServerEndpointTests
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnIdsOnly=true&f=pbf")]
     public async Task QueryFeatures_WithReturnIdsOnlyAndPbf_ReturnsProtobufIds()
     {
-        // Regression (#1824): returnIdsOnly ignored f=pbf and returned JSON. It must emit the
+        // ReturnIdsOnly ignored f=pbf and returned JSON. It must emit the
         // ObjectIdsResult arm of the FeatureCollectionPBuffer QueryResult oneof with
-        // Content-Type application/x-protobuf, mirroring the count-pbf path (#1784).
+        // Content-Type application/x-protobuf, mirroring the count-pbf path.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&returnIdsOnly=true&f=pbf");
 
@@ -1218,7 +1220,7 @@ public sealed partial class FeatureServerEndpointTests
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnExtentOnly=true&f=pbf")]
     public async Task QueryFeatures_WithReturnExtentOnlyAndPbf_ReturnsProtobufExtent()
     {
-        // Regression (#1824): returnExtentOnly ignored f=pbf and returned JSON. It must emit the
+        // ReturnExtentOnly ignored f=pbf and returned JSON. It must emit the
         // ExtentCountResult arm of the FeatureCollectionPBuffer QueryResult oneof with
         // Content-Type application/x-protobuf.
         var response = await _fixture.Client.GetAsync(
@@ -1241,7 +1243,7 @@ public sealed partial class FeatureServerEndpointTests
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnCountOnly=true&f=geojson")]
     public async Task QueryFeatures_WithReturnCountOnlyAndGeoJson_ReturnsBadRequest()
     {
-        // Regression (#1824): geojson on the secondary modes was silently downgraded to an
+        // Geojson on the secondary modes was silently downgraded to an
         // Esri-JSON 200; it must be a clean 400 instead.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&returnCountOnly=true&f=geojson");
@@ -1403,7 +1405,7 @@ public sealed partial class FeatureServerEndpointTests
         }
     }
 
-    // Regression (#1426): ArcGIS API for Python POSTs generateRenderer (form body).
+    // ArcGIS API for Python POSTs generateRenderer (form body).
     // The POST companion must accept the body payload instead of returning 405.
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -1430,7 +1432,7 @@ public sealed partial class FeatureServerEndpointTests
         jsonDoc.RootElement.GetProperty("field").GetString().Should().Be("objectid");
     }
 
-    // Regression (#1426): POST generateRenderer with no body returns the simple
+    // POST generateRenderer with no body returns the simple
     // renderer (mirrors the GET form) rather than 405.
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -1594,7 +1596,7 @@ public sealed partial class FeatureServerEndpointTests
     public async Task QueryFeatures_WithGeoServicesClientParameters_ReturnsOk()
     {
         // ArcGIS Pro and the ArcGIS API for Python send these by default; they must
-        // be accepted (and ignored where unsupported) rather than rejected (#1276).
+        // be accepted (and ignored where unsupported) rather than rejected.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
             "?where=1=1&outFields=*&returnAllRecords=true&multipatchOption=xyFootprint" +
@@ -1608,7 +1610,7 @@ public sealed partial class FeatureServerEndpointTests
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnAdvancedSymbols=true")]
     public async Task QueryFeatures_WithReturnAdvancedSymbols_ReturnsOk()
     {
-        // Regression for #1455: the Esri .NET Runtime SDK (ServiceFeatureTable.LoadAsync)
+        // The Esri .NET Runtime SDK (ServiceFeatureTable.LoadAsync)
         // sends returnAdvancedSymbols=true on every layer query. It must be accepted and
         // ignored (HTTP 200) rather than rejected with 400, which would block the entire
         // .NET FeatureServer client.
@@ -1701,7 +1703,7 @@ public sealed partial class FeatureServerEndpointTests
         queryResponse.Features.Should().AllSatisfy(f => f.Geometry.Should().BeNull());
     }
 
-    // ObjectIds parameter tests (Issue #156)
+    // ObjectIds parameter tests
 
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -1998,7 +2000,6 @@ public sealed partial class FeatureServerEndpointTests
         queryResponse.ExceededTransferLimit.Should().BeFalse();
     }
 
-    // Query paging tests (Issue #8)
 
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -2328,7 +2329,6 @@ public sealed partial class FeatureServerEndpointTests
         queryResponse!.Features.Should().NotBeNull();
     }
 
-    // Output format tests (Issue #9)
 
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -2840,7 +2840,7 @@ public sealed partial class FeatureServerEndpointTests
     public async Task ApplyEdits_ServiceLevel_AddsOnly_IncludesEmptyUpdateAndDeleteResults()
     {
         await UseIsolatedApplicationAsync();
-        // Regression (#1775): a real Esri FeatureServer always includes per-layer
+        // A real Esri FeatureServer always includes per-layer
         // updateResults and deleteResults (empty arrays when none). arcpy's `da` driver
         // raises without them. An adds-only payload must still emit all three arrays.
         var request = """
@@ -2895,7 +2895,7 @@ public sealed partial class FeatureServerEndpointTests
     public async Task ApplyEdits_LayerLevel_AddsOnly_IncludesEmptyUpdateAndDeleteResults()
     {
         await UseIsolatedApplicationAsync();
-        // Regression (#4100): Esri clients expect all three result arrays even when the
+        // Esri clients expect all three result arrays even when the
         // request contains only one edit kind.
         var request = """
             {
@@ -3057,7 +3057,7 @@ public sealed partial class FeatureServerEndpointTests
         applyEditsResponse.DeleteResults.Should().NotBeNull().And.BeEmpty();
     }
 
-    // #4105: Esri client controls that have no effect on this server are accepted wherever the client
+    // Esri client controls that have no effect on this server are accepted wherever the client
     // puts them (query string or form body) and the edit still applies.
     [IntegrationTheory]
     [InlineData("sessionID", "{5D2E0F54-6A4B-4A5B-9C8E-1F2A3B4C5D6E}", true)]
@@ -3095,7 +3095,7 @@ public sealed partial class FeatureServerEndpointTests
         (await CountFeaturesNamedAsync(name)).Should().Be(1);
     }
 
-    // #4105: controls whose silent omission would drop edits or break a client promise are rejected,
+    // Controls whose silent omission would drop edits or break a client promise are rejected,
     // and the edit in the same request is not applied.
     [IntegrationTheory]
     [InlineData("async", "true", true, "async applyEdits is not supported")]
@@ -3133,7 +3133,7 @@ public sealed partial class FeatureServerEndpointTests
     public async Task ApplyEdits_ReturnEditMomentTrue_ReportsWhenEditsWereApplied(bool onQueryString)
     {
         await UseIsolatedApplicationAsync();
-        // #4105: the ArcGIS Maps SDK for JavaScript sends returnEditMoment=true whenever it holds an
+        // The ArcGIS Maps SDK for JavaScript sends returnEditMoment=true whenever it holds an
         // edit session; the server reports its own clock after committing, so the moment lies between
         // wall-clock readings taken before and after the request.
         var name = $"moment-{Guid.NewGuid():N}";
@@ -3151,7 +3151,7 @@ public sealed partial class FeatureServerEndpointTests
         var editMoment = root.GetProperty("editMoment").GetInt64();
         editMoment.Should().BeInRange(before, after);
 
-        // A retry with the same Idempotency-Key replays the recorded response (#2250); the moment it
+        // A retry with the same Idempotency-Key replays the recorded response; the moment it
         // reports is when the edits were originally applied, not when the retry arrived.
         await Task.Delay(TimeSpan.FromMilliseconds(20));
         var replay = await PostLayerApplyEditsFormAsync(name, "returnEditMoment", "true", onQueryString, idempotencyKey);
@@ -3356,7 +3356,7 @@ public sealed partial class FeatureServerEndpointTests
     public async Task ApplyEdits_RetriedAddWithSameIdempotencyKey_CreatesExactlyOneFeature()
     {
         await UseIsolatedApplicationAsync();
-        // Server-side at-most-once (#2250): a client that retries an add carrying the same
+        // Server-side at-most-once: a client that retries an add carrying the same
         // Idempotency-Key must not create a duplicate feature; the retry replays the original
         // response (the same objectId) and the layer ends up with exactly one new row.
         var uniqueName = $"Idempotent-{Guid.NewGuid():n}";
@@ -3435,11 +3435,8 @@ public sealed partial class FeatureServerEndpointTests
     public async Task ApplyEdits_RetryAfterValidationRollbackWithSameIdempotencyKey_RepeatsRollbackInsteadOfConflict()
     {
         await UseIsolatedApplicationAsync();
-        // #3052: the rollbackOnFailure validation-failure response returns before the handler
-        // records a replay value, so before the fix the reservation taken by TryReserveAsync stayed
-        // held for the whole reservation window. A client retrying inside that window found no
-        // replay value, lost the reserve, and got 409 Conflict instead of a deterministic repeat of
-        // the original rejection.
+        // A rollbackOnFailure validation rejection must release its reservation so a retry
+        // returns the same rejection instead of an idempotency conflict.
         var idempotencyKey = Guid.NewGuid().ToString("n");
         var editsRequest = new ApplyEditsRequest
         {
@@ -3481,9 +3478,8 @@ public sealed partial class FeatureServerEndpointTests
     public async Task ApplyEdits_RetryAfterZeroRowCommitWithSameIdempotencyKey_ReattemptsInsteadOfConflict()
     {
         await UseIsolatedApplicationAsync();
-        // #3052: a committed-but-zero-row edit is deliberately NOT recorded so a genuine retry is
-        // re-attempted rather than replaying a no-op failure — but before the fix the still-held
-        // reservation blocked exactly that retry with a 409, contradicting the branch's own intent.
+        // A committed zero-row edit has no replay value. Release its reservation so a
+        // genuine retry can execute again.
         var idempotencyKey = Guid.NewGuid().ToString("n");
         var editsRequest = new ApplyEditsRequest
         {
@@ -3526,17 +3522,17 @@ public sealed partial class FeatureServerEndpointTests
     public async Task ApplyEdits_WhileAnotherRequestHoldsTheSameIdempotencyKey_ReportsConflict()
     {
         await UseIsolatedApplicationAsync();
-        // The reservation's real purpose (BH5-001) must survive the #3052 release change: while a
-        // reservation is genuinely held, a second request carrying the same key must be rejected as a
-        // conflict rather than executing a duplicate edit. Reserving directly through the store makes
-        // the race deterministic — no timing window to lose.
+        // The reservation's real purpose must hold: while a reservation is genuinely held, a second
+        // request carrying the same key must be rejected as a conflict rather than executing a
+        // duplicate edit. Reserving directly through the store makes the race deterministic — no
+        // timing window to lose.
         //
-        // This also pins the conflict body's shape: the branch used to build its payload with
-        // Results.Conflict(new { ... }), an anonymous type that cannot be serialized once
+        // This also pins the conflict body's shape: it goes through the shared error helper like
+        // every other GeoServices error, carrying code 409 in the standard envelope. An
+        // anonymous-type payload built with Results.Conflict(new { ... }) cannot be serialized once
         // reflection-based serialization is off (Honua.Server sets
-        // JsonSerializerIsReflectionEnabledByDefault=false), so it was neither AOT-safe nor
-        // Esri-shaped. It now goes through the shared error helper like every other GeoServices
-        // error, carrying code 409 in the standard envelope.
+        // JsonSerializerIsReflectionEnabledByDefault=false), so it would be neither AOT-safe nor
+        // Esri-shaped.
         var idempotencyKey = Guid.NewGuid().ToString("n");
         var store = _fixture.Services.GetRequiredService<IApplyEditsIdempotencyStore>();
         // Resolve the caller from the fixture's real credentials and tenant middleware, so the held
@@ -3616,7 +3612,7 @@ public sealed partial class FeatureServerEndpointTests
     public async Task ApplyEdits_WithCalculationRule_PopulatesTargetFieldOnAdd()
     {
         await UseIsolatedApplicationAsync();
-        // honua-server#1271: a calculation attribute rule attached to the resource must
+        // A calculation attribute rule attached to the resource must
         // fire on applyEdits and populate its target field before write. The 'description'
         // string field is part of the seeded test layer schema, so we drive a constant
         // assignment into it and read it back via a query.
@@ -3684,7 +3680,7 @@ public sealed partial class FeatureServerEndpointTests
     public async Task ApplyEdits_WithConstraintRule_RejectsViolatingEditWithCleanError()
     {
         await UseIsolatedApplicationAsync();
-        // honua-server#1271: a constraint attribute rule that evaluates to false must
+        // A constraint attribute rule that evaluates to false must
         // reject the edit through the standard per-feature edit-error shape (not a 500).
         var rule = new MetadataV2AttributeRule
         {
@@ -3739,7 +3735,7 @@ public sealed partial class FeatureServerEndpointTests
     public async Task ApplyEdits_WithUnsupportedRuleExpression_DoesNotFailEdit()
     {
         await UseIsolatedApplicationAsync();
-        // honua-server#1271: a constraint whose Arcade expression is outside the supported
+        // A constraint whose Arcade expression is outside the supported
         // safe subset must be routed out of scope (skipped) rather than failing the edit.
         var rule = new MetadataV2AttributeRule
         {
@@ -4393,7 +4389,7 @@ public sealed partial class FeatureServerEndpointTests
     public async Task ApplyEdits_WithGeometryTypeMismatch_FailsPerFeatureWithoutStoring()
     {
         await UseIsolatedApplicationAsync();
-        // Bug A regression: a polygon must not be accepted/stored on an esriGeometryPoint layer.
+        // A polygon must not be accepted/stored on an esriGeometryPoint layer.
         var editsRequest = """
             {
               "adds": [
@@ -4439,7 +4435,6 @@ public sealed partial class FeatureServerEndpointTests
     public async Task ApplyEdits_WithMatchingPointGeometry_Succeeds()
     {
         await UseIsolatedApplicationAsync();
-        // Bug A guard: a valid point geometry must still be accepted on a point layer.
         var editsRequest = """
             {
               "adds": [
@@ -4473,7 +4468,7 @@ public sealed partial class FeatureServerEndpointTests
     public async Task ApplyEdits_ServiceLevel_DefaultRollbackOnFailure_RollsBackAllLayerEdits()
     {
         await UseIsolatedApplicationAsync();
-        // Bug B regression: with rollbackOnFailure=true a valid add must NOT persist when a
+        // With rollbackOnFailure=true a valid add must NOT persist when a
         // sibling edit targeting the same layer fails. The two array elements both target
         // layer 0; the failing update (objectid that does not exist) must roll back the add.
         var marker = $"bugB-{Guid.NewGuid():N}";
@@ -4525,7 +4520,7 @@ public sealed partial class FeatureServerEndpointTests
     public async Task DeleteFeatures_WithWhereClauseInBody_DeletesMatchingFeatures()
     {
         await UseIsolatedApplicationAsync();
-        // Bug C regression: deleteFeatures must honor a where clause (here in the request body)
+        // DeleteFeatures must honor a where clause (here in the request body)
         // to select rows, not just explicit objectIds.
         var marker = $"bugC-where-{Guid.NewGuid():N}";
         var addPayload = $$"""
@@ -4581,7 +4576,7 @@ public sealed partial class FeatureServerEndpointTests
     public async Task DeleteFeatures_WithGeometryFilterInQuery_DeletesMatchingFeatures()
     {
         await UseIsolatedApplicationAsync();
-        // Bug C regression: deleteFeatures must honor a spatial (geometry) filter for selection.
+        // DeleteFeatures must honor a spatial (geometry) filter for selection.
         var marker = $"bugC-geom-{Guid.NewGuid():N}";
         var addPayload = $$"""
             {

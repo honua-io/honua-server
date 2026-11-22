@@ -104,7 +104,7 @@ for the chart-grammar half of the same argument.
 ### 4. Our own spec already says inference belongs to the client — and our implementation ignores its own schema
 
 Two of the eight families back tools that also appear in geospatial-mcp:
-`honua_create_map_package` and `honua_create_app_package` are bound in
+`honua_create_map` and `honua_create_app` are bound in
 `spec/schemas/index.json` to Build App v1's `create_map_package` /
 `create_app_package`.
 
@@ -148,7 +148,7 @@ client.**
 
 ### The deterministic entry points
 
-`honua_create_map_package` and `honua_create_app_package` remain registered,
+`honua_create_map` and `honua_create_app` remain registered,
 advertised, and functional. They stop calling a model and instead:
 
 - accept the **standard's** properties — including `sourceBindings` and

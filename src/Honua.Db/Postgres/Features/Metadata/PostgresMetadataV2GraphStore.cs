@@ -34,12 +34,16 @@ internal sealed partial class PostgresMetadataV2GraphStore : IMetadataV2GraphSto
     private readonly string _schemaName;
     private readonly string _snapshotsTable;
     private readonly string _currentTable;
+    private readonly string _fieldHistoryTable;
     private readonly string _resourcesIdxTable;
     private readonly string _servicesIdxTable;
     private readonly string _publicationsIdxTable;
     private readonly string _storageBindingsIdxTable;
     private readonly string _connectionsIdxTable;
     private MetadataV2GraphSnapshot? _cachedCurrent;
+
+    // Names the editor recorded in metadata_v2_field_history; without one the trigger records the publisher.
+    public IMetadataActorProvider? ActorProvider { get; init; }
 
     public PostgresMetadataV2GraphStore(
         IAdoNetDatabaseConnectionProvider connectionProvider,
@@ -61,6 +65,7 @@ internal sealed partial class PostgresMetadataV2GraphStore : IMetadataV2GraphSto
         _schemaName = string.IsNullOrWhiteSpace(schemaName) ? "honua" : schemaName.Trim();
         _snapshotsTable = Infrastructure.SchemaSearchPath.QualifyTable("metadata_v2_snapshots", schemaName);
         _currentTable = Infrastructure.SchemaSearchPath.QualifyTable("metadata_v2_current", schemaName);
+        _fieldHistoryTable = Infrastructure.SchemaSearchPath.QualifyTable("metadata_v2_field_history", schemaName);
         _resourcesIdxTable = Infrastructure.SchemaSearchPath.QualifyTable("metadata_v2_resources_idx", schemaName);
         _servicesIdxTable = Infrastructure.SchemaSearchPath.QualifyTable("metadata_v2_services_idx", schemaName);
         _publicationsIdxTable = Infrastructure.SchemaSearchPath.QualifyTable("metadata_v2_publications_idx", schemaName);
@@ -201,6 +206,14 @@ internal sealed partial class PostgresMetadataV2GraphStore : IMetadataV2GraphSto
         return MaterializeSnapshot(json, etag);
     }
 
+    // The activation trigger builds global-ID indexes (migration 198); duplicates fail the unique
+    // build and non-UUID text fails the uuid cast inside sync_metadata_global_id_indexes.
+    private static bool IsGlobalIdIntegrityFailure(PostgresException ex)
+        => (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName?.StartsWith("idx_features_gid_", StringComparison.Ordinal) == true)
+            || (ex.SqlState == PostgresErrorCodes.InvalidTextRepresentation
+                && ex.Where?.Contains("sync_metadata_global_id_indexes", StringComparison.Ordinal) == true);
+
     public async Task<MetadataV2GraphSnapshot> SaveAsync(
         MetadataV2Graph graph,
         string? expectedEtag,
@@ -258,7 +271,16 @@ internal sealed partial class PostgresMetadataV2GraphStore : IMetadataV2GraphSto
             }
         }
 
-        var snapshot = await PublishGraphAsync(transaction, graph, cancellationToken).ConfigureAwait(false);
+        MetadataV2GraphSnapshot snapshot;
+        try
+        {
+            snapshot = await PublishGraphAsync(transaction, graph, cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (IsGlobalIdIntegrityFailure(ex))
+        {
+            throw new MetadataV2GlobalIdIntegrityException(ex);
+        }
+
         var commitWasReconciled = false;
         try
         {
@@ -582,6 +604,17 @@ internal sealed partial class PostgresMetadataV2GraphStore : IMetadataV2GraphSto
         string etag,
         CancellationToken cancellationToken)
     {
+        var actor = ActorProvider?.GetCurrentActor();
+        if (!string.IsNullOrWhiteSpace(actor))
+        {
+            await using var actorCommand = new NpgsqlCommand(
+                "SELECT set_config('honua.metadata_actor', @actor, true)",
+                connection,
+                transaction);
+            actorCommand.Parameters.AddWithValue("@actor", actor.Trim());
+            await actorCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         var sql = $"""
             INSERT INTO {_currentTable} (environment, revision, etag)
             VALUES (@environment, @revision, @etag)

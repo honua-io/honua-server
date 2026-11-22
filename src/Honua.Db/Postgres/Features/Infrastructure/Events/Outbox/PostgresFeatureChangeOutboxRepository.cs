@@ -1,8 +1,10 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Data;
 using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
@@ -15,10 +17,14 @@ internal sealed class PostgresFeatureChangeOutboxRepository : IFeatureChangeOutb
     private const string TableName = "honua.feature_change_outbox";
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
+    private readonly PollWakeSignal<IFeatureChangeOutboxRepository>? _wake;
 
-    public PostgresFeatureChangeOutboxRepository(IAdoNetDatabaseConnectionProvider connectionProvider)
+    public PostgresFeatureChangeOutboxRepository(
+        IAdoNetDatabaseConnectionProvider connectionProvider,
+        PollWakeSignal<IFeatureChangeOutboxRepository>? wake = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+        _wake = wake;
     }
 
     public async Task WriteOutboxRowAsync(
@@ -36,6 +42,18 @@ internal sealed class PostgresFeatureChangeOutboxRepository : IFeatureChangeOutb
         command.Transaction = (NpgsqlTransaction)transaction;
         _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
+        await JoinChangeLogRowAsync((NpgsqlTransaction)transaction, entry, cancellationToken).ConfigureAwait(false);
+
+        // Wake this process's idle dispatcher. This runs before the caller commits, so the woken pass can miss
+        // the row; the pacer is back on its short interval, so the next pass (about 1 s later) claims it.
+        _wake?.Wake();
+    }
+
+    private static async Task JoinChangeLogRowAsync(
+        NpgsqlTransaction transaction,
+        FeatureChangeOutboxEntry entry,
+        CancellationToken cancellationToken)
+    {
         const string joinSql = @"
 UPDATE honua.feature_changes
 SET event_id = @event_id,
@@ -46,7 +64,7 @@ SET event_id = @event_id,
 WHERE generation = currval('honua.sync_generation')
   AND layer_id = @layer_id
   AND objectid = @object_id";
-        await using var join = new NpgsqlCommand(joinSql, npgsql, (NpgsqlTransaction)transaction);
+        await using var join = new NpgsqlCommand(joinSql, transaction.Connection, transaction);
         join.Parameters.AddWithValue("event_id", NpgsqlDbType.Text, entry.EventId);
         join.Parameters.AddWithValue("operation_instance_id", NpgsqlDbType.Text, (object?)entry.OperationInstanceId ?? DBNull.Value);
         join.Parameters.AddWithValue("correlation_id", NpgsqlDbType.Text, (object?)entry.CorrelationId ?? DBNull.Value);
@@ -99,8 +117,10 @@ RETURNING
     o.last_error, o.created_at, o.claimed_at, o.claim_node_id, o.claim_expires_at,
     o.dispatched_at, o.operation_instance_id, o.correlation_id, o.audit_id, o.proposal_id";
 
-        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, lease);
+        await using var owner = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = owner.RequireNpgsqlConnection();
+        await PublishPrefixAsync(connection, cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("batch_size", NpgsqlDbType.Integer, batchSize);
         command.Parameters.AddWithValue("node_id", NpgsqlDbType.Text, nodeId);
         command.Parameters.AddWithValue("ttl_seconds", NpgsqlDbType.Text, ((int)claimTtl.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -113,6 +133,18 @@ RETURNING
         }
 
         return results;
+    }
+
+    private static async Task PublishPrefixAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        // Publication needs a fresh snapshot and must commit before the claim allocates
+        // its own transaction ID. Keep both operations on one managed connection lease.
+        await using var transaction = await connection.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(
+            "SELECT honua.publish_feature_change_prefix()", connection, transaction);
+        _ = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<bool> MarkDispatchedAsync(Guid outboxId, string ownerNodeId, CancellationToken cancellationToken)

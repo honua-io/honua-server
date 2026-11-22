@@ -35,7 +35,8 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
 [Collection(WebAppFixtureJobSubstrateExtensions.JobSubstrateCollection)]
 [Protocol(TestProtocols.OgcApiProcesses)]
-public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter database)
+public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter database, VectorProcessParityIntegrationTests.ParityHost parityHost)
+    : IClassFixture<VectorProcessParityIntegrationTests.ParityHost>
 {
     private const string DataUriPrefix = "data:application/geo+json;base64,";
 
@@ -48,6 +49,8 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task CommittedPostgisSink_ResultPackagePublishesAndQueriesAuthoredRows()
     {
+        // This case runs its own job host; stop the shared one so only one host works the job tables.
+        await parityHost.ReleaseAsync();
         await database.DataSource.ClearJobSubstrateAsync();
         using var identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
         // Use the issued managed key as the proposer, including after the host restart.
@@ -375,50 +378,39 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task ClipProcess_CompletesAndReturnsClippedSquare()
     {
-        await database.DataSource.ClearJobSubstrateAsync();
+        var fixture = await parityHost.GetApplicationAsync(database.DataSource);
+        using var client = fixture.CreateAdminClient();
+        client.Timeout = TimeSpan.FromSeconds(30);
 
-        var fixture = BuildFixture();
-        await fixture.InitializeAsync();
-        try
-        {
-            using var client = fixture.CreateAdminClient();
-            client.Timeout = TimeSpan.FromSeconds(30);
+        var target = BuildBoxPolygon(0, 0, 10, 10);
+        var clipEnvelope = BuildBoxPolygon(5, 5, 15, 15);
+        var body = string.Format(
+            CultureInfo.InvariantCulture,
+            "{{\"response\":\"document\",\"inputs\":{{\"targetWkb\":\"{0}\",\"clipEnvelopeWkb\":\"{1}\",\"srid\":4326}}}}",
+            WkbBase64(target),
+            WkbBase64(clipEnvelope));
 
-            var target = BuildBoxPolygon(0, 0, 10, 10);
-            var clipEnvelope = BuildBoxPolygon(5, 5, 15, 15);
-            var body = string.Format(
-                CultureInfo.InvariantCulture,
-                "{{\"response\":\"document\",\"inputs\":{{\"targetWkb\":\"{0}\",\"clipEnvelopeWkb\":\"{1}\",\"srid\":4326}}}}",
-                WkbBase64(target),
-                WkbBase64(clipEnvelope));
+        var jobId = await SubmitJobAsync(client, "geometry.clip", body);
 
-            var jobId = await SubmitJobAsync(client, "geometry.clip", body);
+        using var terminal = await PollUntilTerminalAsync(client, jobId);
+        terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
 
-            using var terminal = await PollUntilTerminalAsync(client, jobId);
-            terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
+        using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
+        var feature = DecodeOutputFeature(resultsDoc, "geometry.clip");
 
-            using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
-            var feature = DecodeOutputFeature(resultsDoc, "geometry.clip");
+        feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(4326);
 
-            feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(4326);
+        var geometry = ReadGeometry(feature.GetProperty("geometry"));
+        geometry.Area.Should().BeApproximately(25.0, 1e-6,
+            "clip of (0..10) by (5..15) envelope yields a 5x5 square");
 
-            var geometry = ReadGeometry(feature.GetProperty("geometry"));
-            geometry.Area.Should().BeApproximately(25.0, 1e-6,
-                "clip of (0..10) by (5..15) envelope yields a 5x5 square");
-
-            var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
-            var package = await resultStore.GetAsync(jobId);
-            package.Should().NotBeNull();
-            package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
-            package.Artifacts.Should().ContainSingle();
-            package.Artifacts[0].Uri.Should().StartWith(DataUriPrefix);
-            package.Artifacts[0].Label.Should().Be("outputFeatureLayer");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-            await database.DataSource.ClearJobSubstrateAsync();
-        }
+        var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
+        var package = await resultStore.GetAsync(jobId);
+        package.Should().NotBeNull();
+        package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
+        package.Artifacts.Should().ContainSingle();
+        package.Artifacts[0].Uri.Should().StartWith(DataUriPrefix);
+        package.Artifacts[0].Label.Should().Be("outputFeatureLayer");
     }
 
     [IntegrationTest]
@@ -427,40 +419,29 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task IntersectProcess_CompletesAndReturnsOverlapSquare()
     {
-        await database.DataSource.ClearJobSubstrateAsync();
+        var fixture = await parityHost.GetApplicationAsync(database.DataSource);
+        using var client = fixture.CreateAdminClient();
+        client.Timeout = TimeSpan.FromSeconds(30);
 
-        var fixture = BuildFixture();
-        await fixture.InitializeAsync();
-        try
-        {
-            using var client = fixture.CreateAdminClient();
-            client.Timeout = TimeSpan.FromSeconds(30);
+        var target = BuildBoxPolygon(0, 0, 10, 10);
+        var intersector = BuildBoxPolygon(5, 5, 15, 15);
+        var body = string.Format(
+            CultureInfo.InvariantCulture,
+            "{{\"response\":\"document\",\"inputs\":{{\"targetWkb\":\"{0}\",\"intersectorWkb\":\"{1}\",\"srid\":4326}}}}",
+            WkbBase64(target),
+            WkbBase64(intersector));
 
-            var target = BuildBoxPolygon(0, 0, 10, 10);
-            var intersector = BuildBoxPolygon(5, 5, 15, 15);
-            var body = string.Format(
-                CultureInfo.InvariantCulture,
-                "{{\"response\":\"document\",\"inputs\":{{\"targetWkb\":\"{0}\",\"intersectorWkb\":\"{1}\",\"srid\":4326}}}}",
-                WkbBase64(target),
-                WkbBase64(intersector));
+        var jobId = await SubmitJobAsync(client, "geometry.intersect", body);
 
-            var jobId = await SubmitJobAsync(client, "geometry.intersect", body);
+        using var terminal = await PollUntilTerminalAsync(client, jobId);
+        terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
 
-            using var terminal = await PollUntilTerminalAsync(client, jobId);
-            terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
+        using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
+        var feature = DecodeOutputFeature(resultsDoc, "geometry.intersect");
 
-            using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
-            var feature = DecodeOutputFeature(resultsDoc, "geometry.intersect");
-
-            var geometry = ReadGeometry(feature.GetProperty("geometry"));
-            geometry.Area.Should().BeApproximately(25.0, 1e-6,
-                "overlap of two 10x10 boxes offset by (5,5) is a 5x5 square");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-            await database.DataSource.ClearJobSubstrateAsync();
-        }
+        var geometry = ReadGeometry(feature.GetProperty("geometry"));
+        geometry.Area.Should().BeApproximately(25.0, 1e-6,
+            "overlap of two 10x10 boxes offset by (5,5) is a 5x5 square");
     }
 
     [IntegrationTest]
@@ -469,45 +450,34 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task ProjectProcess_IdentityTransform_RoundTripsCoordinates()
     {
-        await database.DataSource.ClearJobSubstrateAsync();
+        var fixture = await parityHost.GetApplicationAsync(database.DataSource);
+        using var client = fixture.CreateAdminClient();
+        client.Timeout = TimeSpan.FromSeconds(30);
 
-        var fixture = BuildFixture();
-        await fixture.InitializeAsync();
-        try
-        {
-            using var client = fixture.CreateAdminClient();
-            client.Timeout = TimeSpan.FromSeconds(30);
+        // POINT(1 2) in WGS 84 — identity projection back to WGS 84.
+        var point = NetTopologySuite.NtsGeometryServices.Instance
+            .CreateGeometryFactory(srid: 4326)
+            .CreatePoint(new Coordinate(1.0, 2.0));
 
-            // POINT(1 2) in WGS 84 — identity projection back to WGS 84.
-            var point = NetTopologySuite.NtsGeometryServices.Instance
-                .CreateGeometryFactory(srid: 4326)
-                .CreatePoint(new Coordinate(1.0, 2.0));
+        var body = string.Format(
+            CultureInfo.InvariantCulture,
+            "{{\"response\":\"document\",\"inputs\":{{\"wkb\":\"{0}\",\"fromSrid\":4326,\"toSrid\":4326}}}}",
+            WkbBase64(point));
 
-            var body = string.Format(
-                CultureInfo.InvariantCulture,
-                "{{\"response\":\"document\",\"inputs\":{{\"wkb\":\"{0}\",\"fromSrid\":4326,\"toSrid\":4326}}}}",
-                WkbBase64(point));
+        var jobId = await SubmitJobAsync(client, "geometry.project", body);
 
-            var jobId = await SubmitJobAsync(client, "geometry.project", body);
+        using var terminal = await PollUntilTerminalAsync(client, jobId);
+        terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
 
-            using var terminal = await PollUntilTerminalAsync(client, jobId);
-            terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
+        using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
+        var feature = DecodeOutputFeature(resultsDoc, "geometry.project");
 
-            using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
-            var feature = DecodeOutputFeature(resultsDoc, "geometry.project");
+        feature.GetProperty("properties").GetProperty("fromSrid").GetInt32().Should().Be(4326);
+        feature.GetProperty("properties").GetProperty("toSrid").GetInt32().Should().Be(4326);
 
-            feature.GetProperty("properties").GetProperty("fromSrid").GetInt32().Should().Be(4326);
-            feature.GetProperty("properties").GetProperty("toSrid").GetInt32().Should().Be(4326);
-
-            var geometry = ReadGeometry(feature.GetProperty("geometry"));
-            ((Point)geometry).X.Should().BeApproximately(1.0, 1e-9);
-            ((Point)geometry).Y.Should().BeApproximately(2.0, 1e-9);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-            await database.DataSource.ClearJobSubstrateAsync();
-        }
+        var geometry = ReadGeometry(feature.GetProperty("geometry"));
+        ((Point)geometry).X.Should().BeApproximately(1.0, 1e-9);
+        ((Point)geometry).Y.Should().BeApproximately(2.0, 1e-9);
     }
 
     [IntegrationTest]
@@ -516,48 +486,37 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task AreaProcess_CompletesAndReturnsPlanarMeasure()
     {
-        await database.DataSource.ClearJobSubstrateAsync();
+        var fixture = await parityHost.GetApplicationAsync(database.DataSource);
+        using var client = fixture.CreateAdminClient();
+        client.Timeout = TimeSpan.FromSeconds(30);
 
-        var fixture = BuildFixture();
-        await fixture.InitializeAsync();
-        try
-        {
-            using var client = fixture.CreateAdminClient();
-            client.Timeout = TimeSpan.FromSeconds(30);
+        // 10x10 box has planar area 100 in input-CRS units squared.
+        var polygon = BuildBoxPolygon(0, 0, 10, 10);
+        var body = string.Format(
+            CultureInfo.InvariantCulture,
+            "{{\"response\":\"document\",\"inputs\":{{\"wkb\":\"{0}\",\"srid\":4326}}}}",
+            WkbBase64(polygon));
 
-            // 10x10 box has planar area 100 in input-CRS units squared.
-            var polygon = BuildBoxPolygon(0, 0, 10, 10);
-            var body = string.Format(
-                CultureInfo.InvariantCulture,
-                "{{\"response\":\"document\",\"inputs\":{{\"wkb\":\"{0}\",\"srid\":4326}}}}",
-                WkbBase64(polygon));
+        var jobId = await SubmitJobAsync(client, "geometry.area", body);
 
-            var jobId = await SubmitJobAsync(client, "geometry.area", body);
+        using var terminal = await PollUntilTerminalAsync(client, jobId);
+        terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
 
-            using var terminal = await PollUntilTerminalAsync(client, jobId);
-            terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
+        using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
+        var measure = DecodeScalarMeasure(resultsDoc, "geometry.area");
+        measure.GetProperty("measure").GetString().Should().Be("area");
+        measure.GetProperty("value").GetDouble().Should().BeApproximately(100.0, 1e-9);
+        measure.GetProperty("unit").GetString().Should().Be("input-crs-units-squared");
+        measure.GetProperty("inputSrid").GetInt32().Should().Be(4326);
+        measure.GetProperty("inputGeometryType").GetString().Should().Be("Polygon");
 
-            using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
-            var measure = DecodeScalarMeasure(resultsDoc, "geometry.area");
-            measure.GetProperty("measure").GetString().Should().Be("area");
-            measure.GetProperty("value").GetDouble().Should().BeApproximately(100.0, 1e-9);
-            measure.GetProperty("unit").GetString().Should().Be("input-crs-units-squared");
-            measure.GetProperty("inputSrid").GetInt32().Should().Be(4326);
-            measure.GetProperty("inputGeometryType").GetString().Should().Be("Polygon");
-
-            var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
-            var package = await resultStore.GetAsync(jobId);
-            package.Should().NotBeNull();
-            package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
-            package.Artifacts.Should().ContainSingle();
-            package.Artifacts[0].Uri.Should().StartWith("data:application/json;base64,");
-            package.Artifacts[0].Label.Should().Be("outputScalar");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-            await database.DataSource.ClearJobSubstrateAsync();
-        }
+        var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
+        var package = await resultStore.GetAsync(jobId);
+        package.Should().NotBeNull();
+        package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
+        package.Artifacts.Should().ContainSingle();
+        package.Artifacts[0].Uri.Should().StartWith("data:application/json;base64,");
+        package.Artifacts[0].Label.Should().Be("outputScalar");
     }
 
     [IntegrationTest]
@@ -566,52 +525,41 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task UnionProcess_CompletesAndReturnsAggregatePolygon()
     {
-        await database.DataSource.ClearJobSubstrateAsync();
+        var fixture = await parityHost.GetApplicationAsync(database.DataSource);
+        using var client = fixture.CreateAdminClient();
+        client.Timeout = TimeSpan.FromSeconds(30);
 
-        var fixture = BuildFixture();
-        await fixture.InitializeAsync();
-        try
-        {
-            using var client = fixture.CreateAdminClient();
-            client.Timeout = TimeSpan.FromSeconds(30);
+        // Two overlapping 10x10 boxes offset by (5,5) → area 100+100-25 = 175.
+        var first = BuildBoxPolygon(0, 0, 10, 10);
+        var second = BuildBoxPolygon(5, 5, 15, 15);
+        var body = string.Format(
+            CultureInfo.InvariantCulture,
+            "{{\"response\":\"document\",\"inputs\":{{\"wkbs\":[\"{0}\",\"{1}\"],\"srid\":4326}}}}",
+            WkbBase64(first),
+            WkbBase64(second));
 
-            // Two overlapping 10x10 boxes offset by (5,5) → area 100+100-25 = 175.
-            var first = BuildBoxPolygon(0, 0, 10, 10);
-            var second = BuildBoxPolygon(5, 5, 15, 15);
-            var body = string.Format(
-                CultureInfo.InvariantCulture,
-                "{{\"response\":\"document\",\"inputs\":{{\"wkbs\":[\"{0}\",\"{1}\"],\"srid\":4326}}}}",
-                WkbBase64(first),
-                WkbBase64(second));
+        var jobId = await SubmitJobAsync(client, "geometry.union", body);
 
-            var jobId = await SubmitJobAsync(client, "geometry.union", body);
+        using var terminal = await PollUntilTerminalAsync(client, jobId);
+        terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
 
-            using var terminal = await PollUntilTerminalAsync(client, jobId);
-            terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
+        using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
+        var feature = DecodeOutputFeature(resultsDoc, "geometry.union");
 
-            using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
-            var feature = DecodeOutputFeature(resultsDoc, "geometry.union");
+        feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(4326);
+        feature.GetProperty("properties").GetProperty("inputCount").GetInt32().Should().Be(2);
 
-            feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(4326);
-            feature.GetProperty("properties").GetProperty("inputCount").GetInt32().Should().Be(2);
+        var geometry = ReadGeometry(feature.GetProperty("geometry"));
+        geometry.Area.Should().BeApproximately(175.0, 1e-6,
+            "union of two 10x10 boxes overlapping in a 5x5 square has area 175");
 
-            var geometry = ReadGeometry(feature.GetProperty("geometry"));
-            geometry.Area.Should().BeApproximately(175.0, 1e-6,
-                "union of two 10x10 boxes overlapping in a 5x5 square has area 175");
-
-            var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
-            var package = await resultStore.GetAsync(jobId);
-            package.Should().NotBeNull();
-            package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
-            package.Artifacts.Should().ContainSingle();
-            package.Artifacts[0].Uri.Should().StartWith(DataUriPrefix);
-            package.Artifacts[0].Label.Should().Be("outputFeatureLayer");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-            await database.DataSource.ClearJobSubstrateAsync();
-        }
+        var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
+        var package = await resultStore.GetAsync(jobId);
+        package.Should().NotBeNull();
+        package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
+        package.Artifacts.Should().ContainSingle();
+        package.Artifacts[0].Uri.Should().StartWith(DataUriPrefix);
+        package.Artifacts[0].Label.Should().Be("outputFeatureLayer");
     }
 
     [IntegrationTest]
@@ -620,52 +568,41 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task CentroidProcess_CompletesAndReturnsCenterPoint()
     {
-        await database.DataSource.ClearJobSubstrateAsync();
+        var fixture = await parityHost.GetApplicationAsync(database.DataSource);
+        using var client = fixture.CreateAdminClient();
+        client.Timeout = TimeSpan.FromSeconds(30);
 
-        var fixture = BuildFixture();
-        await fixture.InitializeAsync();
-        try
-        {
-            using var client = fixture.CreateAdminClient();
-            client.Timeout = TimeSpan.FromSeconds(30);
+        // Centroid of a 10x10 box anchored at (0,0) is (5,5).
+        var polygon = BuildBoxPolygon(0, 0, 10, 10);
+        var body = string.Format(
+            CultureInfo.InvariantCulture,
+            "{{\"response\":\"document\",\"inputs\":{{\"wkb\":\"{0}\",\"srid\":4326}}}}",
+            WkbBase64(polygon));
 
-            // Centroid of a 10x10 box anchored at (0,0) is (5,5).
-            var polygon = BuildBoxPolygon(0, 0, 10, 10);
-            var body = string.Format(
-                CultureInfo.InvariantCulture,
-                "{{\"response\":\"document\",\"inputs\":{{\"wkb\":\"{0}\",\"srid\":4326}}}}",
-                WkbBase64(polygon));
+        var jobId = await SubmitJobAsync(client, "geometry.centroid", body);
 
-            var jobId = await SubmitJobAsync(client, "geometry.centroid", body);
+        using var terminal = await PollUntilTerminalAsync(client, jobId);
+        terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
 
-            using var terminal = await PollUntilTerminalAsync(client, jobId);
-            terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
+        using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
+        var feature = DecodeOutputFeature(resultsDoc, "geometry.centroid");
 
-            using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
-            var feature = DecodeOutputFeature(resultsDoc, "geometry.centroid");
+        feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(4326);
+        feature.GetProperty("properties").GetProperty("inputGeometryType").GetString().Should().Be("Polygon");
 
-            feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(4326);
-            feature.GetProperty("properties").GetProperty("inputGeometryType").GetString().Should().Be("Polygon");
+        var geometry = ReadGeometry(feature.GetProperty("geometry"));
+        geometry.Should().BeOfType<Point>();
+        var point = (Point)geometry;
+        point.X.Should().BeApproximately(5.0, 1e-9);
+        point.Y.Should().BeApproximately(5.0, 1e-9);
 
-            var geometry = ReadGeometry(feature.GetProperty("geometry"));
-            geometry.Should().BeOfType<Point>();
-            var point = (Point)geometry;
-            point.X.Should().BeApproximately(5.0, 1e-9);
-            point.Y.Should().BeApproximately(5.0, 1e-9);
-
-            var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
-            var package = await resultStore.GetAsync(jobId);
-            package.Should().NotBeNull();
-            package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
-            package.Artifacts.Should().ContainSingle();
-            package.Artifacts[0].Uri.Should().StartWith(DataUriPrefix);
-            package.Artifacts[0].Label.Should().Be("outputFeatureLayer");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-            await database.DataSource.ClearJobSubstrateAsync();
-        }
+        var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
+        var package = await resultStore.GetAsync(jobId);
+        package.Should().NotBeNull();
+        package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
+        package.Artifacts.Should().ContainSingle();
+        package.Artifacts[0].Uri.Should().StartWith(DataUriPrefix);
+        package.Artifacts[0].Label.Should().Be("outputFeatureLayer");
     }
 
     [IntegrationTest]
@@ -674,55 +611,44 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task LengthProcess_CompletesAndReturnsPlanarMeasure()
     {
-        await database.DataSource.ClearJobSubstrateAsync();
+        var fixture = await parityHost.GetApplicationAsync(database.DataSource);
+        using var client = fixture.CreateAdminClient();
+        client.Timeout = TimeSpan.FromSeconds(30);
 
-        var fixture = BuildFixture();
-        await fixture.InitializeAsync();
-        try
+        // LINESTRING(0 0, 3 0, 3 4) — 3-4-5 right-triangle linestring with planar length 7.
+        var factory = NetTopologySuite.NtsGeometryServices.Instance
+            .CreateGeometryFactory(srid: 4326);
+        var line = factory.CreateLineString(new[]
         {
-            using var client = fixture.CreateAdminClient();
-            client.Timeout = TimeSpan.FromSeconds(30);
+            new Coordinate(0, 0),
+            new Coordinate(3, 0),
+            new Coordinate(3, 4),
+        });
+        var body = string.Format(
+            CultureInfo.InvariantCulture,
+            "{{\"response\":\"document\",\"inputs\":{{\"wkb\":\"{0}\",\"srid\":4326}}}}",
+            WkbBase64(line));
 
-            // LINESTRING(0 0, 3 0, 3 4) — 3-4-5 right-triangle linestring with planar length 7.
-            var factory = NetTopologySuite.NtsGeometryServices.Instance
-                .CreateGeometryFactory(srid: 4326);
-            var line = factory.CreateLineString(new[]
-            {
-                new Coordinate(0, 0),
-                new Coordinate(3, 0),
-                new Coordinate(3, 4),
-            });
-            var body = string.Format(
-                CultureInfo.InvariantCulture,
-                "{{\"response\":\"document\",\"inputs\":{{\"wkb\":\"{0}\",\"srid\":4326}}}}",
-                WkbBase64(line));
+        var jobId = await SubmitJobAsync(client, "geometry.length", body);
 
-            var jobId = await SubmitJobAsync(client, "geometry.length", body);
+        using var terminal = await PollUntilTerminalAsync(client, jobId);
+        terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
 
-            using var terminal = await PollUntilTerminalAsync(client, jobId);
-            terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
+        using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
+        var measure = DecodeScalarMeasure(resultsDoc, "geometry.length");
+        measure.GetProperty("measure").GetString().Should().Be("length");
+        measure.GetProperty("value").GetDouble().Should().BeApproximately(7.0, 1e-9);
+        measure.GetProperty("unit").GetString().Should().Be("input-crs-units");
+        measure.GetProperty("inputSrid").GetInt32().Should().Be(4326);
+        measure.GetProperty("inputGeometryType").GetString().Should().Be("LineString");
 
-            using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
-            var measure = DecodeScalarMeasure(resultsDoc, "geometry.length");
-            measure.GetProperty("measure").GetString().Should().Be("length");
-            measure.GetProperty("value").GetDouble().Should().BeApproximately(7.0, 1e-9);
-            measure.GetProperty("unit").GetString().Should().Be("input-crs-units");
-            measure.GetProperty("inputSrid").GetInt32().Should().Be(4326);
-            measure.GetProperty("inputGeometryType").GetString().Should().Be("LineString");
-
-            var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
-            var package = await resultStore.GetAsync(jobId);
-            package.Should().NotBeNull();
-            package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
-            package.Artifacts.Should().ContainSingle();
-            package.Artifacts[0].Uri.Should().StartWith("data:application/json;base64,");
-            package.Artifacts[0].Label.Should().Be("outputScalar");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-            await database.DataSource.ClearJobSubstrateAsync();
-        }
+        var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
+        var package = await resultStore.GetAsync(jobId);
+        package.Should().NotBeNull();
+        package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
+        package.Artifacts.Should().ContainSingle();
+        package.Artifacts[0].Uri.Should().StartWith("data:application/json;base64,");
+        package.Artifacts[0].Label.Should().Be("outputScalar");
     }
 
     [IntegrationTest]
@@ -731,60 +657,49 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task ConvexHullProcess_CompletesAndReturnsBoundingPolygon()
     {
-        await database.DataSource.ClearJobSubstrateAsync();
+        var fixture = await parityHost.GetApplicationAsync(database.DataSource);
+        using var client = fixture.CreateAdminClient();
+        client.Timeout = TimeSpan.FromSeconds(30);
 
-        var fixture = BuildFixture();
-        await fixture.InitializeAsync();
-        try
+        // MultiPoint with four corners of a 10x10 box plus the centroid.
+        // Hull is the bounding 10x10 box itself with area 100.
+        var factory = NetTopologySuite.NtsGeometryServices.Instance
+            .CreateGeometryFactory(srid: 4326);
+        var multipoint = factory.CreateMultiPoint(new[]
         {
-            using var client = fixture.CreateAdminClient();
-            client.Timeout = TimeSpan.FromSeconds(30);
+            factory.CreatePoint(new Coordinate(0, 0)),
+            factory.CreatePoint(new Coordinate(10, 0)),
+            factory.CreatePoint(new Coordinate(10, 10)),
+            factory.CreatePoint(new Coordinate(0, 10)),
+            factory.CreatePoint(new Coordinate(5, 5)),
+        });
+        var body = string.Format(
+            CultureInfo.InvariantCulture,
+            "{{\"response\":\"document\",\"inputs\":{{\"wkb\":\"{0}\",\"srid\":4326}}}}",
+            WkbBase64(multipoint));
 
-            // MultiPoint with four corners of a 10x10 box plus the centroid.
-            // Hull is the bounding 10x10 box itself with area 100.
-            var factory = NetTopologySuite.NtsGeometryServices.Instance
-                .CreateGeometryFactory(srid: 4326);
-            var multipoint = factory.CreateMultiPoint(new[]
-            {
-                factory.CreatePoint(new Coordinate(0, 0)),
-                factory.CreatePoint(new Coordinate(10, 0)),
-                factory.CreatePoint(new Coordinate(10, 10)),
-                factory.CreatePoint(new Coordinate(0, 10)),
-                factory.CreatePoint(new Coordinate(5, 5)),
-            });
-            var body = string.Format(
-                CultureInfo.InvariantCulture,
-                "{{\"response\":\"document\",\"inputs\":{{\"wkb\":\"{0}\",\"srid\":4326}}}}",
-                WkbBase64(multipoint));
+        var jobId = await SubmitJobAsync(client, "geometry.convex-hull", body);
 
-            var jobId = await SubmitJobAsync(client, "geometry.convex-hull", body);
+        using var terminal = await PollUntilTerminalAsync(client, jobId);
+        terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
 
-            using var terminal = await PollUntilTerminalAsync(client, jobId);
-            terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
+        using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
+        var feature = DecodeOutputFeature(resultsDoc, "geometry.convex-hull");
 
-            using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
-            var feature = DecodeOutputFeature(resultsDoc, "geometry.convex-hull");
+        feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(4326);
+        feature.GetProperty("properties").GetProperty("inputGeometryType").GetString().Should().Be("MultiPoint");
 
-            feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(4326);
-            feature.GetProperty("properties").GetProperty("inputGeometryType").GetString().Should().Be("MultiPoint");
+        var geometry = ReadGeometry(feature.GetProperty("geometry"));
+        geometry.Area.Should().BeApproximately(100.0, 1e-6,
+            "hull of four corners of a 10x10 box plus the centroid is the 10x10 box itself");
 
-            var geometry = ReadGeometry(feature.GetProperty("geometry"));
-            geometry.Area.Should().BeApproximately(100.0, 1e-6,
-                "hull of four corners of a 10x10 box plus the centroid is the 10x10 box itself");
-
-            var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
-            var package = await resultStore.GetAsync(jobId);
-            package.Should().NotBeNull();
-            package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
-            package.Artifacts.Should().ContainSingle();
-            package.Artifacts[0].Uri.Should().StartWith(DataUriPrefix);
-            package.Artifacts[0].Label.Should().Be("outputFeatureLayer");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-            await database.DataSource.ClearJobSubstrateAsync();
-        }
+        var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
+        var package = await resultStore.GetAsync(jobId);
+        package.Should().NotBeNull();
+        package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
+        package.Artifacts.Should().ContainSingle();
+        package.Artifacts[0].Uri.Should().StartWith(DataUriPrefix);
+        package.Artifacts[0].Label.Should().Be("outputFeatureLayer");
     }
 
     [IntegrationTest]
@@ -793,57 +708,46 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task DissolveProcess_CompletesAndReturnsFeatureCollectionPerGroup()
     {
-        await database.DataSource.ClearJobSubstrateAsync();
+        var fixture = await parityHost.GetApplicationAsync(database.DataSource);
+        using var client = fixture.CreateAdminClient();
+        client.Timeout = TimeSpan.FromSeconds(30);
 
-        var fixture = BuildFixture();
-        await fixture.InitializeAsync();
-        try
-        {
-            using var client = fixture.CreateAdminClient();
-            client.Timeout = TimeSpan.FromSeconds(30);
+        // Two overlapping 10x10 boxes share a single group key → one
+        // feature with union area 100 + 100 - 25 = 175.
+        var first = BuildBoxPolygon(0, 0, 10, 10);
+        var second = BuildBoxPolygon(5, 5, 15, 15);
+        var body = string.Format(
+            CultureInfo.InvariantCulture,
+            "{{\"response\":\"document\",\"inputs\":{{\"wkbs\":[\"{0}\",\"{1}\"],\"groupKeys\":[\"a\",\"a\"],\"srid\":4326}}}}",
+            WkbBase64(first),
+            WkbBase64(second));
 
-            // Two overlapping 10x10 boxes share a single group key → one
-            // feature with union area 100 + 100 - 25 = 175.
-            var first = BuildBoxPolygon(0, 0, 10, 10);
-            var second = BuildBoxPolygon(5, 5, 15, 15);
-            var body = string.Format(
-                CultureInfo.InvariantCulture,
-                "{{\"response\":\"document\",\"inputs\":{{\"wkbs\":[\"{0}\",\"{1}\"],\"groupKeys\":[\"a\",\"a\"],\"srid\":4326}}}}",
-                WkbBase64(first),
-                WkbBase64(second));
+        var jobId = await SubmitJobAsync(client, "geometry.dissolve", body);
 
-            var jobId = await SubmitJobAsync(client, "geometry.dissolve", body);
+        using var terminal = await PollUntilTerminalAsync(client, jobId);
+        terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
 
-            using var terminal = await PollUntilTerminalAsync(client, jobId);
-            terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
+        using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
+        var collection = DecodeOutputFeatureCollection(resultsDoc, "geometry.dissolve");
+        collection.GetProperty("groupCount").GetInt32().Should().Be(1);
+        collection.GetProperty("inputCount").GetInt32().Should().Be(2);
 
-            using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
-            var collection = DecodeOutputFeatureCollection(resultsDoc, "geometry.dissolve");
-            collection.GetProperty("groupCount").GetInt32().Should().Be(1);
-            collection.GetProperty("inputCount").GetInt32().Should().Be(2);
+        var features = collection.GetProperty("features");
+        features.GetArrayLength().Should().Be(1);
+        var feature = features[0];
+        feature.GetProperty("properties").GetProperty("groupKey").GetString().Should().Be("a");
 
-            var features = collection.GetProperty("features");
-            features.GetArrayLength().Should().Be(1);
-            var feature = features[0];
-            feature.GetProperty("properties").GetProperty("groupKey").GetString().Should().Be("a");
+        var geometry = ReadGeometry(feature.GetProperty("geometry"));
+        geometry.Area.Should().BeApproximately(175.0, 1e-6,
+            "two overlapping 10x10 boxes under one group dissolve to area 175");
 
-            var geometry = ReadGeometry(feature.GetProperty("geometry"));
-            geometry.Area.Should().BeApproximately(175.0, 1e-6,
-                "two overlapping 10x10 boxes under one group dissolve to area 175");
-
-            var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
-            var package = await resultStore.GetAsync(jobId);
-            package.Should().NotBeNull();
-            package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
-            package.Artifacts.Should().ContainSingle();
-            package.Artifacts[0].Uri.Should().StartWith(DataUriPrefix);
-            package.Artifacts[0].Label.Should().Be("outputFeatureLayer");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-            await database.DataSource.ClearJobSubstrateAsync();
-        }
+        var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
+        var package = await resultStore.GetAsync(jobId);
+        package.Should().NotBeNull();
+        package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
+        package.Artifacts.Should().ContainSingle();
+        package.Artifacts[0].Uri.Should().StartWith(DataUriPrefix);
+        package.Artifacts[0].Label.Should().Be("outputFeatureLayer");
     }
 
     [IntegrationTest]
@@ -852,60 +756,49 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task SimplifyProcess_CollapsesBelowToleranceVertices()
     {
-        await database.DataSource.ClearJobSubstrateAsync();
+        var fixture = await parityHost.GetApplicationAsync(database.DataSource);
+        using var client = fixture.CreateAdminClient();
+        client.Timeout = TimeSpan.FromSeconds(30);
 
-        var fixture = BuildFixture();
-        await fixture.InitializeAsync();
-        try
+        // LINESTRING(0 0, 5 0.001, 10 0) simplified at tolerance 1.0
+        // collapses to LINESTRING(0 0, 10 0).
+        var factory = NetTopologySuite.NtsGeometryServices.Instance
+            .CreateGeometryFactory(srid: 4326);
+        var line = factory.CreateLineString(new[]
         {
-            using var client = fixture.CreateAdminClient();
-            client.Timeout = TimeSpan.FromSeconds(30);
+            new Coordinate(0, 0),
+            new Coordinate(5, 0.001),
+            new Coordinate(10, 0),
+        });
+        var body = string.Format(
+            CultureInfo.InvariantCulture,
+            "{{\"response\":\"document\",\"inputs\":{{\"wkb\":\"{0}\",\"srid\":4326,\"tolerance\":1.0}}}}",
+            WkbBase64(line));
 
-            // LINESTRING(0 0, 5 0.001, 10 0) simplified at tolerance 1.0
-            // collapses to LINESTRING(0 0, 10 0).
-            var factory = NetTopologySuite.NtsGeometryServices.Instance
-                .CreateGeometryFactory(srid: 4326);
-            var line = factory.CreateLineString(new[]
-            {
-                new Coordinate(0, 0),
-                new Coordinate(5, 0.001),
-                new Coordinate(10, 0),
-            });
-            var body = string.Format(
-                CultureInfo.InvariantCulture,
-                "{{\"response\":\"document\",\"inputs\":{{\"wkb\":\"{0}\",\"srid\":4326,\"tolerance\":1.0}}}}",
-                WkbBase64(line));
+        var jobId = await SubmitJobAsync(client, "geometry.simplify", body);
 
-            var jobId = await SubmitJobAsync(client, "geometry.simplify", body);
+        using var terminal = await PollUntilTerminalAsync(client, jobId);
+        terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
 
-            using var terminal = await PollUntilTerminalAsync(client, jobId);
-            terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
+        using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
+        var feature = DecodeOutputFeature(resultsDoc, "geometry.simplify");
 
-            using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
-            var feature = DecodeOutputFeature(resultsDoc, "geometry.simplify");
+        feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(4326);
+        feature.GetProperty("properties").GetProperty("tolerance").GetDouble().Should().Be(1.0);
+        feature.GetProperty("properties").GetProperty("inputGeometryType").GetString().Should().Be("LineString");
 
-            feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(4326);
-            feature.GetProperty("properties").GetProperty("tolerance").GetDouble().Should().Be(1.0);
-            feature.GetProperty("properties").GetProperty("inputGeometryType").GetString().Should().Be("LineString");
+        var geometry = ReadGeometry(feature.GetProperty("geometry"));
+        geometry.Should().BeOfType<LineString>();
+        ((LineString)geometry).NumPoints.Should().Be(2,
+            "tolerance 1.0 collapses the 0.001-offset midpoint");
 
-            var geometry = ReadGeometry(feature.GetProperty("geometry"));
-            geometry.Should().BeOfType<LineString>();
-            ((LineString)geometry).NumPoints.Should().Be(2,
-                "tolerance 1.0 collapses the 0.001-offset midpoint");
-
-            var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
-            var package = await resultStore.GetAsync(jobId);
-            package.Should().NotBeNull();
-            package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
-            package.Artifacts.Should().ContainSingle();
-            package.Artifacts[0].Uri.Should().StartWith(DataUriPrefix);
-            package.Artifacts[0].Label.Should().Be("outputFeatureLayer");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-            await database.DataSource.ClearJobSubstrateAsync();
-        }
+        var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
+        var package = await resultStore.GetAsync(jobId);
+        package.Should().NotBeNull();
+        package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
+        package.Artifacts.Should().ContainSingle();
+        package.Artifacts[0].Uri.Should().StartWith(DataUriPrefix);
+        package.Artifacts[0].Label.Should().Be("outputFeatureLayer");
     }
 
     [IntegrationTest]
@@ -914,59 +807,48 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
     [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
     public async Task SnapProcess_PullsInputOntoReferenceVertex()
     {
-        await database.DataSource.ClearJobSubstrateAsync();
+        var fixture = await parityHost.GetApplicationAsync(database.DataSource);
+        using var client = fixture.CreateAdminClient();
+        client.Timeout = TimeSpan.FromSeconds(30);
 
-        var fixture = BuildFixture();
-        await fixture.InitializeAsync();
-        try
-        {
-            using var client = fixture.CreateAdminClient();
-            client.Timeout = TimeSpan.FromSeconds(30);
+        // Input POINT(0.1 0.1) snapped to reference POINT(0 0) at
+        // tolerance 0.5 lands on the reference origin.
+        var factory = NetTopologySuite.NtsGeometryServices.Instance
+            .CreateGeometryFactory(srid: 4326);
+        var input = factory.CreatePoint(new Coordinate(0.1, 0.1));
+        var reference = factory.CreatePoint(new Coordinate(0, 0));
 
-            // Input POINT(0.1 0.1) snapped to reference POINT(0 0) at
-            // tolerance 0.5 lands on the reference origin.
-            var factory = NetTopologySuite.NtsGeometryServices.Instance
-                .CreateGeometryFactory(srid: 4326);
-            var input = factory.CreatePoint(new Coordinate(0.1, 0.1));
-            var reference = factory.CreatePoint(new Coordinate(0, 0));
+        var body = string.Format(
+            CultureInfo.InvariantCulture,
+            "{{\"response\":\"document\",\"inputs\":{{\"wkb\":\"{0}\",\"referenceWkb\":\"{1}\",\"srid\":4326,\"tolerance\":0.5}}}}",
+            WkbBase64(input),
+            WkbBase64(reference));
 
-            var body = string.Format(
-                CultureInfo.InvariantCulture,
-                "{{\"response\":\"document\",\"inputs\":{{\"wkb\":\"{0}\",\"referenceWkb\":\"{1}\",\"srid\":4326,\"tolerance\":0.5}}}}",
-                WkbBase64(input),
-                WkbBase64(reference));
+        var jobId = await SubmitJobAsync(client, "geometry.snap", body);
 
-            var jobId = await SubmitJobAsync(client, "geometry.snap", body);
+        using var terminal = await PollUntilTerminalAsync(client, jobId);
+        terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
 
-            using var terminal = await PollUntilTerminalAsync(client, jobId);
-            terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
+        using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
+        var feature = DecodeOutputFeature(resultsDoc, "geometry.snap");
 
-            using var resultsDoc = await GetResultsAsync(fixture, client, jobId);
-            var feature = DecodeOutputFeature(resultsDoc, "geometry.snap");
+        feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(4326);
+        feature.GetProperty("properties").GetProperty("tolerance").GetDouble().Should().Be(0.5);
+        feature.GetProperty("properties").GetProperty("inputGeometryType").GetString().Should().Be("Point");
 
-            feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(4326);
-            feature.GetProperty("properties").GetProperty("tolerance").GetDouble().Should().Be(0.5);
-            feature.GetProperty("properties").GetProperty("inputGeometryType").GetString().Should().Be("Point");
+        var geometry = ReadGeometry(feature.GetProperty("geometry"));
+        geometry.Should().BeOfType<Point>();
+        var snapped = (Point)geometry;
+        snapped.X.Should().BeApproximately(0.0, 1e-9);
+        snapped.Y.Should().BeApproximately(0.0, 1e-9);
 
-            var geometry = ReadGeometry(feature.GetProperty("geometry"));
-            geometry.Should().BeOfType<Point>();
-            var snapped = (Point)geometry;
-            snapped.X.Should().BeApproximately(0.0, 1e-9);
-            snapped.Y.Should().BeApproximately(0.0, 1e-9);
-
-            var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
-            var package = await resultStore.GetAsync(jobId);
-            package.Should().NotBeNull();
-            package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
-            package.Artifacts.Should().ContainSingle();
-            package.Artifacts[0].Uri.Should().StartWith(DataUriPrefix);
-            package.Artifacts[0].Label.Should().Be("outputFeatureLayer");
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-            await database.DataSource.ClearJobSubstrateAsync();
-        }
+        var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
+        var package = await resultStore.GetAsync(jobId);
+        package.Should().NotBeNull();
+        package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
+        package.Artifacts.Should().ContainSingle();
+        package.Artifacts[0].Uri.Should().StartWith(DataUriPrefix);
+        package.Artifacts[0].Label.Should().Be("outputFeatureLayer");
     }
 
     // -------------------------------------------------------------------------
@@ -1085,5 +967,62 @@ public sealed class VectorProcessParityIntegrationTests(DatabaseFixtureAdapter d
         using var serviceResource = JsonDocument.Parse(await serviceResourceResponse.Content.ReadAsStringAsync());
         var serviceUri = serviceResource.RootElement.GetProperty("result").GetProperty("contents")[0].GetProperty("uri").GetString();
         serviceUri.Should().Be($"honua://published-services/{service}");
+    }
+
+    // One production-substrate host for the process cases. Each case submits its own job and
+    // asserts on that job only. The job tables are cleared when the host starts and after it
+    // stops, as each case did around its own host before; a case that needs another host
+    // releases this one first, so two hosts never run job workers on the same tables.
+    public sealed class ParityHost : IAsyncLifetime
+    {
+        private WebAppFixture? _application;
+        private NpgsqlDataSource? _dataSource;
+
+        public Task InitializeAsync() => Task.CompletedTask;
+
+        public async Task<WebAppFixture> GetApplicationAsync(NpgsqlDataSource dataSource)
+        {
+            if (_application is not null)
+            {
+                return _application;
+            }
+
+            _dataSource = dataSource;
+            await dataSource.ClearJobSubstrateAsync();
+            var application = BuildFixture();
+            try
+            {
+                await application.InitializeAsync();
+            }
+            catch
+            {
+                await application.DisposeAsync();
+                throw;
+            }
+
+            _application = application;
+            return application;
+        }
+
+        public async Task ReleaseAsync()
+        {
+            var application = _application;
+            _application = null;
+            if (application is null)
+            {
+                return;
+            }
+
+            try
+            {
+                await application.DisposeAsync();
+            }
+            finally
+            {
+                await _dataSource!.ClearJobSubstrateAsync();
+            }
+        }
+
+        public Task DisposeAsync() => ReleaseAsync();
     }
 }

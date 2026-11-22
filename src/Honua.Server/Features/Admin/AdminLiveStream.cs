@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Threading.Channels;
 using Honua.Core.Features.Realtime;
 using Honua.Infrastructure.Monitoring;
+using Honua.Infrastructure.Realtime;
 
 namespace Honua.Server.Features.Admin;
 
@@ -20,6 +21,19 @@ internal sealed class AdminLiveStream(IServiceProvider services, IHostEnvironmen
 
     public async Task HandleAsync(HttpContext context)
     {
+        using var session = RealtimeStreamAdmission.TryOpen(context, RealtimeFamily.Admin, RealtimeStreamAdmission.SseTransport);
+        if (session is null)
+        {
+            RealtimeStreamAdmission.WriteDraining(context.Response);
+            return;
+        }
+
+        await HandleSessionAsync(new AdminLiveConnection(context, session)).ConfigureAwait(false);
+    }
+
+    private async Task HandleSessionAsync(AdminLiveConnection live)
+    {
+        var context = live.Context;
         var topics = ParseTopics(context.Request.Query["topics"].ToString());
         var cursor = context.Request.Headers["Last-Event-ID"].ToString();
         var (validCursor, after) = ParseCursor(cursor);
@@ -48,7 +62,7 @@ internal sealed class AdminLiveStream(IServiceProvider services, IHostEnvironmen
         {
             await WriteAsync(context, "id: admin:" + after.Value.ToString(CultureInfo.InvariantCulture) + "\nevent: status\ndata: " +
                 JsonSerializer.Serialize(CreateStatus(topics), AdminRealtimeJsonContext.Default.AdminRealtimeStatus) + "\n\n").ConfigureAwait(false);
-            await StreamWithResetAsync(context, channel.Reader, subscription).ConfigureAwait(false);
+            await StreamWithResetAsync(live, channel.Reader, subscription).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is OperationCanceledException or IOException or ChannelClosedException)
         {
@@ -56,18 +70,19 @@ internal sealed class AdminLiveStream(IServiceProvider services, IHostEnvironmen
         }
     }
 
-    private static async Task StreamWithResetAsync(HttpContext context, ChannelReader<RealtimeDelivery> reader,
+    private static async Task StreamWithResetAsync(AdminLiveConnection live, ChannelReader<RealtimeDelivery> reader,
         IRealtimeSubscription subscription)
     {
         try
         {
-            await StreamAsync(context, reader).ConfigureAwait(false);
+            await StreamAsync(live, reader).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is
             RealtimeSubscriptionClosedException { Reason: RealtimeResetReasons.SlowConsumer } or
             ChannelClosedException { InnerException: RealtimeSubscriptionClosedException { Reason: RealtimeResetReasons.SlowConsumer } })
         {
-            await WriteAsync(context, Format(new RealtimeDelivery.Reset(RealtimeResetReasons.SlowConsumer,
+            live.Session.RecordReset(RealtimeResetReasons.SlowConsumer);
+            await WriteAsync(live.Context, Format(new RealtimeDelivery.Reset(RealtimeResetReasons.SlowConsumer,
                 subscription.Position))).ConfigureAwait(false);
         }
     }
@@ -101,14 +116,23 @@ internal sealed class AdminLiveStream(IServiceProvider services, IHostEnvironmen
         return (true, sequence);
     }
 
-    private static async Task StreamAsync(HttpContext context, ChannelReader<RealtimeDelivery> reader)
+    private static async Task StreamAsync(AdminLiveConnection live, ChannelReader<RealtimeDelivery> reader)
     {
+        var (context, session) = live;
         using var heartbeat = new PeriodicTimer(TimeSpan.FromSeconds(15));
         var tick = heartbeat.WaitForNextTickAsync(context.RequestAborted).AsTask();
         var available = reader.WaitToReadAsync(context.RequestAborted).AsTask();
+        // Cancelled when the lifecycle closes this session; first, so WhenAny prefers it over ready frames.
+        var draining = Task.Delay(Timeout.InfiniteTimeSpan, session.DrainingToken);
         while (!context.RequestAborted.IsCancellationRequested)
         {
-            var completed = await Task.WhenAny(tick, available).ConfigureAwait(false);
+            var completed = await Task.WhenAny(draining, tick, available).ConfigureAwait(false);
+            if (completed == draining)
+            {
+                await RealtimeStreamAdmission.WriteSseRetryAsync(context.Response, session, context.RequestAborted)
+                    .ConfigureAwait(false);
+                return;
+            }
             if (completed == tick)
             {
                 if (!await tick.ConfigureAwait(false)) { return; }
@@ -120,6 +144,14 @@ internal sealed class AdminLiveStream(IServiceProvider services, IHostEnvironmen
             while (reader.TryRead(out var delivery))
             {
                 await WriteAsync(context, Format(delivery)).ConfigureAwait(false);
+                if (delivery is RealtimeDelivery.Event item)
+                {
+                    session.RecordDelivery(item.Value.CreatedAt);
+                }
+                else if (delivery is RealtimeDelivery.Reset reset)
+                {
+                    session.RecordReset(reset.Reason);
+                }
             }
             available = reader.WaitToReadAsync(context.RequestAborted).AsTask();
         }
@@ -132,6 +164,8 @@ internal sealed class AdminLiveStream(IServiceProvider services, IHostEnvironmen
             new AdminLiveReset(reset.Reason, reset.Head), AdminRealtimeJsonContext.Default.AdminLiveReset) + "\n\n",
         _ => ": heartbeat\n\n"
     };
+
+    private readonly record struct AdminLiveConnection(HttpContext Context, IRealtimeStreamSession Session);
 
     private static async Task WriteAsync(HttpContext context, string frame)
     {

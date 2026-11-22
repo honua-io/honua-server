@@ -10,7 +10,7 @@ resource: "https://github.com/honua-io/honua-server/pkgs/container/honua-server"
 
 See the [Honua vocabulary](../concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
 
-The customer Compose package runs Honua beside PostGIS and Redis, plus a stable
+The customer Compose package runs Honua beside PostGIS, plus a stable
 management service and a separate Compose executor. The executor only executes
 approved proposals after one authorized human reviews the exact plan in a verified
 interactive session. The requester may approve their own proposal.
@@ -48,14 +48,22 @@ is a Compose variable and `docker compose config` never prints one. Restart with
 serving-image override. An install from an earlier package kept its secrets in
 `.env`: extract the new package's files over it and run `python3 quickstart.py`
 once. It moves each secret into its file unchanged and removes it from `.env`.
-Keep `secrets/`, `.env` and the manager's durable Postgres and Redis volumes.
+Keep `secrets/`, `.env` and the manager's durable Postgres volume.
+Packages before rc.2 also ran a cache service. After upgrading such an install, run
+`python3 quickstart.py` and then `docker compose up -d --remove-orphans` once to remove
+its container. Retain its named volumes while rc.1 rollback remains available;
+rc.1 needs their durable state. Delete them only after retiring that rollback path
+or preserving a verified recovery copy. A manual rollback to rc.1 starts the
+service again from the retained file; see
+[upgrade and rollback](../guides/deploy/upgrade-and-rollback.md).
 
 The serving API is at `http://localhost:18080`; the stable management API and MCP
 are at `http://localhost:18082`. Its bootstrap credential is the private
 `secrets/honua_manager_admin_password` file, distinct from the serving admin
 credential in `secrets/honua_admin_password`. Give the MCP client a scoped proposer key.
-Configure the management service's OIDC provider and sign in to that service through
-Console to review and approve the exact proposal. The requester may approve; API
+Review and approve the exact proposal in the manager's Console
+(`https://127.0.0.1:18084/console/`, see [Add Console and embedded Studio](#add-console-and-embedded-studio)),
+signed in with the manager credential or the manager's identity provider. The requester may approve; API
 keys and MCP bearers cannot. See [human operation approval](../guides/secure/authentication.md#human-operation-approval).
 The operation handle records execution and final readback;
 an awaiting-approval proposal has not changed the serving stack.
@@ -101,12 +109,17 @@ The command adds the shipped `compose.console.yaml` overlay to the saved
 override, and enables the Console profile for subsequent quickstart runs. The
 overlay's `console` service is a small HTTPS web server (`console.nginx.conf`) that
 serves the bundle at `/console/` and forwards every other path to the serving API.
+The overlay sets `PUBLIC_BASE_URL` and `HONUA_ADMIN_UI_CORS_ORIGINS` to this HTTPS
+edge so generated style, source, and tile URLs share the browser's origin and
+Studio's browser requests to `/mcp` pass origin validation without colliding with
+customer `Cors__AllowedOrigins__*` entries. A later customer Compose file can
+override both variables when the installation uses a different public origin.
 Browser sign-in sessions, CSRF tokens and the identity-provider callback need one
 HTTPS origin, so Console is not offered over plain HTTP. The certificate is
 self-signed and created locally in `secrets/console_tls_certificate` (key in
 `secrets/console_tls_key`) for `localhost` and `127.0.0.1`; your browser asks you
-to trust it once, or you can add that certificate to your operating system's trust
-store. It is valid for 397 days; `python3 quickstart.py` issues a new one when fewer
+to trust it once for each of those hosts, or you can add that certificate to your
+operating system's trust store. It is valid for 397 days; `python3 quickstart.py` issues a new one when fewer
 than 30 days remain and restarts the Console edge to serve it. Trust the new
 certificate the same way after a renewal. Visits to `127.0.0.1` are redirected to `localhost`, the host the sign-in
 callback uses. The serving API trusts forwarded scheme and host headers only from
@@ -138,6 +151,27 @@ Sign in with one of:
 
   Console then offers the server's identity providers instead of the password
   field.
+
+Proposals held by `compose-manager` (upgrades, rollback and their approvals) are
+approved in a second Console at `https://127.0.0.1:18084/console/`. Set
+`HONUA_MANAGER_CONSOLE_PORT` in `.env` to choose another port. The overlay's
+`console-manager` service is the same edge in front of the manager. Sign in there
+with the manager credential in `secrets/honua_manager_admin_password`. An approval
+needs an interactive browser session on the manager itself, so the serving Console
+cannot approve these proposals, and the two credentials stay separate. The manager
+Console uses `127.0.0.1` because browsers keep cookies per host, not per port.
+Visits to `localhost` on this port are redirected to `127.0.0.1`, so the two
+sessions never replace each other. With OIDC sign-in, also enable OIDC on
+`compose-manager` in a customer override file and register
+`https://127.0.0.1:18084/admin/auth/callback` (with your port). The manager
+trusts forwarded headers only from this edge's fixed address on its own
+`manager-edge` network (`HONUA_MANAGER_EDGE_SUBNET`, `HONUA_MANAGER_EDGE_ADDRESS`
+and `HONUA_MANAGER_EDGE_SERVER_ADDRESS`, default `172.31.250.248/29`,
+`172.31.250.250` and `172.31.250.251`; if that range is in use, change all three
+the same way). Initialization refuses a Console or manager Console port that
+another Honua listener in `.env` already uses. A second install on the same host
+needs its own ports and both edge ranges. MCP clients of the manager that support
+URL-mode elicitation open its proposals in this Console.
 
 `console.config.json` holds Console's public settings and is rewritten from `.env`
 on each run (a change restarts the Console edge); it never contains a credential. Set `HONUA_CONSOLE_V4=false` to show
@@ -192,8 +226,8 @@ Step 2 sets `HONUA_IMAGE` to the channel tag. The public image and the pinned
 clients below can be used without registry credentials.
 
 The clients are pinned:
-[honua-admin 0.3.1](https://pypi.org/project/honua-admin/0.3.1/) and
-[honua-sdk 0.3.1](https://pypi.org/project/honua-sdk/0.3.1/).
+[honua-admin 0.3.2](https://pypi.org/project/honua-admin/0.3.2/) and
+[honua-sdk 0.3.2](https://pypi.org/project/honua-sdk/0.3.2/).
 
 For a certified rc.2 production deployment, continue to
 [ECS Fargate](../guides/deploy/cloud-deployments.md#pick-a-pattern). For a locked-down
@@ -217,7 +251,7 @@ the installed grids offline:
 x-load-secrets: &load-secrets ["/app/honua-entrypoint"]
 services:
   keyring-init:
-    image: redis:7.4-alpine@sha256:a58a2b51fdb121a55861f2586cbde33f174c0f33d5a277b182d52dce45ed9cd4
+    image: alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
     user: "0:0"
     entrypoint: ["sh", "-c"]
     # The servers run as gid 1001. Secret files stay yours; only their group changes.
@@ -242,7 +276,6 @@ services:
       PUBLIC_BASE_URL: "http://localhost:${HONUA_HTTP_PORT}"
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua;Username=honua"
       HONUA_DATABASE_PASSWORD_FILE: /run/secrets/postgres_password
-      ConnectionStrings__Redis: redis:6379
       HONUA_SECRET_FILE__HONUA_ADMIN_PASSWORD: /run/secrets/honua_admin_password
       HONUA_SECRET_FILE__AuditLog__ChainVerification__Key: /run/secrets/honua_audit_chain_key
       HONUA_SECRET_FILE__Security__ConnectionEncryption__MasterKey: /run/secrets/honua_master_key
@@ -258,24 +291,22 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     restart: unless-stopped
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     tmpfs:
-      - /tmp:noexec,nosuid,size=100m
+      - /tmp:noexec,nosuid,size=512m
     volumes:
       - storage:/var/lib/honua/storage
       - ./secrets/keyring.pfx:/var/lib/honua/keyring.pfx:ro
     secrets: [postgres_password, honua_admin_password, honua_audit_chain_key, honua_master_key, honua_keyring_password]
   postgres:
-    image: honua-postgis-proj-grids:17-3.5-3.7.3
+    image: honua-postgis-proj-grids:17-honua-e60f2e28
     build:
       context: ./docker/proj-grids
       args:
-        BASE_IMAGE: pgrouting/pgrouting:17-3.5-3.7.3
+        BASE_IMAGE: ghcr.io/honua-io/honua-server@sha256:e60f2e287f6bddfaa7e1ac0bab082f83580a6ba242a98d0933d55e1e577e6fa0
     pull_policy: missing
     environment:
       POSTGRES_DB: honua
@@ -292,21 +323,11 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
-    restart: unless-stopped
-  redis:
-    image: redis:7.4-alpine
-    command: redis-server --appendonly yes --maxmemory 64mb --maxmemory-policy noeviction
-    volumes:
-      - redis:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
+      # The first start on a volume from an older database image rebuilds text indexes first.
+      start_period: 60m
     restart: unless-stopped
 volumes:
   postgres:
-  redis:
   storage:
 secrets:
   postgres_password:
@@ -377,7 +398,7 @@ New-AuditKey | Set-Content secrets/honua_audit_chain_key -Encoding Ascii -NoNewl
 
 </details>
 
-Both ports bind to loopback only; PostgreSQL and Redis are reachable only on the
+Both ports bind to loopback only; PostgreSQL is reachable only on the
 project's own network. Change `HONUA_HTTP_PORT` if `18080` is taken, and set
 `HONUA_GRPC_PORT` if `18081` is.
 
@@ -422,7 +443,7 @@ docker compose up -d --wait --wait-timeout 180
 checks liveness; also open `http://localhost:18080/healthz/ready` (using your
 selected port) and wait for `Ready`. The authenticated publish/query below then
 verifies the data path. If startup times out,
-`docker compose logs honua postgres redis` says why.
+`docker compose logs honua postgres` says why.
 
 The admin API is not anonymous: it needs the admin password in `secrets/honua_admin_password`,
 which the next step reads for you.
@@ -455,7 +476,7 @@ Install the two public clients, ideally in a virtual environment:
 <!-- docs-validation:install.clients mode=run -->
 ```bash
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
-pip install 'honua-admin==0.3.1' 'honua-sdk==0.3.1'
+pip install 'honua-admin==0.3.2' 'honua-sdk==0.3.2'
 ```
 
 Save this as `publish-quickstart.py`, keeping the package's `quickstart.py` initializer. It registers that database as a connection,
@@ -581,7 +602,7 @@ a backup.
 
 - **`port is already allocated`** — change `HONUA_HTTP_PORT` or `HONUA_GRPC_PORT`
   in `.env` and run `docker compose up -d` again.
-- **Readiness times out** — `docker compose logs honua postgres redis`. Do not
+- **Readiness times out** — `docker compose logs honua postgres`. Do not
   switch to the Development environment or disable preflight to get past a
   startup failure; it is telling you something.
 - **`KeyRingCertificatePath` is required** — the key-ring PKCS#12 from step 2 is
@@ -614,9 +635,10 @@ git clone --depth 1 https://github.com/honua-io/honua-server.git honua-server-de
 ```
 
 The development stack is a separate Compose project with its own database. It
-publishes `127.0.0.1` ports `8080`, `8081`, `5432`, `6379` and `5174`, so those must
-be free; the quickstart above keeps `18080` and `18081`. Its admin password is the
-public development default, which is why every port binds to loopback only.
+publishes `127.0.0.1` ports `8080`, `8081`, `5432` and `5174`, so those must
+be free; the quickstart above keeps `18080` and `18081`. Its admin API key is
+generated per install and stored as `HONUA_ADMIN_PASSWORD` in `honua-server-dev/.env`;
+every port still binds to loopback only.
 
 Open the development Console at `http://localhost:5174` (or its configured `HONUA_CONSOLE_PORT`)
 and use Studio to author maps, save and reopen versions, and request publication.

@@ -96,29 +96,24 @@ graph TB
 
         subgraph "Infrastructure"
             DB[("<b>PostgreSQL + PostGIS</b><br/><i>Database</i><br/><br/>• Feature storage<br/>• Spatial operations<br/>• MVT generation")]
-
-            Redis[("<b>Redis</b><br/><i>Cache (Optional)</i><br/><br/>• Metadata cache<br/>• Output cache")]
         end
     end
 
     AdminUI -->|"API calls<br/>HTTPS"| Server
     Server -->|"SQL/WKB<br/>TCP:5432"| DB
-    Server -.->|"Cache ops<br/>TCP:6379"| Redis
 
     style Server fill:#4A90D9,stroke:#2E6BA6,color:#fff
     style AdminUI fill:#7CB342,stroke:#558B2F,color:#fff
     style DB fill:#FF9800,stroke:#E65100,color:#fff
-    style Redis fill:#9E9E9E,stroke:#616161,color:#fff
 ```
 
 ### Container Responsibilities
 
 | Container | Technology | Responsibility |
 |-----------|------------|----------------|
-| **Honua.Server** | ASP.NET Core 10, Native AOT | API host, business logic, protocol translation |
+| **Honua.Server** | ASP.NET Core 11, Native AOT | API host, business logic, protocol translation |
 | **honua-console** | Standalone web application | Active Admin and Studio UI, deployed separately from `Honua.Server` |
 | **PostgreSQL + PostGIS** | PostgreSQL 16, PostGIS 3.4 | Data storage, spatial ops, MVT generation |
-| **Redis** (optional) | Redis 7 | Metadata caching, output caching |
 
 ---
 
@@ -486,7 +481,6 @@ graph TB
 
         subgraph "Data Tier"
             PG[(PostgreSQL<br/>+ PostGIS)]
-            Redis[(Redis<br/>Optional)]
         end
     end
 
@@ -502,10 +496,6 @@ graph TB
     Pod1 --> PG
     Pod2 --> PG
     PodN --> PG
-
-    Pod1 -.-> Redis
-    Pod2 -.-> Redis
-    PodN -.-> Redis
 
     ConfigMap -.-> Pod1
     Secret -.-> Pod1
@@ -527,10 +517,6 @@ graph TB
             Aurora[(Aurora PostgreSQL<br/>+ PostGIS)]
         end
 
-        subgraph "ElastiCache"
-            RedisCluster[(Redis Cluster)]
-        end
-
         SecretsManager[Secrets Manager]
     end
 
@@ -540,8 +526,6 @@ graph TB
 
     Task1 --> Aurora
     Task2 --> Aurora
-    Task1 -.-> RedisCluster
-    Task2 -.-> RedisCluster
 
     SecretsManager -.-> Task1
     SecretsManager -.-> Task2

@@ -25,7 +25,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Studio;
 
-internal static class StudioPackageEndpoints
+internal static partial class StudioPackageEndpoints
 {
     private const string ProblemType = "https://honua.io/problems/studio";
 
@@ -44,6 +44,7 @@ internal static class StudioPackageEndpoints
             .HasApiVersion(1, 0)
             .WithTags("Studio")
             .RequireStudioLifecycleAuthorization();
+        endpoints.MapStudioDraftRevisionEndpoints();
 
         group.MapGet("/package-families", HandleGetPackageFamilies)
             .WithDisplayName("List Studio Package Families")
@@ -2027,7 +2028,7 @@ internal static class StudioPackageEndpoints
     private static IResult Conflict(HttpContext context, string detail)
         => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status409Conflict, "Conflict", detail);
 
-    // honua-server#5733: a Redis-off host composes draft state (volatile outside Production) but
+    // A host without a durable proposal store composes draft state (volatile outside Production) but
     // not the governed proposal control plane. A mutation that needs it -- publish-request's
     // separate-principal approval, or any mutation on a fail-closed Production store -- refuses
     // with the shared typed capability-unavailable problem, never a 409 or 500 that drops the

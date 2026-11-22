@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Metadata.Crosswalk;
@@ -70,7 +71,12 @@ public sealed record DescriptiveMetadata
 
     public IReadOnlyList<DescriptiveDistribution> Distributions { get; init; } = [];
 
+    public IReadOnlyDictionary<string, JsonElement> CustomFields { get; init; } = EmptyCustomFields;
+
     public required DateTimeOffset MetadataDate { get; init; }
+
+    private static readonly IReadOnlyDictionary<string, JsonElement> EmptyCustomFields =
+        new Dictionary<string, JsonElement>(StringComparer.Ordinal);
 
     public MetadataV2ResponsibleParty? PointOfContact =>
         Contacts.FirstOrDefault(contact => contact.Role == MetadataV2DescriptiveCodes.PointOfContactRole)

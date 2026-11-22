@@ -37,44 +37,8 @@ public sealed class ProcessCatalogTests
     {
         var all = _catalog.ListProcesses();
 
-        // 38 original trunk processes + 13 GeoETL transform/source/sink processes
-        // reconciled from feat/geoetl-baseline + 1 managed spatial-join
-        // (analytics.spatial-join-managed) added for the workflow/codemod job path
-        // + 3 managed analytics counterparts (analytics.cluster-managed,
-        // analytics.buffer-aggregate-managed, analytics.density-managed) added by
-        // #1260 + 2 native-profile GDAL worker processes (gdal.gdalwarp,
-        // gdal.ogr2ogr) reconciled from feat/gdal-heavy-worker + 1 durable
-        // import pipeline (import.dataset) added by #1630 + 1 native-profile
-        // point-cloud translate (pcloud.translate, LAZ/COPC decompress +
-        // projected-CRS reproject) added by #1854
-        // + 13 Round-5 managed ops: 12 GP tool-pack ops
-        // (overlay.clip/intersect/union/erase/merge/split, proximity.near,
-        // proximity.near-table, statistics.summarize/frequency/calculate,
-        // data-management.append) added by the GP tool packs (#2206/#2139/#2140)
-        // + 1 managed honua-layer sink (sink.honua-layer) added by the GeoETL
-        // honua-layer sink path
-        // + 10 Round-4 ops merged from trunk: 4 relational transforms
-        // (transform.attribute-join, transform.aggregate, transform.pivot,
-        // transform.unpivot) added alongside the safe expression engine + the
-        // first-class remote DAG source connectors (source.honua-layer,
-        // source.esri-featureserver, source.ogc-features, source.wfs, source.postgis)
-        // + 1 native-profile GDAL/OGR import reader (source.ogr, broad-format
-        // FeatureCollection canonicalization) added for the honua-worker-etl format
-        // breadth (ADR-0038 roadmap F).
-        // Round-5 (72) ∪ Round-4 (69) = 82 distinct processes (59 shared).
-        // + 4 native-profile raster analysis tool pack ops (raster.resample,
-        // raster.interpolate-idw, raster.interpolate-kriging, raster.mosaic) added
-        // by #2141.
-        // + 9 native-profile raster analysis & terrain ops added by #2239/#2240:
-        // raster.map-algebra, raster.spectral-index, raster.reclassify (#2239);
-        // proximity.euclidean-distance, proximity.euclidean-allocation,
-        // surface.contour, surface.viewshed, conversion.polygonize,
-        // conversion.rasterize (#2240).
-        // + 1 spatial-statistics tool-pack op (analytics.hotspot-managed, Hot Spot
-        // Analysis / Getis-Ord Gi*) added by #2142.
-        // + 1 delegated imagery/ML inference op (imagery.classify, cloud-backend
-        // delegation with no bundled model runtime) added by #2241.
-        // + 1 async batch enrichment op (enrichment.enrich) added by #2283.
+        // Pins the exact size of the built-in catalog: adding or removing a process must
+        // update this count.
         all.Should().HaveCount(101);
         all.Select(p => p.ProcessId).Should().OnlyHaveUniqueItems();
     }
@@ -97,11 +61,10 @@ public sealed class ProcessCatalogTests
     {
         var analytics = _catalog.GetProcessesByCategory("analytics");
 
-        // 4 trunk analytics + analytics.spatial-join-managed +
-        // 3 managed counterparts from #1260 (analytics.cluster-managed,
-        // analytics.buffer-aggregate-managed, analytics.density-managed) — the
-        // job-dispatchable managed counterparts to the PostGIS-protocol entries —
-        // + analytics.hotspot-managed (Getis-Ord Gi* Hot Spot Analysis, #2142).
+        // 4 PostGIS-protocol analytics entries + analytics.spatial-join-managed +
+        // their 3 job-dispatchable managed counterparts (analytics.cluster-managed,
+        // analytics.buffer-aggregate-managed, analytics.density-managed) +
+        // analytics.hotspot-managed (Getis-Ord Gi* Hot Spot Analysis).
         analytics.Should().HaveCount(9);
         analytics.Should().AllSatisfy(p => p.Category.Should().Be("analytics"));
     }
@@ -113,7 +76,7 @@ public sealed class ProcessCatalogTests
     {
         var imagery = _catalog.GetProcessesByCategory("imagery");
 
-        // #2241: one delegated-inference process. Managed profile (the lean
+        // One delegated-inference process. Managed profile (the lean
         // dispatcher performs the HTTP delegation itself), raster sourcing shared
         // with the native raster family (inline source OR layerId/rasterId), and
         // both raster and feature outputs advertised because the backend decides
@@ -270,7 +233,7 @@ public sealed class ProcessCatalogTests
     // The set of built-ins that write durable state and therefore MUST carry
     // ProcessExecutionTier.Mutating. This is the reviewed snapshot; the two invariant
     // tests below make ExecutionTier a forced, auditable decision rather than a
-    // fail-open default that a future mutating built-in could silently omit (#2798).
+    // fail-open default that a future mutating built-in could silently omit.
     private static readonly string[] ExpectedMutatingProcessIds =
     [
         "data-management.copy-features",
@@ -435,7 +398,7 @@ public sealed class ProcessCatalogTests
             "generalization.simplify-layer", "generalization.dissolve",
             "data-management.copy-features", "data-management.delete-features",
             "data-management.calculate-field", "data-management.append",
-            // Layer-aware overlay/proximity/statistics tool packs (#2206, #2139, #2140).
+            // Layer-aware overlay/proximity/statistics tool packs.
             "overlay.clip", "overlay.intersect", "overlay.union", "overlay.erase",
             "overlay.merge", "overlay.split",
             "proximity.near", "proximity.near-table",
@@ -506,7 +469,7 @@ public sealed class ProcessCatalogTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    public void Validator_GeometryBuffer_GeodesicTrue_RejectsPlan()
+    public void Validator_GeometryBuffer_GeodesicTrue_AllowsPlan()
     {
         var plan = CreateSingleStepPlan(
             "geometry.buffer",
@@ -520,9 +483,7 @@ public sealed class ProcessCatalogTests
 
         var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
 
-        violations.Should().Contain(v =>
-            v.FieldPath == "steps[s1].inputs.geodesic" &&
-            v.Message.Contains("geodesic buffering is not yet supported", StringComparison.OrdinalIgnoreCase));
+        violations.Should().BeEmpty();
     }
 
     [UnitTest]
@@ -598,20 +559,17 @@ public sealed class ProcessCatalogTests
         distance.Description.Should().NotContain("in meters.",
             "the buffer distance is in the input CRS's coordinate units, not meters");
 
-        // The honest descriptions may mention geodesic/meters while disclaiming them
-        // ("No geodesic conversion is performed"), so assert on the computed-semantics
-        // claim rather than bare substrings.
         var area = _catalog.GetProcess("geometry.area")!;
-        area.Description.Should().NotContain("Computes the geodesic",
-            "the area executor computes planar area, not geodesic");
-        area.Description.Should().Contain("No geodesic conversion is performed");
         area.Description.Should().Contain("planar");
+        area.Description.Should().Contain("geodesic");
+        area.Parameters.Single(p => p.Name == "geodesic").DefaultValue.Should().Be("false");
+        area.Parameters.Should().Contain(p => p.Name == "unit");
 
         var length = _catalog.GetProcess("geometry.length")!;
-        length.Description.Should().NotContain("Computes the geodesic",
-            "the length executor computes planar length, not geodesic");
-        length.Description.Should().Contain("No geodesic conversion is performed");
         length.Description.Should().Contain("planar");
+        length.Description.Should().Contain("geodesic");
+        length.Parameters.Single(p => p.Name == "geodesic").DefaultValue.Should().Be("false");
+        length.Parameters.Should().Contain(p => p.Name == "unit");
     }
 
     [UnitTest]
@@ -2443,7 +2401,7 @@ public sealed class ProcessCatalogTests
     }
 
     // -----------------------------------------------------------------------
-    // Validator — managed analytics counterparts (#1260) mirror the executor's
+    // Validator — managed analytics counterparts mirror the executor's
     // TransformInputException checks so ValidatePlan refuses plans the executor
     // would terminally fail at runtime.
     // -----------------------------------------------------------------------
@@ -3426,7 +3384,7 @@ public sealed class ProcessCatalogTests
     public void DestructiveClassifier_SinkProcess_RequiresApproval(string processId)
     {
         // A sink/write process is not a destructive source mutation, but it must
-        // still pass the approval gate (#2262).
+        // still pass the approval gate.
         ProcessDestructiveClassifier.IsSink(processId).Should().BeTrue();
         ProcessDestructiveClassifier.IsDestructive(processId).Should().BeFalse();
         ProcessDestructiveClassifier.RequiresApproval(processId).Should().BeTrue();
@@ -3474,7 +3432,7 @@ public sealed class ProcessCatalogTests
     }
 
     // -----------------------------------------------------------------------
-    // Fail-closed, catalog-driven approval gate (ADR-0029, #2814)
+    // Fail-closed, catalog-driven approval gate (ADR-0029)
     // -----------------------------------------------------------------------
 
     [UnitTest]

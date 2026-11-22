@@ -23,13 +23,21 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Wmts10)]
-public sealed class OgcClassicWmtsTests : IAsyncLifetime
+public sealed class OgcClassicWmtsTests : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
+    public OgcClassicWmtsTests(WebAppFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    private static async Task<WebAppFixture> CreateDedicatedFixtureAsync()
+    {
+        var fixture = new WebAppFixture();
+        await fixture.InitializeAsync();
+        return fixture;
+    }
 
     [IntegrationTest]
     [Operation(Operations.Wmts)]
@@ -54,12 +62,14 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [Endpoint("GET /ogc/services/{serviceId}/wmts")]
     public async Task Wmts_GetCapabilities_WithWmtsEnabledAndMapServerDisabled_ReturnsXml()
     {
-        // V2 cutover (#1035 72/N): protocol gating reads MetadataV2Service.Protocols.
-        _fixture.UpdateV2ServiceMetadata(
+        await using var fixture = await CreateDedicatedFixtureAsync();
+
+        // Protocol gating reads MetadataV2Service.Protocols.
+        fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
             enabledProtocols: [ServiceProtocols.Wmts]);
 
-        var response = await _fixture.Client.GetAsync(
+        var response = await fixture.Client.GetAsync(
             $"/ogc/services/{WebAppFixture.TestServiceId}/wmts?SERVICE=WMTS&REQUEST=GetCapabilities");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -293,7 +303,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wmts10, "GetCapabilities")]
     public async Task Wmts_GetCapabilities_AdvertisesWorldCrs84QuadTileMatrixSet()
     {
-        // #1660: WMTS now advertises the WorldCRS84Quad (CRS84/EPSG:4326) gridset in addition
+        // WMTS now advertises the WorldCRS84Quad (CRS84/EPSG:4326) gridset in addition
         // to the WebMercatorQuad default. Both TileMatrixSet definitions and per-layer links
         // must be present so OGC clients can request CRS84 tiles.
         var response = await _fixture.Client.GetAsync(
@@ -306,7 +316,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         content.Should().Contain("<ows:SupportedCRS>urn:ogc:def:crs:OGC:1.3:CRS84</ows:SupportedCRS>");
         content.Should().Contain("<TileMatrixSet>WorldCRS84Quad</TileMatrixSet>");
 
-        // #2738: CRS84 is a lon,lat CRS, so the WorldCRS84Quad TopLeftCorner is emitted
+        // CRS84 is a lon,lat CRS, so the WorldCRS84Quad TopLeftCorner is emitted
         // easting-first (-180 90), matching the OGC WorldCRS84Quad definition.
         var document = XDocument.Parse(content);
         var worldCrs84Quad = document
@@ -327,7 +337,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wmts10, "GetTile")]
     public async Task Wmts_GetTile_WorldCrs84Quad_ReturnsPngImage()
     {
-        // #1660: GetTile must serve the WorldCRS84Quad gridset. At TileMatrix 0 the grid is two
+        // GetTile must serve the WorldCRS84Quad gridset. At TileMatrix 0 the grid is two
         // columns by one row, so TILECOL up to 1 is valid.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WorldCRS84Quad&TILEMATRIX=0&TILEROW=0&TILECOL=1");
@@ -344,7 +354,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wmts10, "GetTile")]
     public async Task Wmts_GetTile_WebMercatorQuad_StillReturnsPngImage()
     {
-        // #1660 no-regression guard: adding WorldCRS84Quad must not change the existing
+        // No-regression guard: adding WorldCRS84Quad must not change the existing
         // WebMercatorQuad GetTile path (the CITE-conformant baseline).
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=1&TILEROW=0&TILECOL=0");
@@ -466,11 +476,13 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
     public async Task Wmts_GetCapabilities_UnpaintedStyle_OmitsLegendUrl(string styleType)
     {
-        await _fixture.GetService<ILayerStyleCatalog>().SetMapLibreStyleAsync(WebAppFixture.TestLayerId, $$$$"""
+        await using var fixture = await CreateDedicatedFixtureAsync();
+
+        await fixture.GetService<ILayerStyleCatalog>().SetMapLibreStyleAsync(WebAppFixture.TestLayerId, $$$$"""
             {"version":8,"sources":{"honua":{"type":"geojson","data":{"type":"FeatureCollection","features":[]}}},
              "layers":[{"id":"unpainted","type":"{{{{styleType}}}}","source":"honua"}]}
             """);
-        using var response = await _fixture.Client.GetAsync(
+        using var response = await fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var capabilities = XDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -727,7 +739,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wmts10, "GetFeatureInfo")]
     public async Task Wmts_GetFeatureInfo_WorldCrs84Quad_ReturnsPlainText()
     {
-        // #1873: GetFeatureInfo now resolves the clicked pixel for non-WebMercatorQuad
+        // GetFeatureInfo now resolves the clicked pixel for non-WebMercatorQuad
         // gridsets through the tile matrix set registry. WorldCRS84Quad is 2 cols x 1 row
         // at level 0, so TILECOL up to 1 is valid and the pixel->world math uses the
         // gridset's own (CRS84) origin and cell size rather than Web Mercator constants.
@@ -956,7 +968,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         content.Should().Contain("exceptionCode=\"InvalidParameterValue\"");
     }
 
-    // honua-server#2945: GetTile proving tests above only assert content-type/length; none
+    // GetTile proving tests above only assert content-type/length; none
     // exercised actual rendered tile content. This binds a deterministic style to the
     // seeded point layer and asserts a matching pixel appears in the WebMercatorQuad z=0
     // tile (a single tile spanning the whole globe, so it always contains the seeded point),
@@ -998,7 +1010,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
 
     // ---- OGC-native service route (/ogc/services/{serviceId}/wmts) ----
     //
-    // honua-release#100: `serve.wmts` is the capability key behind the OGC-native service
+    // `serve.wmts` is the capability key behind the OGC-native service
     // route ONLY — the /rest/services/{id}/MapServer/WMTS alias above belongs to the
     // GeoServices MapServer key, so none of the GetTile/GetFeatureInfo depth above counts as
     // proving evidence for `serve.wmts`. Before this block the OGC route had GetCapabilities
@@ -1055,7 +1067,9 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [Endpoint("GET /ogc/services/{serviceId}/wmts")]
     public async Task Wmts_OgcRoute_GetFeatureInfo_WithWmtsEnabledAndMapServerDisabled_ReturnsSeededFeature()
     {
-        _fixture.UpdateV2ServiceMetadata(
+        await using var fixture = await CreateDedicatedFixtureAsync();
+
+        fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
             enabledProtocols: [ServiceProtocols.Wmts]);
 
@@ -1064,7 +1078,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         // tile-pixel -> world -> feature lookup finds it. The existing MapServer-route
         // GetFeatureInfo tests all click I=128/J=128 (lon 0, lat 0) and only assert the body is
         // non-empty, which "No features found." also satisfies — they never proved a hit.
-        var response = await _fixture.Client.GetAsync(
+        var response = await fixture.Client.GetAsync(
             $"/ogc/services/{WebAppFixture.TestServiceId}/wmts?SERVICE=WMTS&REQUEST=GetFeatureInfo&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0&I=41&J=99&INFOFORMAT=text/plain");
 
         var content = await response.Content.ReadAsStringAsync();
@@ -1083,13 +1097,15 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [Endpoint("GET /ogc/services/{serviceId}/wmts")]
     public async Task Wmts_OgcRoute_GetTile_UnknownTileMatrixSet_ReturnsOwsExceptionReport()
     {
-        _fixture.UpdateV2ServiceMetadata(
+        await using var fixture = await CreateDedicatedFixtureAsync();
+
+        fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
             enabledProtocols: [ServiceProtocols.Wmts]);
 
         // A WMTS client must get an OWS ExceptionReport naming the offending parameter, not a
         // JSON problem document, on the OGC-native route as well as on the MapServer alias.
-        var response = await _fixture.Client.GetAsync(
+        var response = await fixture.Client.GetAsync(
             $"/ogc/services/{WebAppFixture.TestServiceId}/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&FORMAT=image/png&TILEMATRIXSET=NoSuchGrid&TILEMATRIX=0&TILEROW=0&TILECOL=0");
 
         var content = await response.Content.ReadAsStringAsync();

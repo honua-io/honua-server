@@ -68,6 +68,17 @@ public sealed class FeatureEventsAndStreamingRegistrationTests
     }
 
     [UnitTest]
+    public async Task ResolvePublisher_WithoutSystemDatabase_IsTheStreamPublisher()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHonuaFeatureEventsAndStreaming(new ConfigurationBuilder().Build());
+        await using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<IFeatureChangeEventPublisher>().Should().BeOfType<FeatureStreamPublisher>();
+    }
+
+    [UnitTest]
     [Operation(Operations.HealthCheck)]
     public async Task CheckReadinessAsync_ChangeLogStore_ReturnsReady()
     {

@@ -29,22 +29,24 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.OperationsProgress)]
-public sealed partial class OperationsProgressEndpointsTests : IAsyncLifetime
+public sealed partial class OperationsProgressEndpointsTests
+    : IClassFixture<OperationsProgressEndpointsTests.OperationsHost>, IAsyncLifetime
 {
-    // Isolate durable operation state so cancel/retry assertions do not depend on other tests.
-    private readonly WebAppFixture _fixture = new WebAppFixture()
-        .ReplaceRequestService<IExecutionJobStore>(new InMemoryExecutionJobStore())
-        .ReplaceRequestService<IJobQueue>(new InMemoryJobQueue());
+    private readonly OperationsHost _host;
+    private readonly WebAppFixture _fixture;
     private readonly List<string> _operationIds = [];
-    private HttpClient _client = null!;
-    private IUniversalProgressStore _progressStore = null!;
+    private readonly HttpClient _client;
+    private readonly IUniversalProgressStore _progressStore;
 
-    public async Task InitializeAsync()
+    public OperationsProgressEndpointsTests(OperationsHost host)
     {
-        await _fixture.InitializeAsync();
-        _client = _fixture.Client;
-        _progressStore = _fixture.GetService<IUniversalProgressStore>();
+        _host = host;
+        _fixture = host.Fixture;
+        _client = host.Fixture.Client;
+        _progressStore = host.Fixture.GetService<IUniversalProgressStore>();
     }
+
+    public Task InitializeAsync() => _host.DrainQueueAsync();
 
     public async Task DisposeAsync()
     {
@@ -52,8 +54,6 @@ public sealed partial class OperationsProgressEndpointsTests : IAsyncLifetime
         {
             await _progressStore.DeleteProgressAsync(operationId);
         }
-
-        await _fixture.DisposeAsync();
     }
 
     [IntegrationTest]
@@ -724,7 +724,7 @@ public sealed partial class OperationsProgressEndpointsTests : IAsyncLifetime
         }
     }
 
-    // Regression: a remote job the reconciler re-queued for retry sits at
+    // A remote job the reconciler re-queued for retry sits at
     // Queued + AttemptCount > 0 + NextRetryAt != null + ProviderOperationId == null. The
     // admin cancel surface must treat that between-retries state as pre-submission and must
     // not invoke backend.CancelAsync against the stale (possibly TTL-cleaned) prior attempt.

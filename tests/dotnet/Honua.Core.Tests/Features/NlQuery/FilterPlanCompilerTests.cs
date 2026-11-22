@@ -245,6 +245,36 @@ public sealed class FilterPlanCompilerTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public void Compile_TemporalOnExactTimestampField_ReturnsTemporalPredicate()
+    {
+        // exactTypes layers declare TIMESTAMPTZ columns as TimestampOffset.
+        var exactResource = CreateResource(
+            "exact_layer",
+            MetadataV2GeometryType.None,
+            MetadataV2SpatialReference.Wgs84,
+            [
+                Field("objectid", MetadataV2FieldType.Integer, nullable: false, roles: ["id.primary"]),
+                Field("observed_at", MetadataV2FieldType.TimestampOffset)
+            ]);
+        var plan = Deserialize("""
+        {
+          "combinator": "and",
+          "clauses": [{
+            "type": "temporal",
+            "temporal": { "property": "observed_at", "operator": "after", "start": "2025-01-01T00:00:00Z" }
+          }]
+        }
+        """);
+
+        var result = FilterPlanCompiler.Compile(plan, exactResource);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Expression.Should().BeOfType<TemporalPredicate>()
+            .Which.Operator.Should().Be(TemporalOperator.After);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public void Compile_TemporalBefore_ReturnsTemporalPredicate()
     {
         var plan = Deserialize("""
@@ -568,7 +598,7 @@ public sealed class FilterPlanCompilerTests
     [Operation(Operations.SpatialQuery)]
     public void Compile_SpatialOnNon4326Layer_GeoJsonDefaultsTo4326()
     {
-        // Regression: untagged GeoJSON must default to EPSG:4326 per RFC 7946,
+        // Untagged GeoJSON must default to EPSG:4326 per RFC 7946,
         // not the layer SRID, so the downstream pipeline can ST_Transform correctly.
         var webMercatorResource = CreateResource(
             "mercator_layer",
@@ -606,7 +636,7 @@ public sealed class FilterPlanCompilerTests
     public void Deserialize_WithNullClauses_CoalescesToEmptyArrayInsteadOfNull()
     {
         // STJ overwrites the [] default with null for a literal "clauses": null, so
-        // plan.Clauses.Length would NRE out of the provider's parse path (#1986).
+        // plan.Clauses.Length would NRE out of the provider's parse path.
         var plan = Deserialize("""{ "combinator": "and", "clauses": null }""");
 
         plan.Clauses.Should().NotBeNull();

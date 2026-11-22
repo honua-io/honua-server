@@ -2,14 +2,24 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Server.Features.Admin.Models;
 
 namespace Honua.Server.Features.Admin.Share;
 
 internal sealed record ShareExportDefinitionRequest
 {
+    private int? _serviceLayerIndex;
+    private int? _legacyLayerId;
+
     public string? ResourceId { get; init; }
     public required string ServiceName { get; init; }
-    public required int ServiceLayerIndex { get; init; }
+    public int ServiceLayerIndex { get => _serviceLayerIndex ?? _legacyLayerId ?? LegacyIdAlias.Absent; init => _serviceLayerIndex = value; }
+
+    // Deprecated input alias of serviceLayerIndex; published clients still send layerId.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? LayerId { get => null; init => _legacyLayerId = value; }
+
+    internal string? ServiceLayerIndexError => LegacyIdAlias.ServiceLayerIndex.Error(_serviceLayerIndex, _legacyLayerId);
     public string? DisplayName { get; init; }
     public required string DestinationType { get; init; }
     public Dictionary<string, string> DestinationConfig { get; init; } = new(StringComparer.Ordinal);
@@ -30,6 +40,8 @@ internal sealed record ShareExportDefinitionResponse
     public string? ResourceId { get; init; }
     public required string ServiceName { get; init; }
     public required int ServiceLayerIndex { get; init; }
+    // Deprecated wire alias of ServiceLayerIndex; published clients still read layerId.
+    public int LayerId => ServiceLayerIndex;
     public string? DisplayName { get; init; }
     public required string DestinationType { get; init; }
     public required string DestinationStatus { get; init; }
@@ -106,4 +118,6 @@ internal sealed record ShareItemRefResponse
     public string? ResourceId { get; init; }
     public required string ServiceName { get; init; }
     public required int ServiceLayerIndex { get; init; }
+    // Deprecated wire alias of ServiceLayerIndex; published clients still read layerId.
+    public int LayerId => ServiceLayerIndex;
 }

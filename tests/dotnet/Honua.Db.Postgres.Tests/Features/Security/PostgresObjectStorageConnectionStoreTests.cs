@@ -1,0 +1,247 @@
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+
+using Honua.Core.Features.ObjectStorage;
+using Honua.Db.Postgres.Features.Security;
+using Honua.TestKit;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
+using Npgsql;
+
+namespace Honua.Db.Postgres.Tests.Features.Security;
+
+// Two store instances over one database stand in for two server tasks.
+[Collection("Database")]
+[Protocol(ProtocolNames.TestQuality)]
+public sealed class PostgresObjectStorageConnectionStoreTests(PostgresFixture fixture)
+{
+    private const int MaxPerMinter = 5;
+
+    private const string Minter = "api-key:minter";
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ConnectionWrittenByOneTask_IsReadByAnotherAndAdvancesTheGeneration()
+    {
+        await WithSchemaAsync(async schema =>
+        {
+            var writer = new PostgresObjectStorageConnectionStore(fixture.DataSource, schema);
+            var reader = new PostgresObjectStorageConnectionStore(fixture.DataSource, schema);
+            var connection = await SetupAsync(writer, "parcels/");
+            var before = await GenerationAsync(schema);
+
+            (await writer.CreateAsync(connection, Minter, CancellationToken.None)).Should().Be(ObjectStorageCreateOutcome.Created);
+
+            var read = await reader.GetAsync(connection.Id, CancellationToken.None);
+            read!.ExternalId.Should().Be(connection.ExternalId);
+            read.Prefix.Should().Be("parcels/");
+            (await reader.ListAsync(CancellationToken.None)).Should().ContainSingle(item => item.Id == connection.Id);
+            (await GenerationAsync(schema)).Should().BeGreaterThan(before);
+
+            (await reader.UpdateAsync(read with { Name = "Renamed" }, CancellationToken.None)).Should().BeTrue();
+            (await writer.GetAsync(connection.Id, CancellationToken.None))!.Name.Should().Be("Renamed");
+            (await writer.DeleteAsync(connection.Id, CancellationToken.None)).Should().BeTrue();
+            (await reader.GetAsync(connection.Id, CancellationToken.None)).Should().BeNull();
+        });
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ExternalId_IsSingleUseAndMustBeMintedByTheCreatorForTheSameBucketAndPrefix()
+    {
+        await WithSchemaAsync(async schema =>
+        {
+            var store = new PostgresObjectStorageConnectionStore(fixture.DataSource, schema);
+            var connection = await SetupAsync(store, "parcels/");
+
+            (await store.CreateAsync(connection with { ExternalId = ObjectStoragePolicy.NewExternalId() }, Minter, CancellationToken.None))
+                .Should().Be(ObjectStorageCreateOutcome.SetupRejected, "an unknown external id was never minted");
+            (await store.CreateAsync(connection with { Prefix = "other/" }, Minter, CancellationToken.None))
+                .Should().Be(ObjectStorageCreateOutcome.SetupRejected, "the setup was minted for another prefix");
+            (await store.CreateAsync(connection, "someone-else", CancellationToken.None))
+                .Should().Be(ObjectStorageCreateOutcome.SetupRejected, "the setup was minted by another principal");
+            (await store.CreateAsync(connection, Minter, CancellationToken.None)).Should().Be(ObjectStorageCreateOutcome.Created);
+            (await store.FindOpenSetupAsync(connection.ExternalId!, CancellationToken.None)).Should().BeNull();
+            (await store.CreateAsync(connection with { Id = Guid.NewGuid() }, Minter, CancellationToken.None))
+                .Should().Be(ObjectStorageCreateOutcome.SetupRejected, "a consumed external id cannot be reused");
+        });
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ExpiredExternalId_IsRefused()
+    {
+        await WithSchemaAsync(async schema =>
+        {
+            var store = new PostgresObjectStorageConnectionStore(fixture.DataSource, schema);
+            var connection = await SetupAsync(store, "parcels/", DateTimeOffset.UtcNow.AddMinutes(-1));
+
+            (await store.FindOpenSetupAsync(connection.ExternalId!, CancellationToken.None)).Should().BeNull();
+            (await store.CreateAsync(connection, Minter, CancellationToken.None)).Should().Be(ObjectStorageCreateOutcome.SetupRejected);
+        });
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ExternalIdBucketAndPrefix_AreImmutableInTheDatabase()
+    {
+        await WithSchemaAsync(async schema =>
+        {
+            var store = new PostgresObjectStorageConnectionStore(fixture.DataSource, schema);
+            var connection = await SetupAsync(store, "parcels/");
+            await store.CreateAsync(connection, Minter, CancellationToken.None);
+
+            var act = () => fixture.ExecuteAsync(
+                $"UPDATE \"{schema}\".object_storage_connections SET external_id = 'replaced' WHERE connection_id = '{connection.Id}'");
+
+            (await act.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be(PostgresErrorCodes.CheckViolation);
+            (await store.UpdateAsync(connection with { Prefix = "other/" }, CancellationToken.None)).Should().BeFalse();
+        });
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task OpenSetups_AreCappedAndExpiredOnesDoNotCount()
+    {
+        await WithSchemaAsync(async schema =>
+        {
+            var store = new PostgresObjectStorageConnectionStore(fixture.DataSource, schema);
+            await SetupAsync(store, "expired/", DateTimeOffset.UtcNow.AddMinutes(-1));
+            for (var i = 0; i < PostgresObjectStorageConnectionStore.MaxOpenSetups; i++)
+            {
+                (await TrySetupAsync(store, $"operator-{i}")).Should().BeTrue();
+            }
+
+            (await TrySetupAsync(store, "operator-new")).Should().BeFalse("the installation-wide cap is reached");
+        });
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task OpenSetups_PerMinterCap_SupersedesTheMintersOldestSetup()
+    {
+        await WithSchemaAsync(async schema =>
+        {
+            var store = new PostgresObjectStorageConnectionStore(fixture.DataSource, schema);
+            var minted = new List<string>();
+            for (var i = 0; i <= MaxPerMinter; i++)
+            {
+                var externalId = ObjectStoragePolicy.NewExternalId();
+                (await TrySetupAsync(store, NewSetup("operator-a", externalId, TimeSpan.FromMinutes(120 - i)))).Should().BeTrue("a principal at its cap supersedes its own oldest setup");
+                minted.Add(externalId);
+            }
+
+            (await store.FindOpenSetupAsync(minted[0], CancellationToken.None)).Should().BeNull("the oldest setup was superseded");
+            foreach (var externalId in minted.Skip(1))
+            {
+                (await store.FindOpenSetupAsync(externalId, CancellationToken.None)).Should().NotBeNull();
+            }
+
+            (await TrySetupAsync(store, "operator-b")).Should().BeTrue();
+        });
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task OpenSetups_AtTheInstallationCap_AMinterAtItsCapStillSupersedes()
+    {
+        await WithSchemaAsync(async schema =>
+        {
+            var store = new PostgresObjectStorageConnectionStore(fixture.DataSource, schema);
+            for (var i = 0; i < PostgresObjectStorageConnectionStore.MaxOpenSetups - MaxPerMinter; i++)
+            {
+                (await TrySetupAsync(store, $"operator-{i}")).Should().BeTrue();
+            }
+
+            for (var i = 0; i < MaxPerMinter; i++)
+            {
+                (await TrySetupAsync(store, "operator-a")).Should().BeTrue();
+            }
+
+            (await TrySetupAsync(store, "operator-new")).Should().BeFalse("the installation-wide cap is reached");
+            (await TrySetupAsync(store, "operator-a")).Should().BeTrue("superseding keeps the installation total unchanged");
+        });
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task OpenSetups_WithNoPerMinterAllowance_AreRefusedWithoutDeletingAny()
+    {
+        await WithSchemaAsync(async schema =>
+        {
+            var store = new PostgresObjectStorageConnectionStore(fixture.DataSource, schema);
+            var externalId = ObjectStoragePolicy.NewExternalId();
+            (await TrySetupAsync(store, NewSetup("operator-a", externalId))).Should().BeTrue();
+            var refused = await store.SaveSetupAsync(NewSetup("operator-a"), maxOpenForMinter: 0, CancellationToken.None);
+
+            refused.Should().BeFalse();
+            (await store.FindOpenSetupAsync(externalId, CancellationToken.None)).Should().NotBeNull();
+        });
+    }
+
+    private static Task<bool> TrySetupAsync(PostgresObjectStorageConnectionStore store, string mintedBy)
+        => TrySetupAsync(store, NewSetup(mintedBy));
+
+    private static Task<bool> TrySetupAsync(PostgresObjectStorageConnectionStore store, ObjectStorageConnectionSetup setup)
+        => store.SaveSetupAsync(setup, MaxPerMinter, CancellationToken.None);
+
+    private static ObjectStorageConnectionSetup NewSetup(string mintedBy, string? externalId = null, TimeSpan? lifetime = null) => new()
+    {
+        ExternalId = externalId ?? ObjectStoragePolicy.NewExternalId(),
+        MintedBy = mintedBy,
+        Bucket = "customer-imports",
+        Prefix = "parcels/",
+        ExpiresAt = DateTimeOffset.UtcNow.Add(lifetime ?? TimeSpan.FromHours(1)),
+    };
+
+    private async Task WithSchemaAsync(Func<string, Task> test)
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresObjectStorageConnectionStoreTests));
+        try
+        {
+            await CoreMigrationTestFixture.ApplyObjectStorageConnectionsAsync(fixture, schema);
+            await test(schema);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    private static async Task<ObjectStorageConnection> SetupAsync(
+        PostgresObjectStorageConnectionStore store,
+        string prefix,
+        DateTimeOffset? expiresAt = null)
+    {
+        var externalId = ObjectStoragePolicy.NewExternalId();
+        await store.SaveSetupAsync(
+            new ObjectStorageConnectionSetup
+            {
+                ExternalId = externalId,
+                MintedBy = Minter,
+                Bucket = "customer-imports",
+                Prefix = prefix,
+                ExpiresAt = expiresAt ?? DateTimeOffset.UtcNow.AddHours(24),
+            },
+            MaxPerMinter,
+            CancellationToken.None);
+        return new ObjectStorageConnection
+        {
+            Id = Guid.NewGuid(),
+            Name = "Customer imports",
+            Bucket = "customer-imports",
+            Prefix = prefix,
+            Region = "us-west-2",
+            RoleArn = "arn:aws:iam::123456789012:role/honua-connection-imports",
+            ExternalId = externalId,
+            CreatedBy = "test",
+        };
+    }
+
+    private async Task<long> GenerationAsync(string schema)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schema);
+        await using var command = new NpgsqlCommand($"SELECT generation FROM \"{schema}\".configuration_generation WHERE singleton", connection);
+        return (long)(await command.ExecuteScalarAsync())!;
+    }
+}

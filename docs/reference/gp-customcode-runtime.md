@@ -31,6 +31,27 @@ past it. The token expires after that start deadline plus the explicit execution
 timeout and five minutes of upload grace, giving every admitted start its full
 execution budget. Provider retries are disabled; canonical retries mint the next attempt's token.
 
+The token itself is never placed in the AWS Batch job. Container overrides are
+readable by any principal allowed `batch:DescribeJobs`, so the job receives
+`HONUA_JOB_REDEMPTION_CODE`, a single-use code bound to the job and attempt.
+Before fetching source, the harness exchanges it once for the token:
+
+```text
+POST /api/geoprocessing/jobs/{jobId}/attempts/{attempt}/capability
+X-Honua-Redemption-Code: <single-use code>
+```
+
+The server returns the token as `text/plain` and deletes the code from the job
+record in the same compare-and-set, so a code read from the provider after the job
+started is spent. A code that does not match returns 401. An attempt the server has
+not yet recorded as dispatched returns 409, and the harness retries for up to two
+minutes. After the start deadline, cancellation or a terminal state the server
+returns 410. If someone else redeems the code first, the real job cannot obtain
+its token and fails at the inputs phase, so the theft is visible. The same
+happens if the response carrying the token is lost after the server spent the
+code: the retry gets 401 and the attempt fails rather than reusing the code. An
+attempt that ended and is waiting for a canonical retry also returns 410.
+
 The worker sends artifact bytes to:
 
 ```text
@@ -66,7 +87,7 @@ terminal source of truth in that case. A lost acknowledgement after the broker h
 stored the journal can also leave a journal describing tool success beside a failed
 provider exit; consumers must use the durable job/provider state for final outcome.
 
-The Redis execution-log store retains at most 2,000 entries of 4 KiB each per job.
+The execution-log store retains at most 2,000 entries of 4 KiB each per job.
 Queries use absolute append cursors, so trimming earlier entries does not shift a
 cursor onto different events. Tail and step responses disclose total and dropped
 counts; diagnostics includes a truncation warning. Canonical terminal metadata
@@ -74,5 +95,5 @@ survives oversized messages. The legacy `GetLogsAsync` helper returns at most th
 latest 500 entries; use explicit pagination when reading the retained history.
 
 Source and CI tests exercise the definition guards, real HTTP upload transports,
-Redis ingestion, crash recovery and bounded log reads. They do not constitute a
+log ingestion, crash recovery and bounded log reads. They do not constitute a
 live cloud security or deployment qualification receipt.

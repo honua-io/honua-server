@@ -109,7 +109,10 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
     {
         Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the schema-divergence lane.");
 
-        var connectionString = await postgres.CreateFreshDatabaseAsync();
+        var requirement = (DatabaseSchemaRequirement)requirementValue;
+        var storeOperation = (StoreOperation)storeOperationValue;
+        var connectionString = await postgres.CreateFreshDatabaseAsync(
+            enablePostGisRaster: storeOperation == StoreOperation.RasterImportWrite);
         await ExecuteAsync(connectionString, arrangeSql);
         var before = await CaptureStateAsync(connectionString);
 
@@ -117,8 +120,6 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Database:Schema"] = "honua" })
             .Build();
         var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, configuration);
-        var requirement = (DatabaseSchemaRequirement)requirementValue;
-        var storeOperation = (StoreOperation)storeOperationValue;
 
         // Upgrade/preflight receipt: planning cannot report a usable migration plan over a
         // journal/schema mismatch, and the typed cause remains available to the caller.
@@ -182,8 +183,8 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
         reader.IsDBNull(1).Should().BeFalse("the physical guarded schema must remain present for diagnosis");
     }
 
-    // A fixture seed that pre-creates part of the migration-owned schema before the first boot
-    // (#4900): two of migration 031's seven metadata tables with a row, the raster baseline table
+    // A fixture seed that pre-creates part of the migration-owned schema before the first boot:
+    // two of migration 031's seven metadata tables with a row, the raster baseline table
     // without its migration-owned EXTERNAL storage, and migration 063's overview table.
     private const string PreSeededSchemaSql = """
         CREATE SCHEMA IF NOT EXISTS honua;
@@ -1074,7 +1075,7 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
                 OR scriptname = '{ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration}';
             """);
         var original = await CaptureLegacyAttachmentAsync(connectionString);
-        IConfiguration Configuration(string? nonce) => new ConfigurationBuilder()
+        static IConfiguration Configuration(string? nonce) => new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Database:Schema"] = schema,
@@ -1364,9 +1365,9 @@ public sealed partial class CoreSchemaDivergenceGuardTests(LocalSubstratePostgre
                 'upgrade-regression');
             """);
 
-        // Reproduce a pre-#3899 deployment: server migrations 031/059 were journaled in
-        // public while their guarded tables landed in honua, and the provider migration
-        // root plus the forward adoption migration were not yet part of that journal.
+        // Reproduce a legacy deployment: server migrations 031/059 are journaled in
+        // public while their guarded tables are in honua, and the provider migration
+        // root plus the forward adoption migration are not part of that journal.
         await ExecuteAsync(connectionString, $"""
             DELETE FROM public.schema_versions
             WHERE scriptname LIKE 'Honua.Postgres.Migrations.%'

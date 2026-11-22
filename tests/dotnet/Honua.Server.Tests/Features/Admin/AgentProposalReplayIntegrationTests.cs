@@ -18,6 +18,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
@@ -26,6 +27,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Db.Postgres.Features.Attachments;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Models;
 using Honua.TestKit;
@@ -194,25 +196,32 @@ public sealed class AgentProposalReplayIntegrationTests : IAsyncLifetime
     {
         using var agent = await CreateCallerAsync("agent-key-rest");
 
-        // Connection create runs directly for an agent. Without a password or secret reference the
-        // connection handler refuses it, which shows the dispatched request reached the handler.
-        using var response = await agent.PostAsJsonAsync("/api/v1/operations/admin.connections.create/submit", new
+        // Approval permits the loopback replay; the missing password makes the handler reject it.
+        var proposalId = await SubmitRestAsync(agent, "admin.connections.create", new(StringComparer.Ordinal)
         {
-            parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["name"] = $"agent-direct-{Guid.NewGuid():N}",
-                ["host"] = "127.0.0.1",
-                ["port"] = "5432",
-                ["databaseName"] = "honua",
-                ["username"] = "honua",
-                ["sslRequired"] = "false",
-                ["sslMode"] = "Disable",
-            },
+            ["name"] = $"agent-replay-{Guid.NewGuid():N}",
+            ["host"] = "127.0.0.1",
+            ["port"] = "5432",
+            ["databaseName"] = "honua",
+            ["username"] = "honua",
+            ["sslRequired"] = "false",
+            ["sslMode"] = "Disable",
         });
 
-        var payload = await response.Content.ReadAsStringAsync();
-        payload.Should().NotContain(AgentRouteAdmissionMiddleware.PolicyRef, "a gateway dispatch carries a verified operation lineage");
-        payload.Should().Contain("HTTP 400", "the connection handler answered the dispatched request");
+        using var response = await _approver.ApproveAsync(proposalId);
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var proposal = (await _proposals.GetAsync(proposalId, CancellationToken.None))!;
+        proposal.Status.Should().Be(OperationProposalStatus.Failed);
+        proposal.ResolvedBy.Should().Contain("agent-change-approver");
+        var instance = await _fixture.Services.GetRequiredService<IOperationInstanceStore>()
+            .GetAsync(proposal.Audit.OperationInstanceId!);
+        instance.Should().NotBeNull();
+        instance!.Status.Should().Be(OperationHandleStatus.Failed);
+        instance.Result.Should().NotBeNull();
+        instance.Result!.Details["statusCode"].Should().Be("400", "the connection handler answered the approved replay");
+        instance.Result.Details["response"].Should().Contain("Must specify either Password or SecretReference",
+            "the replay reached the connection handler's credential validation");
+        await AssertReplayedWithServerMintedCredentialAsync(proposalId);
     }
 
     private Task CreatePointTableAsync(string table) => _fixture.Postgres.ExecuteDdlUnderLockAsync($"""
@@ -368,7 +377,10 @@ public sealed class AgentProposalReplayIntegrationTests : IAsyncLifetime
 
     private async Task<bool[]> AllowAnonymousAsync()
     {
+        // Read in the schema the clients and the approved replay use. The test graph follows the
+        // ambient schema, which only the concrete context sets; it reverts when this method returns.
         using var scope = _fixture.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<SchemaContext>().CurrentSchema = _fixture.CurrentSchema;
         var snapshot = await scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>().GetCurrentAsync();
         var services = snapshot.Graph.Services.Where(service => service.Metadata.Name == ServiceName).ToArray();
         services.Should().NotBeEmpty();

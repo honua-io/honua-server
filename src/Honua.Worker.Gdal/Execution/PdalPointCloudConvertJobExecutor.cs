@@ -62,7 +62,7 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
         var hasSourceSrs = !string.IsNullOrWhiteSpace(sourceSrs);
         if (hasSourceSrs && !IsValidSrsToken(sourceSrs))
         {
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 $"Invalid point-cloud conversion inputs: 'sourceSrs' value '{sourceSrs}' is not an accepted CRS token " +
                 "(expected an EPSG code like 'EPSG:32610' or a positive integer).");
         }
@@ -72,7 +72,28 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
         if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", opts.MaxArtifactBytes, out var sourceBytes, out var inputError))
         {
             Log.InvalidInputs(logger, job.OperationId, inputError);
-            return JobExecutionResult.Failed($"Invalid point-cloud conversion inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid point-cloud conversion inputs: {inputError}");
+        }
+
+        if (LasPublicHeader.TryReadPointCount(sourceBytes, out var declaredPoints, out var recordLength))
+        {
+            if (declaredPoints > (ulong)opts.MaxPointCloudPoints)
+            {
+                Log.InvalidInputs(logger, job.OperationId,
+                    $"declared point count {declaredPoints} exceeds MaxPointCloudPoints={opts.MaxPointCloudPoints}");
+                return JobExecutionResult.InvalidInput(
+                    $"Invalid point-cloud conversion inputs: declared point count {declaredPoints.ToString(CultureInfo.InvariantCulture)} " +
+                    $"exceeds configured MaxPointCloudPoints={opts.MaxPointCloudPoints.ToString(CultureInfo.InvariantCulture)}.");
+            }
+
+            if (recordLength > 0 && declaredPoints > (ulong)(opts.MaxArtifactBytes / recordLength))
+            {
+                Log.InvalidInputs(logger, job.OperationId,
+                    $"estimated uncompressed LAS payload exceeds MaxArtifactBytes={opts.MaxArtifactBytes}");
+                return JobExecutionResult.InvalidInput(
+                    $"Invalid point-cloud conversion inputs: declared point count {declaredPoints.ToString(CultureInfo.InvariantCulture)} " +
+                    $"exceeds configured MaxArtifactBytes={opts.MaxArtifactBytes.ToString(CultureInfo.InvariantCulture)}.");
+            }
         }
 
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
@@ -133,18 +154,33 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(80, "Encoding decompressed LAS artifact", cancellationToken).ConfigureAwait(false);
 
-            var outputBytes = await File.ReadAllBytesAsync(outputPath, cancellationToken).ConfigureAwait(false);
-            if (outputBytes.Length == 0)
+            var outputInfo = new FileInfo(outputPath);
+            if (!outputInfo.Exists || outputInfo.Length == 0)
             {
                 return JobExecutionResult.Failed("pdal translate produced an empty output point cloud.");
             }
 
-            if (outputBytes.Length > opts.MaxArtifactBytes)
+            if (outputInfo.Length > opts.MaxArtifactBytes)
             {
-                Log.ArtifactTooLarge(logger, job.OperationId, outputBytes.Length, opts.MaxArtifactBytes);
+                Log.ArtifactTooLarge(logger, job.OperationId, outputInfo.Length, opts.MaxArtifactBytes);
                 return JobExecutionResult.Failed(
-                    $"Decompressed LAS size {outputBytes.Length} bytes exceeds configured " +
+                    $"Decompressed LAS size {outputInfo.Length} bytes exceeds configured " +
                     $"MaxArtifactBytes={opts.MaxArtifactBytes}.");
+            }
+
+            var bounded = await GdalArtifactPublisher.ReadBoundedPayloadAsync(outputPath, opts.MaxArtifactBytes, cancellationToken)
+                .ConfigureAwait(false);
+            if (bounded.ExceededLimit)
+            {
+                Log.ArtifactTooLarge(logger, job.OperationId, bounded.Length, opts.MaxArtifactBytes);
+                return JobExecutionResult.Failed(
+                    $"Decompressed LAS size {bounded.Length} bytes exceeds configured " +
+                    $"MaxArtifactBytes={opts.MaxArtifactBytes}.");
+            }
+
+            if (bounded.Payload is not { Length: > 0 } outputBytes)
+            {
+                return JobExecutionResult.Failed("pdal translate produced an empty output point cloud.");
             }
 
             var artifactUri = GdalDataUri.Build(UncompressedLasContentType, outputBytes);

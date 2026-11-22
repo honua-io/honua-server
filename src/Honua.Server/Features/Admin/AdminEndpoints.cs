@@ -9,6 +9,7 @@ using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin.Services;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
@@ -61,9 +62,11 @@ internal static class AdminEndpoints
             .WithDisplayName("Get Admin OpenAPI Specification Method Not Allowed");
 
         // Use Map with explicit HTTP method metadata to avoid MapGet reflection
-        _ = adminGroup.MapMethods("/connections/{id}/tables", [HttpMethods.Get], HandleGetConnectionTables)
-            .WithDisplayName("Get Connection Tables")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var discoverTables = AdminHttpOperationRouteBinding.ForConnectImport(
+            "admin.connections.tables.discover", "/api/v{version:apiVersion}/admin");
+        _ = adminGroup.MapMethods(discoverTables.RoutePattern, discoverTables.Methods, HandleGetConnectionTables)
+            .WithAdminOperation(discoverTables.Definition)
+            .WithDisplayName("Get Connection Tables");
         _ = adminGroup.MapMethods("/connections/{id}/tables", _nonGetMethods, HandleGetOnlyMethodNotAllowed)
             .WithDisplayName("Get Connection Tables Method Not Allowed");
 
@@ -194,17 +197,28 @@ internal static class AdminEndpoints
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            // Intentional catch-all request-handling boundary: logs and returns a generic
-            // admin problem-details response below.
+            // Intentional request boundary: log details and return a safe admin problem.
             AdminLog.TableDiscoveryFailed(logger, ex, id);
-
-            await ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status500InternalServerError,
-                    "Table Discovery Failed",
-                    "An error occurred while discovering tables. Please check the connection and try again.")
-                .ExecuteAsync(context);
+            await CreateTableDiscoveryProblem(context, ex).ExecuteAsync(context);
         }
+    }
+
+    private static IResult CreateTableDiscoveryProblem(HttpContext context, Exception exception)
+    {
+        if (exception is ServiceUnavailableException)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status503ServiceUnavailable,
+                "Database Connection Unavailable",
+                "Unable to connect to the database. Test the connection and check its host, port, credentials, network access, and TLS settings.");
+        }
+
+        return ProblemDetailsHelpers.CreateAdminProblem(
+            context,
+            StatusCodes.Status500InternalServerError,
+            "Table Discovery Failed",
+            "An error occurred while discovering tables. Please check the connection and try again.");
     }
 
     private static async Task<IResult> HandleGetOpenApiSpec(

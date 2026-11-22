@@ -72,7 +72,7 @@ public sealed class OgcRecordsAuthorizationDenialTests
     private static WebAppFixture CreateFixture()
         => new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ConfigureWebHost(builder =>
         {
-            // Displace the F1 development-authentication bypass, which would otherwise make every
+            // Displace the development-authentication bypass, which would otherwise make every
             // caller an admin and the access gate under test unreachable.
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);

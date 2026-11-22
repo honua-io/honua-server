@@ -81,6 +81,7 @@ internal sealed class PostgresConsoleContentStore(ConsoleStateStorage storage) :
             {
                 return null;
             }
+            patch.EnsureStillPersonal(existing);
             var updated = existing with
             {
                 Title = patch.Title ?? existing.Title,

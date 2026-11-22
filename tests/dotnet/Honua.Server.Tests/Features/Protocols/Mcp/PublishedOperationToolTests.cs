@@ -233,29 +233,30 @@ public sealed partial class PublishedOperationToolTests
     }
 
     [UnitTest]
-    public async Task Invoke_ConnectionCreateWithSecretReference_PreservesReferenceAndType()
+    public async Task Invoke_ConnectionCreateWithSecretReference_FilesAProposalThatKeepsTheReference()
     {
         var descriptor = AdminConnectImportOperationCatalog.Descriptors.Single(
             operation => operation.OperationId == "admin.connections.create");
+        var executor = new RecordingExecutor(descriptor.OperationId);
+        var bridge = new CapturingProposalBridge();
+        using var catalog = new OperationCatalog([new AdminConnectImportOperationDescriptorProvider()], TimeProvider.System);
+        var dispatcher = new OperationDispatcher(
+            catalog, [executor],
+            new AllowAllPolicyDecisionPoint(), TimeProvider.System, bridge);
         var tool = new PublishedOperationTool(descriptor, "cat-v1", NullLogger.Instance);
-        var invoker = new CountingInvoker(request =>
-        {
-            request.Parameters["secretReference"].Should().Be("env:HONUA_TEST_CONNECTION");
-            request.Parameters["secretType"].Should().Be("env");
-            request.Parameters.Should().NotContainKey("password");
-            return CompletedHandle(descriptor.OperationId);
-        });
-        var authorization = Substitute.For<IAuthorizationService>();
-        authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object>(), AuthenticationExtensions.AdminPolicy)
-            .Returns(AuthorizationResult.Success());
 
         var result = await tool.InvokeAsync(
-            Context(invoker, authorization: authorization, roles: ["admin"]),
+            Context(dispatcher, authorization: ProposalAuthorization(), roles: ["admin"]),
             Args("""{"name":"reference-only","secretReference":"env:HONUA_TEST_CONNECTION","secretType":"env"}"""),
             CancellationToken.None);
 
         result.IsError.Should().BeFalse();
-        invoker.SubmitCount.Should().Be(1);
+        result.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("RequiresApproval");
+        executor.SubmitCount.Should().Be(0);
+        bridge.Calls.Should().Be(1);
+        bridge.Request!.Parameters["secretReference"].Should().Be("env:HONUA_TEST_CONNECTION");
+        bridge.Request.Parameters["secretType"].Should().Be("env");
+        bridge.Request.Parameters.Should().NotContainKey("password");
     }
 
     // ---- Governance through the policy decision point --------------------------
@@ -407,7 +408,7 @@ public sealed partial class PublishedOperationToolTests
     [UnitTest]
     public async Task Invoke_SameParams_DifferentPrincipal_MissesCacheAndTakesFreshPolicyRoundTrip()
     {
-        // Security regression (PR #2584 review): the cache key includes the full
+        // Security regression: the cache key includes the full
         // policy-relevant principal context, and a cache hit skips the policy
         // decision point — so a result cached under a policy-ALLOWED privileged
         // caller must NEVER be served to a different caller with the same params.
@@ -482,7 +483,7 @@ public sealed partial class PublishedOperationToolTests
     [UnitTest]
     public async Task Invoke_SameParamsSamePrincipalDifferentTenant_MissesCache()
     {
-        // Security regression (#3430): the deterministic result cache is a process-wide
+        // Security regression: the deterministic result cache is a process-wide
         // singleton and OperationPolicyContext.PrincipalId is the canonical actor id,
         // which is deliberately NOT tenant-qualified. Before the tenant component was
         // added to the cache key, one caller with an identical actor/tier/role set and
@@ -580,7 +581,7 @@ public sealed partial class PublishedOperationToolTests
         // The pre-image is assembled from caller-influenced values (tenant, schema,
         // roles, parameter names/values). Without per-component escaping, a value
         // carrying the component delimiter could be re-parsed into another caller's
-        // key — the same injectivity requirement #3430 places on the MCP session
+        // key — the same injectivity requirement as the MCP session
         // binding key.
         var left = IPublishedOperationCache.BuildKey(
             "op",
@@ -725,7 +726,7 @@ public sealed partial class PublishedOperationToolTests
     [UnitTest]
     public async Task Source_RepeatedCalls_ReuseProjectionUntilCatalogVersionChanges()
     {
-        // SEC-18: the projection is rebuilt only when the catalog version changes, so
+        // the projection is rebuilt only when the catalog version changes, so
         // repeated tools/list calls do not resolve executors or rebuild tool schemas.
         var executorResolutions = 0;
         var scopeFactory = new ServiceCollection()
@@ -1085,10 +1086,7 @@ public sealed partial class PublishedOperationToolTests
         public string OperationId => operationId;
 
         public Honua.Core.Features.ControlPlane.Abstractions.OperationGatewayRequest Map(
-            IOperationDescriptor descriptor,
-            OperationRequest request,
-            OperationPolicyContext context,
-            PolicyDecision decision)
+            OperationApprovalRequestContext input)
             => new() { Kind = Honua.Core.Features.Guardrails.Domain.OperationClass.AdminConfigChange };
 
         public OperationApprovalReplayMapping MapReplay(

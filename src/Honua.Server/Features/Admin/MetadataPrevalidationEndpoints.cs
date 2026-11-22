@@ -5,6 +5,7 @@ using System.Text.Json;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -21,10 +22,11 @@ internal static class MetadataPrevalidationEndpoints
             .WithTags("Admin", "Metadata", "Validation")
             .RequireAdminAuthorization();
 
-        group.MapPost("/prevalidate", HandlePrevalidate)
+        var prevalidate = AdminHttpOperationRouteBinding.ForOperate("admin.metadata.prevalidate", "/metadata");
+        group.MapMethods(prevalidate.RoutePattern, prevalidate.Methods, HandlePrevalidate)
+            .WithAdminOperation(prevalidate.Definition)
             .WithDisplayName("Prevalidate Metadata Release Package Compatibility")
             .WithSummary("Returns an environment-scoped Metadata v2 compatibility report for a release package.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Accepts<MetadataPrevalidateRequest>("application/json")
             .Produces<ApiResponse<MetadataCompatibilityReport>>()
             .ProducesProblem(StatusCodes.Status400BadRequest)

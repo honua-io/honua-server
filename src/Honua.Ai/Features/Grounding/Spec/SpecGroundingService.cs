@@ -157,7 +157,14 @@ internal sealed partial class SpecGroundingService
 
             handledAnyClause = true;
             mutations.AddRange(clauseResult.Mutations);
-            workingDocument = _applier.Apply(workingDocument, clauseResult.Mutations);
+            try
+            {
+                workingDocument = _applier.Apply(workingDocument, clauseResult.Mutations);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return RejectInvalidMutation(ex, warnings, clarificationAnswer);
+            }
         }
 
         if (!handledAnyClause || mutations.Count == 0)
@@ -180,20 +187,7 @@ internal sealed partial class SpecGroundingService
         }
         catch (InvalidOperationException ex)
         {
-            const string message = "The proposed mutation could not be applied to the spec.";
-            warnings.Add(SpecDiagnostic.Error(
-                SpecDiagnosticCode.UnknownReference,
-                message,
-                SourceSpan.Synthetic));
-            SpecGroundingTelemetry.RecordValidationFailures([SpecDiagnosticCode.UnknownReference.ToString()]);
-            SpecGroundingTelemetry.RecordMutateTurn(clarified: false, retried: retried, errorKind: "invalid_mutation");
-            SpecGroundingLog.MutateRejected(_logger, "invalid_mutation", ex.Message);
-            return new SpecGroundingResult
-            {
-                ErrorKind = SpecGroundingErrorKind.InvalidMutation,
-                ErrorMessage = message,
-                Warnings = warnings
-            };
+            return RejectInvalidMutation(ex, warnings, clarificationAnswer);
         }
 
         var outputDiagnostics = _validator.Validate(nextDocument, catalogSnapshot).Diagnostics;
@@ -246,6 +240,28 @@ internal sealed partial class SpecGroundingService
         SpecGroundingTelemetry.RecordSummary(summary.Sections.Count, durationMs);
         SpecGroundingLog.SummarizeCompleted(_logger, summary.Sections.Count, durationMs);
         return summary;
+    }
+
+    private SpecGroundingResult RejectInvalidMutation(
+        InvalidOperationException exception,
+        List<SpecDiagnostic> warnings,
+        ClarificationResponse? clarificationAnswer)
+    {
+        var retried = clarificationAnswer is not null;
+        const string message = "The proposed mutation could not be applied to the spec.";
+        warnings.Add(SpecDiagnostic.Error(
+            SpecDiagnosticCode.UnknownReference,
+            message,
+            SourceSpan.Synthetic));
+        SpecGroundingTelemetry.RecordValidationFailures([SpecDiagnosticCode.UnknownReference.ToString()]);
+        SpecGroundingTelemetry.RecordMutateTurn(clarified: false, retried: retried, errorKind: "invalid_mutation");
+        SpecGroundingLog.MutateRejected(_logger, "invalid_mutation", exception.Message);
+        return new SpecGroundingResult
+        {
+            ErrorKind = SpecGroundingErrorKind.InvalidMutation,
+            ErrorMessage = message,
+            Warnings = warnings
+        };
     }
 
     private async Task<ClausePlanResult> PlanClauseAsync(
@@ -1408,7 +1424,7 @@ internal sealed partial class SpecGroundingService
     }
 
     private static string Singularize(string value)
-        => value.EndsWith("s", StringComparison.OrdinalIgnoreCase)
+        => value is [.., 's' or 'S']
             ? value[..^1]
             : value;
 

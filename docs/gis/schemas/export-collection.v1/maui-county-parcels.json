@@ -1,0 +1,191 @@
+{
+  "type": "Collection",
+  "stac_version": "1.1.0",
+  "stac_extensions": [
+    "https://schemas.portolan-sdi.org/portolan/v0.3.0/schema.json",
+    "https://stac-extensions.github.io/file/v2.1.0/schema.json",
+    "https://stac-extensions.github.io/table/v1.2.0/schema.json",
+    "https://stac-extensions.github.io/version/v1.2.0/schema.json",
+    "https://honua.io/schemas/stac/honua/v1.0.0/schema.json"
+  ],
+  "id": "maui-county-parcels",
+  "title": "Maui County parcels",
+  "description": "Maui County tax parcels with public assessment fields, exported as PMTiles and GeoParquet files.",
+  "license": "other",
+  "version": "20261113T062701Z",
+  "updated": "2026-11-13T06:29:45.961Z",
+  "extent": {
+    "spatial": {
+      "bbox": [
+        [
+          -157.3109732,
+          20.500726,
+          -155.9765183,
+          21.2244441
+        ]
+      ]
+    },
+    "temporal": {
+      "interval": [
+        [
+          "2026-11-13T06:27:01.354Z",
+          "2026-11-13T06:27:01.354Z"
+        ]
+      ]
+    }
+  },
+  "table:columns": [
+    {
+      "name": "tmk_txt",
+      "type": "string",
+      "title": "Tax map key",
+      "description": "Nine-digit parcel number"
+    },
+    {
+      "name": "zone",
+      "type": "string",
+      "title": "Zone"
+    },
+    {
+      "name": "section",
+      "type": "string",
+      "title": "Section"
+    },
+    {
+      "name": "plat",
+      "type": "string",
+      "title": "Plat",
+      "description": "Three digits, leading zeros kept"
+    },
+    {
+      "name": "parcel",
+      "type": "string",
+      "title": "Parcel",
+      "description": "Three digits, leading zeros kept"
+    },
+    {
+      "name": "nhoodcode",
+      "type": "string",
+      "title": "Assessment neighborhood",
+      "description": "Null where the county records no neighborhood code"
+    },
+    {
+      "name": "pittcode",
+      "type": "integer",
+      "title": "Property class code"
+    },
+    {
+      "name": "taxacres",
+      "type": "number",
+      "title": "Tax acres"
+    },
+    {
+      "name": "gisacres",
+      "type": "number",
+      "title": "GIS acres"
+    }
+  ],
+  "honua:capture_id": "sha256:0a52118c8a5af4d15ce8facfc0a0f161ce0704e33f7b66bbfdfc126d6ca64791",
+  "honua:captured_at": "2026-11-13T06:27:01.354Z",
+  "honua:source_revision": "metadata-sha256:32e6e0066dadf02b7605881d22fd9568e1c91fa078f7323455cdbc2aeb7cf5aa",
+  "honua:feature_count": 51238,
+  "honua:source": {
+    "service": "maui-parcels",
+    "layer": "parcels",
+    "title": "Maui County Parcels"
+  },
+  "honua:source_crs": "EPSG:3750",
+  "honua:identity": {
+    "field": "tmk_txt",
+    "pmtiles_property": "tmk_txt",
+    "geoparquet_column": "tmk_txt",
+    "stable": true
+  },
+  "honua:geometry": {
+    "column": "geometry",
+    "encoding": "geoarrow-multipolygon",
+    "types": [
+      "MultiPolygon"
+    ],
+    "bbox_column": "bbox"
+  },
+  "honua:public_fields": [
+    "tmk_txt",
+    "zone",
+    "section",
+    "plat",
+    "parcel",
+    "nhoodcode",
+    "pittcode",
+    "taxacres",
+    "gisacres"
+  ],
+  "honua:validation": {
+    "status": "passed",
+    "validated_at": "2026-11-13T06:29:45.985Z",
+    "checks": [
+      {
+        "name": "capture-consistency",
+        "status": "passed"
+      },
+      {
+        "name": "public-fields-only",
+        "status": "passed"
+      },
+      {
+        "name": "identity-unique",
+        "status": "passed"
+      }
+    ]
+  },
+  "links": [
+    {
+      "rel": "pmtiles",
+      "href": "parcels.pmtiles",
+      "type": "application/vnd.pmtiles",
+      "pmtiles:layers": [
+        "parcels"
+      ]
+    }
+  ],
+  "assets": {
+    "geoparquet": {
+      "href": "parcels.parquet",
+      "type": "application/vnd.apache.parquet",
+      "roles": [
+        "data"
+      ],
+      "title": "GeoParquet",
+      "file:size": 10179292,
+      "file:checksum": "12207a456b393280b5fb25b3f7951703ed7f2886f19e79750e9ca5b74ab582ff7b1c",
+      "honua:capture_id": "sha256:0a52118c8a5af4d15ce8facfc0a0f161ce0704e33f7b66bbfdfc126d6ca64791",
+      "honua:fields": [
+        "tmk_txt",
+        "zone",
+        "section",
+        "plat",
+        "parcel",
+        "nhoodcode",
+        "pittcode",
+        "taxacres",
+        "gisacres"
+      ]
+    },
+    "pmtiles": {
+      "href": "parcels.pmtiles",
+      "type": "application/vnd.pmtiles",
+      "roles": [
+        "visual"
+      ],
+      "title": "PMTiles",
+      "file:size": 9215842,
+      "file:checksum": "1220bf055613f8ca888967bf81550ffe714b53153a51f270f0cc1470c7af0f929c0c",
+      "honua:capture_id": "sha256:0a52118c8a5af4d15ce8facfc0a0f161ce0704e33f7b66bbfdfc126d6ca64791",
+      "honua:fields": [
+        "tmk_txt"
+      ],
+      "honua:minzoom": 10,
+      "honua:maxzoom": 15
+    }
+  }
+}

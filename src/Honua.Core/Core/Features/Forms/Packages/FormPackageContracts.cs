@@ -38,6 +38,9 @@ public sealed class FormPackageDocument
     [JsonPropertyName("description")]
     public string? Description { get; init; }
 
+    [JsonPropertyName("expressionLanguage")]
+    public string? ExpressionLanguage { get; init; }
+
     [JsonPropertyName("target")]
     public FormTargetDefinition? Target { get; init; }
 
@@ -140,6 +143,18 @@ public sealed class FormFieldDefinition
 
     [JsonPropertyName("visibility")]
     public FormConditionalRule? Visibility { get; init; }
+
+    [JsonPropertyName("relevanceExpression")]
+    public string? RelevanceExpression { get; init; }
+
+    [JsonPropertyName("constraintExpression")]
+    public string? ConstraintExpression { get; init; }
+
+    [JsonPropertyName("constraintMessage")]
+    public string? ConstraintMessage { get; init; }
+
+    [JsonPropertyName("calculatedExpression")]
+    public string? CalculatedExpression { get; init; }
 }
 
 public sealed class FormFieldDomainDefinition

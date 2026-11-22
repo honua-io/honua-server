@@ -21,6 +21,10 @@ public sealed class RlsPolicyResponse
 
     public required string Comparison { get; init; }
 
+    public string? FilterExpression { get; init; }
+
+    public string? AreaGeometry { get; init; }
+
     public string? Description { get; init; }
 
     public DateTimeOffset CreatedAt { get; init; }
@@ -52,6 +56,12 @@ public sealed class CreateRlsPolicyRequest
 
     [StringLength(16)]
     public string? Comparison { get; init; }
+
+    [StringLength(4096, MinimumLength = 1)]
+    public string? FilterExpression { get; init; }
+
+    [StringLength(65536, MinimumLength = 1)]
+    public string? AreaGeometry { get; init; }
 
     [StringLength(500)]
     public string? Description { get; init; }

@@ -5,22 +5,22 @@ description: "Choose the image that includes your database stores while retainin
 ---
 # How to choose the default or full serving image
 
-The rc.2 default is the **chiseled JIT image with PostGIS as its only database
-store**. Native AOT remains an explicit `-aot` variant; promotion requires full
-suite and live-journey parity evidence by the 18 November evidence review. Choose the JIT **full** image when you need additional
-database stores. File-format support is a separate concern: the default keeps
+The rc.2 default is the **native-AOT image with PostGIS as its only database
+store**, on the plain chiseled runtime without ICU: the 2026.1 release channel
+and unsuffixed nightly and trunk tags select it. The chiseled JIT image remains
+available as the explicit `-jit` variant, and the tag-triggered `latest` and
+`vX.Y.Z` tags still select it. Choose the JIT **full** image
+when you need additional database stores. File-format support is a separate concern: the default keeps
 the import/export readers, including GeoPackage, Shapefile, GeoTIFF and Parquet.
 Importing a GeoPackage does not require a SQLite database-store provider.
 
-**Availability:** the image split is awaiting image-build evidence and
-publication. Do not add `-full` to an older tag and assume that tag exists.
-Select only an image listed in the release's published artifacts, verify its
-revision, and pin its digest. Current general-purpose images are not evidence
-that the new PostGIS-only boundary is installed.
+**Tag selection:** do not add `-full` to an older pre-rc.2 tag and assume that
+tag exists. Select only an image listed in the release's published artifacts,
+verify its revision, and pin its digest.
 
 ## Choose a variant
 
-| Your data sources | Choice after the split is published |
+| Your data sources | Variant |
 |---|---|
 | PostGIS tables and supported file imports | Default serving image |
 | DuckDB, SQL Server, MySQL, Oracle, Redshift, Snowflake, Databricks, or REST read-through | Matching JIT full image |
@@ -36,8 +36,8 @@ and Snowflake retain their JIT runtime requirement. Check each provider's
 1. Inventory the primary store, optional store configuration, warehouse gates,
    and Connections already saved in this installation. Include stores you
    intend to keep after the upgrade.
-2. Select the same release revision in the required variant. The planned
-   nightly full tag is `nightly-jit-<candidate-sha7>-full`; release full tags
+2. Select the same release revision in the required variant. The nightly full
+   tag is `nightly-jit-<candidate-sha7>-full`; release full tags
    use the `-full` suffix. Confirm actual publication before use and
    retain the immutable digest for deployment and rollback.
 3. Back up the installation and follow your normal
@@ -66,7 +66,11 @@ root is `/tmp/honua`; mount it as a writable volume owned by that user, or as
 `--tmpfs /tmp/honua:rw,noexec,nosuid,size=512m,uid=1001,gid=1001,mode=750`.
 The image pre-creates its writable directories. A mounted empty root must permit
 UID 1001 to create child directories. Capacity depends on concurrent import and
-geoprocessing workloads; 512 MiB is the smoke-test allocation.
+geoprocessing workloads; 512 MiB is the smoke-test allocation and what the
+packaged Compose files give the server. It holds one maximum upload (100 MB by
+default) plus several concurrent GeoParquet responses, which are spooled there
+before sending. If the scratch volume fills anyway, GeoParquet queries answer
+`503` with `Retry-After` instead of a query error; retry once readers finish.
 
 | Writes | Image default | Configuration |
 | --- | --- | --- |

@@ -21,12 +21,12 @@ internal sealed class ApiKeyAuthenticationHandler(
     UrlEncoder encoder,
     ApiKeyAuthenticationDependencies dependencies) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
-    private const string ApiKeyHeader = "X-API-Key";
+    private const string ApiKeyHeader = AuthenticationChallenge.ApiKeyHeader;
     private const string AuthorizationHeader = "Authorization";
     private const string BasicSchemePrefix = "Basic ";
+    private const string ApiKeySchemePrefix = "ApiKey ";
     private const string AdminPasswordEnvVar = "HONUA_ADMIN_PASSWORD";
     private const string AuthFailureMessageKey = "AuthFailureMessage";
-    private const string AuthRealm = "Honua Admin";
     private const string AdminAuthenticationNotConfigured = "Admin authentication not configured";
     private const string RequestNotPermittedMessage = "This API key is not permitted from this origin or network.";
     private const string SourceRefusedMessage = "Too many failed authentication attempts from this source";
@@ -71,10 +71,10 @@ internal sealed class ApiKeyAuthenticationHandler(
         return ToAuthenticateResult(validation);
     }
 
-    // The explicit header wins; Basic auth compatibility supplies the key otherwise.
+    // The explicit header wins, then "Authorization: ApiKey"; Basic auth compatibility supplies the key otherwise.
     private (string? ApiKey, AuthenticateResult? Failure) ReadPresentedApiKey()
     {
-        var providedApiKey = GetApiKeyFromHeader();
+        var providedApiKey = GetApiKeyFromHeader() ?? GetApiKeyFromAuthorizationScheme();
         if (!string.IsNullOrEmpty(providedApiKey))
         {
             return (providedApiKey, null);
@@ -115,7 +115,7 @@ internal sealed class ApiKeyAuthenticationHandler(
                 Context.Items[SourceRefusedRetryAfterKey] = validation.RetryAfter;
                 return AuthenticateResult.Fail(SourceRefusedMessage);
             case ApiKeyRejection.RequestNotPermitted:
-                // Refusal already logged by ValidateApiKeyAsync with the key id and restriction.
+                // Refusal already logged by ResolveStoredKey with the key id and restriction.
                 Context.Items[AuthFailureMessageKey] = RequestNotPermittedMessage;
                 return AuthenticateResult.Fail(RequestNotPermittedMessage);
             default:
@@ -280,6 +280,28 @@ internal sealed class ApiKeyAuthenticationHandler(
         if (string.IsNullOrWhiteSpace(providedApiKey))
         {
             AuthenticationLog.EmptyApiKeyProvided(Logger, ApiKeyHeader);
+            return null;
+        }
+
+        return providedApiKey;
+    }
+
+    // Clients that can set only the Authorization header (a Prometheus Operator ServiceMonitor)
+    // send the key under the ApiKey scheme named in the challenge. It follows the same transport
+    // rules as X-API-Key. A Bearer value is never read as a key.
+    private string? GetApiKeyFromAuthorizationScheme()
+    {
+        var authorization = Request.Headers[AuthorizationHeader].FirstOrDefault();
+        if (authorization is null ||
+            !authorization.StartsWith(ApiKeySchemePrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var providedApiKey = authorization[ApiKeySchemePrefix.Length..].Trim();
+        if (providedApiKey.Length == 0)
+        {
+            AuthenticationLog.EmptyApiKeyProvided(Logger, AuthorizationHeader);
             return null;
         }
 
@@ -603,7 +625,7 @@ internal sealed class ApiKeyAuthenticationHandler(
             }
         }
 
-        AdminPasswordValidation.ValidateRefreshedPassword(resolvedPassword, dependencies.Options.EnvironmentName);
+        AdminPasswordValidation.ValidateForEnvironment(resolvedPassword, dependencies.Options.EnvironmentName);
         return resolvedPassword;
     }
 
@@ -632,11 +654,7 @@ internal sealed class ApiKeyAuthenticationHandler(
             return TooManyAttemptsResponse.Create(Context, retryAfter).ExecuteAsync(Context);
         }
 
-        Response.Headers.Append("WWW-Authenticate", $"ApiKey realm=\"{AuthRealm}\", header=\"{ApiKeyHeader}\"");
-        if (_authOptions.EnableBasicAuthCompatibility)
-        {
-            Response.Headers.Append("WWW-Authenticate", $"Basic realm=\"{AuthRealm}\", charset=\"UTF-8\"");
-        }
+        AuthenticationChallenge.AppendCredentialChallenges(Context, _authOptions);
 
         // Check if there's a specific failure message from authentication
         string? failureMessage = Context.Items[AuthFailureMessageKey] as string;

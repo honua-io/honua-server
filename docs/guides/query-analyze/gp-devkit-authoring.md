@@ -16,9 +16,9 @@ Start with the local devkit, use Docker for native dependencies, and use the
 | Managed geometry and transforms on inline data | Repository checkout and .NET 11 SDK |
 | Native GDAL/PDAL operations | The above plus Docker and the heavy-worker image |
 | Processes reading layers, databases, or object storage | Their configured input services and credentials |
-| Python SDK, GPServer, OGC, or MCP integration | Local server, PostGIS, Redis, and a heavy worker for native jobs |
+| Python SDK, GPServer, OGC, or MCP integration | Local server, PostGIS, and a heavy worker for native jobs |
 
-The local runner needs no Redis or job queue. It registers both managed and
+The local runner needs no server or job queue. It registers both managed and
 native executors; listing a function does not install its external dependencies.
 Python SDK calls execute against a server, including a server running locally.
 
@@ -61,7 +61,7 @@ The customer install is the `Honua.Geoprocessing.Cli` package on the GitHub Pack
 feed `https://nuget.pkg.github.com/honua-io/index.json`. `Publish GP Devkit` pushes
 that package only from an explicit canonical-trunk dispatch and retains the
 publication identity for honua-release#615. The tool runs on the .NET 11 runtime; the
-`gp-dotnet` projects it scaffolds target `net10.0`. Authenticate the `honua-github` source
+`gp-dotnet` projects it scaffolds target `net11.0`. Authenticate the `honua-github` source
 with a GitHub token that can read packages before installing:
 
 ```bash
@@ -185,7 +185,7 @@ honua-gp-devkit test --update   # accept the current artifacts and refresh expec
 `summary_tool` / `SummaryTool` until you rename it. The installed tool includes the
 matching Python harness and .NET authoring SDK/harness source payload. `init` extracts
 it under `.honua/toolchain`; no server checkout or unpublished dependency is needed.
-Python 3.11+ and the .NET 10 SDK remain prerequisites for their respective languages.
+Python 3.11+ and the .NET 11 SDK remain prerequisites for their respective languages.
 For .NET, `test` builds the template test project and runs the local harness. Python
 uses the bundled module directly. A failure prints the first differing value, receipt
 path and artifact; `expected/golden.json` also pins the artifact bytes.
@@ -221,7 +221,7 @@ server submission. Add `--probe-container` to also check the GDAL worker image.
 
 A scaffolded project is not a catalog registration. `describe --project <dir>` and
 `list --project <dir>` report that task's own
-prerequisites: the language runtime (Python 3.11+ or a .NET 10 SDK reported by `dotnet --list-sdks`; the runtime host alone is not enough), the committed
+prerequisites: the language runtime (Python 3.11+ or a .NET 11 SDK reported by `dotnet --list-sdks`; the runtime host alone is not enough), the committed
 dependency lock, and the local harness. A lock that is present is the dependency set;
 `describe` does not import each locked package. A missing interpreter, lock, or harness
 is `missing`, names what to install, and `test` stops before starting the harness. The
@@ -269,7 +269,7 @@ supports reflection and does not require an AOT build.
 
 Complete the [sample checkout](gp-local-dev-quickstart.md#prerequisites), then
 build a named worker image using the same Compose definition as the integration
-stack. This builds the image without starting PostGIS, Redis, or the server:
+stack. This builds the image without starting PostGIS or the server:
 
 ```bash
 docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile gdal-worker build gdal-worker
@@ -311,7 +311,7 @@ and scratch paths for local debugging; inspect them before sharing logs.
    tested image digest, with a remote workload declaring the matching
    `managed` or `native` runtime profile. Per-job Kubernetes and AWS Batch
    workers receive an assigned operation and exit after recording its outcome.
-   Persistent Compose workers continue consuming their shared Redis queue.
+   Persistent Compose workers continue consuming their shared job queue.
 
 Workflow publication is a separate operation: `publish` saves a workflow draft,
 creates a version, validates it, and performs a dry run; `--publish` additionally

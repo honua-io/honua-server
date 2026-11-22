@@ -164,7 +164,7 @@ public sealed class RemoteSourceExecutorTests
     [UnitTest]
     public async Task RemoteSource_SecureConnectionResolverThrows_LogsInnerExceptionAndFailsCleanly()
     {
-        // PA-211: the secure-connection resolution failure is wrapped in a
+        // the secure-connection resolution failure is wrapped in a
         // TransformInputException with a sanitized PublicMessage, but the original
         // exception must be preserved as InnerException and logged — not discarded —
         // so an operator can diagnose why the connection could not be resolved.
@@ -202,10 +202,8 @@ public sealed class RemoteSourceExecutorTests
     [UnitTest]
     public async Task RemoteSource_StreamingBytesExceedMaxArtifactBytes_FailsBeforeFullMaterialization()
     {
-        // BH6-024 regression: the executor previously accumulated ALL features into a List<IFeature>
-        // before checking payload.Length against MaxArtifactBytes. A single feature whose attributes
-        // exceed a small ceiling must cause a Failed result during streaming, not after the full
-        // list has already been materialized and serialized.
+        // A feature whose attributes exceed MaxArtifactBytes must fail during streaming,
+        // before the full list is materialized and serialized.
         //
         // "overflow-trigger" as an attribute value is ~16 bytes; together with the geometry GeoJSON
         // (~36 bytes), the estimate easily exceeds the 10-byte MaxArtifactBytes ceiling.
@@ -244,6 +242,37 @@ public sealed class RemoteSourceExecutorTests
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    private static JobExecutionResult? _lastResult;
+
+    [UnitTest]
+    public async Task RemoteSource_HonuaLayerSelectionRejected_IsTerminalRefusalWithGuidance()
+    {
+        const string guidance = "the where clause is not supported; use simple comparisons joined by AND";
+        var executor = BuildExecutor("source.honua-layer", new RejectingSelectionSource(guidance));
+
+        var (status, uri, _) = await RunExecutorAsync(executor, "source.honua-layer", ("layerId", "7"), ("where", "1=1 AND 'a' = 'a'"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        uri.Should().BeNull();
+        _lastResult!.ErrorMessage.Should().Be($"Invalid source.honua-layer inputs: {guidance}");
+        _lastResult.IsRetryable.Should().BeFalse("a rejected selector fails the same way on every attempt");
+    }
+
+    private sealed class RejectingSelectionSource(string message) : IDagFeatureSource
+    {
+        public string SourceId => "source.honua-layer";
+
+        public async IAsyncEnumerable<DagSourceFeature> ReadAsync(
+            DagSourceRequest request, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.Yield();
+            throw new DagSourceSelectionException(message);
+#pragma warning disable CS0162 // Unreachable: the yield makes this an async iterator.
+            yield break;
+#pragma warning restore CS0162
+        }
+    }
 
     private static RemoteSourceExecutor BuildExecutor(string processId, IDagFeatureSource source, Action<IServiceCollection>? configure = null)
     {
@@ -318,6 +347,7 @@ public sealed class RemoteSourceExecutorTests
         };
 
         var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
+        _lastResult = result;
         return (result.Status, publishedUri, null);
     }
 

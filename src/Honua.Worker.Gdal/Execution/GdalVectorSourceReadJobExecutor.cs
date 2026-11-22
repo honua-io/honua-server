@@ -80,7 +80,7 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
         if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", opts.MaxArtifactBytes, out var sourceBytes, out var inputError))
         {
             Log.InvalidInputs(logger, job.OperationId, inputError);
-            return JobExecutionResult.Failed($"Invalid source inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid source inputs: {inputError}");
         }
 
         GdalJobInputReader.TryGetInput(parameters, "layerName", out var layerName);
@@ -88,7 +88,7 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
             && (string.IsNullOrWhiteSpace(layerName) || layerName.Length > 1024
                 || layerName.StartsWith('-') || layerName.Any(char.IsControl)))
         {
-            return JobExecutionResult.Failed("Invalid source inputs: layerName must be a nonempty layer name, not a command option.");
+            return JobExecutionResult.InvalidInput("Invalid source inputs: layerName must be a nonempty layer name, not a command option.");
         }
 
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
@@ -337,7 +337,25 @@ internal sealed partial class GdalVectorSourceReadJobExecutor(
             }
         }
 
-        return new ZipExtraction(DiscoverDataset(extractRoot, sourceFormat), null);
+        var dataset = DiscoverDataset(extractRoot, sourceFormat);
+        return new ZipExtraction(dataset, await RefuseUntrustedDatasetAsync(dataset, extractRoot, cancellationToken).ConfigureAwait(false));
+    }
+
+    // The upload guard saw only the archive bytes. OGR sniffs content, so the file it will open is scanned
+    // again after extraction; other entries (project files, metadata, readme) may mention VSI paths
+    // harmlessly. A FileGDB directory is binary and is not scanned.
+    private static async Task<string?> RefuseUntrustedDatasetAsync(
+        string dataset, string extractRoot, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(dataset))
+        {
+            return null;
+        }
+
+        var reason = await GdalUntrustedFileScanner.ScanFileAsync(dataset, cancellationToken).ConfigureAwait(false);
+        return reason is null
+            ? null
+            : "Archive entry '" + Path.GetRelativePath(extractRoot, dataset) + "' is refused: " + reason + ".";
     }
 
     private static string? ValidateDeclaredEntry(

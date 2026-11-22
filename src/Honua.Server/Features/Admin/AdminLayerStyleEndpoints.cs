@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Models;
@@ -23,17 +24,17 @@ internal static class AdminLayerStyleEndpoints
             .WithTags("Admin", "Metadata", "Styles")
             .RequireAdminAuthorization();
 
-        _ = group.MapGet("/{storageLayerId:int}/style", HandleGetLayerStyle)
-            .WithName("GetAdminLayerStyle")
+        var getStyle = AdminHttpOperationRouteBinding.ForApi("admin.layer.style.get", "/metadata/layers", "/{storageLayerId:int}/style");
+        _ = group.MapMethods(getStyle.RoutePattern, getStyle.Methods, HandleGetLayerStyle)
+            .WithAdminOperation(getStyle.Definition)
             .WithSummary("[Deprecated] Get layer style metadata by storageLayerId")
-            .WithDescription("DEPRECATED storageLayerId-keyed alias. Use the canonical styleId surface GET /ogc/styles/{styleId} (ADR-0048). Kept working for back-compat; emits advisory Deprecation/Sunset headers.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+            .WithDescription("DEPRECATED storageLayerId-keyed alias. Use the canonical styleId surface GET /ogc/styles/{styleId} (ADR-0048). Kept working for back-compat; emits advisory Deprecation/Sunset headers.");
 
-        _ = group.MapPut("/{storageLayerId:int}/style", HandleUpdateLayerStyle)
-            .WithName("UpdateAdminLayerStyle")
+        var setStyle = AdminHttpOperationRouteBinding.ForApi("admin.layer.style.set", "/metadata/layers", "/{storageLayerId:int}/style");
+        _ = group.MapMethods(setStyle.RoutePattern, setStyle.Methods, HandleUpdateLayerStyle)
+            .WithAdminOperation(setStyle.Definition)
             .WithSummary("[Deprecated] Update layer style metadata by storageLayerId")
-            .WithDescription("DEPRECATED storageLayerId-keyed alias. Use the canonical styleId surface PUT /ogc/styles/{styleId} (ADR-0048). Kept working for back-compat; emits advisory Deprecation/Sunset headers.")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+            .WithDescription("DEPRECATED storageLayerId-keyed alias. Use the canonical styleId surface PUT /ogc/styles/{styleId} (ADR-0048). Kept working for back-compat; emits advisory Deprecation/Sunset headers.");
     }
 
     private static async Task<IResult> HandleGetLayerStyle(

@@ -18,9 +18,11 @@ internal static class OgcQueryablesUtilities
             or MetadataV2FieldType.Integer
             or MetadataV2FieldType.BigInteger
             or MetadataV2FieldType.Double
+            or MetadataV2FieldType.Decimal
             or MetadataV2FieldType.Float
             or MetadataV2FieldType.Boolean
             or MetadataV2FieldType.DateTime
+            or MetadataV2FieldType.TimestampOffset
             or MetadataV2FieldType.Date
             or MetadataV2FieldType.Time
             or MetadataV2FieldType.Uuid;
@@ -145,6 +147,7 @@ internal static class OgcQueryablesUtilities
             switch (field.Type)
             {
                 case MetadataV2FieldType.DateTime:
+                case MetadataV2FieldType.TimestampOffset:
                     type = TemporalPropertyType.DateTime;
                     return true;
                 case MetadataV2FieldType.Date:

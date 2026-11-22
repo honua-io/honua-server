@@ -42,13 +42,14 @@ file_header_template = unset
 [tests/dotnet/Honua.Core.Tests/GlobalUsings.cs]
 file_header_template = unset
 
+[*.cs]
 ###############################
 # .NET Coding Conventions     #
 ###############################
 
-# Organize usings
-dotnet_sort_system_directives_first = true
-dotnet_separate_import_directive_groups = false
+# Organize usings (#8707: disabled until a dedicated formatting pass; previously inactive under GlobalUsings.cs and surfaces 1,546 pre-existing IMPORTS sites in dotnet format)
+# dotnet_sort_system_directives_first = true
+# dotnet_separate_import_directive_groups = false
 
 # this. and Me. preferences - don't require, use _prefix instead
 dotnet_style_qualification_for_field = false:suggestion
@@ -83,13 +84,13 @@ dotnet_style_prefer_compound_assignment = true:suggestion
 dotnet_style_prefer_simplified_interpolation = true:suggestion
 dotnet_style_prefer_simplified_boolean_expressions = true:suggestion
 
-# Null-checking preferences
-dotnet_style_coalesce_expression = true:warning
-dotnet_style_null_propagation = true:warning
+# Null-checking preferences (#8707: pinned to suggestion; Release probe found 102 IDE0270 and 58 IDE0031 pre-existing sites)
+dotnet_style_coalesce_expression = true:suggestion
+dotnet_style_null_propagation = true:suggestion
 dotnet_style_prefer_is_null_check_over_reference_equality_method = true:warning
 
-# File header (enforced)
-dotnet_diagnostic.IDE0073.severity = warning
+# File header (#8707: pinned to suggestion; Release probe found 96 pre-existing IDE0073 sites)
+dotnet_diagnostic.IDE0073.severity = suggestion
 
 ###############################
 # C# Coding Conventions       #
@@ -160,95 +161,99 @@ dotnet_style_prefer_collection_expression = true:suggestion
 ###############################
 # C# Formatting Rules         #
 ###############################
+# #8707: disabled until a dedicated formatting pass; previously inactive under GlobalUsings.cs
+# and surfaces 4,285 pre-existing WHITESPACE sites across 2,682 files in dotnet format.
+# Global [*] whitespace settings (indent_style, indent_size, end_of_line, charset,
+# trim_trailing_whitespace, insert_final_newline) remain enforced.
 
 # New line preferences
-csharp_new_line_before_open_brace = all
-csharp_new_line_before_else = true
-csharp_new_line_before_catch = true
-csharp_new_line_before_finally = true
-csharp_new_line_before_members_in_object_initializers = true
-csharp_new_line_before_members_in_anonymous_types = true
-csharp_new_line_between_query_expression_clauses = true
+# csharp_new_line_before_open_brace = all
+# csharp_new_line_before_else = true
+# csharp_new_line_before_catch = true
+# csharp_new_line_before_finally = true
+# csharp_new_line_before_members_in_object_initializers = true
+# csharp_new_line_before_members_in_anonymous_types = true
+# csharp_new_line_between_query_expression_clauses = true
 
 # Indentation preferences
-csharp_indent_case_contents = true
-csharp_indent_switch_labels = true
-csharp_indent_labels = one_less_than_current
-csharp_indent_block_contents = true
-csharp_indent_braces = false
-csharp_indent_case_contents_when_block = false
+# csharp_indent_case_contents = true
+# csharp_indent_switch_labels = true
+# csharp_indent_labels = one_less_than_current
+# csharp_indent_block_contents = true
+# csharp_indent_braces = false
+# csharp_indent_case_contents_when_block = false
 
 # Space preferences
-csharp_space_after_cast = false
-csharp_space_after_keywords_in_control_flow_statements = true
-csharp_space_between_parentheses = false
-csharp_space_before_colon_in_inheritance_clause = true
-csharp_space_after_colon_in_inheritance_clause = true
-csharp_space_around_binary_operators = before_and_after
-csharp_space_between_method_declaration_parameter_list_parentheses = false
-csharp_space_between_method_declaration_empty_parameter_list_parentheses = false
-csharp_space_between_method_declaration_name_and_open_parenthesis = false
-csharp_space_between_method_call_parameter_list_parentheses = false
-csharp_space_between_method_call_empty_parameter_list_parentheses = false
-csharp_space_between_method_call_name_and_opening_parenthesis = false
-csharp_space_after_comma = true
-csharp_space_before_comma = false
-csharp_space_after_dot = false
-csharp_space_before_dot = false
-csharp_space_after_semicolon_in_for_statement = true
-csharp_space_before_semicolon_in_for_statement = false
-csharp_space_around_declaration_statements = false
-csharp_space_before_open_square_brackets = false
-csharp_space_between_empty_square_brackets = false
-csharp_space_between_square_brackets = false
+# csharp_space_after_cast = false
+# csharp_space_after_keywords_in_control_flow_statements = true
+# csharp_space_between_parentheses = false
+# csharp_space_before_colon_in_inheritance_clause = true
+# csharp_space_after_colon_in_inheritance_clause = true
+# csharp_space_around_binary_operators = before_and_after
+# csharp_space_between_method_declaration_parameter_list_parentheses = false
+# csharp_space_between_method_declaration_empty_parameter_list_parentheses = false
+# csharp_space_between_method_declaration_name_and_open_parenthesis = false
+# csharp_space_between_method_call_parameter_list_parentheses = false
+# csharp_space_between_method_call_empty_parameter_list_parentheses = false
+# csharp_space_between_method_call_name_and_opening_parenthesis = false
+# csharp_space_after_comma = true
+# csharp_space_before_comma = false
+# csharp_space_after_dot = false
+# csharp_space_before_dot = false
+# csharp_space_after_semicolon_in_for_statement = true
+# csharp_space_before_semicolon_in_for_statement = false
+# csharp_space_around_declaration_statements = false
+# csharp_space_before_open_square_brackets = false
+# csharp_space_between_empty_square_brackets = false
+# csharp_space_between_square_brackets = false
 
 # Wrapping preferences
-csharp_preserve_single_line_statements = false
-csharp_preserve_single_line_blocks = true
+# csharp_preserve_single_line_statements = false
+# csharp_preserve_single_line_blocks = true
 
 ###############################
 # Naming Conventions          #
 ###############################
 
-# Naming rules
+# Naming rules (#8707: pinned to suggestion; previously inactive under GlobalUsings.cs and surfaces 4,114 pre-existing IDE1006 sites in dotnet format)
 
-dotnet_naming_rule.interface_should_be_begins_with_i.severity = warning
+dotnet_naming_rule.interface_should_be_begins_with_i.severity = suggestion
 dotnet_naming_rule.interface_should_be_begins_with_i.symbols = interface
 dotnet_naming_rule.interface_should_be_begins_with_i.style = begins_with_i
 
-dotnet_naming_rule.types_should_be_pascal_case.severity = warning
+dotnet_naming_rule.types_should_be_pascal_case.severity = suggestion
 dotnet_naming_rule.types_should_be_pascal_case.symbols = types
 dotnet_naming_rule.types_should_be_pascal_case.style = pascal_case
 
-dotnet_naming_rule.non_field_members_should_be_pascal_case.severity = warning
+dotnet_naming_rule.non_field_members_should_be_pascal_case.severity = suggestion
 dotnet_naming_rule.non_field_members_should_be_pascal_case.symbols = non_field_members
 dotnet_naming_rule.non_field_members_should_be_pascal_case.style = pascal_case
 
-dotnet_naming_rule.private_or_internal_field_should_be_underscore_camel_case.severity = warning
+dotnet_naming_rule.private_or_internal_field_should_be_underscore_camel_case.severity = suggestion
 dotnet_naming_rule.private_or_internal_field_should_be_underscore_camel_case.symbols = private_or_internal_field
 dotnet_naming_rule.private_or_internal_field_should_be_underscore_camel_case.style = underscore_camel_case
 
-dotnet_naming_rule.private_or_internal_static_field_should_be_underscore_camel_case.severity = warning
+dotnet_naming_rule.private_or_internal_static_field_should_be_underscore_camel_case.severity = suggestion
 dotnet_naming_rule.private_or_internal_static_field_should_be_underscore_camel_case.symbols = private_or_internal_static_field
 dotnet_naming_rule.private_or_internal_static_field_should_be_underscore_camel_case.style = underscore_camel_case
 
-dotnet_naming_rule.constant_should_be_pascal_case.severity = warning
+dotnet_naming_rule.constant_should_be_pascal_case.severity = suggestion
 dotnet_naming_rule.constant_should_be_pascal_case.symbols = constant
 dotnet_naming_rule.constant_should_be_pascal_case.style = pascal_case
 
-dotnet_naming_rule.static_readonly_should_be_pascal_case.severity = warning
+dotnet_naming_rule.static_readonly_should_be_pascal_case.severity = suggestion
 dotnet_naming_rule.static_readonly_should_be_pascal_case.symbols = static_readonly
 dotnet_naming_rule.static_readonly_should_be_pascal_case.style = pascal_case
 
-dotnet_naming_rule.parameter_should_be_camel_case.severity = warning
+dotnet_naming_rule.parameter_should_be_camel_case.severity = suggestion
 dotnet_naming_rule.parameter_should_be_camel_case.symbols = parameter
 dotnet_naming_rule.parameter_should_be_camel_case.style = camel_case
 
-dotnet_naming_rule.local_should_be_camel_case.severity = warning
+dotnet_naming_rule.local_should_be_camel_case.severity = suggestion
 dotnet_naming_rule.local_should_be_camel_case.symbols = local
 dotnet_naming_rule.local_should_be_camel_case.style = camel_case
 
-dotnet_naming_rule.type_parameter_should_be_t_prefix.severity = warning
+dotnet_naming_rule.type_parameter_should_be_t_prefix.severity = suggestion
 dotnet_naming_rule.type_parameter_should_be_t_prefix.symbols = type_parameter
 dotnet_naming_rule.type_parameter_should_be_t_prefix.style = t_prefix
 
@@ -318,8 +323,8 @@ dotnet_naming_style.async_suffix.capitalization = pascal_case
 # Analyzer Diagnostics        #
 ###############################
 
-# IDE0005: Remove unnecessary using
-dotnet_diagnostic.IDE0005.severity = warning
+# IDE0005: Remove unnecessary using (#8707: pinned to suggestion; Release probe found 742 pre-existing sites)
+dotnet_diagnostic.IDE0005.severity = suggestion
 
 # IDE0011: Add braces (we allow single-line without braces)
 dotnet_diagnostic.IDE0011.severity = suggestion
@@ -327,14 +332,14 @@ dotnet_diagnostic.IDE0011.severity = suggestion
 # IDE0044: Make field readonly
 dotnet_diagnostic.IDE0044.severity = warning
 
-# IDE0051: Remove unused private member
-dotnet_diagnostic.IDE0051.severity = warning
+# IDE0051: Remove unused private member (#8707: pinned to suggestion; Release probe found 7 pre-existing sites)
+dotnet_diagnostic.IDE0051.severity = suggestion
 
-# IDE0052: Remove unread private member
-dotnet_diagnostic.IDE0052.severity = warning
+# IDE0052: Remove unread private member (#8707: pinned to suggestion; Release probe found 10 pre-existing sites including retained OTel gauge fields)
+dotnet_diagnostic.IDE0052.severity = suggestion
 
-# IDE0055: Formatting rule
-dotnet_diagnostic.IDE0055.severity = warning
+# IDE0055: Formatting rule (#8707: pinned to suggestion; Release probe found 4,250 pre-existing sites, enforced separately by CI format gate)
+dotnet_diagnostic.IDE0055.severity = suggestion
 
 # IDE0060: Remove unused parameter
 dotnet_diagnostic.IDE0060.severity = suggestion
@@ -376,6 +381,17 @@ dotnet_diagnostic.CS8618.severity = suggestion
 
 # Corvus.Text.Json 5.7.9 performance analyzers also flow to consuming projects.
 # Keep only UTF-8/conversion suggestions advisory; correctness/resource and IL/AOT rules remain enforced.
-[*.cs]
 dotnet_diagnostic.CTJ001.severity = suggestion
 dotnet_diagnostic.CTJ002.severity = suggestion
+
+# Allocation rules: errors at every analysis level so hot paths keep them.
+# CA1825 zero-length arrays, CA1845/CA1846 span-based concat and slicing,
+# CA1859 concrete types, CA1865-CA1867 char overloads, CA1870 cached SearchValues.
+dotnet_diagnostic.CA1825.severity = error
+dotnet_diagnostic.CA1845.severity = error
+dotnet_diagnostic.CA1846.severity = error
+dotnet_diagnostic.CA1859.severity = error
+dotnet_diagnostic.CA1865.severity = error
+dotnet_diagnostic.CA1866.severity = error
+dotnet_diagnostic.CA1867.severity = error
+dotnet_diagnostic.CA1870.severity = error

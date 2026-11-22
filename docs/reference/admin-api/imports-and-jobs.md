@@ -124,20 +124,22 @@ a new mapping. Unrelated concurrent catalog changes survive compensation.
 | POST | `/api/v1/admin/import/raster` | Import a raster file (GeoTIFF, PNG/JPEG world-file) into PostGIS |
 | GET | `/api/v1/admin/import/raster/formats` | List supported raster formats and extensions |
 | POST | `/api/v1/admin/cloud-rasters` | Register a cloud-optimized GeoTIFF (COG) by URL |
-| GET | `/api/v1/admin/cloud-rasters` | List registered cloud rasters |
+| GET | `/api/v1/admin/cloud-rasters?layerId={layerId}` | List registered cloud rasters for a layer (`layerId` required) |
 | GET | `/api/v1/admin/cloud-rasters/{id}` | Get a registered cloud raster |
 | DELETE | `/api/v1/admin/cloud-rasters/{id}` | Remove a cloud raster registration |
 | POST | `/api/v1/admin/cloud-rasters/{id}/refresh` | Refresh cached cloud raster metadata |
 | POST | `/api/v1/admin/zarr-stores` | Register a Zarr store |
-| GET | `/api/v1/admin/zarr-stores` | List Zarr stores |
+| GET | `/api/v1/admin/zarr-stores?layerId={layerId}` | List Zarr stores for a layer (`layerId` required) |
 | GET | `/api/v1/admin/zarr-stores/{id}` | Get a Zarr store |
 | DELETE | `/api/v1/admin/zarr-stores/{id}` | Remove a Zarr store |
 | POST | `/api/v1/admin/zarr-stores/{id}/refresh` | Refresh Zarr store metadata |
 | POST | `/api/v1/admin/multidim-coverages` | Register a cloud-optimized HDF5/NetCDF4 multidimensional coverage |
-| GET | `/api/v1/admin/multidim-coverages` | List multidimensional coverages |
+| GET | `/api/v1/admin/multidim-coverages?layerId={layerId}` | List multidimensional coverages for a layer (`layerId` required) |
 | GET | `/api/v1/admin/multidim-coverages/{id}` | Get a multidimensional coverage |
 | DELETE | `/api/v1/admin/multidim-coverages/{id}` | Remove a multidimensional coverage |
 | POST | `/api/v1/admin/multidim-coverages/{id}/refresh` | Refresh multidimensional coverage metadata |
+
+`POST /api/v1/admin/import/raster` answers `503` when the database has no `postgis_raster` extension (raster storage isn't installed); the message names the operator action.
 
 Raster import is multipart form-data with optional sidecars (`.pgw`/`.jgw`/`.tfw`/`.wld`, `.prj`). Subsequent uploads to a layer must match the layer's SRID and band count; mismatches return `400`.
 
@@ -153,7 +155,7 @@ Run `POST /api/v1/admin/import/raster` with form values `file=ortho.tif`, `layer
 | POST | `/api/v1/admin/tile-operations/jobs/{jobId}/cancel` | Cancel a tile operation job |
 | POST | `/api/v1/admin/tile-operations/jobs/{jobId}/retry` | Retry a tile operation job |
 
-Supported `operation` values: `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`, `paired-publish`. The `publish` operation produces a durable PMTiles artifact described by `publishedArtifact` on the job-status response. `paired-publish` writes a PMTiles and GeoParquet pair from one capture, with a publication descriptor, and reports it as `publishedPublication`. See [Publish tiles](../../guides/publish/publish-tiles.md).
+Supported `operation` values: `seed`, `warm`, `invalidate`, `purge`, `archive`, `publish`. Exports have their own API, `/api/v1/admin/exports` ([guide](../../guides/publish/publish-tiles.md#export-a-layer-as-files)). The `publish` operation produces a durable PMTiles artifact described by `publishedArtifact` on the job-status response. See [Publish tiles](../../guides/publish/publish-tiles.md).
 
 Run `POST /api/v1/admin/tile-operations/jobs` with `{"operation":"seed","layerId":42,"minZoom":0,"maxZoom":12}`.
 

@@ -16,6 +16,7 @@ using Honua.Geoprocessing;
 using Honua.Infrastructure;
 using Honua.Infrastructure.Authentication;
 using Honua.Io.Export;
+using Honua.Server.Features.Admin.Exports;
 using Honua.Server.Features.Admin.TileOperations;
 using Microsoft.Extensions.Options;
 
@@ -129,7 +130,7 @@ internal sealed partial class ConsoleJobService(
                 : new ConsoleJobFailure
                 {
                     Message = job.ErrorMessage,
-                    Classification = ClassifyFailure(job)
+                    Classification = ClassifyFailureDetailed(job)
                 },
             RetryPolicy = MapRetryPolicy(job.RetryPolicy ?? JobRetryPolicy.Default),
             ParentJobId = GetParameter(job, ExecutionJobParameterKeys.ParentId),
@@ -171,14 +172,7 @@ internal sealed partial class ConsoleJobService(
                 cancellationToken)
             .ConfigureAwait(false);
 
-        return new ConsoleJobLogPageResponse
-        {
-            JobId = job.OperationId,
-            CorrelationId = job.Audit.CorrelationId,
-            State = "available",
-            Items = page.Items.Select(MapLogEntry).ToArray(),
-            NextCursor = page.NextCursor
-        };
+        return await BuildLogPageAsync(context, job, page).ConfigureAwait(false);
     }
 
     public async Task<ConsoleJobArtifactPageResponse?> GetArtifactsAsync(
@@ -385,6 +379,17 @@ internal sealed partial class ConsoleJobService(
                 : Task.FromResult(false)
             : store.TrySetAsync(job, cancellationToken: cancellationToken);
 
+    private async Task EnsureExportNotUnpublishedAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+    {
+        var blocked = await ExportUnpublishGuard
+            .TryGetRetryBlockedMessageAsync(serviceProvider, job, cancellationToken)
+            .ConfigureAwait(false);
+        if (blocked is not null)
+        {
+            throw new ConsoleJobConflictException(blocked);
+        }
+    }
+
     public async Task<ConsoleJobControlResponse?> RetryAsync(
         HttpContext context,
         string jobId,
@@ -401,6 +406,8 @@ internal sealed partial class ConsoleJobService(
         {
             throw new ConsoleJobConflictException("Only failed or cancelled jobs can be retried.");
         }
+
+        await EnsureExportNotUnpublishedAsync(job, cancellationToken).ConfigureAwait(false);
 
         var policy = job.RetryPolicy ?? JobRetryPolicy.Default;
         var policyDisabledReason = ResolveRetryPolicyDisabledReason(policy, job.AttemptCount);
@@ -807,8 +814,8 @@ internal sealed partial class ConsoleJobService(
                 Name = "cancel",
                 Method = "POST",
                 Href = links.Cancel!,
-                Allowed = canExecute,
-                DisabledReason = canExecute ? null : "execute permission required",
+                Allowed = canExecute && !job.CancellationRequestedAt.HasValue,
+                DisabledReason = canExecute ? PendingCancelReason(job) : "execute permission required",
                 RequiresApproval = cancelApproval.IsRequired
             });
         }
@@ -904,6 +911,11 @@ internal sealed partial class ConsoleJobService(
             ? null
             : RetryDisabledReasons.RetryBudgetExhausted;
     }
+
+    // A cancel is applied asynchronously: the job keeps running until its worker or the reconciler
+    // honours the durable signal, so a second cancel is not offered meanwhile.
+    private static string? PendingCancelReason(ExecutionJobRecord job)
+        => job.CancellationRequestedAt.HasValue ? "cancellation requested; waiting for the worker to stop" : null;
 
     private static string ResolveRetryDisabledReason(bool canExecute, string? retryDisabledReason)
     {

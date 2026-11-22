@@ -59,13 +59,19 @@ internal sealed partial class PostgresAiExecutionAdmissionStore
         };
         if (await ExceedsMonthlyActorAsync(monthly, cancellationToken).ConfigureAwait(false))
             return ("financial_monthly_actor_exceeded", null);
+        var incident = policy.IncidentWorkflows?.SingleOrDefault(binding => binding.WorkflowKey == context.WorkflowKey);
+        var incidentCode = await CheckIncidentReservationAsync(monthly, incident, cancellationToken).ConfigureAwait(false);
+        if (incidentCode is not null) return (incidentCode, null);
+        var incidentColumns = policy.Incident is null ? string.Empty : ", incident_authority, incident_episode, incident_version";
+        var incidentValues = policy.Incident is null ? string.Empty : ", @incident_authority, @incident_episode, @incident_version";
         await using var insert = new NpgsqlCommand($"""
             INSERT INTO {_financial} (deployment_id, attempt_id, generation_id, grant_epoch, deadline_at, lease_expires_at, actor_key, use_case, workflow_key,
                 period_start, reserved_at, request_digest, provider, destination_digest, basis_digest, basis_json, currency, money_scale,
-                reserved_input, reserved_output, reserved_money, retained_input, retained_output, charged_tokens, charged_money, state)
+                reserved_input, reserved_output, reserved_money, retained_input, retained_output, charged_tokens, charged_money, state{incidentColumns})
             VALUES (@deployment, @attempt, @generation, @epoch, @deadline, @expires, @actor, @use_case, @workflow, @period, @now,
-                @request, @provider, @destination, @basis, @basis_json, @currency, @scale, @input, @output, @money, @input, @output, @tokens, @money, 'reserved')
+                @request, @provider, @destination, @basis, @basis_json, @currency, @scale, @input, @output, @money, @input, @output, @tokens, @money, 'reserved'{incidentValues})
             """, connection, transaction);
+        if (policy.Incident is not null) BindIncident(insert, incident!);
         insert.Parameters.AddWithValue("deployment", context.DeploymentId);
         insert.Parameters.AddWithValue("attempt", attemptId);
         insert.Parameters.AddWithValue("generation", state.Generation);
@@ -110,8 +116,11 @@ internal sealed partial class PostgresAiExecutionAdmissionStore
     }
 
     public async Task<bool> CommitFinancialSendAsync(AiAdmissionReservation reservation, CancellationToken cancellationToken)
+        => await CommitFinancialSendOrDenyAsync(reservation, cancellationToken).ConfigureAwait(false) is null;
+
+    public async Task<string?> CommitFinancialSendOrDenyAsync(AiAdmissionReservation reservation, CancellationToken cancellationToken)
     {
-        if (reservation.Financial is not { } financial) return false;
+        if (reservation.Financial is not { } financial) return "financial_stop";
         await using var connection = await connections.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         await SetTimeoutsAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
@@ -120,7 +129,10 @@ internal sealed partial class PostgresAiExecutionAdmissionStore
         if (state is null || state.Stopped || state.Generation != reservation.Generation || state.Epoch != reservation.Epoch
             || state.Policy.Financial is not { IsValid: true } policy || policy.Basis.Digest != financial.BasisDigest
             || now < policy.Basis.EffectiveUtc || now >= policy.Basis.ExpiresUtc || now >= reservation.DeadlineUtc)
-            return false;
+            return "financial_stop";
+        // The episode closed, went stale or moved on since admission: the incident authority, not spend, refused the send.
+        if (policy.Incident is not null && !await ValidateIncidentSendAsync(
+            new(connection, transaction, reservation), cancellationToken).ConfigureAwait(false)) return "financial_incident_invalid";
         await using var commit = new NpgsqlCommand($"""
             UPDATE {_financial} f SET state = 'send-committed', send_committed_at = @now
             WHERE f.deployment_id = @deployment AND f.attempt_id = @attempt AND f.generation_id = @generation
@@ -133,11 +145,11 @@ internal sealed partial class PostgresAiExecutionAdmissionStore
         commit.Parameters.AddWithValue("now", now);
         commit.Parameters.AddWithValue("request", financial.RequestDigest);
         commit.Parameters.AddWithValue("basis", financial.BasisDigest);
-        if (await commit.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1) return false;
+        if (await commit.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1) return "financial_stop";
         // A failed or ambiguous commit never returns permission to send. The row remains
         // fully charged whether it committed or rolled back; this call is never retried.
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
-        return true;
+        return null;
     }
 
     public async Task<string> SettleFinancialAsync(AiAdmissionReservation reservation, AiFinancialUsage usage, CancellationToken cancellationToken)

@@ -2,9 +2,15 @@ name: Trunk signal watchdog
 
 # Fails loudly when trunk CI stops producing results. Failure responders only react to runs that fail;
 # a trunk whose runs are all cancelled or stuck in the queue produces no failure event at all.
+# GitHub drops most scheduled runs on this repository, so workflow_run drives active-trunk checks
+# while the half-hourly schedule remains the fallback for quiet periods.
 on:
   schedule:
     - cron: "*/30 * * * *"
+  workflow_run:
+    workflows: ["CI", "Full CI dispatch"]
+    branches: [trunk]
+    types: [completed]
   workflow_dispatch:
 
 permissions: {}
@@ -16,8 +22,10 @@ concurrency:
 jobs:
   watch:
     name: Trunk signal watchdog
-    if: github.repository == 'honua-io/honua-server'
-    runs-on: ubuntu-latest
+    if: >-
+      github.repository == 'honua-io/honua-server' &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) && (!github.event.workflow_run || github.event.workflow_run.head_repository.full_name == github.repository) && fromJSON(vars.HONUA_LIGHT_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       actions: read
@@ -82,12 +90,31 @@ jobs:
               const attemptStart = Date.parse(run.run_started_at);
               return Math.max(Math.min(...starts), Number.isFinite(attemptStart) ? attemptStart : -Infinity);
             }
+            function runnerLabelKey(job) {
+              if (!Array.isArray(job.labels) || job.labels.length === 0) return '';
+              return job.labels.slice().sort().join(',');
+            }
             async function queueProblem(run) {
               const jobs = await jobsFor(run);
-              const waiting = jobs.filter(job => job.status === 'queued');
-              const stalled = waiting.find(job => now - Date.parse(job.started_at || run.updated_at) > maxQueuedMs);
+              const attemptJobs = jobs.filter(job => job.run_attempt === undefined || job.run_attempt === run.run_attempt);
+              // A large matrix fan-out (e.g. full CI server shards) can legitimately queue tail jobs
+              // past MAX_MINUTES_QUEUED while sibling jobs on the same runner pool are actively
+              // draining; MAX_HOURS_RUN_WITHOUT_RESULT still bounds total run duration. Only same-run-attempt
+              // runner activity counts, so pools starved by other runs or stalled shards still alert.
+              const activePools = new Set(
+                attemptJobs
+                  .filter(job => job.runner_id > 0 && (recentStart(job.started_at, maxQueuedMs) || recentStart(job.completed_at, maxQueuedMs)))
+                  .map(runnerLabelKey)
+                  .filter(Boolean)
+              );
+              const waiting = attemptJobs.filter(job => job.status === 'queued');
+              const stalled = waiting.find(job => {
+                if (now - Date.parse(job.started_at || run.updated_at) <= maxQueuedMs) return false;
+                const pool = runnerLabelKey(job);
+                return !pool || !activePools.has(pool);
+              });
               if (stalled) return `Job ${stalled.name} in ${run.html_url} has been queued since ${stalled.started_at || run.updated_at}.`;
-              if (jobs.length === 0 && now - Date.parse(run.updated_at) > maxQueuedMs) {
+              if (attemptJobs.length === 0 && now - Date.parse(run.updated_at) > maxQueuedMs) {
                 return `Run ${run.html_url} (${run.display_title}) has been queued since ${run.updated_at}.`;
               }
               return null;

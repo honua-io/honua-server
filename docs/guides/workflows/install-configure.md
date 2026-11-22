@@ -175,6 +175,8 @@ Apply only within the authorized environment. Preserve a configuration snapshot,
 
 Rollback restores a compatible deployment configuration through its normal control plane. It does not reverse database migrations, source data changes, requests already served, or charges. Stop on drift or an incompatible storage/schema transition and report the specific recovery decision needed.
 
+Over MCP, `honua_list_capabilities` is in the `default` and `setup` [workflow views](../connect/ai-agents-mcp.md#workflow-views-bounded-discovery), and `honua_ops_health` is in `operate`. The `configure` view has neither, so an admin agent on `?view=configure` must switch views to run these checks.
+
 See the [workflow language contract](../../concepts/domain/workflow-language.md) for the meaning and limits of the structured fields. This guide describes an intended workflow; it does not certify a deployment or grant authority.
 
 The [source contract](../../guides/deploy/cloud-deployments.md) defines the executable surface.

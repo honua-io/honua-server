@@ -26,6 +26,9 @@ public sealed class LayerFieldConfigurationResponse
 {
     public int StorageLayerId { get; init; }
 
+    // Deprecated wire alias of StorageLayerId; published clients still read layerId.
+    public int LayerId => StorageLayerId;
+
     public IReadOnlyList<LayerFieldConfigurationItem> Fields { get; init; } = Array.Empty<LayerFieldConfigurationItem>();
 }
 
@@ -50,6 +53,9 @@ public sealed class LayerFilterConfigurationUpdateRequest
 public sealed class LayerFilterConfigurationResponse
 {
     public int StorageLayerId { get; init; }
+
+    // Deprecated wire alias of StorageLayerId; published clients still read layerId.
+    public int LayerId => StorageLayerId;
 
     public LayerPermanentFilterConfiguration? PermanentFilter { get; init; }
 }

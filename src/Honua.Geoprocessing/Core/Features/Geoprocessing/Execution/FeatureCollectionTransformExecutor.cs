@@ -60,7 +60,7 @@ internal abstract partial class FeatureCollectionTransformExecutor : IProcessExe
         var inputs = new StepInputReader(parameters);
         if (!inputs.TryGetRequired("input", out var inputUri, out var inputError))
         {
-            return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid {ProcessId} inputs: {inputError}");
         }
 
         // Open the input as a lazy feature stream. Spilled NDJSON streams are unbounded;
@@ -70,7 +70,7 @@ internal abstract partial class FeatureCollectionTransformExecutor : IProcessExe
                 inputUri, out var parseError, out var inputStream, _options.CurrentValue.MaxArtifactBytes,
                 _options.CurrentValue.OutputRootDirectory, context))
         {
-            return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: 'input' {parseError}");
+            return JobExecutionResult.InvalidInput($"Invalid {ProcessId} inputs: 'input' {parseError}");
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -83,7 +83,7 @@ internal abstract partial class FeatureCollectionTransformExecutor : IProcessExe
         }
         catch (TransformInputException ex)
         {
-            return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: {ex.PublicMessage}");
+            return JobExecutionResult.InvalidInput($"Invalid {ProcessId} inputs: {ex.PublicMessage}");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -133,7 +133,7 @@ internal abstract partial class FeatureCollectionTransformExecutor : IProcessExe
 
         await context.ReportProgressAsync(60, $"Encoding {ProcessId} artifact", cancellationToken).ConfigureAwait(false);
 
-        var output = Apply(source, inputs, cancellationToken);
+        var output = await ApplyAsync(source, inputs, context, cancellationToken).ConfigureAwait(false);
         return await FeatureStreamPublisher.PublishAsync(
             ToAsync(output, cancellationToken),
             ProcessId,
@@ -159,6 +159,13 @@ internal abstract partial class FeatureCollectionTransformExecutor : IProcessExe
         IAsyncEnumerable<IFeature> source,
         StepInputReader inputs,
         CancellationToken cancellationToken) => null;
+
+    protected virtual Task<List<IFeature>> ApplyAsync(
+        FeatureCollection source,
+        StepInputReader inputs,
+        IJobExecutionContext context,
+        CancellationToken cancellationToken)
+        => Task.FromResult(Apply(source, inputs, cancellationToken));
 
     protected virtual List<IFeature> Apply(
         FeatureCollection source,

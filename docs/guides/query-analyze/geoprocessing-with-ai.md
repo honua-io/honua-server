@@ -35,7 +35,7 @@ MCP surface before proposing remote inspection, retries, or deployment actions.
 - MCP execution requires `ai.spec-apply` and the applicable agent-operation
   entitlements. With license enforcement enabled, this is a Pro-or-higher path;
   Community can validate plans. The local stack supplies its Development grant.
-- Async jobs need Redis. Native processes also need a matching heavy worker.
+- Async jobs need the system database. Native processes also need a matching heavy worker.
 
 ## 1. Discover the live tool and process surface
 
@@ -161,7 +161,6 @@ For a Python-only agent, the [SDK quickstart](gp-local-dev-quickstart.md#2-submi
 is an alternative to MCP. Native functions use the same discovery and job
 lifecycle after a native worker is available. AWS Batch and Kubernetes are
 execution targets selected by deployment configuration, not different agent tools.
-Azure remains experimental; it is outside this local/RC journey.
 
 ## Troubleshoot
 
@@ -170,6 +169,6 @@ Azure remains experimental; it is outside this local/RC journey.
 | Authentication or authorization error | Check identity, process grants, and MCP execution entitlements. |
 | `expected base64-encoded WKB` | Use the catalog's base-plan string encoding; GeoJSON objects belong on the OGC geometry input. |
 | `engine: "fixture"` | Build a real plan from the catalog; do not treat the template as an intent-specific result. |
-| Async substrate unavailable | Check Redis and the matching worker. |
+| Async substrate unavailable | Check the system database and the matching worker. |
 | Job `Failed` or `Cancelled` | Inspect the recorded error; do not present its artifacts as a successful analysis. |
 | Missing `buffer_features` | Use the shipped plan tools. |

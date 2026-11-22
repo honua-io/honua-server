@@ -6,6 +6,7 @@ using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.Raster.CogParser;
 using Honua.Core.Features.Raster.Domain;
+using static Honua.Core.Tests.Raster.CogParser.TiffTagReader;
 
 namespace Honua.Core.Tests.Raster.CogParser;
 
@@ -36,8 +37,10 @@ public sealed class CogTiffTileEncoderTests
         tiff.Should().NotBeNull();
 
         // Parse the emitted TIFF tag bytes directly, independently of Honua's TIFF parser.
-        tiff![..8].Should().Equal(73, 73, 42, 0, 8, 0, 0, 0);
-        var fields = ReadFields(tiff);
+        tiff![..8].Should().Equal(73, 73, 42, 0, 192, 0, 0, 0);
+        Encoding.ASCII.GetString(tiff, 8, 67).Should().Be(
+            "GDAL_STRUCTURAL_METADATA_SIZE=000140 bytes\nLAYOUT=IFDS_BEFORE_DATA\n");
+        var fields = TiffTagReader.ReadFields(tiff);
         U32(fields[256]).Should().Be(16);
         U32(fields[257]).Should().Be(16);
         U16(fields[258]).Should().Be(32);
@@ -52,7 +55,10 @@ public sealed class CogTiffTileEncoderTests
         U16(fields[34735].AsSpan(30)).Should().Be(3857);
         U32(fields[325]).Should().Be(1024);
         var tileOffset = (int)U32(fields[324]);
-        (tileOffset + 1024).Should().Be(tiff.Length);
+        // GDAL's COG block leader (tile size) and trailer (last four tile bytes repeated).
+        U32(tiff.AsSpan(tileOffset - 4)).Should().Be(1024);
+        (tileOffset + 1024 + 4).Should().Be(tiff.Length);
+        tiff[^4..].Should().Equal(tiff[(tileOffset + 1020)..(tileOffset + 1024)]);
         for (var row = 0; row < 16; row++)
         {
             for (var col = 0; col < 16; col++)
@@ -63,25 +69,4 @@ public sealed class CogTiffTileEncoderTests
             }
         }
     }
-
-    private static Dictionary<ushort, byte[]> ReadFields(byte[] tiff)
-    {
-        var fields = new Dictionary<ushort, byte[]>();
-        var count = U16(tiff.AsSpan(8));
-        for (var i = 0; i < count; i++)
-        {
-            var entry = tiff.AsSpan(10 + i * 12, 12);
-            var type = U16(entry[2..]);
-            var size = type switch { 2 => 1, 3 => 2, 4 => 4, 12 => 8, _ => throw new InvalidDataException() };
-            var length = checked((int)U32(entry[4..]) * size);
-            var value = length <= 4 ? entry.Slice(8, length).ToArray()
-                : tiff.AsSpan((int)U32(entry[8..]), length).ToArray();
-            fields.Add(U16(entry), value);
-        }
-        U32(tiff.AsSpan(10 + count * 12)).Should().Be(0);
-        return fields;
-    }
-
-    private static ushort U16(ReadOnlySpan<byte> bytes) => BinaryPrimitives.ReadUInt16LittleEndian(bytes);
-    private static uint U32(ReadOnlySpan<byte> bytes) => BinaryPrimitives.ReadUInt32LittleEndian(bytes);
 }

@@ -78,7 +78,7 @@ public sealed class RoutingCostUnitConverterTests
     public void Seconds_FiveMinuteBreak_MapsTo300CostUnits()
     {
         // A 5-minute isochrone break against a seconds topology must probe pgRouting
-        // with a 300-cost cutoff, not 5 — the unit mismatch issue #2008 fixes.
+        // with a 300-cost cutoff, not 5.
         RoutingCostUnitConverter.MinutesToCost(5.0, RoutingCostUnit.Seconds)
             .Should().Be(300.0);
     }

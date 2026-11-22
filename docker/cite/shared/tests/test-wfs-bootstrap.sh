@@ -35,7 +35,7 @@ for suite in wfs10 wfs11 wfs20; do
   [[ "$exit_code" == 0 ]]
   "${compose[@]}" exec -T honua-server /app/honua-healthcheck --ready
   endpoint="$("${compose[@]}" port honua-server 8080)"
-  expected=14
+  expected=17
   [[ "$suite" == wfs20 ]] && expected=2
   actual="$("${compose[@]}" exec -T postgres psql -U postgres -d honua_cite -Atc 'SELECT count(*) FROM honua.layers')"
   [[ "$actual" == "$expected" ]]

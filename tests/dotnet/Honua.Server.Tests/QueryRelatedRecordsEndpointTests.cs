@@ -16,7 +16,7 @@ namespace Honua.Server.Tests;
 
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database.CoreFeatureStore")]
-public sealed class QueryRelatedRecordsEndpointTests : IClassFixture<QueryRelatedRecordsEndpointTests.ReadOnlyProHost>, IAsyncLifetime
+public sealed partial class QueryRelatedRecordsEndpointTests : IClassFixture<QueryRelatedRecordsEndpointTests.ReadOnlyProHost>, IAsyncLifetime
 {
     // The class host by default; a case that writes switches to its own private host.
     private WebAppFixture _fixture;
@@ -82,7 +82,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IClassFixture<QueryRelate
         queryResponse!.RelatedRecordGroups.Should().NotBeNull();
         queryResponse.RelatedRecordGroups.Should().HaveCount(2); // Two object IDs requested
 
-        // Esri queryRelatedRecords contract (#1452): field/geometry metadata is at the
+        // Esri queryRelatedRecords contract: field/geometry metadata is at the
         // response top level, and each group's relatedRecords is a flat array.
         queryResponse.Fields.Should().NotBeNull();
         queryResponse.Fields.Should().Contain(f => f.Name == "objectid");
@@ -109,7 +109,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IClassFixture<QueryRelate
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_RelatedRecordsIsFlatArrayPerEsriSpec()
     {
-        // Regression for #1452: relatedRecords must be a FLAT array of records (the
+        // The relatedRecords member must be a FLAT array of records (the
         // ArcGIS Maps SDK for JavaScript reads relatedRecords.length), not a nested
         // FeatureSet object. Assert the raw JSON shape rather than the typed model.
         var response = await GetWithRetryAsync(
@@ -151,7 +151,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IClassFixture<QueryRelate
     public async Task QueryRelatedRecords_WithHighObjectId_ResolvesRelatedRecords()
     {
         await UseMutableFixtureAsync();
-        // Regression (#1465): queryRelatedRecords must resolve related records for ANY
+        // queryRelatedRecords must resolve related records for ANY
         // origin object-id magnitude, not just the low seeded ids. Build the fixture in
         // the arrange step against the unmodified shared seed: insert a NEW origin feature
         // into the editable layer 0 (the server assigns a high auto-incremented object id),
@@ -419,7 +419,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IClassFixture<QueryRelate
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithReturnCountOnly_ReturnsCountsWithoutRecords()
     {
-        // #1396: returnCountOnly returns a per-source-object count instead of the
+        // ReturnCountOnly returns a per-source-object count instead of the
         // related-record attributes/geometry.
         var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1,2&relationshipId={TestRelationshipId}&returnCountOnly=true");
@@ -449,7 +449,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IClassFixture<QueryRelate
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithOrderByFields_ReturnsSortedRecords()
     {
-        // #1396: orderByFields sorts the related records of each source object.
+        // OrderByFields sorts the related records of each source object.
         var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&orderByFields={Uri.EscapeDataString("name DESC")}");
 
@@ -478,7 +478,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IClassFixture<QueryRelate
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_WithUnknownOrderByField_Returns400()
     {
-        // #1396: orderByFields is validated against the related layer schema.
+        // OrderByFields is validated against the related layer schema.
         var response = await GetWithRetryAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&orderByFields=does_not_exist");
 
@@ -623,7 +623,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IClassFixture<QueryRelate
         errorElement.GetProperty("message").GetString().Should().Be("Bad Request");
         errorElement.GetProperty("details").EnumerateArray()
             .Select(detail => detail.GetString() ?? string.Empty)
-            .Should().Contain(detail => detail.Contains("objectIds parameter is required"));
+            .Should().Contain(detail => detail.Contains("objectIds or globalIds parameter is required"));
     }
 
     [IntegrationTest]
@@ -938,7 +938,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IClassFixture<QueryRelate
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
     public async Task QueryRelatedRecords_EmptyGroupAlwaysEmitsRelatedRecordsArray()
     {
-        // Regression: the @arcgis/core JS SDK reads group.relatedRecords.length
+        // The @arcgis/core JS SDK reads group.relatedRecords.length
         // unconditionally and throws "Cannot read properties of undefined (reading
         // 'length')" when the key is absent. Every group (including objectIds with no
         // related rows) must carry relatedRecords as an array. Mix an object with

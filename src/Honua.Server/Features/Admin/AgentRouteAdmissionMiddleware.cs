@@ -10,7 +10,8 @@ namespace Honua.Server.Features.Admin;
 // administrator authority) to change something, unless the route applies its own agent rule, or
 // the request was dispatched by the operations gateway (it carries a verified operation lineage,
 // so the operation policy and its approval rule have already decided). New routes are covered
-// without being listed.
+// without being listed. Loopback hops made for an agent are marked as agents, so this lineage
+// exemption is what admits their gateway-decided changes; keep it when tightening the rule.
 internal sealed class AgentRouteAdmissionMiddleware(RequestDelegate next)
 {
     internal const string PolicyRef = "operator.agent.admin-route";

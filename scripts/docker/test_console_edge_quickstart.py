@@ -49,6 +49,115 @@ class ConsoleEdgeTests(QuickstartFixture, unittest.TestCase):
                 if name not in ('console', 'honua'):
                     self.assertNotIn('console-edge', service.get('networks', {}), name)
 
+    def test_manager_console_edge_serves_the_manager_on_its_own_host(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, rendered, _ = self.packaged_console_install(Path(directory))
+            services = rendered['services']
+            edge = services['console-manager']
+            self.assertEqual(CONSOLE_WEB_IMAGE, edge['image'])
+            port = edge['ports'][0]
+            self.assertEqual(('8444', '127.0.0.1', '18084'), (str(port['target']), port['host_ip'], str(port['published'])))
+            self.assertEqual({volume['target']: volume['source'] for volume in services['console']['volumes']},
+                             {volume['target']: volume['source'] for volume in edge['volumes']})
+            self.assertTrue(edge['read_only'])
+            self.assertEqual(['manager-edge'], list(edge['networks']))
+            self.assertIn('compose-manager', edge['depends_on'])
+            self.assertNotIn(read_secret(path, 'HONUA_MANAGER_ADMIN_PASSWORD'), json.dumps(rendered))
+
+    def test_manager_trusts_forwarded_headers_only_from_its_edge(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _, rendered, _ = self.packaged_console_install(Path(directory))
+            services = rendered['services']
+            edge = services['console-manager']['networks']['manager-edge']['ipv4_address']
+            manager = services['compose-manager']
+            self.assertEqual({'default', 'manager-edge'}, set(manager['networks']))
+            server_edge = manager['networks']['manager-edge']['ipv4_address']
+            self.assertNotEqual(edge, server_edge, 'The manager must never take the edge address')
+            subnet = ipaddress.ip_network(rendered['networks']['manager-edge']['ipam']['config'][0]['subnet'])
+            self.assertTrue({ipaddress.ip_address(edge), ipaddress.ip_address(server_edge)} <= set(subnet.hosts()))
+            console_subnet = ipaddress.ip_network(rendered['networks']['console-edge']['ipam']['config'][0]['subnet'])
+            self.assertFalse(subnet.overlaps(console_subnet))
+            env = manager['environment']
+            self.assertEqual('true', env['ForwardedHeaders__Enabled'])
+            self.assertEqual(edge, env['ForwardedHeaders__KnownProxies__0'])
+            self.assertEqual('https://127.0.0.1:18084', env['HONUA_ADMIN_UI_CORS_ORIGINS'])
+            self.assertEqual('https://127.0.0.1:18084/admin/auth/callback', env['Oidc__AdminAuthCallbackUri'])
+            self.assertEqual('https://127.0.0.1:18084/console/', env['Mcp__ApprovalConsoleUrl'])
+            for name, service in services.items():
+                if name not in ('console-manager', 'compose-manager'):
+                    self.assertNotIn('manager-edge', service.get('networks', {}), name)
+
+    def test_each_edge_canonicalizes_to_its_own_cookie_host(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, _, _ = self.packaged_console_install(Path(directory))
+            edge_config = (path / 'console.nginx.conf').read_text()
+            # Session cookies are per host, not per port: the two edges must never share one.
+            self.assertIn('"~^8443:127\\.0\\.0\\.1(?<serving_port>:[0-9]+)?$" "localhost$serving_port";', edge_config)
+            self.assertIn('"~^8444:localhost(?<manager_port>:[0-9]+)?$" "127.0.0.1$manager_port";', edge_config)
+            self.assertIn('8444 http://compose-manager:8080;', edge_config)
+            self.assertIn('default http://honua:8080;', edge_config)
+
+    def test_proxied_responses_hide_duplicate_upstream_security_headers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, _, _ = self.packaged_console_install(Path(directory))
+            edge_config = (path / 'console.nginx.conf').read_text()
+            proxy_block = edge_config.split('location / {', 1)[1].split('}', 1)[0]
+            self.assertIn('proxy_hide_header X-Content-Type-Options;', proxy_block)
+            self.assertIn('proxy_hide_header Referrer-Policy;', proxy_block)
+
+    def test_console_advertises_the_https_edge_for_generated_map_urls(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, rendered, _ = self.packaged_console_install(Path(directory))
+            self.assertEqual('https://localhost:18083',
+                             rendered['services']['honua']['environment']['PUBLIC_BASE_URL'])
+            env_file = path / '.env'
+            env_file.write_text(env_file.read_text().replace('HONUA_CONSOLE_PORT=18083', 'HONUA_CONSOLE_PORT=28443'))
+            custom = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                    cwd=path, env=self.compose_env(path), capture_output=True, text=True)
+            self.assertEqual(0, custom.returncode, custom.stderr)
+            self.assertEqual('https://localhost:28443',
+                             json.loads(custom.stdout)['services']['honua']['environment']['PUBLIC_BASE_URL'])
+
+    def test_console_allows_its_https_origin_for_browser_mcp_requests(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, rendered, _ = self.packaged_console_install(Path(directory))
+            env = rendered['services']['honua']['environment']
+            self.assertEqual('http://localhost:18080', env['Cors__AllowedOrigins__0'])
+            self.assertEqual('https://localhost:18083', env.get('HONUA_ADMIN_UI_CORS_ORIGINS'))
+
+            # A customer adding Cors__AllowedOrigins__1 (e.g. first-map.md) must not clobber the Console origin,
+            # and changing HONUA_CONSOLE_PORT must update the allowed Console origin.
+            env_file = path / '.env'
+            env_file.write_text(env_file.read_text().replace('HONUA_CONSOLE_PORT=18083', 'HONUA_CONSOLE_PORT=28443'))
+            (path / 'customer.yaml').write_text('services:\n  honua:\n    environment:\n'
+                                                '      Cors__AllowedOrigins__1: http://localhost:3000\n')
+            custom = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                    cwd=path, env=self.compose_env(path), capture_output=True, text=True)
+            self.assertEqual(0, custom.returncode, custom.stderr)
+            custom_env = json.loads(custom.stdout)['services']['honua']['environment']
+            self.assertEqual('http://localhost:3000', custom_env['Cors__AllowedOrigins__1'])
+            self.assertEqual('https://localhost:28443', custom_env.get('HONUA_ADMIN_UI_CORS_ORIGINS'))
+
+            # A customer with a different public Console origin can override it cleanly.
+            (path / 'customer.yaml').write_text('services:\n  honua:\n    environment:\n'
+                                                '      HONUA_ADMIN_UI_CORS_ORIGINS: https://maps.example.com\n')
+            overridden = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                        cwd=path, env=self.compose_env(path), capture_output=True, text=True)
+            self.assertEqual(0, overridden.returncode, overridden.stderr)
+            self.assertEqual('https://maps.example.com',
+                             json.loads(overridden.stdout)['services']['honua']['environment'].get('HONUA_ADMIN_UI_CORS_ORIGINS'))
+
+    def test_customer_public_origin_overrides_the_console_default(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, _, _ = self.packaged_console_install(Path(directory))
+            (path / 'customer.yaml').write_text('services:\n  honua:\n    environment:\n'
+                                                '      PUBLIC_BASE_URL: https://maps.example.com\n')
+            rendered = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                      cwd=path, env=self.compose_env(path), capture_output=True, text=True)
+            self.assertEqual(0, rendered.returncode, rendered.stderr)
+            self.assertEqual('https://maps.example.com',
+                             json.loads(rendered.stdout)['services']['honua']['environment']['PUBLIC_BASE_URL'])
+
     def test_console_profile_preserves_customer_and_executor_files(self):
         with tempfile.TemporaryDirectory() as directory:
             path, rendered, _ = self.packaged_console_install(Path(directory))
@@ -123,6 +232,19 @@ class ConsoleEdgeTests(QuickstartFixture, unittest.TestCase):
                     initialize(path)
 
                 self.assertEqual(saved, (env_file.read_bytes(), (path / 'console.config.json').read_bytes()))
+
+    def test_console_port_shared_with_another_listener_fails_before_changing_install(self):
+        for case in ('HONUA_MANAGER_CONSOLE_PORT=18083\n', 'HONUA_CONSOLE_PORT=18082\n'):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                path = self.prepare_console(Path(directory))
+                env_file = path / '.env'
+                env_file.write_text(env_file.read_text() + case)
+                saved = env_file.read_bytes()
+
+                with self.assertRaisesRegex(ValueError, 'distinct ports'):
+                    initialize(path)
+
+                self.assertEqual(saved, env_file.read_bytes())
 
     def test_console_compose_file_edit_survives_restart(self):
         with tempfile.TemporaryDirectory() as directory:

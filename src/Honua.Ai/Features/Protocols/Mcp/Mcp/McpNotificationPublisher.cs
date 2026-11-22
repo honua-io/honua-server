@@ -9,7 +9,8 @@ namespace Honua.Ai.Protocols.Mcp;
 
 public interface IMcpNotificationPublisher
 {
-    ValueTask<bool> PublishProgress(string sessionId, string progressToken, double progress, double? total, string? message);
+    // notifications/message to one session; level filtering is the caller's (see McpLogging).
+    ValueTask<bool> PublishMessage(string sessionId, string level, string logger, JsonElement data);
 
     ValueTask<int> BroadcastToolsListChanged();
 
@@ -18,7 +19,7 @@ public interface IMcpNotificationPublisher
 
 internal sealed class McpNotificationPublisher : IMcpNotificationPublisher
 {
-    public const string ProgressMethod = "notifications/progress";
+    public const string MessageMethod = "notifications/message";
 
     public const string ToolsListChangedMethod = "notifications/tools/list_changed";
 
@@ -35,32 +36,25 @@ internal sealed class McpNotificationPublisher : IMcpNotificationPublisher
         _logger = logger;
     }
 
-    public async ValueTask<bool> PublishProgress(string sessionId, string progressToken, double progress, double? total, string? message)
+    public async ValueTask<bool> PublishMessage(string sessionId, string level, string logger, JsonElement data)
     {
-        var parameters = new McpProgressNotificationParams
-        {
-            ProgressToken = progressToken,
-            Progress = progress,
-            Total = total,
-            Message = message
-        };
-
-        var paramsJson = JsonSerializer.Serialize(parameters, McpJsonContext.Default.McpProgressNotificationParams);
+        var parameters = new McpLogMessageParams { Level = level, Logger = logger, Data = data };
+        var paramsJson = JsonSerializer.Serialize(parameters, McpJsonContext.Default.McpLogMessageParams);
         using var document = JsonDocument.Parse(paramsJson);
-        var notification = Serialize(ProgressMethod, document.RootElement.Clone());
+        var notification = Serialize(MessageMethod, document.RootElement.Clone());
         if (_provider is null)
         {
             var enqueued = _sessions.TryEnqueue(sessionId, notification);
             if (enqueued)
             {
-                McpLog.NotificationPublished(_logger, ProgressMethod, sessionId);
+                McpLog.NotificationPublished(_logger, MessageMethod, sessionId);
             }
 
             return enqueued;
         }
 
-        await AppendAsync(sessionId, ProgressMethod, notification).ConfigureAwait(false);
-        McpLog.NotificationPublished(_logger, ProgressMethod, sessionId);
+        await AppendAsync(sessionId, MessageMethod, notification).ConfigureAwait(false);
+        McpLog.NotificationPublished(_logger, MessageMethod, sessionId);
         return true;
     }
 

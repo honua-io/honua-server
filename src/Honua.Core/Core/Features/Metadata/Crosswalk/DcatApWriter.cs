@@ -41,14 +41,38 @@ public static class DcatApWriter
         Add(node, "dcat:contactPoint", ContactPoints(metadata.Contacts));
         Add(node, "dct:provenance", metadata.Lineage is null ? null : Statement("dct:ProvenanceStatement", metadata.Lineage));
         Add(node, "dct:accrualPeriodicity", MetadataCrosswalk.EuFrequencyCode(metadata.UpdateFrequency) is { } frequency ? Reference(EuAuthority + "frequency/" + frequency) : null);
-        Add(node, "dcat:spatialResolutionInMeters", metadata.SpatialResolution?.DistanceMeters is { } meters ? Typed(((decimal)meters).ToString(CultureInfo.InvariantCulture), "xsd:decimal") : null);
+        Add(node, "dcat:spatialResolutionInMeters", metadata.SpatialResolution?.DistanceMeters is { } meters ? Typed(XsdDecimal(meters), "xsd:decimal") : null);
         Add(node, "dcat:temporalResolution", metadata.TemporalResolution is { } duration ? Typed(duration, "xsd:duration") : null);
         Add(node, "dct:spatial", Spatial(metadata.Extent));
         Add(node, "dct:temporal", Temporal(metadata.TemporalExtent));
         Add(node, "foaf:page", metadata.MetadataLink("describedby") is { } page ? Reference(page) : null);
         AddAccess(node, metadata);
+        AddCustomFields(node, metadata);
         return node;
     }
+
+    private static void AddCustomFields(JsonObject node, DescriptiveMetadata metadata)
+    {
+        if (metadata.CustomFields.Count == 0)
+        {
+            return;
+        }
+
+        node["@context"]!.AsObject()["honua"] = "https://honua.io/ns/metadata#";
+        var custom = new JsonObject();
+        foreach (var (key, value) in metadata.CustomFields.OrderBy(static pair => pair.Key, StringComparer.Ordinal))
+        {
+            custom[key] = JsonNode.Parse(value.GetRawText());
+        }
+        node["honua:customFields"] = custom;
+    }
+
+    // xsd:decimal has no exponent. Values outside the decimal range are whole numbers, so they are
+    // written in fixed-point form instead of being converted.
+    private static string XsdDecimal(double value)
+        => Math.Abs(value) < (double)decimal.MaxValue
+            ? ((decimal)value).ToString(CultureInfo.InvariantCulture)
+            : value.ToString("F0", CultureInfo.InvariantCulture);
 
     private static void AddAccess(JsonObject node, DescriptiveMetadata metadata)
     {

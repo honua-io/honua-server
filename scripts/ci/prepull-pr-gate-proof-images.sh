@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prepare the two secondary images consumed by the required execution proofs.
+# Prepare the secondary image consumed by the required execution proofs.
 # These linux/amd64 manifest digests were verified against Docker Hub. Mirrors
 # avoid its shared-runner rate limits; the same upstream digest is a fallback.
 # Retain the test consumers' image names so no test or runtime configuration
@@ -31,6 +31,3 @@ prepare_image() {
 prepare_image 'postgis/postgis:17-3.5' \
   'sha256:8dfee83d8bd4c2873dc4a233c13ba2799a44f2edb16a0552d58715917fac32ba' \
   'mirror.gcr.io/postgis/postgis:17-3.5'
-prepare_image 'redis:7.2-alpine' \
-  'sha256:84bab713067f5494d94c24e99ae3fa3ae2388c037152edcbcf301f7cfaeb3048' \
-  'public.ecr.aws/docker/library/redis:7.2-alpine'

@@ -79,7 +79,10 @@ internal sealed partial class AiExecutionAdmissionCoordinator(
         }
 
         if (decision.Reservation is not { } reservation)
+        {
+            LogFinancialDenial(context, decision.Code);
             throw new AiAdmissionException(decision.Code, decision.RetryAfterSeconds);
+        }
         if (decision.Code != "admitted" || reservation.DeploymentId != context.DeploymentId || reservation.AttemptId != attemptId
             || reservation.Generation == Guid.Empty || reservation.Epoch <= 0
             || reservation.LeaseExpiresUtc < reservation.DeadlineUtc
@@ -112,21 +115,27 @@ internal sealed partial class AiExecutionAdmissionCoordinator(
         }
     }
 
-    private async Task<bool> CommitFinancialSendAsync(AiAdmissionReservation reservation, CancellationToken cancellationToken)
+    // Null authorizes the send; otherwise the code that refused it, logged because the caller falls back silently.
+    private async Task<string?> CommitFinancialSendAsync(AiAdmissionReservation reservation, CancellationToken cancellationToken)
     {
+        string? denied;
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(CheckTimeout);
             await using var scope = scopes.CreateAsyncScope();
-            return await scope.ServiceProvider.GetRequiredService<IAiExecutionAdmissionStore>()
-                .CommitFinancialSendAsync(reservation, timeout.Token).WaitAsync(timeout.Token).ConfigureAwait(false);
+            denied = await scope.ServiceProvider.GetRequiredService<IAiExecutionAdmissionStore>()
+                .CommitFinancialSendOrDenyAsync(reservation, timeout.Token).WaitAsync(timeout.Token).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             StoreFailed(_logger, ex.GetType().Name);
-            return false;
+            return "financial_stop";
         }
+
+        if (denied is not null)
+            SendDenied(_logger, denied, reservation.DeploymentId, reservation.AttemptId);
+        return denied;
     }
 
     private async Task RecordFinancialUsageAsync(AiAdmissionReservation reservation, AiFinancialUsage usage)
@@ -162,6 +171,26 @@ internal sealed partial class AiExecutionAdmissionCoordinator(
             ReleaseFailed(_logger, ex.GetType().Name);
         }
     }
+
+    // A financial denial rolls back its transaction and the caller falls back without saying
+    // why, so this log line is the operator's only record that budget caused it. The actor
+    // key is already a SHA-256 digest of the canonical actor.
+    private void LogFinancialDenial(AiExecutionContext context, string code)
+    {
+        if (code is not ("financial_monthly_actor_exceeded" or "financial_budget_exceeded" or "financial_ledger_full"
+            or "financial_stop" or "budget_exceeded"
+            or "financial_incident_required" or "financial_incident_invalid" or "financial_incident_exceeded"))
+            return;
+
+        var month = _clock.GetUtcNow().ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture);
+        FinancialDenied(_logger, code, context.DeploymentId, context.ActorKey, context.UseCase, month);
+    }
+
+    [LoggerMessage(9542, LogLevel.Warning, "AI admission denied by budget ({AdmissionCode}) for deployment {DeploymentId}, actor {ActorKey}, use case {UseCase}, month {UtcMonth}")]
+    private static partial void FinancialDenied(ILogger logger, string admissionCode, string deploymentId, string actorKey, string useCase, string utcMonth);
+
+    [LoggerMessage(9543, LogLevel.Warning, "AI send refused before provider contact ({AdmissionCode}) for deployment {DeploymentId}, attempt {AttemptId}")]
+    private static partial void SendDenied(ILogger logger, string admissionCode, string deploymentId, Guid attemptId);
 
     [LoggerMessage(9540, LogLevel.Warning, "AI admission state could not be verified ({ExceptionType})")]
     private static partial void StoreFailed(ILogger logger, string exceptionType);
@@ -217,8 +246,8 @@ internal sealed partial class AiExecutionAdmissionCoordinator(
             if (Volatile.Read(ref _begun) != 1 || Interlocked.CompareExchange(ref _sent, 1, 0) != 0)
                 throw new AiAdmissionException("duplicate_invocation");
             await EnsureCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (HasFinancialReservation && !await _owner.CommitFinancialSendAsync(_reservation, cancellationToken).ConfigureAwait(false))
-                throw new AiAdmissionException("financial_stop");
+            if (HasFinancialReservation && await _owner.CommitFinancialSendAsync(_reservation, cancellationToken).ConfigureAwait(false) is { } denied)
+                throw new AiAdmissionException(denied);
             // A committed but interrupted claim remains full debt and cannot be reused.
             await EnsureCurrentAsync(cancellationToken).ConfigureAwait(false);
         }

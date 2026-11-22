@@ -82,7 +82,7 @@ public sealed class TemporalHistoryEndpointsTests : IAsyncLifetime
         root.GetProperty("currentGeneration").GetInt64().Should().Be(42);
 
         // Slices 2-5 are implemented: a history-capable layer now advertises diff/timeline/attribution/
-        // rollback support through the (formerly deferred) capability flags.
+        // rollback support through the capability flags.
         var deferred = root.GetProperty("deferred");
         deferred.GetProperty("supportsDiff").GetBoolean().Should().BeTrue();
         deferred.GetProperty("supportsTimeline").GetBoolean().Should().BeTrue();
@@ -160,6 +160,36 @@ public sealed class TemporalHistoryEndpointsTests : IAsyncLifetime
         delete.TryGetProperty("attributes", out var deletedAttrs).Should().BeFalse();
         _ = deletedAttrs;
     }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/temporal/services/{serviceId}/layers/{layerId}/as-of")]
+    public async Task AsOf_PassesItsPageBoundIntoTheChangeLogRead()
+    {
+        _changeTracker.CurrentGeneration = 5;
+        _changeTracker.ChangesSince = _ => [DeletedChange(1, 200), DeletedChange(2, 201)];
+
+        var response = await _client.GetAsync(
+            $"/api/v1/temporal/services/{ServiceId}/layers/{TemporalLayerId}/as-of?generation=0&limit=1");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var page = await ReadJsonAsync(response);
+        page.RootElement.GetProperty("features").GetArrayLength().Should().Be(1);
+        _changeTracker.WindowLimit.Should().Be(1);
+
+        var capped = await _client.GetAsync(
+            $"/api/v1/temporal/services/{ServiceId}/layers/{TemporalLayerId}/as-of?generation=0&limit=50000");
+        capped.StatusCode.Should().Be(HttpStatusCode.OK);
+        _changeTracker.WindowLimit.Should().Be(10000);
+    }
+
+    private static FeatureChange DeletedChange(long generation, long objectId) => new()
+    {
+        ChangeId = generation,
+        Generation = generation,
+        LayerId = TemporalLayerId,
+        ObjectId = objectId,
+        Operation = FeatureChangeOperation.Delete,
+        ChangedAt = DateTimeOffset.UtcNow
+    };
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/temporal/services/{serviceId}/layers/{layerId}/as-of")]
@@ -314,6 +344,18 @@ public sealed class TemporalHistoryEndpointsTests : IAsyncLifetime
         public Func<long, IReadOnlyList<FeatureChange>> ChangesSince { get; set; } = _ => [];
 
         public long? ThroughGeneration { get; private set; }
+
+        public int? WindowLimit { get; private set; }
+
+        public async Task<IReadOnlyList<FeatureChange>> GetChangesInWindowAsync(
+            FeatureChangeWindow window,
+            CancellationToken cancellationToken = default)
+        {
+            WindowLimit = window.Limit;
+            var changes = await GetChangesInWindowAsync(
+                window.SinceGeneration, window.ThroughGeneration, window.LayerIds, null, cancellationToken);
+            return [.. changes.Take(window.Limit)];
+        }
 
         public Task<IReadOnlyList<FeatureChange>> GetChangesInWindowAsync(
             long sinceGeneration,

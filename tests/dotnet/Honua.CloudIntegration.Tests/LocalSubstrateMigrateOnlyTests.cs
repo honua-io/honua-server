@@ -85,7 +85,7 @@ public sealed class LocalSubstrateMigrateOnlyTests : IClassFixture<LocalSubstrat
         migrate.ExitCode.Should().Be(0, migrate.Describe());
 
         // The rollback image (N) ships every script except the newest k, and starts with
-        // HONUA_SKIP_MIGRATIONS=true, so only its startup schema guard runs (#6477).
+        // HONUA_SKIP_MIGRATIONS=true, so only its startup schema guard runs.
         var full = ServerCoreSchemaMigrations.Manifest;
         var newest = full.KnownMigrationNames!
             .Where(name => name.StartsWith("Honua.Server.Migrations.", StringComparison.Ordinal))

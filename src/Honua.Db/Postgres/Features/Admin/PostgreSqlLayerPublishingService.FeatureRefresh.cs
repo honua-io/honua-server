@@ -219,7 +219,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         await ExecuteSnapshotCommandAsync(command, cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task<MaterializeRefreshMetadata?> ResolveMaterializeRefreshMetadataByIdAsync(
+    private async Task<MaterializeRefreshMetadata?> ResolveMaterializeRefreshMetadataByIdAsync(
         string connectionString,
         int layerId,
         CancellationToken cancellationToken)
@@ -227,7 +227,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        const string sql = """
+        var sql = $"""
             SELECT
                 layer_id,
                 layer_name,
@@ -236,7 +236,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 geometry_column,
                 COALESCE(NULLIF(srid, 0), NULLIF(storage_srid, 0), @catalogSrid) AS layer_srid,
                 COALESCE(storage_options ->> 'managedStore', 'false') = 'true' AS managed_store
-            FROM honua.layers
+            FROM {LayersTable}
             WHERE layer_id = @layerId
               AND COALESCE(storage_options->>'managedCopy', 'false') <> 'true';
             """;
@@ -261,7 +261,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return metadata with { FieldNames = fieldNames };
     }
 
-    private static async Task<IReadOnlyList<MaterializeRefreshMetadata>> ResolveMaterializeRefreshMetadataBySourceAsync(
+    private async Task<IReadOnlyList<MaterializeRefreshMetadata>> ResolveMaterializeRefreshMetadataBySourceAsync(
         string connectionString,
         string? schema,
         string table,
@@ -273,7 +273,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // When the caller knows the resolved schema, constrain by it; otherwise match every
         // published layer for the table name (the import path may not know which schema its
         // table resolved to). @schema is NULL in the latter case.
-        const string sql = """
+        var sql = $"""
             SELECT
                 layer_id,
                 layer_name,
@@ -282,8 +282,12 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 geometry_column,
                 COALESCE(NULLIF(srid, 0), NULLIF(storage_srid, 0), @catalogSrid) AS layer_srid,
                 COALESCE(storage_options ->> 'managedStore', 'false') = 'true' AS managed_store
-            FROM honua.layers
-            WHERE table_name = @table
+            FROM {LayersTable}
+            WHERE (
+                table_name = @table
+                OR table_name = @pointView
+                OR table_name = @lineView
+                OR table_name = @polygonView)
               AND (@schema IS NULL OR table_schema = @schema)
               AND NULLIF(geometry_column, '') IS NOT NULL
               -- Managed-store layers own their rows; a source-table refresh must never
@@ -302,6 +306,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
             command.Parameters.Add("@schema", NpgsqlDbType.Text).Value =
                 string.IsNullOrWhiteSpace(schema) ? DBNull.Value : schema;
             command.Parameters.AddWithValue("@table", table);
+            command.Parameters.AddWithValue("@pointView", GeometryFamilyViews.ViewName(table, "Point"));
+            command.Parameters.AddWithValue("@lineView", GeometryFamilyViews.ViewName(table, "LineString"));
+            command.Parameters.AddWithValue("@polygonView", GeometryFamilyViews.ViewName(table, "Polygon"));
             command.Parameters.AddWithValue("@catalogSrid", CatalogExtentSrid);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (true)
@@ -358,14 +365,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
             []);
     }
 
-    private static async Task<IReadOnlyList<string>> ReadLayerFieldNamesAsync(
+    private async Task<IReadOnlyList<string>> ReadLayerFieldNamesAsync(
         NpgsqlConnection connection,
         int layerId,
         CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = $"""
             SELECT field_name
-            FROM honua.layer_fields
+            FROM {LayerFieldsTable}
             WHERE layer_id = @layerId
             ORDER BY field_order, field_name;
             """;

@@ -74,16 +74,21 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
         using var stalled = new StudioAiProxyStallingStream("data: {\"type\":\"message_start\",\"message\":{\"model\":\"m\"}}\n\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\"}}\n\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"partial\"}}\n\n");
         var handler = new StudioAiProxySequenceHttpMessageHandler(
             () => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(stalled) });
+        // The deadline fires when the stream stalls after the partial text, not after real time passes.
+        var clock = new StudioAiProxyTriggeredTimeProvider(stalled.Stalled);
         var adapter = new AnthropicStudioAiProxyAdapter(
             new StudioAiProxyMockHttpClientFactory(handler), new StudioAiProxyApiKeyResolver(),
-            NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
+            NullLogger<AnthropicStudioAiProxyAdapter>.Instance)
+        {
+            TimeProvider = clock,
+        };
         var options = DefaultOptions();
         options.TimeoutSeconds = 1;
 
-        var stopwatch = Stopwatch.StartNew();
-        var events = await CollectAsync(adapter, options, ToolFreeRequest());
+        // A missing deadline would stall forever; the outer bound turns that into a failure.
+        var events = await CollectAsync(adapter, options, ToolFreeRequest()).WaitAsync(TimeSpan.FromSeconds(60));
 
-        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
+        clock.DueTimes.Should().Contain(TimeSpan.FromSeconds(1));
         events.Count(e => e.Type == StudioAiChatEventType.Error).Should().Be(1);
         events.Should().Contain(e => e.Type == StudioAiChatEventType.TextDelta && e.Text == "partial");
         events.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop);
@@ -286,7 +291,7 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
     [UnitTest]
     public void IsConfigured_EndpointAndModelPresent_ButNoApiKeyAndNoEnvFallback_ReturnsFalse()
     {
-        // honua-server#3010 review: a provider declared without ApiKey and without the per-provider
+        // A provider declared without ApiKey and without the per-provider
         // env var fallback can never actually be called, so it must not report configured — otherwise
         // GET /capabilities lies and POST /chat commits a 200 SSE stream before erroring.
         var adapter = new AnthropicStudioAiProxyAdapter(
@@ -349,7 +354,7 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
     [UnitTest]
     public async Task StreamAsync_SystemRoleMessage_IsFoldedIntoAnthropicSystemParamNotDropped()
     {
-        // honua-server#3010 review: the mapper accepts a messages[] entry with role=system (the
+        // The mapper accepts a messages[] entry with role=system (the
         // OpenAI adapter forwards it as an OpenAI "system"-role message), but Anthropic's Messages
         // API has no such role -- it must be folded into the top-level `system` string instead of
         // silently disappearing.

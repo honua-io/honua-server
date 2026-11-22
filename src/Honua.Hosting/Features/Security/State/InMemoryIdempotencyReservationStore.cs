@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Edit.Receipts;
+
 namespace Honua.Infrastructure.Security;
 
 // For a host with no system database, which is one process by definition, and for tests.
@@ -34,21 +36,20 @@ internal sealed class InMemoryIdempotencyReservationStore(TimeProvider? timeProv
     }
 
     public Task<bool> CompleteAsync(
-        IdempotencyReservation reservation,
-        ReadOnlyMemory<byte> receipt,
+        IdempotencyReceiptWrite write,
         TimeSpan receiptRetention,
         CancellationToken cancellationToken)
     {
         lock (_gate)
         {
-            if (TryGetLive(reservation.ScopeKey, out var current)
-                && (current.Receipt is not null || current.ReservationToken != reservation.ReservationToken))
+            if (TryGetLive(write.Reservation.ScopeKey, out var current)
+                && (current.Receipt is not null || current.ReservationToken != write.Reservation.ReservationToken))
             {
                 return Task.FromResult(false);
             }
 
-            _entries[reservation.ScopeKey] = new Entry(
-                reservation.ReservationToken, receipt.ToArray(), _timeProvider.GetUtcNow().Add(receiptRetention));
+            _entries[write.Reservation.ScopeKey] = new Entry(
+                write.Reservation.ReservationToken, write.Payload.ToArray(), _timeProvider.GetUtcNow().Add(receiptRetention));
             return Task.FromResult(true);
         }
     }

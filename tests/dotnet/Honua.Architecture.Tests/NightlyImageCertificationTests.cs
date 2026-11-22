@@ -103,9 +103,9 @@ public sealed partial class NightlyImageCertificationTests
     [ArchitectureTest]
     public void NightlyBuild_ShouldRunAtTheSelectedSha_SoProvenanceNamesTheImagedCommit()
     {
-        // honua-io/honua-release#520: run 38072453832 was dispatched at 652f7ed, imaged
-        // 99cd5e3, and its Sigstore and BuildKit provenance named 652f7ed. Provenance can
-        // only bind to the run's own commit, so the build must RUN at the candidate.
+        // Provenance can only bind to the run's own commit, so the build must RUN at the
+        // candidate. A run dispatched at one commit that images another names the
+        // dispatch commit in its Sigstore and BuildKit provenance.
         var nightly = Read(NightlyPath);
         var select = Job(nightly, "select-candidate");
 
@@ -128,10 +128,10 @@ public sealed partial class NightlyImageCertificationTests
         selectStep.Should().Contain("\"refs/tags/nightly-candidate-${GITHUB_SHA:0:7}\"");
         selectStep.Should().Contain("--sha \"${GITHUB_SHA}\"");
 
-        // honua-io/honua-server#6613 (founder decision D10): the Actions token cannot create a
-        // candidate tag whose workflow files differ from trunk head (403, it can never hold
-        // `workflows`). It is read-only in every job; the two hand-off writes use a short-lived,
-        // repository-scoped GitHub App token, and a missing app fails by name, never by fallback.
+        // The Actions token cannot create a candidate tag whose workflow files differ from trunk
+        // head (403, it can never hold `workflows`). It is read-only in every job; the two
+        // hand-off writes use a short-lived, repository-scoped GitHub App token, and a missing
+        // app fails by name, never by fallback.
         Regex.IsMatch(nightly, @"^\s+(contents|actions): write$", RegexOptions.Multiline).Should().BeFalse(
             "no job grants the Actions token a write to contents or actions");
         select.Should().Contain("      actions: read\n      checks: read\n      contents: read\n");
@@ -155,6 +155,14 @@ public sealed partial class NightlyImageCertificationTests
             "the failure names the exact setup the founder must perform");
         require.Should().Contain("exit 1");
         require.Should().NotContain("secrets.HONUA_RELEASE_APP_PRIVATE_KEY }}", "the key never enters the guard's environment");
+
+        // The app key is an environment secret of bot-app, which deploys only from trunk.
+        // Only a trunk run hands off; tag and branch-proof runs never enter the environment.
+        select.Should().Contain("    environment: ${{ github.ref_type == 'branch' && github.ref_name == 'trunk' && 'bot-app' || '' }}\n",
+            "a branch workflow cannot read the release App key");
+        require.Should().Contain("are not set in the trunk-only bot-app environment");
+        Regex.Count(select, @"secrets\.HONUA_RELEASE_APP_").Should().Be(Regex.Count(nightly, @"secrets\.HONUA_RELEASE_APP_"),
+            "only select-candidate reads the key");
 
         mint.Should().Contain("id: handoff-token");
         mint.Should().Contain("uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0");
@@ -196,22 +204,32 @@ public sealed partial class NightlyImageCertificationTests
     }
 
     [ArchitectureTest]
-    public void NightlyBuild_ShouldPublishDefaultTagsFromJit()
+    public void NightlyBuild_ShouldPublishDefaultTagsFromAot()
     {
         var nightly = Read(NightlyPath);
 
-        // JIT owns the default tags; AOT remains an explicit alternative.
+        // The AOT index owns the default tags; JIT keeps its -jit tags and the full-store default.
         var jitManifest = Job(nightly, "manifest-jit");
         foreach (var tag in new[]
                  {
-                     "type=raw,value=nightly${{ matrix.store_suffix }}",
-                     "type=raw,value=nightly-${{ needs.mirror-base-images.outputs.build_date }}${{ matrix.store_suffix }}",
-                     $"type=raw,value=nightly-{CandidateSha7}${{{{ matrix.store_suffix }}}}",
-                     $"type=raw,value=nightly-jit-{CandidateSha7}${{{{ matrix.store_suffix }}}}",
+                     "type=raw,value=nightly${{ matrix.store_suffix }},enable=${{ matrix.store_suffix != '' }}",
+                     "type=raw,value=nightly-${{ needs.mirror-base-images.outputs.build_date }}${{ matrix.store_suffix }},enable=${{ matrix.store_suffix != '' }}",
+                     $"type=raw,value=nightly-{CandidateSha7}${{{{ matrix.store_suffix }}}},enable=${{{{ matrix.store_suffix != '' }}}}",
+                     "type=raw,value=trunk${{ matrix.store_suffix }},enable=${{ matrix.store_suffix != '' }}",
+                     $"type=raw,value=nightly-jit-{CandidateSha7}${{{{ matrix.store_suffix }}}}\n",
                  })
         {
             jitManifest.Should().Contain(tag);
         }
+
+        var aotManifest = Job(nightly, "manifest-aot");
+        aotManifest.Should().Contain("nightly-aot|trunk-aot) default_tag=\"${repository}:${tag_name%-aot}\" ;;");
+        aotManifest.Should().Contain("nightly-aot-*) default_tag=\"${repository}:nightly-${tag_name#nightly-aot-}\" ;;");
+        aotManifest.Should().Contain("printf '%s\\n' \"$tag\" \"$default_tag\"", "the alias must be the attested AOT index");
+
+        var executor = Job(nightly, "compose-executor");
+        executor.Should().Contain("needs: [select-candidate, manifest-aot]");
+        executor.Should().NotContain("manifest-jit", "the customer quickstart pins the default AOT image");
     }
 
     [ArchitectureTest]

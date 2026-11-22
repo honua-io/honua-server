@@ -21,7 +21,7 @@ All endpoints require admin authentication — see [Authentication](../../guides
 | PATCH | `/api/v1/admin/api-keys/{id}/restrictions` | Replace referrer and IP restrictions without changing the secret |
 | GET | `/api/v1/admin/api-keys/{id}/effective-permissions` | Get the key's effective permissions |
 
-In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/api-keys` with `{"name":"ci-publisher","permissions":["admin:write"]}`. The body takes `name`, `permissions`, an optional `expiresAt`, and optional request restrictions `allowedReferrers` (origin patterns such as `https://app.example.com` or `https://*.example.com`) and `allowedIpRanges` (CIDR ranges or addresses); an empty `permissions` list grants full admin access. Restrictions are recommended for keys used from browsers or in the `token` query parameter; see [Restrict keys used from browsers or in URLs](../../guides/secure/authentication.md#restrict-keys-used-from-browsers-or-in-urls).
+In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/api-keys` with `{"name":"ci-publisher","permissions":["admin:write"]}`. The body takes `name`, `permissions`, an optional `kind` (`standard` or `agent`; an agent key always carries the `agent` grant, and a key created by an agent or from an agent's proposal is always an agent key), an optional `expiresAt`, and optional request restrictions `allowedReferrers` (origin patterns such as `https://app.example.com` or `https://*.example.com`) and `allowedIpRanges` (CIDR ranges or addresses); an empty `permissions` list grants full admin access. Restrictions are recommended for keys used from browsers or in the `token` query parameter; see [Restrict keys used from browsers or in URLs](../../guides/secure/authentication.md#restrict-keys-used-from-browsers-or-in-urls).
 
 ### Grant grammar
 
@@ -57,6 +57,16 @@ full-administrator credential authority:
 | DELETE | `/api/v1/admin/users/{id}` |
 | POST | `/api/v1/admin/oauth-clients` |
 | DELETE | `/api/v1/admin/oauth-clients/{id}` |
+| PUT | `/api/v1/admin/oauth-scopes` |
+| DELETE | `/api/v1/admin/oauth-scopes/{scope}` |
+| POST | `/api/v1/admin/roles` |
+| PUT | `/api/v1/admin/roles/{id}` |
+| DELETE | `/api/v1/admin/roles/{id}` |
+| PUT | `/api/v1/admin/roles/{id}/permissions` |
+
+Role names the server assigns to principals itself (`admin`, `viewer`, `agent`, `orchestrator`,
+`approved-operation`, `scoped-admin-key`, `scoped-api-key`, `layer-write-key`) cannot be used for a
+new role, here or in Console access, and the permissions of built-in roles cannot be changed.
 
 Full-administrator credential authority is one of:
 
@@ -133,7 +143,7 @@ Runtime licensing validates an offline Ed25519-signed JSON envelope. Without an 
 | GET | `/api/v1/admin/license/features` | Feature entitlement view with catalog category and minimum-edition metadata |
 | POST | `/api/v1/admin/license/upload` | Upload alias using the same validator; returns a compact upload result |
 
-Validation states are `NoLicenseConfigured`, `Valid`, `MissingFile`, `Malformed`, `UnknownKey`, `InvalidSignature`, and `Expired`. Rejected uploads return `400` and do not replace the current license. Paid-feature gates return `402 Payment Required`.
+Validation states are `NoLicenseConfigured`, `Valid`, `MissingFile`, `Malformed`, `UnknownKey`, `InvalidSignature`, `Expired`, and `Disabled` (`Disabled` occurs when `Licensing:Mode=Disabled`, where `isValid=true` with all entitlements active and license uploads are refused). Rejected uploads return `400` and do not replace the current license. Paid-feature gates return `402 Payment Required`.
 
 Run `POST /api/v1/admin/license/upload` and attach `company.honua-license.json` as the binary request body, then verify it with `GET /api/v1/admin/license/status`.
 

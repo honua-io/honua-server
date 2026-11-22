@@ -23,6 +23,9 @@ internal static class ServiceCollectionExtensions
                 schemaName,
                 provider.GetService<IOptions<PostgresRasterStatisticsOptions>>()?.Value));
 
+        services.AddScoped<IRasterStorageAvailability>(provider =>
+            new PostgresRasterStorageAvailability(provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>()));
+
         // Register the map renderer implementation
         services.AddScoped<IRasterMapRenderer>(provider =>
             new PostgresRasterMapRenderer(

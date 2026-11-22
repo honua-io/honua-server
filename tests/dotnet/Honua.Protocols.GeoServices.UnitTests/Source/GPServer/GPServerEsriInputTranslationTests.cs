@@ -148,7 +148,7 @@ public sealed class GPServerEsriInputTranslationTests
     [UnitTest]
     public void Translate_EsriWebMercatorAlias_EmbedsTheNormalizedSridInTheEwkb()
     {
-        // #4033: the executors read the SRID embedded in the EWKB, so Esri's 102100 alias must be
+        // The executors read the SRID embedded in the EWKB, so Esri's 102100 alias must be
         // normalized there too, not only on the reported InputSpatialReference.
         var inputs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {

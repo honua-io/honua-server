@@ -17,10 +17,10 @@ This pattern is identical across both custom-code runtimes:
 | Image | [`docker/worker-customcode-python`](../../docker/worker-customcode-python/README.md) | [`docker/worker-customcode-dotnet`](../../docker/worker-customcode-dotnet/README.md) |
 | GDAL interop | `osgeo.gdal` / `osgeo.ogr` / `osgeo.osr` + `rasterio` (GDAL-full base) | `OSGeo.GDAL` / `OSGeo.OGR` / `OSGeo.OSR` via `MaxRev.Gdal.Core` (+ `LinuxRuntime.Minimal`) |
 | Init | implicit on import (`gdal.UseExceptions()` recommended) | `GdalBase.ConfigureAll()` once before use |
-| Raster sample | `samples/raster_ndvi_tool.py` | `samples/RasterTool/RasterTool.cs` |
-| Vector sample | `samples/buffer_tool.py` | `samples/BufferTool/BufferTool.cs` |
+| Raster sample | `harness/samples/raster_ndvi_tool.py` | `harness/samples/RasterTool/RasterTool.cs` |
+| Vector sample | `harness/samples/buffer_tool.py` | `harness/samples/BufferTool/BufferTool.cs` |
 
-Both images are built on the **`ghcr.io/osgeo/gdal:ubuntu-full-3.12.4`** base, so the
+Both images are built on pinned **`ghcr.io/osgeo/gdal:ubuntu-full-*`** bases (`3.12.4` for Python, `3.13.3` for .NET), so the
 full GDAL driver set is present. In-build sanity checks assert the bindings load and a
 driver count `> 0`, so the images fail to build if raster/vector interop ever regresses.
 
@@ -75,8 +75,9 @@ def execute(context: GpContext) -> GpResult:
 ```
 
 The low-level `osgeo.gdal`/`ogr`/`osr` bindings are equally available for direct
-dataset/driver/CRS work (see `samples/raster_ndvi_tool.py`, which synthesizes a scene
-with `osgeo.gdal` and computes NDVI band math with `rasterio`).
+dataset/driver/CRS work (see
+`docker/worker-customcode-python/harness/samples/raster_ndvi_tool.py`, which
+synthesizes a scene with `osgeo.gdal` and computes NDVI band math with `rasterio`).
 
 ## .NET
 
@@ -109,8 +110,8 @@ public sealed class ReprojectTool : IGeoprocessingTool
 ```
 
 `OSGeo.OGR` (vector) and `OSGeo.OSR` (CRS) are available the same way. See
-`samples/RasterTool/RasterTool.cs`, which creates a 2-band GeoTIFF with `OSGeo.GDAL` and
-computes NDVI band math in-process.
+`docker/worker-customcode-dotnet/harness/samples/RasterTool/RasterTool.cs`, which
+creates a 2-band GeoTIFF with `OSGeo.GDAL` and computes NDVI band math in-process.
 
 ## Why the SDK is not a raster library
 

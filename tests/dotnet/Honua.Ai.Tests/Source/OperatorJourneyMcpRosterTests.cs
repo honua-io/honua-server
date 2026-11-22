@@ -23,12 +23,13 @@ public sealed class OperatorJourneyMcpRosterTests
     private static readonly Dictionary<string, OperationApprovalModel> WriteApprovalModels =
         new Dictionary<string, OperationApprovalModel>(StringComparer.Ordinal)
         {
-            ["admin.connections.create"] = OperationApprovalModel.None,
-            ["admin.import.upload-object"] = OperationApprovalModel.None,
+            ["admin.connections.create"] = OperationApprovalModel.OperatorGate,
+            ["admin.import.upload-object"] = OperationApprovalModel.OperatorGate,
             ["admin.import.upload-url"] = OperationApprovalModel.None,
             ["admin.layer.publish"] = OperationApprovalModel.OperatorGate,
             ["admin.services.access-policy.set"] = OperationApprovalModel.OperatorGate,
             ["dataset.stage.import"] = OperationApprovalModel.OperatorGate,
+            ["dataset.stage.discard"] = OperationApprovalModel.OperatorGate,
         };
 
     [UnitTest]

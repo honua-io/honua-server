@@ -59,6 +59,32 @@ def names(rows: list) -> list[str]:
     return [row[0] for row in rows]
 
 
+def test_claims_follow_filter_changes_and_method_names() -> None:
+    first = "FullyQualifiedName=Ns.AlphaTests.First"
+    second = "FullyQualifiedName=Ns.AlphaTests.Second"
+    for _ in range(2):
+        assert MODULE.shard_claims(first, "Ns.AlphaTests.First")
+        assert not MODULE.shard_claims(first, "Ns.AlphaTests.Second")
+        assert not MODULE.shard_claims(second, "Ns.AlphaTests.First")
+        assert MODULE.shard_claims(second, "Ns.AlphaTests.Second")
+
+
+def test_malformed_filter_fails_after_valid_filter_lookup() -> None:
+    valid = "(FullyQualifiedName~Ns.AlphaTests|FullyQualifiedName~Ns.BetaTests)"
+    assert MODULE.shard_claims(valid, "Ns.AlphaTests.First")
+    for _ in range(2):
+        try:
+            MODULE.shard_claims(valid[:-1], "Ns.AlphaTests.First")
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("an unmatched parenthesis must reject the filter")
+
+
+test_claims_follow_filter_changes_and_method_names()
+test_malformed_filter_fails_after_valid_filter_lookup()
+
+
 def test_clause_flattening_and_selection_pool() -> None:
     node = MODULE._FilterParser(
         "(FullyQualifiedName~A|FullyQualifiedName~B)&FullyQualifiedName!~C"

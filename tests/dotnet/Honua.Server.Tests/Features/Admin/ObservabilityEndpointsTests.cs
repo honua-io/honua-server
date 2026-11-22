@@ -20,7 +20,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-[Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
 public sealed class ObservabilityEndpointsTests : IAsyncLifetime
@@ -232,7 +231,7 @@ public sealed class ObservabilityEndpointsTests : IAsyncLifetime
             root.GetProperty("metricsExportState").GetString().Should().Be("notConfigured");
             root.GetProperty("logExportState").GetString().Should().Be("notConfigured");
             root.GetProperty("lastExportError").ValueKind.Should().Be(JsonValueKind.Null);
-            // #1168: probe state is exposed alongside exporter state so Console can distinguish
+            // Probe state is exposed alongside exporter state so Console can distinguish
             // configuration-derived states from runtime reachability.
             root.GetProperty("otlpProbeState").GetString().Should().BeOneOf("unknown", "disabled");
         }

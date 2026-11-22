@@ -23,7 +23,7 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
 {
     private string _dbPath = null!;
     private DuckDBFeatureStore _store = null!;
-    private Func<LayerReadSecurityResolver?, DuckDBFeatureStore> _createStore = null!;
+    private Func<LayerReadSecurityResolver, DuckDBFeatureStore> _createStore = null!;
     private DuckDBLayerRegistry _registry = null!;
     private string _connectionString = null!;
     private DuckDBSpatialBootstrap _spatialBootstrap = null!;
@@ -100,7 +100,7 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
         var cacheManager = new DuckDBFeatureCacheManager(_registry);
 
         _createStore = readSecurity => new DuckDBFeatureStore(queryBuilder, dataAccess, cacheManager, readSecurity: readSecurity);
-        _store = _createStore(null);
+        _store = _createStore(new LayerReadSecurityResolver(null, null, null, null));
         _filterTranslator = new DuckDbSqlFilterTranslator();
         _resource = new MetadataV2Object
         {
@@ -180,7 +180,7 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Read_WithNoPolicyResolved_ReturnsSameRowsAsWithoutResolver()
+    public async Task Read_WithNoPolicyResolved_ReturnsSameRowsAsEmptyResolver()
     {
         var store = _createStore(CreateResolver());
         var query = new FeatureQuery();
@@ -648,7 +648,7 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
         // Instant-only mode (no EndPropertyName): the predicate is
         // start_time >= queryStart AND start_time <= queryEnd.
         // start_time spans 2024-01-01..2024-01-10 (one per parcel).
-        // Window 2024-01-03..2024-01-05 should match parcels 3, 4, 5 (#379).
+        // The window from 3 to 5 January should match parcels 3, 4, 5.
         var query = new FeatureQuery
         {
             TemporalFilter = new TemporalFilter

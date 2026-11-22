@@ -53,7 +53,7 @@ public sealed class FeatureServerQueryBinsTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBins?f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -68,7 +68,7 @@ public sealed class FeatureServerQueryBinsTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBins?bin=not-json&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -85,7 +85,7 @@ public sealed class FeatureServerQueryBinsTests : IClassFixture<WebAppFixture>
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/nonexistent/FeatureServer/0/queryBins?bin={Uri.EscapeDataString(bin)}&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -138,5 +138,52 @@ public sealed class FeatureServerQueryBinsTests : IClassFixture<WebAppFixture>
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         (await response.Content.ReadAsStringAsync()).Should().Contain("cannot contain more than 1000");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryBins)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryBins")]
+    public async Task AutoIntervalBinCountOverLimit_ReturnsValidationError()
+    {
+        var bin = JsonSerializer.Serialize(new
+        {
+            autoIntervalBin = new { field = "objectid", numBins = 1001 }
+        });
+        var payload = JsonSerializer.Serialize(new { bin, f = "json" });
+
+        using var payloadContent = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBins",
+            payloadContent);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("numBins cannot be more than 1000");
+    }
+
+    [IntegrationTheory]
+    [InlineData(1, "months", "calendarBin")]
+    [InlineData(1, "fortnights", "seconds, minutes, hours, days or weeks")]
+    [InlineData(int.MaxValue, "days", "too large")]
+    [Operation(Operations.QueryBins)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryBins")]
+    public async Task QueryBins_DateBinFixedIntervalInvalidOrOverflow_IsRejected(int count, string unit, string expectedHint)
+    {
+        var bin = JsonSerializer.Serialize(new
+        {
+            dateBin = new
+            {
+                field = "timestamp",
+                fixedBin = new { intervalCount = count, intervalUnit = unit }
+            }
+        });
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryBins?bin={Uri.EscapeDataString(bin)}&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
+        content.Should().Contain(expectedHint);
     }
 }

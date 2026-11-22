@@ -16,18 +16,25 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Collection("Database")]
 [Protocol(TestProtocols.Mcp)]
 [Operation(Operations.Security)]
-public sealed class McpAuthenticationGuidanceTests : IAsyncLifetime
+public sealed class McpAuthenticationGuidanceTests(McpAuthenticationGuidanceTests.GuidanceHost host)
+    : IClassFixture<McpAuthenticationGuidanceTests.GuidanceHost>
 {
-    private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureWebHost(builder =>
+    private readonly WebAppFixture _fixture = host.Fixture;
+
+    // Every case only reads tool, resource and guidance responses on fresh clients, so one host serves them all.
+    public sealed class GuidanceHost : IAsyncLifetime
     {
-        builder.UseEnvironment("Test");
-        builder.UseSetting("HONUA_DEV_AUTH", "false");
-        builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-    });
+        internal WebAppFixture Fixture { get; } = new WebAppFixture().ConfigureWebHost(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        });
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+        public Task InitializeAsync() => Fixture.InitializeAsync();
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
 
     [IntegrationTheory]
     [InlineData("default", false)]

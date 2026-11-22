@@ -109,7 +109,7 @@ public sealed class ApplyEditsIdempotencyStoreTests
         replay.Should().BeNull("the same key on a different layer is a distinct edit");
     }
 
-    // ─── #3052: reservation release ──────────────────────────────────────────────
+    // ─── Reservation release ──────────────────────────────────────────────
 
     [UnitTest]
     [Operation(Operations.ApplyEdits)]

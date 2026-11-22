@@ -25,7 +25,8 @@ internal static class DeploymentConnectionPoolSizing
     // A task's data-source pool, plus the pool behind code that opens connections from its connection string.
     internal const int PoolsPerTask = 2;
 
-    internal const int SmallestPool = 4;
+    // Reserve the dedicated, non-pooled realtime listener even when a deployment disables it.
+    internal const int ListenerConnectionsPerTask = 1;
 
     internal const int IdleConnectionsPerPool = 2;
 
@@ -53,10 +54,20 @@ internal static class DeploymentConnectionPoolSizing
             return;
         }
 
-        var perPool = (int)((maxConnections ?? UnstatedMaxConnections) * ApplicationShare) / (tasks * PoolsPerTask);
         if (IsUnset(section, nameof(ConnectionLimits.MaxConnectionPoolSize)))
         {
-            limits.MaxConnectionPoolSize = Math.Clamp(perPool, SmallestPool, limits.MaxConnectionPoolSize);
+            var applicationBudget = (long)((maxConnections ?? UnstatedMaxConnections) * ApplicationShare);
+            var listenerBudget = (long)tasks * ListenerConnectionsPerTask;
+            var perPool = (applicationBudget - listenerBudget) / ((long)tasks * PoolsPerTask);
+            if (perPool < 1)
+            {
+                throw new InvalidOperationException(
+                    $"The database connection budget cannot support {tasks} server tasks with {PoolsPerTask} pools " +
+                    $"and {ListenerConnectionsPerTask} listener connection per task while retaining maintenance headroom. " +
+                    "Reduce Deployment:MaxTasks or increase Database:MaxConnections to match available database capacity.");
+            }
+
+            limits.MaxConnectionPoolSize = (int)Math.Min(perPool, limits.MaxConnectionPoolSize);
         }
 
         if (IsUnset(section, nameof(ConnectionLimits.MinConnectionPoolSize)))

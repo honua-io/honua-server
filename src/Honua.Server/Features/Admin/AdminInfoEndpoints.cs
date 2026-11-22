@@ -8,6 +8,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Hosting;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Operations;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
@@ -44,10 +45,10 @@ internal static class AdminInfoEndpoints
         // server version, release channel, control-plane API major/base path, metadata
         // schema versions, and compile-time feature switches. It contains no connection
         // details, tenants, topology, or deployment-specific configuration.
-        group.MapGet("/capabilities", HandleGetCapabilities)
-            .WithName("GetAdminCapabilities")
+        var capabilities = AdminHttpOperationRouteBinding.ForOperate("admin.server.capabilities", "/");
+        group.MapMethods(capabilities.RoutePattern, capabilities.Methods, HandleGetCapabilities)
+            .WithAdminOperation(capabilities.Definition)
             .WithSummary("Get admin API capabilities")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .Produces<ApiResponse<AdminCapabilitiesResponse>>()
             .AllowAnonymous();

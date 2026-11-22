@@ -1,0 +1,493 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://honua.io/schemas/stac/honua/v1.0.0/schema.json",
+  "title": "Honua STAC extension v1.0.0 (Export collection)",
+  "description": "A STAC 1.1 collection that describes one Version of a Honua Export: a GeoParquet data asset and a PMTiles visual asset written from one capture of a Layer. The document follows the Portolan profile it declares; this extension adds the facts a client needs to link a tile feature to its GeoParquet row. A collection without honua: fields still opens for display and queries. Rules this schema cannot express, which every validator enforces on the document read as an Export version: (1) capture-id: each asset's honua:capture_id equals the collection's honua:capture_id, so both files come from one capture; (2) unique-field-names: table:columns names are unique; (3) public-fields-only: every name in an asset's honua:fields is a table:columns name listed in honua:public_fields; (4) identity-mapping: honua:identity.field is a public string column, and pmtiles_property and geoparquet_column both name that field and appear in both assets' honua:fields; (5) bounds-order: in extent.spatial.bbox west < east and south < north; (6) zoom-order: the PMTiles asset's honua:minzoom is not greater than its honua:maxzoom. Clients open only documents whose honua:validation.status is passed.",
+  "type": "object",
+  "required": [
+    "type",
+    "stac_version",
+    "stac_extensions",
+    "id",
+    "title",
+    "description",
+    "license",
+    "version",
+    "updated",
+    "extent",
+    "table:columns",
+    "links",
+    "assets",
+    "honua:capture_id",
+    "honua:captured_at",
+    "honua:source_revision",
+    "honua:feature_count",
+    "honua:source",
+    "honua:source_crs",
+    "honua:identity",
+    "honua:geometry",
+    "honua:public_fields",
+    "honua:validation"
+  ],
+  "properties": {
+    "type": {
+      "const": "Collection"
+    },
+    "stac_version": {
+      "const": "1.1.0"
+    },
+    "stac_extensions": {
+      "type": "array",
+      "allOf": [
+        {
+          "contains": {
+            "const": "https://honua.io/schemas/stac/honua/v1.0.0/schema.json"
+          }
+        },
+        {
+          "contains": {
+            "const": "https://schemas.portolan-sdi.org/portolan/v0.3.0/schema.json"
+          }
+        }
+      ]
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{2,63}$",
+      "description": "The Export id."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "license": {
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "const": "proprietary"
+      }
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "The immutable Version id; file paths include it so cached copies never mix versions."
+    },
+    "updated": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this Version became current."
+    },
+    "extent": {
+      "type": "object",
+      "required": [
+        "spatial"
+      ],
+      "properties": {
+        "spatial": {
+          "type": "object",
+          "required": [
+            "bbox"
+          ],
+          "properties": {
+            "bbox": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 1,
+              "items": {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "number",
+                    "minimum": -180,
+                    "maximum": 180
+                  },
+                  {
+                    "type": "number",
+                    "minimum": -90,
+                    "maximum": 90
+                  },
+                  {
+                    "type": "number",
+                    "minimum": -180,
+                    "maximum": 180
+                  },
+                  {
+                    "type": "number",
+                    "minimum": -90,
+                    "maximum": 90
+                  }
+                ],
+                "minItems": 4,
+                "maxItems": 4
+              }
+            }
+          }
+        }
+      }
+    },
+    "table:columns": {
+      "type": "array",
+      "minItems": 1,
+      "description": "The public fields, in file order. Non-public fields appear nowhere in an Export.",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "type"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+          },
+          "type": {
+            "enum": [
+              "string",
+              "integer",
+              "number",
+              "boolean",
+              "date",
+              "datetime"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "links": {
+      "type": "array",
+      "contains": {
+        "type": "object",
+        "required": [
+          "rel",
+          "href",
+          "type",
+          "pmtiles:layers"
+        ],
+        "properties": {
+          "rel": {
+            "const": "pmtiles"
+          },
+          "type": {
+            "const": "application/vnd.pmtiles"
+          },
+          "pmtiles:layers": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "assets": {
+      "type": "object",
+      "required": [
+        "geoparquet",
+        "pmtiles"
+      ],
+      "properties": {
+        "geoparquet": {
+          "type": "object",
+          "required": [
+            "href",
+            "type",
+            "roles",
+            "file:size",
+            "file:checksum",
+            "honua:capture_id",
+            "honua:fields"
+          ],
+          "properties": {
+            "href": {
+              "type": "string",
+              "format": "uri-reference",
+              "description": "Relative to the collection document, so one document serves the signed-in routes and the public path. Never carries expiring credentials."
+            },
+            "type": {
+              "const": "application/vnd.apache.parquet"
+            },
+            "roles": {
+              "type": "array",
+              "contains": {
+                "const": "data"
+              }
+            },
+            "file:size": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "file:checksum": {
+              "type": "string",
+              "pattern": "^1220[a-f0-9]{64}$",
+              "description": "SHA2-256 multihash of the file."
+            },
+            "honua:capture_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "honua:fields": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": "Attribute names this file contains; all are public."
+            }
+          }
+        },
+        "pmtiles": {
+          "type": "object",
+          "required": [
+            "href",
+            "type",
+            "roles",
+            "file:size",
+            "file:checksum",
+            "honua:capture_id",
+            "honua:fields",
+            "honua:minzoom",
+            "honua:maxzoom"
+          ],
+          "properties": {
+            "href": {
+              "type": "string",
+              "format": "uri-reference",
+              "description": "Relative to the collection document, so one document serves the signed-in routes and the public path. Never carries expiring credentials."
+            },
+            "type": {
+              "const": "application/vnd.pmtiles"
+            },
+            "roles": {
+              "type": "array",
+              "contains": {
+                "const": "visual"
+              }
+            },
+            "file:size": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "file:checksum": {
+              "type": "string",
+              "pattern": "^1220[a-f0-9]{64}$",
+              "description": "SHA2-256 multihash of the file."
+            },
+            "honua:capture_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "honua:fields": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": "Attribute names this file contains; all are public."
+            },
+            "honua:minzoom": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 30
+            },
+            "honua:maxzoom": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 30
+            }
+          }
+        }
+      }
+    },
+    "honua:capture_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifies the one read of the source Layer; both files repeat it."
+    },
+    "honua:captured_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "honua:source_revision": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Data generation or revision the capture read."
+    },
+    "honua:feature_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "honua:source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "service",
+        "layer"
+      ],
+      "properties": {
+        "service": {
+          "type": "string",
+          "minLength": 1
+        },
+        "layer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string"
+        }
+      }
+    },
+    "honua:source_crs": {
+      "type": "string",
+      "pattern": "^(EPSG:[0-9]{4,6}|OGC:CRS84)$",
+      "description": "CRS of the source Layer. GeoParquet is written in OGC:CRS84 and PMTiles in EPSG:3857."
+    },
+    "honua:identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field",
+        "pmtiles_property",
+        "geoparquet_column"
+      ],
+      "description": "Feature identity, kept as text so leading zeros survive: a rendered tile feature resolves to its GeoParquet row through these names, never through tile geometry. stable is true when the field is the Layer's declared text key and can be joined across Versions, and false when the identity is the object id rendered as text, which a reload can renumber. An omitted stable means true.",
+      "properties": {
+        "field": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pmtiles_property": {
+          "type": "string",
+          "minLength": 1
+        },
+        "geoparquet_column": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "honua:geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "column",
+        "encoding",
+        "types"
+      ],
+      "description": "Authoritative geometry in the GeoParquet file. PMTiles geometry is simplified for display only.",
+      "properties": {
+        "column": {
+          "type": "string",
+          "minLength": 1
+        },
+        "encoding": {
+          "enum": [
+            "wkb",
+            "geoarrow-point",
+            "geoarrow-linestring",
+            "geoarrow-polygon",
+            "geoarrow-multipoint",
+            "geoarrow-multilinestring",
+            "geoarrow-multipolygon"
+          ]
+        },
+        "types": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "Point",
+              "LineString",
+              "Polygon",
+              "MultiPoint",
+              "MultiLineString",
+              "MultiPolygon",
+              "GeometryCollection"
+            ]
+          }
+        },
+        "bbox_column": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "honua:public_fields": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "honua:validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "validated_at",
+        "checks"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "passed",
+            "failed"
+          ]
+        },
+        "validated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "status"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "enum": [
+                  "passed",
+                  "failed",
+                  "unavailable"
+                ]
+              },
+              "detail": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

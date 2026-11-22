@@ -203,43 +203,27 @@ internal static class CollectionsEndpoints
             }
 
             var visiblePublications = publicationsByResource.Values.ToList();
-            var collections = await OgcCommonUtilities.ProjectWithLimitedConcurrencyAsync(
-                visiblePublications,
-                (entry, ct) => CreateCollectionAsync(
-                    entry.Resource,
-                    entry.Publication,
-                    entry.Service,
-                    snapshot,
-                    baseUrl,
-                    featureReader,
-                    crsRegistry,
-                    coordinateTransformService,
-                    ct),
-                cancellationToken).ConfigureAwait(false);
-
-            var links = OgcCommonUtilities.BuildFormatLinks(
-                    request,
-                    $"{baseUrl}/ogc/features/collections",
-                    outputFormat,
-                    OgcCommonUtilities.MetadataFormats,
-                    "Collections")
-                .ToBuilder();
-
-            // Parent (landing page)
-            links.Add(Link.Create(
-                href: $"{baseUrl}/ogc/features",
-                rel: "parent",
-                type: MediaTypes.Json,
-                title: "Landing page"));
-
-            var response = new Collections
-            {
-                CollectionList = collections,
-                Links = links.ToImmutable()
-            };
-
-            OgcFeaturesLog.CollectionsReturned(logger, collections.Length);
-            return OgcCommonUtilities.FormatMetadataResponse(response, OgcJsonContext.Default.Collections, outputFormat, "Collections");
+            var result = await CollectionsCacheHelper.FormatCollectionsResponseAsync(
+                context,
+                outputFormat,
+                new CollectionsResponseFormatArgs
+                {
+                    CacheKey = CollectionsCacheHelper.BuildCollectionsKey(snapshot, context, visiblePublications),
+                    BuildAsync = () => BuildCollectionsPayloadAsync(new CollectionsBuildArgs
+                    {
+                        Request = request,
+                        BaseUrl = baseUrl,
+                        OutputFormat = outputFormat,
+                        VisiblePublications = visiblePublications,
+                        Snapshot = snapshot,
+                        FeatureReader = featureReader,
+                        CrsRegistry = crsRegistry,
+                        CoordinateTransformService = coordinateTransformService,
+                        CancellationToken = cancellationToken
+                    })
+                }).ConfigureAwait(false);
+            OgcFeaturesLog.CollectionsReturned(logger, visiblePublications.Count);
+            return result;
         }
         catch (OperationCanceledException)
             when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
@@ -332,34 +316,31 @@ internal static class CollectionsEndpoints
             var service = validation.Service;
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-            var collection = await CreateCollectionAsync(
-                resource,
-                publication,
-                service,
-                snapshot,
-                baseUrl,
-                featureReader,
-                crsRegistry,
-                coordinateTransformService,
-                cancellationToken);
-            var collectionSegment = Uri.EscapeDataString(collectionId);
-            var basePath = $"{baseUrl}/ogc/features/collections/{collectionSegment}";
-            var selfHref = $"{basePath}{request.QueryString}";
-            var updatedLinks = collection.Links.Select(link =>
-                    string.Equals(link.Rel, RelationTypes.Self, StringComparison.OrdinalIgnoreCase)
-                        ? link with { Href = selfHref, Type = outputFormat }
-                        : link)
-                .ToImmutableArray();
-
-            updatedLinks = OgcCommonUtilities.AddAlternateLinks(updatedLinks, request, basePath, outputFormat, OgcCommonUtilities.MetadataFormats);
-            collection = collection with { Links = updatedLinks };
-
-            OgcFeaturesLog.CollectionReturned(logger, collectionId, resource.Metadata.Name);
-            return OgcCommonUtilities.FormatMetadataResponse(
-                collection,
-                OgcJsonContext.Default.CollectionInfo,
+            var result = await CollectionsCacheHelper.FormatCollectionResponseAsync(
+                context,
                 outputFormat,
-                collection.Title ?? collection.Id);
+                new CollectionResponseFormatArgs
+                {
+                    CacheKey = CollectionsCacheHelper.BuildCollectionKey(
+                        snapshot, context, new OgcCollectionCacheEntry(publication, service, resource)),
+                    BuildAsync = () => BuildSingleCollectionPayloadAsync(new SingleCollectionBuildArgs
+                    {
+                        Request = request,
+                        BaseUrl = baseUrl,
+                        CollectionId = collectionId,
+                        OutputFormat = outputFormat,
+                        Resource = resource,
+                        Publication = publication,
+                        Service = service,
+                        Snapshot = snapshot,
+                        FeatureReader = featureReader,
+                        CrsRegistry = crsRegistry,
+                        CoordinateTransformService = coordinateTransformService,
+                        CancellationToken = cancellationToken
+                    })
+                }).ConfigureAwait(false);
+            OgcFeaturesLog.CollectionReturned(logger, collectionId, resource.Metadata.Name);
+            return result;
         }
         catch (OperationCanceledException)
             when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
@@ -452,7 +433,9 @@ internal static class CollectionsEndpoints
                 return validation.ErrorResult!;
             }
 
-            var resource = validation.Resource!;
+            // A field the caller's mask withholds is not a queryable for that caller.
+            var resource = await CallerVisibleSchema.HideMaskedFieldsAsync(context, validation.Resource!, effectiveToken)
+                .ConfigureAwait(false);
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var queryablesId = $"{baseUrl}/ogc/features/collections/{Uri.EscapeDataString(collectionId)}/queryables";
@@ -497,6 +480,27 @@ internal static class CollectionsEndpoints
                 context,
                 "An error occurred while retrieving the queryables schema.");
         }
+    }
+
+    private static async Task<Collections> BuildCollectionsPayloadAsync(CollectionsBuildArgs args)
+    {
+        var collections = await OgcCommonUtilities.ProjectWithLimitedConcurrencyAsync(
+            args.VisiblePublications,
+            (entry, ct) => CreateCollectionAsync(
+                entry.Resource, entry.Publication, entry.Service,
+                args.Snapshot, args.BaseUrl, args.FeatureReader,
+                args.CrsRegistry, args.CoordinateTransformService, ct),
+            args.CancellationToken).ConfigureAwait(false);
+        return CollectionsCacheHelper.FinalizeCollectionsResponse(args, collections);
+    }
+
+    private static async Task<CollectionInfo> BuildSingleCollectionPayloadAsync(SingleCollectionBuildArgs args)
+    {
+        var built = await CreateCollectionAsync(
+            args.Resource, args.Publication, args.Service,
+            args.Snapshot, args.BaseUrl, args.FeatureReader,
+            args.CrsRegistry, args.CoordinateTransformService, args.CancellationToken).ConfigureAwait(false);
+        return CollectionsCacheHelper.FinalizeSingleCollectionResponse(args, built);
     }
 
     // Metadata v2 builder for an OGC API Features CollectionInfo. The collection
@@ -667,22 +671,22 @@ internal static class CollectionsEndpoints
             (double Lon, double Lat) maxTransformed = default;
             if (extentSrid != 4326)
             {
-                transformedToCrs84 =
-                    OgcExtentTransformer.TryTransformToCrs84(bbox.West, bbox.South, extentSrid, out minTransformed) &&
-                    OgcExtentTransformer.TryTransformToCrs84(bbox.East, bbox.North, extentSrid, out maxTransformed);
-
-                if (!transformedToCrs84)
+                // One extent transform, including the outward margin. Transforming the two
+                // opposite corners with a different formula than feature output leaves edge
+                // points just outside the advertised box.
+                var extentResult = await OgcExtentTransformer.TryTransformExtentToCrs84Async(
+                    bbox.West,
+                    bbox.South,
+                    bbox.East,
+                    bbox.North,
+                    extentSrid,
+                    coordinateTransformService,
+                    cancellationToken).ConfigureAwait(false);
+                if (extentResult.HasValue)
                 {
-                    var extentResult = await coordinateTransformService.TransformExtentAsync(
-                        bbox.West, bbox.South,
-                        bbox.East, bbox.North,
-                        extentSrid, 4326, cancellationToken);
-                    if (extentResult.HasValue)
-                    {
-                        minTransformed = (extentResult.Value.MinX, extentResult.Value.MinY);
-                        maxTransformed = (extentResult.Value.MaxX, extentResult.Value.MaxY);
-                        transformedToCrs84 = true;
-                    }
+                    minTransformed = (extentResult.Value.MinLon, extentResult.Value.MinLat);
+                    maxTransformed = (extentResult.Value.MaxLon, extentResult.Value.MaxLat);
+                    transformedToCrs84 = true;
                 }
             }
 
@@ -841,9 +845,11 @@ internal static class CollectionsEndpoints
             MetadataV2FieldType.Integer => ("integer", null),
             MetadataV2FieldType.BigInteger => ("integer", null),
             MetadataV2FieldType.Double => ("number", "double"),
+            MetadataV2FieldType.Decimal => ("number", null),
             MetadataV2FieldType.Float => ("number", "float"),
             MetadataV2FieldType.Boolean => ("boolean", null),
             MetadataV2FieldType.DateTime => ("string", "date-time"),
+            MetadataV2FieldType.TimestampOffset => ("string", "date-time"),
             MetadataV2FieldType.Date => ("string", "date"),
             MetadataV2FieldType.Time => ("string", "time"),
             MetadataV2FieldType.Uuid => ("string", "uuid"),

@@ -34,27 +34,19 @@ internal sealed partial class PostgresExecutionJobStore
         }
 
         var limit = Math.Clamp(query.Limit, MinQueryLimit, MaxQueryLimit);
-        var jobs = await _database.ExecuteAsync(
+        var rows = await _database.ExecuteAsync(
             async (connection, _, token) =>
             {
                 await using var command = BuildQueryCommand(connection, query, cursor, limit);
-                return await ReadJobsAsync(command, token).ConfigureAwait(false);
+                return await ReadRowsAsync(command, limit, token).ConfigureAwait(false);
             },
             StatementRepeat.SafeToRepeat,
             cancellationToken).ConfigureAwait(false);
 
-        if (jobs.Count <= limit)
-        {
-            return new ExecutionJobPage { Items = jobs };
-        }
-
-        jobs.RemoveAt(jobs.Count - 1);
-        var last = jobs[^1];
-        return new ExecutionJobPage
-        {
-            Items = jobs,
-            NextCursor = new ExecutionJobCursor(last.CreatedAt, last.OperationId).Encode()
-        };
+        // The cursor follows the last row read, readable or not, so a skipped row never ends paging.
+        return rows.HasMore
+            ? new ExecutionJobPage { Items = rows.Jobs, NextCursor = rows.Last!.Value.Encode() }
+            : new ExecutionJobPage { Items = rows.Jobs };
     }
 
     public async Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(
@@ -90,7 +82,8 @@ internal sealed partial class PostgresExecutionJobStore
             cancellationToken).ConfigureAwait(false);
 
     public async Task<IReadOnlyList<ExecutionJobRecord>> ListExpiryAndDispatchCandidatesAsync(CancellationToken cancellationToken)
-        => await _database.ExecuteAsync(
+    {
+        var rows = await _database.ExecuteAsync(
             async (connection, _, token) =>
             {
                 await using var command = new NpgsqlCommand(
@@ -103,10 +96,51 @@ internal sealed partial class PostgresExecutionJobStore
                            AND backend = '{ExecutionJobRow.LocalBackend}')
                     """,
                     connection);
-                return await ReadJobsAsync(command, token).ConfigureAwait(false);
+                return await ReadRowsAsync(command, pageSize: null, token).ConfigureAwait(false);
             },
             StatementRepeat.SafeToRepeat,
             cancellationToken).ConfigureAwait(false);
+
+        if (rows.Unreadable.Count > 0)
+        {
+            await FailUnreadableExpiredJobsAsync(rows.Unreadable, cancellationToken).ConfigureAwait(false);
+        }
+
+        return rows.Jobs;
+    }
+
+    // An active job whose record cannot be read can neither run nor be expired through the record,
+    // so once its claim is stale it is failed by its columns alone. A live owner still heartbeating
+    // keeps it until that stops.
+    private async Task FailUnreadableExpiredJobsAsync(IReadOnlyList<string> operationIds, CancellationToken cancellationToken)
+    {
+        var failed = await _database.ExecuteAsync(
+            async (connection, _, token) =>
+            {
+                await using var command = new NpgsqlCommand(
+                    $"""
+                    UPDATE {_jobs} SET {ExecutionJobRow.FailUnreadableAssignments}, expires_at = now() + @retention
+                    WHERE operation_id = ANY (@operation_ids)
+                      AND status IN ('{nameof(ExecutionJobStatus.Provisioning)}', '{nameof(ExecutionJobStatus.Running)}')
+                      AND (COALESCE(last_heartbeat_at, claimed_at) <= now() - heartbeat_timeout
+                           OR claimed_at <= now() - max_duration)
+                    """,
+                    connection);
+                command.Parameters.Add(new NpgsqlParameter("operation_ids", NpgsqlDbType.Array | NpgsqlDbType.Text)
+                {
+                    Value = operationIds.ToArray()
+                });
+                command.Parameters.Add(RetentionParameter(ttl: null));
+                return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
+            },
+            StatementRepeat.SafeToRepeat,
+            cancellationToken).ConfigureAwait(false);
+
+        if (failed > 0)
+        {
+            Log.UnreadableJobsFailed(_logger, failed);
+        }
+    }
 
     public async Task<IReadOnlyList<string>> ListBackendReconciliationCandidateIdsAsync(CancellationToken cancellationToken)
         => await _database.ExecuteAsync(
@@ -277,15 +311,50 @@ internal sealed partial class PostgresExecutionJobStore
         }
     }
 
-    private static async Task<List<ExecutionJobRecord>> ReadJobsAsync(NpgsqlCommand command, CancellationToken cancellationToken)
+    private async Task<List<ExecutionJobRecord>> ReadJobsAsync(NpgsqlCommand command, CancellationToken cancellationToken)
+        => (await ReadRowsAsync(command, pageSize: null, cancellationToken).ConfigureAwait(false)).Jobs;
+
+    // One unreadable row must not hide every other job from listings and the reconciler. With a
+    // page size, the query reads one row more than the page to learn whether another page follows.
+    private async Task<JobRows> ReadRowsAsync(NpgsqlCommand command, int? pageSize, CancellationToken cancellationToken)
     {
-        var jobs = new List<ExecutionJobRecord>();
+        var rows = new JobRows();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            jobs.Add(ExecutionJobRow.Read(reader));
+            if (rows.Read == pageSize)
+            {
+                rows.HasMore = true;
+                break;
+            }
+
+            rows.Read++;
+            rows.Last = ExecutionJobRow.ReadCursor(reader);
+            if (ExecutionJobRow.TryRead(reader, _database.Secrets) is { } job)
+            {
+                rows.Jobs.Add(job);
+            }
+            else
+            {
+                var operationId = ExecutionJobRow.ReadOperationId(reader);
+                rows.Unreadable.Add(operationId);
+                Log.UnreadableJobSkipped(_logger, operationId);
+            }
         }
 
-        return jobs;
+        return rows;
+    }
+
+    private sealed class JobRows
+    {
+        public List<ExecutionJobRecord> Jobs { get; } = [];
+
+        public List<string> Unreadable { get; } = [];
+
+        public int Read { get; set; }
+
+        public bool HasMore { get; set; }
+
+        public ExecutionJobCursor? Last { get; set; }
     }
 }

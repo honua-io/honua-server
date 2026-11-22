@@ -28,7 +28,7 @@ public sealed class JsonContextRegistrationTests
         var options = BuildConfiguredHttpJsonOptions();
         var serializerOptions = options.SerializerOptions;
 
-        // Act + Assert: the [FromBody] DTOs for the enrichment admin endpoints (#2280) must be
+        // Act + Assert: the [FromBody] DTOs for the enrichment admin endpoints must be
         // resolvable, otherwise the RegisterEnrichmentDataset / UpdateEnrichmentDataset MapPost/
         // MapPut endpoints fail to build and the host aborts at startup.
         serializerOptions.GetTypeInfo<RegisterEnrichmentDatasetRequest>()

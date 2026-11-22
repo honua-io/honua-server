@@ -44,6 +44,28 @@ public sealed class StudioVersionMcpTests
     public Task SaveAndReopen_PreserveIndependentDashboardValues()
         => AssertSaveAndReopenAsync(StudioPackageFamily.Dashboard);
 
+    [UnitTest]
+    public async Task Create_CompletedResult_IsPollableOnlyByTheProposerInItsTenant()
+    {
+        var operation = new OperationHandle
+        {
+            OperationInstanceId = "create-draft-result",
+            OperationId = "studio.draft.create",
+            CorrelationId = "create-draft-correlation",
+            Status = OperationHandleStatus.Completed,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            ResourceIds = new Dictionary<string, string>
+            {
+                ["draftId"] = Guid.NewGuid().ToString("D"),
+                ["itemId"] = Guid.NewGuid().ToString("D"),
+            },
+        };
+        var instances = Substitute.For<IOperationInstanceStore>();
+        instances.GetAsync(operation.OperationInstanceId, Arg.Any<CancellationToken>()).Returns(operation);
+        await AssertPollableResultAsync(operation, instances);
+    }
+
     private static async Task AssertSaveAndReopenAsync(StudioPackageFamily family)
     {
         using var provider = LifecycleProvider();

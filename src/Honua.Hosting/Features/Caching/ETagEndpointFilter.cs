@@ -79,31 +79,17 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
             etag = await ConfigurationResponseETag.ForResponseAsync(httpContext, etag,
                 (result as IContentTypeHttpResult)?.ContentType ?? "application/json").ConfigureAwait(false);
 
-            // Check conditional headers
-            var ifNoneMatch = httpContext.Request.Headers["If-None-Match"].ToString();
-            var ifMatch = httpContext.Request.Headers["If-Match"].ToString();
-            var requestPath = httpContext.Request.Path.Value ?? string.Empty;
-
-            // Validate If-Match header
-            if (!string.IsNullOrEmpty(ifMatch) && !etagService.MatchesPrecondition(ifMatch, etag))
+            var preconditionResult = EvaluatePreconditions(httpContext, etag, etagService);
+            if (preconditionResult is not null)
             {
-                Log.PreconditionFailed(_logger, requestPath, ifMatch, etag);
-                return Results.StatusCode((int)HttpStatusCode.PreconditionFailed);
+                return preconditionResult;
             }
 
-            // Check If-None-Match header
-            if (!etagService.IsModified(ifNoneMatch, etag))
+            if (_logger.IsEnabled(LogLevel.Debug))
             {
-                Log.NotModified(_logger, requestPath, ifNoneMatch, etag);
-
-                // Return 304 Not Modified with ETag header using a custom result
-                // that wraps the 304 response.
-                return new NotModifiedWithETagResult(etag, etagService);
+                Log.ETagGenerated(_logger, httpContext.Request.Path.Value ?? string.Empty, etag);
             }
 
-            Log.ETagGenerated(_logger, requestPath, etag);
-
-            // Return the original result with ETag headers
             return new ResultWithETag(result, etag, etagService);
         }
 
@@ -120,25 +106,45 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
 
         etag = await ConfigurationResponseETag.ForResponseAsync(httpContext, etag, "application/json").ConfigureAwait(false);
 
-        var ifNoneMatch = httpContext.Request.Headers["If-None-Match"].ToString();
-        var ifMatch = httpContext.Request.Headers["If-Match"].ToString();
-        var requestPath = httpContext.Request.Path.Value ?? string.Empty;
-
-        if (!string.IsNullOrEmpty(ifMatch) && !etagService.MatchesPrecondition(ifMatch, etag))
+        var preconditionResult = EvaluatePreconditions(httpContext, etag, etagService);
+        if (preconditionResult is not null)
         {
-            Log.PreconditionFailed(_logger, requestPath, ifMatch, etag);
-            return Results.StatusCode((int)HttpStatusCode.PreconditionFailed);
-        }
-
-        if (!etagService.IsModified(ifNoneMatch, etag))
-        {
-            Log.NotModified(_logger, requestPath, ifNoneMatch, etag);
-            return new NotModifiedWithETagResult(etag, etagService);
+            return preconditionResult;
         }
 
         etagService.SetCacheHeaders(httpContext.Response, etag);
-        Log.ETagGenerated(_logger, requestPath, etag);
+        if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            Log.ETagGenerated(_logger, httpContext.Request.Path.Value ?? string.Empty, etag);
+        }
+
         return result;
+    }
+
+    private IResult? EvaluatePreconditions(HttpContext httpContext, string etag, IETagService etagService)
+    {
+        var headers = httpContext.Request.Headers;
+        if (headers.TryGetValue("If-Match", out var ifMatchValues) && ifMatchValues.Count > 0)
+        {
+            var ifMatch = ifMatchValues.ToString();
+            if (!string.IsNullOrEmpty(ifMatch) && !etagService.MatchesPrecondition(ifMatch, etag))
+            {
+                Log.PreconditionFailed(_logger, httpContext.Request.Path.Value ?? string.Empty, ifMatch, etag);
+                return Results.StatusCode((int)HttpStatusCode.PreconditionFailed);
+            }
+        }
+
+        if (headers.TryGetValue("If-None-Match", out var ifNoneMatchValues) && ifNoneMatchValues.Count > 0)
+        {
+            var ifNoneMatch = ifNoneMatchValues.ToString();
+            if (!etagService.IsModified(ifNoneMatch, etag))
+            {
+                Log.NotModified(_logger, httpContext.Request.Path.Value ?? string.Empty, ifNoneMatch, etag);
+                return new NotModifiedWithETagResult(etag, etagService);
+            }
+        }
+
+        return null;
     }
 
     private string? ComputeETagForValueResult(
@@ -153,9 +159,13 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
                 return etagService.ComputeETag(string.Empty);
             }
 
-            var typeInfo = serializerOptions.GetTypeInfo(value.GetType());
-            var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(value, typeInfo);
-            return etagService.ComputeETag(jsonBytes);
+            if (!serializerOptions.TryGetTypeInfo(value.GetType(), out var typeInfo))
+            {
+                return null;
+            }
+
+            using var payload = ETagJsonPayload.Serialize(value, typeInfo);
+            return etagService.ComputeETag(payload.WrittenSpan);
         }
         catch (NotSupportedException)
         {
@@ -208,12 +218,11 @@ internal sealed partial class ETagEndpointFilter : IEndpointFilter
             _etagService = etagService;
         }
 
-        public async Task ExecuteAsync(HttpContext httpContext)
+        public Task ExecuteAsync(HttpContext httpContext)
         {
-            // Set ETag headers before executing the original result
             _etagService.SetCacheHeaders(httpContext.Response, _etag);
 
-            await _originalResult.ExecuteAsync(httpContext);
+            return _originalResult.ExecuteAsync(httpContext);
         }
     }
 

@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Buffers.Binary;
 using System.Text;
 using Honua.Core.Features.Raster.Domain;
 
@@ -9,6 +8,21 @@ namespace Honua.Core.Features.Raster.CogParser;
 
 public static class CogTiffTileEncoder
 {
+    // GDAL's COG layout declaration. GDAL 3.8 reports LAYOUT=COG only when the ghost area, the
+    // 4-byte size leader and the repeated last-4-bytes trailer around each tile are all present.
+    private static readonly byte[] GhostArea = Encoding.ASCII.GetBytes(
+        "GDAL_STRUCTURAL_METADATA_SIZE=000140 bytes\n"
+        + "LAYOUT=IFDS_BEFORE_DATA\n"
+        + "BLOCK_ORDER=ROW_MAJOR\n"
+        + "BLOCK_LEADER=SIZE_AS_UINT4\n"
+        + "BLOCK_TRAILER=LAST_4_BYTES_REPEATED\n"
+        + "KNOWN_INCOMPATIBLE_EDITION=NO\n ");
+
+    private const int BlockLeaderBytes = 4;
+    private const int BlockTrailerBytes = 4;
+
+    private static readonly int IfdOffset = (8 + GhostArea.Length + 1) & ~1;
+
     public static byte[]? Encode(byte[] samples, CogMetadata metadata, RasterExtent extent)
     {
         var bits = metadata.BitsPerSample;
@@ -31,22 +45,22 @@ public static class CogTiffTileEncoder
 
         var fields = new List<(ushort Tag, ushort Type, uint Count, byte[] Value)>
         {
-            (256, 4, 1, LongValue(metadata.TileWidth)),
-            (257, 4, 1, LongValue(metadata.TileHeight)),
-            (258, 3, (uint)metadata.BandCount, ShortValues(Enumerable.Repeat((ushort)bits, metadata.BandCount).ToArray())),
-            (259, 3, 1, ShortValues(1)),
-            (262, 3, 1, ShortValues((ushort)metadata.PhotometricInterpretation)),
-            (277, 3, 1, ShortValues((ushort)metadata.BandCount)),
-            (284, 3, 1, ShortValues(1)),
-            (322, 4, 1, LongValue(metadata.TileWidth)),
-            (323, 4, 1, LongValue(metadata.TileHeight)),
-            (324, 4, 1, LongValue(0)), // Filled once all IFD and tag payload sizes are known.
-            (325, 4, 1, LongValue(samples.Length)),
-            (339, 3, (uint)metadata.BandCount, ShortValues(Enumerable.Repeat((ushort)sampleFormat, metadata.BandCount).ToArray())),
-            (33550, 12, 3, DoubleValues((extent.XMax - extent.XMin) / metadata.TileWidth,
+            (256, 4, 1, TiffFieldValues.Long(metadata.TileWidth)),
+            (257, 4, 1, TiffFieldValues.Long(metadata.TileHeight)),
+            (258, 3, (uint)metadata.BandCount, TiffFieldValues.Shorts(Enumerable.Repeat((ushort)bits, metadata.BandCount).ToArray())),
+            (259, 3, 1, TiffFieldValues.Shorts(1)),
+            (262, 3, 1, TiffFieldValues.Shorts((ushort)metadata.PhotometricInterpretation)),
+            (277, 3, 1, TiffFieldValues.Shorts((ushort)metadata.BandCount)),
+            (284, 3, 1, TiffFieldValues.Shorts(1)),
+            (322, 4, 1, TiffFieldValues.Long(metadata.TileWidth)),
+            (323, 4, 1, TiffFieldValues.Long(metadata.TileHeight)),
+            (324, 4, 1, TiffFieldValues.Long(0)), // Filled once all IFD and tag payload sizes are known.
+            (325, 4, 1, TiffFieldValues.Long(samples.Length)),
+            (339, 3, (uint)metadata.BandCount, TiffFieldValues.Shorts(Enumerable.Repeat((ushort)sampleFormat, metadata.BandCount).ToArray())),
+            (33550, 12, 3, TiffFieldValues.Doubles((extent.XMax - extent.XMin) / metadata.TileWidth,
                 (extent.YMax - extent.YMin) / metadata.TileHeight, 0)),
-            (33922, 12, 6, DoubleValues(0, 0, 0, extent.XMin, extent.YMax, 0)),
-            (34735, 3, 16, ShortValues(1, 1, 0, 3, 1024, 0, 1, 1, 1025, 0, 1, 1,
+            (33922, 12, 6, TiffFieldValues.Doubles(0, 0, 0, extent.XMin, extent.YMax, 0)),
+            (34735, 3, 16, TiffFieldValues.Shorts(1, 1, 0, 3, 1024, 0, 1, 1, 1025, 0, 1, 1,
                 3072, 0, 1, checked((ushort)extent.Srid)))
         };
         if (metadata.NoData is not null)
@@ -55,14 +69,16 @@ public static class CogTiffTileEncoder
             fields.Add((42113, 2, (uint)noData.Length, noData));
         }
 
-        var externalOffset = 8 + 2 + fields.Count * 12 + 4;
+        var externalOffset = IfdOffset + 2 + fields.Count * 12 + 4;
         var tileOffset = externalOffset + fields.Where(field => field.Value.Length > 4)
-            .Sum(field => (field.Value.Length + 1) & ~1);
-        using var stream = new MemoryStream(checked(tileOffset + samples.Length));
+            .Sum(field => (field.Value.Length + 1) & ~1) + BlockLeaderBytes;
+        using var stream = new MemoryStream(checked(tileOffset + samples.Length + BlockTrailerBytes));
         using var writer = new BinaryWriter(stream, Encoding.ASCII, leaveOpen: true);
         writer.Write((ushort)0x4949);
         writer.Write((ushort)42);
-        writer.Write(8u);
+        writer.Write((uint)IfdOffset);
+        writer.Write(GhostArea);
+        writer.Write(new byte[IfdOffset - 8 - GhostArea.Length]);
         writer.Write((ushort)fields.Count);
         foreach (var field in fields)
         {
@@ -90,6 +106,7 @@ public static class CogTiffTileEncoder
             writer.Write(field.Value);
             if (field.Value.Length % 2 != 0) writer.Write((byte)0);
         }
+        writer.Write((uint)samples.Length);
         if (metadata.IsLittleEndian || bits == 8)
         {
             writer.Write(samples);
@@ -99,27 +116,9 @@ public static class CogTiffTileEncoder
             for (var sample = 0; sample < samples.Length; sample += bits / 8)
                 for (var b = bits / 8 - 1; b >= 0; b--) writer.Write(samples[sample + b]);
         }
+        writer.Flush();
+        var trailer = stream.GetBuffer().AsSpan(tileOffset + samples.Length - BlockTrailerBytes, BlockTrailerBytes).ToArray();
+        writer.Write(trailer);
         return stream.ToArray();
-    }
-
-    private static byte[] LongValue(int value)
-    {
-        var bytes = new byte[4];
-        BinaryPrimitives.WriteInt32LittleEndian(bytes, value);
-        return bytes;
-    }
-
-    private static byte[] ShortValues(params ushort[] values)
-    {
-        var bytes = new byte[values.Length * 2];
-        for (var i = 0; i < values.Length; i++) BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(i * 2), values[i]);
-        return bytes;
-    }
-
-    private static byte[] DoubleValues(params double[] values)
-    {
-        var bytes = new byte[values.Length * 8];
-        for (var i = 0; i < values.Length; i++) BinaryPrimitives.WriteDoubleLittleEndian(bytes.AsSpan(i * 8), values[i]);
-        return bytes;
     }
 }

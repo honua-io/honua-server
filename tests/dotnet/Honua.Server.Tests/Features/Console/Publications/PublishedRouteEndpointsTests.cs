@@ -17,7 +17,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Console.Publications;
 
-[Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Query)]
 public sealed class PublishedRouteEndpointsTests : IAsyncLifetime

@@ -13,6 +13,9 @@ public sealed class StudioAiTranscriptCertification
     [JsonPropertyName("endpointIdentity")] public string EndpointIdentity { get; init; } = string.Empty;
     [JsonPropertyName("actionId")] public string ActionId { get; init; } = string.Empty;
     [JsonPropertyName("runNonce")] public string RunNonce { get; init; } = string.Empty;
+
+    // The canonical actor of the authenticated chat caller. Resolved by the server, never read from the wire.
+    [JsonIgnore] public string RequestedBy { get; init; } = string.Empty;
 }
 
 public sealed class StudioAiSignedTranscript

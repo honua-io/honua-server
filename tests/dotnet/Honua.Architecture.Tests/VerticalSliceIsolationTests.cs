@@ -21,15 +21,15 @@ public sealed class VerticalSliceIsolationTests
         "CloudDemo",
         "Collaboration",
         "Console",
-        "DataEnrichment", // Data-enrichment API slice (honua-server#374): curated catalog facade over the shared spatial-join pipeline.
+        "DataEnrichment", // Data-enrichment API slice: curated catalog facade over the shared spatial-join pipeline.
         "Forms",
         "Geocoding",
         "Geoprocessing",
         "Grounding",
-        "Identity", // Enterprise identity slice (honua-server#508/#510): SCIM 2.0 provisioning + SAML 2.0 SP SSO bridge over the shared user/role model.
+        "Identity", // Enterprise identity slice: SCIM 2.0 provisioning + SAML 2.0 SP SSO bridge over the shared user/role model.
         "Orchestration",
         "PackageReview",
-        "Plugins", // Plugin/extension SDK host slice (honua-server#1562): maps plugin-contributed ICustomEndpoint routes.
+        "Plugins", // Plugin/extension SDK host slice: maps plugin-contributed ICustomEndpoint routes.
         "Portal", // Persistent Portal sharing and request-scoped audience hydration.
         "Protocols",
         "Mobile", // Parent container for mobile sub-feature slices (e.g. FieldCollection sync)
@@ -40,7 +40,7 @@ public sealed class VerticalSliceIsolationTests
         "Migration",    // Import-split: ArcGIS/legacy migration slice.
         "RasterImport", // Import-split: raster ingest slice.
         "ControlPlane", // Relocated out of the Infrastructure grab-bag (audit-A1).
-        "Provisioner",  // Per-area geocoder/router build-job slice (honua-server#1752): service/job-only,
+        "Provisioner",  // Per-area geocoder/router build-job slice: service/job-only,
                         // no HTTP surface — rides the GP-on-Batch dispatch path. Satisfies the vertical-slice
                         // rule via its in-folder ProvisionerServiceCollectionExtensions.cs (mirrors ControlPlane).
         "FileStorage",
@@ -58,9 +58,11 @@ public sealed class VerticalSliceIsolationTests
         "Styling", // Relocated out of the Infrastructure grab-bag into its own top-level slice.
         "WorkflowPackages",
         "Operations", // Honua Operations Toolset slice: descriptor/executor split + policy-gated dispatcher over composable operations.
-        "Temporal", // Temporal data history slice (honua-server#1166): capability discovery + as-of read.
-        "FieldWorkflows", // Back-office field workflow slice (honua-server#1158/#1159/#1160): review/QA + exports over form submissions.
-        "AgentWorkspace" // Owner-scoped native local process workspaces: identity store + sandbox gateway.
+        "Temporal", // Temporal data history slice: capability discovery + as-of read.
+        "FieldWorkflows", // Back-office field workflow slice: review/QA + exports over form submissions.
+        "AgentWorkspace", // Owner-scoped native local process workspaces: identity store + sandbox gateway.
+        "Assets", // Task-first asset management: asset profiles over published layers, command receipts.
+        "Tasks" // Work tasks on assets: commands, state machine, immutable history.
     };
 
     private static readonly HashSet<string> _infrastructureAllowedSubAreas =
@@ -104,7 +106,7 @@ public sealed class VerticalSliceIsolationTests
             "Caching",          // Lives in Honua.Hosting under the preserved namespace.
             "Collaboration",    // Hosting-resident FeatureEditLockEnforcement: the single seam
                                 // every feature-write surface consults before mutating a feature
-                                // so a collaborative-editing lease is binding (#4402). Shared by
+                                // so a collaborative-editing lease is binding. Shared by
                                 // three protocol assemblies (GeoServices FeatureServer, OGC API
                                 // Features, OData), so it cannot live in any one of them; the
                                 // /feature-locks endpoints stay in
@@ -131,7 +133,10 @@ public sealed class VerticalSliceIsolationTests
             "Progress",
             "Raster",
             "RateLimiting",
-            "Redis",
+            "Realtime",         // Hosting-resident RealtimeStreamAdmission: shared stream
+                                // shutdown-drain admission, 503 Retry-After, and SSE/WebSocket
+                                // reconnect hints used by both Honua.Protocols.SensorThings and
+                                // Honua.Server transports so neither owns the drain seam.
             "Rendering",
             "Resilience",
             "Scene",
@@ -165,12 +170,23 @@ public sealed class VerticalSliceIsolationTests
             // Surfaced once these became tracked features; tech debt to retire by
             // routing through shared Core abstractions (and, for the ingest set,
             // by the Honua.Import extraction).
-            ["Admin"] = new[] { "Styling", "ControlPlane", "Console", "Import", "Migration", "FileImport", "RasterImport" },
+            // Operations: Admin folder routes bind their path, method and metadata to the
+            // canonical AdminApiOperationCatalog definitions, so the HTTP surface and governed
+            // execution cannot drift apart.
+            ["Admin"] = new[] { "Styling", "ControlPlane", "Console", "Import", "Migration", "FileImport", "RasterImport", "Operations" },
             // ControlPlane orchestrates deploy/release workflows over the
             // Geoprocessing job runtime and is wired from the Admin surface.
             ["ControlPlane"] = new[] { "Geoprocessing", "Admin" },
+            // The governed operation executor runs approved folder mutations through
+            // Admin's transport-neutral folder mutation service, the same path the
+            // direct HTTP routes use, instead of a loopback HTTP call.
+            ["Operations"] = new[] { "Admin" },
             // Studio composes the Console authoring surface.
             ["Studio"] = new[] { "Console" },
+            // Asset profiles validate their linked inspection and service forms against the published layer.
+            ["Assets"] = new[] { "Forms" },
+            // Tasks share the asset command envelope (receipts, actor, access) and pin published forms.
+            ["Tasks"] = new[] { "Assets", "Forms" },
             // The ingest cluster (Import + Migration + FileImport + RasterImport)
             // is one cohesive unit destined for the Honua.Import module; intra-
             // cluster references are expected and move out of Server together.

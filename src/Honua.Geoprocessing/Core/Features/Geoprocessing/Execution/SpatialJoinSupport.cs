@@ -5,6 +5,7 @@ using Honua.Core.Features.SpatialAnalytics.Domain;
 using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Index.Strtree;
+using NetTopologySuite.Operation.Distance;
 using NtsEnvelope = NetTopologySuite.Geometries.Envelope;
 using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
@@ -43,6 +44,7 @@ internal static class SpatialJoinSupport
         IReadOnlyList<string> carryFields,
         IReadOnlyList<StatisticsSupport.StatSpec> stats,
         MatchBudget? budget = null,
+        int? srid = null,
         CancellationToken cancellationToken = default)
     {
         var attributes = OverlayExecutorSupport.CopyAttributes(target);
@@ -61,20 +63,16 @@ internal static class SpatialJoinSupport
 
         long matchCount = 0;
         var geometry = target.Geometry;
+        var effectiveSrid = srid ?? (geometry?.SRID > 0 ? geometry.SRID : 0);
+        var isGeographic = effectiveSrid > 0 && GeodesicGeometryOperations.IsGeographicSrid(effectiveSrid);
         if (geometry is not null && !geometry.IsEmpty)
         {
-            foreach (var candidate in index.Query(QueryEnvelope(geometry, predicate, distance)))
+            foreach (var candidate in index.Query(QueryEnvelope(geometry, predicate, distance, isGeographic)))
             {
-                // The exact predicate test is the expensive part and it runs on every candidate,
-                // matched or not. Two layers whose envelopes overlap broadly but whose exact
-                // predicates mostly fail evaluate up to targets x dataset pairs while charging
-                // the match budget almost nothing — so neither the budget nor the loop itself
-                // bounded the work, and a dismissed job kept a worker busy because nothing
-                // observed cancellation between targets.
                 cancellationToken.ThrowIfCancellationRequested();
                 budget?.ChargeCandidate();
 
-                if (!Matches(candidate.Geometry, geometry, predicate, distance))
+                if (!Matches(candidate.Geometry, geometry, predicate, distance, isGeographic))
                 {
                     continue;
                 }
@@ -191,14 +189,29 @@ internal static class SpatialJoinSupport
             ? feature.Attributes.GetOptionalValue(field)
             : null;
 
-    private static NtsEnvelope QueryEnvelope(NtsGeometry targetGeometry, SpatialJoinPredicate predicate, double distance)
+    private static NtsEnvelope QueryEnvelope(
+        NtsGeometry targetGeometry,
+        SpatialJoinPredicate predicate,
+        double distance,
+        bool isGeographic)
     {
         var envelope = targetGeometry.EnvelopeInternal.Copy();
         if (predicate == SpatialJoinPredicate.DWithin)
         {
-            // Widen the candidate window by the distance threshold so join geometries
-            // whose envelopes fall just outside the target's are still tested exactly.
-            envelope.ExpandBy(distance);
+            if (isGeographic)
+            {
+                // Convert meter distance to conservative latitude/longitude degree margins.
+                var latDeg = distance / 110_574.0;
+                var maxAbsLat = Math.Min(89.9, Math.Max(Math.Abs(envelope.MinY), Math.Abs(envelope.MaxY)) + latDeg);
+                var lonDeg = maxAbsLat >= 89.5
+                    ? 180.0
+                    : distance / (111_320.0 * Math.Cos(maxAbsLat * Math.PI / 180.0));
+                envelope.ExpandBy(lonDeg, latDeg);
+            }
+            else
+            {
+                envelope.ExpandBy(distance);
+            }
         }
 
         return envelope;
@@ -208,7 +221,8 @@ internal static class SpatialJoinSupport
         NtsGeometry? joinGeometry,
         NtsGeometry targetGeometry,
         SpatialJoinPredicate predicate,
-        double distance)
+        double distance,
+        bool isGeographic)
     {
         if (joinGeometry is null || joinGeometry.IsEmpty)
         {
@@ -219,8 +233,28 @@ internal static class SpatialJoinSupport
         {
             SpatialJoinPredicate.JoinContainsTarget => joinGeometry.Contains(targetGeometry),
             SpatialJoinPredicate.TargetContainsJoin => targetGeometry.Contains(joinGeometry),
+            SpatialJoinPredicate.DWithin when isGeographic => IsWithinGeodesicMeters(joinGeometry, targetGeometry, distance),
             SpatialJoinPredicate.DWithin => joinGeometry.IsWithinDistance(targetGeometry, distance),
             _ => joinGeometry.Intersects(targetGeometry),
         };
+    }
+
+    private static bool IsWithinGeodesicMeters(NtsGeometry first, NtsGeometry second, double distanceMeters)
+    {
+        if (first.Intersects(second))
+        {
+            return true;
+        }
+
+        var nearest = DistanceOp.NearestPoints(first, second);
+        if (nearest is null || nearest.Length < 2)
+        {
+            return false;
+        }
+
+        var meters = GeodesicGeometryOperations.ComputeEllipsoidalDistanceMeters(
+            nearest[0].Y, nearest[0].X,
+            nearest[1].Y, nearest[1].X);
+        return double.IsFinite(meters) && meters <= distanceMeters;
     }
 }

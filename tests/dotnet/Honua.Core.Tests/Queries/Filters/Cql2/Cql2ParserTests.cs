@@ -39,6 +39,42 @@ public class Cql2ParserTests
     }
 
     [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("age != 2")]
+    [InlineData("age!=2")]
+    [InlineData("age <> 2")]
+    public void Parse_InequalitySpellings_ReturnsCanonicalNotEqualExpression(string cql)
+    {
+        var result = _parser.Parse(cql);
+        var json = new Cql2JsonParser().Parse(
+            """{"op":"!=","args":[{"property":"age"},2]}""");
+
+        var binary = result.Should().BeOfType<BinaryExpression>().Subject;
+        var jsonBinary = json.Should().BeOfType<BinaryExpression>().Subject;
+        binary.Operator.Should().Be(BinaryOperator.NotEqual);
+        jsonBinary.Operator.Should().Be(binary.Operator);
+        binary.Left.Should().BeOfType<PropertyReference>().Subject.PropertyName.Should().Be("age");
+        jsonBinary.Left.Should().BeOfType<PropertyReference>().Subject.PropertyName.Should().Be("age");
+        binary.Right.Should().BeOfType<Literal>().Subject.Value.Should().Be(2.0);
+        Convert.ToDouble(jsonBinary.Right.Should().BeOfType<Literal>().Subject.Value,
+            System.Globalization.CultureInfo.InvariantCulture).Should().Be(2.0);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("age ! 2")]
+    [InlineData("age ! = 2")]
+    [InlineData("age !! 2")]
+    [InlineData("age !> 2")]
+    [InlineData("age !")]
+    public void Parse_MalformedExclamationOperator_ThrowsArgumentException(string cql)
+    {
+        var act = () => _parser.Parse(cql);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Trait("Tier", "Fast")]
     [Fact]
     public void Parse_NumericComparison_ReturnsCorrectAST()
     {
@@ -544,16 +580,47 @@ public class Cql2ParserTests
     public void Parse_Exponent_IsRightAssociative()
     {
         // Arrange
-        const string cql = "2 ^ 3 ^ 2";
+        const string cql = "2 ^ 3 ^ 2 = 512";
 
         // Act
         var result = _parser.Parse(cql);
 
         // Assert
-        result.Should().BeOfType<BinaryExpression>();
-        var power = (BinaryExpression)result;
+        var comparison = result.Should().BeOfType<BinaryExpression>().Subject;
+        comparison.Operator.Should().Be(BinaryOperator.Equal);
+        var power = comparison.Left.Should().BeOfType<BinaryExpression>().Subject;
         power.Operator.Should().Be(BinaryOperator.Power);
         power.Right.Should().BeOfType<BinaryExpression>();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public void Parse_ParenthesizedArithmeticComparison_ReturnsExpectedExpressionTree()
+    {
+        var result = _parser.Parse("(population + 1) > 10");
+
+        var comparison = result.Should().BeOfType<BinaryExpression>().Subject;
+        comparison.Operator.Should().Be(BinaryOperator.GreaterThan);
+        var add = comparison.Left.Should().BeOfType<BinaryExpression>().Subject;
+        add.Operator.Should().Be(BinaryOperator.Add);
+        add.Left.Should().BeOfType<PropertyReference>().Which.PropertyName.Should().Be("population");
+        add.Right.Should().BeOfType<Literal>().Which.Value.Should().Be(1L);
+        comparison.Right.Should().BeOfType<Literal>().Which.Value.Should().Be(10L);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("(population + 1) * 2 > 10")]
+    [InlineData("((population + 1) * 2) > 10")]
+    [InlineData("((population + 1) > 10) AND status = 'active'")]
+    [InlineData("(population + 1) BETWEEN 10 AND 20")]
+    [InlineData("(population + 1) IN (10, 20)")]
+    [InlineData("(population + 1) IS NOT NULL")]
+    public void Parse_ParenthesizedArithmeticVariants_Succeed(string cql)
+    {
+        var result = _parser.Parse(cql);
+
+        result.Should().NotBeNull();
     }
 
     [Trait("Tier", "Fast")]
@@ -576,10 +643,43 @@ public class Cql2ParserTests
     [InlineData("(name = 'John'")] // Unclosed parenthesis
     [InlineData("name = 'John')")] // Unmatched parenthesis
     [InlineData("name == 'John'")] // Invalid operator
+    [InlineData("CASEI('x')")] // Non-boolean scalar function root
+    [InlineData("ACCENTI('x')")] // Non-boolean scalar function root
+    [InlineData("LOWER('abc')")] // Non-boolean scalar function root
+    [InlineData("1 + 2")] // Non-boolean arithmetic root
+    [InlineData("-5")] // Non-boolean unary negate root
+    [InlineData("NOT 1")] // Non-boolean NOT operand
+    [InlineData("TRUE AND 1")] // Non-boolean AND operand
+    [InlineData("FALSE OR 'abc'")] // Non-boolean OR operand
+    [InlineData("123 LIKE '%a%'")] // Non-string LIKE target
+    [InlineData("LENGTH('a') LIKE 'a%'")] // Numeric function LIKE target
+    [InlineData("'a' BETWEEN 1 AND 2")] // Incompatible BETWEEN literal types
+    [InlineData("(1 + 2) BETWEEN 'a' AND 'z'")] // Arithmetic target with string BETWEEN bounds
+    [InlineData("1 / 0 = 1")] // Division by zero
+    [InlineData("1 % 0 = 0")] // Modulo by zero
+    [InlineData("1 DIV 0 = 1")] // Integer division by zero
+    [InlineData("1 / (2 - 2) = 1")] // Constant-folded division by zero
+    [InlineData("1 / ABS(0) = 1")] // Function-folded division by zero
+    [InlineData("MOD(1, 0) = 0")] // MOD function division by zero
+    [InlineData("IIF(TRUE, TRUE, 1)")] // Non-boolean IIF branch
+    [InlineData("NULLIF(TRUE, 1)")] // Non-boolean NULLIF branch
     public void Parse_InvalidSyntax_ThrowsArgumentException(string cql)
     {
         // Act & Assert
         var action = () => _parser.Parse(cql);
         action.Should().Throw<ArgumentException>();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("IIF(TRUE, TRUE, NULL)")]
+    [InlineData("IIF(TRUE, NULL, FALSE)")]
+    [InlineData("NULLIF(TRUE, NULL)")]
+    [InlineData("1 / ((1 / 2) * 2 - 1) = -1")]
+    [InlineData("amount BETWEEN '0.1' AND 1")]
+    public void Parse_ValidConditionalNullBranchesAndIntegerDivision_Succeeds(string cql)
+    {
+        var action = () => _parser.Parse(cql);
+        action.Should().NotThrow();
     }
 }

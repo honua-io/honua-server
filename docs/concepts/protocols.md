@@ -30,7 +30,7 @@ Honua serves every published layer through multiple protocols at once — the sa
 | OGC API Coverages | `/ogc/coverages` | Science/raster tooling | REST/JSON raster coverage discovery and GeoTIFF export |
 | OGC API Processes | `/ogc/processes` | OGC processing clients | Standards-based async geoprocessing |
 | OGC API Records | `/ogc/records` | Catalog/metadata search clients | Standards-based catalog discovery and record search |
-| OGC API Environmental Data Retrieval (EDR) **(Preview)** | `/edr` | Environmental/scientific tooling | Query environmental data resources by position or cube. Preview: CRS, temporal-selection, output-format and coordinate-query corrections target 2026.2 |
+| OGC API Environmental Data Retrieval (EDR) **(Preview; experimental opt-in)** | `/edr` | Environmental/scientific tooling | Query environmental data resources by position or cube. Disabled by default (returns HTTP 404 `honua:capability-experimental-disabled`); enable `Capabilities:Experimental:serve.ogc-api-edr:Enabled=true`. Preview: CRS, temporal-selection, output-format and coordinate-query corrections target 2026.2 |
 | OGC API Styles | `/ogc/styles` | Style-aware map clients | Discover and fetch published layer styles and metadata |
 | OGC SensorThings v1.1 (Preview) | `/sta/v1.1` | IoT/observation clients | Service discovery and linked REST access to Things, Datastreams, Sensors, ObservedProperties, and Observations; FeaturesOfInterest and Locations are not exposed; enable `Capabilities:Experimental:serve.sensorthings:Enabled=true` |
 | WMS 1.3 / 1.1.1 | `/rest/services/{serviceId}/MapServer/WMS` or `/ogc/services/{serviceId}/wms` | QGIS, legacy OGC clients | Clients expect classic GetMap/GetFeatureInfo |
@@ -42,7 +42,7 @@ Honua serves every published layer through multiple protocols at once — the sa
 | STAC | `/stac` | STAC browsers, catalog tooling | Catalog discovery and item search with extension metadata |
 | Vector tiles (MVT) + TileJSON | `/tiles/{layerId}/{z}/{x}/{y}.mvt`, `/tiles/{layerId}/tile.json` | MapLibre, OpenLayers, Leaflet | Web maps render features client-side |
 | Terrain-RGB + elevation | `/terrain/{datasetId}/…`, `/elevation/{datasetId}/…` | MapLibre `raster-dem`, field apps | Web terrain rendering or numeric elevation lookups |
-| 3D Tiles scenes | `/scenes/{sceneId}/tileset.json` | CesiumJS, 3D Tiles clients | Serving hosted or generated OGC 3D Tiles tilesets |
+| 3D Tiles scenes **(experimental opt-in)** | `/scenes/{sceneId}/tileset.json` | CesiumJS, 3D Tiles clients | Serving hosted or generated OGC 3D Tiles tilesets; enable `Capabilities:Experimental:serve.3d-tiles-scene:Enabled=true` ([all scene switches](../reference/protocols/3d-tiles-and-scenes.md#enable-the-3d-surfaces)) |
 | gRPC (`geospatial.v1`) | port `8081` (h2c), gRPC-Web on `8080` | Honua SDKs, mobile, services | High-throughput programmatic access from SDK clients |
 | MCP | `/mcp` | AI agents | Agents validate, plan, and run geoprocessing via JSON-RPC |
 | PMTiles | `/api/v1/tiles/pmtiles/{artifactId}` | MapLibre, serverless tile hosting | Single-file tile archives served with HTTP range requests |

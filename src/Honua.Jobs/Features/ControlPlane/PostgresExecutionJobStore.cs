@@ -97,7 +97,7 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
         ArgumentNullException.ThrowIfNull(job);
 
         var created = job with { Version = 1 };
-        var row = ExecutionJobRow.From(created);
+        var row = ExecutionJobRow.From(created, _database.Secrets);
         var inserted = await _database.ExecuteAsync(
             async (connection, attempt, token) =>
             {
@@ -135,7 +135,7 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
                     connection);
                 command.Parameters.Add(new NpgsqlParameter("operation_id", NpgsqlDbType.Text) { Value = operationId });
                 await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
-                return await reader.ReadAsync(token).ConfigureAwait(false) ? ExecutionJobRow.Read(reader) : null;
+                return await reader.ReadAsync(token).ConfigureAwait(false) ? ExecutionJobRow.Read(reader, _database.Secrets) : null;
             },
             StatementRepeat.SafeToRepeat,
             cancellationToken).ConfigureAwait(false);
@@ -148,7 +148,7 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
         ArgumentNullException.ThrowIfNull(job);
 
         var stored = job with { Version = job.Version + 1 };
-        var row = ExecutionJobRow.From(stored);
+        var row = ExecutionJobRow.From(stored, _database.Secrets);
         await _database.ExecuteAsync(
             async (connection, token) =>
             {
@@ -192,7 +192,7 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
     {
         ArgumentNullException.ThrowIfNull(job);
 
-        var row = ExecutionJobRow.From(job);
+        var row = ExecutionJobRow.From(job, _database.Secrets);
         var leasePrefix = ownedLease is null ? string.Empty : _ownedLeasePrefix;
         var leaseCondition = ownedLease is null ? string.Empty : " AND EXISTS (SELECT 1 FROM owned_lease)";
 
@@ -303,5 +303,11 @@ internal sealed partial class PostgresExecutionJobStore : IExecutionJobStore, IJ
 
         [LoggerMessage(9012, LogLevel.Debug, "Version conflict for execution job {OperationId} at version {Version}; a concurrent write was detected")]
         public static partial void CasConflict(ILogger logger, string operationId, long version);
+
+        [LoggerMessage(9013, LogLevel.Warning, "Skipped execution job {OperationId}: its stored record cannot be read")]
+        public static partial void UnreadableJobSkipped(ILogger logger, string operationId);
+
+        [LoggerMessage(9014, LogLevel.Error, "Failed {Count} stale execution job(s) whose stored record cannot be read")]
+        public static partial void UnreadableJobsFailed(ILogger logger, int count);
     }
 }

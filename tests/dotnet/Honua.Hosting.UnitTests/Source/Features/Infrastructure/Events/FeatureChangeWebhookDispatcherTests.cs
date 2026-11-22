@@ -9,6 +9,7 @@ using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Infrastructure.Events;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -193,6 +194,89 @@ public sealed class FeatureChangeWebhookDispatcherTests
         await CancelAndAwaitDispatcherShutdownAsync(cts, executeTask);
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ExecuteAsync_WhenReceiverRejectsAnEvent_SkipsAndLogsItAndDeliversLaterEvents()
+    {
+        var logger = Substitute.For<ILogger<FeatureChangeWebhookDispatcher>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var stores = new DispatcherStores(new ListFeatureChangeEventStore(CreateEvent(1), CreateEvent(2), CreateEvent(3))) { Logger = logger };
+        stores.Cursors.Seed(CursorName, 0);
+        using var handler = new StatusHandler(eventId => eventId == "evt-1" ? HttpStatusCode.MethodNotAllowed : HttpStatusCode.OK);
+        using var httpClient = new HttpClient(handler, disposeHandler: false);
+        using var dispatcher = CreateDispatcher(stores, CreateHttpClientFactory(httpClient));
+
+        using var cts = new CancellationTokenSource();
+        var executeTask = InvokeExecuteAsync(dispatcher, cts.Token);
+        await WaitForConditionAsync(() => stores.Cursors.Read(CursorName) == 3L, TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(20));
+        await CancelAndAwaitDispatcherShutdownAsync(cts, executeTask);
+
+        Assert.Equal(3L, stores.Cursors.Read(CursorName));
+        Assert.Equal(["evt-1", "evt-2", "evt-3"], handler.SentEventIds);
+        var entries = LoggedEntries(logger);
+        Assert.Contains(entries, entry => entry.EventId == 9109 && entry.Message.Contains("evt-1", StringComparison.Ordinal));
+        Assert.Contains(entries, entry => entry.EventId == 9002 && entry.Message.Contains("event evt-1 ", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ExecuteAsync_WhenReceiverKeepsFailing_KeepsTheEventAndBacksOffBetweenPasses()
+    {
+        var stores = new DispatcherStores(new ListFeatureChangeEventStore(CreateEvent(1)));
+        stores.Cursors.Seed(CursorName, 0);
+        using var handler = new StatusHandler(_ => HttpStatusCode.ServiceUnavailable);
+        using var httpClient = new HttpClient(handler, disposeHandler: false);
+        using var dispatcher = CreateDispatcher(stores, CreateHttpClientFactory(httpClient));
+
+        using var cts = new CancellationTokenSource();
+        var executeTask = InvokeExecuteAsync(dispatcher, cts.Token);
+        // Passes at about 0, 1, 3 and 7 s; a fixed one-second poll would send six or seven times.
+        await Task.Delay(TimeSpan.FromSeconds(6.5));
+        await CancelAndAwaitDispatcherShutdownAsync(cts, executeTask);
+
+        Assert.Equal(0L, stores.Cursors.Read(CursorName));
+        Assert.InRange(handler.SentEventIds.Length, 1, 4);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task TryHoldLease_WhenAnotherNodeHoldsTheLease_ClearsFailedPassBackoff()
+    {
+        var leases = new InMemoryLeaseStore();
+        leases.HoldForOtherOwner(CursorName);
+        var stores = new DispatcherStores(new ListFeatureChangeEventStore(), leases);
+        using var handler = new CountingHandler();
+        using var httpClient = new HttpClient(handler, disposeHandler: false);
+        using var dispatcher = CreateDispatcher(stores, CreateHttpClientFactory(httpClient));
+        var failedPasses = typeof(FeatureChangeWebhookDispatcher).GetField(
+            "_consecutiveFailedPasses",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(failedPasses);
+        failedPasses!.SetValue(dispatcher, 8);
+
+        var method = typeof(FeatureChangeWebhookDispatcher).GetMethod(
+            "TryHoldLeaseAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+        var held = method!.Invoke(dispatcher, new object[] { CancellationToken.None }) as Task<bool>;
+        Assert.NotNull(held);
+
+        Assert.False(await held!);
+        Assert.Equal(0, failedPasses.GetValue(dispatcher));
+    }
+
+    [UnitTheory]
+    [Operation(Operations.TestInfrastructure)]
+    [InlineData(0, 1)]
+    [InlineData(1, 1)]
+    [InlineData(2, 2)]
+    [InlineData(3, 4)]
+    [InlineData(9, 256)]
+    [InlineData(10, 300)]
+    [InlineData(int.MaxValue, 300)]
+    public void ComputeFailedPassDelay_DoublesPerFailedPassUpToFiveMinutes(int failedPasses, int expectedSeconds)
+        => Assert.Equal(TimeSpan.FromSeconds(expectedSeconds), FeatureChangeWebhookDispatcher.ComputeFailedPassDelay(failedPasses));
+
     private static FeatureChangeWebhookDispatcher CreateDispatcher(
         DispatcherStores stores,
         IHttpClientFactory httpClientFactory,
@@ -210,7 +294,7 @@ public sealed class FeatureChangeWebhookDispatcherTests
                 MaxAttempts = 1,
                 RequestTimeoutSeconds = 30
             }),
-            NullLogger<FeatureChangeWebhookDispatcher>.Instance);
+            stores.Logger);
 
     private static IHttpClientFactory CreateHttpClientFactory(HttpClient httpClient)
     {
@@ -246,7 +330,7 @@ public sealed class FeatureChangeWebhookDispatcherTests
 
         var task = method!.Invoke(
             dispatcher,
-            new object[] { featureEvent, new Uri("https://localhost/webhook"), cancellationToken }) as Task<bool>;
+            new object[] { featureEvent, new Uri("https://localhost/webhook"), cancellationToken }) as Task<WebhookDeliveryOutcome>;
         Assert.NotNull(task);
         await task!;
     }
@@ -308,7 +392,17 @@ public sealed class FeatureChangeWebhookDispatcherTests
         }
 
         public InMemoryStreamCursorStore Cursors { get; } = new();
+
+        public ILogger<FeatureChangeWebhookDispatcher> Logger { get; init; } = NullLogger<FeatureChangeWebhookDispatcher>.Instance;
     }
+
+    // LoggerMessage state formats to the rendered message.
+    private static (int EventId, string Message)[] LoggedEntries(ILogger logger)
+        => logger.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(ILogger.Log))
+            .Select(call => call.GetArguments())
+            .Select(arguments => (((EventId)arguments[1]!).Id, arguments[2]?.ToString() ?? string.Empty))
+            .ToArray();
 
     private sealed class CountingHandler : HttpMessageHandler
     {
@@ -321,6 +415,20 @@ public sealed class FeatureChangeWebhookDispatcherTests
             Interlocked.Increment(ref _sendCount);
             // Ownership transfers to the HttpClient pipeline/caller, which disposes it; not this handler's responsibility.
             return Task.FromResult<HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK));
+        }
+    }
+
+    private sealed class StatusHandler(Func<string, HttpStatusCode> statusForEvent) : HttpMessageHandler
+    {
+        private readonly ConcurrentQueue<string> _sentEventIds = new();
+
+        public string[] SentEventIds => _sentEventIds.ToArray();
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var eventId = request.Headers.GetValues("X-Honua-Event-Id").Single();
+            _sentEventIds.Enqueue(eventId);
+            return Task.FromResult<HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(statusForEvent(eventId)));
         }
     }
 

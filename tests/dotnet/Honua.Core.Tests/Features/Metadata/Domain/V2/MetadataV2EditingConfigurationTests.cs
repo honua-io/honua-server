@@ -131,6 +131,79 @@ public sealed class MetadataV2EditingConfigurationTests
         Apply(repaired, new MetadataV2EditingPatch { GlobalIdField = "" }).Resources[0].Editing!.GlobalIdField.Should().BeNull();
     }
 
+    [UnitTest]
+    public void EditorTracking_SetsCanonicalNamesClearsWithEmptyStringAndKeepsOtherSettings()
+    {
+        var graph = CreateGraph();
+        var result = Apply(graph, new MetadataV2EditingPatch
+        {
+            CreatorField = "",
+            EditorField = "editor",
+            CreatedAtField = "objectid",
+            UpdatedAtField = "EDITED_ON"
+        });
+        var editing = result.Resources[0].Editing!;
+        editing.Should().BeEquivalentTo(new MetadataV2ObjectEditing
+        {
+            CanModify = false,
+            CreatorField = null,
+            EditorField = "Editor",
+            CreatedAtField = "objectid",
+            UpdatedAtField = "edited_on"
+        });
+        result.Publications.Should().Equal(graph.Publications);
+        Apply(result, new MetadataV2EditingPatch { SupportsAttachments = true }).Resources[0].Editing!.EditorField.Should().Be("Editor");
+    }
+
+    [UnitTest]
+    public void EditorTracking_AcceptsExactTimestampFieldsForBothTimeSlots()
+    {
+        var graph = CreateGraph();
+        var resource = graph.Resources[0];
+        graph = graph with
+        {
+            Resources =
+            [
+                resource with
+                {
+                    SchemaFields =
+                    [
+                        .. resource.SchemaFields,
+                        new MetadataV2Field { Name = "created_on", Type = MetadataV2FieldType.TimestampOffset }
+                    ]
+                }
+            ]
+        };
+        var result = Apply(graph, new MetadataV2EditingPatch
+        {
+            CreatedAtField = "CREATED_ON",
+            UpdatedAtField = "created_on"
+        });
+
+        var editing = result.Resources[0].Editing!;
+        editing.CreatedAtField.Should().Be("created_on");
+        editing.UpdatedAtField.Should().Be("created_on");
+        editing.CreatorField.Should().Be("created_by");
+    }
+
+    [UnitTest]
+    public void EditorTracking_RejectsUndeclaredOrUnstampableFields()
+    {
+        var graph = CreateGraph();
+        foreach (var patch in new[]
+                 {
+                     new MetadataV2EditingPatch { EditorField = "objectid" },
+                     new MetadataV2EditingPatch { CreatorField = "missing" },
+                     new MetadataV2EditingPatch { UpdatedAtField = "GlobalID" },
+                     new MetadataV2EditingPatch { CreatedAtField = " " }
+                 })
+        {
+            var action = () => Apply(graph, patch);
+            action.Should().Throw<ArgumentException>().WithMessage("*must reference a declared field of type*");
+        }
+        graph.Resources[0].Editing!.CreatorField.Should().Be("created_by");
+    }
+
     private static MetadataV2Graph Apply(MetadataV2Graph graph, MetadataV2EditingPatch patch)
         => MetadataV2EditingConfiguration.Apply(graph, "resource", SelectedPublications, patch);
 
@@ -146,7 +219,9 @@ public sealed class MetadataV2EditingConfigurationTests
                     SchemaFields =
                     [
                         new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger },
-                        new MetadataV2Field { Name = "GlobalID", Type = MetadataV2FieldType.Uuid }
+                        new MetadataV2Field { Name = "GlobalID", Type = MetadataV2FieldType.Uuid },
+                        new MetadataV2Field { Name = "Editor", Type = MetadataV2FieldType.String },
+                        new MetadataV2Field { Name = "edited_on", Type = MetadataV2FieldType.Date }
                     ],
                     PrimaryStorageBindingId = "storage",
                     StorageBindingIds = ["storage"],

@@ -33,6 +33,7 @@ namespace Honua.Server.Features.Console.Models;
 // Open-data DCAT + STAC publication API.
 [JsonSerializable(typeof(ApiResponse<ConsoleOpenDataPageResponse>))]
 [JsonSerializable(typeof(ApiResponse<ConsoleOpenDataPage>))]
+[JsonSerializable(typeof(ApiResponse<ConsoleOpenDataDatasetListResponse>))]
 [JsonSerializable(typeof(ApiResponse<ConsoleOpenDataEligibilityResponse>))]
 [JsonSerializable(typeof(ApiResponse<ConsoleDcatExportResponse>))]
 [JsonSerializable(typeof(ApiResponse<ConsoleStacPublicationState>))]
@@ -103,10 +104,11 @@ namespace Honua.Server.Features.Console.Models;
 // Per-itemType sidecar shapes, sourced for AOT-safe writes via SerializeToElement.
 [JsonSerializable(typeof(ConsoleServiceTypeMetadata))]
 [JsonSerializable(typeof(ConsoleLayerTypeMetadata))]
-[JsonSerializable(typeof(ConsoleSavedMapTypeMetadata))]
+[JsonSerializable(typeof(ConsoleDatasetTypeMetadata))]
+[JsonSerializable(typeof(ConsoleMapTypeMetadata))]
 [JsonSerializable(typeof(ConsoleDashboardTypeMetadata))]
 [JsonSerializable(typeof(ConsoleReportTypeMetadata))]
-[JsonSerializable(typeof(ConsoleGeneratedAppTypeMetadata))]
+[JsonSerializable(typeof(ConsoleAppTypeMetadata))]
 [JsonSerializable(typeof(ConsoleOpenDataTypeMetadata))]
 internal sealed partial class ConsoleJsonContext : JsonSerializerContext
 {

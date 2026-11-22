@@ -93,6 +93,7 @@ internal static class LayerPublishRequestMapper
             GlobalIdField = request.GlobalIdField,
             TemporalColumn = request.TemporalColumn,
             SupportsAttachments = request.SupportsAttachments,
+            ExactTypes = request.ExactTypes,
             Fields = request.Fields ?? Array.Empty<string>(),
             FieldDomains = request.FieldDomains is { } fieldDomains
                 ? new Dictionary<string, MetadataV2FieldDomain>(fieldDomains, StringComparer.OrdinalIgnoreCase)
@@ -135,6 +136,7 @@ internal static class LayerPublishRequestMapper
             GlobalIdField = request.GlobalIdField,
             TemporalColumn = request.TemporalColumn,
             SupportsAttachments = request.SupportsAttachments,
+            ExactTypes = request.ExactTypes,
             Fields = request.Fields ?? Array.Empty<string>(),
             FieldDomains = request.FieldDomains,
             Subtypes = request.Subtypes,

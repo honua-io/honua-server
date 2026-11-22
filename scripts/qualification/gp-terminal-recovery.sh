@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Sourced at the actual terminal-CAS acknowledgement fence by gp-store-crash.sh.
 # The caller retains failure isolation and restores its topology after this case.
+# The worker writes the ready receipt after its terminal UPDATE commits in
+# honua.execution_jobs and before queue cleanup or terminal callbacks; the
+# unreleased hold is the withheld acknowledgement.
 terminal_assert_fence() {
+  [[ ! -e "$(barrier_directory "$job")/terminal-committed-registration-pending.released.json" ]] || return 1
   jq -e --arg job "$job" --argjson before "$before_record" '
     .operationId == $job and .barrier == "terminal-committed-registration-pending"
-    and .redis_reply == ":1" and .reply_forwarded == false
-    and .workerId == $before.claimedBy and .terminal_record == $before
+    and .workerId == $before.claimedBy and (.workerProcessId | type) == "number"
     and ($before.status == 3 or $before.status == "succeeded")
     and ($before.artifactReferences | length) == 1' <<<"$ready" >/dev/null
 }
@@ -24,11 +27,11 @@ terminal_assert_same_record() {
 
 terminal_capture_services() {
   local service container
-  for service in server server-peer redis postgres; do
+  for service in server server-peer postgres; do
     container="$(compose ps -q "$service")" || return 1
     docker inspect "$container" | jq -c --arg service "$service" \
       '.[0] | {service:$service,id:.Id,image:.Image,started_at:.State.StartedAt,running:.State.Running}' || return 1
-  done | jq -se 'sort_by(.service) | select(length == 4 and all(.[]; .running == true))' > "$1"
+  done | jq -se 'sort_by(.service) | select(length == 3 and all(.[]; .running == true))' > "$1"
 }
 
 terminal_assert_package() {
@@ -61,11 +64,11 @@ terminal_assert_public_result() {
 }
 
 terminal_job_record() {
-  compose exec -T redis redis-cli --raw GET "controlplane:job:$job"
+  job_record "$job"
 }
 
 terminal_package_record() {
-  compose exec -T redis redis-cli --raw GET "controlplane:job:gp-result:$job"
+  result_package_record "$job"
 }
 
 run_terminal_result_recovery() {
@@ -78,8 +81,9 @@ run_terminal_result_recovery() {
   services_before="$receipt_root/$scenario-services-before.json"
   services_after="$receipt_root/$scenario-services-after.json"
   printf '%s\n' "$before_record" > "$baseline" || return 1
-  printf '%s\n' "$ready" > "$receipt_root/$scenario-terminal-fence.json" || return 1
   terminal_assert_fence || { scenario_fail "terminal fence did not prove exact committed CAS with withheld acknowledgement"; return 1; }
+  # Recorded while the hold is still unreleased: the worker never acknowledged the commit.
+  jq '. + {released:false}' <<<"$ready" > "$receipt_root/$scenario-terminal-fence.json" || return 1
   before_bytes="$receipt_root/$scenario-before.geojson"
   cp "$content" "$before_bytes" || return 1
   (( $(wc -c < "$before_bytes") > $(compose_staging_value MaxInlineArtifactBytes) )) || {
@@ -95,8 +99,8 @@ run_terminal_result_recovery() {
   terminal_assert_killed "$killed" || { scenario_fail "worker did not actually exit from SIGKILL (137)"; return 1; }
   # The old process is dead before the withheld response can be released.
   release_barrier "$job" terminal-committed-registration-pending || return 1
-  HONUA_GP_QUALIFICATION_BARRIER_ROOT="" HONUA_GP_WORKER_REDIS=redis:6379
-  # Deliberately do not restart serving hosts, Redis or PostgreSQL in this cell.
+  HONUA_GP_QUALIFICATION_BARRIER_ROOT=""
+  # Deliberately do not restart serving hosts or PostgreSQL in this cell.
   compose up -d --no-deps --force-recreate worker >/dev/null || return 1
   replacement_container="$(compose ps -q worker)" || return 1
   docker inspect "$replacement_container" > "$replacement" || return 1
@@ -106,7 +110,7 @@ run_terminal_result_recovery() {
     and all((.[0], $original[0][0]); .Config.Image == $image
       and .Config.Labels["org.opencontainers.image.revision"] == $sha)' "$replacement" >/dev/null || return 1
   record_disruption worker terminal-committed-registration-pending recovered
-  package_before_read="$(compose exec -T redis redis-cli --raw EXISTS "controlplane:job:gp-result:$job")" || return 1
+  package_before_read="$(result_package_exists "$job")" || return 1
   jq -n --argjson before "$package_before" --argjson before_read "$package_before_read" \
     '{at_crash:$before,after_worker_replacement_before_read:$before_read}' \
     > "$receipt_root/$scenario-package-absence.json" || return 1
@@ -120,7 +124,7 @@ run_terminal_result_recovery() {
   package_first="$receipt_root/$scenario-first-package.json"
   package_final="$receipt_root/$scenario-final-package.json"
   # This public read is the sole recovery trigger. The harness never writes a
-  # Redis job, index, queue, result package, timestamp or retry record.
+  # PostgreSQL job, index, queue, result package, timestamp or retry record.
   auth_curl "$peer_url/ogc/processes/jobs/$job/results" > "$descriptor_first" || return 1
   terminal_package_record > "$package_first" || return 1
   terminal_assert_package "$package_first" || {

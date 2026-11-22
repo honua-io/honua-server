@@ -2,7 +2,7 @@ name: Build & Publish Platform Images
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*.*.*"]
   schedule:
     - cron: "30 3 * * 1"
   workflow_dispatch:
@@ -43,11 +43,14 @@ jobs:
     if: ${{ github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.scan_only != true) }}
     uses: ./.github/workflows/publish-authorization.yml
     with:
-      tag-patterns: 'v*'
+      tag-patterns: 'v*.*.*'
 
   build-and-push:
     name: Build & Push ${{ matrix.image_name }} (${{ matrix.arch }})
     if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/trunk' || inputs.scan_only == true
+    # Only a publishing run (PUBLISH_IMAGES) enters the environment; scheduled and scan_only
+    # runs publish nothing and read no registry credentials, so they run without one.
+    environment: ${{ (github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.scan_only != true)) && 'publish-images' || '' }}
     runs-on: ${{ matrix.runner }}
     # 180, matching nightly-container-build.yml: a COLD native-AOT build (the amd64 Lambda AOT
     # leg included) does not fit in 140 minutes once boundary verification, SBOM, two Trivy
@@ -144,15 +147,15 @@ jobs:
       id-token: write
     steps:
       # GitHub compares strings without case, so this job's if also admits a branch named TRUNK.
-      # A publishing run must be on trunk or a v* tag exactly, the test publish-authorization.yml makes.
+      # A publishing run must be on trunk or a v*.*.* tag exactly, the test publish-authorization.yml makes.
       - name: Refuse publication from any other ref
         if: env.PUBLISH_IMAGES == 'true'
         run: |
           case "${GITHUB_REF}" in
             refs/heads/trunk) exit 0 ;;
-            refs/tags/v*) [[ "${GITHUB_REF#refs/tags/}" != */* ]] && exit 0 ;;
+            refs/tags/v*.*.*) [[ "${GITHUB_REF#refs/tags/}" != */* ]] && exit 0 ;;
           esac
-          echo "::error::Publishing runs only from trunk or a v* tag; ${GITHUB_REF} is neither."
+          echo "::error::Publishing runs only from trunk or a v*.*.* tag; ${GITHUB_REF} is neither."
           exit 1
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -618,6 +621,7 @@ jobs:
     name: Publish ${{ matrix.image_name }} Manifest
     if: ${{ github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || (github.ref == 'refs/heads/trunk' && inputs.scan_only != true)) && needs.build-and-push.result == 'success' }}
     needs: [authorize-publish, build-and-push]
+    environment: publish-images
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:

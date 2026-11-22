@@ -232,7 +232,8 @@ internal static class StacFilterHelpers
         {
             var temporalField = resource.SchemaFields.FirstOrDefault(field =>
                 string.Equals(field.Name, candidate, StringComparison.OrdinalIgnoreCase)
-                && field.Type is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time);
+                && field.Type is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time
+                    or MetadataV2FieldType.TimestampOffset);
 
             if (temporalField is not null)
             {
@@ -240,7 +241,8 @@ internal static class StacFilterHelpers
                 {
                     endTimeField = resource.SchemaFields.FirstOrDefault(field =>
                         string.Equals(field.Name, "end_datetime", StringComparison.OrdinalIgnoreCase) &&
-                        field.Type is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time)?.Name;
+                        field.Type is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time
+                            or MetadataV2FieldType.TimestampOffset)?.Name;
                 }
                 return temporalField.Name;
             }
@@ -348,6 +350,13 @@ internal static class StacFilterHelpers
             if (offsetStart > fractionalSeparator)
             {
                 var fractionalLength = offsetStart - fractionalSeparator - 1;
+                if (fractionalLength == 0 ||
+                    normalized.AsSpan(fractionalSeparator + 1, fractionalLength).IndexOfAnyExceptInRange('0', '9') >= 0)
+                {
+                    timestamp = default;
+                    return false;
+                }
+
                 if (fractionalLength > 7)
                 {
                     normalized = normalized[..(fractionalSeparator + 8)] + normalized[offsetStart..];
@@ -370,7 +379,9 @@ internal static class StacFilterHelpers
 
     private static bool HasExplicitRfc3339TimeZone(string value)
     {
-        if (value.Length <= 11 || value[10] != 'T')
+        if (value.Length < 20 || value[10] != 'T' ||
+            value[13] != ':' || value[16] != ':' ||
+            !char.IsAsciiDigit(value[17]) || !char.IsAsciiDigit(value[18]))
         {
             return false;
         }

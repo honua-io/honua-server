@@ -607,9 +607,7 @@ public sealed class SpatialAnalyticsRestTests : IClassFixture<SpatialAnalyticsRe
     public async Task SpatialJoin_DWithinOverKnownGeometry_ReturnsExactRowLevelMatchCountsAndAggregates()
     {
         var fixture = await StartSeededFixtureAsync();
-        // Depth pack 2 (honua-server#2982): prior spatial-join coverage only asserted
-        // matchCount >= 0 / "some row has X" (the same "shape, not value" gap class depth
-        // pack 1 (#2960) closed for viewshed/line-of-sight/sun-shadow). This test inserts its
+        // Asserts exact values, not shape such as matchCount >= 0. This test inserts its
         // own deterministic target/join points at lat=0 so every pairwise distance is an exact,
         // hand-computable equatorial geodesic (radius * deltaLonRadians on the WGS84 ellipsoid —
         // the equator is a great circle, so this is exact, not an approximation), with wide
@@ -623,7 +621,7 @@ public sealed class SpatialAnalyticsRestTests : IClassFixture<SpatialAnalyticsRe
         // So target A must match exactly {J1}, target B must match exactly {J3} — matchCount 1
         // each, with the carried label/weight identifying precisely which join row matched.
         const double earthEquatorialRadiusMeters = 6378137.0;
-        double LonDelta(double degrees) => earthEquatorialRadiusMeters * degrees * Math.PI / 180.0;
+        static double LonDelta(double degrees) => earthEquatorialRadiusMeters * degrees * Math.PI / 180.0;
 
         await fixture.Postgres.ExecuteAsync(
             """
@@ -756,9 +754,7 @@ public sealed class SpatialAnalyticsRestTests : IClassFixture<SpatialAnalyticsRe
     public async Task QueryBufferAggregate_GroupByCategoryWithNumericOutStatistics_ReturnsExactAggregatesPerBand()
     {
         var fixture = await StartSeededFixtureAsync();
-        // Depth pack 2 (honua-server#2982): prior buffer-aggregate coverage only asserted
-        // featureCount > 0 / row-count ranges (the same "shape, not value" gap class depth
-        // pack 1 (#2960) closed for viewshed/line-of-sight/sun-shadow). Layer 0's 5 seeded
+        // Asserts exact values, not shape such as featureCount > 0. Layer 0's 5 seeded
         // features (tests/seed/server.yaml) split into exactly two geometried "bands" by
         // category: 'test' = {objectid 1, 5} and 'sample' = {objectid 2, 4} (objectid 3 has a
         // NULL geometry and is excluded by every spatial-analytics query). A known numeric
@@ -1029,15 +1025,6 @@ public sealed class SpatialAnalyticsRestTests : IClassFixture<SpatialAnalyticsRe
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryDensity")]
     public async Task QueryDensity_SquareGrid_ReturnsExactCellCountForSeededPoints()
     {
-        // Regression for honua-server#2945: prior density tests only asserted
-        // featureCount > 0 per cell, never a real cell-count against known geometry.
-        // Layer 0 has 5 seeded features (tests/seed/server.yaml); objectid 3 has a NULL
-        // geometry and is excluded by the density query's "geometry IS NOT NULL" filter,
-        // leaving 4 points: (-122.5,37.5) (-122.7,37.7) (-121.9,37.3) (-122.3,37.8).
-        // The geographic query now uses an azimuthal plane centered on this
-        // extent. The last point lies on its x=0 grid boundary: it must belong
-        // to one cell, not both neighbors. The four points occupy distinct
-        // 20km cells, so the exact four-cell, one-feature-per-cell oracle remains.
         var payload = JsonSerializer.Serialize(new
         {
             mode = "square",
@@ -1181,7 +1168,7 @@ public sealed class SpatialAnalyticsRestTests : IClassFixture<SpatialAnalyticsRe
         await response.AssertGeoServicesErrorAsync(404);
     }
 
-    // ---------- Fix #1: TryBuildFeatureQuery shared filter parameters ----------
+    // ---------- TryBuildFeatureQuery shared filter parameters ----------
     // These tests cover the extended filter parsing (objectIds / time / geometry /
     // spatialRel) added so the analytics endpoints honour the same FeatureQuery
     // shape as the rest of FeatureServer. Each test exercises one filter dimension
@@ -1325,12 +1312,9 @@ public sealed class SpatialAnalyticsRestTests : IClassFixture<SpatialAnalyticsRe
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryDensity")]
     public async Task QueryDensity_WithTimeFilter_FlowsThroughTemporalBuilder()
     {
-        // Layer 0 declares timeInfo with startTimeField=timestamp,endTimeField=event_date
-        // in the seed, so the same `time={start,end}` shape that FeatureServer's
-        // main query handler accepts should also flow through the analytics
-        // path. The fix wires TryBuildFeatureQueryAsync to call the same
-        // GeoServicesTemporalQueryBuilder used by the main handler, so the
-        // request must succeed and yield a well-formed feature collection.
+        // Layer 0 declares timestamp and event_date as its time fields. The analytics
+        // path must accept the same time={start,end} shape as the main query handler via
+        // GeoServicesTemporalQueryBuilder and return a well-formed feature collection.
         var payload = JsonSerializer.Serialize(new
         {
             mode = "hex",
@@ -1352,7 +1336,7 @@ public sealed class SpatialAnalyticsRestTests : IClassFixture<SpatialAnalyticsRe
         doc.RootElement.GetProperty("metadata").GetProperty("operation").GetString().Should().Be("density");
     }
 
-    // ---------- Fix #3: aggregated paths report InputTruncated correctly ----------
+    // ---------- aggregated paths report InputTruncated correctly ----------
     // These tests verify the SQL builder emits "_inputCount" and the handler
     // strips it from the response payload. Triggering an actual truncation
     // requires >MaxInputFeatures (≥1000) seeded features, which is impractical
@@ -1460,13 +1444,12 @@ public sealed class SpatialAnalyticsRestTests : IClassFixture<SpatialAnalyticsRe
                 .Should().BeFalse("_inputCount must be stripped before MapRowToFeature");
         }
 
-        // Density was previously hardcoding inputTruncated=false; the fix wires
-        // it to the actual overflow detector. With small input it must still be
-        // false, but the property must now be present in the metadata.
+        // Density metadata must expose inputTruncated from its overflow detector.
+        // For small input the value remains false.
         root.GetProperty("metadata").GetProperty("inputTruncated").GetBoolean().Should().BeFalse();
     }
 
-    // ---------- Fix #4: cluster and spatial-join geometries are EPSG:4326 ----------
+    // ---------- cluster and spatial-join geometries are EPSG:4326 ----------
     // Per `application/geo+json` (RFC 7946), the response must be in WGS 84
     // unless an alternate CRS is negotiated. The cluster (per-feature + hull)
     // and spatial-join SQL builders now wrap the emitted geometry with
@@ -1566,5 +1549,28 @@ public sealed class SpatialAnalyticsRestTests : IClassFixture<SpatialAnalyticsRe
         }
 
         anyChecked.Should().BeTrue("spatial join should emit at least one target geometry to validate");
+    }
+
+    [IntegrationTheory]
+    [InlineData("queryBufferAggregate", "{\"distance\":100,\"unit\":\"meters\",\"dissolve\":true,\"groupByFields\":\"name\\r\\n[ERR] FORGED_SA_GRP\",\"f\":\"json\"}")]
+    [InlineData("queryDensity", "{\"mode\":\"hex\",\"cellSize\":1000,\"weightField\":\"id\\r\\n[ERR] FORGED_SA_WGT\",\"f\":\"json\"}")]
+    [InlineData("spatialJoin", "{\"joinLayerId\":1,\"predicate\":\"intersects\",\"carryFields\":\"name\\r\\n[ERR] FORGED_SA_CARRY\",\"f\":\"json\"}")]
+    [InlineData("queryClusters", "{\"algorithm\":\"dbscan\",\"eps\":50000,\"minPoints\":1,\"returnHullPerCluster\":true,\"outStatistics\":[{\"statisticType\":\"count\",\"onStatisticField\":\"id\\r\\n[ERR] FORGED_SA_STAT\",\"outStatisticFieldName\":\"cnt\"}],\"f\":\"json\"}")]
+    [Operation(Operations.QueryBufferAggregate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryBufferAggregate")]
+    public async Task SpatialAnalytics_CrLfFieldNames_AreRejectedWithoutEchoingRawPayload(
+        string operation,
+        string payload)
+    {
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await _client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/{operation}",
+            content);
+
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.TryGetProperty("error", out var errorElement).Should().BeTrue();
+        errorElement.GetProperty("code").GetInt32().Should().Be(400);
+        body.Should().NotContain("FORGED_SA_");
     }
 }

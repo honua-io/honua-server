@@ -31,7 +31,7 @@ public class RedshiftFeatureStoreReadPolicyTests
     [Fact]
     public void Capabilities_SupportStatisticsOnADedicatedDeclaration()
     {
-        var store = CreateStore(new RecordingConnectionFactory(), readSecurity: null);
+        var store = CreateStore(new RecordingConnectionFactory(), new LayerReadSecurityResolver(null, null, null, null));
 
         Assert.True(store.Capabilities.SupportsStatistics);
         Assert.NotSame(FeatureProviderCapabilities.ReadOnlyMySql, store.Capabilities);
@@ -165,7 +165,7 @@ public class RedshiftFeatureStoreReadPolicyTests
 
     private static RedshiftFeatureStore CreateStore(
         IRedshiftConnectionFactory factory,
-        LayerReadSecurityResolver? readSecurity)
+        LayerReadSecurityResolver readSecurity)
     {
         var dataAccess = new RedshiftFeatureDataAccess(
             factory,

@@ -6,12 +6,13 @@ using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Hosting;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Authentication;
 
-public class OidcAuthenticationOptionsValidatorTests
+public partial class OidcAuthenticationOptionsValidatorTests
 {
-    private readonly OidcAuthenticationOptionsValidator _validator = new();
+    private readonly OidcAuthenticationOptionsValidator _validator = CreateValidator(Environments.Development);
 
     [UnitTheory]
     [InlineData(null, false, true)]

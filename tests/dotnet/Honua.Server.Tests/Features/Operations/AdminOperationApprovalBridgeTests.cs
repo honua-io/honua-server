@@ -26,9 +26,10 @@ public sealed class AdminOperationApprovalBridgeTests
     {
         var mapper = new ServicePublishApprovalRequestMapper();
 
-        var mapped = mapper.Map(
-            ServicePublishOperation.BuildDescriptor(),
-            new OperationRequest
+        var mapped = mapper.Map(new OperationApprovalRequestContext
+        {
+            Descriptor = ServicePublishOperation.BuildDescriptor(),
+            Request = new OperationRequest
             {
                 OperationId = ServicePublishOperation.OperationId,
                 ConnectionId = "connection-1",
@@ -41,8 +42,9 @@ public sealed class AdminOperationApprovalBridgeTests
                     ["layerName"] = "Roads",
                 },
             },
-            Context() with { TenantId = "tenant-a", SchemaName = "tenant_a" },
-            Decision());
+            Context = Context() with { TenantId = "tenant-a", SchemaName = "tenant_a" },
+            Decision = Decision(),
+        });
 
         mapped.Kind.Should().Be(OperationClass.ServicePublish);
         mapped.Kind.Should().NotBe(OperationClass.AdminConfigChange);
@@ -71,8 +73,8 @@ public sealed class AdminOperationApprovalBridgeTests
     [UnitTest]
     public async Task CreateProposalAsync_DurableStoreWithoutGateway_ReturnsNonDurableFailure()
     {
-        // A real proposal store with no gateway is a composition defect, not a Redis-off host:
-        // the bridge keeps its fail-closed non-durable result rather than naming Redis (#5733).
+        // A real proposal store with no gateway is a composition defect, not a host without a job store:
+        // the bridge keeps its fail-closed non-durable result rather than naming a missing job store.
         var services = new ServiceCollection();
         services.AddSingleton(Substitute.For<IOperationProposalStore>());
         var bridge = CreateBridge(services.BuildServiceProvider());
@@ -93,7 +95,7 @@ public sealed class AdminOperationApprovalBridgeTests
     public async Task CreateProposalAsync_NoDurableControlPlane_RefusesWithTypedSystemDatabaseDependency()
     {
         // No gateway and no durable proposal store (absent, or the Redis-off placeholder): the
-        // control plane was never composed, so the bridge refuses with the typed receipt (#5733).
+        // control plane was never composed, so the bridge refuses with the typed receipt.
         foreach (var services in new[]
                  {
                      new ServiceCollection(),
@@ -355,15 +357,11 @@ public sealed class AdminOperationApprovalBridgeTests
     {
         public string OperationId => "admin.test";
 
-        public OperationGatewayRequest Map(
-            IOperationDescriptor descriptor,
-            OperationRequest request,
-            OperationPolicyContext context,
-            PolicyDecision decision)
+        public OperationGatewayRequest Map(OperationApprovalRequestContext input)
             => new()
             {
                 Kind = OperationClass.AdminConfigChange,
-                RequestedBy = context.PrincipalId,
+                RequestedBy = input.Context.PrincipalId,
                 ExecutionPayload = "{}",
                 IdempotencyKey = idempotencyKey,
             };

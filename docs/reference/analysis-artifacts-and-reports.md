@@ -19,7 +19,7 @@ changed since last time". For submitting and polling a run, see
 [run geoprocessing](../guides/query-analyze/run-geoprocessing.md); for the operation
 catalog, see [geoprocessing operations](geoprocessing-operations.md).
 
-All routes require an authenticated caller.
+Content, artifact, and job routes (`/api/v1/analysis/content/*`, `/api/v1/analysis/artifacts/*`, `/api/v1/analysis/jobs/*`) require platform admin authorization; report routes (`/api/v1/analysis/reports/*`) require admin authorization.
 
 ## Content items
 
@@ -64,7 +64,7 @@ reason rather than leaving you to infer it from the log.
 | Method | Route | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/v1/analysis/reports/{jobId}` | The structured analysis report for a job. |
-| `GET` | `/api/v1/analysis/reports/{jobId}/render` | The same report, rendered. |
+| `GET` | `/api/v1/analysis/reports/{jobId}/render?format={format}` | The same report, rendered; requires `format=md` (Markdown) or `format=html` (HTML) — missing or unsupported values return `400`. |
 
 Fetch `/reports/{jobId}` when something is going to read the result; fetch `/render`
 when a person is going to look at it.

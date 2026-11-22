@@ -25,6 +25,7 @@ public static partial class EndpointRegistry
         new("GET", "/ogc/styles/conformance"),
         new("GET", "/ogc/styles/openapi.json"),
         new("GET", "/ogc/styles/{styleId}"),
+        new("GET", "/ogc/styles/{styleId}/impact"),
         new("GET", "/ogc/styles/{styleId}/metadata"),
         new("PUT", "/ogc/styles/{styleId}"),
         new("POST", "/ogc/styles"),

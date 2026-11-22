@@ -87,6 +87,8 @@ internal static class Wfs20DispatcherEndpoint
         };
 
     private static readonly string[] SupportedHttpMethods = new[] { "GET", "POST" };
+    private static readonly string CapabilitiesUtf8ContentType = PooledUtf8ContentResult.WithUtf8Charset("application/xml");
+
     internal static IEndpointRouteBuilder MapWfs20DispatcherEndpoint(this IEndpointRouteBuilder endpoints)
     {
         // Single WFS endpoint that dispatches based on request parameter.
@@ -427,16 +429,8 @@ internal static class Wfs20DispatcherEndpoint
                 "updateSequence");
         }
 
-        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var capabilities = await handler.HandleGetCapabilitiesAsync(
-            context, acceptVersions, requestedSections, baseUrl, cancellationToken);
-
-        // Render the typed capabilities model by hand instead of via XmlSerializer:
-        // XmlSerializer requires runtime code generation, which is unavailable under
-        // PublishAot=true and throws at runtime (HTTP 500) for WfsCapabilities. The
-        // hand-written writer mirrors the exact XmlSerializer output shape.
-        var xml = BuildCapabilitiesXml(capabilities);
-        return Results.Content(xml, "application/xml", System.Text.Encoding.UTF8);
+        return await handler.HandleGetCapabilitiesResultAsync(
+            context, requestedSections, baseUrl).ConfigureAwait(false);
     }
 
     private static async Task<IResult> HandleDescribeFeatureType(
@@ -1478,60 +1472,104 @@ internal static class Wfs20DispatcherEndpoint
     private static void SetRawValue(Dictionary<string, string> values, string key, string value)
         => values[key] = value.Trim();
 
-    private static string BuildCapabilitiesXml(WfsCapabilities capabilities)
+    // Same bytes and headers as Results.Content(xml, "application/xml", Encoding.UTF8) over the document an
+    // XmlWriter wrote into a UTF-8 StringWriter (declaration encoding="utf-8", no BOM), written into a pooled
+    // UTF-8 buffer instead of a growing StringBuilder, its string copy and a second encoding.
+    internal static PooledUtf8ContentResult BuildCapabilitiesResult(WfsCapabilities capabilities)
     {
         var settings = new XmlWriterSettings
         {
             Indent = true,
             IndentChars = "  ",
             NewLineChars = "\n",
-            Encoding = Encoding.UTF8,
+            Encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
             OmitXmlDeclaration = false
         };
 
-        using var stringWriter = new Utf8StringWriter();
-        using (var writer = XmlWriter.Create(stringWriter, settings))
+        var buffer = new PooledByteBuffer();
+        try
         {
-            writer.WriteStartDocument();
-            // WFS-namespace elements are written with an explicit empty prefix so the
-            // document keeps the default-namespace shape (<FeatureTypeList>, not
-            // <wfs:FeatureTypeList>) even though a "wfs" prefix is also bound below.
-            writer.WriteStartElement(string.Empty, "WFS_Capabilities", Wfs20Utilities.WfsNamespace);
-
-            // Bind "wfs" explicitly, and bind it BEFORE any other declaration whose URI
-            // contains "wfs" (notably xmlns:honua="http://honua.io/wfs"). Real WFS clients
-            // resolve the service namespace by prefix and fall back to a substring match on
-            // the declared URIs: ows4R (the R OGC client) does exactly that, so with only a
-            // default-namespace binding it resolved "wfs" to http://honua.io/wfs and parsed
-            // ZERO feature types out of an otherwise valid capabilities document. Declaring
-            // the conventional prefix (as GeoServer/MapServer do) is a pure addition: element
-            // names, schema validity and every namespace-correct client are unaffected.
-            writer.WriteAttributeString("xmlns", "wfs", null, Wfs20Utilities.WfsNamespace);
-            foreach (var binding in capabilities.Namespaces.ToArray()
-                .Where(binding => !string.IsNullOrEmpty(binding.Name) && binding.Name != "wfs"))
+            using (var writer = XmlWriter.Create(buffer, settings))
             {
-                writer.WriteAttributeString("xmlns", binding.Name, null, binding.Namespace);
+                WriteCapabilitiesDocument(writer, capabilities);
             }
 
-            writer.WriteAttributeString("version", capabilities.Version);
-            if (!string.IsNullOrEmpty(capabilities.UpdateSequence))
-            {
-                writer.WriteAttributeString("updateSequence", capabilities.UpdateSequence);
-            }
+            return new PooledUtf8ContentResult(buffer, CapabilitiesUtf8ContentType);
+        }
+        catch
+        {
+            buffer.Dispose();
+            throw;
+        }
+    }
 
-            writer.WriteAttributeString("xsi", "schemaLocation", Wfs20Utilities.XsiNamespace, capabilities.SchemaLocation);
+    internal static void WriteCapabilitiesDocument(XmlWriter writer, WfsCapabilities capabilities)
+    {
+        writer.WriteStartDocument();
+        // WFS-namespace elements are written with an explicit empty prefix so the
+        // document keeps the default-namespace shape (<FeatureTypeList>, not
+        // <wfs:FeatureTypeList>) even though a "wfs" prefix is also bound below.
+        writer.WriteStartElement(string.Empty, "WFS_Capabilities", Wfs20Utilities.WfsNamespace);
 
-            WriteServiceIdentification(writer, capabilities.ServiceIdentification);
-            WriteServiceProvider(writer, capabilities.ServiceProvider);
-            WriteOperationsMetadata(writer, capabilities.OperationsMetadata);
-            WriteFeatureTypeList(writer, capabilities.FeatureTypeList);
-            WriteFilterCapabilities(writer, capabilities.FilterCapabilities);
-
-            writer.WriteEndElement();
-            writer.WriteEndDocument();
+        // Bind "wfs" explicitly, and bind it BEFORE any other declaration whose URI
+        // contains "wfs" (notably xmlns:honua="http://honua.io/wfs"). Real WFS clients
+        // resolve the service namespace by prefix and fall back to a substring match on
+        // the declared URIs: ows4R (the R OGC client) does exactly that, so with only a
+        // default-namespace binding it resolved "wfs" to http://honua.io/wfs and parsed
+        // ZERO feature types out of an otherwise valid capabilities document. Declaring
+        // the conventional prefix (as GeoServer/MapServer do) is a pure addition: element
+        // names, schema validity and every namespace-correct client are unaffected.
+        writer.WriteAttributeString("xmlns", "wfs", null, Wfs20Utilities.WfsNamespace);
+        foreach (var binding in capabilities.Namespaces.ToArray()
+            .Where(binding => !string.IsNullOrEmpty(binding.Name) && binding.Name != "wfs"))
+        {
+            writer.WriteAttributeString("xmlns", binding.Name, null, binding.Namespace);
         }
 
-        return stringWriter.ToString();
+        writer.WriteAttributeString("version", capabilities.Version);
+        if (!string.IsNullOrEmpty(capabilities.UpdateSequence))
+        {
+            writer.WriteAttributeString("updateSequence", capabilities.UpdateSequence);
+        }
+
+        writer.WriteAttributeString("xsi", "schemaLocation", Wfs20Utilities.XsiNamespace, capabilities.SchemaLocation);
+
+        WriteServiceIdentification(writer, capabilities.ServiceIdentification);
+        WriteServiceProvider(writer, capabilities.ServiceProvider);
+        WriteOperationsMetadata(writer, capabilities.OperationsMetadata);
+        WriteFeatureTypeList(writer, capabilities.FeatureTypeList);
+        WriteFilterCapabilities(writer, capabilities.FilterCapabilities);
+
+        writer.WriteEndElement();
+        writer.WriteEndDocument();
+    }
+
+    // OWS ContactInfo children in schema order: Phone, Address, OnlineResource.
+    private static void WriteOwsContactInfo(XmlWriter writer, ContactInfo info)
+    {
+        writer.WriteStartElement("ContactInfo", Wfs20Utilities.OwsNamespace);
+        if (info.Phone is { Voice: { } voice })
+        {
+            writer.WriteStartElement("Phone", Wfs20Utilities.OwsNamespace);
+            WriteOwsElement(writer, "Voice", voice);
+            writer.WriteEndElement();
+        }
+
+        if (info.Address is { } address)
+        {
+            writer.WriteStartElement("Address", Wfs20Utilities.OwsNamespace);
+            WriteOwsElement(writer, "ElectronicMailAddress", address.ElectronicMailAddress);
+            writer.WriteEndElement();
+        }
+
+        if (info.OnlineResource is { } online)
+        {
+            writer.WriteStartElement("OnlineResource", Wfs20Utilities.OwsNamespace);
+            writer.WriteAttributeString("href", Wfs20Utilities.XLinkNamespace, online.Href);
+            writer.WriteEndElement();
+        }
+
+        writer.WriteEndElement();
     }
 
     private static void WriteOwsElement(XmlWriter writer, string localName, string? value)
@@ -1599,22 +1637,7 @@ internal static class Wfs20DispatcherEndpoint
             WriteOwsElement(writer, "PositionName", contact.PositionName);
             if (contact.ContactInfo is { } info)
             {
-                writer.WriteStartElement("ContactInfo", Wfs20Utilities.OwsNamespace);
-                if (info.Address is { } address)
-                {
-                    writer.WriteStartElement("Address", Wfs20Utilities.OwsNamespace);
-                    WriteOwsElement(writer, "ElectronicMailAddress", address.ElectronicMailAddress);
-                    writer.WriteEndElement();
-                }
-
-                if (info.OnlineResource is { } online)
-                {
-                    writer.WriteStartElement("OnlineResource", Wfs20Utilities.OwsNamespace);
-                    writer.WriteAttributeString("href", Wfs20Utilities.XLinkNamespace, online.Href);
-                    writer.WriteEndElement();
-                }
-
-                writer.WriteEndElement();
+                WriteOwsContactInfo(writer, info);
             }
 
             WriteOwsElement(writer, "Role", contact.Role);
@@ -1970,10 +1993,5 @@ internal static class Wfs20DispatcherEndpoint
     {
         var prefix = writer.LookupPrefix(name.Namespace);
         return string.IsNullOrEmpty(prefix) ? name.Name : $"{prefix}:{name.Name}";
-    }
-
-    private sealed class Utf8StringWriter : StringWriter
-    {
-        public override Encoding Encoding => Encoding.UTF8;
     }
 }

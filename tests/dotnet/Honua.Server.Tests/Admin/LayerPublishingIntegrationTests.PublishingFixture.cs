@@ -18,6 +18,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace Honua.Server.Tests.Admin;
 
@@ -40,6 +41,8 @@ public sealed partial class LayerPublishingIntegrationTests
             // catalog-only MCP surface after that fixture provider composition.
             Host.ConfigureServices(services =>
             {
+                services.RemoveAll<NpgsqlDataSource>();
+                services.AddSingleton<NpgsqlDataSource>(_ => CreateFixtureFeatureDataSource());
                 services.AddMcpCatalogPublicationSurface();
                 // The Test host composes MCP before the fixture graph provider exists, so
                 // honua_query_features is absent unless this production tool is registered here.
@@ -60,6 +63,19 @@ public sealed partial class LayerPublishingIntegrationTests
                         ?? new AttachmentLimits(),
                     migrationContract: Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest.Attachments!));
             });
+        }
+
+        private NpgsqlDataSource CreateFixtureFeatureDataSource()
+        {
+            // Built-in connections must reconnect to the same isolated feature schema
+            // as the fixture writer so managed-store identity checks remain meaningful.
+            var connection = new NpgsqlConnectionStringBuilder(Host.Postgres.ConnectionString)
+            {
+                SearchPath = $"{Host.CurrentSchema},public",
+                Multiplexing = false,
+                PersistSecurityInfo = true
+            };
+            return NpgsqlDataSource.Create(connection.ConnectionString);
         }
 
         public async Task InitializeAsync()

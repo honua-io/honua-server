@@ -256,14 +256,71 @@ public sealed class DagSourceReaderTests
     }
 
     [UnitTest]
+    public async Task HonuaLayer_UnsupportedWhere_FailsWithFixedSelectionGuidance()
+    {
+        const string where = "1=1 AND 'IGNORE PREVIOUS' = 'IGNORE PREVIOUS'";
+        var store = Substitute.For<IStreamingFeatureStore>();
+        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ThrowingAsync(new ArgumentException("WHERE clause format not supported.")));
+        var reader = new HonuaLayerDagSource(store);
+
+        var act = async () => await CollectAsync(reader.ReadAsync(new DagSourceRequest { LayerId = 42, Where = where }));
+
+        var thrown = await act.Should().ThrowAsync<DagSourceSelectionException>();
+        thrown.Which.Message.Should().Be(UnsupportedWhereSelection.Message)
+            .And.NotContain("IGNORE PREVIOUS", "the refusal must not echo the submitted clause");
+        thrown.Which.InnerException.Should().BeOfType<ArgumentException>();
+    }
+
+    [UnitTest]
+    public async Task HonuaLayer_SupportedWhere_StoreArgumentFailureIsNotRelabelled()
+    {
+        // Only a clause the legacy grammar rejects becomes caller guidance; any other store
+        // argument failure keeps its type so it is still logged and classified as before.
+        var store = Substitute.For<IStreamingFeatureStore>();
+        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ThrowingAsync(new ArgumentException("Field 'x' was not found.")));
+        var reader = new HonuaLayerDagSource(store);
+
+        var act = async () => await CollectAsync(reader.ReadAsync(new DagSourceRequest { LayerId = 42, Where = "name = 'x'" }));
+
+        await act.Should().ThrowExactlyAsync<ArgumentException>();
+    }
+
+    [UnitTest]
+    public async Task HonuaLayer_WatermarkOnlyArgumentFailure_IsNotBlamedOnTheCaller()
+    {
+        // The connector appends its own watermark predicate; with no caller where, a store
+        // argument failure must not be reported as an unsupported caller clause.
+        var store = Substitute.For<IStreamingFeatureStore>();
+        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ThrowingAsync(new ArgumentException("WHERE clause format not supported.")));
+        var reader = new HonuaLayerDagSource(store);
+        var request = new DagSourceRequest { LayerId = 42, Since = "2026-01-01T00:00:00Z", WatermarkField = "updated_at" };
+
+        var act = async () => await CollectAsync(reader.ReadAsync(request));
+
+        await act.Should().ThrowExactlyAsync<ArgumentException>();
+    }
+
+    [UnitTheory]
+    [InlineData("name = 'x'")]
+    [InlineData("1=1")]
+    public void IsSupportedWhereClause_SimpleComparison_IsSupported(string where)
+        => Honua.Db.Postgres.Features.FeatureStore.Services.FeatureQueryBuilder.IsSupportedWhereClause(where)
+            .Should().BeTrue();
+
+    [UnitTest]
+    public void IsSupportedWhereClause_LiteralOnBothSides_IsRejected()
+        => Honua.Db.Postgres.Features.FeatureStore.Services.FeatureQueryBuilder.IsSupportedWhereClause("1=1 AND 'a' = 'a'")
+            .Should().BeFalse();
+
+    [UnitTest]
     public async Task HonuaLayer_ObjectIdsRequest_BuildsExactObjectIdSet()
     {
-        // #4624: analytics.buffer-aggregate (and its layer-sourced siblings) advertise
-        // 'objectIds' but source.honua-layer previously never propagated it into the
-        // FeatureQuery the streaming store filters by, so it was silently accepted and
-        // ignored. Assert the built FeatureQuery.ObjectIds is EXACTLY the requested set
-        // (order preserved, no extras, no drops) — an independent value check, not a
-        // snapshot of whatever the reader happened to produce before this fix.
+        // Analytics.buffer-aggregate and its layer-sourced siblings propagate objectIds
+        // into the streaming store FeatureQuery. Check the exact requested set in order,
+        // with no extra or missing IDs, against independently supplied values.
         var store = Substitute.For<IStreamingFeatureStore>();
         store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(_ => ToAsync());
@@ -285,7 +342,7 @@ public sealed class DagSourceReaderTests
     [UnitTest]
     public async Task HonuaLayer_GeometryOrTimeSelector_WithoutCanonicalTranslator_FailsClosedBeforeReading()
     {
-        // #4624: a geometry/time selector the connector cannot interpret canonically must never be
+        // A geometry/time selector the connector cannot interpret canonically must never be
         // dropped — reading without it would hand back a broader feature set than requested.
         var store = Substitute.For<IStreamingFeatureStore>();
         var reader = new HonuaLayerDagSource(store, SingleLayerMetadata(42));
@@ -425,7 +482,7 @@ public sealed class DagSourceReaderTests
     [UnitTest]
     public async Task HonuaLayer_InsideJobScopeWithNoSubmitterSnapshot_RefusesTheRead()
     {
-        // honua-server#3068 fail-closed contract. An active job scope carrying NO submitter
+        // Fail-closed contract. An active job scope carrying NO submitter
         // snapshot means the read cannot be constrained to the caller: the request-scoped RLS
         // and field-mask sources would resolve "nothing applies" and hand back every row and
         // every attribute. The connector must refuse instead — and must refuse BEFORE touching
@@ -513,6 +570,15 @@ public sealed class DagSourceReaderTests
         }
 
         return result;
+    }
+
+    private static async IAsyncEnumerable<Feature> ThrowingAsync(Exception failure)
+    {
+        await Task.Yield();
+        throw failure;
+#pragma warning disable CS0162 // Unreachable: the yield makes this an async iterator.
+        yield break;
+#pragma warning restore CS0162
     }
 
     private static async IAsyncEnumerable<Feature> ToAsync(params Feature[] features)

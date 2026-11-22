@@ -27,7 +27,9 @@ The release rescan never writes advisory ids, package names or digests into a pu
   and files nothing. Set the repository variable `SECURITY_FINDINGS_REPO` (`owner/name` of
   that tracker). The
   report job then opens one issue per release, platform and advisory with the package, fixed
-  version and due date, and skips findings that already have an open issue. Before reading
+  version and due date. Existing open issues are retained; escalation from HIGH to CRITICAL
+  tightens the deadline to first detection plus 7 days (or preserves an earlier deadline)
+  without replacing human notes. Before reading
   findings, it checks the destination repository's visibility through the API. A public
   destination or failed visibility lookup fails the job before any issue is read or written;
   correct the destination or token access, then rerun the report.
@@ -48,10 +50,14 @@ also a signal.
 1. Confirm it: the finding is in the latest nightly verdict for a supported digest (or the trunk scan).
 2. Start the deadline clock from that day: critical 7 days, high 30 days, medium next release, low reviewed at every release.
 3. Decide:
-   - **Fix available:** bump the base image digest, the package (`RUNTIME_PACKAGE_REVISION`
-     in the Dockerfiles forces the `apt-get upgrade` layer to rerun), or the NuGet/npm
-     dependency on trunk. HIGH/CRITICAL in a supported release then goes through the patch
-     release path below.
+   - **Fix available:** update the affected base image digest, staged runtime package or
+     NuGet/npm dependency on trunk. The serving images use pinned .NET 11 chiseled bases;
+     refresh the applicable ASP.NET or runtime-deps digest to update their packages.
+     `apt-get upgrade` runs in the SDK-based `runtime-assets` stage, and
+     `docker/runtime/stage-runtime.sh` copies selected additions without replacing libraries
+     already present in the chiseled base. Rebuilding that stage does not upgrade the base.
+     Scan the final image digest to confirm the affected package version changed.
+     HIGH/CRITICAL in a supported release then goes through the patch release path below.
    - **No fix, not exploitable in Honua:** add a decision to `eng/security/vex-statements.json`
      (below). Only decisions you can show with evidence from the image belong there.
    - **No fix, possibly exploitable:** leave it open. It is fixed in the first release after
@@ -79,14 +85,17 @@ one remaining entry, CVE-2025-6965 (bundled SQLite in `SQLitePCLRaw.lib.e_sqlite
 upstream fix, kept in step with the NuGet audit suppression), is read by the trunk JIT scan
 and by the `ci.yml` image gate (Trivy's default ignore file). The release rescan and release-asset scan use empty ignore files and report it
 as an unfixed finding. The `release-bundle.yml` gate uses `.trivyignore-release`. `.trivyignore-release` holds only documented, time-boxed exceptions
-that the release gate script (`scripts/ci/trivy-release-gate.sh`, which does not read VEX)
-must honour; each entry states the package, why it does not apply, the owner and an expiry.
+that the release gate script (`scripts/ci/trivy-release-gate.sh`) honours alongside the
+generated OpenVEX document; each entry states the package, why it does not apply, the owner and an expiry.
 Move it
 to a VEX decision once its runtime reachability is established, or remove it when a fix ships.
 
-Do not mark a shell or command-line package (`dash`, `bash`, `tar`, `coreutils`,
-`util-linux`) as not in the execute path: the migration backup hook
-(`PostgresDatabaseMigrationRunner`) runs an operator-configured command through `/bin/sh`.
+Assess shell and command-line packages against the exact image digest. When `/bin/sh`
+is present, the migration backup hook (`PostgresDatabaseMigrationRunner`) can run an
+operator-configured command, so a shell or tool cannot be excluded merely because HTTP
+handlers do not call it. Check the final image's package inventory and reachable commands
+before recording a VEX decision; package removal in a newer image does not establish a
+not-affected decision for an older supported digest.
 
 ## Release security assets
 
@@ -140,7 +149,7 @@ security fix is a trunk change followed by a new release.
    private tracker only. Request a CVE from the advisory if Honua code is the root cause.
 2. **Fix on trunk.** Land the fix (base image or package bump, dependency update, or code fix)
    through the normal PR gates with a neutral title, for example
-   `fix(security): move serving images to .NET 10.0.15`. For an embargoed code fix, develop
+   `fix(security): refresh serving image base digests`. For an embargoed code fix, develop
    it in the advisory's temporary private fork and merge from there.
 3. **Cut the patch release.** Dispatch `release-bundle.yml` from trunk with the next release
    id (`2026.1.1`, or the next `-rc.N` before GA) and promote it on a green verdict. Publish
@@ -159,7 +168,9 @@ security fix is a trunk change followed by a new release.
 ## Triage record, 2026-11-11
 
 Open Trivy code-scanning alerts on `trunk`: 30 (25 medium, 5 low); **no high or critical**.
-The oldest is 2026-08-22. Every advisory id is triaged:
+The oldest is 2026-08-22. This dated record describes the images scanned then; it is not
+an inventory of the current .NET 11 chiseled images. Recheck the final supported digest's
+SBOM and scan when carrying a decision forward. Every advisory id was triaged:
 
 | Advisory | Package (image) | Decision |
 | --- | --- | --- |
@@ -175,7 +186,8 @@ The oldest is 2026-08-22. Every advisory id is triaged:
 | CVE-2026-107778 | libkrb5support0 | Open, no Ubuntu fix; loaded for Kerberos/GSSAPI database authentication. |
 | CVE-2025-66382, CVE-2026-102633 | libexpat1 (JIT only, through fontconfig) | Open, no Ubuntu fix. |
 
-Open items are medium or low with no upstream fix: they are fixed in the first release after
-Ubuntu publishes a fix (the release rebuild runs `apt-get upgrade` on the pinned base).
-Separately, the serving and worker images move from .NET 10.0.14 to 10.0.15, which fixes a
-high-severity ASP.NET Core advisory.
+At that review, open items were medium or low with no upstream fix. They remain subject
+to the remediation deadlines above; reassess them against each supported image when a fix
+ships. For current chiseled images, update the affected base digest or staged addition and
+verify the final scan as described under triage. The .NET 10.0.14 to 10.0.15 update recorded
+at that time is historical; current serving images use .NET 11.

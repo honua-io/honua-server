@@ -76,6 +76,23 @@ public sealed class FeatureStreamPublisherTests
     }
 
     [UnitTest]
+    public async Task PublishStrictAsync_HostWithoutSystemDatabase_DispatchesTheRequest()
+    {
+        var sink = new SignalingSink();
+        var publisher = new FeatureStreamPublisher(
+            wake: null,
+            log: null,
+            NullLogger<FeatureStreamPublisher>.Instance,
+            CreateBroadcaster(sink));
+
+        await publisher.PublishStrictAsync(CreateRequest(eventId: "evt-no-system-db"));
+
+        var received = await sink.Signal.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal("evt-no-system-db", received.EventId);
+        Assert.Equal(0, received.Cursor);
+    }
+
+    [UnitTest]
     public async Task PublishAsync_WhenChangeLogReadFails_LogsTheEventAndSkipsTheSinks()
     {
         var sink = new SignalingSink();

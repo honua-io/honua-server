@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Globalization;
 using System.IO.Pipelines;
 using System.Text.Json;
 using Honua.Core.Configuration;
@@ -24,6 +23,11 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
 internal sealed class QueryFormatter
 {
+    private static readonly HashSet<string> UndeclaredObjectIdProperties = new(StringComparer.OrdinalIgnoreCase)
+    {
+        FieldNames.ObjectId
+    };
+
     private readonly GeometryLimits _geometryLimits;
     private readonly GeoParquetLimits _geoParquetLimits;
     private readonly PbfQueryFormatter _pbfFormatter;
@@ -32,7 +36,7 @@ internal sealed class QueryFormatter
     public QueryFormatter(IOptions<LimitsOptions> limitsOptions, PbfQueryFormatter pbfFormatter, ILogger<QueryFormatter> logger)
     {
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
-        _geoParquetLimits = limitsOptions?.Value?.GeoParquet ?? new GeoParquetLimits();
+        _geoParquetLimits = (limitsOptions?.Value?.GeoParquet ?? new GeoParquetLimits()).ForQuery();
         _pbfFormatter = pbfFormatter;
         _logger = logger;
     }
@@ -55,11 +59,13 @@ internal sealed class QueryFormatter
     {
         ArgumentNullException.ThrowIfNull(resource);
 
-        var effectiveLimits = GeometryOutputProcessor.CreateEffectiveLimits(
-            _geometryLimits,
-            geometryPrecision,
-            maxAllowableOffset,
-            forceSimplify: maxAllowableOffset is > 0);
+        var effectiveLimits = GeometryOutputProcessor.ForGeometrySrid(
+            GeometryOutputProcessor.CreateEffectiveLimits(
+                _geometryLimits,
+                geometryPrecision,
+                maxAllowableOffset,
+                forceSimplify: maxAllowableOffset is > 0),
+            outputSrid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid);
 
         return format.ToLowerInvariant() switch
         {
@@ -68,6 +74,7 @@ internal sealed class QueryFormatter
                 {
                     ReturnGeometry = returnGeometry,
                     OutputSrid = outputSrid,
+                    RequestedOutputSrid = requestedOutputSrid,
                     ReturnZ = returnZ,
                     ReturnM = returnM,
                     GeometryPrecision = geometryPrecision,
@@ -245,9 +252,12 @@ internal sealed class QueryFormatter
     {
         var projectedProperties = CreateProjectedProperties(outFields);
         var buildOptions = CreateFeatureServerGeoJsonBuildOptions(resource, projectedProperties);
-        GeoJsonFeature[] features = result.Items
-            .Select(f => ConvertToGeoJsonFeature(f, resource, returnGeometry, buildOptions, returnZ, returnM, geometryLimits))
-            .ToArray();
+        var items = result.Items;
+        var features = new GeoJsonFeature[items.Length];
+        for (var i = 0; i < features.Length; i++)
+        {
+            features[i] = ConvertToGeoJsonFeature(items[i], resource, returnGeometry, buildOptions, returnZ, returnM, geometryLimits);
+        }
 
         var exceededTransferLimit = result.HasMoreResults;
         var response = new GeoJsonFeatureSet
@@ -322,7 +332,7 @@ internal sealed class QueryFormatter
     {
         var featureBase = GeoJsonFeatureBaseBuilder.Create(feature, resource, buildOptions);
         var geometry = returnGeometry ? ConvertGeometryToGeoJsonFormat(feature.Geometry, geometryLimits, returnZ, returnM) : null;
-        return featureBase.ToGeoJsonFeature(geometry);
+        return featureBase.ToGeoJsonFeatureWithOwnedProperties(geometry);
     }
 
     private static Dictionary<string, object?> FilterAttributes(
@@ -451,12 +461,14 @@ internal sealed class QueryFormatter
         => GeoJsonFeatureBaseBuilder.PrepareOptions(resource, new(
             ProjectedProperties: projectedProperties,
             IncludeObjectIdProperty: true,
-            // GeoJSON properties must mirror the f=json attributes, which carry only the
-            // lowercase objectid field. Suppress the synthetic uppercase OBJECTID alias so the
-            // two formats stay faithful (the OID is also exposed via the feature `id`).
+            // FeatureServer exposes the declared OID without a synthetic uppercase alias.
             IncludeObjectIdAlias: false,
             IncludeAdditionalAttributes: true,
-            ResolveIdFromProperties: true));
+            ResolveIdFromProperties: true,
+            ExcludedAdditionalProperties: resource.SchemaFields.Any(field =>
+                !IsGeometryField(field) && field.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
+                ? null
+                : UndeclaredObjectIdProperties));
 
     internal static GeoServicesFieldInfo[] BuildQueryFields(
         MetadataV2Object resource,
@@ -692,10 +704,10 @@ internal sealed class QueryFormatter
             return null;
         }
 
-        geometry = GeometryOutputProcessor.ApplyLimits(geometry, geometryLimits) ?? geometry;
+        geometry = GeometryOutputProcessor.ApplyLimitsInPlace(geometry, geometryLimits) ?? geometry;
         if (!returnZ || !returnM)
         {
-            geometry = GeometryOutputProcessor.ApplyDimensionFilter(geometry, returnZ, returnM);
+            geometry = GeometryOutputProcessor.ApplyDimensionFilterInPlace(geometry, returnZ, returnM);
         }
         return ConvertGeometryToGeoJsonGeometry(geometry);
     }
@@ -942,8 +954,11 @@ internal sealed class StreamingQueryFormatter
     public StreamingQueryFormatter(IOptions<LimitsOptions> limitsOptions)
     {
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
-        _geoParquetLimits = limitsOptions?.Value?.GeoParquet ?? new GeoParquetLimits();
+        _geoParquetLimits = (limitsOptions?.Value?.GeoParquet ?? new GeoParquetLimits()).ForQuery();
+        PbfFormatter = new PbfQueryFormatter(limitsOptions!);
     }
+
+    internal PbfQueryFormatter PbfFormatter { get; }
 
     public Task StreamAsGeoServicesJsonAsync(
         IAsyncEnumerable<Feature> features,
@@ -1048,11 +1063,13 @@ internal sealed class StreamingQueryFormatter
             }
         }
 
-        var effectiveLimits = GeometryOutputProcessor.CreateEffectiveLimits(
-            _geometryLimits,
-            geometryPrecision,
-            maxAllowableOffset,
-            forceSimplify: maxAllowableOffset is > 0);
+        var effectiveLimits = GeometryOutputProcessor.ForGeometrySrid(
+            GeometryOutputProcessor.CreateEffectiveLimits(
+                _geometryLimits,
+                geometryPrecision,
+                maxAllowableOffset,
+                forceSimplify: maxAllowableOffset is > 0),
+            srid);
 
         writer.WriteStartArray("features");
         var featuresSinceFlush = 0;
@@ -1157,11 +1174,13 @@ internal sealed class StreamingQueryFormatter
 
         writer.WriteStartArray("features");
 
-        var effectiveLimits = GeometryOutputProcessor.CreateEffectiveLimits(
-            _geometryLimits,
-            geometryPrecision,
-            maxAllowableOffset,
-            forceSimplify: maxAllowableOffset is > 0);
+        var effectiveLimits = GeometryOutputProcessor.ForGeometrySrid(
+            GeometryOutputProcessor.CreateEffectiveLimits(
+                _geometryLimits,
+                geometryPrecision,
+                maxAllowableOffset,
+                forceSimplify: maxAllowableOffset is > 0),
+            SpatialReference.WGS84.Wkid);
         var featuresSinceFlush = 0;
 
         while (hasFeature)
@@ -1226,11 +1245,13 @@ internal sealed class StreamingQueryFormatter
 
         // Ensure objectId is always present in attributes
         var objectIdWritten = false;
+        var hasObjectIdAliasKey = false;
         if (feature.Attributes != null)
         {
             foreach (var kvp in feature.Attributes)
             {
                 var fieldName = kvp.Key;
+                hasObjectIdAliasKey |= fieldName.Equals("OBJECTID", StringComparison.OrdinalIgnoreCase);
 
                 // Skip fields not in outFields if specified
                 if (outFieldLookup != null && !outFieldLookup.Contains(fieldName))
@@ -1262,8 +1283,7 @@ internal sealed class StreamingQueryFormatter
         // path byte-for-byte equivalent for that common default projection.
         if (outFieldLookup is null &&
             objectIdFieldName.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) &&
-            (feature.Attributes is null || !feature.Attributes.Keys.Any(
-                static key => key.Equals("OBJECTID", StringComparison.OrdinalIgnoreCase))))
+            !hasObjectIdAliasKey)
         {
             writer.WriteNumber("OBJECTID", GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName));
         }
@@ -1402,10 +1422,8 @@ internal sealed class StreamingQueryFormatter
         if (value is not null
             && temporalFieldTypes is not null
             && temporalFieldTypes.TryGetValue(propertyName, out var temporalType)
-            && GeoServicesFieldConventions.TryConvertTemporalValue(value, temporalType, out var converted))
+            && GeoServicesFieldConventions.TryWriteTemporalValue(writer, new TemporalAttribute(propertyName, value, temporalType)))
         {
-            writer.WritePropertyName(propertyName);
-            JsonSerializer.Serialize(writer, converted, FeatureServerJsonContext.Default.Object);
             cancellationToken.ThrowIfCancellationRequested();
             return;
         }
@@ -1443,7 +1461,7 @@ internal sealed class StreamingQueryFormatter
                 writer.WriteNumber(propertyName, dto.ToUnixTimeMilliseconds());
                 break;
             case DateOnly dateOnly:
-                writer.WriteString(propertyName, dateOnly.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+                GeoServicesFieldConventions.WriteCalendarDate(writer, propertyName, dateOnly);
                 break;
             // GeoServices has no array or object field type, so a column whose values are
             // complex is published as esriFieldTypeString and the value has to agree. The

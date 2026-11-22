@@ -84,9 +84,9 @@ Every published layer is reachable through every protocol its service enables. T
 | OGC API Coverages **(Preview)** | `/ogc/coverages` | Science and raster tooling |
 | OGC API Processes | `/ogc/processes` | OGC processing clients |
 | OGC API Records | `/ogc/records` | Catalog / metadata search clients |
-| OGC API Environmental Data Retrieval (EDR) **(Preview)** | `/edr` | Environmental and scientific data clients |
+| OGC API Environmental Data Retrieval (EDR) **(Preview; experimental opt-in)** | `/edr` | Environmental and scientific data clients |
 | OGC API Styles | `/ogc/styles` | Style-aware map clients |
-| OGC SensorThings v1.1 | `/sta/v1.1` | IoT / observations clients |
+| OGC SensorThings v1.1 **(Preview; experimental opt-in)** | `/sta/v1.1` | IoT / observations clients |
 | WMS 1.3 / 1.1.1 | `/ogc/services/{id}/wms`, `/rest/services/{id}/MapServer/WMS` | QGIS, legacy OGC clients |
 | WFS 2.0 / 1.1.0 / 1.0.0 | `/wfs` | QGIS, GDAL/OGR, legacy stacks |
 | WCS 2.0.1 | `/ogc/services/{id}/wcs`, `/ogc/wcs/{id}` ([client-specific alias](docs/reference/compatibility/clients.md)), `/rest/services/{id}/ImageServer/WCS` | Science, elevation, coverage clients |
@@ -96,10 +96,12 @@ Every published layer is reachable through every protocol its service enables. T
 | STAC API | `/stac` | STAC browsers, catalog/search tooling |
 | Vector tiles (MVT) + TileJSON | `/tiles/{layerId}/{z}/{x}/{y}.mvt`, `/tiles/{layerId}/tile.json` | MapLibre, OpenLayers, Leaflet |
 | Terrain-RGB + elevation API | `/terrain/{datasetId}/…`, `/elevation/{datasetId}/…` | MapLibre `raster-dem`, field apps |
-| 3D Tiles scenes | `/scenes/{sceneId}/tileset.json` | CesiumJS, 3D Tiles clients |
+| 3D Tiles scenes **(experimental opt-in)** | `/scenes/{sceneId}/tileset.json` | CesiumJS, 3D Tiles clients |
 | PMTiles | `/api/v1/tiles/pmtiles/{artifactId}` | MapLibre, serverless/CDN tile hosting |
 | MCP (JSON-RPC) | `/mcp` | AI agents, operator automation, MCP clients |
 | gRPC (`geospatial.v1`) | port `8081` (h2c), gRPC-Web on `8080` | Honua SDKs, mobile, services |
+
+Surfaces marked **experimental opt-in** are off by default and answer 404 until you set `Capabilities:Experimental:{capability}:Enabled=true` (`serve.ogc-api-edr`, `serve.sensorthings`, `serve.3d-tiles-scene`); check `available` and `reasonCode` in `/api/v1/capabilities/manifest` to see what a deployment serves.
 
 Path shapes differ on purpose: each protocol carries exactly the scope its own specification makes the addressable unit. WMS, WMTS and WCS render a composition, so a service is in the path; WFS returns features that `TYPENAMES` already identifies, so it is served unscoped at `/wfs` with no service-scoped form and no GeoServices alias. The rule, and why adding one for symmetry would be a regression, is [ADR-0079](docs/internal/contributor/adr/0079-protocol-route-scoping.md).
 
@@ -129,7 +131,7 @@ Plus operational surfaces: health probes (`/healthz/live`, `/healthz/ready`), Op
 - **Routing and network analysis** — routes, service areas, closest facility, origin-destination cost matrices, and location-allocation through NAServer **(Pro)**.
 - **Time** — temporal extent discovery and time filtering (Community), temporal histograms, time-series tiles, and an SDK-side animation API **(Pro)**, so time-aware layers answer "when" as well as "where". See [Work with time](docs/guides/query-analyze/work-with-time.md).
 - **Real-time, geofencing and alerting** — feature subscriptions for change streams **(Pro)**; an alert-rule evaluation engine **(Pro, Preview)** whose trigger types are enter/exit geofences **(Pro, Preview)** and dwell and threshold triggers **(Enterprise, Preview)**; delivery to a webhook **(Pro, Preview)** or to Slack, Teams, email, AWS SNS, Azure EventGrid, or a digest **(Enterprise, Preview)**. See [React to changes](docs/guides/edit/react-to-changes.md).
-- **Field operations** — [form packages](docs/reference/admin-api/forms.md) for data collection (Community) and offline sync for disconnected field work **(Pro, Preview)**; the mobile SDK and collection app live in [honua-mobile](https://github.com/honua-io/honua-mobile) and [honua-collect](https://github.com/honua-io/honua-collect).
+- **Field operations** — author [form packages in XLSForm](docs/reference/admin-api/forms.md) for data collection (Community) and offline sync for disconnected field work **(Pro, Preview)**; the mobile SDK and collection app live in [honua-mobile](https://github.com/honua-io/honua-mobile) and [honua-collect](https://github.com/honua-io/honua-collect).
 - **Collaboration** — multi-user saved-map sessions with an [operation log](docs/reference/saved-map-collaboration-op-log.md) (Community), and [feature locks](docs/reference/collaboration/feature-locks.md) for concurrent editing (Community) — note that the shipped lock authorizer **denies every claim** until you register your own `IFeatureLockAuthorizer`, so the manifest reports `available: false` out of the box. Leases are also single-node.
 - **Data enrichment** — enrich your features with attributes from a registered reference dataset by spatial join ([data enrichment](docs/guides/operate/data-enrichment.md), Community).
 - **Static maps** — server-rendered map images (Community) for reports, tiles-free embeds and notifications; high-DPI output, large dimensions and rich overlays are **(Pro)**.

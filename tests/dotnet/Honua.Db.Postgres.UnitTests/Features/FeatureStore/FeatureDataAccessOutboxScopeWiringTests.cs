@@ -24,7 +24,7 @@ public sealed class FeatureDataAccessOutboxScopeWiringTests
     [Fact]
     public void TryUseTransactionalOutbox_WithScopeButNoRepository_ThrowsToPreventSilentCdcLoss()
     {
-        // Outbox wiring guard (#692): if the protocol layer opens an outbox scope but the
+        // Outbox wiring guard: if the protocol layer opens an outbox scope but the
         // data access has no IFeatureChangeOutboxWriter injected, the mutation must not
         // silently fall through to the autocommit fast path — that would commit the feature
         // without recording its CDC envelope, which is the exact gap the transactional

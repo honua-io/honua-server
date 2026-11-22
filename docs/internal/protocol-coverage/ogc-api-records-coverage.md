@@ -20,7 +20,9 @@ server contract stabilizes.
 
 The first slice projects records from published Honua catalog services and
 layers that are visible to the caller. Layer records use stable ids of the form
-`layer:{layerId}`. Service records use `service:{serviceName}`.
+`layer:{graph Layer ID}`, where the graph Layer ID is the id of the resource's
+primary publication (not the numeric layer index). Service records use
+`service:{serviceName}`.
 
 Layer records include links to matching OGC API Features, STAC, and
 FeatureServer resources where those protocol surfaces are addressable. Service

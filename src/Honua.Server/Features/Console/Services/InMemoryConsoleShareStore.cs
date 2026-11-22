@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using Honua.Core.Features.Console.Abstractions;
 using Honua.Core.Features.Console.Domain;
+using Honua.Core.Features.Publishing.Content;
 
 namespace Honua.Server.Features.Console.Services;
 
@@ -281,7 +282,7 @@ internal sealed class InMemoryConsoleShareStore : IConsoleShareStore
     }
 
     private static bool IsTokenExpired(ConsolePublicLinkToken token, DateTimeOffset now)
-        => token.IsExpired || (token.ExpiresAt is { } expiry && expiry <= now);
+        => token.IsExpired || PublicLinkLifetime.HasEnded(token.ExpiresAt, token.CreatedAt, now);
 
     private static ConsolePublicLinkToken WithEffectiveExpiry(ConsolePublicLinkToken token, DateTimeOffset now)
         => token with { IsExpired = IsTokenExpired(token, now) };

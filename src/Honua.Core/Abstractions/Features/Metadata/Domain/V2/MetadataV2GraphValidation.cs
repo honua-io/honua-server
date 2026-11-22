@@ -1,12 +1,14 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.RegularExpressions;
+
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Studio.Domain;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-public static class MetadataV2GraphValidator
+public static partial class MetadataV2GraphValidator
 {
     public static MetadataV2GraphValidationResult Validate(MetadataV2Graph graph)
     {
@@ -265,6 +267,10 @@ public static class MetadataV2GraphValidator
                 else
                 {
                     EnsureFieldDeclared(errors, resource, rule.FieldName, "attributeRules.fieldName");
+                    if (rule.FieldName.Equals(resource.Editing?.GlobalIdField, StringComparison.OrdinalIgnoreCase))
+                    {
+                        errors.Add($"resource '{resource.Metadata.Id}' calculation attributeRule '{rule.Name}' cannot target the global ID field.");
+                    }
                 }
             }
         }
@@ -696,41 +702,64 @@ public static class MetadataV2GraphValidator
 
     private static void ValidateObjectMetadataUniversals(List<string> errors, MetadataV2Graph graph)
     {
-        ValidateOneMetadata(errors, "graph", graph.Metadata);
+        var schemas = graph.CustomFieldSchemas ?? [];
+        if (schemas.Count > 0)
+        {
+            MetadataV2CustomFieldValidation.ValidateSchemas(errors, schemas);
+        }
+
+        ValidateOneMetadata(errors, new("graph", MetadataV2CustomFieldKinds.Graph, schemas), graph.Metadata);
+        foreach (var catalog in graph.Catalogs)
+        {
+            ValidateOneMetadata(errors, new($"catalog '{catalog.Metadata.Id}'", MetadataV2CustomFieldKinds.Catalog, schemas), catalog.Metadata);
+        }
         foreach (var folder in graph.Folders)
         {
-            ValidateOneMetadata(errors, $"folder '{folder.Metadata.Id}'", folder.Metadata);
+            ValidateOneMetadata(errors, new($"folder '{folder.Metadata.Id}'", MetadataV2CustomFieldKinds.Folder, schemas), folder.Metadata);
         }
         foreach (var r in graph.Resources)
         {
-            ValidateOneMetadata(errors, $"resource '{r.Metadata.Id}'", r.Metadata);
+            ValidateOneMetadata(errors, new($"resource '{r.Metadata.Id}'", MetadataV2CustomFieldKinds.Dataset, schemas), r.Metadata);
         }
         foreach (var c in graph.Connections)
         {
-            ValidateOneMetadata(errors, $"connection '{c.Metadata.Id}'", c.Metadata);
+            ValidateOneMetadata(errors, new($"connection '{c.Metadata.Id}'", "connection", schemas), c.Metadata);
         }
         foreach (var sb in graph.StorageBindings)
         {
-            ValidateOneMetadata(errors, $"storage binding '{sb.Metadata.Id}'", sb.Metadata);
+            ValidateOneMetadata(errors, new($"storage binding '{sb.Metadata.Id}'", "storageBinding", schemas), sb.Metadata);
         }
         foreach (var s in graph.Services)
         {
-            ValidateOneMetadata(errors, $"service '{s.Metadata.Id}'", s.Metadata);
+            ValidateOneMetadata(errors, new($"service '{s.Metadata.Id}'", MetadataV2CustomFieldKinds.Service, schemas), s.Metadata);
         }
         foreach (var p in graph.Publications)
         {
-            ValidateOneMetadata(errors, $"publication '{p.Metadata.Id}'", p.Metadata);
+            ValidateOneMetadata(errors, new($"publication '{p.Metadata.Id}'", MetadataV2CustomFieldKinds.Layer, schemas), p.Metadata);
         }
     }
 
-    private static void ValidateOneMetadata(List<string> errors, string ownerLabel, MetadataV2ObjectMetadata metadata)
+    private readonly record struct MetadataOwner(
+        string Label,
+        string ItemKind,
+        IReadOnlyList<MetadataV2CustomFieldSchema> Schemas);
+
+    private static void ValidateOneMetadata(List<string> errors, MetadataOwner owner, MetadataV2ObjectMetadata metadata)
     {
+        var ownerLabel = owner.Label;
         if (!SpdxLicensePolicy.IsValidCanonicalValue(metadata.License))
         {
             errors.Add(
                 $"{ownerLabel} metadata.license must be a canonical SPDX expression or the literal 'proprietary' without padding or control characters and must not exceed {SpdxLicensePolicy.MaxExpressionLength} characters.");
         }
         MetadataV2DescriptiveValidation.Validate(errors, ownerLabel, metadata);
+        if (owner.Schemas.Count > 0 || metadata.CustomFields is { Count: > 0 })
+        {
+            MetadataV2CustomFieldValidation.ValidateItemCustomFields(
+                errors,
+                new MetadataV2CustomFieldOwner(ownerLabel, owner.ItemKind, metadata.CustomFields),
+                owner.Schemas);
+        }
 
         if (!IsValidGovernanceText(metadata.Attribution, MetadataV2ObjectMetadata.MaxAttributionLength))
         {
@@ -751,6 +780,7 @@ public static class MetadataV2GraphValidator
         }
         ValidateContactEmail(errors, $"{ownerLabel} metadata.contactPoint.email", metadata.ContactPoint?.Email);
         ValidateContactUrl(errors, $"{ownerLabel} metadata.contactPoint.url", metadata.ContactPoint?.Url);
+        ValidateContactPhone(errors, $"{ownerLabel} metadata.contactPoint.phone", metadata.ContactPoint?.Phone);
 
         for (var i = 0; i < metadata.Links.Count; i++)
         {
@@ -790,6 +820,24 @@ public static class MetadataV2GraphValidator
             errors.Add($"{field} must contain non-empty local and domain parts.");
         }
     }
+
+    // A dialable number: digits with optional leading '+', spaces, '-', '.', '/', parentheses and an
+    // "x"/"ext" extension. Free text would land verbatim in ContactVoiceTelephone and ows:Voice.
+    internal static void ValidateContactPhone(List<string> errors, string field, string? phone)
+    {
+        if (string.IsNullOrWhiteSpace(phone))
+        {
+            return;
+        }
+        if (phone.Length > MetadataV2ContactPoint.MaxPhoneLength || !ContactPhonePattern().IsMatch(phone))
+        {
+            errors.Add(
+                $"{field} must be a telephone number of at most {MetadataV2ContactPoint.MaxPhoneLength} characters: digits, an optional leading '+', spaces, '-', '.', '/', parentheses and an optional 'x' or 'ext' extension.");
+        }
+    }
+
+    [GeneratedRegex(@"^\+?[0-9(][0-9 ()./-]*[0-9](?: ?(?:x|ext\.?) ?[0-9]+)?\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    private static partial Regex ContactPhonePattern();
 
     internal static void ValidateContactUrl(List<string> errors, string field, string? url)
     {
@@ -834,8 +882,7 @@ public static class MetadataV2GraphValidator
         IReadOnlyList<MetadataV2Service> services,
         Dictionary<string, MetadataV2Layer> publicationsById)
     {
-        // Service→publications is now derived from publication.ServiceId only;
-        // the redundant Service.PublicationIds slot was removed in design slice 55/N.
+        // Service→publications is derived from publication.ServiceId only.
         _ = publicationsById;
 
         foreach (var service in services)
@@ -843,6 +890,11 @@ public static class MetadataV2GraphValidator
             if (!MetadataV2MapServerDrawing.TryResolveCachedDrawing(service, out _))
             {
                 errors.Add($"service '{service.Metadata.Id}' options.{MetadataV2MapServerDrawing.OptionName} must be 'cached' or 'dynamic'.");
+            }
+
+            if (MetadataV2WmsProtectedLayers.ResolveMode(service) is null)
+            {
+                errors.Add($"service '{service.Metadata.Id}' options.{MetadataV2WmsProtectedLayers.OptionName} must be 'hide' or 'challenge'.");
             }
         }
 

@@ -49,11 +49,22 @@ public sealed class Cql2JsonParser
             _expressionDepth = 0;
             using var document = JsonDocument.Parse(cql2Json);
             var expression = ParseExpression(document.RootElement);
+            if (!Cql2BooleanExpression.IsPredicate(expression))
+            {
+                throw new ArgumentException("CQL2-JSON filter must be a predicate or boolean expression.");
+            }
+
             FilterParserGuard.EnsureExpressionTree(expression);
             return expression;
         }
         catch (JsonException ex)
         {
+            throw new ArgumentException($"Invalid CQL2-JSON payload: {ex.Message}", nameof(cql2Json), ex);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Valid JSON the parser cannot read as CQL2: a member of the wrong JSON type, or a
+            // lone surrogate escape that cannot be decoded to text. Both are client errors.
             throw new ArgumentException($"Invalid CQL2-JSON payload: {ex.Message}", nameof(cql2Json), ex);
         }
     }
@@ -159,6 +170,7 @@ public sealed class Cql2JsonParser
                 throw new ArgumentException($"Operator '{opValue}' requires at least two arguments");
             }
 
+            Cql2BooleanExpression.EnsurePredicateOperands(opValue, expressions);
             var binaryOperator = normalizedLower == "and" ? BinaryOperator.And : BinaryOperator.Or;
             var current = expressions[0];
             for (var i = 1; i < expressions.Count; i++)
@@ -177,6 +189,7 @@ public sealed class Cql2JsonParser
                 throw new ArgumentException("Operator 'not' requires a single argument");
             }
 
+            Cql2BooleanExpression.EnsurePredicateOperands(opValue, expressions);
             return new UnaryExpression(UnaryOperator.Not, expressions[0]);
         }
 
@@ -213,6 +226,7 @@ public sealed class Cql2JsonParser
                 throw new ArgumentException($"Operator '{opValue}' requires two arguments");
             }
 
+            Cql2BooleanExpression.EnsureLikeOperands(opValue, expressions[0], expressions[1]);
             var op = normalizedLower == "like" ? BinaryOperator.Like : BinaryOperator.NotLike;
             return new BinaryExpression(expressions[0], op, expressions[1]);
         }

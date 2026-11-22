@@ -124,10 +124,9 @@ public class PostgresSqlFilterTranslatorTests
     {
         // Normalisation only resolves properties that appear in comparison-to-literal position,
         // so for an IS NULL (and every other non-comparison shape) translation is the first place
-        // an undeclared property is detected at all. Throwing the plain base type made
+        // an undeclared property is detected at all. Throwing the plain base type would make
         // FilterExpressionService report an untyped failure, and a multi-collection STAC search
-        // answered 400 instead of skipping the collection that lacks the field
-        // (review finding on honua-server#3489).
+        // would answer 400 instead of skipping the collection that lacks the field.
         var isNull = new UnaryExpression(UnaryOperator.IsNull, new PropertyReference("collection_specific_field"));
 
         var translate = () => _translator.Translate(isNull, _resource);
@@ -470,7 +469,7 @@ public class PostgresSqlFilterTranslatorTests
     [Fact]
     public void Translate_SpatialDistance_ContextNotGeographicButGeodesicSafeSrid_UsesGeographyFallback()
     {
-        // Fallback path (#2732): when the resource carries no explicit IsGeographic flag, the
+        // Fallback path: when the resource carries no explicit IsGeographic flag, the
         // translator routes ::geography casts for SRIDs on the narrow geodesic-safe bucket. ETRS89
         // (4258) is geodesic-safe, so DWithin transforms to WGS84 and evaluates on the ellipsoid.
         var resource = CreateResource(new MetadataV2SpatialReference
@@ -496,9 +495,9 @@ public class PostgresSqlFilterTranslatorTests
     [Fact]
     public void Translate_SpatialDistance_ContextNotGeographicSweref99_KeepsPlanarFallback()
     {
-        // #2732 fallback delta: the narrow geodesic-safe bucket drops SWEREF99 (4619) that the old
-        // 6-code Postgres fallback carried. Without an explicit IsGeographic flag, 4619 now stays on
-        // the planar path; the primary spatial_ref_sys-derived flag still classifies it correctly.
+        // The narrow geodesic-safe bucket excludes SWEREF99 (4619). Without an explicit IsGeographic
+        // flag, 4619 stays on the planar path; the primary spatial_ref_sys-derived flag still
+        // classifies it correctly.
         var resource = CreateResource(new MetadataV2SpatialReference
         {
             Srid = 4619,
@@ -899,10 +898,8 @@ public class PostgresSqlFilterTranslatorTests
     [Fact]
     public void Translate_TemporalPredicateOnAttributeBackedTimestampField_UsesAttributesJsonPath()
     {
-        // Regression: a schema field literally named "created_at"/"updated_at" is
-        // stored in the JSONB attributes column on managed feature tables and must
-        // be resolved through the schema, not rewritten to a bare physical column
-        // (which previously produced invalid SQL and a 500 from the OGC pipeline).
+        // Schema fields named created_at or updated_at live in managed tables’ JSONB
+        // attributes. Resolve them through the schema rather than physical columns.
         var jsonTranslator = new PostgresSqlFilterTranslator(useJsonAttributes: true);
         var resource = CreateResource() with
         {
@@ -923,12 +920,6 @@ public class PostgresSqlFilterTranslatorTests
     [Fact]
     public void Translate_TemporalPredicateOnAttributeBackedDateField_EmitsEpochAwareCast()
     {
-        // Regression (bug hunt): a JSONB-stored date attribute can hold an ISO-8601
-        // string (seeds) OR epoch-milliseconds rendered as text (Esri applyEdits).
-        // A bare ::timestamptz cast on epoch-ms text raised SQLSTATE 22008 -> HTTP
-        // 500 on CQL2 temporal filters despite cql2/temporal being advertised. The
-        // translator must emit an epoch-aware cast: numeric text -> to_timestamp,
-        // ISO text -> ::timestamptz.
         var jsonTranslator = new PostgresSqlFilterTranslator(useJsonAttributes: true);
         var resource = CreateResource() with
         {
@@ -951,10 +942,8 @@ public class PostgresSqlFilterTranslatorTests
     [Fact]
     public void Translate_TemporalPredicateOnUndefinedField_ThrowsArgumentException()
     {
-        // Regression: T_BEFORE(updated_at, ...) on a layer that does not define an
-        // "updated_at" queryable previously emitted a bare column reference and
-        // failed at the database (500). It must surface a client error (400) via
-        // an ArgumentException instead.
+        // T_BEFORE(updated_at, ...) without an updated_at queryable must raise
+        // ArgumentException for a client error rather than emit an invalid column reference.
         var jsonTranslator = new PostgresSqlFilterTranslator(useJsonAttributes: true);
 
         var predicate = new TemporalPredicate(
@@ -970,12 +959,11 @@ public class PostgresSqlFilterTranslatorTests
     [Fact]
     public void Translate_ComparisonOnUpdatedSystemAlias_MapsToUpdatedAtColumn()
     {
-        // Regression (#1436): the OData $deltatoken "changed since" predicate
-        // targets the reserved audit-trail system alias "updated", which must
-        // resolve to the bare physical "updated_at" column on managed feature
-        // tables. #1415 mapped the alias to a bare "updated" column that does not
-        // exist (migration 001 defines created_at/updated_at), dropping the delta
-        // filter; this ensures the delta predicate applies again.
+        // The OData $deltatoken "changed since" predicate targets the reserved
+        // audit-trail system alias "updated", which must resolve to the bare
+        // physical "updated_at" column on managed feature tables. Mapping the alias
+        // to a bare "updated" column, which does not exist (migration 001 defines
+        // created_at/updated_at), drops the delta filter.
         var jsonTranslator = new PostgresSqlFilterTranslator(useJsonAttributes: true);
 
         var predicate = new BinaryExpression(
@@ -1012,7 +1000,7 @@ public class PostgresSqlFilterTranslatorTests
     {
         // Guard: if the resource explicitly declares a queryable named "updated",
         // it is resolved through the schema as a JSONB attribute (not the system
-        // column), preserving the #1415 schema-resolution contract.
+        // column), preserving the schema-resolution contract.
         var jsonTranslator = new PostgresSqlFilterTranslator(useJsonAttributes: true);
         var resource = CreateResource() with
         {
@@ -1275,7 +1263,7 @@ public class PostgresSqlFilterTranslatorTests
             SemanticRoles = semanticRoles,
         };
 
-    // ArcGIS SQL parity (#1660): clauses are parsed by the GeoServices SQL parser and
+    // ArcGIS SQL parity: clauses are parsed by the GeoServices SQL parser and
     // must translate to parameterized PostgreSQL — only allowlisted constructs ever
     // reach the database, and every literal becomes a bound parameter.
 
@@ -1334,14 +1322,14 @@ public class PostgresSqlFilterTranslatorTests
 
         var result = _translator.Translate(expression, _resource);
 
-        result.Sql.Should().Be("CONCAT(\"name\", @p0, \"description\") = @p1");
+        result.Sql.Should().Be("CONCAT(CAST(\"name\" AS text), CAST(@p0 AS text), CAST(\"description\" AS text)) = @p1");
         result.Parameters.Should().HaveCount(2);
         result.Parameters[0].Should().Be(" ");
         result.Parameters[1].Should().Be("a b");
     }
 
     // ------------------------------------------------------------------
-    // #1865 — LIKE ESCAPE, extended EXTRACT fields, CASE.
+    // LIKE ESCAPE, extended EXTRACT fields, CASE.
     // Every test asserts the literal payloads remain bound parameters so the
     // SQL-injection boundary is preserved.
     // ------------------------------------------------------------------

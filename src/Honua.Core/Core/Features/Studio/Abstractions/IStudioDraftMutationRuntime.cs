@@ -19,6 +19,11 @@ public interface IStudioDraftMutationRuntime
         StudioDraftMutationContext context,
         CancellationToken cancellationToken = default);
 
+    Task<StudioDraftMutationReceipt<StudioPackageDraft>> RestoreRevisionAsync(
+        StudioDraftRevisionRestore restore,
+        StudioDraftMutationContext context,
+        CancellationToken cancellationToken = default);
+
     Task<StudioDraftMutationReceipt<bool>> DeleteAsync(
         Guid draftId,
         StudioDraftMutationContext context,
@@ -60,10 +65,13 @@ public interface IStudioDraftMutationRuntime
         StudioDraftMutationContext context, CancellationToken cancellationToken = default);
 }
 
+public sealed record StudioDraftRevisionRestore(Guid DraftId, RestoreStudioDraftRevisionCommand Command);
+
 public sealed record StudioDraftMutationContext
 {
     public const string CreateOperationId = "studio.draft.create";
     public const string UpdateOperationId = "studio.draft.update";
+    public const string RestoreRevisionOperationId = "studio.draft.restore-revision";
     public const string DeleteOperationId = "studio.draft.delete";
     public const string ValidateOperationId = "studio.draft.validate";
     public const string PreviewPlanOperationId = "studio.draft.preview-plan";
@@ -71,14 +79,18 @@ public sealed record StudioDraftMutationContext
     public const string ReopenVersionOperationId = "studio.content.reopen-version";
 
     public static bool IsPrivateDraftOperation(string operationId) => operationId is
-        CreateOperationId or UpdateOperationId or DeleteOperationId or ValidateOperationId or
-        PreviewPlanOperationId or SaveVersionOperationId or ReopenVersionOperationId;
+        CreateOperationId or UpdateOperationId or RestoreRevisionOperationId or DeleteOperationId or
+        ValidateOperationId or PreviewPlanOperationId or SaveVersionOperationId or ReopenVersionOperationId;
 
     public string? PrincipalId { get; init; }
     public string? TenantId { get; init; }
     public string? SchemaName { get; init; }
     public string? CorrelationId { get; init; }
     public string? IdempotencyKey { get; init; }
+
+    // Binds IdempotencyKey to the request content: a retry with the same key and different
+    // content is a conflict, and an in-flight retry is refused instead of re-dispatched.
+    public string? IdempotencyRequestHash { get; init; }
     public string AuthorizationOutcome { get; init; } = "authorized";
     public IReadOnlyList<string> Roles { get; init; } = [];
     public bool ScopeGoverned { get; init; }

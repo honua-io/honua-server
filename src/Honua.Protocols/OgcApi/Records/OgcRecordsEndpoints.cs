@@ -16,6 +16,7 @@ using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Api.Records.Models;
 using Honua.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Net.Http.Headers;
 
 namespace Honua.Protocols.Ogc.Api.Records;
 
@@ -247,7 +248,11 @@ internal static class OgcRecordsEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Record collection '{collectionId}' not found.");
         }
 
-        var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, ItemsQueryParameters);
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var customFields = OgcRecordCustomFields.ForRequest(snapshot.Graph.CustomFieldSchemas, context.Request);
+        var validationError = OgcCommonUtilities.ValidateQueryParameters(
+            context.Request, customFields.AllowedQueryParameters(ItemsQueryParameters));
         if (validationError is not null)
         {
             return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
@@ -273,10 +278,11 @@ internal static class OgcRecordsEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, datetimeError!);
         }
 
-        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var records = await BuildVisibleRecordsAsync(context, graphProvider, cancellationToken).ConfigureAwait(false);
-        var filtered = ApplyFilters(records, bboxFilter, datetimeFilter, q, ids, type, externalIds).ToArray();
+        var filtered = ApplyFilters(records, bboxFilter, datetimeFilter, q, ids, type, externalIds)
+            .Where(record => customFields.Matches(record.Descriptive.CustomFields)).ToArray();
         var page = filtered.Skip(pageOffset).Take(pageLimit).Select(record => record.Feature).ToImmutableArray();
+        var facets = customFields.Facets(filtered.Select(record => record.Descriptive.CustomFields).ToArray());
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var links = BuildItemsLinks(context, baseUrl, collectionId, filtered.Length, pageLimit, pageOffset);
@@ -285,6 +291,7 @@ internal static class OgcRecordsEndpoints
             Features = page,
             NumberMatched = filtered.Length,
             NumberReturned = page.Length,
+            Facets = facets,
             Links = links
         };
 
@@ -309,9 +316,9 @@ internal static class OgcRecordsEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
-        if (!TryGetGeoJsonOutputFormat(context, f, out var formatError))
+        if (OgcRecordMetadataFormats.FormatParameterError(f) is { } formatError)
         {
-            return StandardErrorHelpers.CreateBadRequest(context, formatError ?? "Invalid format.");
+            return StandardErrorHelpers.CreateBadRequest(context, formatError);
         }
 
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -323,8 +330,31 @@ internal static class OgcRecordsEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Record '{recordId}' not found.");
         }
 
-        return Results.Json(record.Feature, OgcRecordsJsonContext.Default.OgcRecordFeature, MediaTypes.GeoJson);
+        return WriteRecord(context, record, f);
     }
+
+    // The record varies by Accept: GeoJSON, or one of the metadata encodings its kind allows.
+    private static IResult WriteRecord(HttpContext context, CatalogRecord record, string? f)
+    {
+        context.Response.Headers.Append(HeaderNames.Vary, HeaderNames.Accept);
+        var negotiation = OgcRecordMetadataFormats.Negotiate(context.Request, f, record.Descriptive.Kind);
+        if (NegotiationProblem(context, negotiation) is { } problem)
+        {
+            return problem;
+        }
+
+        return negotiation.Format == OgcRecordOutputFormat.GeoJson
+            ? Results.Json(record.Feature, OgcRecordsJsonContext.Default.OgcRecordFeature, MediaTypes.GeoJson)
+            : OgcRecordMetadataFormats.Write(
+                negotiation.Format, record.Descriptive, record.Feature.Links.First(link => link.Rel == RelationTypes.Self).Href);
+    }
+
+    private static IResult? NegotiationProblem(HttpContext context, OgcRecordFormatNegotiation negotiation) => negotiation.ErrorStatus switch
+    {
+        null => null,
+        StatusCodes.Status406NotAcceptable => StandardErrorHelpers.CreateNotAcceptable(context, negotiation.Error!),
+        _ => StandardErrorHelpers.CreateBadRequest(context, negotiation.Error!),
+    };
 
     private static OgcRecordCollection CreateCatalogCollection(string baseUrl) => new()
     {
@@ -481,7 +511,9 @@ internal static class OgcRecordsEndpoints
             ?? throw new InvalidOperationException("Metadata v2 service metadata is required.");
         var servicePath = baseUrl + GeoServicesServiceUrls.CanonicalPath(snapshot.Graph, service);
         var links = ImmutableArray.CreateBuilder<Link>();
-        links.Add(Link.Create($"{baseUrl}/ogc/records/collections/{CatalogCollectionId}/items/{Uri.EscapeDataString($"service:{serviceMetadata.Name}")}", RelationTypes.Self, MediaTypes.GeoJson, serviceMetadata.Title ?? service.EffectivePublicName));
+        var selfHref = $"{baseUrl}/ogc/records/collections/{CatalogCollectionId}/items/{Uri.EscapeDataString($"service:{serviceMetadata.Name}")}";
+        links.Add(Link.Create(selfHref, RelationTypes.Self, MediaTypes.GeoJson, serviceMetadata.Title ?? service.EffectivePublicName));
+        links.AddRange(OgcRecordMetadataFormats.AlternateLinks(selfHref, DescribedItemKind.Service));
         if (IsProtocolEnabled(service, FeatureServerProtocolName))
         {
             links.Add(Link.Create($"{servicePath}/FeatureServer", RelationTypes.Alternate, MediaTypes.Json, "FeatureServer"));
@@ -521,10 +553,16 @@ internal static class OgcRecordsEndpoints
             Modified: modified,
             ExternalIds: [serviceMetadata.Name],
             SearchText: BuildSearchText(
-                $"service:{serviceMetadata.Name}",
-                serviceMetadata.Name,
-                serviceMetadata.Title,
-                serviceMetadata.Description));
+                [
+                    $"service:{serviceMetadata.Name}",
+                    serviceMetadata.Name,
+                    serviceMetadata.Title,
+                    serviceMetadata.Description,
+                    .. OgcRecordCustomFields.SearchValues(descriptive.CustomFields)
+                ]))
+        {
+            Descriptive = descriptive,
+        };
     }
 
     private static CatalogRecord CreateResourceRecord(
@@ -540,7 +578,9 @@ internal static class OgcRecordsEndpoints
             LayerValidationHelpers.AdvertisedCollectionId(publication, resource) ?? resource.Metadata.Id);
 
         var links = ImmutableArray.CreateBuilder<Link>();
-        links.Add(Link.Create($"{baseUrl}/ogc/records/collections/{CatalogCollectionId}/items/{Uri.EscapeDataString($"layer:{publicationId}")}", RelationTypes.Self, MediaTypes.GeoJson, resource.Metadata.Name));
+        var selfHref = $"{baseUrl}/ogc/records/collections/{CatalogCollectionId}/items/{Uri.EscapeDataString($"layer:{publicationId}")}";
+        links.Add(Link.Create(selfHref, RelationTypes.Self, MediaTypes.GeoJson, resource.Metadata.Name));
+        links.AddRange(OgcRecordMetadataFormats.AlternateLinks(selfHref, DescribedItemKind.Dataset));
 
         if (IsProtocolEnabled(service, OgcFeaturesProtocolName))
         {
@@ -583,11 +623,17 @@ internal static class OgcRecordsEndpoints
             Modified: ResolveModified(resource.Metadata),
             ExternalIds: [publicationId, resource.Metadata.Name],
             SearchText: BuildSearchText(
-                $"layer:{publicationId}",
-                publicationId,
-                resource.Metadata.Name,
-                properties.Title,
-                properties.Description));
+                [
+                    $"layer:{publicationId}",
+                    publicationId,
+                    resource.Metadata.Name,
+                    properties.Title,
+                    properties.Description,
+                    .. OgcRecordCustomFields.SearchValues(descriptive.CustomFields)
+                ]))
+        {
+            Descriptive = descriptive,
+        };
     }
 
     private static OgcRecordGeometry? CreateExtentGeometry(ImmutableArray<double>? bbox)
@@ -905,7 +951,11 @@ internal static class OgcRecordsEndpoints
         ImmutableArray<double>? Bbox,
         DateTimeOffset? Modified,
         string[] ExternalIds,
-        string SearchText);
+        string SearchText)
+    {
+        // The resolved descriptive metadata the ISO and DCAT encodings of this record are written from.
+        public required DescriptiveMetadata Descriptive { get; init; }
+    }
 
     private sealed record BboxFilter(double MinX, double MinY, double MaxX, double MaxY);
 

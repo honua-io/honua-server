@@ -95,16 +95,18 @@ internal sealed partial class PostgresCdnPurgeBudget(
         command.Parameters.AddWithValue("limit", budget.MonthlyLimit);
         command.Parameters.AddWithValue("unit", budget.UnitCost);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
         {
-            return new CdnPurgeAdmission(
-                CdnPurgeBudgetDecision.Admitted,
-                reader.GetInt32(0),
-                reader.GetDecimal(1));
+            if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                return new CdnPurgeAdmission(CdnPurgeBudgetDecision.Admitted, reader.GetInt32(0), reader.GetDecimal(1));
+            }
         }
 
-        return new CdnPurgeAdmission(CdnPurgeBudgetDecision.Exceeded, budget.MonthlyLimit, 0);
+        // A refusal reports what the month actually holds, so the operator log shows the real count and spend.
+        var month = await ReadAsync(connection, cancellationToken).ConfigureAwait(false);
+        return new CdnPurgeAdmission(CdnPurgeBudgetDecision.Exceeded,
+            month?.SubmittedCount ?? budget.MonthlyLimit, month?.EstimatedSpend ?? 0);
     }
 
     private async Task<CdnPurgeBudgetMonth?> ReadAsync(NpgsqlConnection connection, CancellationToken cancellationToken)

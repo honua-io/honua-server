@@ -69,6 +69,16 @@ class ProtocolProfileSelectionTests(unittest.TestCase):
         self.assertNotEqual(payload["shards"], "run_all")
         self.assertTrue(any("FeatureServer" in name or "GeoServices" in name for name in payload["shards"]))
 
+    def test_all_selects_every_profile_even_for_an_empty_range(self):
+        env = os.environ.copy()
+        env["BASE_REF"] = "HEAD"
+        env["HEAD_REF"] = "HEAD"
+        completed = run_selector(["--all", "--changed-from-git"], env=env)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        payload = json.loads(completed.stdout)
+        self.assertEqual(payload["mode"], "full")
+        self.assertEqual(payload["profiles"], ["gsr", "ogc-api", "ogc-api-classic", "all"])
+
     def test_unresolved_git_range_fails_closed(self):
         env = os.environ.copy()
         env.pop("BASE_REF", None)

@@ -52,7 +52,7 @@ public sealed partial class StudioAiProxyServiceTests
     [UnitTest]
     public async Task GetCapabilitiesAsync_AnthropicProviderWithoutApiKeyOrEnvFallback_ReportsUnconfigured()
     {
-        // honua-server#3010 review: exercises the REAL AnthropicStudioAiProxyAdapter (not the fake)
+        // Exercises the REAL AnthropicStudioAiProxyAdapter (not the fake)
         // so this proves the service + adapter together, not just a mocked contract.
         var config = ConfigWithOneAnthropicProvider("claude", isDefault: true);
         config.Providers["claude"].ApiKey = string.Empty;
@@ -433,7 +433,8 @@ public sealed partial class StudioAiProxyServiceTests
                 ReleaseId = "release-9",
                 EndpointIdentity = "candidate-proxy",
                 ActionId = "deploy",
-                RunNonce = "nonce"
+                RunNonce = "nonce",
+                RequestedBy = "apikey:api-key:00000000-0000-0000-0000-000000000007"
             },
             Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "deploy" }]
         };
@@ -610,7 +611,8 @@ public sealed partial class StudioAiProxyServiceTests
             ReleaseId = "release-9",
             EndpointIdentity = "candidate-proxy",
             ActionId = "compose-map",
-            RunNonce = "nonce"
+            RunNonce = "nonce",
+            RequestedBy = "apikey:api-key:00000000-0000-0000-0000-000000000007"
         },
         Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }]
     };

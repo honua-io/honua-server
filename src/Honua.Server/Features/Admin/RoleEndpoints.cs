@@ -2,9 +2,11 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using Asp.Versioning.Builder;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -15,7 +17,7 @@ namespace Honua.Server.Features.Admin;
 internal static partial class RoleEndpoints
 {
     private const string ConsoleAccessService = "console-access";
-    private const string WorkspaceMembershipOperation = "workspace-membership";
+    private const string EnvironmentMembershipOperation = "environment-membership";
     internal sealed class RoleEndpointsLog;
 
     internal static partial class RoleLog
@@ -45,37 +47,48 @@ internal static partial class RoleEndpoints
             .WithTags("Admin", "Roles")
             .RequireAdminAuthorization();
 
-        group.MapGet("/", HandleListRoles)
-            .WithDisplayName("List Roles")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var list = AdminHttpOperationRouteBinding.ForAccess("admin.role.list", "/roles");
+        group.MapMethods(list.RoutePattern, list.Methods, HandleListRoles)
+            .WithAdminOperation(list.Definition).WithDisplayName("List Roles");
 
-        group.MapPost("/", HandleCreateRole)
-            .WithDisplayName("Create Role")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
-            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
+        // Role definitions decide what every holder of the role may do. Assigning a role to a user
+        // already needs credential-management authority, so defining what it grants does too.
+        var create = AdminHttpOperationRouteBinding.ForAccess("admin.role.create", "/roles");
+        group.MapMethods(create.RoutePattern, create.Methods, HandleCreateRole)
+            .WithAdminOperation(create.Definition).WithDisplayName("Create Role")
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
+            .RequireCredentialManagementAuthority();
 
-        group.MapGet("/{id:guid}", HandleGetRole)
-            .WithDisplayName("Get Role")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var get = AdminHttpOperationRouteBinding.ForAccess("admin.role.get", "/roles", "/{id:guid}");
+        group.MapMethods(get.RoutePattern, get.Methods, HandleGetRole)
+            .WithAdminOperation(get.Definition).WithDisplayName("Get Role");
 
-        group.MapPut("/{id:guid}", HandleUpdateRole)
-            .WithDisplayName("Update Role")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
-            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
+        var update = AdminHttpOperationRouteBinding.ForAccess("admin.role.update", "/roles", "/{id:guid}");
+        group.MapMethods(update.RoutePattern, update.Methods, HandleUpdateRole)
+            .WithAdminOperation(update.Definition).WithDisplayName("Update Role")
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
+            .RequireCredentialManagementAuthority();
 
-        group.MapDelete("/{id:guid}", HandleDeleteRole)
-            .WithDisplayName("Delete Role")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }))
-            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
+        var delete = AdminHttpOperationRouteBinding.ForAccess("admin.role.delete", "/roles", "/{id:guid}");
+        group.MapMethods(delete.RoutePattern, delete.Methods, HandleDeleteRole)
+            .WithAdminOperation(delete.Definition).WithDisplayName("Delete Role")
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
+            .RequireCredentialManagementAuthority();
 
-        group.MapGet("/{id:guid}/permissions", HandleGetPermissions)
-            .WithDisplayName("Get Role Permissions")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        MapPermissionEndpoints(group);
+    }
 
-        group.MapPut("/{id:guid}/permissions", HandleSetPermissions)
-            .WithDisplayName("Set Role Permissions")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
-            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
+    private static void MapPermissionEndpoints(IVersionedEndpointRouteBuilder group)
+    {
+        var getPermissions = AdminHttpOperationRouteBinding.ForAccess("admin.role.permissions.get", "/roles", "/{id:guid}/permissions");
+        group.MapMethods(getPermissions.RoutePattern, getPermissions.Methods, HandleGetPermissions)
+            .WithAdminOperation(getPermissions.Definition).WithDisplayName("Get Role Permissions");
+
+        var setPermissions = AdminHttpOperationRouteBinding.ForAccess("admin.role.permissions.set", "/roles", "/{id:guid}/permissions");
+        group.MapMethods(setPermissions.RoutePattern, setPermissions.Methods, HandleSetPermissions)
+            .WithAdminOperation(setPermissions.Definition).WithDisplayName("Set Role Permissions")
+            .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
+            .RequireCredentialManagementAuthority();
     }
 
     private static RoleResponse ToResponse(RoleDefinition r) => new()
@@ -130,11 +143,9 @@ internal static partial class RoleEndpoints
     {
         try
         {
-            var validationResults = new List<ValidationResult>();
-            if (!Validator.TryValidateObject(request, new ValidationContext(request), validationResults, true))
+            if (CreateRequestError(request) is { } error)
             {
-                var errors = string.Join(", ", validationResults.Select(r => r.ErrorMessage));
-                return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {errors}"));
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(error));
             }
 
             var role = new RoleDefinition
@@ -161,6 +172,17 @@ internal static partial class RoleEndpoints
                 detail: "An internal error occurred while creating the role.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
+    }
+
+    private static string? CreateRequestError(CreateRoleRequest request)
+    {
+        var validationResults = new List<ValidationResult>();
+        if (!Validator.TryValidateObject(request, new ValidationContext(request), validationResults, true))
+        {
+            return $"Validation failed: {string.Join(", ", validationResults.Select(r => r.ErrorMessage))}";
+        }
+
+        return ReservedRoleNames.Contains(request.Name) ? ReservedRoleNames.Refusal(request.Name) : null;
     }
 
     private static async Task<Results<Ok<ApiResponse<RoleResponse>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
@@ -313,7 +335,7 @@ internal static partial class RoleEndpoints
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PermissionGrantResponse>>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
+    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PermissionGrantResponse>>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
         HandleSetPermissions(
             Guid id,
             SetPermissionsRequest request,
@@ -329,6 +351,11 @@ internal static partial class RoleEndpoints
                 return TypedResults.NotFound(ApiResponse<object>.Failure("Role not found"));
             }
 
+            if (role.IsBuiltIn || ReservedRoleNames.Contains(role.Name))
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(ReservedRoleNames.Refusal(role.Name)));
+            }
+
             var grants = request.Permissions.Select(p => new PermissionGrant
             {
                 Service = p.Service,
@@ -336,12 +363,12 @@ internal static partial class RoleEndpoints
                 Operation = p.Operation,
             }).ToList();
 
-            // Console-created roles encode their workspace ownership as a reserved
+            // Console-created roles encode their Environment ownership as a reserved
             // grant. The generic permission editor replaces authorizing grants, but
             // must not strip this stable ownership metadata.
             grants.AddRange(role.Permissions.Where(static grant =>
                 string.Equals(grant.Service, ConsoleAccessService, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(grant.Operation, WorkspaceMembershipOperation, StringComparison.Ordinal)));
+                && string.Equals(grant.Operation, EnvironmentMembershipOperation, StringComparison.Ordinal)));
 
             var result = await store.SetPermissionsAsync(id, grants, context.RequestAborted);
 

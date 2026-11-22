@@ -29,7 +29,7 @@ public sealed class RedisOffGovernedControlPlaneTests
     [UnitTest]
     public void AdminApiCatalog_IsTheTwentyToolsTheRedisOffCellLost()
     {
-        AdminApiOperationCatalog.Definitions.Should().HaveCount(29);
+        AdminApiOperationCatalog.Definitions.Should().HaveCount(31);
     }
 
     [UnitTest]
@@ -124,7 +124,7 @@ public sealed class RedisOffGovernedControlPlaneTests
     [UnitTest]
     public async Task RedisOffComposition_ApprovalBridge_RefusesWithTypedSystemDatabaseDependency()
     {
-        // honua-server#5733: even where the operation record itself is volatile (Development/Test),
+        // Even where the operation record itself is volatile (Development/Test),
         // an approval-gated call must not invent a proposal, and must not degrade to a non-durable
         // failure every adapter projects as an untyped 500. The bridge refuses with the typed
         // capability-unavailable receipt the rest of the Redis-off surface emits.

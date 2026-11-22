@@ -3,6 +3,7 @@
 
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Infrastructure.Licensing;
@@ -92,9 +93,10 @@ internal static partial class SceneAnalysisEndpoints
         // uniformly to a 400 bad-request response.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            if (logger is not null)
+            if (logger is not null && logger.IsEnabled(LogLevel.Warning))
             {
-                LogSunShadowRequestParseFailed(logger, datasetId, ex);
+                var sanitizedDatasetId = LogValueRedactor.SanitizeForLog(datasetId);
+                LogSunShadowRequestParseFailed(logger, sanitizedDatasetId, ex);
             }
             return StandardErrorHelpers.CreateBadRequest(context, "Request body must be valid JSON.");
         }
@@ -227,9 +229,10 @@ internal static partial class SceneAnalysisEndpoints
         // uniformly to a 400 bad-request response.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            if (logger is not null)
+            if (logger is not null && logger.IsEnabled(LogLevel.Warning))
             {
-                LogSliceRequestParseFailed(logger, datasetId, ex);
+                var sanitizedDatasetId = LogValueRedactor.SanitizeForLog(datasetId);
+                LogSliceRequestParseFailed(logger, sanitizedDatasetId, ex);
             }
             return StandardErrorHelpers.CreateBadRequest(context, "Request body must be valid JSON.");
         }

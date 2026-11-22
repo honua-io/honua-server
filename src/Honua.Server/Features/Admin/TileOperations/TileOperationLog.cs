@@ -46,6 +46,18 @@ internal static partial class TileOperationLog
     [LoggerMessage(EventId = 9220, Level = LogLevel.Warning, Message = "Failed to delete the completed tile-cache generation checkpoint for generation {GenerationId}; it will self-expire.")]
     public static partial void CheckpointDeleteFailed(ILogger logger, string generationId, Exception exception);
 
-    [LoggerMessage(EventId = 9221, Level = LogLevel.Information, Message = "Paired publish job {JobId} activated version {Version} of publication {PublicationId}.")]
-    public static partial void PairedPublishActivated(ILogger logger, string jobId, string publicationId, string version);
+    [LoggerMessage(EventId = 9221, Level = LogLevel.Information, Message = "Export job {JobId} activated version {Version} of export {ExportId}.")]
+    public static partial void ExportActivated(ILogger logger, string jobId, string exportId, string version);
+
+    [LoggerMessage(EventId = 9222, Level = LogLevel.Warning, Message = "Export {ExportVersion} could not read the layer's stored style; style.json and the thumbnail use default paints.")]
+    public static partial void ExportStoredStyleSkipped(ILogger logger, string exportVersion, Exception exception);
+
+    [LoggerMessage(EventId = 9223, Level = LogLevel.Warning, Message = "Export {ExportVersion} was published without a thumbnail because rendering failed.")]
+    public static partial void ExportThumbnailSkipped(ILogger logger, string exportVersion, Exception exception);
+
+    [LoggerMessage(EventId = 9224, Level = LogLevel.Warning, Message = "Public promotion failed for export {ExportVersion}; the Export remains active on signed-in routes.")]
+    public static partial void ExportPublicPromotionFailed(ILogger logger, string exportVersion, Exception exception);
+
+    [LoggerMessage(EventId = 9225, Level = LogLevel.Error, Message = "Export {ExportVersion} was unpublished during public promotion, and immediate public revocation failed; the revocation sweep will retry.")]
+    public static partial void ExportPublicPromotionFenceRevokeFailed(ILogger logger, string exportVersion, Exception exception);
 }

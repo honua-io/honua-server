@@ -383,6 +383,11 @@ internal static partial class FeatureServerEndpoints
                 $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not bound to a storage layer."));
         }
 
+        if (FeatureServerEditRefusals.ForSourceTable(context, snapshot, publication) is { } sourceTableRefusal)
+        {
+            return (null, sourceTableRefusal);
+        }
+
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         var query = new FeatureQuery
         {
@@ -1099,13 +1104,6 @@ internal static partial class FeatureServerEndpoints
     // An applyEdits control this server cannot honor is a 400, not an accepted no-op, because ignoring it would drop edits or change the promised result.
     private static IResult? CreateUnsupportedEditControlError(HttpContext context, ApplyEditsRequest request)
     {
-        if (request.UseGlobalIds)
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "useGlobalIds is not supported",
-                ["Set useGlobalIds to false and supply objectIds in attributes."]);
-        }
-
         if (request.Attachments is { Length: > 0 })
         {
             return StandardErrorHelpers.CreateBadRequest(context,

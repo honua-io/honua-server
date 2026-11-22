@@ -437,10 +437,11 @@ public sealed class ContentPublicationService : IContentPublicationService
                     path: "/createPublicLink");
             }
 
-            if (linkRequest.ExpiresAt is { } expiresAt && expiresAt <= now)
+            var (linkExpiresAt, expiryError) = PublicLinkLifetime.Resolve(linkRequest.ExpiresAt, now);
+            if (expiryError is not null)
             {
                 throw new ContentPublicationValidationException(
-                    "The public link expiry must be in the future.",
+                    $"Public link {expiryError}",
                     code: "publication.publicLink.create.expiresAt.invalid",
                     path: "/createPublicLink/expiresAt");
             }
@@ -471,7 +472,7 @@ public sealed class ContentPublicationService : IContentPublicationService
                 Label = linkRequest.Label,
                 CreatedBy = actor,
                 CreatedAt = now,
-                ExpiresAt = linkRequest.ExpiresAt,
+                ExpiresAt = linkExpiresAt,
                 Revoked = false,
             });
             // Creating a link implicitly enables the feature for the route.

@@ -65,6 +65,7 @@ internal sealed class DescribeLayerTool : IMcpTool
     private const string InputSchemaJson = """
         {
           "type": "object",
+          "additionalProperties": false,
           "required": ["serviceId", "serviceLayerIndex"],
           "properties": {
             "serviceId": {

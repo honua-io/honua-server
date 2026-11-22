@@ -147,6 +147,10 @@ public sealed record MetadataV2ObjectMetadata : ExtensibleJsonRecord
     [JsonPropertyName("temporalResolution")]
     public string? TemporalResolution { get; init; }
 
+    [JsonPropertyName("customFields")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyDictionary<string, JsonElement>? CustomFields { get; init; }
+
     private static readonly IReadOnlyDictionary<string, string> EmptyStringMap =
         new Dictionary<string, string>();
 }
@@ -220,6 +224,8 @@ public sealed record MetadataV2ContactPoint : ExtensibleJsonRecord
 
     public const int MaxUrlLength = MetadataV2Link.MaxGovernanceHrefLength;
 
+    public const int MaxPhoneLength = 64;
+
     [JsonPropertyName("name")]
     public string? Name { get; init; }
 
@@ -228,6 +234,10 @@ public sealed record MetadataV2ContactPoint : ExtensibleJsonRecord
 
     [JsonPropertyName("url")]
     public string? Url { get; init; }
+
+    // Voice telephone, emitted as WMS ContactVoiceTelephone and OWS ows:Phone/ows:Voice.
+    [JsonPropertyName("phone")]
+    public string? Phone { get; init; }
 }
 
 public sealed record MetadataV2Link : ExtensibleJsonRecord

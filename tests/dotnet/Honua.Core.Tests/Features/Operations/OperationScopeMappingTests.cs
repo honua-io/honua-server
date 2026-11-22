@@ -27,6 +27,7 @@ public sealed class OperationScopeMappingTests
     [InlineData("admin.layer.spatial.set", OperatorOperation.Update)]
     [InlineData("admin.connections.features.refresh", OperatorOperation.Update)]
     [InlineData("admin.connections.delete", OperatorOperation.Delete)]
+    [InlineData("admin.connections.objects.list", OperatorOperation.Read)]
     [InlineData("admin.import.jobs.cancel", OperatorOperation.Delete)]
     public void TryResolve_AdminApprovalReplay_UsesSemanticOperation(
         string operationId,
@@ -64,13 +65,14 @@ public sealed class OperationScopeMappingTests
             .Should().BeTrue();
     }
 
-    // #3429: the dispatcher refuses every scope-governed submission it cannot map (#4722), so each
+    // The dispatcher refuses every scope-governed submission it cannot map, so each
     // Studio operation routed through the canonical runtime must resolve, with or without a gateway
     // envelope, to the same operation StudioAuthorizationService uses as its scope ceiling.
     [Trait("Tier", "Fast")]
     [Theory]
     [InlineData("studio.draft.create", OperatorOperation.Create)]
     [InlineData("studio.draft.update", OperatorOperation.Update)]
+    [InlineData("studio.draft.restore-revision", OperatorOperation.Update)]
     [InlineData("studio.draft.save-version", OperatorOperation.Update)]
     [InlineData("studio.draft.delete", OperatorOperation.Delete)]
     [InlineData("studio.draft.validate", OperatorOperation.Read)]

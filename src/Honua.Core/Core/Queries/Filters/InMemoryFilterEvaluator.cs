@@ -1,11 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 
 namespace Honua.Core.Queries.Filters;
 
@@ -16,11 +14,17 @@ public static class InMemoryFilterEvaluator
 
     public static bool Evaluate(FilterExpression expression, IReadOnlyDictionary<string, JsonElement> properties)
     {
-        return EvaluateTruth(expression, properties, depth: 0) == TruthValue.True;
+        return !ExceedsMaxDepth(expression) && EvaluateTruth(expression, properties, depth: 0) == TruthValue.True;
     }
 
     public static bool TryValidateStreamingExpression(FilterExpression expression, out string? error)
     {
+        if (ExceedsMaxDepth(expression))
+        {
+            error = "Expression exceeds the streaming depth limit.";
+            return false;
+        }
+
         return TryValidateBooleanExpression(expression, out error);
     }
 
@@ -31,7 +35,7 @@ public static class InMemoryFilterEvaluator
     {
         if (depth > MaxStreamingDepth)
         {
-            return TruthValue.False; // Fail closed for expressions that exceed streaming limits.
+            return TruthValue.Unknown;
         }
 
         return expr switch
@@ -547,64 +551,9 @@ public static class InMemoryFilterEvaluator
         return false;
     }
 
-    // LIKE patterns are client-controlled. The cache is bounded so unique patterns cannot
-    // pin one automaton per subscription for the process lifetime. Patterns past the
-    // length or wildcard cap are refused before they are compiled.
-    private const int MaxCachedLikePatterns = 1024;
-    private const int MaxLikePatternLength = 256;
-    private const int MaxLikeWildcards = 32;
-
-    private static readonly ConcurrentDictionary<string, Regex> LikePatternCache = new();
-
+    // LIKE patterns are client-controlled; SqlLikePattern holds the limits and the bounded cache.
     private static bool EvaluateLike(object left, object right)
-    {
-        var input = left.ToString() ?? string.Empty;
-        var pattern = right.ToString() ?? string.Empty;
-        if (pattern.Length > MaxLikePatternLength || CountLikeWildcards(pattern) > MaxLikeWildcards)
-        {
-            throw new UnevaluableLikePatternException();
-        }
-
-        try
-        {
-            if (!LikePatternCache.TryGetValue(pattern, out var regex))
-            {
-                regex = LikePatternCache.Count < MaxCachedLikePatterns
-                    ? LikePatternCache.GetOrAdd(pattern, static p => CreateLikeRegex(p))
-                    : CreateLikeRegex(pattern);
-            }
-
-            return regex.IsMatch(input);
-        }
-        catch (RegexMatchTimeoutException)
-        {
-            throw new UnevaluableLikePatternException();
-        }
-    }
-
-    private static int CountLikeWildcards(string pattern)
-    {
-        var count = 0;
-        foreach (var character in pattern)
-        {
-            if (character is '%' or '_')
-            {
-                count++;
-            }
-        }
-
-        return count;
-    }
-
-    private static Regex CreateLikeRegex(string pattern)
-    {
-        // Convert SQL LIKE pattern to regex: % → .*, _ → ., escape others.
-        // NonBacktracking keeps a failed match linear.
-        var regexPattern = "^" + Regex.Escape(pattern)
-            .Replace("%", ".*", StringComparison.Ordinal)
-            .Replace("_", ".", StringComparison.Ordinal) + "$";
-        return new Regex(regexPattern, RegexOptions.NonBacktracking | RegexOptions.CultureInvariant);
-    }
+        => SqlLikePattern.IsMatch(left.ToString() ?? string.Empty, right.ToString() ?? string.Empty);
 
     public static bool ExceedsMaxDepth(FilterExpression expression)
     {

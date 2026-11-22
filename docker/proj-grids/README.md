@@ -1,9 +1,12 @@
 # PROJ grid-data PostGIS image
 
-The default customer Compose deployment builds this image with
-`pgrouting/pgrouting:17-3.5-3.7.3` as its base. It retains PostgreSQL 17 and the
-existing data-volume layout while adding the regional grids used by the datum
-catalog. The install archive includes this build context under `docker/proj-grids`.
+The default customer Compose deployment builds this image on Honua's Compose
+database image (`docker/compose-postgres`: PostgreSQL 17, PostGIS 3.5 and
+pgRouting 3.7 on a maintained Debian base, gated and rebuilt weekly). It retains
+PostgreSQL 17 and the existing data-volume layout while adding the regional grids
+used by the datum catalog. On the first start of an existing volume, that image
+rebuilds text indexes for its newer C library before the server starts. The
+install archive includes this build context under `docker/proj-grids`.
 Run `python3 quickstart.py` from the extracted archive as described in the
 [quickstart](../../docs/get-started/quickstart.md).
 
@@ -32,8 +35,8 @@ docker compose -f docker/proj-grids/compose.yml up -d --build
 To build the same base as the customer deployment:
 
 ```bash
-docker build --build-arg BASE_IMAGE=pgrouting/pgrouting:17-3.5-3.7.3 \
-  -t honua-postgis-proj-grids:17-3.5-3.7.3 docker/proj-grids
+docker build --build-arg BASE_IMAGE=ghcr.io/honua-io/honua-server@sha256:e60f2e287f6bddfaa7e1ac0bab082f83580a6ba242a98d0933d55e1e577e6fa0 \
+  -t honua-postgis-proj-grids:17-honua-e60f2e28 docker/proj-grids
 ```
 
 ## Integration coverage

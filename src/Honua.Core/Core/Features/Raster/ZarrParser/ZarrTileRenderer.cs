@@ -266,7 +266,7 @@ public static class ZarrTileRenderer
         pixel[3] = 255;
     }
 
-    private static (int StrideY, int StrideX) ComputeSpatialStrides(int[] shape, int yDim, int xDim)
+    internal static (int StrideY, int StrideX) ComputeSpatialStrides(int[] shape, int yDim, int xDim)
     {
         var strideY = 1;
         for (var i = yDim + 1; i < shape.Length; i++)
@@ -414,6 +414,6 @@ public static class ZarrTileRenderer
         _ => throw new InvalidOperationException($"Zarr dtype '{original}' is not supported for tile rendering.")
     };
 
-    private static string Normalize(string dtype)
+    internal static string Normalize(string dtype)
         => dtype.Length > 0 && dtype[0] is '<' or '|' or '=' ? dtype[1..] : dtype;
 }

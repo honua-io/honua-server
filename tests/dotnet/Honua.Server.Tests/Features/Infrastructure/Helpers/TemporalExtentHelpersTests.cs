@@ -6,6 +6,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Helpers;
+using Honua.TestKit.Attributes;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Helpers;
@@ -67,7 +68,7 @@ public sealed class TemporalExtentHelpersTests
     [Fact]
     public async Task TryResolveTemporalRangeV2Async_EndExtentNull_FallsBackToStartExtentEnd()
     {
-        // Regression for #379: when EndTimeField is configured but every row
+        // When EndTimeField is configured but every row
         // has a null end, the Postgres reader returns null for that field's
         // extent. Without the fallback, max collapses to null even though the
         // start field has valid latest values, so temporalExtent /
@@ -123,7 +124,7 @@ public sealed class TemporalExtentHelpersTests
         // helper must catch that and return null so capabilities and the
         // temporalExtent endpoint fall back to their non-time-aware
         // contract (omit time dimension, return 404) instead of escaping
-        // a 500 to the public surface (#379).
+        // a 500 to the public surface.
         var resource = BuildResourceWithIntervalTemporal();
         var reader = Substitute.For<IFeatureReader>();
         reader.GetTemporalExtentAsync(
@@ -161,6 +162,29 @@ public sealed class TemporalExtentHelpersTests
             resource, LayerIndex, reader, CancellationToken.None);
 
         range.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void TryResolveOptInTemporalFieldsV2_ExactTimestampFields_SelectsThem()
+    {
+        // exactTypes layers declare TIMESTAMPTZ columns as TimestampOffset.
+        var resource = new MetadataV2Object
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-layer-0", Name = "exact_layer" },
+            Type = MetadataV2ObjectType.FeatureDataset,
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "Observed_At", Type = MetadataV2FieldType.TimestampOffset },
+                new MetadataV2Field { Name = "Closed_At", Type = MetadataV2FieldType.TimestampOffset },
+            ],
+            Temporal = new MetadataV2ObjectTemporal { StartTimeField = "observed_at", EndTimeField = "closed_at" },
+        };
+
+        var resolved = TemporalExtentHelpers.TryResolveOptInTemporalFieldsV2(resource, out var selection);
+
+        resolved.Should().BeTrue();
+        selection.StartFieldName.Should().Be("Observed_At");
+        selection.EndFieldName.Should().Be("Closed_At");
     }
 
     private static MetadataV2Object BuildResourceWithIntervalTemporal()

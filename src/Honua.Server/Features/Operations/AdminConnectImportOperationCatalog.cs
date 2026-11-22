@@ -16,7 +16,14 @@ internal static class AdminConnectImportOperationCatalog
 {
     internal sealed record Definition(string OperationId, string Title, HttpMethod Method, string Path,
         string OpenApiOperationId, OperationSideEffectClass SideEffect, string? ContentType = null,
-        bool SupportsDryRun = false, string? DryRunPath = null);
+        bool SupportsDryRun = false, string? DryRunPath = null) : IAdminHttpOperationDefinition
+    {
+        public OperationBlastRadiusClass BlastRadius => OperationBlastRadiusClass.ResourceScope;
+        public OperationApprovalModel? ApprovalModel => OperatorJourneyApproval.ForMutation(
+            OperationId, SideEffect != OperationSideEffectClass.ReadOnly);
+        public HttpMethod? DryRunMethod => null;
+        public OperationClass OperationClass => OperationClass.AdminConfigChange;
+    }
 
     public static IReadOnlyList<Definition> Definitions { get; } =
     [
@@ -27,6 +34,7 @@ internal static class AdminConnectImportOperationCatalog
         Write("admin.connections.delete", "Delete connection", HttpMethod.Delete, "/connections/{id}", "deleteConnection", OperationSideEffectClass.DestroysState),
         Read("admin.connections.layers.list", "List connection layers", "/connections/{id}/layers", "getPublishedLayers"),
         Read("admin.connections.tables.discover", "Discover connection tables", "/connections/{id}/tables", "getConnectionTables"),
+        Read("admin.connections.objects.list", "Browse connection objects", "/connections/{id}/objects", "listConnectionObjects"),
         new("admin.connections.test-draft", "Test draft connection", HttpMethod.Post, "/connections/test", "testDraftConnection", OperationSideEffectClass.ReadOnly, SupportsDryRun: true, DryRunPath: "/connections/test"),
         new("admin.connections.test", "Test connection", HttpMethod.Post, "/connections/{id}/test", "testConnection", OperationSideEffectClass.ReadOnly, SupportsDryRun: true, DryRunPath: "/connections/{id}/test"),
         new("admin.connections.tables.validate", "Validate connection table", HttpMethod.Post, "/connections/{id}/tables/validate", "validateConnectionTableForPublish", OperationSideEffectClass.ReadOnly, SupportsDryRun: true, DryRunPath: "/connections/{id}/tables/validate"),
@@ -47,6 +55,12 @@ internal static class AdminConnectImportOperationCatalog
 
     public static IReadOnlyList<OperationDescriptor> Descriptors { get; } = BuildDescriptors();
 
+    private static readonly HashSet<string> EmptyQueryParameters = new(StringComparer.Ordinal);
+    private static readonly Dictionary<string, HashSet<string>> QueryParametersByOperationId = BuildQueryParameters();
+
+    internal static IReadOnlySet<string> QueryParametersFor(string operationId) =>
+        QueryParametersByOperationId.TryGetValue(operationId, out var names) ? names : EmptyQueryParameters;
+
     private static Definition Read(string id, string title, string path, string openApiId) =>
         new(id, title, HttpMethod.Get, path, openApiId, OperationSideEffectClass.ReadOnly);
 
@@ -61,6 +75,35 @@ internal static class AdminConnectImportOperationCatalog
         return Definitions.Select(definition => BuildDescriptor(document.RootElement, definition)).ToArray();
     }
 
+    private static Dictionary<string, HashSet<string>> BuildQueryParameters()
+    {
+        using var stream = typeof(AdminConnectImportOperationCatalog).Assembly.GetManifestResourceStream("Honua.Server.admin-api.json")
+            ?? throw new InvalidOperationException("Embedded admin-api.json contract was not found.");
+        using var document = JsonDocument.Parse(stream);
+        var root = document.RootElement;
+        var result = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        foreach (var definition in Definitions)
+        {
+            var operation = FindOperation(root, definition.OpenApiOperationId);
+            if (!operation.TryGetProperty("parameters", out var parameters))
+            {
+                continue;
+            }
+
+            var queryNames = parameters.EnumerateArray()
+                .Select(value => Resolve(root, value))
+                .Where(parameter => parameter.GetProperty("in").GetString() == "query")
+                .Select(parameter => parameter.GetProperty("name").GetString()!)
+                .ToHashSet(StringComparer.Ordinal);
+            if (queryNames.Count > 0)
+            {
+                result[definition.OperationId] = queryNames;
+            }
+        }
+
+        return result;
+    }
+
     private static OperationDescriptor BuildDescriptor(JsonElement root, Definition definition)
     {
         var operation = FindOperation(root, definition.OpenApiOperationId);
@@ -72,12 +115,10 @@ internal static class AdminConnectImportOperationCatalog
             Description = operation.TryGetProperty("description", out var description) ? description.GetString()! : definition.Title,
             Category = "admin",
             ExecutionKind = OperationExecutionKind.Synchronous,
-            ApprovalModel = OperatorJourneyApproval.ForMutation(
-                definition.OperationId,
-                definition.SideEffect != OperationSideEffectClass.ReadOnly),
+            ApprovalModel = definition.ApprovalModel!.Value,
             Policy = new OperationPolicyMetadata
             {
-                BlastRadiusClass = OperationBlastRadiusClass.ResourceScope,
+                BlastRadiusClass = definition.BlastRadius,
                 SideEffectClass = definition.SideEffect,
                 Determinism = OperationDeterminism.RuntimeDynamic,
                 SupportsDryRun = definition.SupportsDryRun
@@ -186,30 +227,21 @@ internal sealed class AdminConnectImportApprovalRequestMapper(
 {
     public string OperationId => definition.OperationId;
 
-    public OperationGatewayRequest Map(IOperationDescriptor descriptor, OperationRequest request,
-        OperationPolicyContext context, PolicyDecision decision)
+    public OperationGatewayRequest Map(OperationApprovalRequestContext input)
     {
+        ArgumentNullException.ThrowIfNull(input);
+        var (descriptor, request, context, decision) = (input.Descriptor, input.Request, input.Context, input.Decision);
         ArgumentNullException.ThrowIfNull(descriptor);
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(decision);
         if (descriptor.OperationId != OperationId || request.OperationId != OperationId)
-            throw new ArgumentException($"The mapper only accepts {OperationId} requests.", nameof(request));
+            throw new ArgumentException($"The mapper only accepts {OperationId} requests.", nameof(input));
         var payload = AdminConnectImportApprovalPayload.From(request, context);
         var serialized = JsonSerializer.Serialize(payload,
             AdminConnectImportApprovalJsonContext.Default.AdminConnectImportApprovalPayload);
-        return new OperationGatewayRequest
-        {
-            OperationInstanceId = context.OperationInstanceId,
-            OperationId = OperationId,
-            Kind = OperationClass.AdminConfigChange,
-            RequestedBy = context.PrincipalId,
-            Reason = decision.Reason,
-            CorrelationId = context.CorrelationId,
-            ExecutionPayload = serialized,
-            Plan = AdminOperationReview.Create(descriptor, request, context, definition.Method.Method,
-                definition.Path, definition.SideEffect == OperationSideEffectClass.DestroysState ? ProposalRiskLevel.High : ProposalRiskLevel.Medium, serialized)
-        };
+        return AdminOperationApprovalRequest.Create(definition,
+            new(descriptor, request, context) { Decision = decision }, serialized);
     }
 
     public OperationApprovalReplayMapping MapReplay(OperationGatewayRequest request)

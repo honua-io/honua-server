@@ -2,7 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
-using Honua.Core.Features.Import.ObjectStore;
+using Honua.Core.Features.ObjectStorage;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane;
@@ -44,12 +44,11 @@ internal sealed class CapabilityManifestOptionsSnapshot
         IExecutionJobStore? executionJobStore = null,
         IJobQueue? jobQueue = null,
         Honua.Core.Features.FileImport.Abstractions.IBackgroundImportRunnerInfo? backgroundImportRunner = null,
-        IOptions<ImportObjectStoreOptions>? objectStoreOptions = null,
+        ObjectStoreImportAvailability? objectStoreImport = null,
         IOperationProposalStore? proposalStore = null)
     {
         BackgroundImportRunner = backgroundImportRunner;
-        ObjectStoreConfigured = objectStoreOptions?.Value.AllowedBuckets?
-            .Any(static bucket => !string.IsNullOrWhiteSpace(bucket)) == true;
+        ObjectStoreImport = objectStoreImport;
         ArgumentNullException.ThrowIfNull(limitsOptions);
         ArgumentNullException.ThrowIfNull(streamOptions);
         ArgumentNullException.ThrowIfNull(realtimeLimits);
@@ -94,7 +93,7 @@ internal sealed class CapabilityManifestOptionsSnapshot
 
     public Honua.Core.Features.FileImport.Abstractions.IBackgroundImportRunnerInfo? BackgroundImportRunner { get; }
 
-    public bool ObjectStoreConfigured { get; }
+    public ObjectStoreImportAvailability? ObjectStoreImport { get; }
 
     public LimitsOptions Limits { get; }
 
@@ -133,4 +132,27 @@ internal sealed class CapabilityManifestOptionsSnapshot
     public CapabilityManifestDeploymentProfile DeploymentProfile { get; }
 
     public DeploymentIdentity DeploymentIdentity { get; }
+
+    private CapabilityManifestTransports? _cachedTransports;
+    private CapabilityManifestServerInfo? _cachedServerInfo;
+    private string[]? _cachedInstalledProviders;
+
+    internal CapabilityManifestTransports GetOrCreateTransports(Func<CapabilityManifestTransports> factory)
+        => _cachedTransports ??= factory();
+
+    internal CapabilityManifestServerInfo GetOrCreateServerInfo(string environmentName, Func<CapabilityManifestServerInfo> factory)
+    {
+        var existing = _cachedServerInfo;
+        if (existing is not null && string.Equals(existing.DeploymentEnvironment, environmentName, StringComparison.Ordinal))
+        {
+            return existing;
+        }
+
+        var created = factory();
+        _cachedServerInfo = created;
+        return created;
+    }
+
+    internal string[] GetOrCreateInstalledProviders(Func<string[]> factory)
+        => _cachedInstalledProviders ??= factory();
 }

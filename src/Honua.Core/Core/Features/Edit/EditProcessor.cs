@@ -13,8 +13,7 @@ namespace Honua.Core.Features.Edit;
 
 public sealed class EditProcessor : IEditProcessor
 {
-    // PA-018: the feature-write pipeline (validate/optimize/convert) is called separately by
-    // every protocol adapter and previously emitted no telemetry at all. Honua.Core cannot
+    // Honua.Core cannot
     // depend on Honua.ServiceDefaults (see the dependency-direction rule), so this mirrors the
     // local-ActivitySource convention already used elsewhere in this project (e.g.
     // VersionJobRunner) rather than referencing HonuaTelemetry.ActivitySource.
@@ -765,9 +764,10 @@ public sealed class EditProcessor : IEditProcessor
         // V2 fields carry Nullable but no DefaultValue — match the v1 contract by
         // treating any non-nullable, non-geometry, non-system field as required.
         var primaryIdFieldName = resource.FindPrimaryIdField()?.Name;
+        var trackingFields = EditorTrackingFields.Names(resource.Editing).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var field in resource.SchemaFields)
         {
-            if (field.Nullable)
+            if (field.Nullable || trackingFields.Contains(field.Name))
             {
                 continue;
             }
@@ -791,10 +791,11 @@ public sealed class EditProcessor : IEditProcessor
     {
         var missing = new List<string>();
         var primaryIdFieldName = resource.FindPrimaryIdField()?.Name;
+        var trackingFields = EditorTrackingFields.Names(resource.Editing).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var field in resource.SchemaFields)
         {
-            if (field.Nullable)
+            if (field.Nullable || trackingFields.Contains(field.Name))
             {
                 continue;
             }

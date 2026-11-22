@@ -10,6 +10,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Tiles;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
@@ -362,7 +363,7 @@ internal static class CollectionsEndpoints
             if (transformedExtent.HasValue)
             {
                 var maxZoom = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Tiles.MaxTileZoom;
-                var extent = OgcTileExtent.ExpandDegenerateAxes(transformedExtent.Value, maxZoom);
+                var extent = TileExtent.ExpandDegenerateAxes(transformedExtent.Value, maxZoom);
                 spatialExtent = new SpatialExtent
                 {
                     BoundingBox = ImmutableArray.Create(ImmutableArray.Create(

@@ -326,6 +326,55 @@ public sealed class StacFilterHelpersTests
         filter!.Value.PropertyName.Should().Be("timestamp");
     }
 
+    [UnitTest]
+    public void ParseDatetime_WithMalformedFractionalSeconds_RejectsInstantAndIntervalBounds()
+    {
+        var resource = CreateResource(
+            [
+                new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime }
+            ]);
+
+        foreach (var fraction in new[] { "", "1234567garbage", "12345678e2", "1234567  ", "1234567.8", "1234567\u0668" })
+        {
+            foreach (var zone in new[] { "Z", "+01:00", "-01:00" })
+            {
+                var instant = $"2026-11-16T12:00:00.{fraction}{zone}";
+                foreach (var datetime in new[] { instant, $"{instant}/..", $"../{instant}" })
+                {
+                    StacFilterHelpers.IsValidDatetimeSyntax(datetime).Should().BeFalse("'{0}' has a malformed fraction", datetime);
+                    StacFilterHelpers.ParseDatetime(datetime, resource).Should().BeNull("'{0}' has a malformed fraction", datetime);
+                }
+            }
+        }
+    }
+
+    [UnitTest]
+    public void ParseDatetime_WithValidFractionalSeconds_PreservesSupportedPrecisionAndIntervals()
+    {
+        var resource = CreateResource(
+            [
+                new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime }
+            ]);
+
+        foreach (var fraction in new[] { "1", "1234567", "123456789" })
+        {
+            foreach (var zone in new[] { "Z", "+01:00", "-01:00", "z" })
+            {
+                var instant = $"2026-11-16T12:00:00.{fraction}{zone}";
+                var supportedFraction = fraction[..Math.Min(fraction.Length, 7)];
+                var expected = DateTimeOffset.Parse($"2026-11-16T12:00:00.{supportedFraction}{zone}", CultureInfo.InvariantCulture);
+                foreach (var datetime in new[] { instant, $"{instant}/..", $"../{instant}", $"{instant}/{instant}" })
+                {
+                    StacFilterHelpers.IsValidDatetimeSyntax(datetime).Should().BeTrue("'{0}' has a valid fraction", datetime);
+                    var filter = StacFilterHelpers.ParseDatetime(datetime, resource);
+                    filter.Should().NotBeNull();
+                    filter!.Value.Start.Should().Be(datetime.StartsWith("../", StringComparison.Ordinal) ? null : expected);
+                    filter.Value.End.Should().Be(datetime.EndsWith("/..", StringComparison.Ordinal) ? null : expected);
+                }
+            }
+        }
+    }
+
     private static async Task<StacV2Lookups.ResolvedStacPublication[]> ResolveVisiblePublicationsAsync(
         MetadataV2Graph graph)
     {
@@ -345,8 +394,8 @@ public sealed class StacFilterHelpersTests
     // A doubly-open / empty datetime interval (datetime=../.., /, /..) is NOT a valid
     // OGC API-Features / STAC value — an interval must have at least one bounded end. The
     // STAC API conformance validator requires these to be rejected with 400, so the syntax
-    // check must fail and ParseDatetime must return null. (Reverts BH-S-02 from #2423, which
-    // accepted them as a no-op filter and regressed STAC item-search conformance.)
+    // check must fail and ParseDatetime must return null. Accepting them as a no-op
+    // filter breaks STAC item-search conformance.
 
     [UnitTest]
     public void IsValidDatetimeSyntax_WithDoublyOpenInterval_ReturnsFalse()
@@ -420,6 +469,23 @@ public sealed class StacFilterHelpersTests
         var value = filter!.Value;
         value.Start.Should().Be(DateTimeOffset.Parse("2023-01-02T00:00:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal));
         value.End.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void ResolveTemporalField_WithExactTimestampFallbackFields_ReturnsStartAndEnd()
+    {
+        // exactTypes layers declare TIMESTAMPTZ columns as TimestampOffset.
+        var resource = CreateResource(
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+                new MetadataV2Field { Name = "start_datetime", Type = MetadataV2FieldType.TimestampOffset },
+                new MetadataV2Field { Name = "end_datetime", Type = MetadataV2FieldType.TimestampOffset }
+            ]);
+
+        var startField = StacFilterHelpers.ResolveTemporalField(resource, out var endField);
+
+        startField.Should().Be("start_datetime");
+        endField.Should().Be("end_datetime");
     }
 
     private static MetadataV2Object CreateResource(MetadataV2Field[] fields)

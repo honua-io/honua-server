@@ -357,7 +357,7 @@ public sealed class GeometryServiceEditOperationsTests
     {
         // Existing left square [0,0]-[1,1] plus a polyline tracing the three open sides of the
         // adjacent right square. Polygonization yields both faces; autoComplete must return ONLY
-        // the new right square, not the pre-existing input polygon (#2742).
+        // the new right square, not the pre-existing input polygon.
         var body = """
         {
             "polygons": [

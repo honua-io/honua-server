@@ -272,7 +272,8 @@ internal static partial class FeatureServerEndpoints
 
         if (parseResult.Expression != null)
         {
-            var translationResult = filterService.Translate(parseResult.Expression, resource);
+            // The caller's where may not name a hidden field; it is refused like an undeclared one.
+            var translationResult = filterService.Translate(parseResult.Expression, resource.WithoutHiddenSchemaFields());
             if (!translationResult.IsSuccess)
             {
                 errorResult = StandardErrorHelpers.CreateBadRequest(context,
@@ -431,6 +432,13 @@ internal static partial class FeatureServerEndpoints
             return false;
         }
 
+        // A requested bin count shares the fixed-boundary cap, so either bin form yields at most that many rows.
+        if (numBins > MaxFixedBoundaryCount)
+        {
+            error = $"autoIntervalBin.numBins cannot be more than {MaxFixedBoundaryCount}.";
+            return false;
+        }
+
         binDef = new BinDefinition
         {
             Type = BinType.AutoInterval,
@@ -524,16 +532,15 @@ internal static partial class FeatureServerEndpoints
         }
         else if (element.TryGetProperty("fixedBin", out var fixEl) && fixEl.ValueKind == JsonValueKind.Object)
         {
-            if (!fixEl.TryGetProperty("intervalCount", out var countEl) || !countEl.TryGetInt32(out var count))
+            // An omitted intervalUnit defaults to days; a present one must be valid.
+            var (interval, intervalError) = ParseFixedBinInterval(fixEl, "dateBin.fixedBin", defaultUnit: "days");
+            if (intervalError is not null)
             {
-                error = "dateBin.fixedBin.intervalCount is required.";
+                error = intervalError;
                 return false;
             }
 
-            var unit = fixEl.TryGetProperty("intervalUnit", out var unitEl)
-                ? unitEl.GetString()?.ToLowerInvariant() ?? "days"
-                : "days";
-            fixedInterval = ConvertToTimeSpan(count, unit);
+            fixedInterval = interval;
         }
         else
         {

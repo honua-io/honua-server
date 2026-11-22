@@ -36,6 +36,8 @@ public sealed record ProposalDetailResponse
 {
     public required string ProposalId { get; init; }
 
+    public string? OperationId { get; init; }
+
     public long Version { get; init; }
 
     public string? PlanHash { get; init; }
@@ -67,6 +69,8 @@ public sealed record ProposalDetailResponse
     public required IReadOnlyList<string> Diff { get; init; }
 
     public required IReadOnlyList<string> DryRun { get; init; }
+
+    public string? ExecutionPayload { get; init; }
 
     public required string RiskLevel { get; init; }
 

@@ -38,10 +38,9 @@ public sealed class SecureConnectionAwareDatabaseProviderConcurrencyTests
             NullLogger<CachingDatabaseConnectionProvider>.Instance,
             concurrencyGate: gate);
 
-        // Stub resolver that mimics PostgresSecureConnectionRegistry: it opens
-        // a metadata connection through the primary (gated) provider before
-        // returning the resolved connection string. This is the exact path
-        // that previously self-deadlocked.
+        // Mimic PostgresSecureConnectionRegistry by opening a metadata connection through
+        // the primary gated provider before returning the resolved connection string.
+        // The nested access must complete without deadlocking.
         var resolver = new RegistryLookupSimulatingResolver(
             primaryProvider,
             _fixture.ConnectionString,
@@ -66,9 +65,6 @@ public sealed class SecureConnectionAwareDatabaseProviderConcurrencyTests
             activeDbConnectionTracker: null,
             concurrencyGate: gate);
 
-        // Act — this would have raised ServiceUnavailableException pre-fix
-        // because the secure provider held the only slot while the registry
-        // lookup tried to take a second slot via the primary provider.
         await using var connection = await secureProvider.OpenConnectionAsync(CancellationToken.None);
 
         // Assert — the connection opened, the resolver actually ran, and the
@@ -136,10 +132,6 @@ public sealed class SecureConnectionAwareDatabaseProviderConcurrencyTests
         // Act
         await using var connection = await secureProvider.OpenConnectionAsync(CancellationToken.None);
 
-        // Assert — peak consumption during the secure open was exactly one slot
-        // (the metadata open's slot), not two. Pre-fix this would have been 1
-        // because the secure provider already held a slot when the resolver ran,
-        // leaving the metadata open to consume the second slot for a peak of two.
         resolver.SlotsAvailableBeforeMetadataOpen.Should().Be(
             2,
             "the secure provider must not pre-acquire a gate slot — peak consumption per secure open must be one slot, not two");
@@ -178,8 +170,6 @@ public sealed class SecureConnectionAwareDatabaseProviderConcurrencyTests
         {
             Interlocked.Increment(ref ResolveCallCount);
 
-            // Capture gate state before the metadata open. Pre-fix this would
-            // have been 0 because the secure provider already held the slot.
             SlotsAvailableBeforeMetadataOpen = _gate.AvailableSlots;
 
             // Mirror PostgresSecureConnectionRegistry.GetConnectionByNameAsync —

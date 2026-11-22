@@ -111,9 +111,8 @@ public sealed class SldConversionTests
     [UnitTest]
     public void Parse_PolygonFillOnly_ProducesFillLayerWithoutOutline()
     {
-        // Fill-only PolygonSymbolizer must not carry a fill-outline-color (no Stroke
-        // means no outline). The previous behavior used to copy a default into the fill,
-        // here we verify only the fill-color is present.
+        // A fill-only PolygonSymbolizer has no Stroke, so it must carry fill-color
+        // without fill-outline-color.
         const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
 <StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld"">
   <NamedLayer><Name>fills</Name><UserStyle><FeatureTypeStyle><Rule>
@@ -195,10 +194,7 @@ public sealed class SldConversionTests
     [UnitTest]
     public void Parse_HexColorWithOpacity_DoesNotDoubleApplyAlpha()
     {
-        // Regression: previously the converter baked SLD opacity into rgba() on the
-        // *-color paint property AND set *-opacity, so MapLibre multiplied the alpha
-        // twice (e.g. fill-opacity 0.5 with #ff0000 rendered at 0.25 alpha). Color
-        // and opacity must be independent paint properties for hex inputs.
+        // Keep hex color and opacity in separate paint properties so MapLibre applies alpha once.
         const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
 <StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld"">
   <NamedLayer><Name>alpha-trio</Name><UserStyle><FeatureTypeStyle>
@@ -448,7 +444,7 @@ public sealed class SldConversionTests
     }
 
     [UnitTest]
-    public void Convert_FilterOgcFunction_EmitsWarningAndDropsFilter()
+    public void Convert_FilterOgcFunction_EmitsWarningAndOmitsRule()
     {
         const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
 <StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld"" xmlns:ogc=""http://www.opengis.net/ogc"">
@@ -461,8 +457,7 @@ public sealed class SldConversionTests
         var conversion = SldToMapLibreConverter.Convert(SldParser.Parse(xml));
 
         conversion.Diagnostics.Should().Contain(d => d.Construct == "OgcFunction");
-        var layer = conversion.Layers.Single();
-        layer.Filter.Should().BeNull("OGC Function expressions cannot be represented in MapLibre filters");
+        conversion.Layers.Should().BeEmpty("unsupported filter predicates must omit the rule instead of rendering unfiltered");
     }
 
     [UnitTest]
@@ -490,33 +485,40 @@ public sealed class SldConversionTests
     }
 
     [UnitTest]
-    public void Convert_AndFilterWithUnsupportedOperand_DropsEntireFilter()
+    public void Convert_AndFilterWithUnsupportedOperand_OmitsRuleAndKeepsSupportedSibling()
     {
-        // A AND <unsupported> must render unfiltered, not silently narrow to A.
+        // A AND <unsupported> must omit the rule rather than silently draw unfiltered or narrow to A.
         const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
 <StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld"" xmlns:ogc=""http://www.opengis.net/ogc"">
-  <NamedLayer><Name>and-mixed</Name><UserStyle><FeatureTypeStyle><Rule>
-    <ogc:Filter>
-      <ogc:And>
-        <ogc:PropertyIsEqualTo><ogc:PropertyName>kind</ogc:PropertyName><ogc:Literal>city</ogc:Literal></ogc:PropertyIsEqualTo>
-        <ogc:BBOX/>
-      </ogc:And>
-    </ogc:Filter>
-    <PolygonSymbolizer><Fill><CssParameter name=""fill"">#abcdef</CssParameter></Fill></PolygonSymbolizer>
-  </Rule></FeatureTypeStyle></UserStyle></NamedLayer>
+  <NamedLayer><Name>and-mixed</Name><UserStyle><FeatureTypeStyle>
+    <Rule>
+      <Name>supported</Name>
+      <ogc:Filter><ogc:PropertyIsEqualTo><ogc:PropertyName>kind</ogc:PropertyName><ogc:Literal>town</ogc:Literal></ogc:PropertyIsEqualTo></ogc:Filter>
+      <PolygonSymbolizer><Fill><CssParameter name=""fill"">#112233</CssParameter></Fill></PolygonSymbolizer>
+    </Rule>
+    <Rule>
+      <Name>unsupported-and</Name>
+      <ogc:Filter>
+        <ogc:And>
+          <ogc:PropertyIsEqualTo><ogc:PropertyName>kind</ogc:PropertyName><ogc:Literal>city</ogc:Literal></ogc:PropertyIsEqualTo>
+          <ogc:BBOX/>
+        </ogc:And>
+      </ogc:Filter>
+      <PolygonSymbolizer><Fill><CssParameter name=""fill"">#abcdef</CssParameter></Fill></PolygonSymbolizer>
+    </Rule>
+  </FeatureTypeStyle></UserStyle></NamedLayer>
 </StyledLayerDescriptor>";
 
         var conversion = SldToMapLibreConverter.Convert(SldParser.Parse(xml));
 
-        var layer = conversion.Layers.Single();
-        layer.Filter.Should().BeNull("compound filters with an unsupported operand must drop the whole filter to preserve documented unfiltered fallback");
-        conversion.Diagnostics.Should().Contain(d => d.Construct == "BBOX");
+        conversion.Layers.Should().ContainSingle(l => l.Id!.StartsWith("supported-"));
+        conversion.Diagnostics.Should().Contain(d => d.Construct == "BBOX" && d.RuleName == "unsupported-and");
     }
 
     [UnitTest]
-    public void Convert_OrFilterWithUnsupportedOperand_DropsEntireFilter()
+    public void Convert_OrFilterWithUnsupportedOperand_OmitsRule()
     {
-        // A OR <unsupported> must render unfiltered, not silently narrow to A.
+        // A OR <unsupported> must omit the rule rather than silently draw unfiltered or narrow to A.
         const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
 <StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld"" xmlns:ogc=""http://www.opengis.net/ogc"">
   <NamedLayer><Name>or-mixed</Name><UserStyle><FeatureTypeStyle><Rule>
@@ -532,34 +534,8 @@ public sealed class SldConversionTests
 
         var conversion = SldToMapLibreConverter.Convert(SldParser.Parse(xml));
 
-        var layer = conversion.Layers.Single();
-        layer.Filter.Should().BeNull("compound filters with an unsupported operand must drop the whole filter to preserve documented unfiltered fallback");
+        conversion.Layers.Should().BeEmpty("compound filters with an unsupported operand must omit the rule instead of drawing everything");
         conversion.Diagnostics.Should().Contain(d => d.Construct == "OgcFunction");
-    }
-
-    [UnitTest]
-    public void Convert_PropertyIsLike_EmitsWarningAndRendersUnfiltered()
-    {
-        // PropertyIsLike has SLD wildcard semantics with no portable MapLibre equivalent.
-        // Treat as unsupported rather than silently coercing wildcards into literal equality.
-        const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
-<StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld"" xmlns:ogc=""http://www.opengis.net/ogc"">
-  <NamedLayer><Name>like</Name><UserStyle><FeatureTypeStyle><Rule>
-    <ogc:Filter>
-      <ogc:PropertyIsLike wildCard=""%"" singleChar=""_"" escapeChar=""\\"">
-        <ogc:PropertyName>name</ogc:PropertyName>
-        <ogc:Literal>San %</ogc:Literal>
-      </ogc:PropertyIsLike>
-    </ogc:Filter>
-    <PolygonSymbolizer><Fill><CssParameter name=""fill"">#abcdef</CssParameter></Fill></PolygonSymbolizer>
-  </Rule></FeatureTypeStyle></UserStyle></NamedLayer>
-</StyledLayerDescriptor>";
-
-        var conversion = SldToMapLibreConverter.Convert(SldParser.Parse(xml));
-
-        var layer = conversion.Layers.Single();
-        layer.Filter.Should().BeNull("PropertyIsLike has no portable MapLibre form; layer must render unfiltered");
-        conversion.Diagnostics.Should().Contain(d => d.Construct == "PropertyIsLike");
     }
 
     [UnitTest]
@@ -615,11 +591,8 @@ public sealed class SldConversionTests
     [UnitTest]
     public void Parse_PointStrokeWithOpacity_EmitsCircleStrokeOpacityAsSeparatePaintProperty()
     {
-        // Regression: previously the converter baked SLD point Stroke opacity into the
-        // circle-stroke-color rgba() because it assumed MapLibre had no
-        // circle-stroke-opacity paint property. The MapLibre style spec defines
-        // circle-stroke-opacity as a first-class circle paint property; emitting it
-        // separately keeps the color and opacity orthogonal and round-trippable.
+        // MapLibre defines circle-stroke-opacity independently of circle-stroke-color.
+        // Emit both properties separately so point Stroke opacity survives a round trip.
         const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
 <StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld"">
   <NamedLayer><Name>points</Name><UserStyle><FeatureTypeStyle><Rule>
@@ -739,7 +712,7 @@ public sealed class SldConversionTests
     [UnitTest]
     public void Parse_DuplicateRuleNames_ProduceDistinctLayerIds()
     {
-        // Regression: SLD allows two Rules to share a Name. The previous converter
+        // SLD allows two Rules to share a Name. The previous converter
         // built layer ids from `{sanitizedRuleName}-{symbolizerIndex}` only, so two
         // matching rule names with matching symbolizer positions both produced the
         // same id. MapLibreStyleNormalizer rejects duplicate ids and the SLD would
@@ -771,11 +744,8 @@ public sealed class SldConversionTests
     [UnitTest]
     public void Parse_VeryLongRuleName_TruncatesIdentifierAndStaysUnique()
     {
-        // Regression: SanitizeIdentifier previously stackalloc'd `char[span.Length]`
-        // off the SLD Name element. With the 1 MiB body cap, an attacker-controlled
-        // Name could drive a multi-megabyte stack frame. The sanitizer now caps the
-        // sanitized identifier; ruleIndex still disambiguates rules whose names
-        // collapse to the same prefix after truncation.
+        // Cap sanitized identifiers to bound stack use for an attacker-controlled SLD Name
+        // within the 1 MiB body limit. ruleIndex disambiguates names with equal truncated prefixes.
         var longA = new string('a', 200);
         var longB = $"{new string('a', 200)}-different-tail";
         var xml = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
@@ -807,11 +777,8 @@ public sealed class SldConversionTests
     [UnitTest]
     public void Parse_TextSymbolizerFillOpacity_RoundTripsThroughTextOpacity()
     {
-        // Regression: TextSymbolizer Fill opacity used to be baked into the
-        // text-color rgba(); MapLibre exposes text-opacity as a first-class paint
-        // property, so the alpha must ride there. Otherwise MapLibre multiplies the
-        // alpha twice (color × opacity) and the export side has nothing to write
-        // back into SLD Fill fill-opacity.
+        // MapLibre text-opacity carries TextSymbolizer Fill alpha independently of text-color,
+        // so rendering applies alpha once and export can recover SLD fill-opacity.
         const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
 <StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld""
     xmlns:ogc=""http://www.opengis.net/ogc"">
@@ -871,13 +838,8 @@ public sealed class SldConversionTests
     [UnitTest]
     public void Parse_PolygonSymbolizer_GraphicFill_WarnsAndDropsFillLayer()
     {
-        // Regression: SLD <Fill><GraphicFill>...</GraphicFill></Fill> embeds a tiled
-        // pattern that has no portable MapLibre equivalent (fill-pattern requires a
-        // sprite). The converter previously emitted a fill layer with empty paint,
-        // which the rendering pipeline defaults to opaque black — a solid fill
-        // silently substituted for the unsupported pattern. The parser now emits a
-        // GraphicFill warning and drops the empty Fill so the converter skips the
-        // layer entirely.
+        // SLD GraphicFill has no portable MapLibre equivalent without a sprite. Emit a
+        // GraphicFill warning and skip the layer instead of substituting a solid black fill.
         const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
 <StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld"">
   <NamedLayer><Name>patterns</Name><UserStyle><FeatureTypeStyle><Rule>
@@ -907,10 +869,8 @@ public sealed class SldConversionTests
     [UnitTest]
     public void Parse_PolygonSymbolizer_GraphicStroke_WarnsAndDropsLineLayer()
     {
-        // Regression: SLD <Stroke><GraphicStroke>...</GraphicStroke></Stroke> embeds
-        // a repeating sprite stroke that has no portable MapLibre equivalent
-        // (line-pattern requires a sprite). The converter previously emitted a line
-        // layer with default 1px stroke. Diagnose the construct and drop the layer.
+        // SLD GraphicStroke requires a sprite with no portable MapLibre equivalent.
+        // Diagnose the unsupported construct and drop the layer.
         const string xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
 <StyledLayerDescriptor version=""1.0.0"" xmlns=""http://www.opengis.net/sld"">
   <NamedLayer><Name>patterns</Name><UserStyle><FeatureTypeStyle><Rule>
@@ -939,7 +899,7 @@ public sealed class SldConversionTests
     [UnitTest]
     public void Parse_LineSymbolizer_GraphicStroke_WarnsAndDropsSymbolizer()
     {
-        // Regression: a LineSymbolizer with only a GraphicStroke fell back to the
+        // A LineSymbolizer with only a GraphicStroke fell back to the
         // empty SldStroke fallback inside ParseLineSymbolizer, so the converter
         // produced a line layer with empty paint and the renderer defaulted to a
         // 1px opaque line. The symbolizer must now be dropped entirely.

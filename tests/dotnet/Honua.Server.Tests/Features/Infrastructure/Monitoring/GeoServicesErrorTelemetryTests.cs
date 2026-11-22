@@ -148,7 +148,7 @@ public sealed class GeoServicesErrorTelemetryTests
         // Arrange: the direct-to-Response writer bypasses the central FormatError
         // dispatch and serializes the {error} envelope itself, so it must funnel
         // telemetry through RecordErrorTelemetry independently. A silent bypass
-        // here is exactly the blind spot the #2243 release gate guards against.
+        // here is exactly the blind spot the release gate guards against.
         var context = CreateContext("/rest/services/0/MapServer/0/query");
         context.Response.Body = new MemoryStream();
 

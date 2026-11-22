@@ -40,6 +40,22 @@ public static class MetadataV2FieldVisibilityExtensions
             field.Hidden && string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase));
     }
 
+    // Treats the named fields (a caller's masked fields) as hidden, so schema listings omit them like hidden fields.
+    public static MetadataV2Object WithSchemaFieldsHidden(this MetadataV2Object resource, IEnumerable<string> fieldNames)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        ArgumentNullException.ThrowIfNull(fieldNames);
+        var names = fieldNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return resource.SchemaFields.Any(field => !field.Hidden && names.Contains(field.Name))
+            ? resource with
+            {
+                SchemaFields = resource.SchemaFields
+                    .Select(field => names.Contains(field.Name) ? field with { Hidden = true } : field)
+                    .ToArray()
+            }
+            : resource;
+    }
+
     public static MetadataV2Object WithoutHiddenSchemaFields(this MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);

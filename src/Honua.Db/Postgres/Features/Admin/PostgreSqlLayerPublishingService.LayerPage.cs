@@ -22,13 +22,14 @@ internal static class LayerNamePattern
 
 internal sealed partial class PostgreSqlLayerPublishingService
 {
-    private const string PublishedLayerPageSql = $"""
+    private string PublishedLayerPageSql => $"""
         WITH matched AS (
             SELECT DISTINCT l.layer_id
-            FROM honua.layers l
-            INNER JOIN honua.service_layers sl
+            FROM {LayersTable} l
+            INNER JOIN {ServiceLayersTable} sl
                 ON sl.layer_id = l.layer_id
             WHERE sl.service_name = @serviceName
+              AND {PublishedLayerConnectionPredicate}
               AND (@namePattern IS NULL OR l.layer_name ILIKE @namePattern ESCAPE '\')
         ),
         totals AS (
@@ -46,9 +47,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
             totals.total_count
         FROM totals
         LEFT JOIN page ON true
-        LEFT JOIN honua.layers l
+        LEFT JOIN {LayersTable} l
             ON l.layer_id = page.layer_id
-        LEFT JOIN honua.layer_fields f
+        LEFT JOIN {LayerFieldsTable} f
             ON f.layer_id = l.layer_id
         GROUP BY
             {PublishedLayerColumns},
@@ -88,7 +89,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         };
     }
 
-    private static async Task<(List<PublishedLayerSummary> Layers, int Total)> ReadPublishedLayerPageAsync(
+    private async Task<(List<PublishedLayerSummary> Layers, int Total)> ReadPublishedLayerPageAsync(
         NpgsqlConnection connection,
         string normalizedService,
         PublishedLayerPageQuery query,
@@ -105,6 +106,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         });
         command.Parameters.AddWithValue("@pageSize", query.PageSize);
         command.Parameters.AddWithValue("@offset", (query.Page - 1) * query.PageSize);
+        await AddPublishedLayerConnectionParametersAsync(
+            command, new ConnectionLayerScope(normalizedService, query.ConnectionId, query.ManagedConnectionId), cancellationToken).ConfigureAwait(false);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))

@@ -126,7 +126,9 @@ public sealed class JobSpec
     public string BaseUrl { get; }
 
     /// <summary>The scoped, job-bound bearer token (from <c>HONUA_JOB_TOKEN</c>).</summary>
-    public string JobToken { get; }
+    public string JobToken { get; private set; }
+
+    internal string? RedemptionCode { get; private set; }
 
     /// <summary>The job-contract version the submitting server used (from <c>HONUA_CONTRACT_VERSION</c>).</summary>
     public int ContractVersion { get; }
@@ -171,6 +173,7 @@ public sealed class JobSpec
         // The auth spine is ALWAYS env-only — never sourced from the spec file.
         var baseUrl = TryGet(env, "HONUA_BASE_URL");
         var jobToken = TryGet(env, "HONUA_JOB_TOKEN");
+        var redemptionCode = TryGet(env, "HONUA_JOB_REDEMPTION_CODE");
 
         // Serving↔worker job-contract gate (ADR-0060 #3b), env-only like the auth spine. Absent
         // means a pre-versioning server (version 1). Fail closed if the server used a newer
@@ -183,7 +186,7 @@ public sealed class JobSpec
         Require(depsManifest, "deps_manifest / CUSTOMCODE_DEPS_MANIFEST");
         Require(outputPrefix, "output_prefix / CUSTOMCODE_OUTPUT_PREFIX");
         Require(baseUrl, "HONUA_BASE_URL");
-        Require(jobToken, "HONUA_JOB_TOKEN");
+        Require(jobToken ?? redemptionCode, "HONUA_JOB_REDEMPTION_CODE (or HONUA_JOB_TOKEN for local runs)");
 
         if (!IsValidGitSha(gitRef))
         {
@@ -206,7 +209,13 @@ public sealed class JobSpec
 
         if (!StartsWithAny(repoUrl!, "https://", "git@", "ssh://", "http://"))
         {
-            throw new JobSpecException($"repo_url has an unsupported scheme: '{repoUrl}'.");
+            throw new JobSpecException("repo_url has an unsupported scheme.");
+        }
+
+        // The URL is logged and echoed in git errors, so credentials must never travel in it.
+        if (EmbedsCredentials(repoUrl!))
+        {
+            throw new JobSpecException("repo_url must not embed credentials.");
         }
 
         if (!outputPrefix!.StartsWith("s3://", StringComparison.Ordinal))
@@ -225,8 +234,17 @@ public sealed class JobSpec
             CoerceScope(field("declared_scope")),
             CoerceMaxBytes(field("output_max_bytes")),
             baseUrl!,
-            jobToken!,
-            contractVersion);
+            jobToken ?? string.Empty,
+            contractVersion)
+        {
+            RedemptionCode = redemptionCode,
+        };
+    }
+
+    internal void AcceptCapability(string capability)
+    {
+        JobToken = capability;
+        RedemptionCode = null;
     }
 
     private static int CoerceContractVersion(string? raw)
@@ -251,7 +269,7 @@ public sealed class JobSpec
         return value;
     }
 
-    private static IReadOnlyDictionary<string, string?> ReadProcessEnv()
+    private static Dictionary<string, string?> ReadProcessEnv()
     {
         var map = new Dictionary<string, string?>(StringComparer.Ordinal);
         foreach (System.Collections.DictionaryEntry kv in Environment.GetEnvironmentVariables())
@@ -262,7 +280,7 @@ public sealed class JobSpec
         return map;
     }
 
-    private static IReadOnlyDictionary<string, string?> LoadSpecFile(string path)
+    private static Dictionary<string, string?> LoadSpecFile(string path)
     {
         if (!File.Exists(path))
         {
@@ -342,7 +360,7 @@ public sealed class JobSpec
         return doc.RootElement.Clone();
     }
 
-    private static IReadOnlyList<string> CoerceScope(string? raw)
+    private static string[] CoerceScope(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
         {
@@ -387,6 +405,27 @@ public sealed class JobSpec
         }
 
         return !path.Split('/', '\\').Any(segment => segment == "..");
+    }
+
+    // An http(s) URL may carry no userinfo at all; an ssh URL may name a user but not a password.
+    private static bool EmbedsCredentials(string repoUrl)
+    {
+        if (repoUrl.StartsWith("git@", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!Uri.TryCreate(repoUrl, UriKind.Absolute, out var uri))
+        {
+            throw new JobSpecException("repo_url is malformed.");
+        }
+
+        if (string.IsNullOrEmpty(uri.UserInfo))
+        {
+            return false;
+        }
+
+        return uri.Scheme is "http" or "https" || uri.UserInfo.Contains(':', StringComparison.Ordinal);
     }
 
     private static bool StartsWithAny(string value, params string[] prefixes)

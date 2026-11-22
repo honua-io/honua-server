@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Forms.Packages;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -20,7 +21,12 @@ internal sealed class FormTargetMetadataResolver(IMetadataV2GraphProvider metada
         }
 
         var snapshot = await metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var service = ResolveService(snapshot, target.ServiceId);
+        return Resolve(snapshot, target);
+    }
+
+    internal static FormTargetMetadataResolution Resolve(MetadataV2GraphSnapshot snapshot, FormTargetDefinition target)
+    {
+        var service = string.IsNullOrEmpty(target.ServiceId) ? null : snapshot.FindServiceByNameOrId(target.ServiceId);
         if (service is null)
         {
             return default;
@@ -43,21 +49,9 @@ internal sealed class FormTargetMetadataResolver(IMetadataV2GraphProvider metada
             ? null
             : snapshot.ResolveStorageLayerId(publication);
 
-        return new FormTargetMetadataResolution(service, publication, resource, storageLayerId);
-    }
-
-    private static MetadataV2Service? ResolveService(MetadataV2GraphSnapshot snapshot, string serviceId)
-    {
-        if (snapshot.Index.ServicesByName.TryGetValue(serviceId, out var byName))
+        return new FormTargetMetadataResolution(service, publication, resource, storageLayerId)
         {
-            return byName;
-        }
-
-        if (snapshot.Index.ServicesById.TryGetValue(serviceId, out var byId))
-        {
-            return byId;
-        }
-
-        return null;
+            ServedFromSourceTable = publication is not null && ManagedWriteStorage.SourceTableOf(snapshot, publication) is not null
+        };
     }
 }

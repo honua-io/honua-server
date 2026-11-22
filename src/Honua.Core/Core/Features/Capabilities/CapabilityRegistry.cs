@@ -148,7 +148,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("honua_studio_add_control", "add_control", "execution"),
             ("honua_studio_remove_control", "remove_control", "execution"),
             // No publish/share/embed execution tool: honua_studio_propose_publication
-            // only records intent on the draft (REQ-003/REQ-009).
+            // only records intent on the draft.
             ("honua_studio_propose_publication", "studio_propose_publication", "lifecycle"),
         ];
 
@@ -345,10 +345,13 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // Shared PostgreSQL leases implement cross-node coordination; availability
             // depends on the selected runtime store.
             ("collaboration.feature-locks.cross-node", "collaboration", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+            // Console catalog, share-link, open-data and embed-key state lives in the system database
+            // when the host has one (ADR-0086); availability follows the selected store.
+            ("console.content.persistent", "console", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             // GeoServices applyEdits still has no client-supplied version-token support.
 
             ("edit.geoservices-version-tokens", "edit", null, CapabilityKind.Feature, null, CapabilityMaturity.Planned),
-            // Branch versioning (VMS REST surface) — built-experimental (ADR-0058 / BH6-001/BH6-002 fix).
+            // Branch versioning (VMS REST surface) — built-experimental (ADR-0058).
             // The VMS endpoints are gated OFF the GA surface by default (versioning.branch descriptor).
             // Opt in via Capabilities:Experimental:versioning.branch:Enabled=true.
             ("versioning.branch", "versioning", FeatureCatalog.BranchVersioningKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),

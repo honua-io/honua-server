@@ -10,7 +10,7 @@ The admin API is Honua's control-plane REST surface at `/api/v1/admin/*`. It pow
 
 ## Authentication
 
-All admin endpoints require authentication. Send `X-API-Key` with the admin password or a scoped API key, or `Authorization: Bearer <jwt>` when OIDC is enabled. A valid mapped client certificate can also authenticate when mTLS is configured. See [Authentication](../../guides/secure/authentication.md).
+All admin endpoints require authentication except the sign-in endpoints under `/api/v1/admin/auth/*`, the capabilities handshake (`GET /api/v1/admin/capabilities`), and the runtime OpenAPI document (`GET /api/v1/admin/openapi.json`). Send `X-API-Key` with the admin password or a scoped API key, or `Authorization: Bearer <jwt>` when OIDC is enabled. A valid mapped client certificate can also authenticate when mTLS is configured. See [Authentication](../../guides/secure/authentication.md).
 
 ## Endpoint groups
 
@@ -23,7 +23,7 @@ All admin endpoints require authentication. Send `X-API-Key` with the admin pass
 | Form packages and submissions | `/api/v1/admin/forms`, `/api/v1/forms` | [Forms](forms.md) |
 | Deploy operations and rollback | `/api/v1/admin/deploy` | [Upgrade and rollback](../../guides/deploy/upgrade-and-rollback.md) |
 | Operations, observability, customer alerts (Preview) | `/api/v1/admin/observability`, `/api/v1/admin/alerts` | [Monitoring](../../guides/deploy/monitoring.md), [Operating Honua](../../guides/operate/README.md) |
-| 3D scene registry and generation | `/api/v1/admin/scenes` | [Publish 3D scenes](../../guides/publish/publish-3d-scenes.md) |
+| 3D scene registry and generation (Experimental; opt-in via `scene.catalog` / `serve.3d-tiles-scene`, returns `404` when disabled) | `/api/v1/admin/scenes` | [Publish 3D scenes](../../guides/publish/publish-3d-scenes.md) |
 | Runtime configuration reference | `/api/v1/admin/config` | [Environment variables](../configuration/environment-variables.md) |
 
 Console control-plane surfaces (`/api/v1/console/*`, including workflow packages) use the same admin authorization posture.
@@ -44,9 +44,9 @@ Each capability record reports:
 |---|---|
 | `supported` | The server build registers the backing implementation. |
 | `available` | Usable for this request after the deployment profile, configuration, environment, authentication, license, and policy checks. A configured profile makes a capability that maps to a route unavailable when that route's key is not enabled. A capability with no mapped route is unchanged. |
-| `reasonCode` | Present only when unavailable; stable values include `unsupported`, `experimental-disabled`, `disabled-by-configuration`, `deployment-profile-excluded`, `license-required`, `entitlement-inactive`, `insufficient-policy`, `environment-unavailable`, and `workspace-scope-required`. Preview surfaces are opt-in through `Capabilities:Experimental:<capability-id>:Enabled=true`. |
+| `reasonCode` | Present only when unavailable; stable values include `unsupported`, `experimental-disabled`, `disabled-by-configuration`, `deployment-profile-excluded`, `protocol-profile-excluded`, `dependency-unavailable`, `durable-runner-required`, `license-required`, `entitlement-inactive`, `insufficient-policy`, `environment-unavailable`, and `workspace-scope-required`. Preview surfaces are opt-in through `Capabilities:Experimental:<capability-id>:Enabled=true`. |
 | `lifecycle` | Product lifecycle classification. Customer alerting (`alerts.geofence`) and SensorThings report `preview`, and realtime feature streams report `experimental`, for 2026.1; alerting qualification evidence does not promote it to GA. |
-| `optInRequired` | Whether the capability must be explicitly enabled. Preview and Experimental realtime capabilities remain declared but unavailable with `disabled-by-configuration` until opted in. |
+| `optInRequired` | Whether the capability must be explicitly enabled. Preview and Experimental realtime capabilities remain declared but unavailable until opted in (reporting `experimental-disabled` with the shipped `Capabilities:ManifestFromRegistry=true` default, or `disabled-by-configuration` when `Capabilities:ManifestFromRegistry=false`). |
 
 The document also carries `transports` (REST, GeoServices, OGC, OData, STAC, tiles, gRPC, MCP, QGIS, mTLS), `limits` (query, analysis, upload, and job limits), and `policies` (license and entitlement state). The manifest is informational only — operation endpoints remain the source of truth for authorization and resource checks. Do not persist it as an authorization cache.
 
@@ -66,8 +66,7 @@ Customer alert zones, rules, evaluation, and delivery channels are Preview in
 existing feature-status log event; this opt-in does not constitute a GA
 availability or support commitment.
 
-
-Control-plane SDKs should instead call `GET /api/v1/admin/capabilities` once per session and branch on its `data.compatibility` object (server version, control-plane major, feature flags). `data.compatibility.contractVersions` lists every contract the server serves (`admin`, `metadata`, `geoservices`, `ogc`, `stac`, `grpc`) with its exact version, as declared in the repository's `eng/release/component-versions.v1.json`; the server refuses to start when that declaration differs from what it serves. The capabilities handshake is readable anonymously so `checkCompatibility()` can run before credentials exist; every other admin endpoint requires authentication.
+Control-plane SDKs should call `GET /api/v1/admin/capabilities` once per session and branch on its `data.compatibility` object (server version, control-plane major, feature flags). `data.compatibility.contractVersions` lists every contract the server serves (`admin`, `metadata`, `geoservices`, `ogc`, `stac`, `grpc`) with its exact version, as declared in the repository's `eng/release/component-versions.v1.json`; the server refuses to start when that declaration differs from what it serves. The capabilities handshake is readable anonymously so `checkCompatibility()` can run before credentials exist (see [Authentication](#authentication) for the full anonymous allowlist).
 
 ## OpenAPI specs
 
@@ -118,11 +117,11 @@ Operate validation also enforces declared scalar types, enum and format constrai
 and explicit nullability of supplied objects, collections, and collection entries.
 Optional nullable values remain valid when their target scope does not require them.
 
-On a server started without Redis, `POST /api/v1/operations/service.publish/submit`
+On a server started without a system database, `POST /api/v1/operations/service.publish/submit`
 and `POST /api/v1/operations/style.apply-preset/submit` execute directly when the
 operation policy allows the caller. The handle carries the evidence reference
 `operation-instance:non-durable` and cannot be read back from
 `/api/v1/operations/handles/{handleId}`; the audit log still records it. Every
 other operation, and any decision that requires approval, refuses with HTTP 503
 and `missingDependency: "system-database"`. See
-[Redis is optional; PostGIS is not](../../guides/deploy/docker-compose.md#redis-is-optional-postgis-is-not).
+[Durable administration requires the system database](../../guides/deploy/docker-compose.md#durable-administration-requires-the-system-database).

@@ -125,9 +125,9 @@ internal static class ServiceCollectionExtensions
             sp.GetRequiredService<IFeatureQueryBuilder>(),
             sp.GetRequiredService<IFeatureDataAccess>(),
             sp.GetRequiredService<IFeatureCacheManager>(),
+            Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp),
             sp.GetService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>(),
-            sp.GetService<Honua.Core.Queries.Filters.IFilterExpressionService>(),
-            Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp)));
+            sp.GetService<Honua.Core.Queries.Filters.IFilterExpressionService>()));
 
         // Register segregated interfaces
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
@@ -144,10 +144,9 @@ internal static class ServiceCollectionExtensions
         // dependency of FeatureServer/ImageServer/GeometryService/gRPC) requires
         // ICrsDetectionService regardless of provider. Only Postgres ever registered one
         // (CRS detection from WKT/.prj/GeoJSON needs its spatial_ref_sys catalog), so every
-        // FeatureServer query under DataSource:Provider=duckdb failed DI activation outright
-        // before this fix.
+        // FeatureServer query under DataSource:Provider=duckdb would fail DI activation.
         services.AddScoped<ICrsDetectionService>(_ => new NoOpCrsDetectionService());
-        // Same gap, same fix shape: SpatialReferenceResolver also requires ICrsRegistry.
+        // SpatialReferenceResolver also requires ICrsRegistry.
         // WellKnownCrsRegistry covers CRS84/EPSG:4326/EPSG:3857 (the practical case for a
         // provider with no spatial_ref_sys-equivalent catalog) and honestly reports
         // "unsupported" for anything else.
@@ -180,7 +179,7 @@ internal static class ServiceCollectionExtensions
 
         // ReadinessCheckService requires IDatabaseHealthChecker; without this registration
         // resolving /healthz/ready under DataSource:Provider=duckdb fails DI activation
-        // with InvalidOperationException (PA-158). The checker drives a SELECT 1 through
+        // with InvalidOperationException. The checker drives a SELECT 1 through
         // the same scoped connection provider the feature store uses.
         services.AddScoped<IDatabaseHealthChecker, DuckDBDatabaseHealthChecker>();
 
@@ -306,6 +305,20 @@ internal static class ServiceCollectionExtensions
             return;
         }
 
+        // Discovery prepares an unlocked instance but does not lock it: a :memory:
+        // instance is closed right after, and a shared file instance is locked by the
+        // first request connection. On an instance a request already locked, extensions
+        // and settings are in place and only this connection's temp view is missing.
+        if (!DuckDBConnectionLockdown.IsLocked(connection))
+        {
+            PrepareDiscoveryInstance(connection, options);
+        }
+
+        ExecuteNonQuery(connection, DuckDBExternalSourceSql.BuildCreateTempViewSql(layerOpt));
+    }
+
+    private static void PrepareDiscoveryInstance(DuckDBConnection connection, DuckDBOptions options)
+    {
         if (!string.IsNullOrWhiteSpace(options.SpatialExtensionPath))
         {
             ExecuteNonQuery(
@@ -326,8 +339,6 @@ internal static class ServiceCollectionExtensions
         {
             ExecuteNonQuery(connection, command.Sql);
         }
-
-        ExecuteNonQuery(connection, DuckDBExternalSourceSql.BuildCreateTempViewSql(layerOpt));
     }
 
     private static void ExecuteNonQuery(DuckDBConnection connection, string sql)

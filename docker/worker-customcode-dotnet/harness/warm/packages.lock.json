@@ -1,0 +1,466 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net11.0": {
+      "Honua.Sdk": {
+        "type": "Direct",
+        "requested": "[5.0.1, )",
+        "resolved": "5.0.1",
+        "contentHash": "QWO2bU+gJcHMq26lg/Iov/tpw0zAHR0/PjoaUEciELOH/1iqizp1bWxeuwgJle9Rl/KnGyYl3gTT0EtXBKfLPA==",
+        "dependencies": {
+          "Honua.Sdk.Abstractions": "5.0.1",
+          "Honua.Sdk.Admin": "5.0.1",
+          "Honua.Sdk.Catalogs": "5.0.1",
+          "Honua.Sdk.ConsoleShare": "5.0.1",
+          "Honua.Sdk.Field": "5.0.1",
+          "Honua.Sdk.GeoServices": "5.0.1",
+          "Honua.Sdk.Geometry": "5.0.1",
+          "Honua.Sdk.Grpc": "5.0.1",
+          "Honua.Sdk.Offline": "5.0.1",
+          "Honua.Sdk.OgcFeatures": "5.0.1",
+          "Honua.Sdk.Processes": "5.0.1",
+          "Honua.Sdk.Scenes": "5.0.1",
+          "Honua.Sdk.Spec": "5.0.1",
+          "Honua.Sdk.Studio": "5.0.1",
+          "Microsoft.Extensions.DependencyInjection": "10.0.7"
+        }
+      },
+      "MaxRev.Gdal.Core": {
+        "type": "Direct",
+        "requested": "[3.13.3.611, )",
+        "resolved": "3.13.3.611",
+        "contentHash": "rioZ1DomXfWIh3R1dUJZSfNLjV9PCsUdCLYmFlfEa00hUc//R+kC710mfLtYCzyWCuYqDaeD7FHzay8uxzVeQw=="
+      },
+      "MaxRev.Gdal.LinuxRuntime.Minimal": {
+        "type": "Direct",
+        "requested": "[3.13.3.611, )",
+        "resolved": "3.13.3.611",
+        "contentHash": "nwFdYc//woYlQr+VmKxWAg9WFs1/6sBWvbvxMt9mri8HJO4o2jlr0IEDbIzOCDAZJKD13wN5k8UspfVqiqEFxw==",
+        "dependencies": {
+          "MaxRev.Gdal.LinuxRuntime.Minimal.arm64": "3.13.3.611",
+          "MaxRev.Gdal.LinuxRuntime.Minimal.x64": "3.13.3.611"
+        }
+      },
+      "NetTopologySuite": {
+        "type": "Direct",
+        "requested": "[2.6.0, )",
+        "resolved": "2.6.0",
+        "contentHash": "1B1OTacTd4QtFyBeuIOcThwSSLUdRZU3bSFIwM8vk36XiZlBMi3K36u74e4OqwwHRHUuJC1PhbDx4hyI266X1Q=="
+      },
+      "NetTopologySuite.IO.GeoJSON": {
+        "type": "Direct",
+        "requested": "[4.0.0, )",
+        "resolved": "4.0.0",
+        "contentHash": "AWpcRwPAIrUZfghQat7bXK9dAckhuAxKF/Yvp+DoctLpct7pilj0Y+VCiof/8NlaclGlrISSfgnu3Tbvq6T2ug==",
+        "dependencies": {
+          "NetTopologySuite": "[2.0.0, 3.0.0-A)",
+          "NetTopologySuite.Features": "[2.0.0, 3.0.0-A)",
+          "Newtonsoft.Json": "13.0.1"
+        }
+      },
+      "Geospatial.Grpc": {
+        "type": "Transitive",
+        "resolved": "1.0.2",
+        "contentHash": "kR3TThy8DUzHiL3ad/76gsx+GbqyXse5JWus17CXA/7KPzqFEzAcBjacxsHoDF8J5oZTH6n0vgoU01gv5DwxrQ==",
+        "dependencies": {
+          "Google.Protobuf": "3.36.2",
+          "Grpc.Core.Api": "2.84.0"
+        }
+      },
+      "Google.Protobuf": {
+        "type": "Transitive",
+        "resolved": "3.36.2",
+        "contentHash": "Ci1q1iJg74qAE5riTA2FbMS0wPbpruPQI/JQ9DrAsRo2VsSxgt1e/pmxGxgrci+pXJEgrSYg2vPl8rrStZkclQ=="
+      },
+      "Grpc.Core.Api": {
+        "type": "Transitive",
+        "resolved": "2.84.0",
+        "contentHash": "p2SOMl6q/GZ4/5MLkgboC/z55g4zKUEruRn/g46QgppjQBVnsLZVBU/9VO7n60ll38G3Eo8Zu9b7x+W01GKFVg=="
+      },
+      "Grpc.Net.Client": {
+        "type": "Transitive",
+        "resolved": "2.76.0",
+        "contentHash": "K1oldmqw2+Gn69nGRzZLhqSiUZwelX1GrBu/cUl9wNf1C0uB61vFS6JcxUUv9P8VoUJhFsmV44JA6lI2EUt4xw==",
+        "dependencies": {
+          "Grpc.Net.Common": "2.76.0"
+        }
+      },
+      "Grpc.Net.Common": {
+        "type": "Transitive",
+        "resolved": "2.76.0",
+        "contentHash": "bZpiMVYgvpB44/wBh1RotrkqC7bg2FOasLri2GhR3hMKyzsiTxCoDE49YjPrJeFc4RW0wS8u+EInI09sjxVFRA==",
+        "dependencies": {
+          "Grpc.Core.Api": "2.76.0"
+        }
+      },
+      "Honua.Sdk.Abstractions": {
+        "type": "Transitive",
+        "resolved": "5.0.1",
+        "contentHash": "QT13/pBiE/mAHkdc4YsbTvYaqbEVO48GgnWRzfpH5+8VK6E+7PXGODni9B3enjEYH4JKIJj38ryU5h2ME5+rEg=="
+      },
+      "Honua.Sdk.Admin": {
+        "type": "Transitive",
+        "resolved": "5.0.1",
+        "contentHash": "K5uOenUMOv7BJ2xkm7cAVyk3NCm9bFo7kH1m2l+I4LNUhag8sdycjZo4ErD2AVpj5hwJUG/hIeswOIL50oGGOQ==",
+        "dependencies": {
+          "Honua.Sdk.Abstractions": "5.0.1",
+          "Microsoft.Extensions.Http": "10.0.7",
+          "Microsoft.Extensions.Http.Resilience": "10.5.0"
+        }
+      },
+      "Honua.Sdk.Catalogs": {
+        "type": "Transitive",
+        "resolved": "5.0.1",
+        "contentHash": "c+fqbvpqJ3s2DgMLsFx8+UKhzePw6AMBhkX8VxVXJAXMOB1meT+wWQSp/sPBUBW92uUwoOg1mtBKfuCAC5klvw==",
+        "dependencies": {
+          "Honua.Sdk.Abstractions": "5.0.1",
+          "Microsoft.Extensions.Http": "10.0.7",
+          "Microsoft.Extensions.Http.Resilience": "10.5.0"
+        }
+      },
+      "Honua.Sdk.ConsoleShare": {
+        "type": "Transitive",
+        "resolved": "5.0.1",
+        "contentHash": "0s/cht30d269yUbsxzwQp+de52vVStBc2REejrtLtlUQxELY176AgRTPQv0aFhLVB/L7ayKmoFdxKVNo+QK1vg==",
+        "dependencies": {
+          "Honua.Sdk.Abstractions": "5.0.1",
+          "Microsoft.Extensions.Http": "10.0.7",
+          "Microsoft.Extensions.Http.Resilience": "10.5.0"
+        }
+      },
+      "Honua.Sdk.Field": {
+        "type": "Transitive",
+        "resolved": "5.0.1",
+        "contentHash": "9IeBG2WtReh3QVxX7zzAU2sTvCcWpkoc/z6tTyQdlOd3j84ePlj0hw2agrPLC5b67u9PUIBgPghb/I80jbFagQ==",
+        "dependencies": {
+          "Honua.Sdk.Abstractions": "5.0.1"
+        }
+      },
+      "Honua.Sdk.Geometry": {
+        "type": "Transitive",
+        "resolved": "5.0.1",
+        "contentHash": "TvpF/+wxwc6xZHOKTd7tYgRu3orIsQLFHPPUs4i0z2ilMciK7rFFg6DlOd3Y5oF1W5akXf5UGdwRt9CfpRRirQ==",
+        "dependencies": {
+          "Geospatial.Grpc": "1.0.2",
+          "Honua.Sdk.Abstractions": "5.0.1",
+          "NetTopologySuite": "2.6.0",
+          "NetTopologySuite.IO.GeoJSON4STJ": "4.0.0",
+          "ProjNET": "2.1.0"
+        }
+      },
+      "Honua.Sdk.GeoServices": {
+        "type": "Transitive",
+        "resolved": "5.0.1",
+        "contentHash": "9/AOOfmOE7PecCleieXdeimF6xdxYxCjPtvPJ/AZ8je+RNWXfwhFDGM6JGPU6iawAyzICnJQ842+E4zZY5BPgA==",
+        "dependencies": {
+          "Honua.Sdk.Abstractions": "5.0.1",
+          "Honua.Sdk.Geometry": "5.0.1",
+          "Microsoft.Extensions.Http": "10.0.7",
+          "Microsoft.Extensions.Http.Resilience": "10.5.0"
+        }
+      },
+      "Honua.Sdk.Grpc": {
+        "type": "Transitive",
+        "resolved": "5.0.1",
+        "contentHash": "wktnmp/Q0qubXBNkuil5WKsdG9fSg/b4Nq6Y7T3HsEtMFawnZZDXKRo66sciSNLetengviahRFzlBRBHIbUDiw==",
+        "dependencies": {
+          "Geospatial.Grpc": "1.0.2",
+          "Google.Protobuf": "3.36.2",
+          "Grpc.Net.Client": "2.76.0",
+          "Honua.Sdk.Abstractions": "5.0.1",
+          "Honua.Sdk.Geometry": "5.0.1",
+          "Honua.Sdk.Processes": "5.0.1"
+        }
+      },
+      "Honua.Sdk.Offline": {
+        "type": "Transitive",
+        "resolved": "5.0.1",
+        "contentHash": "MMJH/ykQ+86mVMR95Z5rNW6sLCvwAmMrong7zvEsRN62ubItmuNdeHQv0nYNVIeuPekswqz942o1jcf7z7mkzQ==",
+        "dependencies": {
+          "Honua.Sdk.Abstractions": "5.0.1"
+        }
+      },
+      "Honua.Sdk.OgcFeatures": {
+        "type": "Transitive",
+        "resolved": "5.0.1",
+        "contentHash": "bQYoF/LN5XHCmxHiPUO8zTPOpfwbwNrV3+myZa+hAxn4AyrCVVWkbBoTDxO7+QAtwdT9acjYW4YMRa40f5wEMw==",
+        "dependencies": {
+          "Honua.Sdk.Abstractions": "5.0.1",
+          "Honua.Sdk.Geometry": "5.0.1",
+          "Microsoft.Extensions.Http": "10.0.7",
+          "Microsoft.Extensions.Http.Resilience": "10.5.0"
+        }
+      },
+      "Honua.Sdk.Processes": {
+        "type": "Transitive",
+        "resolved": "5.0.1",
+        "contentHash": "i9MLO0A5BjF43KDbXdp9yPb8zR04qugQGCYyHNJ33XGcKf18WIT61nTpRjcNAAHbmxYRimAu23VRH7djjanTkw==",
+        "dependencies": {
+          "Honua.Sdk.Abstractions": "5.0.1",
+          "Microsoft.Extensions.Http": "10.0.7",
+          "Microsoft.Extensions.Http.Resilience": "10.5.0"
+        }
+      },
+      "Honua.Sdk.Scenes": {
+        "type": "Transitive",
+        "resolved": "5.0.1",
+        "contentHash": "lYMnnMkaXaBebeK7kiQGGqmZRcVHmpHFKPxh1NtJ9CfZ1KJvA1mkPATFoMQtEj01s5L5fd65OmNmp6jYrVmw2g==",
+        "dependencies": {
+          "Honua.Sdk.Abstractions": "5.0.1",
+          "Microsoft.Extensions.Http": "10.0.7",
+          "Microsoft.Extensions.Http.Resilience": "10.5.0"
+        }
+      },
+      "Honua.Sdk.Spec": {
+        "type": "Transitive",
+        "resolved": "5.0.1",
+        "contentHash": "jCdKr5aGws1/mjoP/8oHWNXkF5EZRicZEXnWalPqaRa1kZ0H+oU21wd6JCC/OBDFEeYnsn0O6insRQ7Z87Jb0A==",
+        "dependencies": {
+          "Honua.Sdk.Abstractions": "5.0.1",
+          "Microsoft.Extensions.Http": "10.0.7",
+          "Microsoft.Extensions.Http.Resilience": "10.5.0"
+        }
+      },
+      "Honua.Sdk.Studio": {
+        "type": "Transitive",
+        "resolved": "5.0.1",
+        "contentHash": "4HiCYVsE8YGHDcyhaNBsY2ju1oSvq9kEJu52canJS6MMj0KBgJONww+9Qf5gaV/nAZuZr9vlotTNp+otIUqjfA==",
+        "dependencies": {
+          "Honua.Sdk.Abstractions": "5.0.1",
+          "Microsoft.Extensions.Http": "10.0.7",
+          "Microsoft.Extensions.Http.Resilience": "10.5.0"
+        }
+      },
+      "MaxRev.Gdal.LinuxRuntime.Minimal.arm64": {
+        "type": "Transitive",
+        "resolved": "3.13.3.611",
+        "contentHash": "gkBotOx4o78VJmcQrifRmGEEFIvEtZLLBl1TEM66QseJSOgwr01p3oibgqVAPLP3sWxkN4GNV76IcWlPb77J2Q=="
+      },
+      "MaxRev.Gdal.LinuxRuntime.Minimal.x64": {
+        "type": "Transitive",
+        "resolved": "3.13.3.611",
+        "contentHash": "IpJaHMg3G7Uh7Y9jb6W7FhnD2sXWf/oRlnlCUNdwCoV9SaNXGHQbtvm85ZFY+J/N3pIysju/Jw7v5vlF6EJxLQ=="
+      },
+      "Microsoft.Extensions.AmbientMetadata.Application": {
+        "type": "Transitive",
+        "resolved": "10.5.0",
+        "contentHash": "lCJjEDknSYeTXB133DwLNwXYA6q9nzJiJFjQb1KO1n3sS6wHfROm6zqG6y3UthQP5oPnNbE1a7M15LpjSf5yBg==",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration": "10.0.6",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "10.0.6"
+        }
+      },
+      "Microsoft.Extensions.Compliance.Abstractions": {
+        "type": "Transitive",
+        "resolved": "10.5.0",
+        "contentHash": "xbWZji13Vb2jDJNtwVrKpI09jd8x3n3fL+GzhiLK+8O5Wc2A+GyqCZalST2fV46Pf0QfCwkXf83y+3/rDkCd7A==",
+        "dependencies": {
+          "Microsoft.Extensions.ObjectPool": "10.0.6"
+        }
+      },
+      "Microsoft.Extensions.Configuration": {
+        "type": "Transitive",
+        "resolved": "10.0.7",
+        "contentHash": "wZbGh7J8R1vXN525O6d8dlcDTxhRTnd5MyW4LdfP5S0tSnTwTCseYSrq6g0Mxh7W9xn8P/2xPuf0D/m6k2dy2w=="
+      },
+      "Microsoft.Extensions.Configuration.Binder": {
+        "type": "Transitive",
+        "resolved": "10.0.7",
+        "contentHash": "8bS1qIaRivny+WX+49pmeJ6iAylbtX8C0DLEcCQWZjdxQvLqaMssXiGD9P/6pYElrHbK5/nAHmjbQ8STqdMYeg==",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration": "10.0.7"
+        }
+      },
+      "Microsoft.Extensions.DependencyInjection": {
+        "type": "Transitive",
+        "resolved": "10.0.7",
+        "contentHash": "91F/o3emPV/+xY/ip3s2LqDNF14kjttlVtq0BXgg6p4MnCzeSZxnUJm+t6WRrtD3JdGo88/oX+z7OwK4y8PZuw=="
+      },
+      "Microsoft.Extensions.DependencyInjection.AutoActivation": {
+        "type": "Transitive",
+        "resolved": "10.5.0",
+        "contentHash": "vby/PzPScy9pX3r3f5UuHutxSr4Q8SXqyIiH6+JEK7SVpTCL6f8R9mp04OUVsZLlsME2rBjA9PHXf9L9aG7wbg=="
+      },
+      "Microsoft.Extensions.Diagnostics": {
+        "type": "Transitive",
+        "resolved": "10.0.7",
+        "contentHash": "l+smp1qPlU0OUXD0OGfdp7OUFrbdq7ZaP5T7m2WpfZ4RFKD7iG73BAT7tjSMxNmbSXkhAn1jYHOAqzYG1r9sNg==",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration": "10.0.7",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "10.0.7"
+        }
+      },
+      "Microsoft.Extensions.Diagnostics.ExceptionSummarization": {
+        "type": "Transitive",
+        "resolved": "10.5.0",
+        "contentHash": "+jdC9YUfMkX9/Yb3Pi8Kovt1nFVGGB2UqSHZgLapo63d+WAhYf9KiuNA3jiaaRINhVyCgWuKFoMtjWKET5oXEQ=="
+      },
+      "Microsoft.Extensions.Http": {
+        "type": "Transitive",
+        "resolved": "10.0.7",
+        "contentHash": "1wbd+RPhRo3hJKNJhdGEO5ls0LGe55Ho4BUjlFtRUrWxDVVBd7g0Ydq9fbNy86pmvx/j7AGcSPo7YNCo1IRI6Q==",
+        "dependencies": {
+          "Microsoft.Extensions.Diagnostics": "10.0.7",
+          "Microsoft.Extensions.Logging": "10.0.7"
+        }
+      },
+      "Microsoft.Extensions.Http.Diagnostics": {
+        "type": "Transitive",
+        "resolved": "10.5.0",
+        "contentHash": "HoWdJKvBt7vkLlclRbjDTXcCp3s9hwFf1CY4ovlmMKFAbKSI7zKl0fUQ4LMvUI3sHIhpEtMjp7Mxjaf/yEmVvQ==",
+        "dependencies": {
+          "Microsoft.Extensions.Http": "10.0.6",
+          "Microsoft.Extensions.Telemetry": "10.5.0"
+        }
+      },
+      "Microsoft.Extensions.Http.Resilience": {
+        "type": "Transitive",
+        "resolved": "10.5.0",
+        "contentHash": "81rw+wjFFP5jREOERb1PHIPvBNFtE6NXO8bsLTSCET2UZWxj7cwrpzcI3l07tOpHEprYmruZAF3kZEar7uG4Iw==",
+        "dependencies": {
+          "Microsoft.Extensions.Http.Diagnostics": "10.5.0",
+          "Microsoft.Extensions.ObjectPool": "10.0.6",
+          "Microsoft.Extensions.Resilience": "10.5.0"
+        }
+      },
+      "Microsoft.Extensions.Logging": {
+        "type": "Transitive",
+        "resolved": "10.0.7",
+        "contentHash": "hOeRIQ63GkgiYCB/MIFp+LQs8aXpJXpB55t6Aj37ab7t2/6WeFcPXxYM9hdy/o5tffzwf8mhqzLJP6mjGYCxjw==",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection": "10.0.7"
+        }
+      },
+      "Microsoft.Extensions.Logging.Configuration": {
+        "type": "Transitive",
+        "resolved": "10.0.6",
+        "contentHash": "YXyeFL/MFNuy7k4zCIxldXdyyK7hpW3wPnqyS5HxOJ+BkMkaT7cYVmpWYNnRaiEM6a98vjVjvIRHiUUsTJfc6g==",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration": "10.0.6",
+          "Microsoft.Extensions.Configuration.Binder": "10.0.6",
+          "Microsoft.Extensions.Logging": "10.0.6",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "10.0.6"
+        }
+      },
+      "Microsoft.Extensions.ObjectPool": {
+        "type": "Transitive",
+        "resolved": "10.0.6",
+        "contentHash": "2Jafd4fdxxiwiQ08mcF+Lf3vqikkQZusGVThOKZNSmPDceGk4IwkjeHL7OEb9Ov8q9ICY5wofL98CS153K5VvQ=="
+      },
+      "Microsoft.Extensions.Options.ConfigurationExtensions": {
+        "type": "Transitive",
+        "resolved": "10.0.7",
+        "contentHash": "IT7f+EMXZtkjatEcF+o6aOw/7OE4etRrMiDGEWH/iiTu2R3uhC4NEQJCfHiibtX45U3sIQ5Fh6tbb1qaOz3YAg==",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration.Binder": "10.0.7"
+        }
+      },
+      "Microsoft.Extensions.Resilience": {
+        "type": "Transitive",
+        "resolved": "10.5.0",
+        "contentHash": "yjbGQkSqLkP8/lKZLfaUcdkNUpWUqMafCsm56kw9uzznhJb/uJiIRy5/zG9D0SFsBzJkz2AcvWU2J/MJydPxoA==",
+        "dependencies": {
+          "Microsoft.Extensions.Diagnostics": "10.0.6",
+          "Microsoft.Extensions.Diagnostics.ExceptionSummarization": "10.5.0",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "10.0.6",
+          "Microsoft.Extensions.Telemetry.Abstractions": "10.5.0",
+          "Polly.Extensions": "8.4.2",
+          "Polly.RateLimiting": "8.4.2"
+        }
+      },
+      "Microsoft.Extensions.Telemetry": {
+        "type": "Transitive",
+        "resolved": "10.5.0",
+        "contentHash": "jI7b9rkfoz06ZEQols6WG3D0iQMIbtRDHkx1F7QvQOSDmzyXLwUIBbJEO8ftr7aD/2tvsHplqycp+WXFvMfujg==",
+        "dependencies": {
+          "Microsoft.Extensions.AmbientMetadata.Application": "10.5.0",
+          "Microsoft.Extensions.DependencyInjection.AutoActivation": "10.5.0",
+          "Microsoft.Extensions.Logging.Configuration": "10.0.6",
+          "Microsoft.Extensions.ObjectPool": "10.0.6",
+          "Microsoft.Extensions.Telemetry.Abstractions": "10.5.0"
+        }
+      },
+      "Microsoft.Extensions.Telemetry.Abstractions": {
+        "type": "Transitive",
+        "resolved": "10.5.0",
+        "contentHash": "VmU7e6xHqoubWKl7y9MtWyQAjlDpvbds3gY8ZKMS/1GxY2+U1/aMNnMj09aOXAa3p5qhHSSkBzDJvyokCjVkPg==",
+        "dependencies": {
+          "Microsoft.Extensions.Compliance.Abstractions": "10.5.0",
+          "Microsoft.Extensions.ObjectPool": "10.0.6"
+        }
+      },
+      "NetTopologySuite.Features": {
+        "type": "Transitive",
+        "resolved": "2.1.0",
+        "contentHash": "Iq+Ie9WZJj8Pyu3asHZ/UwZLim786QzWC0DmLEzFK2u3BeLHDK7iWfsYBLDb/RCBUql8VBmW6LMlsJ+LKUHduA==",
+        "dependencies": {
+          "NetTopologySuite": "[2.0.0, 3.0.0-A)"
+        }
+      },
+      "NetTopologySuite.IO.GeoJSON4STJ": {
+        "type": "Transitive",
+        "resolved": "4.0.0",
+        "contentHash": "Jdm9qBVDcHkrVn3fm3knw6pGu3Ggn31tGVRyIP1/5HSL+8EDPfUnEZF0+oVFBkOKR9tqu9aV2jmEX42Kq8F2Yw==",
+        "dependencies": {
+          "NetTopologySuite": "[2.0.0, 3.0.0-A)",
+          "NetTopologySuite.Features": "[2.1.0, 3.0.0-A)"
+        }
+      },
+      "Newtonsoft.Json": {
+        "type": "Transitive",
+        "resolved": "13.0.1",
+        "contentHash": "ppPFpBcvxdsfUonNcvITKqLl3bqxWbDCZIzDWHzjpdAHRFfZe0Dw9HmA0+za13IdyrgJwpkDTDA9fHaxOrt20A=="
+      },
+      "Polly.Core": {
+        "type": "Transitive",
+        "resolved": "8.4.2",
+        "contentHash": "BpE2I6HBYYA5tF0Vn4eoQOGYTYIK1BlF5EXVgkWGn3mqUUjbXAr13J6fZVbp7Q3epRR8yshacBMlsHMhpOiV3g=="
+      },
+      "Polly.Extensions": {
+        "type": "Transitive",
+        "resolved": "8.4.2",
+        "contentHash": "GZ9vRVmR0jV2JtZavt+pGUsQ1O1cuRKG7R7VOZI6ZDy9y6RNPvRvXK1tuS4ffUrv8L0FTea59oEuQzgS0R7zSA==",
+        "dependencies": {
+          "Polly.Core": "8.4.2"
+        }
+      },
+      "Polly.RateLimiting": {
+        "type": "Transitive",
+        "resolved": "8.4.2",
+        "contentHash": "ehTImQ/eUyO07VYW2WvwSmU9rRH200SKJ/3jku9rOkyWE0A2JxNFmAVms8dSn49QLSjmjFRRSgfNyOgr/2PSmA==",
+        "dependencies": {
+          "Polly.Core": "8.4.2",
+          "System.Threading.RateLimiting": "8.0.0"
+        }
+      },
+      "ProjNET": {
+        "type": "Transitive",
+        "resolved": "2.1.0",
+        "contentHash": "4F0xEYe+cQCgWgnf1UaDlRPFm9RxTaSFt4C/axNnCgSCNWU1AFDNvTyVdN/RwNmTYoGEWxo4sOYMQrW9kQtwpg=="
+      },
+      "System.Threading.RateLimiting": {
+        "type": "Transitive",
+        "resolved": "8.0.0",
+        "contentHash": "7mu9v0QDv66ar3DpGSZHg9NuNcxDaaAcnMULuZlaTpP9+hwXhrxNGsF5GmLkSHxFdb5bBc1TzeujsRgTrPWi+Q=="
+      }
+    },
+    "net11.0/linux-x64": {
+      "MaxRev.Gdal.Core": {
+        "type": "Direct",
+        "requested": "[3.13.3.611, )",
+        "resolved": "3.13.3.611",
+        "contentHash": "rioZ1DomXfWIh3R1dUJZSfNLjV9PCsUdCLYmFlfEa00hUc//R+kC710mfLtYCzyWCuYqDaeD7FHzay8uxzVeQw=="
+      },
+      "MaxRev.Gdal.LinuxRuntime.Minimal.arm64": {
+        "type": "Transitive",
+        "resolved": "3.13.3.611",
+        "contentHash": "gkBotOx4o78VJmcQrifRmGEEFIvEtZLLBl1TEM66QseJSOgwr01p3oibgqVAPLP3sWxkN4GNV76IcWlPb77J2Q=="
+      },
+      "MaxRev.Gdal.LinuxRuntime.Minimal.x64": {
+        "type": "Transitive",
+        "resolved": "3.13.3.611",
+        "contentHash": "IpJaHMg3G7Uh7Y9jb6W7FhnD2sXWf/oRlnlCUNdwCoV9SaNXGHQbtvm85ZFY+J/N3pIysju/Jw7v5vlF6EJxLQ=="
+      }
+    }
+  }
+}

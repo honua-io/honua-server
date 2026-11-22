@@ -269,6 +269,7 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_ingest_job_artifact"),
                     McpWorkflowViewMemberRule.Exact("honua_op_dataset_stage_preview"),
                     McpWorkflowViewMemberRule.Exact("honua_op_dataset_stage_import"),
+                    McpWorkflowViewMemberRule.Exact("honua_op_dataset_stage_discard"),
                 ],
             },
             new McpWorkflowViewStageDefinition

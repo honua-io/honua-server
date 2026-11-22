@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Infrastructure.Helpers;
@@ -87,6 +88,14 @@ internal static partial class WmsRequestHandlers
         }
 
         var layer = resolvedLayers[0];
+        if (OgcClassicRasterSupport.IsRasterResource(layer.Resource))
+        {
+            return CreateWmsServiceException(
+                context,
+                "OperationNotSupported",
+                $"Layer '{GetWmsLayerDisplayName(layer)}' has no legend-renderable symbology.");
+        }
+
         var styleCatalog = context.RequestServices.GetRequiredService<ILayerStyleCatalog>();
 
         // Same style source, same cache, same parse as GetMap: the legend cannot show
@@ -109,7 +118,8 @@ internal static partial class WmsRequestHandlers
         var (entries, unrepresentable) = BuildLegendEntries(
             stylePlan,
             GetWmsLayerDisplayName(layer),
-            zoom);
+            zoom,
+            await ResolveLegendWithheldFieldsAsync(context, layer.Resource, cancellationToken).ConfigureAwait(false));
 
         var imageBytes = LegendImageComposer.Compose(
             entries,
@@ -130,7 +140,8 @@ internal static partial class WmsRequestHandlers
         List<string> Unrepresentable) BuildLegendEntries(
             RasterStylePlan stylePlan,
             string layerDisplayName,
-            RenderZoom zoom)
+            RenderZoom zoom,
+            IReadOnlySet<string>? withheldFields = null)
     {
         var entries = new List<LegendImageComposer.LegendImageEntry>();
         var unrepresentable = new List<string>();
@@ -152,7 +163,8 @@ internal static partial class WmsRequestHandlers
                 continue;
             }
 
-            var classSet = LegendClassifier.Classify(styleLayer);
+            var classSet = LegendClassifier.Classify(
+                styleLayer, withheldFields ?? ImmutableHashSet<string>.Empty);
             if (classSet.UnrepresentableReason != null)
             {
                 unrepresentable.Add(classSet.UnrepresentableReason);
@@ -186,6 +198,19 @@ internal static partial class WmsRequestHandlers
         }
 
         return (entries, unrepresentable);
+    }
+
+    // Hidden fields plus the caller's masked fields: a legend must not list class values of either.
+    private static async Task<IReadOnlySet<string>> ResolveLegendWithheldFieldsAsync(
+        HttpContext context, MetadataV2Object resource, CancellationToken cancellationToken)
+    {
+        var withheld = new HashSet<string>(resource.HiddenSchemaFieldNames(), StringComparer.OrdinalIgnoreCase);
+        if (context.RequestServices.GetService<IFieldMaskSource>() is { } masks)
+        {
+            withheld.UnionWith(await masks.ResolveAsync(resource, cancellationToken).ConfigureAwait(false));
+        }
+
+        return withheld;
     }
 
     private static bool TryParseLegendDimension(

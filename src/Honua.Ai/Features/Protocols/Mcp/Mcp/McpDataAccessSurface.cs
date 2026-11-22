@@ -14,6 +14,7 @@ using Honua.Ai.Protocols.Mcp.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Ai.Protocols.Mcp;
 
@@ -134,6 +135,7 @@ internal sealed partial class McpDataAccessSurface
                     ErrorResponse(request.Id, McpErrorMapper.MethodNotFound("initialize is a legacy method.")),
                 "initialize" => HandleInitialize(httpContext, request),
                 "ping" => Ping(request),
+                "logging/setLevel" => await SetLogLevelAsync(httpContext, request, cancellationToken).ConfigureAwait(false),
                 "tools/list" => await ListToolsAsync(httpContext, request, cancellationToken).ConfigureAwait(false),
                 "tools/call" => await CallToolAsync(httpContext, request, cancellationToken).ConfigureAwait(false),
                 "resources/list" => ListResources(request),
@@ -221,19 +223,20 @@ internal sealed partial class McpDataAccessSurface
         // list_changed is delivered only on the optional GET /mcp stream. Advertising
         // it while that stream is off (the default) tells clients a notification
         // channel exists that this transport can never send.
-        var listChanged = httpContext.RequestServices?.GetService<IOptions<McpOptions>>()
-            ?.Value.ServerInitiatedStreamEnabled == true;
+        var listChanged = LoggingAvailable(httpContext);
         var result = new McpInitializeResult
         {
             ProtocolVersion = negotiatedVersion,
             // When the stream is enabled the server emits
-            // notifications/tools/list_changed and notifications/resources/list_changed.
+            // notifications/tools/list_changed, notifications/resources/list_changed
+            // and notifications/message (job status, logging/setLevel).
             // The prompt catalog stays static, so prompts.listChanged remains false.
             Capabilities = new McpServerCapabilities
             {
                 Tools = new McpCapabilityFlag { ListChanged = listChanged },
                 Resources = new McpCapabilityFlag { ListChanged = listChanged },
-                Prompts = new McpCapabilityFlag { ListChanged = false }
+                Prompts = new McpCapabilityFlag { ListChanged = false },
+                Logging = listChanged ? new McpEmptyCapability() : null
             },
 
             // State how the issued session is kept so a client or harness can record
@@ -616,13 +619,16 @@ internal sealed partial class McpDataAccessSurface
                         "A bound MCP session is required for governed proposal calls.");
                 }
 
+                var caller = new ProposalEvidenceCaller(
+                    tenantId,
+                    CanonicalSecurityActor.Resolve(httpContext.User)?.ActorId,
+                    sessionId);
                 httpContext.Items[ProposalEvidenceVerifier.HttpContextItemKey] =
                     await _proposalEvidenceVerifier.VerifyAsync(
                         tool,
                         parameters.Arguments,
                         parameters.Meta,
-                        tenantId,
-                        sessionId,
+                        caller,
                         request.Id,
                         cancellationToken).ConfigureAwait(false);
             }
@@ -680,6 +686,10 @@ internal sealed partial class McpDataAccessSurface
         }
 
         if (invocationStarted) result = McpInputGuidance.Enrich(tool, parameters.Arguments, result);
+        // Audited even when the governed-proposal evidence check refused the call before the tool ran.
+        var errorCode = result.IsError ? ExtractErrorCode(result) : null;
+        await AuditAsync(httpContext, McpAccessAudit.ToolCall(tool.Name, parameters.Arguments, errorCode)).ConfigureAwait(false);
+
         return result.InputRequired is { } inputRequired
             ? new McpJsonRpcResponse { Id = request.Id, Result = McpModernResults.InputRequired(inputRequired) }
             : SuccessResponse(request.Id, result, McpJsonContext.Default.McpToolsCallResult);
@@ -880,6 +890,8 @@ internal sealed partial class McpDataAccessSurface
                         1,
                         new KeyValuePair<string, object?>("resource_family", resourceFamily),
                         new KeyValuePair<string, object?>("status", McpTelemetry.Status.Error));
+                    var invalid = McpAccessAudit.ResourceRead(parameters.Uri, McpErrorMapper.Codes.InvalidArgument);
+                    await AuditAsync(httpContext, invalid).ConfigureAwait(false);
                     return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(ex.Message));
                 }
             }
@@ -889,6 +901,7 @@ internal sealed partial class McpDataAccessSurface
                 1,
                 new KeyValuePair<string, object?>("resource_family", resourceFamily),
                 new KeyValuePair<string, object?>("status", completionStatus));
+            await AuditAsync(httpContext, McpAccessAudit.ResourceRead(parameters.Uri, errorCode: null)).ConfigureAwait(false);
             return SuccessResponse(request.Id, result, McpJsonContext.Default.McpResourcesReadResult);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -903,6 +916,9 @@ internal sealed partial class McpDataAccessSurface
             {
                 McpLog.ResourceReadFailed(_logger, resourceFamily, parameters.Uri, ex);
             }
+
+            var failed = McpAccessAudit.ResourceRead(parameters.Uri, error.Data?.Code ?? McpErrorMapper.Codes.Internal);
+            await AuditAsync(httpContext, failed).ConfigureAwait(false);
             return ErrorResponse(request.Id, error);
         }
     }

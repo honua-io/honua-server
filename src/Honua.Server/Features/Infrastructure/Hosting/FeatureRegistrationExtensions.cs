@@ -38,6 +38,8 @@ using Honua.Server.Features.Geocoding;
 using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Forms;
 using Honua.Server.Features.Mobile.FieldCollection.Automations;
+using Honua.Server.Features.Assets;
+using Honua.Server.Features.Tasks;
 using Honua.Server.Features.FieldWorkflows;
 using Honua.Server.Features.FieldWorkflows.Export;
 using Honua.Server.Features.FieldWorkflows.Review;
@@ -124,6 +126,7 @@ internal static class FeatureRegistrationExtensions
         services.AddGeocoding(configuration);
         services.AddForms(configuration);
         services.AddFieldWorkflows();
+        services.AddAssets();
         services.AddCogServices(configuration);
         services.AddMultidimensionalCoverageServices();
         services.AddZarrServices();
@@ -287,7 +290,15 @@ internal static class FeatureRegistrationExtensions
     {
         services.AddSingleton<PMTilesProxyService>();
         services.AddSingleton<Honua.Server.Features.Infrastructure.FileStorage.ArtifactByteReader>();
-        services.AddScoped<Honua.Server.Features.Admin.PairedPublications.PairedPublicationReader>();
+        services.AddScoped<Honua.Server.Features.Admin.Exports.ExportReader>();
+        services.AddScoped(provider => new Honua.Server.Features.Admin.Exports.ExportCatalog(
+            new Honua.Server.Features.Admin.Exports.ExportCatalogDependencies
+            {
+                Storage = provider.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage>(),
+                Options = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Features.Infrastructure.Domain.CloudStorageOptions>>(),
+                Jobs = provider.GetRequiredService<Honua.Server.Features.Admin.TileOperations.ITileCacheJobService>(),
+                PublicRevocation = provider.GetService<Honua.Server.Features.Admin.Exports.PublicExportRevocationService>()
+            }));
         services.AddScoped<Honua.Server.Features.Protocols.Rasters.CogArtifacts.CogArtifactService>();
         // Lets a protocol assembly advertise a published COG without referencing the
         // server: Honua.Server references the protocols, never the reverse, so STAC
@@ -312,6 +323,8 @@ internal static class FeatureRegistrationExtensions
 #endif
         endpoints.MapFormPackageEndpoints();
         endpoints.MapFieldReviewEndpoints();
+        endpoints.MapAssetProfileEndpoints();
+        endpoints.MapWorkTaskEndpoints();
         endpoints.MapFieldExportEndpoints();
         endpoints.MapCogEndpoints();
         endpoints.MapMultidimensionalCoverageEndpoints();

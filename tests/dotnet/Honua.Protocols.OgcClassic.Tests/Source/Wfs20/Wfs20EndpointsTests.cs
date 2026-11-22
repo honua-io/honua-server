@@ -1653,7 +1653,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_Transaction_Insert_WithUnparseableSrsName_ReturnsExceptionReport()
     {
         await using var fixture = await StartIsolatedApplicationAsync();
-        // #2737: a present but unparseable/unsupported srsName on an insert geometry is a
+        // A present but unparseable/unsupported srsName on an insert geometry is a
         // transaction failure (OGC exception), not a silent fall back to the layer CRS.
         const string requestBody = """
             <wfs:Transaction service="WFS" version="2.0.0"
@@ -1688,7 +1688,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_Transaction_AllowAnonymousWritePolicy_AllowsInsertWithoutRbac()
     {
         await using var fixture = await StartIsolatedApplicationAsync();
-        // V2 cutover (#1035 72/N): per-resource access policy now lives on
+        // Per-resource access policy lives on
         // MetadataV2Object.AccessPolicy. Seed it directly via the test fixture.
         fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
@@ -2061,7 +2061,7 @@ public sealed partial class Wfs20EndpointsTests
     public async Task Wfs_Transaction_Replace_RoundTripsGmlDescriptionAndIdentifierCodeSpace()
     {
         await using var fixture = await StartIsolatedApplicationAsync();
-        // Mirrors the WFS 2.0 ETS ReplaceTests flow (#1433): the harness replaces a feature with
+        // Mirrors the WFS 2.0 ETS ReplaceTests flow: the harness replaces a feature with
         // standard gml:description / gml:identifier properties (the identifier carrying a CITE
         // codeSpace) and then asserts they survive a GetFeatureById read-back. gml:identifier is
         // gml:CodeWithAuthorityType, so the codeSpace authority must round-trip too.
@@ -2593,7 +2593,6 @@ public sealed partial class Wfs20EndpointsTests
         allowedValues.Should().Contain("FALSE");
     }
 
-    // ---- Regression tests for BH-008, BH-009, BH-010, BH-011 ----
 
     [IntegrationTest]
     [Operation(Operations.Update)]
@@ -2841,8 +2840,7 @@ public sealed partial class Wfs20EndpointsTests
             SupportedCrs = [MetadataV2SpatialReference.Wgs84]
         });
 
-        // 2-vertex 3D LineString: x1 y1 z1 x2 y2 z2 → 6 ordinates.
-        // Before the fix these were mis-parsed as 3 2D points with the wrong coordinates.
+        // A two-vertex 3D LineString has six ordinates: x1 y1 z1 x2 y2 z2.
         const string requestBody = """
             <wfs:Transaction service="WFS" version="2.0.0"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
@@ -2865,7 +2863,7 @@ public sealed partial class Wfs20EndpointsTests
         var response = await fixture.Client.PostAsync("/wfs", requestContent);
 
         var content = await response.Content.ReadAsStringAsync();
-        // Before the fix this returned 400 or stored wrong geometry; now it must succeed.
+        // The three-dimensional transaction must preserve its geometry.
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         content.Should().Contain("TransactionResponse");
         content.Should().Contain("<wfs:totalInserted>1</wfs:totalInserted>");
@@ -2922,12 +2920,9 @@ public sealed partial class Wfs20EndpointsTests
             .ToArray();
     }
 
-    // Regression tests for BH2-004 / BH2-005.
 
-    // BH2-004: an invalid FES 2.0 filter expression inside a WFS-T Transaction body
-    // previously caused a 500 Internal Server Error because the Fes20ParseException
-    // propagated out of HandleTransactionAsync unhandled.  After the fix the handler
-    // catches it and returns 400 InvalidParameterValue.
+    // An invalid FES 2.0 filter in a WFS-T transaction must return
+    // 400 InvalidParameterValue.
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("POST /wfs")]
@@ -2958,11 +2953,7 @@ public sealed partial class Wfs20EndpointsTests
             "an unparseable FES 2.0 filter must produce 400, not 500");
     }
 
-    // BH2-005: a WFS-T Delete with an empty <fes:Filter/> element previously caused a
-    // TOCTOU: the filter was non-null but produced zero children, which (after the
-    // has-only-ResourceId check passed) was forwarded as an empty SQL WHERE clause,
-    // potentially deleting all rows in the type.  After the fix an empty filter is
-    // treated as null, which triggers the server's null-guard and returns 400.
+    // Reject an empty WFS-T Delete filter with 400 to prevent an unbounded delete.
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("POST /wfs")]

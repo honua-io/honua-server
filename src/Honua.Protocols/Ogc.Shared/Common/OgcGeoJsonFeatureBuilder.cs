@@ -105,6 +105,12 @@ internal static class OgcGeoJsonFeatureBuilder
             geometry,
             links);
 
+    // The caller passes a base it has just built, so its properties dictionary is unshared.
+    internal static GeoJsonFeature CreateFromBuiltBase(
+        GeoJsonFeatureBase featureBase,
+        SimpleGeoJsonGeometry? geometry)
+        => CreateCore(featureBase, geometry, links: null, ownsProperties: true);
+
     private static GeoJsonFeature CreateCore(
         GeoJsonFeatureBase featureBase,
         SimpleGeoJsonGeometry? geometry,

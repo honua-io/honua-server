@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Edit.Receipts;
 using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Features.Collaboration.FeatureLocks;
 using Honua.Server.Features.Collaboration.FeatureLocks;
@@ -48,7 +49,10 @@ internal static class PostgresSharedStateRegistration
         services.AddPostgresConfigurationStores();
         services.TryAddSingleton(provider => new JobStoreDatabase(
             provider.GetRequiredService<NpgsqlDataSource>(),
-            configuration[SystemSchemaKey]));
+            configuration[SystemSchemaKey])
+        {
+            Secrets = provider.GetService<IExecutionJobSecretProtector>() ?? UnprotectedExecutionJobSecrets.Instance,
+        });
         // One wake signal per store kind, shared by the store that rings it and the loops that wait on it.
         services.TryAddSingleton(typeof(PollWakeSignal<>));
         services.TryAddSingleton<PostgresExecutionJobStore>();

@@ -7,9 +7,11 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
@@ -84,7 +86,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         var inputs = new StepInputReader(job.Spec.Parameters);
         if (!inputs.TryGetRequired("input", out var inputUri, out var inputError))
         {
-            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid {HandledProcessId} inputs: {inputError}");
         }
 
         // Open the input as a streamed feature sequence so a >50 MiB load lands via
@@ -95,7 +97,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
                 inputUri, out var parseError, out var source, _options.CurrentValue.MaxArtifactBytes,
                 _options.CurrentValue.OutputRootDirectory, context))
         {
-            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
+            return JobExecutionResult.InvalidInput($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
         }
 
         string connectionString;
@@ -123,7 +125,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
             var hasIdempotencyConstraint = inputs.TryGet("idempotencyConstraint", out var rawIdempotencyConstraint);
             if (hasIdempotencyColumn != hasIdempotencyConstraint)
             {
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid {HandledProcessId} inputs: idempotencyColumn and idempotencyConstraint must be supplied together.");
             }
 
@@ -136,9 +138,12 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         }
         catch (TransformInputException ex)
         {
-            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {ex.PublicMessage}");
+            return JobExecutionResult.InvalidInput($"Invalid {HandledProcessId} inputs: {ex.PublicMessage}");
         }
 
+        using var jobScope = JobSecurityScope.Current is null && job.Audit?.SubmitterSecurityContext is not null
+            ? JobSecurityScope.Begin(job.Audit.SubmitterSecurityContext)
+            : null;
         var resolvedConnection = await ResolveConnectionStringAsync(inputs, cancellationToken).ConfigureAwait(false);
         if (resolvedConnection.Error is not null)
         {
@@ -322,12 +327,14 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
             return (null, "secure connection resolver is not configured.");
         }
 
+        var registry = scope.ServiceProvider.GetService<ISecureConnectionRegistry>();
         return await ResolveConnectionStringAsync(
             scopedResolver,
             hasId,
             connectionName,
             connectionIdText,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            registry).ConfigureAwait(false);
     }
 
     private async Task<(string? ConnectionString, string? Error)> ResolveConnectionStringAsync(
@@ -335,7 +342,8 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         bool hasId,
         string? connectionName,
         string? connectionIdText,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ISecureConnectionRegistry? registry = null)
     {
         try
         {
@@ -347,12 +355,24 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
                     return (null, "connectionId must be a valid GUID.");
                 }
 
+                if (registry is not null)
+                {
+                    var registered = await registry.GetConnectionAsync(connectionId, cancellationToken).ConfigureAwait(false);
+                    RemoteSourceExecutor.EnsureConnectionTenantScope(registered);
+                }
+
                 connectionString = await resolver.ResolveConnectionStringAsync(
                     connectionId,
                     cancellationToken).ConfigureAwait(false);
             }
             else
             {
+                if (registry is not null)
+                {
+                    var registered = await registry.GetConnectionByNameAsync(connectionName!, cancellationToken).ConfigureAwait(false);
+                    RemoteSourceExecutor.EnsureConnectionTenantScope(registered);
+                }
+
                 connectionString = await resolver.ResolveConnectionStringAsync(
                     connectionName!,
                     cancellationToken).ConfigureAwait(false);

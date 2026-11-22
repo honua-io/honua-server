@@ -152,7 +152,7 @@ run_case() {
   HONUA_SERVER_TEST_STALL_SECONDS="${stall}" \
   HONUA_SERVER_TEST_KILL_AFTER_SECONDS="${HONUA_FIXTURE_KILL_AFTER:-2}" \
   HONUA_SERVER_TEST_HEARTBEAT_SECONDS=1 \
-  HONUA_SERVER_TEST_POLL_SECONDS=1 \
+  HONUA_SERVER_TEST_POLL_SECONDS="${HONUA_FIXTURE_POLL_SECONDS:-1}" \
   GITHUB_STEP_SUMMARY="${workdir}/${name}.summary" \
     "${RUNNER}" > "${out_file}" 2>&1 || rc=$?
 }
@@ -175,6 +175,19 @@ ratio="$(timing_field .headroom_ratio)"
 awk -v r="${ratio}" 'BEGIN { exit !(r > 0 && r < 0.30) }' \
   || fail "headroom_ratio=${ratio} is not a plausible fraction of the budget"
 pass "duration and headroom_ratio reflect the child's real runtime"
+
+# --- 1b. A shard that exits early is not held for the rest of a poll. -------
+# Stage 0 runs many one-second shards back to back; waiting out a 5s poll after
+# each one added 4s per shard.
+quick_started=${SECONDS}
+HONUA_FIXTURE_POLL_SECONDS=5
+run_case quick chatty 0 1 0.90 60
+unset HONUA_FIXTURE_POLL_SECONDS
+quick_elapsed=$((SECONDS - quick_started))
+[[ "${rc}" == "0" ]] || fail "quick shard did not exit 0 (rc=${rc})"
+[[ "${quick_elapsed}" -lt 5 ]] \
+  || fail "quick shard took ${quick_elapsed}s: the supervisor slept out the 5s poll after the child exited"
+pass "an early-exiting shard returns within the exit check, not the poll interval"
 
 # --- 2. Passing shard over the warn line: warning, still exit 0. -------------
 run_case warn chatty 2 1 0.01 60

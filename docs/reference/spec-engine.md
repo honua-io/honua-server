@@ -12,9 +12,11 @@ The spec engine executes canonical spec documents with Terraform-style plan/appl
 
 ## Endpoints
 
+All `/v1/spec/*` endpoints require admin authorization (anonymous requests return `401`).
+
 | Method | Path | Purpose |
 | --- | --- | --- |
-| POST | `/v1/spec/validate` | Parse and validate spec DSL text or canonical JSON; returns diagnostics and optionally the canonical JSON. |
+| POST | `/v1/spec/validate` | Parse and validate a wrapper object containing `text` (spec DSL) or `spec` (canonical JSON); returns diagnostics and optionally the canonical JSON. |
 | POST | `/v1/spec/plan` | Compile the DAG; returns per-node `contentHash`, `dependsOn`, cost estimates, warnings. Reads catalog/metadata only. |
 | POST | `/v1/spec/apply` | Execute the DAG; streams per-node events as Server-Sent Events (requires `Accept: text/event-stream`). |
 | POST | `/v1/spec/cancel` | Cooperatively cancel an in-flight apply by token. |
@@ -24,7 +26,9 @@ The same orchestrator is exposed over gRPC as `geospatial.v1.SpecService` (`Plan
 
 ## Request document
 
-`plan` and `apply` take the canonical document shape produced by the validator:
+`POST /v1/spec/validate` expects a wrapper JSON object containing exactly one of `text` (a spec DSL string) or `spec` (a canonical JSON object) — `{"text": "..."}` or `{"spec": { ... }}`. Sending a raw canonical document directly to `/v1/spec/validate` returns `400` (`invalid-request-body`).
+
+`plan` and `apply` take the canonical document shape directly:
 
 | Field | Required | Notes |
 | --- | --- | --- |
@@ -55,7 +59,7 @@ Any other value is rejected with `unknown-cache-mode`. Cache keys are derived fr
 
 ## Diagnostic codes
 
-All warnings and errors carry a stable `code`. Errors: `version-skew`, `dag-cycle`, `duplicate-node-id`, `unresolved-reference`, `invalid-node-id`, `invalid-request-body`, `unknown-kind`, `unknown-cache-mode`, `spec-kind-not-in-s1`, `apply-token-unknown`, `artifact-not-found`, `read-only-cache-miss`. Warnings: `crs-mismatch`, `missing-column`, `unknown-service`, `mutable-source-no-pin`, `rbac-out-of-scope`, `estimated-oversize`, `nondeterministic-op`, `upstream-failed`, `apply-cancelled`. Structural errors are returned as `400` problem details before any stream is opened.
+All warnings and errors carry a stable `code`. Errors: `version-skew`, `dag-cycle`, `duplicate-node-id`, `unresolved-reference`, `invalid-node-id`, `invalid-request-body`, `accept-required`, `unknown-kind`, `unknown-cache-mode`, `spec-kind-not-in-s1`, `apply-token-unknown`, `artifact-not-found`, `read-only-cache-miss`. Warnings: `crs-mismatch`, `missing-column`, `unknown-service`, `mutable-source-no-pin`, `rbac-out-of-scope`, `estimated-oversize`, `nondeterministic-op`, `upstream-failed`, `apply-cancelled`. Structural errors (including `accept-required` when `POST /v1/spec/apply` omits `Accept: text/event-stream`) are returned as `400` problem details before any stream is opened.
 
 ## Example
 

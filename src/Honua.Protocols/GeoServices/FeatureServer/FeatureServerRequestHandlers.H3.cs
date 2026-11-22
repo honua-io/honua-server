@@ -212,30 +212,10 @@ internal static partial class FeatureServerEndpoints
         }
 
         var where = GetValueString(values, "where");
-        SqlFragment? sqlFilter = null;
-        if (!string.IsNullOrWhiteSpace(where))
+        var (sqlFilter, whereError) = TranslateCallerWhere(context, resource, where);
+        if (whereError != null)
         {
-            var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-            var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, where);
-            if (!parseResult.IsSuccess)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    ErrorMessages.Validation.InvalidParameter,
-                    [parseResult.ErrorMessage ?? "Invalid filter syntax."]);
-            }
-
-            if (parseResult.Expression != null)
-            {
-                var translationResult = filterService.Translate(parseResult.Expression, resource);
-                if (!translationResult.IsSuccess)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context,
-                        ErrorMessages.Validation.InvalidParameter,
-                        [translationResult.ErrorMessage ?? "Invalid filter syntax."]);
-                }
-
-                sqlFilter = translationResult.SqlFilter;
-            }
+            return whereError;
         }
 
         var featureQuery = new FeatureQuery
@@ -460,30 +440,10 @@ internal static partial class FeatureServerEndpoints
         }
 
         var where = GetValueString(queryValues, "where");
-        SqlFragment? sqlFilter = null;
-        if (!string.IsNullOrWhiteSpace(where))
+        var (sqlFilter, whereError) = TranslateCallerWhere(context, resource, where);
+        if (whereError != null)
         {
-            var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-            var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, where);
-            if (!parseResult.IsSuccess)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context,
-                    ErrorMessages.Validation.InvalidParameter,
-                    [parseResult.ErrorMessage ?? "Invalid filter syntax."]);
-            }
-
-            if (parseResult.Expression != null)
-            {
-                var translationResult = filterService.Translate(parseResult.Expression, resource);
-                if (!translationResult.IsSuccess)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context,
-                        ErrorMessages.Validation.InvalidParameter,
-                        [translationResult.ErrorMessage ?? "Invalid filter syntax."]);
-                }
-
-                sqlFilter = translationResult.SqlFilter;
-            }
+            return whereError;
         }
 
         var query = new FeatureQuery

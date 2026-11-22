@@ -5,10 +5,18 @@ description: "Published image identity and bounded installation evidence for the
 ---
 # Local Docker preview artifact
 
-The [quickstart](../get-started/quickstart.md), [Linux](../get-started/linux-packages.md),
-and [Windows](../get-started/windows-packages.md) instructions select this published
-preview image while the 2026.1 release channel is unavailable. This is a local
-evaluation artifact, not release promotion or end-to-end platform qualification.
+This page records an earlier local Docker preview artifact observed before the
+2026.1 release channel was published. The current [quickstart](../get-started/quickstart.md),
+[Linux](../get-started/linux-packages.md), and [Windows](../get-started/windows-packages.md)
+guides no longer select this preview image; they use the `2026.1-rc` release channel.
+This record is a historical local evaluation artifact, not release promotion or
+end-to-end platform qualification.
+
+> **Historical observation.** The record below is the 17 October 2026 nightly, which
+> still ran a separate cache container beside PostGIS. Current server images keep jobs,
+> coordination and caches in PostgreSQL and process memory, so the only data service an
+> install needs is PostGIS. Follow the [quickstart](../get-started/quickstart.md) for the
+> current image and Compose file.
 
 | Field | Observed value |
 | --- | --- |

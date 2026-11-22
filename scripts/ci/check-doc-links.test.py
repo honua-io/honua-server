@@ -108,14 +108,14 @@ def test_slug_strip_set_matches_the_origin() -> None:
 
 def test_slug_rules() -> None:
     cases = {
-        "Redis is optional; PostGIS is not": "redis-is-optional-postgis-is-not",
+        "Durable administration requires the system database": "durable-administration-requires-the-system-database",
         "Authentication: 401 and 403": "authentication-401-and-403",
         "Availability SLO / error budget": "availability-slo--error-budget",
         # An arrow is stripped, not replaced, so the surrounding spaces collapse
         # to a run of hyphens. Reproducing this exactly is why the strip set is
         # pinned rather than re-derived.
         "Promote L2 -> L1 criteria": "promote-l2---l1-criteria",
-        "What needs Redis when multi-node": "what-needs-redis-when-multi-node",
+        "What needs PostgreSQL when multi-node": "what-needs-postgresql-when-multi-node",
         "<code>Escaped</code> HTML": "escaped-html",
         "Under_scores and 'quotes'": "under_scores-and-quotes",
     }
@@ -274,7 +274,7 @@ def test_manifest_redirect_only_url_warns(stack) -> None:
 
 
 def test_pending_pr_entry_warns_then_fails_when_stale(stack) -> None:
-    url = "https://honua.io/docs/guides/deploy/monitoring/#redis-is-optional-postgis-is-not"
+    url = "https://honua.io/docs/guides/deploy/monitoring/#durable-administration-requires-the-system-database"
     root = new_tree(stack, manifest=manifest({"url": url, "pendingPr": 3583}))
     code, _, err = run(root, "--skip-links")
     assert_that(code == 0, f"a pendingPr heading must warn while its branch is open: {err}")
@@ -282,7 +282,7 @@ def test_pending_pr_entry_warns_then_fails_when_stale(stack) -> None:
 
     # Once the branch lands the heading appears; the stale marker becomes an
     # error so it must be removed before the gate passes.
-    write(root, "docs/guides/deploy/monitoring.md", "# Monitor\n\n## What to watch\n\n## Redis is optional; PostGIS is not\n")
+    write(root, "docs/guides/deploy/monitoring.md", "# Monitor\n\n## What to watch\n\n## Durable administration requires the system database\n")
     code, out, err = run(root, "--skip-links")
     assert_that(code == 1, "a resolved pendingPr marker must fail until removed")
     assert_that("appears to have landed" in err, err)
@@ -443,14 +443,14 @@ def test_live_repository_is_green() -> None:
 def test_live_runbook_annotations_all_resolve() -> None:
     """Every shipped `runbook_url` must be a manifest entry that resolves.
 
-    The 19 annotations in `docs/guides/deploy/examples/prometheus-alerts.yml`
+    The 16 annotations in `docs/guides/deploy/examples/prometheus-alerts.yml`
     pointed at `/operations/runbook#...` for as long as they existed; that page
     has never been in this repository. This pins the retarget so the next docs
     restructure cannot quietly recreate the same hole.
     """
     alerts = (REPO_ROOT / "docs/guides/deploy/examples/prometheus-alerts.yml").read_text(encoding="utf-8")
     urls = [line.split('"')[1] for line in alerts.splitlines() if "runbook_url:" in line]
-    assert_that(len(urls) == 19, f"expected 19 runbook_url annotations, found {len(urls)}")
+    assert_that(len(urls) == 16, f"expected 16 runbook_url annotations, found {len(urls)}")
     assert_that(
         not any("docs.honua.io" in url or "/operations/runbook" in url for url in urls),
         "the dark docs host and /operations/runbook are not runtime runbook targets",

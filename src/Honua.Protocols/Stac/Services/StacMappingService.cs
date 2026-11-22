@@ -28,6 +28,79 @@ internal sealed class StacMappingService
 
     // RFC 7946 requires the geometry member to be present, so a missing geometry is stored as a cloned JSON null rather than omitted.
     private static readonly JsonElement JsonNullElement = JsonElement.Parse("null");
+    private static readonly ImmutableArray<string> DataAssetRoles = ImmutableArray.Create("data");
+    private static readonly ImmutableArray<string> CogAssetRoles = ImmutableArray.Create("data", "cloud-optimized");
+
+    internal readonly record struct StacItemMappingOptions
+    {
+        internal required MetadataV2Object Resource { get; init; }
+        internal required MetadataV2Layer Publication { get; init; }
+        internal required int LayerIndex { get; init; }
+        internal required string BaseUrl { get; init; }
+        internal IReadOnlySet<string>? SelectedProperties { get; init; }
+        internal int? GeometrySrid { get; init; }
+        internal CogArtifactReference? CogArtifact { get; init; }
+    }
+
+    internal sealed class StacItemMappingContext
+    {
+        internal StacItemMappingContext(StacItemMappingOptions options)
+        {
+            Resource = options.Resource;
+            CollectionId = options.LayerIndex.ToString(CultureInfo.InvariantCulture);
+            IdFieldName = options.Resource.FindPrimaryIdField()?.Name ?? "objectid";
+            StartTimeField = StacFilterHelpers.ResolveTemporalField(options.Resource, out var endField);
+            EndTimeField = endField;
+            FallbackDatetime = FormatTemporalValue(ResolveFallbackInstant(options.Resource));
+            FallbackDatetimeSource = options.Resource.Temporal?.Extent is { Start: not null } or { End: not null }
+                ? "collection_extent"
+                : "unknown";
+            DeclaredExtensions = options.Resource.ResolveDeclaredExtensions();
+            GeometrySrid = options.GeometrySrid ?? options.Resource.ReadSrid() ?? 4326;
+            SelectedPropertiesLookup = options.SelectedProperties is null
+                ? null
+                : options.SelectedProperties as HashSet<string> is { Comparer: { } comparer } existing && comparer.Equals(StringComparer.OrdinalIgnoreCase)
+                    ? existing
+                    : new HashSet<string>(options.SelectedProperties, StringComparer.OrdinalIgnoreCase);
+
+            var stacBase = $"{options.BaseUrl}/stac";
+            var collectionHref = $"{stacBase}/collections/{CollectionId}";
+            ItemHrefPrefix = $"{collectionHref}/items/";
+            OgcItemHrefPrefix = $"{options.BaseUrl}/ogc/features/collections/{CollectionId}/items/";
+            var title = ResolveDisplayName(options.Publication, options.Resource, options.LayerIndex);
+            CollectionLink = Link.Create(href: collectionHref, rel: RelationTypes.Collection, type: MediaTypes.Json, title: title);
+            ParentLink = Link.Create(href: collectionHref, rel: StacConstants.StacRelations.Parent, type: MediaTypes.Json, title: title);
+            RootLink = Link.Create(href: stacBase, rel: StacConstants.StacRelations.Root, type: MediaTypes.Json, title: "STAC Catalog");
+            CogAsset = options.CogArtifact is null
+                ? null
+                : new StacAsset
+                {
+                    Href = options.CogArtifact.Href.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+                        ? options.CogArtifact.Href
+                        : $"{options.BaseUrl}{options.CogArtifact.Href}",
+                    Title = "Cloud Optimized GeoTIFF",
+                    Type = options.CogArtifact.ContentType,
+                    Roles = CogAssetRoles,
+                };
+        }
+
+        internal MetadataV2Object Resource { get; }
+        internal string CollectionId { get; }
+        internal string IdFieldName { get; }
+        internal string? StartTimeField { get; }
+        internal string? EndTimeField { get; }
+        internal string FallbackDatetime { get; }
+        internal string FallbackDatetimeSource { get; }
+        internal ImmutableArray<string>? DeclaredExtensions { get; }
+        internal int GeometrySrid { get; }
+        internal HashSet<string>? SelectedPropertiesLookup { get; }
+        internal string ItemHrefPrefix { get; }
+        internal string OgcItemHrefPrefix { get; }
+        internal Link CollectionLink { get; }
+        internal Link ParentLink { get; }
+        internal Link RootLink { get; }
+        internal StacAsset? CogAsset { get; }
+    }
 
     private static GeoJsonWriter GetGeoJsonWriter() => _geoJsonWriter ??= new GeoJsonWriter();
     internal sealed record CollectionMappingContext(
@@ -242,120 +315,43 @@ internal sealed class StacMappingService
         IReadOnlySet<string>? selectedProperties = null,
         int? geometrySrid = null,
         CogArtifactReference? cogArtifact = null)
+        => MapFeatureToItem(
+            feature,
+            new StacItemMappingContext(new StacItemMappingOptions
+            {
+                Resource = resource,
+                Publication = publication,
+                LayerIndex = layerIndex,
+                BaseUrl = baseUrl,
+                SelectedProperties = selectedProperties,
+                GeometrySrid = geometrySrid,
+                CogArtifact = cogArtifact
+            }));
+
+    internal static StacItem MapFeatureToItem(Feature feature, StacItemMappingContext context)
     {
-        var collectionId = layerIndex.ToString(CultureInfo.InvariantCulture);
-        var itemId = ResolveItemId(feature, resource);
+        var itemId = ResolveItemId(feature, context.Resource);
         var escapedItemId = Uri.EscapeDataString(itemId);
-        var idFieldName = resource.FindPrimaryIdField()?.Name ?? "objectid";
-        var ogcItemId = ResolveOgcPublicId(feature, idFieldName);
-        var escapedOgcItemId = Uri.EscapeDataString(ogcItemId);
-        var stacBase = $"{baseUrl}/stac";
-        IReadOnlyDictionary<string, object?> attributes = feature.Attributes ?? ImmutableDictionary<string, object?>.Empty;
-        var selectedPropertiesLookup = selectedProperties is null
-            ? null
-            : new HashSet<string>(selectedProperties, StringComparer.OrdinalIgnoreCase);
+        var ogcItemId = ResolveOgcPublicId(feature, context.IdFieldName);
+        var escapedOgcItemId = string.Equals(ogcItemId, itemId, StringComparison.Ordinal)
+            ? escapedItemId
+            : Uri.EscapeDataString(ogcItemId);
 
-        var properties = new Dictionary<string, object?>();
-        PopulateTemporalPropertiesV2(attributes, resource, properties);
+        var attributes = feature.Attributes ?? ImmutableDictionary<string, object?>.Empty;
+        var properties = new Dictionary<string, object?>(attributes.Count + 3);
+        PopulateTemporalPropertiesV2(attributes, context, properties);
+        CopyIncludedAttributes(attributes, context.SelectedPropertiesLookup, properties);
 
-        // Copy feature attributes
-        var includedAttributes = attributes.Where(kvp =>
-            (!IsItemIdAttribute(kvp.Key) || selectedPropertiesLookup?.Contains(kvp.Key) == true) &&
-            !string.Equals(kvp.Key, "objectid", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(kvp.Key, "datetime", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(kvp.Key, "start_datetime", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(kvp.Key, "end_datetime", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(kvp.Key, "honua:datetime_source", StringComparison.OrdinalIgnoreCase) &&
-            !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key) &&
-            (selectedPropertiesLookup is null || selectedPropertiesLookup.Contains(kvp.Key)) &&
-            !(kvp.Value is null && selectedPropertiesLookup is null));
-
-        foreach (var kvp in includedAttributes)
-        {
-            properties[kvp.Key] = kvp.Value;
-        }
-
-        // RFC 7946 §3.2 and STAC 1.0.0 require the "geometry" member to always be present;
-        // when there is no geometry the value must be JSON null (not an absent key).  We use an
-        // explicit JSON-null JsonElement so the source-generated serializer emits the member.
-        JsonElement? geometry = JsonNullElement;
-        ImmutableArray<double>? bbox = null;
-        if (feature.Geometry is { Length: > 0 })
-        {
-            try
-            {
-                var parsed = WkbReaderCache.Get().Read(feature.Geometry);
-                // ConvertGeometryToGeoJsonElement returns null on serialization failure;
-                // fall back to the explicit JSON-null element rather than C# null.
-                geometry = ConvertGeometryToGeoJsonElement(parsed) ?? JsonNullElement;
-                bbox = TryBuildBboxFromGeometry(parsed, geometrySrid ?? resource.ReadSrid() ?? 4326);
-            }
-            // Intentionally generic: NTS WKB reading can throw a range of format/argument
-            // exceptions for malformed geometry bytes. Geometry is optional in the STAC item
-            // response, so a parse failure degrades to an explicit JSON-null geometry rather
-            // than failing the whole item mapping.
-            catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
-            {
-                // WKB parsing failure — keep geometry as explicit JSON null.
-            }
-        }
-
-        // Use the same canonical title resolver as the collection resource so the
-        // collection/parent link titles match the collection's own title.
-        var title = ResolveDisplayName(publication, resource, layerIndex);
-
+        var (geometry, bbox) = MapGeometryAndBbox(feature.Geometry, context.GeometrySrid);
         var links = ImmutableArray.Create(
             Link.Create(
-                href: $"{stacBase}/collections/{collectionId}/items/{escapedItemId}",
+                href: string.Concat(context.ItemHrefPrefix, escapedItemId),
                 rel: RelationTypes.Self,
                 type: MediaTypes.GeoJson,
-                title: $"Item {itemId}"),
-            Link.Create(
-                href: $"{stacBase}/collections/{collectionId}",
-                rel: RelationTypes.Collection,
-                type: MediaTypes.Json,
-                title: title),
-            Link.Create(
-                href: $"{stacBase}/collections/{collectionId}",
-                rel: StacConstants.StacRelations.Parent,
-                type: MediaTypes.Json,
-                title: title),
-            Link.Create(
-                href: stacBase,
-                rel: StacConstants.StacRelations.Root,
-                type: MediaTypes.Json,
-                title: "STAC Catalog"));
-
-        var assets = new Dictionary<string, StacAsset>
-        {
-            ["geojson"] = new StacAsset
-            {
-                Href = $"{baseUrl}/ogc/features/collections/{collectionId}/items/{escapedOgcItemId}",
-                Title = "GeoJSON",
-                Type = MediaTypes.GeoJson,
-                Roles = ImmutableArray.Create("data"),
-            }
-        };
-
-        // A layer with a published COG gets it alongside the GeoJSON. This is what
-        // makes the catalogue usable to a raster client: a STAC reader picks an asset
-        // by media type, and the cloud-optimized profile is the token it keys on -
-        // QGIS resolves an asset to a loadable layer URI only when it is present, and
-        // a catalogue that advertises only application/geo+json gives a raster client
-        // nothing to open even when the raster is published and range-readable.
-        // Null whenever nothing is published, which is every vector layer.
-        if (cogArtifact is not null)
-        {
-            assets["cog"] = new StacAsset
-            {
-                Href = cogArtifact.Href.StartsWith("http", StringComparison.OrdinalIgnoreCase)
-                    ? cogArtifact.Href
-                    : $"{baseUrl}{cogArtifact.Href}",
-                Title = "Cloud Optimized GeoTIFF",
-                Type = cogArtifact.ContentType,
-                Roles = ImmutableArray.Create("data", "cloud-optimized"),
-            };
-        }
+                title: string.Concat("Item ", itemId)),
+            context.CollectionLink,
+            context.ParentLink,
+            context.RootLink);
 
         return new StacItem
         {
@@ -364,10 +360,76 @@ internal sealed class StacMappingService
             Bbox = bbox,
             Properties = properties,
             Links = links,
-            Assets = assets,
-            Collection = collectionId,
-            StacExtensions = resource.ResolveDeclaredExtensions(),
+            Assets = BuildItemAssets(context, escapedOgcItemId),
+            Collection = context.CollectionId,
+            StacExtensions = context.DeclaredExtensions,
         };
+    }
+
+    private static Dictionary<string, StacAsset> BuildItemAssets(StacItemMappingContext context, string escapedOgcItemId)
+    {
+        var assets = new Dictionary<string, StacAsset>(context.CogAsset is null ? 1 : 2)
+        {
+            ["geojson"] = new StacAsset
+            {
+                Href = string.Concat(context.OgcItemHrefPrefix, escapedOgcItemId),
+                Title = "GeoJSON",
+                Type = MediaTypes.GeoJson,
+                Roles = DataAssetRoles,
+            }
+        };
+
+        if (context.CogAsset is { } cogAsset)
+        {
+            assets["cog"] = cogAsset;
+        }
+
+        return assets;
+    }
+
+    private static void CopyIncludedAttributes(
+        IReadOnlyDictionary<string, object?> attributes,
+        HashSet<string>? selectedPropertiesLookup,
+        Dictionary<string, object?> properties)
+    {
+        foreach (var kvp in attributes)
+        {
+            var key = kvp.Key;
+            if ((IsItemIdAttribute(key) && selectedPropertiesLookup?.Contains(key) != true) ||
+                string.Equals(key, "objectid", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(key, "datetime", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(key, "start_datetime", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(key, "end_datetime", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(key, "honua:datetime_source", StringComparison.OrdinalIgnoreCase) ||
+                FeatureAttributeVisibility.IsInternalAttribute(key) ||
+                (selectedPropertiesLookup is not null && !selectedPropertiesLookup.Contains(key)) ||
+                (kvp.Value is null && selectedPropertiesLookup is null))
+            {
+                continue;
+            }
+
+            properties[key] = kvp.Value;
+        }
+    }
+
+    private static (JsonElement? Geometry, ImmutableArray<double>? Bbox) MapGeometryAndBbox(byte[]? wkb, int srid)
+    {
+        if (wkb is not { Length: > 0 })
+        {
+            return (JsonNullElement, null);
+        }
+
+        try
+        {
+            var parsed = WkbReaderCache.Get().Read(wkb);
+            var geometry = ConvertGeometryToGeoJsonElement(parsed) ?? JsonNullElement;
+            var bbox = TryBuildBboxFromGeometry(parsed, srid);
+            return (geometry, bbox);
+        }
+        catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
+        {
+            return (JsonNullElement, null);
+        }
     }
 
     private static string ResolveOgcPublicId(Feature feature, string idFieldName)
@@ -388,10 +450,11 @@ internal sealed class StacMappingService
 
     private static void PopulateTemporalPropertiesV2(
         IReadOnlyDictionary<string, object?> attributes,
-        MetadataV2Object resource,
+        StacItemMappingContext context,
         Dictionary<string, object?> properties)
     {
-        var startField = StacFilterHelpers.ResolveTemporalField(resource, out var endField);
+        var startField = context.StartTimeField;
+        var endField = context.EndTimeField;
         DateTimeOffset? start = null;
         DateTimeOffset? end = null;
 
@@ -426,10 +489,8 @@ internal sealed class StacMappingService
         // Preserve the legacy readable-item contract and STAC 1.0's required datetime.
         // Explicitly identify this display fallback: it is not an acquisition timestamp,
         // and cannot make an undated collection match a datetime search.
-        properties["datetime"] = FormatTemporalValue(ResolveFallbackInstant(resource));
-        properties["honua:datetime_source"] = resource.Temporal?.Extent is { Start: not null } or { End: not null }
-            ? "collection_extent"
-            : "unknown";
+        properties["datetime"] = context.FallbackDatetime;
+        properties["honua:datetime_source"] = context.FallbackDatetimeSource;
     }
 
     private static DateTimeOffset ResolveFallbackInstant(MetadataV2Object resource)

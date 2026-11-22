@@ -1,0 +1,24 @@
+{
+  "version": 8,
+  "name": "County parcels",
+  "sources": {
+    "export": {
+      "type": "vector",
+      "url": "pmtiles://parcels.pmtiles",
+      "minzoom": 0,
+      "maxzoom": 14,
+      "attribution": "City \u0026 County of Honolulu"
+    }
+  },
+  "layers": [
+    {
+      "id": "export-0",
+      "type": "fill",
+      "source": "export",
+      "source-layer": "layer",
+      "paint": {
+        "fill-color": "#88AA44"
+      }
+    }
+  ]
+}

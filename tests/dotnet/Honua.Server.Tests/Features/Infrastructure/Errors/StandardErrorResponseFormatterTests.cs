@@ -19,22 +19,27 @@ namespace Honua.Server.Tests.Features.Infrastructure.Errors;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
-public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
+public sealed class StandardErrorResponseFormatterTests : IClassFixture<StandardErrorResponseFormatterTests.SeededHost>
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
     };
 
-    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
-
-    public async Task InitializeAsync()
+    // One started server for the class. The cases format errors on their own HTTP contexts; the
+    // OData cases read the process-wide OData error formatter that host start-up installs.
+    public sealed class SeededHost : IAsyncLifetime
     {
-        _fixture.UseSeed(Path.Join("tests", "seed", "server.yaml"));
-        await _fixture.InitializeAsync();
-    }
+        private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+        public async Task InitializeAsync()
+        {
+            _fixture.UseSeed(Path.Join("tests", "seed", "server.yaml"));
+            await _fixture.InitializeAsync();
+        }
+
+        public Task DisposeAsync() => _fixture.DisposeAsync();
+    }
 
     #region OData Error Formatting
 
@@ -186,7 +191,7 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
         var result = StandardErrorResponseFormatter.FormatError(context, errorResponse);
         await result.ExecuteAsync(context);
 
-        // PA-069/PA-074: WMS alias paths return ServiceExceptionReport with HTTP 200 OK.
+        // WMS alias paths return ServiceExceptionReport with HTTP 200 OK.
         context.Response.StatusCode.Should().Be(200);
         context.Response.ContentType.Should().Be("application/xml; charset=utf-8");
 
@@ -234,7 +239,7 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
         await result.ExecuteAsync(context);
 
         // Assert
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error is in the JSON body.
+        // GeoServices always returns HTTP 200; error is in the JSON body.
         context.Response.StatusCode.Should().Be(200);
 
         var responseBody = GetResponseBody(context);
@@ -266,7 +271,7 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
         await result.ExecuteAsync(context);
 
         // Assert
-        // PA-167: HTTP 401 on GeoServices → body code 499 (TokenRequired), HTTP status 200.
+        // HTTP 401 on GeoServices → body code 499 (TokenRequired), HTTP status 200.
         context.Response.StatusCode.Should().Be(200);
 
         var responseBody = GetResponseBody(context);
@@ -289,7 +294,7 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
         await result.ExecuteAsync(context);
 
         // Assert
-        // PA-069/PA-074: WMS alias paths return ServiceExceptionReport with HTTP 200 OK.
+        // WMS alias paths return ServiceExceptionReport with HTTP 200 OK.
         context.Response.StatusCode.Should().Be(200);
         context.Response.ContentType.Should().Be("application/xml; charset=utf-8");
 
@@ -421,7 +426,7 @@ public sealed class StandardErrorResponseFormatterTests : IAsyncLifetime
         await result.ExecuteAsync(context);
 
         // Assert
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error is in the JSON body.
+        // GeoServices always returns HTTP 200; error is in the JSON body.
         context.Response.StatusCode.Should().Be(200);
         context.Response.Headers.Should().ContainKey("Retry-After");
         context.Response.Headers["Retry-After"].ToString().Should().Be("300");

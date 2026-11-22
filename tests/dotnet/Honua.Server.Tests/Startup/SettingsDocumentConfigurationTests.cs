@@ -364,7 +364,7 @@ public sealed class SettingsDocumentConfigurationTests
             configuration,
             resolver,
             StartupConfigurationHelpers.SecuritySecretReferenceKeys,
-            isProduction: true);
+            environmentName: "Production");
 
         configuration[StartupConfigurationHelpers.AuditChainKeyConfigurationKey].Should().Be(auditKey);
         configuration["HONUA_ADMIN_PASSWORD"].Should().Be(adminReference, "the admin credential keeps its refreshable reference");

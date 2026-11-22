@@ -12,6 +12,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.Tests.ParquetUnitSupport;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -114,7 +115,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
     // returnExceededLimitFeatures is included here because the ArcGIS Maps SDK for
     // .NET ServiceFeatureTable.QueryFeaturesAsync always sends it, and its contract
     // ("return rows beyond maxRecordCount + report exceededTransferLimit") matches
-    // Honua's default behavior, so it is accept-and-ignore (#1460).
+    // Honua's default behavior, so it is accept-and-ignore.
     [Theory]
     [InlineData("gdbVersion=sde.DEFAULT")]
     [InlineData("quantizationParameters=1")]
@@ -132,7 +133,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
     }
 
-    // BUG A regression: returnExceededLimitFeatures must be accepted (not 400) alongside
+    // ReturnExceededLimitFeatures must be accepted (not 400) alongside
     // other query controls, since the ArcGIS Maps SDK for .NET always sends it.
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -156,11 +157,11 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where=1%3D1&resultRecordCount=-5&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    // honua-server#1825: a resultRecordCount above maxRecordCount must be silently capped
+    // A resultRecordCount above maxRecordCount must be silently capped
     // to maxRecordCount (and the page returned) rather than rejected with a 400 — this is
     // what ArcGIS does, and clients routinely pass a large "give me everything" count. The
     // default maxRecordCount in the test host is 10000, so 100000 is over the limit.
@@ -177,7 +178,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         content.Should().NotContain("cannot exceed");
     }
 
-    // BUG C regression: an unknown geometryType must be rejected, not coerced to an envelope.
+    // An unknown geometryType must be rejected, not coerced to an envelope.
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
@@ -186,7 +187,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where=1%3D1&geometry=-122.6,37.4,-122.3,37.9&geometryType=esriGeometryBogus&returnCountOnly=true&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("geometryType");
@@ -635,7 +636,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=fgb&returnDistinctValues=true");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("returnDistinctValues is not supported when f=fgb.");
@@ -646,7 +647,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
     public async Task Query_WithGeoParquetFormatAndResolvableNon4326OutSR_ReturnsParquetWithProjJsonCrs()
     {
-        // #2844: EPSG:3857 has a resolvable PROJJSON definition, so GeoParquet output reprojects
+        // EPSG:3857 has a resolvable PROJJSON definition, so GeoParquet output reprojects
         // through the shared query pipeline and emits the authoritative PROJJSON crs metadata.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=parquet&outSR=3857");
@@ -662,14 +663,14 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
     public async Task Query_WithGeoParquetFormatAndUnresolvableOutSR_ReturnsBadRequest()
     {
-        // #2844/#2907: EPSG:2000 (Anguilla 1957 / British West Indies Grid) is a valid CRS the
+        // EPSG:2000 (Anguilla 1957 / British West Indies Grid) is a valid CRS the
         // registry resolves from spatial_ref_sys, but it is NOT in the GeoParquet PROJJSON
         // catalog. This exercises the catalog-resolvability branch of the endpoint guard (a
         // made-up SRID would be rejected earlier by CRS-registry validation, never reaching it).
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=parquet&outSR=2000");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         // Assert against the endpoint guard's own message (not the deeper writer message), so
@@ -685,7 +686,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=parquet&returnM=true");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("GeoParquet output does not support returnM=true");
@@ -699,7 +700,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=arrow&returnM=true");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("GeoArrow output does not support returnM=true");
@@ -713,7 +714,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=geojson&returnM=true");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("GeoJSON output does not support returnM=true");
@@ -774,7 +775,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=geobuf&returnDistinctValues=true");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("returnDistinctValues is not supported when f=geobuf.");
@@ -887,7 +888,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
     public async Task Query_WithPjsonFormat_ReturnsPrettyPrintedJson()
     {
-        // f=pjson must emit indented JSON, not the byte-identical compact f=json payload (#1824).
+        // f=pjson must emit indented JSON, not the byte-identical compact f=json payload.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=pjson");
 
@@ -914,7 +915,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
     public async Task Query_WithoutFormatAndWildcardAccept_DefaultsToJson()
     {
         // Esri REST defaults f to json; a no-f request (even with a wildcard Accept that a
-        // browser/curl sends) must not silently return binary protobuf (#1824).
+        // browser/curl sends) must not silently return binary protobuf.
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where=1%3D1");
@@ -952,7 +953,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=xml");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
@@ -972,7 +973,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?objectIds=1,,2&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -984,7 +985,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?outFields=name,,category&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -1006,7 +1007,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query",
             payloadContent);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("outStatistics");
@@ -1045,7 +1046,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=json&outStatistics={malformedOutStatistics}");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -1106,9 +1107,9 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         categories.Distinct(StringComparer.OrdinalIgnoreCase).Should().HaveCount(categories.Count);
     }
 
-    // Regression: returnDistinctValues must honor the caller's outFields verbatim.
+    // ReturnDistinctValues must honor the caller's outFields verbatim.
     // Force-appending objectid would give every distinct row a unique OID and defeat
-    // de-duplication, so the OID must NOT appear in the returned attributes (#1427).
+    // de-duplication, so the OID must NOT appear in the returned attributes.
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
@@ -1132,9 +1133,6 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         }
     }
 
-    // Esri's large-page JSON path used the streaming formatter before this regression:
-    // returnDistinctValues was ignored there, so duplicate attributes and feature OIDs
-    // leaked into the response (#4091).
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
@@ -1205,7 +1203,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
             $"?f=json&groupByFieldsForStatistics=category&having={having}");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("having");
@@ -1226,13 +1224,13 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
             $"?f=json&groupByFieldsForStatistics=category&outStatistics={outStats}&having={having}");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("having");
     }
 
-    // #3372: when outStatistics is present the result columns ARE the statistic aliases plus
+    // When outStatistics is present the result columns ARE the statistic aliases plus
     // the groupByFieldsForStatistics columns, so ordering by an alias is the only way to order
     // aggregate output. ArcGIS Server accepts it; validating against the layer's source fields
     // (the non-aggregate denominator) rejected it. The test layer groups to test=3, sample=2.
@@ -1345,7 +1343,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
             "?f=json&where=1%3D1&orderByFields=feature_count%20DESC");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("\"code\":400");
@@ -1392,7 +1390,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         supportsHaving.GetBoolean().Should().BeTrue();
     }
 
-    // #3372 helper: the canonical aggregate request — count grouped by category, ordered by the
+    // The canonical aggregate request — count grouped by category, ordered by the
     // caller-supplied orderByFields — issued against the shared test layer.
     private const string StatisticsOutStatistics =
         """[{"statisticType":"count","onStatisticField":"objectid","outStatisticFieldName":"feature_count"}]""";
@@ -1411,7 +1409,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
     {
         var response = await _fixture.Client.GetAsync(url);
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         return await response.Content.ReadAsStringAsync();
     }
@@ -1471,7 +1469,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         Encoding.ASCII.GetString(payload, 0, 4).Should().Be("PAR1");
 
         using var stream = new MemoryStream(payload);
-        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var reader = ArrowParquetTestReader.Open(stream);
         using var batchReader = reader.GetRecordBatchReader();
         await batchReader.ReadNextRecordBatchAsync(); // materialize schema
 
@@ -1501,7 +1499,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         Encoding.ASCII.GetString(payload, 0, 4).Should().Be("PAR1");
 
         using var stream = new MemoryStream(payload);
-        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var reader = ArrowParquetTestReader.Open(stream);
         using var batchReader = reader.GetRecordBatchReader();
         await batchReader.ReadNextRecordBatchAsync(); // materialize schema
 
@@ -1531,7 +1529,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         content.Should().Contain("features");
     }
 
-    // BH2-001: a moderate resultOffset below the threshold (< MaxRecordCount * 10) with
+    // a moderate resultOffset below the threshold (< MaxRecordCount * 10) with
     // returnDistinctValues must still be accepted.
     [IntegrationTest]
     [Operation(Operations.Query)]

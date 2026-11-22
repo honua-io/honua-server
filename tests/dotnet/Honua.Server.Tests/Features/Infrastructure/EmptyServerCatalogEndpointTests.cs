@@ -21,25 +21,36 @@ namespace Honua.Server.Tests.Features.Infrastructure;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
-public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
+public sealed class EmptyServerCatalogEndpointTests(EmptyServerCatalogEndpointTests.EmptyCatalogHost host)
+    : IClassFixture<EmptyServerCatalogEndpointTests.EmptyCatalogHost>
 {
-    private readonly WebAppFixture _fixture;
+    private readonly WebAppFixture _fixture = host.Fixture;
 
-    public EmptyServerCatalogEndpointTests()
+    // One host for the class: every case reads the same empty catalog.
+    public sealed class EmptyCatalogHost : IAsyncLifetime
+    {
+        internal WebAppFixture Fixture { get; } = CreateEmptyCatalogFixture();
+
+        public Task InitializeAsync() => Fixture.InitializeAsync();
+
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
+
+    private static WebAppFixture CreateEmptyCatalogFixture()
     {
         // Provide an in-memory graph with zero services/resources/publications to
         // simulate a freshly deployed server that has never had a dataset published.
         var emptyGraph = new TestMetadataV2GraphBuilder().Build();
 
-        _fixture = new WebAppFixture()
+        return new WebAppFixture()
             // A fresh instance seeds a default layerless "geoprocessing" GPServer service so
-            // the GP facade is drivable out of the box (honua-server#2349, enabled by default
+            // the GP facade is drivable out of the box (enabled by default
             // via GeoprocessingSeedHostedService -> GeoprocessingServiceSeeder). That seed
             // writes a service into the (otherwise empty) graph store at startup, so this
             // "genuinely empty server" scenario would advertise one GPServer entry and the
             // zero-services assertion below would fail. Turn the seed off — matching the CITE
             // conformance compose files (HONUA_GEOPROCESSING_SEED_DEFAULT_SERVICE=false) — so
-            // the graph stays empty and the honua-server#1619 empty-graph path (200, not 500)
+            // the graph stays empty and the empty-graph path (200, not 500)
             // is exercised on a truly clean catalog.
             .ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, config) =>
                 config.AddInMemoryCollection(new Dictionary<string, string?>
@@ -63,19 +74,11 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
                 // Emptying only the graph left the registry reading shared state, so a scene
                 // registered elsewhere in a merge-train batch made this "empty" server advertise
                 // one service and the zero-services assertion flaked. Pin an empty scene registry
-                // so the catalog is deterministically empty regardless of edition or batch state
-                // (honua-server#1619).
+                // so the catalog is deterministically empty regardless of edition or batch state.
                 services.RemoveAll<ISceneRegistrationService>();
                 services.AddSingleton<ISceneRegistrationService>(new StubRegistrationService());
             });
     }
-
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-    }
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     // --- STAC ---
 
@@ -90,7 +93,7 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
         // Act
         var response = await client.GetAsync("/stac");
 
-        // Assert — must be 200, not 500 (honua-server#1619)
+        // Assert — must be 200, not 500
         response.StatusCode.Should().Be(HttpStatusCode.OK,
             "a fresh server with no datasets must return a valid empty STAC catalog, not 500");
 
@@ -138,7 +141,7 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
             "STAC catalog must be returned as JSON");
     }
 
-    // --- ArcGIS site root (#5158) ---
+    // --- ArcGIS site root ---
 
     [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]
@@ -186,7 +189,7 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
         // Act
         var response = await client.GetAsync("/rest/services");
 
-        // Assert — must be 200, not 500 (honua-server#1619)
+        // Assert — must be 200, not 500
         response.StatusCode.Should().Be(HttpStatusCode.OK,
             "a fresh server with no datasets must return a valid empty services directory, not 500");
 
@@ -240,7 +243,7 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
         // Act
         var response = await client.GetAsync("/ogc/features");
 
-        // Assert — must be 200, not 500 (honua-server#1619)
+        // Assert — must be 200, not 500
         response.StatusCode.Should().Be(HttpStatusCode.OK,
             "a fresh server with no datasets must return a valid OGC API landing page, not 500");
 
@@ -266,7 +269,7 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
         // Act
         var response = await client.GetAsync("/ogc/features/collections");
 
-        // Assert — must be 200, not 500 (honua-server#1619)
+        // Assert — must be 200, not 500
         response.StatusCode.Should().Be(HttpStatusCode.OK,
             "a fresh server with no datasets must return a valid empty collections document, not 500");
 
@@ -290,7 +293,7 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
         // The OData service document's documented empty-state contract is a 404 OData
         // error ("OData is not enabled for any available service") — see
         // ODataMetadataHandler.HandleGetServiceDocument and the endpoint's Produces(404).
-        // Before honua-server#1619 a fresh server never reached that contract: resolving
+        // A fresh server must reach that contract: resolving
         // publications threw and the endpoint returned 500. Pin the deliberate 404 here.
 
         // Arrange
@@ -299,7 +302,7 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
         // Act
         var response = await client.GetAsync("/odata");
 
-        // Assert — must be the documented 404 OData error, never 500 (honua-server#1619)
+        // Assert — must be the documented 404 OData error, never 500
         response.StatusCode.Should().Be(HttpStatusCode.NotFound,
             "a fresh server with no datasets must surface OData's documented not-enabled error, not 500");
 

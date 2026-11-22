@@ -101,9 +101,9 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<MySqlFeatureStore>(sp => new MySqlFeatureStore(
             sp.GetRequiredService<IFeatureQueryBuilder>(),
             sp.GetRequiredService<IFeatureDataAccess>(),
+            Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp),
             sp.GetService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>(),
-            sp.GetService<Honua.Core.Queries.Filters.IFilterExpressionService>(),
-            Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp)));
+            sp.GetService<Honua.Core.Queries.Filters.IFilterExpressionService>()));
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<MySqlFeatureStore>());
         services.AddScoped<IFeatureReader>(sp => sp.GetRequiredService<MySqlFeatureStore>());
         services.AddScoped<IPagedFeatureReader>(sp => sp.GetRequiredService<MySqlFeatureStore>());
@@ -125,10 +125,9 @@ internal static class ServiceCollectionExtensions
         // dependency of FeatureServer/ImageServer/GeometryService/gRPC) requires
         // ICrsDetectionService regardless of provider. Only Postgres ever registered one
         // (CRS detection from WKT/.prj/GeoJSON needs its spatial_ref_sys catalog), so every
-        // FeatureServer query under DataSource:Provider=mysql failed DI activation outright
-        // before this fix.
+        // FeatureServer query under DataSource:Provider=mysql would fail DI activation.
         services.AddScoped<ICrsDetectionService>(_ => new NoOpCrsDetectionService());
-        // Same gap, same fix shape: SpatialReferenceResolver also requires ICrsRegistry.
+        // SpatialReferenceResolver also requires ICrsRegistry.
         // WellKnownCrsRegistry covers CRS84/EPSG:4326/EPSG:3857 (the practical case for a
         // provider with no spatial_ref_sys-equivalent catalog) and honestly reports
         // "unsupported" for anything else.

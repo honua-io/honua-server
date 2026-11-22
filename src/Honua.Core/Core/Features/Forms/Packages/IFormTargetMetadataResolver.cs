@@ -16,4 +16,8 @@ public readonly record struct FormTargetMetadataResolution(
     MetadataV2Service? Service,
     MetadataV2Layer? Publication,
     MetadataV2Object? Resource,
-    int? StorageLayerId);
+    int? StorageLayerId)
+{
+    // The target publication is served from a source table, so the managed writer cannot edit it.
+    public bool ServedFromSourceTable { get; init; }
+}

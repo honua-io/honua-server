@@ -25,6 +25,7 @@ anonymous GET /admin/services/{serviceName}.{serviceType}
 anonymous GET /api/enrich/catalog
 anonymous GET /api/enrich/datasets
 anonymous GET /api/enrich/datasets/{id}
+anonymous GET /api/v1/attachments/downloads/{token}
 anonymous GET /api/v1/realtime/incidents/sse
 anonymous GET /api/v{version:apiVersion}/admin/auth/config
 anonymous GET /api/v{version:apiVersion}/admin/auth/csrf
@@ -36,6 +37,7 @@ anonymous GET /api/v{version:apiVersion}/capabilities/manifest
 anonymous GET /api/v{version:apiVersion}/console/share/content/{id}
 anonymous GET /api/v{version:apiVersion}/console/share/link/{token}
 anonymous GET /api/v{version:apiVersion}/embed/policy
+anonymous GET /api/v{version:apiVersion}/open-data/datasets
 anonymous GET /api/v{version:apiVersion}/open-data/datasets/{id}
 anonymous GET /api/v{version:apiVersion}/open-data/datasets/{id}/data.json
 anonymous GET /api/v{version:apiVersion}/open-data/datasets/{id}/schema.org
@@ -161,6 +163,7 @@ anonymous GET /rest/services/{serviceId}/VersionManagementServer/versions
 anonymous GET /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}
 anonymous GET /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/inspectConflicts
 anonymous GET /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/jobs/{jobId}
+anonymous GET /saml/login
 anonymous GET /saml/metadata
 anonymous GET /scim/v2/Groups/
 anonymous GET /scim/v2/Groups/{id}
@@ -199,6 +202,7 @@ anonymous PATCH /scim/v2/Users/{id}
 anonymous POST /admin/services/{folderName}/{serviceName}.{serviceType}
 anonymous POST /admin/services/{serviceName}.{serviceType}
 anonymous POST /api/enrich
+anonymous POST /api/geoprocessing/jobs/{jobId}/attempts/{attempt}/capability
 anonymous POST /api/v1/cloud-demo/reset
 anonymous POST /api/v{version:apiVersion}/admin/auth/bearer
 anonymous POST /api/v{version:apiVersion}/admin/auth/logout
@@ -452,8 +456,8 @@ none GET /api/scenes
 none GET /api/scenes/{sceneId}
 none GET /api/scenes/{sceneId}/resolve
 none GET /api/styles/{publicationId}.json
-none GET /api/v1/publications/{publicationId}/current.json
-none GET /api/v1/publications/{publicationId}/{version}/{fileName}
+none GET /api/v1/exports/{exportId}/current.json
+none GET /api/v1/exports/{exportId}/{version}/{fileName}
 none GET /api/v1/rasters/cog/{*artifactId}
 none GET /api/v1/tiles/pmtiles/{*artifactId}
 none GET /api/v{version:apiVersion}/datacubes/{layerId:int}/tiles/{tileMatrixSetId}/{z:int}/{x:int}/{y:int}
@@ -743,8 +747,8 @@ none GET /tiles/{layerId:int}/h3/{z:int}/{x:int}/{y:int}.mvt
 none GET /tiles/{layerId:int}/tile.json
 none GET /tiles/{layerId:int}/{z:int}/{x:int}/{y:int}.mvt
 none GET /wfs
-none HEAD /api/v1/publications/{publicationId}/current.json
-none HEAD /api/v1/publications/{publicationId}/{version}/{fileName}
+none HEAD /api/v1/exports/{exportId}/current.json
+none HEAD /api/v1/exports/{exportId}/{version}/{fileName}
 none HEAD /api/v1/rasters/cog/{*artifactId}
 none HEAD /api/v1/tiles/pmtiles/{*artifactId}
 none HEAD /scenes/{sceneId}/tileset.json
@@ -757,6 +761,7 @@ none POST /geospatial.v1.ElevationService/GetElevationProfile
 # Generated base handlers for unimplemented FeatureService RPCs return status Unimplemented.
 none POST /geospatial.v1.FeatureService/AbortAttachmentUpload
 none POST /geospatial.v1.FeatureService/ApplyEdits
+none POST /geospatial.v1.FeatureService/ApplyServiceEdits
 none POST /geospatial.v1.FeatureService/BeginAttachmentUpload
 none POST /geospatial.v1.FeatureService/CommitAttachmentUpload
 none POST /geospatial.v1.FeatureService/DeleteAttachment
@@ -766,6 +771,7 @@ none POST /geospatial.v1.FeatureService/GetAttachmentUrl
 none POST /geospatial.v1.FeatureService/ListAttachments
 none POST /geospatial.v1.FeatureService/QueryFeatures
 none POST /geospatial.v1.FeatureService/QueryFeaturesStream
+none POST /geospatial.v1.FeatureService/QueryRelatedRecords
 none POST /geospatial.v1.FeatureService/UploadAttachment
 none POST /geospatial.v1.FeatureService/UploadAttachmentChunk
 none POST /geospatial.v1.ProcessService/CancelJob

@@ -1,8 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Security.Domain;
 
 namespace Honua.Core.Features.Admin.Domain;
 
@@ -53,7 +56,20 @@ public sealed class LayerPublishRequest
     // A published date or date-time column; when set, the layer reports temporal history.
     public string? TemporalColumn { get; init; }
 
+    // Opt-in temporal metadata (start/end time fields, track id, extent) persisted on the Metadata v2 resource.
+    public MetadataV2ObjectTemporal? Temporal { get; init; }
+
+    // Per-layer access policy persisted on the Metadata v2 resource.
+    public AccessPolicy? AccessPolicy { get; init; }
+
+    // Additional Metadata v2 resource extensions (for example declared WMS elevation dimensions).
+    public IReadOnlyDictionary<string, JsonElement>? Extensions { get; init; }
+
     public bool SupportsAttachments { get; init; }
+
+    // Opt-in: numeric/decimal columns publish as Decimal and timestamptz as TimestampOffset
+    // (the primary key and the temporal column keep their default types).
+    public bool ExactTypes { get; init; }
 
     public IReadOnlyList<string> Fields { get; init; } = Array.Empty<string>();
 
@@ -100,6 +116,12 @@ public sealed class TablePublishValidationRequest
 
     public bool ManagedStore { get; init; }
 
+    // Reports numeric/decimal and timestamptz columns with their exact published types.
+    public bool ExactTypes { get; init; }
+
+    // With ExactTypes, this column keeps DateTime as it does on publish.
+    public string? TemporalColumn { get; init; }
+
     public required string Schema { get; init; }
 
     public required string Table { get; init; }
@@ -111,6 +133,9 @@ public sealed class TablePublishValidationRequest
     public int? TargetSrid { get; init; }
 
     public string? GeometryColumn { get; init; }
+
+    // On a mixed table, the one geometry type to publish; without it a mixed table is an error.
+    public string? GeometryType { get; init; }
 
     public string? PrimaryKey { get; init; }
 
@@ -197,6 +222,9 @@ public sealed class PublishedLayerSummary
 {
     public required int StorageLayerId { get; init; }
 
+    // Deprecated wire alias of StorageLayerId; published clients still read layerId.
+    public int LayerId => StorageLayerId;
+
     public required string LayerName { get; init; }
 
     public required string Schema { get; init; }
@@ -253,6 +281,9 @@ public sealed class LayerExtentRefreshLayerResult
 {
     public int StorageLayerId { get; init; }
 
+    // Deprecated wire alias of StorageLayerId; published clients still read layerId.
+    public int LayerId => StorageLayerId;
+
     public required string LayerName { get; init; }
 
     public bool HasExtent { get; init; }
@@ -263,6 +294,9 @@ public sealed class LayerExtentRefreshLayerResult
 public sealed class MaterializedFeatureRefreshResult
 {
     public int StorageLayerId { get; init; }
+
+    // Deprecated wire alias of StorageLayerId; published clients still read layerId.
+    public int LayerId => StorageLayerId;
 
     public required string LayerName { get; init; }
 

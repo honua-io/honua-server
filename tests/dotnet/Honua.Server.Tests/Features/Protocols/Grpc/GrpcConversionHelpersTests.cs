@@ -194,23 +194,18 @@ public sealed class GrpcConversionHelpersTests
     }
 
     [UnitTest]
-    public void ToFeatureQuery_WithOrderBy_ParsesMultipleClauses()
+    public void ToFeatureQuery_WithOutSrWkidAndLatestWkid_PrefersLatestWkid()
     {
         var request = new Proto.QueryFeaturesRequest
         {
             ServiceId = "test",
             LayerId = 0,
-            OrderBy = "name ASC, population DESC"
+            OutSr = new Proto.SpatialReference { Wkid = 102100, LatestWkid = 3857 }
         };
 
         var query = GrpcConversionHelpers.ToFeatureQuery(request);
 
-        query.OrderBy.Should().NotBeNull();
-        query.OrderBy!.Value.Should().HaveCount(2);
-        query.OrderBy!.Value[0].Field.Should().Be("name");
-        query.OrderBy!.Value[0].Ascending.Should().BeTrue();
-        query.OrderBy!.Value[1].Field.Should().Be("population");
-        query.OrderBy!.Value[1].Ascending.Should().BeFalse();
+        query.OutputSrid.Should().Be(3857);
     }
 
     [UnitTest]
@@ -358,7 +353,7 @@ public sealed class GrpcConversionHelpersTests
     [UnitTest]
     public void ToProtoFeature_WithObjectIdFieldName_DoesNotRepeatTheIdAsAnAttribute()
     {
-        // honua-server#5330: storage returns the primary key as a lowercase
+        // Storage returns the primary key as a lowercase
         // "objectid" attribute while the published id field is "OBJECTID".
         // geospatial.v1.Feature carries the id in Feature.id only.
         var feature = Feature.Create(42, null, ImmutableDictionary<string, object?>.Empty
@@ -722,7 +717,7 @@ public sealed class GrpcConversionHelpersTests
     [UnitTest]
     public void ToProtoField_UsesAliasThenTitleThenName()
     {
-        // honua-server#5330: same display-name precedence as GeoServices REST.
+        // Same display-name precedence as GeoServices REST.
         var aliased = new MetadataV2Field { Name = "NAME", Alias = "Park Name", Title = "Name title" };
         var titled = new MetadataV2Field { Name = "NAME", Title = "Name title" };
         var bare = new MetadataV2Field { Name = "NAME" };
@@ -809,6 +804,30 @@ public sealed class GrpcConversionHelpersTests
 
         query.SpatialFilter.Should().NotBeNull();
         query.SpatialFilter!.Value.Srid.Should().Be(4326);
+    }
+
+    [UnitTest]
+    public void ToFeatureQuery_WithSpatialFilterWkidAndLatestWkid_PrefersLatestWkid()
+    {
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            SpatialFilter = new Proto.SpatialFilter
+            {
+                Geometry = new Proto.Geometry
+                {
+                    Point = new Proto.PointGeometry { X = 10, Y = 20 }
+                },
+                SpatialRelationship = Proto.SpatialRelationship.Within,
+                SpatialReference = new Proto.SpatialReference { Wkid = 102100, LatestWkid = 3857 }
+            }
+        };
+
+        var query = GrpcConversionHelpers.ToFeatureQuery(request);
+
+        query.SpatialFilter.Should().NotBeNull();
+        query.SpatialFilter!.Value.Srid.Should().Be(3857);
     }
 
     [UnitTest]

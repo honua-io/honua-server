@@ -58,7 +58,7 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
         if (!TryReadInputs(parameters, out var inputs, out var inputError))
         {
             Log.InvalidInputs(_logger, job.OperationId, inputError);
-            return JobExecutionResult.Failed($"Invalid area inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid area inputs: {inputError}");
         }
 
         Geometry geometry;
@@ -70,18 +70,18 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
         catch (Exception ex) when (ex is ParseException or ArgumentException or IndexOutOfRangeException)
         {
             Log.InvalidWkb(_logger, job.OperationId, ex.Message);
-            return JobExecutionResult.Failed("Invalid area inputs: WKB payload could not be decoded.");
+            return JobExecutionResult.InvalidInput("Invalid area inputs: WKB payload could not be decoded.");
         }
 
         if (geometry == null || geometry.IsEmpty)
         {
-            return JobExecutionResult.Failed("Invalid area inputs: geometry is empty.");
+            return JobExecutionResult.InvalidInput("Invalid area inputs: geometry is empty.");
         }
 
         if (!GeometrySridGuard.TryValidateEmbeddedSrid(geometry, inputs.Srid, out var sridError))
         {
             Log.InvalidInputs(_logger, job.OperationId, sridError);
-            return JobExecutionResult.Failed($"Invalid area inputs: {sridError}.");
+            return JobExecutionResult.InvalidInput($"Invalid area inputs: {sridError}.");
         }
 
         geometry.SRID = inputs.Srid;
@@ -92,10 +92,18 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
         double area;
         try
         {
-            // Computes the planar area in the squared units of the input CRS.
-            // No geodesic conversion is applied — the catalog advertises planar
-            // area only, consistent with the buffer executor's planar behavior.
-            area = geometry.Area;
+            if (inputs.Geodesic && GeodesicGeometryOperations.IsGeographicSrid(inputs.Srid))
+            {
+                area = GeodesicGeometryOperations.ComputeGeodesicAreaSquareMeters(geometry) / inputs.SquareMetersPerUnit;
+            }
+            else if (inputs.Geodesic)
+            {
+                area = geometry.Area / inputs.SquareMetersPerUnit;
+            }
+            else
+            {
+                area = geometry.Area;
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -152,6 +160,22 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
             return false;
         }
 
+        var geodesic = false;
+        if (parameters.TryGetValue(prefix + "geodesic", out var geodesicRaw)
+            && !string.IsNullOrWhiteSpace(geodesicRaw)
+            && !bool.TryParse(geodesicRaw, out geodesic))
+        {
+            error = "invalid input 'geodesic'; expected boolean";
+            return false;
+        }
+
+        var unitRaw = parameters.TryGetValue(prefix + "unit", out var rawUnit) ? rawUnit : null;
+        if (!GeodesicGeometryOperations.TryNormalizeAreaUnit(unitRaw, out var unitName, out var squareMetersPerUnit))
+        {
+            error = $"invalid input 'unit' '{unitRaw}'; expected square-meters, square-kilometers, hectares, acres, square-feet, or square-miles";
+            return false;
+        }
+
         byte[] wkbBytes;
         try
         {
@@ -169,7 +193,7 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
             return false;
         }
 
-        inputs = new AreaInputs(wkbBytes, srid);
+        inputs = new AreaInputs(wkbBytes, srid, geodesic, unitName, squareMetersPerUnit);
         error = "";
         return true;
     }
@@ -189,7 +213,7 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
             writer.WriteString("processId", HandledProcessId);
             writer.WriteString("measure", "area");
             writer.WriteNumber("value", area);
-            writer.WriteString("unit", "input-crs-units-squared");
+            writer.WriteString("unit", inputs.Geodesic ? inputs.Unit : "input-crs-units-squared");
             writer.WriteNumber("inputSrid", inputs.Srid);
             writer.WriteString("inputGeometryType", geometry.GeometryType);
             writer.WriteEndObject();
@@ -207,7 +231,7 @@ internal sealed partial class GeometryAreaJobExecutor : IProcessExecutor
         return sb.ToString();
     }
 
-    private readonly record struct AreaInputs(byte[] WkbBytes, int Srid);
+    private readonly record struct AreaInputs(byte[] WkbBytes, int Srid, bool Geodesic, string Unit, double SquareMetersPerUnit);
 
     private static partial class Log
     {

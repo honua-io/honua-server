@@ -52,7 +52,7 @@ public sealed class SnowflakeFeatureStoreIntegrationTests
             connectionFactory,
             options,
             NullLogger<SnowflakeFeatureDataAccess>.Instance);
-        var provider = new SnowflakeFeatureStore(dataAccess);
+        var provider = new SnowflakeFeatureStore(dataAccess, new LayerReadSecurityResolver(null, null, null, null));
 
         var (snapshot, service, resource, publication) = CreateSnapshot();
         var storageBinding = snapshot.ResolveStorageBinding(publication)

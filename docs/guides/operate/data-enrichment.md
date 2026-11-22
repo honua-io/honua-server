@@ -8,9 +8,8 @@ resource: "honua://capability/enrichment.datasets"
 
 The data-enrichment API enriches your own features with attributes drawn from a
 registered reference dataset (administrative boundary, points of interest, or
-demographic reference layer) using a spatial join. It is the
-[CARTO Data Observatory](https://carto.com/data-observatory) enrichment pattern —
-*input features + enrichment dataset → enriched features* — built on Honua's
+demographic reference layer) using a spatial join:
+*input features + enrichment dataset → enriched features*, built on Honua's
 shared spatial-analytics pipeline.
 
 ## Endpoints
@@ -41,14 +40,14 @@ enrichment dataset. Each entry captures: a stable `id` (slug), `title`,
 `geometryType`, joinable `attributes`, default `defaultPredicate`/`distanceMeters`,
 and the provenance/`attribution`/`license`/`minimumEdition` metadata so downstream
 consumers can comply with the data provider's terms. The catalog is persisted in
-`honua.enrichment_datasets` (migration 071), cached through the shared
+`honua.enrichment_datasets` (migration 072), cached through the shared
 generation-stamped catalog scope, and invalidated on register/update/deregister.
 
-`POST /api/enrich` resolves its `datasetId` through this catalog (falling back to
+`POST /api/enrich` resolves its `datasetId` (or legacy `datasetKey`) through this catalog (falling back to
 the configuration catalog key for back-compat), maps the enrichment `method`
-vocabulary (`intersects`, `point-in-polygon`, `within-distance`) to the canonical
-spatial predicates, supports `outputFields` and per-match `aggregates`
-(count/sum/avg/min/max), echoes the dataset attribution in the
+vocabulary (`intersects`, `point-in-polygon`, `within`, `within-distance`; `nearest-neighbor` returns `501` and points to the async `enrichment.enrich` job) to the canonical
+spatial predicates, supports `outputFields` (or legacy `attributes`) and per-match `aggregates`
+(`{ statisticType, onField, outName }` with `count`/`sum`/`avg`/`min`/`max`), echoes the dataset attribution in the
 `X-Honua-Data-Attribution` response header, and returns `413` (pointing to the
 async batch path) when the source selection exceeds the synchronous input cap.
 
@@ -110,16 +109,12 @@ enrichment-local job lifecycle:
   enrichment dataset at a different layer while a job is queued causes that job
   to fail at execution rather than read a layer that was never authorized;
   resubmit so the new layer is authorized.
-- **Known limitation — row-level security and field masking are NOT applied to
-  the job's layer reads.** Both are request-scoped concerns and a job executes on
-  a background worker with no request context, so a caller who may read a layer
-  but is restricted to particular rows or fields receives unrestricted rows and
-  unmasked attributes in the job artifact. This affects every layer-sourced
-  geoprocessing process, not only enrichment, and is tracked as
-  [#3068](https://github.com/honua-io/honua-server/issues/3068). Until it lands,
-  do not rely on RLS or field-mask policies to constrain what a
-  `Process.Execute` holder can obtain through a job artifact — restrict the layer
-  itself.
+- **Managed background jobs retain the submitter's security context.** Catalog
+  layer reads through the PostgreSQL provider apply the submitter's row-level
+  security and field-mask policies, including reads of the source and dataset
+  layers during enrichment. Jobs without a captured submitter security context
+  refuse catalog-layer reads; resubmit older jobs so that context is captured.
+  See [access control](../secure/access-control.md) for policy configuration.
 
 ## Registering enrichment datasets
 

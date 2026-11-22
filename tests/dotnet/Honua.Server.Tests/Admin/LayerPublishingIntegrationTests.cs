@@ -748,7 +748,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         var failedItemResponse = await _client.GetAsync($"/stac/collections/{collectionId}/items/1");
         failedItemResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
 
-        // #5827: a plain TEXT stac_id column is not an item identity by name alone; the
+        // A plain TEXT stac_id column is not an item identity by name alone; the
         // resource must declare it (extensions.stac.idField) for it to win over the key.
         await SetPublishedStacStorageLayerIdAsync(storageLayerId, declaredStacIdField: "stac_id");
         await PoisonCanonicalFeatureStoreAsync(_layerId.Value);
@@ -814,7 +814,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
                 .Be(0);
         }
 
-        // #5827: a blank declared id publishes the object id; item_id is no longer a
+        // A blank declared id publishes the object id; item_id is not a
         // second-precedence identity.
         var blankCanonicalIdSearchResponse = await _client.GetAsync(
             $"/stac/search?collections={collectionId}&ids=901&limit=10");
@@ -1204,7 +1204,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         // The published layer materializes a one-time snapshot of the source table into the
         // canonical `honua.features` table that the server-side MVT/tile path reads, while the
         // feature-query paths read the live source. After updating the source, the query path
-        // sees the new row but the MVT snapshot stays stale until rebuilt (honua-server#1628).
+        // sees the new row but the MVT snapshot stays stale until rebuilt.
         var publishedLayer = await PublishLayerAsync(new PublishLayerRequest
         {
             Schema = _schema,
@@ -1234,8 +1234,6 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         // Update the live source table, as a re-import would.
         await InsertPostGisFeatureAsync("Reimported Feature", 250, 1.001d, 1.001d);
 
-        // The feature-query path reads the live source and immediately sees the new row, but the
-        // canonical snapshot the MVT path reads is unchanged — the staleness this fix addresses.
         var ogcItemsResponse = await _client.GetAsync(
             $"/ogc/features/collections/{_layerId}/items?f=json&limit=10");
         ogcItemsResponse.Be200Ok();
@@ -1341,11 +1339,11 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task OgcFeaturesInsert_OnLayerPublishedOverSourceTable_IsRefusedAndNeverPersisted()
     {
-        // honua-server#4707. A published layer serves features from the live source table
-        // while the managed feature writer only ever writes the shared `features` table.
-        // An insert accepted on this collection therefore landed in the publish-time
-        // snapshot, answered 201 Created, and was never readable back through any protocol.
-        // The write surface now refuses it instead of acknowledging a lost write.
+        // A published layer serves features from the live source table while the managed
+        // feature writer only ever writes the shared `features` table. An insert accepted
+        // on this collection would land in the publish-time snapshot, answer 201 Created,
+        // and never be readable back through any protocol. The write surface refuses it
+        // instead of acknowledging a lost write.
         var publishedLayer = await PublishLayerAsync(new PublishLayerRequest
         {
             Schema = _schema,
@@ -1407,7 +1405,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task OgcFeaturesInsert_OnSourceBackedLayerDeclaringCreate_IsRefusedAsUnserviceable()
     {
-        // honua-server#4707, the case the capability contract alone does not cover: a
+        // The case the capability contract alone does not cover: a
         // deployment that declares Create on a layer published over a source table. The
         // managed writer still cannot write that table, so the storage-routing guard — not
         // the capability guard — must refuse the insert.
@@ -1449,6 +1447,8 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
         insertResponse.StatusCode.Should().Be(
             HttpStatusCode.NotImplemented,
             $"the declared capability is satisfied but the storage cannot be written through; response: {insertPayload}");
+        insertPayload.Should().NotContain(_tableName, "the refusal must not name the storage table")
+            .And.NotContain($"{_schema}.", "the refusal must not name the storage schema");
 
         (await GetSourceRowCountAsync()).Should().Be(1);
         (await GetSourceRowCountAsync("Phantom Feature")).Should().Be(0);
@@ -1469,7 +1469,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
     {
         await UseServerFeatureStoreConnectionAsync();
 
-        // honua-server#4859: the product path to an editable collection. Publishing with
+        // The product path to an editable collection. Publishing with
         // storageMode=managed and a declared Create capability — through the admin API only,
         // with no metadata or SQL seeding — yields a collection whose OGC API Features insert
         // is accepted and reads back through OGC API Features and FeatureServer.
@@ -1643,9 +1643,9 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     public async Task PublishLayer_UnserviceableEditableRequests_AreRejectedBeforePublishing()
     {
-        // honua-server#4859 keeps the #4707/#4712 contract: a source-backed layer cannot be
-        // written through, so declaring an edit capability on one is refused at publish time
-        // instead of publishing a collection whose first insert answers 501.
+        // A source-backed layer cannot be written through, so declaring an edit capability
+        // on one is refused at publish time instead of publishing a collection whose first
+        // insert answers 501.
         var sourceBacked = await PostPublishLayerAsync(new PublishLayerRequest
         {
             Schema = _schema,
@@ -1724,7 +1724,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
 
         // A managed-store layer's rows are its authoritative features. The source-snapshot
         // refresh deletes and re-copies a layer's rows, which would erase every edit, so it
-        // must refuse a managed-store layer (honua-server#4859).
+        // must refuse a managed-store layer.
         var publishedLayer = await PublishLayerAsync(new PublishLayerRequest
         {
             Schema = _schema,
@@ -2022,7 +2022,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             var publishedLayer = await PublishLayerAsync(publishRequest);
             _layerId = publishedLayer.StorageLayerId;
 
-            // #2020: route global honua.layers/honua.services UPDATEs through the schema-mutation
+            // Route global honua.layers/honua.services UPDATEs through the schema-mutation
             // advisory lock (combined statement also seeds the per-test public table).
             await _fixture.Postgres.ApplyGlobalSeedSqlAsync(FormattableString.Invariant($"""
                 INSERT INTO public.{projectedTable} (id, name, population, geom)
@@ -2159,7 +2159,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             disabledPublications.Should().HaveCount(2).And.OnlyContain(publication =>
                 publication.Status.Lifecycle == MetadataV2LifecycleStatus.Retired);
 
-            // #2020: route global honua.layers/honua.services UPDATEs through the schema-mutation
+            // Route global honua.layers/honua.services UPDATEs through the schema-mutation
             // advisory lock (combined statement also clears the per-test public table).
             await _fixture.Postgres.ApplyGlobalSeedSqlAsync($"""
                 DELETE FROM public.{emptyTable};
@@ -3366,7 +3366,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
             return;
         }
 
-        // #2020: serialize global honua.layers/honua.services cleanup deletes under the
+        // Serialize global honua.layers/honua.services cleanup deletes under the
         // schema-mutation advisory lock (multi-statement, parameterized).
         await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
         {
@@ -3551,7 +3551,7 @@ public sealed partial class LayerPublishingIntegrationTests : IClassFixture<Laye
 
     private async Task ResetPublishedMetadataAsync()
     {
-        // #2020: serialize global honua.* metadata reset under the schema-mutation advisory lock.
+        // Serialize global honua.* metadata reset under the schema-mutation advisory lock.
         await _fixture.Postgres.ApplyGlobalSeedSqlAsync("""
             DELETE FROM honua.layer_fields;
             DELETE FROM honua.service_layers;

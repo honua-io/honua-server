@@ -6,6 +6,7 @@ using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Internal;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Features.Shared.Models;
 using Microsoft.Data.Sqlite;
@@ -55,6 +56,7 @@ internal static class GeoPackageExportWriter
 
         await CreateMetadataTablesAsync(connection, cancellationToken).ConfigureAwait(false);
         await InsertSpatialRefAsync(connection, srid, srsName, srsWkt, cancellationToken).ConfigureAwait(false);
+        await InsertSpatialRefAsync(connection, 4326, "EPSG:4326", WellKnownCrsWkt.Epsg4326, cancellationToken).ConfigureAwait(false);
         var usedNames = fields.Select(field => field.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var idColumn = ColumnNameReservation.Reserve("fid", usedNames);
         var geometryColumn = ColumnNameReservation.Reserve("geom", usedNames);
@@ -130,7 +132,7 @@ internal static class GeoPackageExportWriter
         cmd.Parameters.AddWithValue("$srid", srid);
         cmd.Parameters.AddWithValue("$org", organization);
         cmd.Parameters.AddWithValue("$orgCoordsysId", coordsysId);
-        cmd.Parameters.AddWithValue("$definition", srsWkt ?? "undefined");
+        cmd.Parameters.AddWithValue("$definition", srsWkt ?? (srid == 4326 ? WellKnownCrsWkt.Epsg4326 : "undefined"));
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
@@ -382,6 +384,8 @@ internal static class GeoPackageExportWriter
         return fieldType switch
         {
             ExportFieldType.Boolean when value is bool b => b ? 1 : 0,
+            // An exact decimal arrives as canonical text; REAL columns store the double.
+            ExportFieldType.Double when value is string text && ExactAttributeValues.ToFiniteDouble(text) is { } number => number,
             ExportFieldType.DateTime => FormatDateTime(value),
             ExportFieldType.Date => FormatDate(value),
             ExportFieldType.Time when value is TimeSpan ts => ts.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture),

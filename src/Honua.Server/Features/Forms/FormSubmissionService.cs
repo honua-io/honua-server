@@ -216,6 +216,12 @@ internal sealed class FormSubmissionService
                 return Results.Json(rejected, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: StatusCodes.Status400BadRequest);
             }
 
+            if (targetMetadata.ServedFromSourceTable)
+            {
+                // Refused before the owner-policy read, which uses the managed store and would not find the row.
+                throw new ReadOnlyFeatureWriteException(ManagedWriteStorage.WriteRefusal);
+            }
+
             var optimized = _editProcessor.OptimizeEdit(editRequest, targetMetadata.Resource);
             var batch = _editProcessor.ToFeatureEditBatch(optimized, targetMetadata.Resource);
             var ownerPrepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
@@ -317,6 +323,17 @@ internal sealed class FormSubmissionService
             await RecordAuditAsync(context, "forms.submission.create", packageVersion.FormId, AuditOutcome.Failure, $"{{\"version\":{packageVersion.Version},\"timeout\":true}}", CancellationToken.None)
                 .ConfigureAwait(false);
             return Results.Json(timeoutResponse, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: StatusCodes.Status500InternalServerError);
+        }
+        catch (ReadOnlyFeatureWriteException ex)
+        {
+            FormSubmissionLog.SubmissionFailed(_logger, ex, packageVersion.FormId, packageVersion.Version, submissionId);
+            // When nothing was dispatched, resending cannot succeed until the target layer is republished.
+            var refused = editMayHaveCommitted
+                ? BuildFailedResponse(submissionId, packageVersion, request, ReadOnlyTargetReason, editMayHaveCommitted, committedEditResult, committedTargetFeatureId)
+                : BuildReadOnlyRefusal(submissionId, packageVersion, request);
+            await PreserveOrReleaseClaimAsync(submissionId, refused, editMayHaveCommitted).ConfigureAwait(false);
+            await RecordAuditAsync(context, "forms.submission.create", packageVersion.FormId, AuditOutcome.Failure, $"{{\"version\":{packageVersion.Version},\"readOnly\":true}}", CancellationToken.None).ConfigureAwait(false);
+            return Results.Json(refused, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: StatusCodes.Status405MethodNotAllowed);
         }
         // Intentional catch-all request-handling boundary: this is the form
         // submission-create endpoint; the failure is logged and mapped to a
@@ -745,7 +762,9 @@ internal sealed class FormSubmissionService
         return builder.ToImmutable();
     }
 
-    private static object? ConvertJsonValue(JsonElement value, MetadataV2FieldType fieldType)
+    // Exact types (TimestampOffset, Decimal) are stored as canonical text, which the package validator
+    // has already parsed; a JSON number keeps its own digits.
+    internal static object? ConvertJsonValue(JsonElement value, MetadataV2FieldType fieldType)
     {
         if (value.ValueKind == JsonValueKind.Null)
         {
@@ -754,7 +773,10 @@ internal sealed class FormSubmissionService
 
         return fieldType switch
         {
-            MetadataV2FieldType.String or MetadataV2FieldType.Uuid or MetadataV2FieldType.Time => value.ValueKind == JsonValueKind.String ? value.GetString() : value.GetRawText(),
+            MetadataV2FieldType.Decimal when value.ValueKind == JsonValueKind.Number
+                => ExactAttributeValues.FormatDecimalNumber(value) ?? value.GetRawText(),
+            MetadataV2FieldType.String or MetadataV2FieldType.Uuid or MetadataV2FieldType.Time
+                or MetadataV2FieldType.TimestampOffset or MetadataV2FieldType.Decimal => value.ValueKind == JsonValueKind.String ? value.GetString() : value.GetRawText(),
             MetadataV2FieldType.Integer => value.GetInt32(),
             MetadataV2FieldType.BigInteger => value.GetInt64(),
             MetadataV2FieldType.Double => value.GetDouble(),
@@ -980,6 +1002,24 @@ internal sealed class FormSubmissionService
                 Retryable = retryable,
                 Reason = retryable ? "Submission policy denied this operation." : "Submission must be corrected before retry."
             }
+        };
+
+    private const string ReadOnlyTargetReason = "The form's target layer does not accept edits.";
+
+    private static FormSubmissionResponse BuildReadOnlyRefusal(
+        Guid submissionId,
+        FormPackageVersion packageVersion,
+        FormSubmissionRequest request)
+        => new()
+        {
+            SubmissionId = submissionId,
+            Status = "failed",
+            FormId = packageVersion.FormId,
+            FormVersion = packageVersion.Version,
+            Operation = request.Operation,
+            TargetFeatureId = request.TargetFeatureId,
+            EditOutcome = new FormEditOutcome { Succeeded = false, Error = "Submission could not be applied." },
+            Retry = new FormSubmissionRetryGuidance { Retryable = false, Reason = ReadOnlyTargetReason }
         };
 
     private static FormSubmissionResponse BuildFailedResponse(

@@ -20,11 +20,7 @@ public sealed partial class FeatureStreamEndpointsTests
     [Endpoint("GET /api/v1/streaming/features")]
     public async Task Sse_ExpiredDeltaCursor_SendsRetentionResetThenSnapshot()
     {
-        await using var fixture = new WebAppFixture()
-            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
-            .ReplaceService<IFeatureChangeEventStore>(FakeFeatureChangeEventStore.WithRetentionWindow(
-                FeatureChangeRetentionWindow.Retained(currentCursor: 60, oldestRetainedCursor: 50)));
-        await fixture.InitializeAsync();
+        var fixture = await _host.GetVariantAsync("retention-window-50-60", CreateRetentionWindowFixture);
         using var client = fixture.CreateAdminClient();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/streaming/features?layers=0&cursor=features:1");
@@ -49,11 +45,7 @@ public sealed partial class FeatureStreamEndpointsTests
     [InlineData(true)]
     public async Task Sse_ExpiredUnsafeSnapshotScope_ResetsWithoutPublishingSnapshotCheckpoint(bool filtered)
     {
-        await using var fixture = new WebAppFixture()
-            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
-            .ReplaceService<IFeatureChangeEventStore>(FakeFeatureChangeEventStore.WithRetentionWindow(
-                FeatureChangeRetentionWindow.Retained(currentCursor: 60, oldestRetainedCursor: 50)));
-        await fixture.InitializeAsync();
+        var fixture = await _host.GetVariantAsync("retention-window-50-60", CreateRetentionWindowFixture);
         using var client = fixture.CreateAdminClient();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/streaming/features?cursor=features:1" + (filtered ? "&layers=0&bbox=-180,-90,180,90" : ""));
@@ -71,11 +63,7 @@ public sealed partial class FeatureStreamEndpointsTests
     [InlineData(true)]
     public async Task WebSocket_ExpiredUnsafeSnapshotScope_ResetsWithoutPublishingSnapshotCheckpoint(bool filtered)
     {
-        await using var fixture = new WebAppFixture()
-            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
-            .ReplaceService<IFeatureChangeEventStore>(FakeFeatureChangeEventStore.WithRetentionWindow(
-                FeatureChangeRetentionWindow.Retained(currentCursor: 60, oldestRetainedCursor: 50)));
-        await fixture.InitializeAsync();
+        var fixture = await _host.GetVariantAsync("retention-window-50-60", CreateRetentionWindowFixture);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var socketClient = fixture.CreateWebSocketClient();
         var configureRequest = socketClient.ConfigureRequest;
@@ -196,4 +184,12 @@ public sealed partial class FeatureStreamEndpointsTests
             error.Data.GetProperty("message").GetString().Should().Contain("cannot be combined");
         }
     }
+
+    // The cases on this variant never append to its store, so the fixed retention
+    // window and the features:60 head stay the same for every case that shares it.
+    private static WebAppFixture CreateRetentionWindowFixture()
+        => new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ReplaceService<IFeatureChangeEventStore>(FakeFeatureChangeEventStore.WithRetentionWindow(
+                FeatureChangeRetentionWindow.Retained(currentCursor: 60, oldestRetainedCursor: 50)));
 }

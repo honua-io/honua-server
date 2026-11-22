@@ -312,7 +312,7 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
                 TileUrl(TileLevel, 0, 0, MissingCogLayerId));
             var body = await response.Content.ReadAsByteArrayAsync();
 
-            // ImageServer tile misses are transport 404s (#5937), unlike ordinary
+            // ImageServer tile misses are transport 404s, unlike ordinary
             // GeoServices operation errors that keep a 200 status line. The body is
             // still the bounded GeoServices error envelope. What matters for this
             // criterion is asserted below: it is an error, it is bounded, it carries no

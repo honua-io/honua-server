@@ -18,7 +18,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
 [Protocol(TestProtocols.FeatureServer)]
 [Collection("Database")]
-public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
+public sealed partial class FeatureServerMutationScenarioTests : IAsyncLifetime
 {
     private const string TestServiceId = "test";
     private const int TestLayerId = 0;
@@ -371,7 +371,7 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task ApplyEdits_MultiRowPartialUpdate_PreservesFieldsAndGeometryCommittedAfterPreRead()
     {
-        // #6094: a multi-row batch has no snapshot-token guard. Its partial updates must merge
+        // A multi-row batch has no snapshot-token guard. Its partial updates must merge
         // onto the row the writer locks, not write back the unlocked pre-read snapshot.
         _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field { Name = "score", Type = MetadataV2FieldType.Integer });
         const string path = "/rest/services/test/FeatureServer/0/applyEdits";

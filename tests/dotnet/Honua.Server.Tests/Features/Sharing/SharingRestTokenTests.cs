@@ -5,16 +5,11 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
-using Honua.Core.Features.Metadata.Abstractions;
-using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
-using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
-using Honua.TestKit.Infrastructure;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,7 +20,7 @@ namespace Honua.Server.Tests.Features.Sharing;
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
-public sealed class SharingRestTokenTests : IAsyncLifetime
+public sealed partial class SharingRestTokenTests : IClassFixture<SharingRestTokenTests.TokenHost>
 {
     // Base64url managed credentials may contain consecutive hyphens. Keep the
     // supported form/query exchange paths deterministic against that SQL-looking data.
@@ -35,59 +30,13 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
     private const string OtherReferer = "https://other.example.com/maps/";
     private const string ProtectedServiceId = "portal-token-protected";
 
-    // The in-process WebApplicationFactory transport leaves Connection.RemoteIpAddress
-    // unset, which a real Kestrel deployment always populates. IP-bound token issuance
-    // (client=ip / client=requestip) needs that address, so the fixture installs a
-    // startup filter that stamps a loopback IP onto every request.
-    private static readonly IPAddress ClientIp = IPAddress.Parse("203.0.113.10");
-
     private readonly WebAppFixture _fixture;
 
-    public SharingRestTokenTests()
+    public SharingRestTokenTests(TokenHost host)
     {
-        var graph = new TestMetadataV2GraphBuilder()
-            .AddService(
-                ProtectedServiceId,
-                "Protected token service",
-                protocols: [ServiceProtocols.FeatureServer],
-                accessPolicy: new AccessPolicy())
-            .Build();
-
-        _fixture = new WebAppFixture()
-            .ReplaceService<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph))
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
-                // Allow the in-process test transport to issue tokens; production
-                // defaults remain RequireHttps=true.
-                builder.UseSetting("Authentication:PortalToken:RequireHttps", "false");
-                // Re-check a token's backing credential on every request so a revocation is
-                // observable immediately instead of after the revalidation window.
-                builder.UseSetting("Cors:AllowedOrigins:0", "http://localhost:3000");
-                builder.ConfigureServices(services =>
-                    services.AddSingleton<IStartupFilter>(new RemoteIpStartupFilter(ClientIp)));
-            });
+        _fixture = host.Fixture;
+        host.UseNextClientAddress();
     }
-
-    private sealed class RemoteIpStartupFilter(IPAddress remoteIp) : IStartupFilter
-    {
-        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
-            => app =>
-            {
-                app.Use(async (context, nextMiddleware) =>
-                {
-                    context.Connection.RemoteIpAddress = remoteIp;
-                    await nextMiddleware(context).ConfigureAwait(false);
-                });
-                next(app);
-            };
-    }
-
-    public Task InitializeAsync() => _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTheory]
     [InlineData(TokenEndpoint)]
@@ -106,30 +55,6 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
             new KeyValuePair<string, string>("f", "json"),
         });
         using var response = await client.PostAsync(path, content);
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var payload = await ReadTokenPayloadAsync(response);
-        payload.Token.Should().NotBeNullOrWhiteSpace();
-        payload.Expires.Should().BeGreaterThan(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-        payload.Ssl.Should().BeTrue();
-
-        response.Headers.CacheControl.Should().NotBeNull();
-        response.Headers.CacheControl!.NoStore.Should().BeTrue();
-        response.Headers.Pragma.Should().Contain(value => value.Name == "no-cache");
-    }
-
-    [IntegrationTheory]
-    [InlineData(TokenEndpoint)]
-    [InlineData(TokenEndpoint + "/")]
-    [Operation(Operations.Security)]
-    [Endpoint("GET /sharing/rest/generateToken")]
-    public async Task GenerateToken_WithQueryStringCredentials_ReturnsToken(string path)
-    {
-        using var client = _fixture.CreateClient();
-        var query = $"{path}?username=admin" +
-            $"&password={Uri.EscapeDataString(AdminPassword)}" +
-            $"&client=referer&referer={Uri.EscapeDataString(SecureRefererA)}&f=json";
-        using var response = await client.GetAsync(query);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await ReadTokenPayloadAsync(response);
@@ -181,7 +106,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
             new KeyValuePair<string, string>(parameter, "opaque--value"),
             new KeyValuePair<string, string>("f", "json")
         });
-        // Unmatched routes intentionally do not buffer anonymous form bodies (#5615).
+        // Unmatched routes intentionally do not buffer anonymous form bodies.
         // Query parameters are inspected even there, proving the password exemption
         // matches the exact token path rather than a prefix.
         using var response = query
@@ -263,7 +188,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
     {
         // ArcGIS clients request an IP-bound token with client=requestip (the
         // default for many SDKs). It must be accepted and IP-bind the token,
-        // not be rejected with the misleading "referer required" error (#1912).
+        // not be rejected with the misleading "referer required" error.
         using var client = _fixture.CreateClient();
         using var response = await PostFormAsync(client,
             ("username", "admin"), ("password", AdminPassword),
@@ -278,15 +203,14 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("GET /sharing/rest/generateToken")]
+    [Endpoint("POST /sharing/rest/generateToken")]
     public async Task GenerateToken_WithClientIp_ReturnsToken()
     {
         // The explicit client=ip alias behaves identically to client=requestip: the
         // token binds to the request's source IP without requiring a referer.
         using var client = _fixture.CreateClient();
-        var query = $"/sharing/rest/generateToken?username=admin" +
-            $"&password={Uri.EscapeDataString(AdminPassword)}&client=ip&f=json";
-        using var response = await client.GetAsync(query);
+        using var response = await PostFormAsync(client,
+            ("username", "admin"), ("password", AdminPassword), ("client", "ip"), ("f", "json"));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await ReadTokenPayloadAsync(response);
@@ -679,7 +603,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
     public async Task GenerateToken_ExchangePresentedFromAnotherIp_Returns498_Issue5491()
     {
         // generateToken always binds an IP token to the caller's own address, so mint one
-        // bound to another address directly; the request comes from the fixture's client IP.
+        // bound to another address directly; the request comes from this case's client IP.
         var issuer = _fixture.Services.GetRequiredService<IPortalTokenIssuer>();
         var portalToken = await issuer.IssueAsync(
             new PortalTokenIssueRequest(
@@ -807,7 +731,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
     [Endpoint("GET /sharing/rest/generateToken")]
     public async Task GenerateToken_CredentialsInQueryStringOverPlainHttp_Returns403WithHelpfulMessage()
     {
-        // PA-059: When RequireHttps=true (the default), a GET request carrying
+        // When RequireHttps=true (the default), a GET request carrying
         // credentials in the URL query string over plain HTTP must be rejected
         // with an actionable error that directs the caller to POST or HTTPS.
         var fixture = new WebAppFixture()
@@ -836,24 +760,6 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
         {
             await fixture.DisposeAsync();
         }
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Security)]
-    [Endpoint("GET /sharing/rest/generateToken")]
-    public async Task GenerateToken_CredentialsInQueryStringWithInsecureMode_Succeeds()
-    {
-        // PA-059: When RequireHttps=false (explicit dev/test opt-out), GET with
-        // credentials in the query string is still accepted — ArcGIS clients use
-        // this flow and the dev override must not break them.
-        using var client = _fixture.CreateClient();
-        var query = $"/sharing/rest/generateToken?username=admin" +
-            $"&password={Uri.EscapeDataString(AdminPassword)}&client=ip&f=json";
-        using var response = await client.GetAsync(query);
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var payload = await ReadTokenPayloadAsync(response);
-        payload.Token.Should().NotBeNullOrWhiteSpace();
     }
 
     private static async Task<HttpResponseMessage> PostFormAsync(HttpClient client, params (string Key, string Value)[] pairs)

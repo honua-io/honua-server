@@ -34,7 +34,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Admin;
 
-public sealed class LayerPublishJobTests
+public sealed partial class LayerPublishJobTests
 {
     [Theory]
     [Trait("Tier", "Fast")]

@@ -47,4 +47,17 @@ public static class MetadataV2FolderMutations
         };
         return MetadataV2PathReservations.Reconcile(graph, candidate);
     }
+
+    public static MetadataV2Graph AssignFolders(MetadataV2Graph graph, IReadOnlyList<MetadataV2FolderAssignment> assignments)
+    {
+        var byService = assignments.ToDictionary(assignment => assignment.ServiceId, assignment => assignment.FolderId, StringComparer.Ordinal);
+        var candidate = graph with
+        {
+            Services = graph.Services.Select(service => byService.TryGetValue(service.Metadata.Id, out var folderId)
+                ? service with { FolderId = folderId } : service).ToArray()
+        };
+        return MetadataV2PathReservations.Reconcile(graph, candidate);
+    }
 }
+
+public readonly record struct MetadataV2FolderAssignment(string ServiceId, string? FolderId);

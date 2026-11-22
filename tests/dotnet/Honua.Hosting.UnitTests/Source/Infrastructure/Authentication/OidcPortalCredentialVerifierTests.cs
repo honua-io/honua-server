@@ -317,7 +317,8 @@ public sealed class OidcPortalCredentialVerifierTests
             wrapped,
             transformation,
             new OidcConfigurationManagerCache(),
-            NullLogger<OidcPortalCredentialVerifier>.Instance);
+            NullLogger<OidcPortalCredentialVerifier>.Instance,
+            replays: new Honua.Infrastructure.Security.InMemoryTokenReplayStore());
     }
 
     private static string CreateToken(

@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Protocols.Ogc.Common;
 
@@ -50,8 +51,21 @@ public sealed record OgcRecordFeatureCollection
     [JsonPropertyName("numberReturned")]
     public int NumberReturned { get; init; }
 
+    [JsonPropertyName("facets")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyDictionary<string, ImmutableArray<OgcRecordFacetBucket>>? Facets { get; init; }
+
     [JsonPropertyName("links")]
     public required ImmutableArray<Link> Links { get; init; }
+}
+
+public sealed record OgcRecordFacetBucket
+{
+    [JsonPropertyName("value")]
+    public required string Value { get; init; }
+
+    [JsonPropertyName("count")]
+    public int Count { get; init; }
 }
 
 public sealed record OgcRecordFeature
@@ -134,6 +148,10 @@ public sealed record OgcRecordProperties
     [JsonPropertyName("contacts")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ImmutableArray<OgcRecordContact>? Contacts { get; init; }
+
+    [JsonPropertyName("honua:customFields")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyDictionary<string, JsonElement>? CustomFields { get; init; }
 }
 
 public sealed record OgcRecordContact

@@ -40,4 +40,37 @@ public sealed class AdminApiKeyHashingTests
         AdminApiKeyHashing.Verify("material", [], null).Should().BeFalse();
         AdminApiKeyHashing.Verify("material", new byte[31], new byte[32]).Should().BeFalse();
     }
+
+    [UnitTest]
+    public void HashSalted_EqualMaterial_ProducesDistinctStoredValues_ThatBothVerify()
+    {
+        const string material = "test-key-material";
+        var first = AdminApiKeyHashing.HashSalted(material);
+        var second = AdminApiKeyHashing.HashSalted(material);
+
+        first.Salt.Should().HaveCount(AdminApiKeyHashing.SaltSizeInBytes).And.NotEqual(second.Salt);
+        first.Hash.Should().NotEqual(second.Hash).And.NotEqual(AdminApiKeyHashing.HashLegacy(material));
+        AdminApiKeyHashing.Verify(material, first.Hash, first.Salt).Should().BeTrue();
+        AdminApiKeyHashing.Verify(material, second.Hash, second.Salt).Should().BeTrue();
+        AdminApiKeyHashing.Verify(material, first.Hash, second.Salt).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task InMemoryStore_CreatedRotatedAndRegisteredKeys_AreStoredSalted()
+    {
+        var store = new InMemoryAdminApiKeyStore();
+        var created = await store.CreateAsync("salted", ["admin:read"], null, null, CancellationToken.None);
+        var rotated = await store.RotateAsync(created.Record.Id, CancellationToken.None);
+        var registered = store.RegisterKnownMaterial("hnua_known-test-material", "known", ["admin:read"], null, null);
+
+        foreach (var result in new[] { created, rotated!, registered })
+        {
+            result.Record.KeySalt.Should().HaveCount(AdminApiKeyHashing.SaltSizeInBytes);
+            result.Record.KeyHash.Should().Equal(HMACSHA256.HashData(result.Record.KeySalt!, Encoding.UTF8.GetBytes(result.Key)));
+        }
+
+        (await store.ValidateAsync(created.Key, CancellationToken.None)).Should().BeNull("rotation revokes the previous key");
+        (await store.ValidateAsync(rotated!.Key, CancellationToken.None)).Should().NotBeNull();
+        (await store.ValidateAsync(registered.Key, CancellationToken.None)).Should().NotBeNull();
+    }
 }

@@ -92,6 +92,20 @@ public static class MetadataV2GraphSnapshotExtensions
         return snapshot.Index.ServicesByName.TryGetValue(serviceName, out var service) ? service : null;
     }
 
+    // Callers may address a service by its ID or by its (case-insensitive) name; an exact ID wins.
+    public static MetadataV2Service? FindServiceByNameOrId(this MetadataV2GraphSnapshot snapshot, string serviceNameOrId)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (string.IsNullOrEmpty(serviceNameOrId))
+        {
+            return null;
+        }
+
+        return snapshot.Index.ServicesById.TryGetValue(serviceNameOrId, out var byId) ? byId
+            : snapshot.Index.ServicesByName.TryGetValue(serviceNameOrId, out var byName) ? byName
+            : null;
+    }
+
     public static IReadOnlyList<MetadataV2Layer> PublicationsForService(
         this MetadataV2GraphSnapshot snapshot, string serviceId)
     {
@@ -166,7 +180,7 @@ public static class MetadataV2GraphSnapshotExtensions
         // Last resort for graphs that carry no binding handle. The service-local index is
         // only usable as a storage handle when no other resource's binding claims that
         // number; otherwise it names a different resource's storage and the publication
-        // resolves to no handle (SEC-4).
+        // resolves to no handle.
         var layerIndex = publication.LayerIndex;
         if (layerIndex is int index
             && snapshot.Index.StorageBindingsByStorageLayerId.TryGetValue(index, out var claimant)

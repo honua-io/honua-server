@@ -266,6 +266,122 @@ vm.runInNewContext('(async () => {' + input.script + '})()', sandbox)
         ])
         self.assertFalse(any(kind == 'failed' for kind, _ in calls))
 
+    def test_draining_matrix_queue_on_active_runner_pool_does_not_alert(self):
+        # A full CI matrix can queue tail shards past 45 min while sibling shards on the same
+        # runner pool are actively starting and completing.
+        queued = {'id': 42, 'status': 'queued', 'updated_at': '2026-11-11T11:00:00Z',
+                  'run_started_at': '2026-11-11T10:30:00Z', 'html_url': 'https://example.test/full'}
+        calls = self.run_watchdog([queued], runs=[queued, self.recent_result()], jobs={'42': [
+            {'status': 'in_progress', 'runner_id': 12, 'labels': ['ubuntu-latest'],
+             'started_at': '2026-11-11T11:55:00Z', 'name': 'Server Tests (Active shard)'},
+            {'status': 'queued', 'runner_id': 0, 'labels': ['ubuntu-latest'],
+             'started_at': '2026-11-11T11:05:00Z', 'name': 'Server Tests (Tail shard)'},
+        ]})
+        self.assertFalse(any(kind == 'failed' for kind, _ in calls))
+
+    def test_stalled_runner_pool_still_alerts_when_different_pool_is_active(self):
+        queued = {'id': 42, 'status': 'queued', 'updated_at': '2026-11-11T11:00:00Z',
+                  'run_started_at': '2026-11-11T10:30:00Z', 'html_url': 'https://example.test/full'}
+        calls = self.run_watchdog([queued], runs=[queued, self.recent_result()], jobs={'42': [
+            {'status': 'in_progress', 'runner_id': 12, 'labels': ['ubuntu-latest'],
+             'started_at': '2026-11-11T11:55:00Z', 'name': 'Server Tests (Active shard)'},
+            {'status': 'queued', 'runner_id': 0, 'labels': ['honua-heavy'],
+             'started_at': '2026-11-11T11:05:00Z', 'name': 'AOT Build Verification'},
+        ]})
+        self.assertTrue(any(kind == 'failed' and 'AOT Build Verification' in value for kind, value in calls))
+
+    def test_stale_sibling_activity_on_same_pool_still_alerts_for_queued_sibling(self):
+        queued = {'id': 42, 'status': 'queued', 'updated_at': '2026-11-11T11:00:00Z',
+                  'run_started_at': '2026-11-11T10:30:00Z', 'html_url': 'https://example.test/full'}
+        calls = self.run_watchdog([queued], runs=[queued, self.recent_result()], jobs={'42': [
+            {'status': 'in_progress', 'runner_id': 12, 'labels': ['honua-heavy'],
+             'started_at': '2026-11-11T11:00:00Z', 'name': 'Hung heavy job'},
+            {'status': 'queued', 'runner_id': 0, 'labels': ['honua-heavy'],
+             'started_at': '2026-11-11T11:05:00Z', 'name': 'Waiting heavy job'},
+        ]})
+        self.assertTrue(any(kind == 'failed' and 'Waiting heavy job' in value for kind, value in calls))
+
+    def test_unassigned_recent_sibling_does_not_mark_runner_pool_active(self):
+        queued = {'id': 42, 'status': 'queued', 'updated_at': '2026-11-11T11:00:00Z',
+                  'run_started_at': '2026-11-11T10:30:00Z', 'html_url': 'https://example.test/full'}
+        calls = self.run_watchdog([queued], runs=[queued, self.recent_result()], jobs={'42': [
+            {'status': 'completed', 'runner_id': 12, 'labels': ['ubuntu-latest'],
+             'started_at': '2026-11-11T10:31:00Z', 'completed_at': '2026-11-11T10:35:00Z'},
+            {'status': 'queued', 'runner_id': 0, 'labels': ['ubuntu-latest'],
+             'started_at': '2026-11-11T11:55:00Z', 'name': 'Freshly queued sibling'},
+            {'status': 'queued', 'runner_id': 0, 'labels': ['ubuntu-latest'],
+             'started_at': '2026-11-11T11:05:00Z', 'name': 'Stalled shard'},
+        ]})
+        self.assertTrue(any(kind == 'failed' and 'Stalled shard' in value for kind, value in calls))
+
+    def test_unlabelled_queued_job_always_alerts_even_with_recent_unlabelled_sibling(self):
+        queued = {'id': 42, 'status': 'queued', 'updated_at': '2026-11-11T11:00:00Z',
+                  'run_started_at': '2026-11-11T10:30:00Z', 'html_url': 'https://example.test/full'}
+        calls = self.run_watchdog([queued], runs=[queued, self.recent_result()], jobs={'42': [
+            {'status': 'in_progress', 'runner_id': 12, 'started_at': '2026-11-11T11:55:00Z'},
+            {'status': 'queued', 'runner_id': 0, 'started_at': '2026-11-11T11:05:00Z',
+             'name': 'Unlabelled waiting shard'},
+        ]})
+        self.assertTrue(any(kind == 'failed' and 'Unlabelled waiting shard' in value for kind, value in calls))
+
+    def test_recent_completion_alone_marks_pool_active_and_normalizes_label_order(self):
+        queued = {'id': 42, 'status': 'queued', 'updated_at': '2026-11-11T11:00:00Z',
+                  'run_started_at': '2026-11-11T10:00:00Z', 'html_url': 'https://example.test/full'}
+        calls = self.run_watchdog([queued], runs=[queued, self.recent_result()], jobs={'42': [
+            {'status': 'completed', 'runner_id': 12, 'labels': ['self-hosted', 'linux'],
+             'started_at': '2026-11-11T10:30:00Z', 'completed_at': '2026-11-11T11:55:00Z'},
+            {'status': 'queued', 'runner_id': 0, 'labels': ['linux', 'self-hosted'],
+             'started_at': '2026-11-11T11:05:00Z', 'name': 'Tail self-hosted shard'},
+        ]})
+        self.assertFalse(any(kind == 'failed' for kind, _ in calls))
+
+    def test_prior_attempt_activity_does_not_mark_current_attempt_pool_active(self):
+        queued = {'id': 42, 'status': 'queued', 'run_attempt': 2, 'updated_at': '2026-11-11T11:00:00Z',
+                  'run_started_at': '2026-11-11T11:00:00Z', 'html_url': 'https://example.test/full'}
+        calls = self.run_watchdog([queued], runs=[queued, self.recent_result()], jobs={'42': [
+            {'status': 'completed', 'runner_id': 12, 'run_attempt': 1, 'labels': ['ubuntu-latest'],
+             'started_at': '2026-11-11T11:50:00Z', 'completed_at': '2026-11-11T11:55:00Z'},
+            {'status': 'queued', 'runner_id': 0, 'run_attempt': 2, 'labels': ['ubuntu-latest'],
+             'started_at': '2026-11-11T11:05:00Z', 'name': 'Attempt 2 waiting shard'},
+        ]})
+        self.assertTrue(any(kind == 'failed' and 'Attempt 2 waiting shard' in value for kind, value in calls))
+
+    def test_active_pool_activity_window_boundary(self):
+        queued = {'id': 42, 'status': 'queued', 'updated_at': '2026-11-11T11:00:00Z',
+                  'run_started_at': '2026-11-11T10:30:00Z', 'html_url': 'https://example.test/full'}
+        for started_at, expect_fail in [('2026-11-11T11:15:00Z', False), ('2026-11-11T11:14:59Z', True)]:
+            with self.subTest(started_at=started_at):
+                calls = self.run_watchdog([queued], runs=[queued, self.recent_result()], jobs={'42': [
+                    {'status': 'in_progress', 'runner_id': 12, 'labels': ['ubuntu-latest'],
+                     'started_at': started_at},
+                    {'status': 'queued', 'runner_id': 0, 'labels': ['ubuntu-latest'],
+                     'started_at': '2026-11-11T11:05:00Z', 'name': 'Boundary shard'},
+                ]})
+                self.assertEqual(any(kind == 'failed' and 'Boundary shard' in value for kind, value in calls),
+                                 expect_fail)
+
+    def test_triggers_on_ci_and_full_ci_dispatch_workflow_run_with_light_runner_guard(self):
+        triggers = DEFINITION['on']
+        self.assertEqual(triggers.get('schedule'), [{'cron': '*/30 * * * *'}])
+        self.assertIn('workflow_dispatch', triggers)
+        workflow_run = triggers.get('workflow_run')
+        self.assertIsInstance(workflow_run, dict)
+        self.assertEqual(set(workflow_run.get('workflows', [])), {'CI', 'Full CI dispatch'})
+        self.assertEqual(workflow_run.get('branches'), ['trunk'])
+        self.assertEqual(workflow_run.get('types'), ['completed'])
+
+        concurrency = DEFINITION['concurrency']
+        self.assertEqual(concurrency['group'], 'trunk-signal-watchdog')
+        self.assertEqual(concurrency['cancel-in-progress'], 'true')
+
+        watch = DEFINITION['jobs']['watch']
+        canonical = yaml.load(
+            (ROOT / '.github/workflows/flake-quarantine.yml').read_text(),
+            Loader=yaml.BaseLoader,
+        )['jobs']['publish']['runs-on']
+        self.assertEqual(watch['runs-on'], canonical)
+        self.assertIn('github.event.workflow_run.head_repository.full_name == github.repository', watch['if'])
+
 
 if __name__ == '__main__':
     unittest.main()

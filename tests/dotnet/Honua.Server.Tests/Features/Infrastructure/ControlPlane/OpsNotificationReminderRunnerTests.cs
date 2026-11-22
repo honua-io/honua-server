@@ -5,12 +5,14 @@ using System.Collections.Immutable;
 using FluentAssertions;
 using Honua.Alerts;
 using Honua.Alerts.Ops;
+using Honua.ControlPlane;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Monitoring;
 using Honua.Server.Tests.Infrastructure;
 using Honua.Server.Tests.Infrastructure.Telemetry;
@@ -158,6 +160,8 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
     {
         await using var harness = await ControlPlaneStateHarness.CreateAsync(database, nameof(OpsNotificationReminderRunnerTests));
         var clock = new ReminderClock(DateTimeOffset.UtcNow);
+        await harness.CreateNotificationStore().ObserveAsync(new("finding", "finding-1", OpsFindingSeverity.Warning),
+            clock.Now - PostgresOpsNotificationStore.WarningSettle);
         var findings = CreateFindings();
         findings.EvaluateAsync(Arg.Any<CancellationToken>()).Returns(new[] { Finding(clock.Now, OpsFindingSeverity.Warning) });
         var outbox = Substitute.For<IAlertOutboxWriter>();
@@ -202,7 +206,8 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         var store = harness.CreateNotificationStore();
         foreach (var finding in values)
         {
-            await store.ObserveAsync(new("finding", finding.Id, finding.Severity), clock.Now.AddMinutes(-1));
+            await store.ObserveAsync(new("finding", finding.Id, finding.Severity),
+                clock.Now - PostgresOpsNotificationStore.WarningSettle - TimeSpan.FromMinutes(1));
         }
         values.Add(Finding(clock.Now, OpsFindingSeverity.Critical));
         var findings = CreateFindings();
@@ -337,8 +342,62 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         (await store.ListDueAsync(clock.Now.AddMinutes(1), 100)).Should().ContainSingle()
             .Which.EpisodeId.Should().Be(original.EpisodeId);
         recovered.EvaluateAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<OpsFinding>());
+        clock.Now += PostgresOpsNotificationStore.FindingAbsenceGrace;
         await Runner(recovered).RunAsync(CancellationToken.None);
         (await store.ListDueAsync(clock.Now.AddMinutes(1), 100)).Should().BeEmpty();
+    }
+
+    [UnitTheory]
+    [InlineData("finding", 1, "finding finding-1, open since 2026-11-21 17:45 UTC; notice 2.")]
+    [InlineData("proposal", 0, "proposal finding-1, awaiting approval since 2026-11-21 17:45 UTC; notice 1.")]
+    public void BuildNotification_BodyStatesStartAndNoticeNumber(string source, int noticeNumber, string expected)
+    {
+        var schedule = new OpsNotificationSchedule
+        {
+            Source = source,
+            SubjectId = "finding-1",
+            EpisodeId = Guid.NewGuid(),
+            FirstSeenAt = new DateTimeOffset(2026, 11, 21, 7, 45, 30, TimeSpan.FromHours(-10)),
+            Severity = OpsFindingSeverity.Critical,
+            NoticeNumber = noticeNumber,
+            Revision = 1,
+        };
+
+        var body = OpsNotificationReminderRunner.BuildNotification(schedule, null).Body;
+
+        body.Should().StartWith(expected).And.EndWith("/operate/copilot.");
+    }
+
+    [UnitTest]
+    public void BuildNotification_ExpiredProposal_StatesRequestTime()
+    {
+        var created = new DateTimeOffset(2026, 11, 21, 17, 10, 0, TimeSpan.Zero);
+        var schedule = new OpsNotificationSchedule
+        {
+            Source = "proposal",
+            SubjectId = "proposal-1",
+            EpisodeId = Guid.NewGuid(),
+            FirstSeenAt = created,
+            Severity = OpsFindingSeverity.Warning,
+            NoticeNumber = 1,
+            Revision = 1,
+        };
+        var proposal = new OperationProposal
+        {
+            ProposalId = "proposal-1",
+            TenantId = "public",
+            Kind = OperationClass.AdminConfigChange,
+            Status = OperationProposalStatus.Expired,
+            RequestedBy = "requester",
+            Plan = new OperationProposalPlan { Summary = "Change a setting", RiskLevel = ProposalRiskLevel.Medium },
+            CreatedAt = created,
+            UpdatedAt = created,
+        };
+
+        var notification = OpsNotificationReminderRunner.BuildNotification(schedule, proposal);
+
+        notification.Title.Should().Be("Approval expired without execution");
+        notification.Body.Should().StartWith("proposal proposal-1, requested 2026-11-21 17:10 UTC; notice 2.");
     }
 
     private static async Task<EvidencePosture> FailedSelfCheckPostureAsync(TimeProvider clock)
@@ -385,15 +444,72 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         OpsNotificationReminderRunner Runner() => new(store, findings, harness.CreateProposalStore(),
             notifications, clock, Substitute.For<IAlertDispatchHealth>());
         await Runner().RunAsync(CancellationToken.None);
-        await outbox.DidNotReceive().CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
-            Arg.Any<IReadOnlyList<AlertOutboxEntry>>(), Arg.Any<CancellationToken>());
-        // A restarted runner can reach the later active finding while the missing episodes remain open.
-        await Runner().RunAsync(CancellationToken.None);
+        // Active findings are dispatched immediately without waiting for absent episodes to be deferred.
         await outbox.Received(1).CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
             Arg.Is<IReadOnlyList<AlertOutboxEntry>>(entries => entries.Count == 1 &&
                 entries[0].AlertEvent.DedupeKey.Contains("finding:finding-1:")), Arg.Any<CancellationToken>());
+        // A second pass does not duplicate the notice and leaves all 100 absent episodes untouched.
+        await Runner().RunAsync(CancellationToken.None);
+        await outbox.Received(1).CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+            Arg.Any<IReadOnlyList<AlertOutboxEntry>>(), Arg.Any<CancellationToken>());
         var preserved = await store.ListDueAsync(clock.Now.AddMinutes(1), 100);
         preserved.Should().BeEquivalentTo(original, options => options.Excluding(row => row.Revision));
+    }
+
+    [IntegrationTest]
+    public async Task TwoReplicas_AbsentReplicaDoesNotDeferActiveReplicaReminder()
+    {
+        await using var harness = await ControlPlaneStateHarness.CreateAsync(database, nameof(OpsNotificationReminderRunnerTests));
+        var clock = new ReminderClock(DateTimeOffset.UtcNow);
+        var storeA = harness.CreateNotificationStore();
+        var findingsA = CreateFindings();
+        findingsA.EvaluateAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => new[] { Finding(clock.GetUtcNow(), OpsFindingSeverity.Critical) });
+        var outboxA = Substitute.For<IAlertOutboxWriter>();
+        var outboxB = Substitute.For<IAlertOutboxWriter>();
+        var options = new AlertOptions { Enabled = true, Ops = new AlertOpsOptions { Enabled = true, Channels = ["webhook"] } };
+        var runnerA = new OpsNotificationReminderRunner(storeA, findingsA, harness.CreateProposalStore(),
+            CreateNotifications(outboxA, options), clock, Substitute.For<IAlertDispatchHealth>());
+        var runnerB = new OpsNotificationReminderRunner(harness.CreateNotificationStore(), CreateIncompleteEmptyFindings(clock),
+            harness.CreateProposalStore(), CreateNotifications(outboxB, options), clock, Substitute.For<IAlertDispatchHealth>());
+
+        await storeA.ObserveAsync(new("finding", "finding-1", OpsFindingSeverity.Critical), clock.Now);
+        await runnerB.RunAsync(CancellationToken.None);
+        clock.Now = clock.Now.AddSeconds(15);
+        await runnerB.RunAsync(CancellationToken.None);
+        clock.Now = clock.Now.AddSeconds(15);
+
+        await runnerA.RunAsync(CancellationToken.None);
+        await outboxB.DidNotReceive().CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+            Arg.Any<IReadOnlyList<AlertOutboxEntry>>(), Arg.Any<CancellationToken>());
+        await outboxA.Received(1).CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+            Arg.Is<IReadOnlyList<AlertOutboxEntry>>(entries => entries.Count == 1 &&
+                entries[0].AlertEvent.DedupeKey.EndsWith(":Critical:0", StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>());
+
+        clock.Now = clock.Now.AddMinutes(30);
+        await runnerB.RunAsync(CancellationToken.None);
+        clock.Now = clock.Now.AddSeconds(10);
+        await runnerA.RunAsync(CancellationToken.None);
+        await outboxA.Received(1).CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+            Arg.Is<IReadOnlyList<AlertOutboxEntry>>(entries => entries.Count == 1 &&
+                entries[0].AlertEvent.DedupeKey.EndsWith(":Critical:1", StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>());
+    }
+
+    private static IOpsFindingsEvidenceSource CreateIncompleteEmptyFindings(TimeProvider clock)
+    {
+        var source = CreateFindings();
+        source.EvaluateWithEvidenceAsync(Arg.Any<CancellationToken>()).Returns(_ => new OpsFindingsEvaluation
+        {
+            EvaluatedAt = clock.GetUtcNow(),
+            Findings = [],
+            Posture = EvidencePostureFactory.Build(clock.GetUtcNow(), [EvidencePostureFactory.Unavailable(
+                EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations,
+                EvidencePostureVocabulary.BackendKinds.DurableStore, "workflow-store",
+                EvidencePostureVocabulary.ReasonCodes.SourceUnavailable)])
+        });
+        return source;
     }
 
     private static IOpsFindingsEvidenceSource CreateFindings()
@@ -431,12 +547,10 @@ public sealed class OpsNotificationReminderRunnerTests(DatabaseFixtureAdapter da
         outbox.CommitEvaluationAsync(Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
             Arg.Any<IReadOnlyList<AlertOutboxEntry>>(), Arg.Any<CancellationToken>())
             .Returns(call => ImmutableArray.CreateRange(Enumerable.Repeat(true, call.ArgAt<IReadOnlyList<AlertOutboxEntry>>(1).Count)));
-        var policy = Substitute.For<IAlertEditionPolicy>();
-        policy.IsChannelAllowed(Arg.Any<AlertChannelType>()).Returns(true);
         var configured = Options.Create(options);
         var metrics = TestTelemetry.CreateAlertPipelineMetrics();
         return new OpsNotificationService(new AlertDispatchWriter(outbox, metrics, NullLogger<AlertDispatchWriter>.Instance),
-            policy, new AlertChannelCircuitBreaker(configured), configured, metrics, NullLogger<OpsNotificationService>.Instance);
+            new AlertChannelCircuitBreaker(configured), configured, metrics, NullLogger<OpsNotificationService>.Instance);
     }
 
     private sealed class ReminderClock(DateTimeOffset now) : TimeProvider

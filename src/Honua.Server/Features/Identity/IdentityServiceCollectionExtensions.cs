@@ -20,6 +20,11 @@ public static class IdentityServiceCollectionExtensions
         services.AddOptions<ScimProvisioningOptions>()
             .Bind(configuration.GetSection(ScimProvisioningOptions.SectionName))
             .Validate(
+                static options => string.IsNullOrEmpty(options.BearerToken)
+                    || (!string.IsNullOrWhiteSpace(options.BearerToken)
+                        && options.BearerToken.Length >= ScimProvisioningOptions.MinimumBearerTokenLength),
+                "Scim:BearerToken must contain at least 32 characters when provisioning is enabled.")
+            .Validate(
                 static options => string.IsNullOrWhiteSpace(options.BearerToken)
                     || IsValidOidcIssuer(options.OidcIssuer),
                 "Scim:OidcIssuer must be an absolute HTTP(S) URI of at most 2048 characters "
@@ -33,6 +38,10 @@ public static class IdentityServiceCollectionExtensions
         services.TryAddSingleton<Honua.Infrastructure.Security.ITokenReplayStore, Honua.Infrastructure.Security.InMemoryTokenReplayStore>();
         services.TryAddSingleton<SamlAssertionReplayCache>();
         services.TryAddSingleton<SamlAssertionValidator>();
+        services.TryAddSingleton<SamlLogoutRequestValidator>();
+        services.TryAddSingleton<SamlRequestCorrelation>();
+        services.TryAddSingleton<SamlSessionIndex>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<Honua.Infrastructure.Security.IExternalIdentityProviderSource, SamlIdentityProviderSource>());
 
         return services;
     }

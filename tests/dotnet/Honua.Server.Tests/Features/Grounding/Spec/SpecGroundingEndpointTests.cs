@@ -17,31 +17,27 @@ namespace Honua.Server.Tests.Features.Grounding.Spec;
 
 [Collection("Database")]
 [Protocol(global::Honua.TestKit.Constants.ProtocolNames.Grounding)]
-public sealed class SpecGroundingEndpointTests : IAsyncLifetime
+public sealed class SpecGroundingEndpointTests(SpecGroundingEndpointTests.GroundingHost host)
+    : IClassFixture<SpecGroundingEndpointTests.GroundingHost>
 {
-    private readonly WebAppFixture _fixture;
-    private HttpClient _client = null!;
+    private readonly HttpClient _client = host.Fixture.Client;
 
-    public SpecGroundingEndpointTests()
+    // One host for the class: each case sends its whole spec and turn, and these endpoints
+    // store nothing between requests.
+    public sealed class GroundingHost : IAsyncLifetime
     {
-        var graphProvider = SpecGroundingTestSupport.CreateGraphProvider(
-            SpecGroundingTestSupport.CreateLayer(1, "Rivers"),
-            SpecGroundingTestSupport.CreateLayer(2, "Hospitals North"),
-            SpecGroundingTestSupport.CreateLayer(3, "Hospitals South"),
-            SpecGroundingTestSupport.CreateLayer(4, "Zones"));
-
-        _fixture = new WebAppFixture()
+        internal WebAppFixture Fixture { get; } = new WebAppFixture()
             .WithTestLicense(HonuaEdition.Pro)
-            .ReplaceService<IMetadataV2GraphProvider>(graphProvider);
-    }
+            .ReplaceService<IMetadataV2GraphProvider>(SpecGroundingTestSupport.CreateGraphProvider(
+                SpecGroundingTestSupport.CreateLayer(1, "Rivers"),
+                SpecGroundingTestSupport.CreateLayer(2, "Hospitals North"),
+                SpecGroundingTestSupport.CreateLayer(3, "Hospitals South"),
+                SpecGroundingTestSupport.CreateLayer(4, "Zones")));
 
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-        _client = _fixture.Client;
-    }
+        public Task InitializeAsync() => Fixture.InitializeAsync();
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+        public Task DisposeAsync() => Fixture.DisposeAsync();
+    }
 
     [IntegrationTest]
     [Operation(Operations.GroundingMutate)]
@@ -396,6 +392,47 @@ public sealed class SpecGroundingEndpointTests : IAsyncLifetime
         var root = payload.RootElement;
         root.GetProperty("title").GetString().Should().Be("Invalid spec grounding request");
         root.GetProperty("detail").GetString().Should().Contain("numeric values must be finite");
+    }
+
+    [IntegrationTheory]
+    [Operation(Operations.GroundingMutate)]
+    [Operation(Operations.GroundingSummarize)]
+    [Endpoint("POST /v1/grounding/spec/mutate")]
+    [Endpoint("POST /v1/grounding/spec/summarize")]
+    [InlineData("mutate", "sources", "{\"a\":1}")]
+    [InlineData("summarize", "sources", "\"x\"")]
+    [InlineData("summarize", "compute", "{}")]
+    [InlineData("mutate", "map", "[]")]
+    public async Task WrongTypedSpecSection_ReturnsProblemDetails(
+        string endpoint, string section, string value)
+    {
+        var expectedDetail = section == "map"
+            ? $"spec.{section} must be a JSON object."
+            : $"spec.{section} must be a JSON array.";
+        using var content = new StringContent(
+            $$"""{"spec":{"grammar":"v1.0","{{section}}":{{value}}},"turn":"show rivers on the map"}""",
+            Encoding.UTF8,
+            "application/json");
+        using var response = await _client.PostAsync($"/v1/grounding/spec/{endpoint}", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        payload.RootElement.GetProperty("title").GetString().Should().Be("Invalid spec grounding request");
+        payload.RootElement.GetProperty("detail").GetString().Should().Be(expectedDetail);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GroundingSummarize)]
+    [Endpoint("POST /v1/grounding/spec/summarize")]
+    public async Task Summarize_NullSpecSections_TreatsThemAsAbsent()
+    {
+        using var content = new StringContent(
+            """{"spec":{"grammar":"v1.0","sources":null,"map":null}}""",
+            Encoding.UTF8,
+            "application/json");
+        using var response = await _client.PostAsync("/v1/grounding/spec/summarize", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     private static int CountSentences(string text)

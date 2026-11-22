@@ -35,7 +35,7 @@ internal static class McpEndpointExtensions
         endpoints.MapPost(RoutePath,
                 static (HttpContext context, CancellationToken ct) => HandlePostAsync(context, ct))
             .AddEndpointFilter(ProtectedResourceChallengeFilter)
-            .AddEndpointFilter(McpModernHttp.ValidateModernOriginAsync)
+            .AddEndpointFilter(McpModernHttp.ValidateOriginAsync)
             .AddEndpointFilter(McpBearerAuthenticationEndpointExtensions.AuthenticateBearerAsync)
             .WithDisplayName("MCP Operator Surface")
             .WithName("McpDataAccessSurface")
@@ -46,7 +46,7 @@ internal static class McpEndpointExtensions
         endpoints.MapGet(RoutePath,
                 static (HttpContext context, CancellationToken ct) => HandleGetAsync(context, ct))
             .AddEndpointFilter(ProtectedResourceChallengeFilter)
-            .AddEndpointFilter(McpModernHttp.ValidateModernOriginAsync)
+            .AddEndpointFilter(McpModernHttp.ValidateOriginAsync)
             .AddEndpointFilter(McpBearerAuthenticationEndpointExtensions.AuthenticateBearerAsync)
             .WithDisplayName("MCP Operator Surface (SSE stream)")
             .WithName("McpDataAccessSurfaceStream")
@@ -58,7 +58,7 @@ internal static class McpEndpointExtensions
         endpoints.MapDelete(RoutePath,
                 static (HttpContext context, CancellationToken ct) => HandleDeleteAsync(context, ct))
             .AddEndpointFilter(ProtectedResourceChallengeFilter)
-            .AddEndpointFilter(McpModernHttp.ValidateModernOriginAsync)
+            .AddEndpointFilter(McpModernHttp.ValidateOriginAsync)
             .AddEndpointFilter(McpBearerAuthenticationEndpointExtensions.AuthenticateBearerAsync)
             .WithDisplayName("MCP Operator Surface (session termination)")
             .WithName("McpDataAccessSurfaceTerminate")
@@ -91,7 +91,7 @@ internal static class McpEndpointExtensions
         cancellationToken = requestCancellation.Token;
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (await McpModernHttp.TryRejectDeclaredOriginAsync(context).ConfigureAwait(false))
+        if (await McpModernHttp.TryRejectPostPreconditionsAsync(context, cancellationToken).ConfigureAwait(false))
         {
             return;
         }

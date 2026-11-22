@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Domain;
 
@@ -15,6 +16,26 @@ public sealed record OperationPolicyMetadata
     public required OperationDeterminism Determinism { get; init; }
 
     public required bool SupportsDryRun { get; init; }
+}
+
+public enum OperationCompensationAvailability
+{
+    NotApplicable,
+
+    Unavailable,
+
+    Supported
+}
+
+public sealed record OperationCompensationMetadata(
+    OperationCompensationAvailability Availability,
+    string? Reason)
+{
+    public static OperationCompensationMetadata For(OperationSideEffectClass sideEffectClass) =>
+        sideEffectClass == OperationSideEffectClass.ReadOnly
+            ? new(OperationCompensationAvailability.NotApplicable, null)
+            : new(OperationCompensationAvailability.Unavailable,
+                "No compensation executor and durable recovery evidence are registered for this operation.");
 }
 
 public sealed record OperationDescriptor : IOperationDescriptor
@@ -40,6 +61,12 @@ public sealed record OperationDescriptor : IOperationDescriptor
     public bool IsCompatibilityOnly { get; init; }
 
     public required OperationPolicyMetadata Policy { get; init; }
+
+    [JsonIgnore]
+    public OperationCompensationMetadata? DeclaredCompensation { get; init; }
+
+    public OperationCompensationMetadata Compensation =>
+        DeclaredCompensation ?? OperationCompensationMetadata.For(Policy.SideEffectClass);
 
     public OperationGroundingMetadata? Grounding { get; init; }
 }

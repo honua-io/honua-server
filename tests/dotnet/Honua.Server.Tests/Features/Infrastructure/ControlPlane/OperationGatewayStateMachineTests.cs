@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 public sealed partial class OperationGatewayStateMachineTests
 {
-    // ── BH6-032: ExecuteDirectAsync with unregistered operation class ─────────
+    // ── ExecuteDirectAsync with unregistered operation class ─────────
 
     [Theory]
     [InlineData(OperationClass.MetadataRelease)]
@@ -48,7 +48,7 @@ public sealed partial class OperationGatewayStateMachineTests
         // Act
         var result = await sut2.RouteAsync(request);
 
-        // Assert: must NOT claim Executed (BH6-032) — nothing ran
+        // Assert: must NOT claim Executed — nothing ran
         result.Outcome.Should().Be(OperationGatewayOutcome.NotSupported,
             "a kind with no registered executor must not be claimed as Executed");
         result.ExecutionOperationId.Should().BeNull("no operation was performed");
@@ -79,7 +79,7 @@ public sealed partial class OperationGatewayStateMachineTests
         result.ExecutionOperationId.Should().Be(DeployExecutor.OperationId);
     }
 
-    // ── BH6-033: ApplyApprovedProposalAsync with unregistered operation class ─
+    // ── ApplyApprovedProposalAsync with unregistered operation class ─
 
     [Theory]
     [InlineData(OperationClass.MetadataRelease)]
@@ -95,7 +95,7 @@ public sealed partial class OperationGatewayStateMachineTests
         // Act
         var result = await sut.ApplyApprovedProposalAsync("p-no-executor", new OperationProposalApprovalContext { ApprovedBy = "admin", TenantId = string.Empty });
 
-        // Assert BH6-033: must transition to terminal Failed, not stay Submitted
+        // Assert: must transition to terminal Failed, not stay Submitted
         result.Should().NotBeNull();
         result!.Status.Should().Be(OperationProposalStatus.Failed,
             "a proposal whose operation class has no registered executor must fail terminally, " +
@@ -167,8 +167,7 @@ public sealed partial class OperationGatewayStateMachineTests
     [Fact]
     public async Task ApplyApprovedProposal_WhenExecutorThrows_ReachesTerminalFailed()
     {
-        // Executor exceptions must also yield terminal Failed (pre-existing behaviour;
-        // confirmed to still hold after the BH6-033 fix).
+        // Executor exceptions must also yield terminal Failed.
         var proposal = CreateProposal("p-throws", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval);
         var store = new InMemoryProposalStore(proposal);
         var sut = BuildGateway(store: store, executor: new ThrowingExecutor());
@@ -483,10 +482,7 @@ public sealed partial class OperationGatewayStateMachineTests
         public string OperationId => "control-plane.deploy";
 
         public OperationGatewayRequest Map(
-            Honua.Core.Features.Operations.Abstractions.IOperationDescriptor descriptor,
-            Honua.Core.Features.Operations.Domain.OperationRequest request,
-            Honua.Core.Features.Operations.Domain.OperationPolicyContext context,
-            Honua.Core.Features.Operations.Domain.PolicyDecision decision)
+            Honua.Core.Features.Operations.Abstractions.OperationApprovalRequestContext input)
             => throw new NotSupportedException();
 
         public Honua.Core.Features.Operations.Abstractions.OperationApprovalReplayMapping MapReplay(

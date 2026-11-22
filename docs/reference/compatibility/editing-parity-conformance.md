@@ -71,10 +71,15 @@ never by parsing the message.
   — `Upper`, `Lower`, `Trim`, `Text`, `Concatenate`, `Round`, `Floor`, `Ceil`, `Abs`,
   `IsEmpty` — plus `+` string concatenation). Expressions outside the subset are routed out of
   scope (skipped with a logged warning), never failing the edit. Full Arcade parity is a non-goal.
-- Contingent values and plugin edit hooks run on GeoServices `applyEdits`, OGC API Features and
+- Attribute rules, contingent values and plugin edit hooks run on GeoServices `applyEdits`, OGC API Features and
   gRPC `ApplyEdits`. WFS-T transactions and OData writes do not run them yet.
+- On OGC API Features and gRPC, calculations precede owner/editor stamps, contingent checks and
+  hooks. Only calculated fields are added to a partial write; stored values read by a rule stay
+  inside validation. Delete constraints read the stored row and bind the write to that snapshot.
+  When attribute rules are configured, updating and deleting the same target in a batch rejects
+  both rows, preventing a delete from being validated against the state before the update.
 - On OGC API Features and gRPC, a hook sees the row an update produces and, on delete, the stored
-  row where the request read it (every OGC delete, and gRPC deletes). When a contingent-value
+  row where the request read it (every OGC delete, and gRPC deletes). When a rule or contingent-value
   failure removes rows from a gRPC call without `rollback_on_failure`, hooks number the remaining
   rows of each kind from zero, and gRPC after-hooks receive the submitted values of a partial
   update, not the merged row.
@@ -101,6 +106,10 @@ never by parsing the message.
 ## Status summary
 
 - **Supported:** owner policies (#2132), contingent values (#2133), attribute-rule depth (#2134),
-  contingent values and plugin edit hooks on OGC API Features and gRPC edits (#7855).
+  attribute rules, contingent values and plugin edit hooks on OGC API Features and gRPC edits
+  (#7855). The shared edit core also prepares attribute rules, omits and stamps server-maintained
+  tracking fields, and validates normalized attributes across protocol adapters. Shared receipt
+  storage and replay coordination preserve each protocol's existing idempotency contract;
+  OGC API Features does not gain an idempotency-key contract.
 - **Partial / deferred to #2135:** VersionManagementServer `conflictDetection=byAttribute`,
   `withPost` auto-post, and the `resolveConflicts` accepted-resolution echo.

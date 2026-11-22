@@ -94,7 +94,9 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0086](0086-one-generation-for-configuration-and-caches.md) | One source of truth and one generation number for configuration and caches | Accepted | 2026-11 |
 | [0087](0087-native-client-protocols.md) | Native client protocols are gRPC and cloud-native files; OGC API and GeoServices REST are compatibility surfaces | Proposed | 2026-11 |
 | [0088](0088-one-first-party-field-sync-contract.md) | One first-party field sync contract | Proposed | 2026-11 |
+| [0089](0089-one-operation-definition.md) | One operation definition for governed transports and recovery | Proposed | 2026-11 |
 | [0088](0088-explicit-datum-selection-and-observation-epochs.md) | Explicit datum selection and observation epochs | Accepted | 2026-11 |
+| [0090](0090-certified-reference-architecture.md) | One certified reference architecture | Proposed | 2026-11 |
 
 ## Template
 

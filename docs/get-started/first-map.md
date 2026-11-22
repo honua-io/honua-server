@@ -9,7 +9,7 @@ See the [Honua vocabulary](../concepts/domain/README.md) for the meanings of Con
 
 You'll turn a published layer into a live MapLibre map using vector tiles, TileJSON, and the server's auto-generated style in about 10 minutes.
 
-**Prerequisites:** a published layer and its `layerId` (see [Publish your first dataset](first-dataset.md)), `$HONUA_BASE_URL`, `$HONUA_API_KEY`, `$HONUA_SERVICE`, and `$HONUA_LAYER_ID` set as that page describes, and Python 3 to serve one HTML file. Step 1 installs the pinned clients (`honua-admin` 0.3.1, `honua-sdk` 0.3.1) and the MCP Python client `mcp` 2.1.1, so this page can be run on its own.
+**Prerequisites:** a published layer and its `layerId` (see [Publish your first dataset](first-dataset.md)), `$HONUA_BASE_URL`, `$HONUA_API_KEY`, `$HONUA_SERVICE`, and `$HONUA_LAYER_ID` set as that page describes, and Python 3 to serve one HTML file. Step 1 installs the pinned clients (`honua-admin` 0.3.2, `honua-sdk` 0.3.2) and the MCP Python client `mcp` 2.1.1, so this page can be run on its own.
 
 > The browser fetches tiles without credentials, so steps 2–6 require anonymous reads to be
 > enabled on the published service. Do not proceed after a refused policy change.
@@ -24,12 +24,15 @@ The `honua_admin_services_access_policy_set` MCP tool sets a service's access po
 through the server's MCP endpoint (`POST /mcp`) with the official MCP Python client.
 `$HONUA_SERVICE` is the service name the publish step exported.
 
-The tool requires the Redis-backed operator workflow capability. A Redis-off deployment
-refuses the operation; it does not enable anonymous access. Use the Redis-backed quickstart
-profile and retain a successful policy-change result before opening the map.
+The tool requires the durable operator workflow capability, which needs the system database.
+A deployment without one refuses the operation; it does not enable anonymous access. Over `/mcp`,
+access-policy changes are proposal-gated: the call returns `isError: false` with
+`status: "RequiresApproval"` and `requiresApproval: true`, and anonymous reads take effect only
+after a human approves the resulting proposal in Console Approvals. Use the quickstart profile and
+ensure the policy change is approved before opening the map.
 
 ```bash
-python3 -m pip install 'honua-admin==0.3.1' 'honua-sdk==0.3.1' 'mcp==2.1.1'
+python3 -m pip install 'honua-admin==0.3.2' 'honua-sdk==0.3.2' 'mcp==2.1.1'
 python3 - <<'PY'
 import asyncio
 import os
@@ -54,9 +57,20 @@ async def allow_anonymous():
 
 
 call = asyncio.run(allow_anonymous())
+result = call.structured_content or {}
+status = result.get("status")
 if call.is_error:
     raise SystemExit(f"access policy not set: {call.content}")
-print(f"anonymous read enabled on {service}")
+if result.get("requiresApproval") or status == "RequiresApproval":
+    proposal_id = result.get("proposalId")
+    print(
+        f"approval required before anonymous read takes effect on {service} "
+        f"(proposalId={proposal_id}); approve it in Console Approvals"
+    )
+elif status == "Completed":
+    print(f"anonymous read enabled on {service}")
+else:
+    raise SystemExit(f"access policy not applied (status={status}): {call.content}")
 PY
 ```
 

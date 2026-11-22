@@ -2,7 +2,10 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using Honua.Core.Features.AuditLog;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
@@ -25,35 +28,35 @@ internal static partial class AdminApiKeyEndpoints
             .RequireAdminAuthorization()
             .RequirePlatformAdminAuthority();
 
-        group.MapGet("/", HandleListApiKeys)
-            .WithDisplayName("List Admin API Keys")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var list = AdminHttpOperationRouteBinding.ForAccess("admin.api-key.list", "/api-keys");
+        group.MapMethods(list.RoutePattern, list.Methods, HandleListApiKeys)
+            .WithAdminOperation(list.Definition).WithDisplayName("List Admin API Keys");
 
         // Issuing, rotating, revoking or replacing restrictions needs full-admin credential
         // authority; general admin write (admin:write, admin:manage) keeps the read routes only.
-        group.MapPost("/", HandleCreateApiKey)
-            .WithDisplayName("Create Admin API Key")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+        var create = AdminHttpOperationRouteBinding.ForAccess("admin.api-key.create", "/api-keys");
+        group.MapMethods(create.RoutePattern, create.Methods, HandleCreateApiKey)
+            .WithAdminOperation(create.Definition).WithDisplayName("Create Admin API Key")
             .RequireAdminCredentialManagementAuthorization();
 
-        group.MapPost("/{id:guid}/rotate", HandleRotateApiKey)
-            .WithDisplayName("Rotate Admin API Key")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+        var rotate = AdminHttpOperationRouteBinding.ForAccess("admin.api-key.rotate", "/api-keys", "/{id:guid}/rotate");
+        group.MapMethods(rotate.RoutePattern, rotate.Methods, HandleRotateApiKey)
+            .WithAdminOperation(rotate.Definition).WithDisplayName("Rotate Admin API Key")
             .RequireAdminCredentialManagementAuthorization();
 
-        group.MapPost("/{id:guid}/revoke", HandleRevokeApiKey)
-            .WithDisplayName("Revoke Admin API Key")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+        var revoke = AdminHttpOperationRouteBinding.ForAccess("admin.api-key.revoke", "/api-keys", "/{id:guid}/revoke");
+        group.MapMethods(revoke.RoutePattern, revoke.Methods, HandleRevokeApiKey)
+            .WithAdminOperation(revoke.Definition).WithDisplayName("Revoke Admin API Key")
             .RequireAdminCredentialManagementAuthorization();
 
-        group.MapPatch("/{id:guid}/restrictions", HandleUpdateApiKeyRestrictions)
-            .WithDisplayName("Update Admin API Key Restrictions")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Patch }))
+        var restrictions = AdminHttpOperationRouteBinding.ForAccess("admin.api-key.update-restrictions", "/api-keys", "/{id:guid}/restrictions");
+        group.MapMethods(restrictions.RoutePattern, restrictions.Methods, HandleUpdateApiKeyRestrictions)
+            .WithAdminOperation(restrictions.Definition).WithDisplayName("Update Admin API Key Restrictions")
             .RequireAdminCredentialManagementAuthorization();
 
-        group.MapGet("/{id:guid}/effective-permissions", HandleGetEffectivePermissions)
-            .WithDisplayName("Get Admin API Key Effective Permissions")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var effective = AdminHttpOperationRouteBinding.ForAccess("admin.api-key.effective-permissions", "/api-keys", "/{id:guid}/effective-permissions");
+        group.MapMethods(effective.RoutePattern, effective.Methods, HandleGetEffectivePermissions)
+            .WithAdminOperation(effective.Definition).WithDisplayName("Get Admin API Key Effective Permissions");
     }
 
     private static async Task<Ok<ApiResponse<IReadOnlyList<AdminApiKeyResponse>>>> HandleListApiKeys(
@@ -73,19 +76,39 @@ internal static partial class AdminApiKeyEndpoints
             [FromServices] ILogger<AdminApiKeyEndpointsLog> logger,
             HttpContext context)
     {
-        if (!TryValidateCreateRequest(request, out var permissions, out var validationMessage) ||
+        if (!TryValidateCreateRequest(request, out var requested, out var validationMessage) ||
             !TryValidateRestrictionLists(request.AllowedReferrers, request.AllowedIpRanges, out var restrictions, out validationMessage))
         {
             return TypedResults.BadRequest(ApiResponse<object>.Failure(validationMessage));
         }
 
+        var kind = ResolveKind(request, requested, context);
+        if (kind.Refusal is { } refusal)
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(refusal));
+        }
+
         var result = await store.CreateAsync(
             request.Name.Trim(),
-            permissions,
+            kind.Permissions,
             request.ExpiresAt,
             ResolveCreator(context),
             restrictions,
             context.RequestAborted);
+
+        if (IsSupportSessionKey(kind.Permissions))
+        {
+            var audited = await TryAuditSupportSessionKeyAsync(
+                context,
+                "ops.support_session.granted",
+                result.Record,
+                context.RequestAborted).ConfigureAwait(false);
+            if (!audited)
+            {
+                await store.RevokeAsync(result.Record.Id, context.RequestAborted).ConfigureAwait(false);
+                throw new InvalidOperationException("Support session grant aborted: tamper-evident audit log write failed.");
+            }
+        }
 
         LogApiKeyCreated(logger, result.Record.Id, result.Record.Name);
         var response = new AdminApiKeySecretResponse
@@ -99,12 +122,22 @@ internal static partial class AdminApiKeyEndpoints
             ApiResponse<AdminApiKeySecretResponse>.CreateSuccess(response));
     }
 
-    private static async Task<Results<Ok<ApiResponse<AdminApiKeySecretResponse>>, NotFound<ApiResponse<object>>>> HandleRotateApiKey(
+    // Rotation returns the new secret to the caller, so an agent caller may rotate only an agent key.
+    private static async Task<Results<Ok<ApiResponse<AdminApiKeySecretResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>>> HandleRotateApiKey(
         Guid id,
         [FromServices] IAdminApiKeyStore store,
         [FromServices] ILogger<AdminApiKeyEndpointsLog> logger,
         HttpContext context)
     {
+        var caller = AdminApiKeyKind.CallerOf(context);
+        if (caller == AdminApiKeyCaller.Agent
+            && await store.GetAsync(id, context.RequestAborted) is { } current
+            && !AdminApiKeyKind.MayRotate(caller, current.Permissions))
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                "Validation failed: an agent, or a proposal an agent made, may rotate only agent keys"));
+        }
+
         var result = await store.RotateAsync(id, context.RequestAborted);
         if (result is null)
         {
@@ -131,6 +164,19 @@ internal static partial class AdminApiKeyEndpoints
         if (record is null)
         {
             return TypedResults.NotFound(ApiResponse<object>.Failure("API key not found"));
+        }
+
+        if (IsSupportSessionKey(record.Permissions))
+        {
+            var audited = await TryAuditSupportSessionKeyAsync(
+                context,
+                "ops.support_session.revoked",
+                record,
+                context.RequestAborted).ConfigureAwait(false);
+            if (!audited)
+            {
+                throw new InvalidOperationException("Support session revocation audit failed: tamper-evident audit log write failed.");
+            }
         }
 
         LogApiKeyRevoked(logger, id);
@@ -196,12 +242,63 @@ internal static partial class AdminApiKeyEndpoints
             Id = record.Id,
             Name = record.Name,
             Status = status,
+            Kind = AdminApiKeyKind.Of(record.Permissions),
             Permissions = record.Permissions,
             CanAuthenticate = string.Equals(status, "active", StringComparison.Ordinal),
         };
 
         return TypedResults.Ok(ApiResponse<AdminApiKeyEffectivePermissionsResponse>.CreateSuccess(response));
     }
+
+    private static bool IsSupportSessionKey(IReadOnlyList<string> permissions)
+        => permissions.Any(static permission =>
+            string.Equals(permission?.Trim(), AdminApiKeyPermission.OpsPropose, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(permission?.Trim(), AdminApiKeyPermission.OpsRead, StringComparison.OrdinalIgnoreCase));
+
+    private static async Task<bool> TryAuditSupportSessionKeyAsync(
+        HttpContext context,
+        string action,
+        AdminApiKeyRecord record,
+        CancellationToken cancellationToken)
+    {
+        var auditLog = context.RequestServices.GetService<IAuditLog>();
+        if (auditLog is null || auditLog is NullAuditLog || !auditLog.IsPersisted)
+        {
+            return true;
+        }
+
+        var actor = ResolveCreator(context) ?? AuditEvent.AnonymousActor;
+        var permissionsList = string.Join(",", record.Permissions);
+        var escapedName = record.Name.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
+        var escapedPerms = permissionsList.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
+        var expiresAt = record.ExpiresAt?.ToString("O") ?? "none";
+        var details = $"{{\"keyId\":\"{record.Id:D}\",\"name\":\"{escapedName}\",\"permissions\":\"{escapedPerms}\",\"expiresAt\":\"{expiresAt}\"}}";
+        var auditId = await auditLog.RecordAsync(
+            new AuditEvent
+            {
+                Timestamp = DateTimeOffset.UtcNow,
+                EventType = AuditEventType.AdminAction,
+                Actor = actor,
+                ActorType = actor == AuditEvent.AnonymousActor ? AuditActorType.Anonymous : AuditActorType.UserId,
+                ResourceType = "ops_support_session",
+                ResourceId = record.Id.ToString("D"),
+                Action = action,
+                Outcome = AuditOutcome.Success,
+                CorrelationId = context.TraceIdentifier ?? record.Id.ToString("D"),
+                Details = details,
+            },
+            cancellationToken).ConfigureAwait(false);
+        return !string.IsNullOrWhiteSpace(auditId);
+    }
+
+    private static AdminApiKeyKindResult ResolveKind(
+        CreateAdminApiKeyRequest request, IReadOnlyList<string> requested, HttpContext context)
+        => AdminApiKeyKind.Resolve(new AdminApiKeyKindRequest
+        {
+            Kind = request.Kind,
+            Permissions = requested,
+            Caller = AdminApiKeyKind.CallerOf(context),
+        });
 
     private static bool TryValidateCreateRequest(
         CreateAdminApiKeyRequest request,
@@ -337,6 +434,7 @@ internal static partial class AdminApiKeyEndpoints
         Id = record.Id,
         Name = record.Name,
         KeyPrefix = record.KeyPrefix,
+        Kind = AdminApiKeyKind.Of(record.Permissions),
         Permissions = record.Permissions,
         Status = GetStatus(record),
         CreatedAt = record.CreatedAt,

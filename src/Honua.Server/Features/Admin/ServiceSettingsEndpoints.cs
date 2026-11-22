@@ -1,12 +1,17 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Data.Common;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Models;
@@ -36,48 +41,58 @@ internal static partial class ServiceSettingsEndpoints
             .WithTags("Admin", "Services")
             .RequireAdminAuthorization();
 
-        group.MapGet("/", HandleListServices)
-            .WithDisplayName("List Services")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var list = AdminHttpOperationRouteBinding.ForApi("admin.services.list", "/services");
+        group.MapMethods(list.RoutePattern, list.Methods, HandleListServices)
+            .WithAdminOperation(list.Definition).WithDisplayName("List Services");
 
-        group.MapGet("/{serviceName}/settings", HandleGetSettings)
-            .WithDisplayName("Get Service Settings")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var settings = AdminHttpOperationRouteBinding.ForApi("admin.services.settings.get", "/services");
+        group.MapMethods(settings.RoutePattern, settings.Methods, HandleGetSettings)
+            .WithAdminOperation(settings.Definition).WithDisplayName("Get Service Settings");
 
-        group.MapPut("/{serviceName}/protocols", HandleUpdateProtocols)
+        var protocols = AdminHttpOperationRouteBinding.ForApi("admin.services.protocols.set", "/services");
+        group.MapMethods(protocols.RoutePattern, protocols.Methods, HandleUpdateProtocols)
+            .WithAdminOperation(protocols.Definition)
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
-            .WithDisplayName("Update Service Protocols")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+            .WithDisplayName("Update Service Protocols");
 
         group.MapPut("/{serviceName}/mapserver", HandleUpdateMapServerSettings)
             .WithDisplayName("Update MapServer Settings")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
 
-        group.MapPut("/{serviceName}/access-policy", HandleUpdateAccessPolicy)
+        var accessPolicy = AdminHttpOperationRouteBinding.ForApi("admin.services.access-policy.set", "/services");
+        group.MapMethods(accessPolicy.RoutePattern, accessPolicy.Methods, HandleUpdateAccessPolicy)
+            .WithAdminOperation(accessPolicy.Definition)
             .WithDisplayName("Update Access Policy")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessPolicy);
 
-        group.MapPut("/{serviceName}/timeinfo", HandleUpdateTimeInfo)
-            .WithDisplayName("Update Time Info")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+        var timeInfo = AdminHttpOperationRouteBinding.ForApi("admin.services.timeinfo.set", "/services");
+        group.MapMethods(timeInfo.RoutePattern, timeInfo.Methods, HandleUpdateTimeInfo)
+            .WithAdminOperation(timeInfo.Definition).WithDisplayName("Update Time Info");
 
+        MapServiceLayerMetadataEndpoints(group);
+    }
+
+    private static void MapServiceLayerMetadataEndpoints(IEndpointRouteBuilder group)
+    {
         group.MapGet("/{serviceName}/layers/{serviceLayerIndex:int}/metadata", HandleGetLayerMetadata)
             .WithDisplayName("Get Layer Metadata")
             .Produces<ApiResponse<LayerMetadataResponse>>(200)
             .Produces<ApiResponse<object>>(404)
             .ProducesProblem(409);
 
-        group.MapPut("/{serviceName}/layers/{serviceLayerIndex:int}/metadata", HandleUpdateLayerMetadata)
+        var layerMetadata = AdminHttpOperationRouteBinding.ForApi(
+            "admin.services.layer-metadata.set", "/services", "/{serviceName}/layers/{serviceLayerIndex:int}/metadata");
+        group.MapMethods(layerMetadata.RoutePattern, layerMetadata.Methods, HandleUpdateLayerMetadata)
+            .WithAdminOperation(layerMetadata.Definition)
             .WithDisplayName("Update Layer Metadata")
             .Produces<ApiResponse<LayerMetadataResponse>>(200)
             .Produces<ApiResponse<object>>(400)
             .Produces<ApiResponse<object>>(404)
             .ProducesProblem(409)
+            .ProducesProblem(422)
             .ProducesProblem(500)
             .ProducesProblem(501)
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
-            .AddAgentApprovalFilter(AgentApprovalFilter.LayerMetadataAccessPolicy);
+            .AddAgentApprovalFilter(AgentApprovalFilter.LayerMetadata);
     }
 
     private static async Task<Results<Ok<ApiResponse<ServiceListPage>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
@@ -93,6 +108,8 @@ internal static partial class ServiceSettingsEndpoints
 
         try
         {
+            listQuery = await ResolveLayerScopeOwnerAsync(listQuery, context).ConfigureAwait(false);
+
             var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
             var tenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId;
             if (ServiceCatalogPage.FolderIsMissing(snapshot, listQuery.FolderId, tenantId))
@@ -100,9 +117,14 @@ internal static partial class ServiceSettingsEndpoints
                 return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound, detail: "Folder not found.");
             }
 
+            var scope = new ServiceListScope
+            {
+                TenantId = tenantId,
+                UnlistedProtocols = await ServableProtocolsAsync(context).ConfigureAwait(false)
+            };
             context.Response.Headers.ETag = snapshot.Etag;
             return TypedResults.Ok(ApiResponse<ServiceListPage>.CreateSuccess(
-                ServiceCatalogPage.Create(snapshot, listQuery, tenantId)));
+                ServiceCatalogPage.Create(snapshot, listQuery, scope)));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -112,6 +134,20 @@ internal static partial class ServiceSettingsEndpoints
                 detail: "An internal error occurred while listing services.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
+    }
+
+    private static async Task<AdminListQuery> ResolveLayerScopeOwnerAsync(AdminListQuery query, HttpContext context)
+    {
+        if (query.ConnectionId is null)
+        {
+            return query;
+        }
+
+        return query with
+        {
+            ManagedConnectionId = await Services.ManagedImportConnection.ResolveOwnerAsync(
+                context.RequestServices, context.RequestAborted).ConfigureAwait(false)
+        };
     }
 
     private static async Task<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
@@ -136,7 +172,7 @@ internal static partial class ServiceSettingsEndpoints
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            ServiceSettingsLog.GetServiceSettingsFailed(logger, serviceName, ex);
+            ServiceSettingsLog.GetServiceSettingsFailed(logger, LogValueRedactor.SanitizeForLog(serviceName), ex);
             return TypedResults.Problem(
                 title: "Service settings retrieval failed",
                 detail: "An internal error occurred while retrieving service settings.",
@@ -198,7 +234,7 @@ internal static partial class ServiceSettingsEndpoints
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            ServiceSettingsLog.UpdateProtocolsFailed(logger, serviceName, ex);
+            ServiceSettingsLog.UpdateProtocolsFailed(logger, LogValueRedactor.SanitizeForLog(serviceName), ex);
             return TypedResults.Problem(
                 title: "Protocol update failed",
                 detail: "An internal error occurred while updating service protocols.",
@@ -221,7 +257,7 @@ internal static partial class ServiceSettingsEndpoints
         _ = request;
         ServiceSettingsLog.UpdateMapServerSettingsFailed(
             logger,
-            serviceName,
+            LogValueRedactor.SanitizeForLog(serviceName),
             new NotSupportedException(
                 "MapServer settings have no Metadata v2 representation yet (#1035 cutover gap)."));
         return Task.FromResult<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>(
@@ -282,7 +318,7 @@ internal static partial class ServiceSettingsEndpoints
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            ServiceSettingsLog.UpdateAccessPolicyFailed(logger, serviceName, ex);
+            ServiceSettingsLog.UpdateAccessPolicyFailed(logger, LogValueRedactor.SanitizeForLog(serviceName), ex);
             return TypedResults.Problem(
                 title: "Access policy update failed",
                 detail: "An internal error occurred while updating access policy.",
@@ -307,7 +343,7 @@ internal static partial class ServiceSettingsEndpoints
         _ = request;
         ServiceSettingsLog.UpdateTimeInfoFailed(
             logger,
-            serviceName,
+            LogValueRedactor.SanitizeForLog(serviceName),
             new NotSupportedException(
                 "Service-level TimeInfo has no Metadata v2 representation. Use the per-layer endpoint."));
         return Task.FromResult<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>(
@@ -343,7 +379,7 @@ internal static partial class ServiceSettingsEndpoints
             {
                 ServiceSettingsLog.UpdateLayerMetadataFailed(
                     logger,
-                    serviceName,
+                    LogValueRedactor.SanitizeForLog(serviceName),
                     serviceLayerIndex,
                     new NotSupportedException("Raster mosaic settings have no Metadata v2 representation yet."));
                 return TypedResults.Problem(
@@ -369,11 +405,20 @@ internal static partial class ServiceSettingsEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure($"Invalid source governance: {governanceError}"));
             }
 
+            if (RefuseInvalidExtrusion(request.Extrusion, resource) is { } extrusionRefusal)
+            {
+                return extrusionRefusal;
+            }
+
+            var extrusion = NormalizeExtrusionUnit(request.Extrusion);
+
+            var connections = context.RequestServices.GetRequiredService<IAdoNetDatabaseConnectionProvider>();
             var mutation = await MutateResourceByIdAsync(
                 graphStore,
-                serviceName,
-                serviceLayerIndex,
-                resource.Metadata.Id,
+                new LayerMetadataMutation(
+                    connections,
+                    new LayerMetadataTarget(serviceName, serviceLayerIndex, resource.Metadata.Id),
+                    request.Editing),
                 next =>
                 {
                     if (request.AccessPolicy is { } incomingAccessPolicy)
@@ -415,6 +460,7 @@ internal static partial class ServiceSettingsEndpoints
 
                     next = next with
                     {
+                        Extrusion = extrusion ?? next.Extrusion,
                         Metadata = governanceRequested
                             ? ApplySourceGovernancePatch(
                                 next.Metadata,
@@ -428,7 +474,6 @@ internal static partial class ServiceSettingsEndpoints
                     // GET responses can still echo what the caller PUT.
                     return next;
                 },
-                request.Editing,
                 context.RequestAborted).ConfigureAwait(false);
             if (mutation.BindingConflict)
             {
@@ -448,27 +493,50 @@ internal static partial class ServiceSettingsEndpoints
             await InvalidateServiceCatalogCacheAsync(context, graphProvider, serviceName, logger,
                 request.Editing is not null ? persistedResource.Metadata.Id : null).ConfigureAwait(false);
 
-            var response = BuildLayerMetadataResponse(
-                serviceLayerIndex,
-                persistedResource.Metadata.Name,
-                persistedResource.Metadata,
-                persistedResource.AccessPolicy,
-                persistedResource.Temporal,
-                null,
-                persistedResource.Editing);
+            var response = BuildLayerMetadataResponse(serviceLayerIndex, persistedResource);
             return TypedResults.Ok(ApiResponse<LayerMetadataResponse>.CreateSuccess(response));
         }
         catch (ArgumentException ex) when (request.Editing is not null)
         {
             return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
         }
+        catch (MetadataV2GlobalIdIntegrityException ex)
+        {
+            return TypedResults.Problem(
+                title: "Global-ID field conflicts with stored values",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status409Conflict);
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            ServiceSettingsLog.UpdateLayerMetadataFailed(logger, serviceName, serviceLayerIndex, ex);
+            ServiceSettingsLog.UpdateLayerMetadataFailed(logger, LogValueRedactor.SanitizeForLog(serviceName), serviceLayerIndex, ex);
             return TypedResults.Problem(
                 title: "Layer metadata update failed",
                 detail: "An internal error occurred while updating layer metadata.",
                 statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    // A feature-only install cannot serve terrain or elevation, so the list does not advertise them
+    // for services that leave their protocols unset. Service settings keep the full set, so a save
+    // still stores "all". Without a raster store, or when the check fails, the list keeps the full set.
+    internal static async Task<string[]> ServableProtocolsAsync(HttpContext context)
+    {
+        var rasterStorage = context.RequestServices.GetService<IRasterStorageAvailability>();
+        if (rasterStorage is null)
+        {
+            return MetadataV2ServiceProtocols.All;
+        }
+
+        try
+        {
+            return await rasterStorage.IsInstalledAsync(context.RequestAborted).ConfigureAwait(false)
+                ? MetadataV2ServiceProtocols.All
+                : MetadataV2ServiceProtocols.WithoutRasterStorage;
+        }
+        catch (DbException)
+        {
+            return MetadataV2ServiceProtocols.All;
         }
     }
 
@@ -557,20 +625,16 @@ internal static partial class ServiceSettingsEndpoints
         };
     }
 
-    private static LayerMetadataResponse BuildLayerMetadataResponse(
-        int serviceLayerIndex,
-        string layerName,
-        MetadataV2ObjectMetadata metadata,
-        AccessPolicy? accessPolicy,
-        MetadataV2ObjectTemporal? timeInfo,
-        RasterMosaicResponse? rasterMosaic,
-        MetadataV2ObjectEditing? editing)
+    private static LayerMetadataResponse BuildLayerMetadataResponse(int serviceLayerIndex, MetadataV2Object resource)
     {
+        var metadata = resource.Metadata;
+        var accessPolicy = resource.AccessPolicy;
+        var timeInfo = resource.Temporal;
         return new LayerMetadataResponse
         {
             ServiceLayerIndex = serviceLayerIndex,
-            LayerName = layerName,
-            Editing = editing,
+            LayerName = metadata.Name,
+            Editing = resource.Editing,
             License = metadata.License,
             Attribution = metadata.Attribution,
             Publisher = metadata.Publisher,
@@ -589,7 +653,44 @@ internal static partial class ServiceSettingsEndpoints
                 EndTimeField = timeInfo.EndTimeField,
                 TrackIdField = timeInfo.TrackIdField
             } : null,
-            RasterMosaic = rasterMosaic
+            Extrusion = resource.Extrusion
+        };
+    }
+
+    // Validates an incoming extrusion block against the layer's fields, as the scene guide documents:
+    // an invalid block is refused with 422 and the validator's stable codes, never silently dropped.
+    private static ProblemHttpResult? RefuseInvalidExtrusion(MetadataV2ExtrusionInfo? extrusion, MetadataV2Object resource)
+    {
+        if (extrusion is null)
+        {
+            return null;
+        }
+
+        var errors = MetadataV2ExtrusionValidator.Validate(extrusion, resource.SchemaFields);
+        return errors.Count == 0
+            ? null
+            : TypedResults.Problem(
+                title: "Invalid extrusion",
+                detail: $"The extrusion block is invalid: {string.Join(", ", errors)}.",
+                statusCode: StatusCodes.Status422UnprocessableEntity,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["code"] = errors[0]
+                });
+    }
+
+    private static MetadataV2ExtrusionInfo? NormalizeExtrusionUnit(MetadataV2ExtrusionInfo? extrusion)
+    {
+        if (extrusion is null)
+        {
+            return null;
+        }
+
+        MetadataV2VerticalUnits.TryNormalize(extrusion.Unit, out var unit);
+        return extrusion with
+        {
+            Unit = unit,
+            AdditionalProperties = null
         };
     }
 
@@ -769,17 +870,14 @@ internal static partial class ServiceSettingsEndpoints
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            ServiceSettingsLog.InvalidateServiceCatalogCacheFailed(logger, serviceName, ex);
+            ServiceSettingsLog.InvalidateServiceCatalogCacheFailed(logger, LogValueRedactor.SanitizeForLog(serviceName), ex);
         }
     }
 
     private static async Task<(MetadataV2Object? Resource, bool BindingConflict)> MutateResourceByIdAsync(
         IMetadataV2GraphStore graphStore,
-        string serviceName,
-        int serviceLayerIndex,
-        string resourceId,
+        LayerMetadataMutation mutation,
         Func<MetadataV2Object, MetadataV2Object> mutate,
-        MetadataV2EditingPatch? editingPatch,
         CancellationToken cancellationToken)
     {
         for (var attempt = 1; ; attempt++)
@@ -787,9 +885,9 @@ internal static partial class ServiceSettingsEndpoints
             var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var bindingState = ResolveFeatureLayerBindingState(
                 snapshot.Graph,
-                serviceName,
-                serviceLayerIndex,
-                resourceId);
+                mutation.Target.ServiceName,
+                mutation.Target.ServiceLayerIndex,
+                mutation.Target.ResourceId);
             if (bindingState == FeatureLayerBindingState.Conflict)
             {
                 return (null, true);
@@ -801,7 +899,7 @@ internal static partial class ServiceSettingsEndpoints
 
             var resources = snapshot.Graph.Resources.ToArray();
             var resourceIndex = Array.FindIndex(resources, resource =>
-                string.Equals(resource.Metadata.Id, resourceId, StringComparison.Ordinal));
+                string.Equals(resource.Metadata.Id, mutation.Target.ResourceId, StringComparison.Ordinal));
             if (resourceIndex < 0)
             {
                 return (null, false);
@@ -816,19 +914,10 @@ internal static partial class ServiceSettingsEndpoints
                 Revision = snapshot.Graph.Revision + 1,
             };
 
-            if (editingPatch is not null)
+            if (mutation.EditingPatch is not null)
             {
-                var serviceIds = snapshot.Graph.Services.Where(service =>
-                        string.Equals(service.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase) &&
-                        ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.FeatureServer))
-                    .Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
-                var publicationIds = snapshot.Graph.Publications.Where(publication =>
-                        publication.ResourceId == resourceId && serviceIds.Contains(publication.ServiceId) &&
-                        publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer &&
-                        publication.LayerIndex == serviceLayerIndex && snapshot.IsRoutable(publication))
-                    .Select(publication => publication.Metadata.Id).ToHashSet(StringComparer.Ordinal);
-                updated = MetadataV2EditingConfiguration.Apply(updated, resourceId, publicationIds, editingPatch);
-                mutatedResource = updated.Resources.Single(resource => resource.Metadata.Id == resourceId);
+                (updated, mutatedResource) = await ApplyEditingPatchAsync(
+                    mutation, new EditingGraphUpdate(snapshot, updated), cancellationToken).ConfigureAwait(false);
             }
 
             try

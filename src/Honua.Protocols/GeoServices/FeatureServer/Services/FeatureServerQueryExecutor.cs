@@ -53,6 +53,7 @@ internal sealed partial class FeatureServerQueryExecutor
     public bool SupportsFlatGeobufOutput => _featureReader is IFlatGeobufFeatureStore;
     public bool SupportsRawGeoServicesPointOutput => _featureReader is IPagedRawGeoServicesFeatureStore;
     public bool SupportsDistinctValues => _featureReader is IDistinctFeatureReader;
+    public bool HasComputedFields => _computedFieldPipeline.HasComputedFields;
 
     public Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken)
         => _featureReader.CountAsync(layerId, query, cancellationToken);
@@ -78,6 +79,39 @@ internal sealed partial class FeatureServerQueryExecutor
         FeatureQuery query,
         CancellationToken cancellationToken)
         => await QueryObjectIdsWithValidationAsync(_featureReader, layerId, query, cancellationToken).ConfigureAwait(false);
+
+    public async Task<BoundedObjectIds> QueryObjectIdsWithLimitProbeAsync(
+        int layerId,
+        FeatureQuery query,
+        CancellationToken cancellationToken)
+        => await QueryObjectIdsWithLimitProbeAsync(
+            _featureReader,
+            new ObjectIdProbeQuery(layerId, query),
+            cancellationToken).ConfigureAwait(false);
+
+    private static async Task<BoundedObjectIds> QueryObjectIdsWithLimitProbeAsync(
+        IFeatureReader reader,
+        ObjectIdProbeQuery probe,
+        CancellationToken cancellationToken)
+    {
+        if (probe.Query.Limit is not int limit || limit < 0 || limit == int.MaxValue)
+        {
+            var unboundedIds = await QueryObjectIdsWithValidationAsync(reader, probe.LayerId, probe.Query, cancellationToken).ConfigureAwait(false);
+            return new BoundedObjectIds(unboundedIds.IsDefault ? ImmutableArray<long>.Empty : unboundedIds, ExceededTransferLimit: false);
+        }
+
+        var probeQuery = probe.Query with { Limit = checked(limit + 1) };
+        var ids = await QueryObjectIdsWithValidationAsync(reader, probe.LayerId, probeQuery, cancellationToken).ConfigureAwait(false);
+        if (ids.IsDefault)
+        {
+            ids = ImmutableArray<long>.Empty;
+        }
+
+        var exceeded = ids.Length > limit;
+        return new BoundedObjectIds(exceeded ? ids[..limit] : ids, exceeded);
+    }
+
+    private readonly record struct ObjectIdProbeQuery(int LayerId, FeatureQuery Query);
 
     private static async Task<ImmutableArray<long>> QueryObjectIdsWithValidationAsync(
         IFeatureReader reader,
@@ -169,8 +203,10 @@ internal sealed partial class FeatureServerQueryExecutor
     {
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         var queryFields = QueryFormatter.BuildQueryFields(resource, outFields: null, objectIdFieldName);
-        var allowedAttributeNames = queryFields.Select(field => field.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var temporalFieldTypes = GeoServicesFieldConventions.ResolveTemporalFieldTypes(resource);
+        var selection = new RawAttributeSelection(
+            queryFields.Select(field => field.Name).ToHashSet(StringComparer.OrdinalIgnoreCase),
+            GeoServicesFieldConventions.ResolveTemporalFieldTypes(resource),
+            objectIdFieldName);
         var displayFieldName = QueryFormatter.ResolveDisplayFieldName(resource, queryFields, objectIdFieldName);
         var srid = outputSrid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         var buffer = new ArrayBufferWriter<byte>(EstimateRawGeoServicesPointPayloadCapacity(result, queryFields));
@@ -193,7 +229,7 @@ internal sealed partial class FeatureServerQueryExecutor
         {
             writer.WriteStartObject();
             writer.WritePropertyName("attributes");
-            WriteRawGeoServicesAttributes(writer, feature, allowedAttributeNames, temporalFieldTypes, objectIdFieldName);
+            WriteRawGeoServicesAttributes(writer, feature, selection);
 
             if (returnGeometry)
             {
@@ -229,27 +265,20 @@ internal sealed partial class FeatureServerQueryExecutor
     private static void WriteRawGeoServicesAttributes(
         Utf8JsonWriter writer,
         RawGeoServicesFeature feature,
-        IReadOnlySet<string> allowedAttributeNames,
-        IReadOnlyDictionary<string, MetadataV2FieldType> temporalFieldTypes,
-        string objectIdFieldName)
+        RawAttributeSelection selection)
     {
         writer.WriteStartObject();
         if (!string.IsNullOrWhiteSpace(feature.AttributesJson))
         {
-            WriteDeclaredRawAttributes(writer, feature.AttributesJson, allowedAttributeNames, temporalFieldTypes, objectIdFieldName);
+            WriteDeclaredRawAttributes(writer, feature.AttributesJson, selection);
         }
 
-        writer.WritePropertyName(objectIdFieldName);
+        writer.WritePropertyName(selection.ObjectIdFieldName);
         WriteRawGeoServicesObjectIdValue(writer, feature);
         writer.WriteEndObject();
     }
 
-    private static void WriteDeclaredRawAttributes(
-        Utf8JsonWriter writer,
-        string attributesJson,
-        IReadOnlySet<string> allowedAttributeNames,
-        IReadOnlyDictionary<string, MetadataV2FieldType> temporalFieldTypes,
-        string objectIdFieldName)
+    private static void WriteDeclaredRawAttributes(Utf8JsonWriter writer, string attributesJson, RawAttributeSelection selection)
     {
         using var document = JsonDocument.Parse(attributesJson);
         if (document.RootElement.ValueKind != JsonValueKind.Object)
@@ -259,44 +288,38 @@ internal sealed partial class FeatureServerQueryExecutor
 
         foreach (var property in document.RootElement.EnumerateObject())
         {
-            if (!ShouldIncludeRawGeoServicesAttribute(property.Name, allowedAttributeNames, objectIdFieldName))
+            if (selection.Choose(property) is { } choice)
             {
-                continue;
+                RawAttributeSelection.WriteName(writer, property, choice);
+                WriteDeclaredRawAttributeValue(writer, property.Value, choice.TemporalType);
             }
-
-            writer.WritePropertyName(property.Name);
-
-            // Match the materialized path: booleans are small integers, while JSON
-            // arrays and objects are strings as required by the advertised field type.
-            if (property.Value.ValueKind is JsonValueKind.True or JsonValueKind.False
-                or JsonValueKind.Array or JsonValueKind.Object)
-            {
-                JsonSerializer.Serialize(writer, GeoServicesAttributeProjection.ToEsriValue(property.Value),
-                    FeatureServerJsonContext.Default.Object);
-                continue;
-            }
-
-            // Match the other JSON paths: timestamp epochs and ISO calendar dates.
-            // Null and unconvertible values retain their stored representation.
-            if (property.Value.ValueKind is not JsonValueKind.Null
-                && temporalFieldTypes.TryGetValue(property.Name, out var temporalType)
-                && GeoServicesFieldConventions.TryConvertTemporalValue(property.Value, temporalType, out var converted))
-            {
-                JsonSerializer.Serialize(writer, converted, FeatureServerJsonContext.Default.Object);
-                continue;
-            }
-
-            property.Value.WriteTo(writer);
         }
     }
 
-    private static bool ShouldIncludeRawGeoServicesAttribute(
-        string fieldName,
-        IReadOnlySet<string> allowedAttributeNames,
-        string objectIdFieldName)
-        => !fieldName.StartsWith("__", StringComparison.Ordinal) &&
-           !fieldName.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase) &&
-           allowedAttributeNames.Contains(fieldName);
+    private static void WriteDeclaredRawAttributeValue(Utf8JsonWriter writer, JsonElement value, MetadataV2FieldType? temporalType)
+    {
+        // Match the materialized path: booleans are small integers, while JSON
+        // arrays and objects are strings as required by the advertised field type.
+        if (value.ValueKind is JsonValueKind.True or JsonValueKind.False
+            or JsonValueKind.Array or JsonValueKind.Object)
+        {
+            JsonSerializer.Serialize(writer, GeoServicesAttributeProjection.ToEsriValue(value),
+                FeatureServerJsonContext.Default.Object);
+            return;
+        }
+
+        // Match the other JSON paths: timestamp epochs and ISO calendar dates.
+        // Null and unconvertible values retain their stored representation.
+        if (value.ValueKind is not JsonValueKind.Null
+            && temporalType is { } fieldType
+            && GeoServicesFieldConventions.TryConvertTemporalValue(value, fieldType, out var converted))
+        {
+            JsonSerializer.Serialize(writer, converted, FeatureServerJsonContext.Default.Object);
+            return;
+        }
+
+        value.WriteTo(writer);
+    }
 
     private static void WriteRawGeoServicesObjectIdValue(Utf8JsonWriter writer, RawGeoServicesFeature feature)
     {
@@ -475,23 +498,24 @@ internal sealed partial class FeatureServerQueryExecutor
         {
             await StreamObjectIdsWithValidationAsync(
                 streamingReader,
-                new ObjectIdStreamRequest(layerId, query, new ObjectIdResponse(objectIdFieldName, context, cancellationToken))).ConfigureAwait(false);
+                new ObjectIdStreamRequest(
+                    layerId,
+                    query,
+                    new ObjectIdResponse
+                    {
+                        ObjectIdFieldName = objectIdFieldName,
+                        Context = context,
+                        CancellationToken = cancellationToken
+                    })).ConfigureAwait(false);
             return;
         }
 
-        var objectIds = await QueryObjectIdsWithValidationAsync(layerId, query, cancellationToken).ConfigureAwait(false);
-        await WriteObjectIdsAsync(objectIds, objectIdFieldName, context, cancellationToken).ConfigureAwait(false);
+        var bounded = await QueryObjectIdsWithLimitProbeAsync(
+            _featureReader,
+            new ObjectIdProbeQuery(layerId, query),
+            cancellationToken).ConfigureAwait(false);
+        await WriteObjectIdsAsync(bounded, objectIdFieldName, context, cancellationToken).ConfigureAwait(false);
     }
-
-    private static Task WriteObjectIdsAsync(
-        ImmutableArray<long> objectIds,
-        string objectIdFieldName,
-        HttpContext context,
-        CancellationToken cancellationToken)
-        => WriteObjectIdsAsync(
-            objectIds.IsDefault ? [] : objectIds,
-            remainingIds: null,
-            new ObjectIdResponse(objectIdFieldName, context, cancellationToken));
 
     private static Task WriteObjectIdsAsync(
         BoundedObjectIds objectIds,
@@ -501,13 +525,27 @@ internal sealed partial class FeatureServerQueryExecutor
         => WriteObjectIdsAsync(
             objectIds.ObjectIds.IsDefault ? [] : objectIds.ObjectIds,
             remainingIds: null,
-            new ObjectIdResponse(objectIdFieldName, context, cancellationToken, objectIds.ExceededTransferLimit));
+            new ObjectIdResponse
+            {
+                ObjectIdFieldName = objectIdFieldName,
+                Context = context,
+                CancellationToken = cancellationToken,
+                ExceededTransferLimit = objectIds.ExceededTransferLimit
+            });
 
     private static bool ShouldUsePagedQuery(FeatureQuery query)
-        => query.Limit is > 0 and < int.MaxValue;
+        => query.Limit is >= 0 and < int.MaxValue;
 
     private static long GetLowerBoundTotalCount(int itemCount, bool hasMoreResults)
         => hasMoreResults ? itemCount + 1L : itemCount;
 }
 
 internal readonly record struct BoundedObjectIds(ImmutableArray<long> ObjectIds, bool ExceededTransferLimit);
+
+internal readonly record struct V2LayerQueryTarget
+{
+    public required MetadataV2Service Service { get; init; }
+    public required MetadataV2Object Resource { get; init; }
+    public required MetadataV2Layer Publication { get; init; }
+    public required int StorageLayerId { get; init; }
+}

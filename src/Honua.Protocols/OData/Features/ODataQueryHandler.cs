@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -628,13 +629,12 @@ internal sealed partial class ODataQueryHandler(
             // Convert features to OData format
             var featuresData = queryResult.Items.Select(f =>
             {
-                var attributes = ODataAttributeSerializer.Serialize(f.Attributes);
                 var geometry = ODataGeometryConverter.ConvertWkbToGeometry(
                     _geometryService,
                     f.Geometry,
                     layerSrid,
                     axisOrder);
-                var dict = ODataUtilityService.BuildFeaturePayload(publicLayerId, f, geometry, attributes);
+                var dict = ODataUtilityService.BuildFeaturePayload(publicLayerId, f, geometry);
 
                 // Add expanded relations if available
                 if (expandedRelations != null && expandedRelations.TryGetValue(f.Id, out var relations))
@@ -866,7 +866,7 @@ internal sealed partial class ODataQueryHandler(
                 GeometryLimits = geometryLimits,
                 OutFields = outFields,
                 Logger = _logger,
-                EncodingLimits = limitsOptions?.Value?.GeoParquet
+                EncodingLimits = (limitsOptions?.Value?.GeoParquet ?? new GeoParquetLimits()).ForQuery()
             });
 
             ODataUtilityService.SetODataHeaders(context);
@@ -886,6 +886,11 @@ internal sealed partial class ODataQueryHandler(
                 "NotImplemented",
                 ParquetRuntimeUnavailableException.CapabilityMessage,
                 StatusCodes.Status501NotImplemented);
+        }
+        catch (ServiceUnavailableException ex)
+        {
+            // Full scratch storage is transient; answer 503 with Retry-After, not a query error.
+            return StandardErrorHelpers.CreateFromException(context, ex);
         }
         catch (InvalidOperationException ex)
         {

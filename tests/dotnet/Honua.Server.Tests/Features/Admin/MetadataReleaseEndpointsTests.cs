@@ -23,14 +23,17 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Metadata)]
-public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
+public sealed class MetadataReleaseEndpointsTests(MetadataReleaseEndpointsTests.ReleaseHost host)
+    : IClassFixture<MetadataReleaseEndpointsTests.ReleaseHost>
 {
-    private readonly WebAppFixture _fixture;
-    private HttpClient _client = null!;
+    private readonly WebAppFixture _fixture = host.Fixture;
+    private readonly HttpClient _client = host.Client;
 
-    public MetadataReleaseEndpointsTests()
+    // One host per class: every case creates its own release packages and finds them by package id,
+    // and the list case checks only its own two packages and their order.
+    public sealed class ReleaseHost : IAsyncLifetime
     {
-        _fixture = new WebAppFixture()
+        internal WebAppFixture Fixture { get; } = new WebAppFixture()
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -47,15 +50,21 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
                         DateTimeOffset.UtcNow));
                 services.AddSingleton<IMetadataReleasePackageStore, CancellationAwareReleasePackageStore>();
             });
-    }
 
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-        _client = _fixture.CreateAdminClient();
-    }
+        internal HttpClient Client { get; private set; } = null!;
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+        public async Task InitializeAsync()
+        {
+            await Fixture.InitializeAsync();
+            Client = Fixture.CreateAdminClient();
+        }
+
+        public async Task DisposeAsync()
+        {
+            Client?.Dispose();
+            await Fixture.DisposeAsync();
+        }
+    }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/metadata/environments/{environment}/inventory")]

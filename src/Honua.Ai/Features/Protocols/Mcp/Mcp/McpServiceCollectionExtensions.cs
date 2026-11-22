@@ -426,6 +426,11 @@ internal static class McpServiceCollectionExtensions
 
         services.TryAddSingleton<McpDataAccessSurface>();
 
+        // Access audit records are written by one background writer in batches, so MCP
+        // calls never queue on the audit chain lock.
+        services.TryAddSingleton<McpAccessAuditQueue>();
+        services.AddHostedService(static sp => sp.GetRequiredService<McpAccessAuditQueue>());
+
         // MCP transport + session-lifecycle options (A3 hardening):
         // server-initiated GET-stream toggle, idle TTL, session cap, and eviction
         // policy. Bound from the `Mcp` section; defaults live on McpOptions.
@@ -441,7 +446,7 @@ internal static class McpServiceCollectionExtensions
             McpTokenReplayScopeResolver>());
 
         // Server-push notifications over the session SSE stream:
-        // the publisher builds notifications/progress + */list_changed frames and
+        // the publisher builds notifications/message + */list_changed frames and
         // enqueues them onto the owning session; the progress bridge polls the
         // canonical job runtime and forwards progress to the session that started
         // the job. Both are process-wide singletons.

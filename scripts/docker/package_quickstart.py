@@ -29,13 +29,15 @@ README = (
     'proposer API keys on the management API. Do not give that password to an agent. '
     'A person reviews and approves each proposal '
     'in Console with a live interactive browser session (password or OIDC); the human requester may approve their own proposal. '
+    'With the Console profile, management proposals are approved in the manager Console at '
+    'https://127.0.0.1:18084/console/, signed in with the management admin password. '
     'API keys and agent tokens cannot approve. A default install uses the admin password session; '
     'configure an identity provider when operators approve with their own OIDC accounts. '
     'Only approved proposals execute.\n\n'
     'The executor runs as uid 1002, targets only this project and serving service, and is '
     'the only process with Docker socket access. Docker socket access grants host control; '
     'use a dedicated local Docker host. No Docker socket is mounted in either HTTP server. '
-    'Retain backups, manager database, and Redis volumes for recovery and audit.\n\n'
+    'Retain backups and the manager database volume for recovery and audit.\n\n'
     'Images in images.json are immutable digests from one candidate build. '
     'For an upgrade, set HONUA_RELEASE_IMAGE, HONUA_RELEASE_WORKER_IMAGE and HONUA_RELEASE_VERSION '
     'in .env from the new release lock. Pull the new serving image before approving. '
@@ -52,8 +54,8 @@ README = (
 )
 
 # Serves the static Console bundle and terminates its local HTTPS origin (compose.console.yaml).
-CONSOLE_WEB_IMAGE = ('docker.io/nginxinc/nginx-unprivileged:1.29-alpine@sha256:'
-                     '0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6')
+CONSOLE_WEB_IMAGE = ('ghcr.io/honua-io/honua-server@sha256:'
+                     '0e41aa9070658b41fde5bd09bf21eb1fbf74c52375f1093eb7ca9f6aa86b7aaa')
 CONSOLE_ENTRYPOINTS = ('index.html', 'config.json')
 CONSOLE_MAX_FILES = 20000
 CONSOLE_MAX_BYTES = 1 << 30

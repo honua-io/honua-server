@@ -18,7 +18,7 @@ User/group provisioning through the SCIM 2.0 protocol surface.
 | Edition | Enterprise |
 | Surface maturity | 17 implemented |
 | Registry entries | 17 |
-| Proving tests | 35 |
+| Proving tests | 36 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

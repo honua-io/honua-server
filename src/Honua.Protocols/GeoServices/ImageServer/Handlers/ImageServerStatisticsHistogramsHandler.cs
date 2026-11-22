@@ -21,6 +21,8 @@ internal sealed class ImageServerStatisticsHistogramsHandler
 
     private const int DefaultBinCount = 256;
 
+    private static readonly string[] CogUnappliedParameters = ["geometry", "renderingRule", "mosaicRule", "time"];
+
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
     private readonly ILogger<ImageServerStatisticsHistogramsHandler> _logger;
@@ -40,22 +42,28 @@ internal sealed class ImageServerStatisticsHistogramsHandler
         int layerId,
         IReadOnlyDictionary<string, StringValues> values,
         CancellationToken cancellationToken)
-        => ComputeCoreAsync(context, layerId, values, histogramsOnly: false, cancellationToken);
+        => ComputeAsync(context, new StatisticsRequest { LayerId = layerId, Values = values }, cancellationToken);
+
+    public Task<IResult> ComputeAsync(HttpContext context, StatisticsRequest request, CancellationToken cancellationToken)
+        => ComputeCoreAsync(context, request, StatisticsResponseKind.StatisticsAndHistograms, cancellationToken);
 
     public Task<IResult> ComputeHistogramsAsync(
         HttpContext context,
         int layerId,
         IReadOnlyDictionary<string, StringValues> values,
         CancellationToken cancellationToken)
-        => ComputeCoreAsync(context, layerId, values, histogramsOnly: true, cancellationToken);
+        => ComputeHistogramsAsync(context, new StatisticsRequest { LayerId = layerId, Values = values }, cancellationToken);
+
+    public Task<IResult> ComputeHistogramsAsync(HttpContext context, StatisticsRequest request, CancellationToken cancellationToken)
+        => ComputeCoreAsync(context, request, StatisticsResponseKind.HistogramsOnly, cancellationToken);
 
     private async Task<IResult> ComputeCoreAsync(
         HttpContext context,
-        int layerId,
-        IReadOnlyDictionary<string, StringValues> values,
-        bool histogramsOnly,
+        StatisticsRequest request,
+        StatisticsResponseKind kind,
         CancellationToken cancellationToken)
     {
+        var (layerId, values, histogramsOnly) = (request.LayerId, request.Values, kind == StatisticsResponseKind.HistogramsOnly);
         var operationName = histogramsOnly ? "compute-histograms" : "compute-statistics-histograms";
         using var scope = HonuaTelemetryScope.StartFeature(
             operationName,
@@ -159,6 +167,16 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 selectionSrid = aoi.Srid;
             }
 
+            var cogCall = new CogStatisticsCall(layerId, new ImageServerCogStatisticsRequest(new(snapshot, resolved.Publication, []), bands, binCount) { Unsupported = CogUnsupported(values) }, kind);
+
+            // REST requires an AOI geometry except on a COG-only layer, which has no catalog to clip.
+            if (selectionGeometry is null && request.Aoi == StatisticsAoi.Required)
+            {
+                var isCatalog = rasterIds is { Length: > 0 } || await _rasterStore.GetPrimaryRasterInfoAsync(layerId, cancellationToken).ConfigureAwait(false) is not null;
+                var cogAnswer = isCatalog ? null : await TryAnswerFromCogsAsync(context, cogCall, cancellationToken).ConfigureAwait(false);
+                return cogAnswer ?? GeometryRequired(context, layerId);
+            }
+
             // Parse before selection so a lock, an unsupported where, or an unsupported
             // method constrains the rasters the same way exportImage and identify do.
             var rawMosaicRule = ImageServerRequestValues.GetString(values, "mosaicRule");
@@ -208,8 +226,7 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                     cancellationToken);
                 if (selected.Length == 0)
                 {
-                    ImageServerLog.NoRastersFound(_logger, layerId);
-                    return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
+                    return await TryAnswerFromCogsAsync(context, cogCall, cancellationToken).ConfigureAwait(false) ?? NoRastersFound(context, layerId);
                 }
 
                 targetRasters.AddRange(selected);
@@ -270,24 +287,7 @@ internal sealed class ImageServerStatisticsHistogramsHandler
 
             ImageServerLog.StatisticsHistogramsComputed(_logger, layerId, statisticsList.Count);
             scope.SetSuccess(histogramsOnly ? histogramsList.Count : statisticsList.Count);
-
-            if (histogramsOnly)
-            {
-                var histogramsResponse = new ComputeHistogramsResponse
-                {
-                    Histograms = histogramsList.ToArray(),
-                };
-
-                return Results.Json(histogramsResponse, ImageServerJsonContext.Default.ComputeHistogramsResponse);
-            }
-
-            var response = new ComputeStatisticsHistogramsResponse
-            {
-                Statistics = statisticsList.ToArray(),
-                Histograms = histogramsList.ToArray(),
-            };
-
-            return Results.Json(response, ImageServerJsonContext.Default.ComputeStatisticsHistogramsResponse);
+            return new BandResults(statisticsList, histogramsList, kind).ToResult();
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -304,6 +304,70 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 context,
                 "An error occurred while computing statistics and histograms.");
         }
+    }
+
+    // A layer whose imagery is only registered COGs answers from the COGs' overviews; null for any
+    // other layer, which keeps the caller's answer.
+    private async Task<IResult?> TryAnswerFromCogsAsync(HttpContext context, CogStatisticsCall call, CancellationToken cancellationToken)
+    {
+        var cogs = await ImageServerCogStatistics.TryComputeAsync(context, call.Request, cancellationToken).ConfigureAwait(false);
+        if (cogs is null)
+        {
+            return null;
+        }
+
+        if (cogs.Refusal is { } refusal)
+        {
+            return refusal;
+        }
+
+        var results = new BandResults([], [], call.Kind);
+        AppendAlignedBandResults(results.Statistics, results.Histograms, call.Request.Bands, cogs.Statistics, cogs.Histograms);
+        ImageServerLog.StatisticsHistogramsComputed(_logger, call.LayerId, results.Statistics.Count);
+        return results.ToResult();
+    }
+
+    private IResult NoRastersFound(HttpContext context, int layerId)
+    {
+        ImageServerLog.NoRastersFound(_logger, layerId);
+        return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
+    }
+
+    private IResult GeometryRequired(HttpContext context, int layerId)
+    {
+        ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, "geometry is required");
+        return StandardErrorHelpers.CreateBadRequest(context, "geometry is required.");
+    }
+
+    // The COG path reads whole overviews of every registered COG with no rendering.
+    internal static string? CogUnsupported(IReadOnlyDictionary<string, StringValues> values)
+    {
+        var applied = CogUnappliedParameters
+            .Where(name => !string.IsNullOrWhiteSpace(ImageServerRequestValues.GetString(values, name)))
+            .ToArray();
+        return applied.Length == 0
+            ? null
+            : $"{string.Join(", ", applied)} {(applied.Length == 1 ? "is" : "are")} not applied to cloud COG layers; their statistics describe every registered COG.";
+    }
+
+    private enum StatisticsResponseKind
+    {
+        StatisticsAndHistograms,
+        HistogramsOnly,
+    }
+
+    private sealed record CogStatisticsCall(int LayerId, ImageServerCogStatisticsRequest Request, StatisticsResponseKind Kind);
+
+    private sealed record BandResults(List<BandStatistic> Statistics, List<BandHistogram> Histograms, StatisticsResponseKind Kind)
+    {
+        public IResult ToResult()
+            => Kind == StatisticsResponseKind.HistogramsOnly
+                ? Results.Json(
+                    new ComputeHistogramsResponse { Histograms = Histograms.ToArray() },
+                    ImageServerJsonContext.Default.ComputeHistogramsResponse)
+                : Results.Json(
+                    new ComputeStatisticsHistogramsResponse { Statistics = Statistics.ToArray(), Histograms = Histograms.ToArray() },
+                    ImageServerJsonContext.Default.ComputeStatisticsHistogramsResponse);
     }
 
     private static void AppendAlignedBandResults(
@@ -477,4 +541,23 @@ internal sealed class ImageServerStatisticsHistogramsHandler
         rendering = resolved.HasRendering ? resolved : null;
         return true;
     }
+}
+
+// One statistics request: the layer, its request values, and whether an AOI geometry is required.
+internal sealed class StatisticsRequest
+{
+    public required int LayerId { get; init; }
+
+    public required IReadOnlyDictionary<string, StringValues> Values { get; init; }
+
+    public StatisticsAoi Aoi { get; init; }
+}
+
+// Whether a statistics request without an AOI geometry is refused (REST computeStatisticsHistograms
+// and computeHistograms, where ArcGIS requires one) or analyses the whole layer (SOAP
+// ComputeHistograms with only a mosaic or rendering rule). A COG-only layer answers either way.
+internal enum StatisticsAoi
+{
+    Optional,
+    Required,
 }

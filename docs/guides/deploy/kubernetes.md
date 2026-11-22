@@ -17,20 +17,16 @@ must be enabled together.
 The authoritative chart contract lives in
 [`honua-helm`](https://github.com/honua-io/honua-helm/blob/trunk/docs/values-contract.md).
 The examples below target chart source commit
-[`68fcb72f03aab74adc812df48f8f63677c829877`](https://github.com/honua-io/honua-helm/commit/68fcb72f03aab74adc812df48f8f63677c829877).
+[`cc72784a7b5d4215091232c7c90996400bd60577`](https://github.com/honua-io/honua-helm/commit/cc72784a7b5d4215091232c7c90996400bd60577).
 Pin a published chart version instead when one is available; do not deploy a
 moving branch.
 
 ## Prerequisites
 
 - A Kubernetes cluster with `kubectl` and Helm 3 access.
-- PostGIS and Redis endpoints reachable from the cluster. Redis is required by
-  the chart for non-development deployments, including the single-node path.
-  Any working Redis enables the governed control plane; jobs are stored in
-  PostGIS and do not use Redis. For durable
-  acknowledged state, configure `appendonly yes`, `appendfsync everysec` (or
-  `always`) and `maxmemory-policy noeviction`, or use a managed service's own
-  durability. See [Redis durability](#redis-durability) below.
+- A PostGIS endpoint reachable from the cluster. Jobs and coordination are
+  stored in PostGIS and each replica keeps its cache in memory; no other data
+  service is needed.
 - A default StorageClass for the single-node persistent volume.
 - From 2026.1, x64 nodes need an x86-64-v2 CPU; check each node pool with
   [the CPU baseline preflight](troubleshooting.md#cpu-baseline-x86-64-v2).
@@ -42,7 +38,7 @@ moving branch.
 Set and validate the immutable inputs first:
 
 ```bash
-export HONUA_HELM_REF=68fcb72f03aab74adc812df48f8f63677c829877
+export HONUA_HELM_REF=cc72784a7b5d4215091232c7c90996400bd60577
 export HONUA_IMAGE_DIGEST='sha256:replace-with-64-lowercase-hex-characters'
 
 if ! [[ "$HONUA_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
@@ -60,8 +56,6 @@ export CHART_PATH="$PWD/honua-helm/honua"
 
 Create the namespace, a single-writer persistent volume claim, and the runtime
 Secret. Put real values in the temporary file; the examples are placeholders.
-The Redis password must not contain `,` or `=` when written in the
-StackExchange.Redis connection-string form shown here.
 
 ```bash
 kubectl create namespace honua --dry-run=client -o yaml | kubectl apply -f -
@@ -81,7 +75,6 @@ EOF
 umask 077
 cat > honua-runtime.env <<'EOF'
 ConnectionStrings__DefaultConnection=Host=db.example.com;Database=honua;Username=honua;Password=replace-me;SSL Mode=Require
-ConnectionStrings__redis=redis.example.com:6380,ssl=true,password=replace-me
 HONUA_ADMIN_PASSWORD=Replace-With-A-Strong-Admin-Password1!
 Security__ConnectionEncryption__MasterKey=replace-with-at-least-32-random-characters
 EOF
@@ -224,8 +217,7 @@ observability:
   otlpProtocol: "grpc"
 
 # This existing Secret must contain ConnectionStrings__DefaultConnection,
-# ConnectionStrings__redis, HONUA_ADMIN_PASSWORD, and
-# Security__ConnectionEncryption__MasterKey.
+# HONUA_ADMIN_PASSWORD, and Security__ConnectionEncryption__MasterKey.
 secret:
   create: false
   name: honua-runtime
@@ -276,8 +268,8 @@ chart fails closed when more than one replica or HPA is combined with
 
 On EKS, prefer EKS Pod Identity for the server's AWS role. The server's AWS
 credential consumers support it: the built-in
-`aws:secretsmanager:` resolver (settings document, security settings, Redis
-connection string, key-ring certificate) reads the projected token named by
+`aws:secretsmanager:` resolver (settings document, security settings,
+key-ring certificate) reads the projected token named by
 `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` on each credential refresh and sends it
 to the agent at `AWS_CONTAINER_CREDENTIALS_FULL_URI`, and the S3, Batch, and
 other AWS SDK clients use the SDK's default credential chain. IRSA
@@ -371,7 +363,9 @@ downtime.
 Use `RollingUpdate` only when the target migration set has been reviewed as
 forward and backward compatible across both images. In that case, apply this
 overlay to the complete multi-node values and keep the drain delay shorter than
-the termination grace period:
+the termination grace period. The server image has no shell, so the drain uses
+the kubelet's `sleep` action (Kubernetes 1.30 or later) instead of an `exec`
+hook:
 
 ```yaml
 strategy:
@@ -381,8 +375,8 @@ strategy:
     maxUnavailable: 1
 lifecycle:
   preStop:
-    exec:
-      command: ["/bin/sh", "-c", "sleep 5"]
+    sleep:
+      seconds: 5
 terminationGracePeriodSeconds: 60
 ```
 
@@ -492,29 +486,12 @@ kubectl -n honua rollout restart deployment/honua-honua
 kubectl -n honua rollout status deployment/honua-honua --timeout=600s
 ```
 
-## Redis durability
-
-Jobs, the job queue, execution logs, proposals and workflow operations are in
-PostGIS. A self-managed Redis keeps acknowledged writes across a restart when
-all three of these hold:
-
-| Redis setting | Required value |
-|---|---|
-| `appendonly` | `yes` (`INFO persistence` reports `aof_enabled:1`) |
-| `appendfsync` | `everysec` or `always` |
-| `maxmemory-policy` | `noeviction` |
-
-A stock `redis:7-alpine` sidecar defaults to `appendonly no`. Durability is a
-property of the Redis you choose. Configure the policy above on self-managed
-Redis, or rely on the managed service's replication, snapshots or transaction
-log.
-
 ## Troubleshoot
 
 - **Helm rejects multiple replicas** — keep one `SingleInstance` replica, or
   apply the complete `MultiNode` values with cloud file storage.
 - **Pods never become ready** — inspect the preflight Job and pod logs. Common
-  causes are unreachable PostGIS/Redis, missing Secret keys, or an invalid
+  causes are unreachable PostGIS, missing Secret keys, or an invalid
   storage provider configuration.
 - **Telemetry validation fails at render time** — configure
   `observability.otlpEndpoint` (as shown), enable a supported Prometheus scrape
@@ -532,4 +509,4 @@ log.
 
 - [Monitor Honua Server](monitoring.md)
 - [Scale and tune performance](scaling-and-performance.md)
-- [Deploy on AWS and Azure](cloud-deployments.md)
+- [Cloud deployments](cloud-deployments.md)

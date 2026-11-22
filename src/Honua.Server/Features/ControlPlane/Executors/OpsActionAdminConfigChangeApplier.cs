@@ -8,6 +8,7 @@ using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Server.Features.Admin;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.ControlPlane.Executors;
@@ -18,7 +19,6 @@ internal sealed partial class OpsActionAdminConfigChangeApplier(
     TimeProvider timeProvider,
     ILogger<OpsActionAdminConfigChangeApplier> logger) : IAdminConfigChangeApplier
 {
-    private const int DefaultRedriveBatchLimit = 500;
     private const string ActorName = "system:ops-action";
 
     public async Task<string?> ApplyAsync(string? changePayload, CancellationToken cancellationToken = default)
@@ -66,7 +66,7 @@ internal sealed partial class OpsActionAdminConfigChangeApplier(
         CancellationToken cancellationToken)
     {
         var store = ResolveDispatchStore(services);
-        var limit = request.MaxCount is > 0 ? request.MaxCount.Value : DefaultRedriveBatchLimit;
+        var limit = AlertRedriveBatchLimit.Resolve(request.MaxCount);
         var count = await store.RedriveDeadLettersAsync(now, limit, cancellationToken).ConfigureAwait(false);
         return new OpsActionOutcome(
             "alert-dispatch",
@@ -135,7 +135,7 @@ internal sealed partial class OpsActionAdminConfigChangeApplier(
                 throw new OpsActionException(ComposeExecutorCodes.ScopeViolation);
         }
         if (request.Service is not null && (request.Target is null || options is null
-            || !new[] { options.ServiceName, options.PostgresService, options.RedisService }.Contains(request.Service, StringComparer.Ordinal)))
+            || !new[] { options.ServiceName, options.PostgresService }.Contains(request.Service, StringComparer.Ordinal)))
             throw new OpsActionException(ComposeExecutorCodes.ScopeViolation);
         if (request.HasParameters && (request.ParameterNames.Count != 1 || request.ParameterNames[0] != "service"
             || string.IsNullOrWhiteSpace(request.Service)))

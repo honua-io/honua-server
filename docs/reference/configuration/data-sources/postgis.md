@@ -54,15 +54,31 @@ PostgreSQL 16–18 with PostGIS 3.4–3.6 are tested in CI; see the [tested conf
 | --- | --- | --- |
 | `postgis` | Yes | Spatial operations, geometry types, spatial indexing. |
 | `postgis_raster` | For raster features | Raster data storage and analysis. |
-| `pgcrypto` | Yes | Cryptographic functions for secure identifiers. |
 | `unaccent` | Yes | Accent-insensitive text search normalization. |
+| `h3`, `h3_postgis` | For H3 aggregation | H3 cell aggregation (`/ogc/features/collections/{collectionId}/h3`, FeatureServer `queryH3`). |
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS postgis_raster;
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS unaccent;
 ```
+
+H3 aggregation is optional. Without the h3-pg extensions the H3 endpoints answer
+`501`, and `limits.analysis.h3Available` in `GET /api/v1/capabilities/manifest`
+is `false`, so a client can check before calling. The bundled quickstart
+Postgres image does not include h3-pg. To enable H3, install the h3-pg package
+on the database host and run:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS h3_postgis CASCADE;
+```
+
+Once Honua has read the extension list it keeps the answer for the life of
+the process, so restart the server after you add the extensions. If the
+database cannot be reached, Honua asks again after 60 seconds, and until then
+the H3 endpoints answer `503` and the manifest omits `h3Available`. H3 aggregation is not available yet on source-backed PostGIS layers
+(layers read from a connected database rather than the Honua database); those
+answer `501` whether or not the extension is installed.
 
 Honua never creates `postgis_raster` from application startup. When the
 extension is absent, the canonical migration runner leaves the optional raster
@@ -137,14 +153,14 @@ The preflight result is available via `GET /api/v1/admin/deploy/preflight?includ
 ## AWS Aurora PostgreSQL
 
 1. Create a custom DB cluster parameter group (or modify the default); Aurora bundles PostGIS — enable it via the parameter group. Optionally include `pg_stat_statements` in `shared_preload_libraries` for monitoring.
-2. Create the four extensions listed above on your database.
+2. Create the extensions listed above on your database (`postgis` and `unaccent`, plus `postgis_raster` if using raster features).
 3. Connection pooling: Aurora provides a built-in PgBouncer-compatible endpoint. Use the cluster writer endpoint for Honua's connection.
 4. Failover: Aurora automatic failover updates the cluster DNS endpoint; no application-level changes are needed.
 
 ## Azure Database for PostgreSQL Flexible Server
 
-1. In **Server parameters**, set `azure.extensions` to include `POSTGIS`, `POSTGIS_RASTER`, `PGCRYPTO`, `UNACCENT` (may require a restart).
-2. Create the four extensions on your database.
+1. In **Server parameters**, set `azure.extensions` to include `POSTGIS`, `POSTGIS_RASTER`, `UNACCENT` (may require a restart).
+2. Create the extensions on your database (`postgis` and `unaccent`, plus `postgis_raster` if using raster features).
 3. Connection pooling: Flexible Server supports built-in PgBouncer; Honua works with both direct and pooled connections.
 4. High availability: configure zone-redundant HA. Honua connects to the primary endpoint; failover is transparent at the DNS level.
 
@@ -193,6 +209,7 @@ The mode covers the `DefaultConnection` data source only, whose role the startup
 | `Limits__Connections__StatementTimeout` / `LockTimeout` | `00:00:30` | Server-side statement and lock timeouts. |
 | `Limits__Connections__IdleInTransactionTimeout` | `00:01:00` | Idle-in-transaction timeout. |
 | `Limits__Connections__AdaptiveConcurrencyEnabled` | `false` | Adaptive query admission below the concurrency ceiling. |
+| `Limits__Connections__AnonymousPressureAdmissionEnabled` | `true` | Refuse anonymous expensive reads with a retryable 503 while the query gate is under pressure. Set `false` to queue them instead, for example behind an edge that already admits traffic. |
 | `Limits__Connections__Multiplexing` | `false` | Npgsql multiplexing (`false`, `true`, or `auto`). Incompatible with RDS Proxy and transaction-mode poolers — see [Connection poolers and proxies](#connection-poolers-and-proxies-rds-proxy-pgbouncer). |
 | `Database__SessionSettings__Mode` | `connection` | `connection` sets the session timeouts and default `search_path` on every connection; `role-defaults` issues no session `SET` and relies on `ALTER ROLE` defaults — see [Role defaults instead of per-connection SET](#role-defaults-instead-of-per-connection-set). |
 
@@ -222,7 +239,7 @@ starts when the last lease returns. Minimum pool size applies while the source
 pool remains active; a later request recreates an expired pool. Active leases
 finish normally, and the primary default database pool is unaffected.
 
-The full admission set (adaptive bounds, target lease duration, update interval) is in the [environment variable reference](../environment-variables.md#admission-and-pooling). Pool and admission behavior can be observed at `GET /monitoring/metrics/connection-pool`.
+The full admission set (adaptive bounds, target lease duration, update interval) is in the [environment variable reference](../environment-variables.md#admission-and-pooling). Pool and admission behavior can be observed at `GET /monitoring/metrics/connection-pool` (requires admin authentication).
 
 ## Indexing numeric source columns
 
@@ -276,13 +293,14 @@ When `Database__PreferSerialBoundedSpatialReads` is unset, Honua automatically
 uses a narrow serial-planner policy for source-backed PostGIS point layers.
 Set it to `false` to retain PostgreSQL planning for these reads, or `true` to
 explicitly enable the same bounded policy. Eligible reads have a simple
-intersects/envelope bbox, an effective first-page limit of
-1–100 features before the extra pagination probe row, default ordering (including
+intersects/envelope bbox, an effective limit of
+1–1,000 features before the extra pagination probe row, an offset of at most 1,000
+(next-link pages), default ordering (including
 the normalized ascending primary-ID sort), and no distinct, branch-version or null-geometry request.
 Unknown geometry types, ambient transactions and borrowed mutation transactions
 retain ordinary planning.
-This option does not change counts, statistics, streaming, tiles, larger pages,
-later pages or custom sorts. Count planning has separate options below.
+This option does not change counts, statistics, streaming, tiles, pages over
+1,000 features, offsets beyond 1,000 or custom sorts. Count planning has separate options below.
 
 For an eligible read, Honua batches a transaction-local
 `max_parallel_workers_per_gather=0` setting with the original parameterized
@@ -324,11 +342,11 @@ defaults in benchmark reports.
 
 When `Database__PreferSerialSourceSpatialCounts` is unset, Honua automatically
 uses serial plans only for exact counts associated with the bounded reads
-described above. The count retains the originating query's eligibility limits:
-first page, limit 1–100, ascending primary-ID/default order, simple point bbox,
-and no distinct, branch-version or null-geometry request. Standalone counts
-retain PostgreSQL planning even if their query includes an eligible limit.
-Unbounded, larger-page and later-page reads also retain ordinary count planning.
+described above, and only for a first page: limit 1–100, offset 0, ascending
+primary-ID/default order, simple point bbox, and no distinct, branch-version or
+null-geometry request. Standalone counts retain PostgreSQL planning even if their
+query includes an eligible limit. Unbounded, larger-page and later-page reads
+retain ordinary count planning, even when the page itself is planned serially.
 
 Set `Database__PreferSerialSourceSpatialCounts=false` to opt out of serial counts.
 Set it to `true` to explicitly enable serial plans for all eligible source-backed

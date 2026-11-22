@@ -408,7 +408,7 @@ public sealed class FileBackedLicenseServiceTests
     [UnitTest]
     public async Task LoadBootstrapSnapshotAsync_LicenseContentSecretRef_WithResolver_ActivatesProEntitlements()
     {
-        // honua-server#1755: the bootstrap entitlement probe must honor a Secrets-Manager-only Pro
+        // The bootstrap entitlement probe must honor a Secrets-Manager-only Pro
         // license (Licensing:LicenseContentSecretRef) just like the per-request service does, so a
         // startup gate sees its Pro entitlements.
         const string secretRef = "aws:secretsmanager:honua/license-pro";
@@ -504,7 +504,7 @@ public sealed class FileBackedLicenseServiceTests
         var result = await service.UploadLicenseAsync(stream, CancellationToken.None);
 
         result.Success.Should().BeFalse();
-        result.Message.Should().Be("License validation failed: Malformed.");
+        result.Message.Should().Be("License validation failed: Malformed (invalid-size).");
         stream.BytesRead.Should().Be(MaxLicenseFileBytes + 1);
         File.Exists(licensePath).Should().BeFalse();
         logger.Entries.Should().Contain(entry =>

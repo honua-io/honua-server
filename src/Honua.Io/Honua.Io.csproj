@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>$(HonuaTargetFramework)</TargetFramework>
+    <EnableRequestDelegateGenerator>true</EnableRequestDelegateGenerator>
     <OutputType>Library</OutputType>
     <DisableMicrosoftExtensionsLoggingSourceGenerator>false</DisableMicrosoftExtensionsLoggingSourceGenerator>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>

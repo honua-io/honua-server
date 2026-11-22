@@ -5,18 +5,16 @@ using System.Globalization;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Realtime;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
-using Honua.Infrastructure.MultiTenancy;
-using Honua.Infrastructure.Security;
+using Honua.Infrastructure.Realtime;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Streaming;
 
@@ -122,6 +120,13 @@ internal static partial class FeatureStreamEndpoints
         // storage, so admitting the session afterwards would let rejected callers consume
         // unbounded storage work outside MaxConcurrentSessions.
         var addDefaultSubscription = !isWebSocket || filterResult.HasSubscription || isAdmin;
+        using var realtime = RealtimeStreamAdmission.TryOpen(context, RealtimeFamily.Features,
+            isWebSocket ? RealtimeStreamAdmission.WebSocketTransport : RealtimeStreamAdmission.SseTransport);
+        if (realtime is null)
+        {
+            return RealtimeStreamAdmission.Draining(context);
+        }
+
         var session = deps.SessionManager.TryCreateSession(
             isWebSocket ? WebSocketTransport : SseTransport,
             NullIfEmpty(context.Request.Query["clientLabel"].ToString()),
@@ -130,10 +135,11 @@ internal static partial class FeatureStreamEndpoints
             ResolveAdmissionPartition(context));
         if (session is null)
         {
-            return CreateSessionLimitExceeded(context, deps.Options.Value.MaxConcurrentSessions);
+            return CreateSessionLimitExceeded(context);
         }
 
         using var sessionLease = session;
+        session.AttachLifecycle(realtime);
 
         // Snapshot servability is decided here, ahead of the transport handshake: it is the last
         // point at which an unservable baseline can still be reported as a typed problem document
@@ -172,6 +178,7 @@ internal static partial class FeatureStreamEndpoints
             session,
             filterResult.Filter,
             filterResult.Mode).ConfigureAwait(false);
+        await WriteSseServiceRestartAsync(context, session).ConfigureAwait(false);
         return Results.Empty;
     }
 
@@ -349,26 +356,31 @@ internal static partial class FeatureStreamEndpoints
     private static string? NullIfEmpty(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value;
 
-    internal static string ResolveAdmissionPartition(HttpContext context)
+    private static async Task WriteSseServiceRestartAsync(HttpContext context, FeatureStreamSession session)
     {
-        // Single-tenant deployments resolve every request to the deployment tenant, so a
-        // tenant partition there would let one principal exhaust the whole node.
-        var tenancyEnabled = context.RequestServices.GetService<IOptions<TenantContextOptions>>()?.Value.Enabled == true;
-        var tenant = tenancyEnabled ? context.RequestServices.GetService<ITenantContext>()?.TenantId : null;
-        if (!string.IsNullOrWhiteSpace(tenant))
+        if (!session.ServiceRestart || session.Lifecycle is not { } realtime || context.RequestAborted.IsCancellationRequested
+            || !context.Response.HasStarted || context.Response.StatusCode != StatusCodes.Status200OK)
         {
-            return $"tenant:{tenant}";
+            return;
         }
 
-        var actor = CanonicalSecurityActor.Resolve(context.User);
-        return actor is null ? "anonymous" : $"principal:{actor.ActorId}";
+        try
+        {
+            await RealtimeStreamAdmission.WriteSseRetryAsync(context.Response, realtime, context.RequestAborted)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException or ObjectDisposedException or OperationCanceledException)
+        {
+            // The client left or the drain deadline aborted the connection first.
+        }
     }
 
-    private static IResult CreateSessionLimitExceeded(HttpContext context, int maxConcurrentSessions)
+    // Several limits can refuse a session (per client, per tenant or principal, per node), so the answer names none.
+    private static IResult CreateSessionLimitExceeded(HttpContext context)
         => ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status503ServiceUnavailable,
-                $"Feature stream session limit of {maxConcurrentSessions} concurrent sessions reached.");
+                "Feature stream session limit reached; try again later.");
 }
 
 internal sealed class FeatureStreamEndpointsLog;

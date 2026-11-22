@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -55,31 +56,57 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
         if (!GdalJobInputReader.TryGetInput(parameters, "provider", out var providerRaw) ||
             !Enum.TryParse<CloudStorageProvider>(providerRaw, ignoreCase: true, out var provider))
         {
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 "Invalid coverage inputs: 'provider' must be one of Local, AwsS3, AzureBlob.");
         }
 
         if (!GdalJobInputReader.TryGetInput(parameters, "bucket", out var bucket) || string.IsNullOrWhiteSpace(bucket))
         {
-            return JobExecutionResult.Failed("Invalid coverage inputs: missing required input 'bucket'.");
+            return JobExecutionResult.InvalidInput("Invalid coverage inputs: missing required input 'bucket'.");
         }
 
         if (!GdalJobInputReader.TryGetInput(parameters, "objectKey", out var objectKey) || string.IsNullOrWhiteSpace(objectKey))
         {
-            return JobExecutionResult.Failed("Invalid coverage inputs: missing required input 'objectKey'.");
+            return JobExecutionResult.InvalidInput("Invalid coverage inputs: missing required input 'objectKey'.");
         }
+
+        var opts = options.CurrentValue;
+        var normalizedKey = objectKey.TrimStart('/');
+        if (objectKey.StartsWith("//", StringComparison.Ordinal)
+            || objectKey.Contains('\\')
+            || !RasterDescriptorChecks.IsSafeObjectStoreKey(normalizedKey))
+        {
+            return JobExecutionResult.InvalidInput("Invalid coverage inputs: 'objectKey' failed safety validation.");
+        }
+
+        if (provider != CloudStorageProvider.Local)
+        {
+            if (!RasterDescriptorChecks.IsOpaqueReference(bucket))
+            {
+                return JobExecutionResult.InvalidInput("Invalid coverage inputs: 'bucket' failed safety validation.");
+            }
+
+            if (opts.AllowedCoverageBuckets.Count > 0
+                && !opts.AllowedCoverageBuckets.Contains(bucket, StringComparer.Ordinal))
+            {
+                return JobExecutionResult.InvalidInput("Invalid coverage inputs: 'bucket' is not in the configured AllowedCoverageBuckets allowlist.");
+            }
+        }
+
+        var localStorageRoot = provider == CloudStorageProvider.Local
+            ? (string.IsNullOrWhiteSpace(opts.LocalCoverageRoot) ? opts.ScratchRoot : opts.LocalCoverageRoot)
+            : null;
 
         string vsiPath;
         try
         {
-            vsiPath = GdalVsiPath.Build(provider, bucket, objectKey);
+            vsiPath = GdalVsiPath.Build(provider, bucket, objectKey, localStorageRoot);
         }
-        catch (NotSupportedException ex)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or NotSupportedException)
         {
             return JobExecutionResult.Failed($"Invalid coverage inputs: {ex.Message}");
         }
 
-        var opts = options.CurrentValue;
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
         try
         {
@@ -134,7 +161,7 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
             // container: GDAL's netCDF driver refuses /vsi sources unless Linux
             // userfaultfd is available, and Docker's default seccomp blocks it.
             string? zarrRootPath = DeriveZarrRootPath(objectKey);
-            var vsiOut = GdalVsiPath.Build(provider, bucket, zarrRootPath);
+            var vsiOut = GdalVsiPath.Build(provider, bucket, zarrRootPath, localStorageRoot);
             using var derivedStoreScope = GdalRemoteInputScope.Trust(vsiOut);
             var convertResult = await RunConvertAsync(runner, context, vsiPath, vsiOut, workspace, linked.Token).ConfigureAwait(false);
             if (convertResult is not { Succeeded: true })

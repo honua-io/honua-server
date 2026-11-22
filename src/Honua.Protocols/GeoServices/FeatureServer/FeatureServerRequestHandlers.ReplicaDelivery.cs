@@ -345,7 +345,7 @@ internal static partial class FeatureServerEndpoints
 
                 if (parseResult.Expression is not null)
                 {
-                    var translationResult = filterService.Translate(parseResult.Expression, layer.Resource);
+                    var translationResult = filterService.Translate(parseResult.Expression, layer.Resource.WithoutHiddenSchemaFields());
                     if (!translationResult.IsSuccess)
                     {
                         error = $"Layer {layer.PublicLayerId} where clause is invalid: {translationResult.ErrorMessage ?? "invalid filter syntax."}";

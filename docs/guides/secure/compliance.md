@@ -59,6 +59,17 @@ Run `GET /api/v1/admin/compliance/dashboard` again.
 
 Residency evaluations and report exports also appear in the audit feed at `GET /api/v1/admin/observability/audit`.
 
+## Widen the audit trail
+
+By default the audit trail records administrative changes, sign-ins, denials, feature deletes and multi-feature edits. If your control baseline also needs every feature edit or every authenticated read, turn them on:
+
+```bash
+AuditLog__Policy__RecordSingleFeatureWrites=true   # single-feature creates and updates
+AuditLog__Policy__RecordSuccessfulReads=true       # successful reads by signed-in callers
+```
+
+Reads add one audit row per authenticated request, tile requests included, so size audit storage and export for that volume. Anonymous reads are not recorded.
+
 ## Limitations (current release)
 
 - The control catalog is curated to controls with automated server evidence; process controls (training, change management) belong in your system security plan.

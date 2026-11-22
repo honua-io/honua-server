@@ -153,7 +153,7 @@ public class GeoServicesSqlParserTests
     public void Parse_TimestampLiteralWithoutOffset_AcceptedAsUtc()
     {
         // The canonical SQL-92 TIMESTAMP literal the ArcGIS SDK emits carries no
-        // timezone offset; real ArcGIS accepts it (honua-server#1825). The parser
+        // timezone offset; real ArcGIS accepts it. The parser
         // must treat it as naive/UTC instead of rejecting it as ambiguous.
         var expression = _parser.Parse("event_date > TIMESTAMP '2024-06-01 12:30:00'");
 
@@ -195,7 +195,7 @@ public class GeoServicesSqlParserTests
     [Fact]
     public void Parse_HashDatetimeLiteralWithoutOffset_AcceptedAsUtc()
     {
-        // PA-026: mirror ArcGIS Server behaviour — bare date+time literals without an explicit
+        // mirror ArcGIS Server behaviour — bare date+time literals without an explicit
         // timezone offset (including the #...# hash form) are accepted and treated as UTC
         // instead of being rejected.  The old test ("StillRejected") encoded the wrong behaviour.
         var expression = _parser.Parse("event_date > #2024-06-01T12:30:00#");
@@ -212,9 +212,8 @@ public class GeoServicesSqlParserTests
     [Fact]
     public void Parse_TimestampKeywordWithoutOffset_AcceptedAsUtc()
     {
-        // PA-026: ArcGIS clients emit TIMESTAMP 'value' literals without a timezone offset.
-        // Previously the parser threw "missing a timezone offset"; now they are accepted
-        // as UTC to mirror ArcGIS Server's AssumeUniversal behaviour.
+        // Accept TIMESTAMP literals without timezone offsets as UTC, matching
+        // ArcGIS Server AssumeUniversal behavior.
         var expression = _parser.Parse("event_date > TIMESTAMP '2024-01-01 12:00:00'");
 
         var binary = (BinaryExpression)expression;
@@ -229,7 +228,7 @@ public class GeoServicesSqlParserTests
     [Fact]
     public void Parse_UnknownFunction_ThrowsArgumentException()
     {
-        // PA-013: the parser allowlist should reject unknown function names before an AST node
+        // the parser allowlist should reject unknown function names before an AST node
         // is created so that future providers cannot inherit the parser's permissiveness.
         var act = () => _parser.Parse("pg_sleep(600) > 0");
 
@@ -352,7 +351,7 @@ public class GeoServicesSqlParserTests
     public void Parse_ExtractUnsupportedField_ThrowsArgumentException()
     {
         // MILLENNIUM is a real Postgres field but is intentionally outside the allowlist,
-        // so it must still be rejected. (WEEK/DOW/etc. became supported in #1865.)
+        // so it must still be rejected. (WEEK/DOW/etc. are supported.)
         var act = () => _parser.Parse("EXTRACT(MILLENNIUM FROM created) >= 1");
 
         act.Should().Throw<ArgumentException>()
@@ -425,7 +424,7 @@ public class GeoServicesSqlParserTests
     }
 
     // ------------------------------------------------------------------
-    // #1865 — extended grammar: LIKE ESCAPE, extra EXTRACT fields, CASE.
+    // Extended grammar: LIKE ESCAPE, extra EXTRACT fields, CASE.
     // ------------------------------------------------------------------
 
     [Trait("Tier", "Fast")]
@@ -606,5 +605,98 @@ public class GeoServicesSqlParserTests
         var condition = (BinaryExpression)function.Arguments[0];
         ((Literal)condition.Right).Value.Should().Be("' OR 1=1 --");
         ((Literal)function.Arguments[1]).Value.Should().Be("x' ; DROP TABLE features --");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("1")]
+    [InlineData("'abc'")]
+    [InlineData("1 + 2")]
+    [InlineData("-1")]
+    [InlineData("LOWER('abc')")]
+    [InlineData("LENGTH(name)")]
+    public void Parse_NonBooleanRootExpression_ThrowsArgumentException(string where)
+    {
+        var act = () => _parser.Parse(where);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("1=1 AND 1")]
+    [InlineData("1=1 OR 'abc'")]
+    [InlineData("1 AND 1=1")]
+    [InlineData("NOT 1")]
+    [InlineData("NOT 'abc'")]
+    [InlineData("NOT (1 + 2)")]
+    public void Parse_NonBooleanLogicalOperand_ThrowsArgumentException(string where)
+    {
+        var act = () => _parser.Parse(where);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("1 / 0 = 1")]
+    [InlineData("1 / 0.0 = 1")]
+    [InlineData("1 % 0 = 0")]
+    [InlineData("1 / -0 = 1")]
+    [InlineData("1 / -(-0) = 1")]
+    public void Parse_ZeroDivisor_ThrowsArgumentException(string where)
+    {
+        var act = () => _parser.Parse(where);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("name LIKE 123")]
+    [InlineData("123 LIKE 'a%'")]
+    [InlineData("name NOT LIKE 42")]
+    public void Parse_LikeWithNonStringLiteral_ThrowsArgumentException(string where)
+    {
+        var act = () => _parser.Parse(where);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("ST_INTERSECTS(geom, other_geom)")]
+    [InlineData("status = 'open' AND ST_WITHIN(geom, boundary)")]
+    [InlineData("CAST(flag AS BOOLEAN)")]
+    [InlineData("status = 'open' AND CAST(flag AS BOOL)")]
+    public void Parse_ValidBooleanSpatialAndCastPredicates_Succeeds(string where)
+    {
+        var expr = _parser.Parse(where);
+
+        expr.Should().NotBeNull();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("status = 'open' OR NULL")]
+    [InlineData("status = 'open' AND NULL")]
+    [InlineData("NOT NULL")]
+    [InlineData("amount / 1e-29 > 0")]
+    public void Parse_NullBooleanOperandAndSmallNonZeroDivisor_Succeeds(string where)
+    {
+        var expr = _parser.Parse(where);
+
+        expr.Should().NotBeNull();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("CURRENT_TIMESTAMP - INTERVAL '7' DAY < CURRENT_TIMESTAMP")]
+    [InlineData("CURRENT_DATE + INTERVAL '1' DAY >= CURRENT_DATE")]
+    public void Parse_TimestampIntervalArithmeticComparison_Succeeds(string whereClause)
+    {
+        var act = () => _parser.Parse(whereClause);
+
+        act.Should().NotThrow();
     }
 }

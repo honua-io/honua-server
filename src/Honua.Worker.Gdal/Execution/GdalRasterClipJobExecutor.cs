@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Logging;
@@ -56,7 +57,7 @@ internal sealed partial class GdalRasterClipJobExecutor(
         if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
-            return JobExecutionResult.Failed($"Invalid clip inputs: {sourceError}");
+            return JobExecutionResult.InvalidInput($"Invalid clip inputs: {sourceError}");
         }
 
         // Secondary base64 inputs share the same per-worker payload ceiling as
@@ -66,7 +67,7 @@ internal sealed partial class GdalRasterClipJobExecutor(
         if (!GdalJobInputReader.TryGetBase64Input(parameters, "boundary", opts.MaxArtifactBytes, out var boundaryWkb, out var boundaryError))
         {
             Log.InvalidInputs(logger, job.OperationId, boundaryError);
-            return JobExecutionResult.Failed($"Invalid clip inputs: {boundaryError}");
+            return JobExecutionResult.InvalidInput($"Invalid clip inputs: {boundaryError}");
         }
 
         Geometry boundary;
@@ -77,17 +78,17 @@ internal sealed partial class GdalRasterClipJobExecutor(
         catch (ParseException ex)
         {
             Log.BoundaryParseFailed(logger, job.OperationId, ex);
-            return JobExecutionResult.Failed("Invalid clip inputs: boundary WKB could not be parsed.");
+            return JobExecutionResult.InvalidInput("Invalid clip inputs: boundary WKB could not be parsed.");
         }
 
         if (boundary == null || boundary.IsEmpty)
         {
-            return JobExecutionResult.Failed("Invalid clip inputs: boundary geometry is empty.");
+            return JobExecutionResult.InvalidInput("Invalid clip inputs: boundary geometry is empty.");
         }
 
         if (!IsAreaGeometry(boundary))
         {
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 $"Invalid clip inputs: boundary must be a Polygon or MultiPolygon; got '{boundary.GeometryType}'.");
         }
 
@@ -96,7 +97,7 @@ internal sealed partial class GdalRasterClipJobExecutor(
         {
             if (!int.TryParse(boundarySridRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid) || srid <= 0)
             {
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid clip inputs: 'boundarySrid' value '{boundarySridRaw}' is not a positive integer.");
             }
             boundary.SRID = srid;
@@ -118,7 +119,7 @@ internal sealed partial class GdalRasterClipJobExecutor(
             // decompression-bomb allocation.
             if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
-                return JobExecutionResult.Failed($"Invalid raster input: {dimensionError}");
+                return JobExecutionResult.InvalidInput($"Invalid raster input: {dimensionError}");
             }
 
             if (sourceInput.InlineBytes is { } inlineBytes)
@@ -205,21 +206,59 @@ internal sealed partial class GdalRasterClipJobExecutor(
     private static bool IsAreaGeometry(Geometry geometry)
         => geometry is Polygon or MultiPolygon;
 
-    internal static string WriteCutlineGeoJson(Geometry boundary)
+    internal static string WriteCutlineGeoJson(Geometry boundary, string? crsName = null)
     {
-        var geometryJson = new GeoJsonWriter().Write(boundary);
-        var sb = new StringBuilder(geometryJson.Length + 256);
-        sb.Append("{\"type\":\"FeatureCollection\"");
-        if (boundary.SRID > 0)
+        ArgumentNullException.ThrowIfNull(boundary);
+
+        string? normalizedCrs = null;
+        if (!string.IsNullOrWhiteSpace(crsName))
         {
-            sb.Append(",\"crs\":{\"type\":\"name\",\"properties\":{\"name\":\"EPSG:");
-            sb.Append(boundary.SRID.ToString(CultureInfo.InvariantCulture));
-            sb.Append("\"}}");
+            if (!GdalSrsToken.IsValid(crsName))
+            {
+                throw new ArgumentException($"Invalid cutline CRS token '{crsName}'.", nameof(crsName));
+            }
+
+            normalizedCrs = GdalSrsToken.Normalize(crsName);
         }
-        sb.Append(",\"features\":[{\"type\":\"Feature\",\"properties\":{},\"geometry\":");
-        sb.Append(geometryJson);
-        sb.Append("}]}");
-        return sb.ToString();
+        else if (boundary.SRID > 0)
+        {
+            normalizedCrs = $"EPSG:{boundary.SRID.ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        var geometryJson = new GeoJsonWriter().Write(boundary);
+        using var geometryDocument = JsonDocument.Parse(geometryJson);
+        using var stream = new MemoryStream(geometryJson.Length + 256);
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("type", "FeatureCollection");
+            if (normalizedCrs is not null)
+            {
+                writer.WritePropertyName("crs");
+                writer.WriteStartObject();
+                writer.WriteString("type", "name");
+                writer.WritePropertyName("properties");
+                writer.WriteStartObject();
+                writer.WriteString("name", normalizedCrs);
+                writer.WriteEndObject();
+                writer.WriteEndObject();
+            }
+
+            writer.WritePropertyName("features");
+            writer.WriteStartArray();
+            writer.WriteStartObject();
+            writer.WriteString("type", "Feature");
+            writer.WritePropertyName("properties");
+            writer.WriteStartObject();
+            writer.WriteEndObject();
+            writer.WritePropertyName("geometry");
+            geometryDocument.RootElement.WriteTo(writer);
+            writer.WriteEndObject();
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
     }
 
     private static partial class Log

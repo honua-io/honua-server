@@ -9,6 +9,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Sql;
+using Honua.Core.Queries.Filters.GeoServicesSql;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Geoprocessing.Execution;
 
@@ -478,29 +479,11 @@ internal static partial class ProcessPlanValidator
         }
     }
 
-    // geometry.buffer advertises a geodesic flag and accepts a FloatingPoint
-    // distance, but GeometryBufferJobExecutor only implements planar buffering
-    // and requires a strictly positive distance. Mirror both runtime guards at
-    // submit time so the plan is refused up front instead of failing only once
-    // the job runs.
+    // Buffer requires a strictly positive finite distance; both planar and geodesic buffering are supported.
     private static void ValidateGeometryBufferSemantics(
         AnalysisPlanStep step,
         List<GeoprocessingValidationFailure> violations)
     {
-        if (step.Inputs.TryGetValue("geodesic", out var geodesicRaw)
-            && !string.IsNullOrWhiteSpace(geodesicRaw)
-            && bool.TryParse(geodesicRaw, out var geodesic)
-            && geodesic)
-        {
-            AddRangeViolationIfNew(step, "geodesic",
-                "geodesic buffering is not yet supported; submit with geodesic=false and supply distance in the input CRS units",
-                violations);
-        }
-
-        // The base type validator already rejects non-finite FloatingPoint
-        // values, but it admits zero and negatives, which erode the geometry to
-        // an empty result at execution. A buffer requires a strictly positive,
-        // finite distance.
         RequirePositiveFiniteDouble(step, "distance", violations);
     }
 
@@ -580,11 +563,12 @@ internal static partial class ProcessPlanValidator
         try
         {
             ReadOnlyDynamicSql.ValidateReadOnlySingleStatement(sql);
+            _ = new GeoServicesSqlParser().Parse(where);
         }
         catch (ArgumentException)
         {
             AddRangeViolationIfNew(step, "where",
-                "expected a single read-only predicate without a statement separator, comment, or mutating SQL",
+                "expected a supported filter expression without a statement separator, comment, or mutating SQL",
                 violations);
         }
     }

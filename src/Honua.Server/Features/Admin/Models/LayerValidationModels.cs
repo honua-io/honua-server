@@ -7,6 +7,9 @@ internal sealed record LayerValidationResponse
 {
     public int StorageLayerId { get; init; }
 
+    // Deprecated wire alias of StorageLayerId; published clients still read layerId.
+    public int LayerId => StorageLayerId;
+
     public required string LayerName { get; init; }
 
     public required string Status { get; init; }

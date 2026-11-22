@@ -27,7 +27,6 @@ public sealed class DatumGridProvisioningTests : IAsyncLifetime
     {
         _image = new ImageFromDockerfileBuilder()
             .WithDockerfileDirectory(FindGridContext())
-            .WithBuildArgument("BASE_IMAGE", "pgrouting/pgrouting:17-3.5-3.7.3")
             .Build();
         await _image.CreateAsync();
         _container = new PostgreSqlBuilder().WithImage(_image)

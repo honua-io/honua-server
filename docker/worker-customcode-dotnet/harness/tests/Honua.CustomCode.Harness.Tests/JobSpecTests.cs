@@ -229,4 +229,30 @@ public sealed class JobSpecTests
             dir.Delete(recursive: true);
         }
     }
+
+    [Theory]
+    [InlineData("https://user:token@github.com/honua-io/example.git")]
+    [InlineData("https://token@github.com/honua-io/example.git")]
+    [InlineData("ssh://git:secret@github.com/honua-io/example.git")]
+    public void Load_RepoUrlWithCredentials_RejectedWithoutEchoingThem(string url)
+    {
+        var env = BaseEnv();
+        env["CUSTOMCODE_REPO_URL"] = url;
+
+        var act = () => JobSpec.Load(env);
+
+        act.Should().Throw<JobSpecException>()
+            .Where(e => e.Message.Contains("credentials") && !e.Message.Contains("token") && !e.Message.Contains("secret"));
+    }
+
+    [Theory]
+    [InlineData("git@github.com:honua-io/example.git")]
+    [InlineData("ssh://git@github.com/honua-io/example.git")]
+    public void Load_RepoUrlWithPlainSshUser_Accepted(string url)
+    {
+        var env = BaseEnv();
+        env["CUSTOMCODE_REPO_URL"] = url;
+
+        JobSpec.Load(env).RepoUrl.Should().Be(url);
+    }
 }

@@ -45,8 +45,13 @@ internal sealed class OperationHumanApprovalTestHost : IDisposable
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddMemoryCache();
-        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection(
-            new Dictionary<string, string?> { ["Public:BaseUrl"] = options.Audience }).Build());
+        var configValues = new Dictionary<string, string?> { ["Public:BaseUrl"] = options.Audience };
+        if (options.AllowSelfApproval.HasValue)
+        {
+            configValues["Operations:Approval:AllowSelfApproval"] = options.AllowSelfApproval.Value.ToString();
+        }
+
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection(configValues).Build());
         services.AddSingleton<IHttpContextAccessor>(_requests);
         services.AddSingleton<TimeProvider>(Clock);
         services.AddSingleton<IDataProtectionProvider>(protection ?? new EphemeralDataProtectionProvider());
@@ -120,6 +125,22 @@ internal sealed class OperationHumanApprovalTestHost : IDisposable
         _services.GetRequiredService<RequestTenantContext>().Set(operation.Audit.TenantId, TenantContextSource.Claim);
         var gate = operation.CoordinatedRelease!.CurrentStep == CoordinatedReleaseStep.ContainerRollout ? "container" : "data";
         Context.Request.Path = $"/api/v1/admin/metadata/coordinated-releases/operations/{operation.OperationId}/approve/{gate}";
+        Context.Request.Headers[OperationHumanApprovalAuthority.CapabilityHeader] = review.Capability;
+    }
+
+    public void DeployReviewRequest(ApprovalTestHuman human, WorkflowOperationRecord operation, string action)
+    {
+        SetRequest(human, AdminHumanApprovalEndpointMetadata.Review);
+        _services.GetRequiredService<RequestTenantContext>().Set(operation.Audit.TenantId, TenantContextSource.Claim);
+        Context.Request.Path = $"/api/v1/admin/deploy/operations/{operation.OperationId}/approval-review/{action}";
+    }
+
+    public void DeployApproveRequest(ApprovalTestHuman human, WorkflowOperationRecord operation,
+        string action, OperationHumanApprovalReview review)
+    {
+        SetRequest(human, AdminHumanApprovalEndpointMetadata.Approve);
+        _services.GetRequiredService<RequestTenantContext>().Set(operation.Audit.TenantId, TenantContextSource.Claim);
+        Context.Request.Path = $"/api/v1/admin/deploy/operations/{operation.OperationId}/{action}";
         Context.Request.Headers[OperationHumanApprovalAuthority.CapabilityHeader] = review.Capability;
     }
 
@@ -200,4 +221,5 @@ internal sealed record OperationHumanApprovalTestOptions
 {
     public string Audience { get; init; } = "https://server.example.com";
     public IPrincipalMembershipSource? Memberships { get; init; }
+    public bool? AllowSelfApproval { get; init; }
 }

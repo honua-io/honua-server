@@ -71,7 +71,7 @@ public sealed class FeatureServerQueryDateBinsTests : IClassFixture<FeatureServe
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDateBins?bin={Uri.EscapeDataString(bin)}&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -86,7 +86,7 @@ public sealed class FeatureServerQueryDateBinsTests : IClassFixture<FeatureServe
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDateBins?binField=timestamp&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
@@ -106,7 +106,7 @@ public sealed class FeatureServerQueryDateBinsTests : IClassFixture<FeatureServe
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/nonexistent/FeatureServer/0/queryDateBins?binField=timestamp&bin={Uri.EscapeDataString(bin)}&f=json");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+        // GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -115,9 +115,9 @@ public sealed class FeatureServerQueryDateBinsTests : IClassFixture<FeatureServe
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins")]
     public async Task QueryDateBins_MonthCalendarBin_ReturnsExactBucketCounts()
     {
-        // Regression for honua-server#2945: previous proving tests only checked that
-        // "features" is a JSON array, never that the bucket counts reflect the seeded
-        // timestamps. tests/seed/server.yaml layer 0 has 5 features with `timestamp`:
+        // A check that "features" is a JSON array is not enough: the bucket counts must
+        // reflect the seeded timestamps.
+        // tests/seed/server.yaml layer 0 has 5 features with `timestamp`:
         //   2022-12-31T23:00:00Z (objectid 4)             -> 2022-12 bucket
         //   2023-01-02T00:00:00Z, 2023-01-05T12:00:00Z,
         //   2023-01-20T00:00:00Z (objectids 1, 2, 5)       -> 2023-01 bucket (count 3)
@@ -224,5 +224,30 @@ public sealed class FeatureServerQueryDateBinsTests : IClassFixture<FeatureServe
 
         root.TryGetProperty("features", out var features).Should().BeTrue();
         features.ValueKind.Should().Be(JsonValueKind.Array);
+    }
+
+    [IntegrationTheory]
+    [InlineData(1, "months", "calendarBin")]
+    [InlineData(1, "years", "calendarBin")]
+    [InlineData(1, "fortnights", "seconds, minutes, hours, days or weeks")]
+    [InlineData(int.MaxValue, "days", "too large")]
+    [Operation(Operations.QueryDateBins)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryDateBins")]
+    public async Task QueryDateBins_FixedBinInvalidUnitOrOverflow_IsRejected(int count, string unit, string expectedHint)
+    {
+        // Unsupported or overflowing fixed-bin intervals must fail with 400 rather than binning by days or throwing.
+        var bin = JsonSerializer.Serialize(new
+        {
+            fixedBin = new { intervalCount = count, intervalUnit = unit }
+        });
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryDateBins?binField=timestamp&bin={Uri.EscapeDataString(bin)}&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
+        content.Should().Contain(expectedHint);
     }
 }

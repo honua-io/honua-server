@@ -85,7 +85,7 @@ public sealed partial class ManagedComposeObserverTests
     [InlineData(60, 40)]
     [Trait("Tier", "Fast")]
     [Operation(Operations.TestInfrastructure)]
-    public async Task ReadAsync_SlowServingProbes_DoNotHideStoppedRedis(int probeTimeoutSeconds, int responseDelaySeconds)
+    public async Task ReadAsync_SlowServingProbes_DoNotHideStoppedDatabase(int probeTimeoutSeconds, int responseDelaySeconds)
     {
         var builder = WebApplication.CreateSlimBuilder([]);
         builder.Logging.ClearProviders();
@@ -123,8 +123,7 @@ public sealed partial class ManagedComposeObserverTests
                 var args = call.ArgAt<IReadOnlyList<string>>(0);
                 var output = args.Contains("ps") ? """
                     {"ID":"serving","Service":"honua","Project":"slow-probe-unit","State":"running"}
-                    {"ID":"database","Service":"postgres","Project":"slow-probe-unit","State":"running"}
-                    {"ID":"cache","Service":"redis","Project":"slow-probe-unit","State":"exited"}
+                    {"ID":"database","Service":"postgres","Project":"slow-probe-unit","State":"exited"}
                     """
                     : args.Contains("{{.State.StartedAt}}") ? "2026-11-01T00:00:00Z"
                     : args.Contains("{{json .RepoDigests}}") ? "[]"
@@ -142,7 +141,7 @@ public sealed partial class ManagedComposeObserverTests
         {
             var target = Assert.Single(await CreateObserver(client, configuration).ReadAsync(CancellationToken.None));
             Assert.True(target.Available, "slow serving probes must not discard the stopped dependency's readback");
-            Assert.Equal("Unhealthy", Assert.Single(target.Services, service => service.Name == "redis").Status);
+            Assert.Equal("Unhealthy", Assert.Single(target.Services, service => service.Name == "postgres").Status);
             Assert.True(EvidencePostureFactory.IsActionable(ManagedComposeObserver.Source([target])));
         }
         finally
@@ -284,7 +283,7 @@ public sealed partial class ManagedComposeObserverTests
     {
         var monitor = Substitute.For<IOptionsMonitor<ControlPlaneOptions>>();
         monitor.CurrentValue.Returns(options);
-        return new(client, Options.Create(new ComposeExecutorOptions()), monitor, clock ?? TimeProvider.System);
+        return new(new(client, new ComposeExecutorOptions()), monitor, clock ?? TimeProvider.System);
     }
 
     private static ControlPlaneOptions Configuration() => new()

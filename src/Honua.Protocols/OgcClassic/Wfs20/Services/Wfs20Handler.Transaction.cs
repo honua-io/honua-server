@@ -1237,17 +1237,22 @@ internal sealed partial class Wfs20Handler
 
         // Declared capabilities of the advertised feature type's publication bound every
         // Transaction action, including on anonymously writable layers (SEC-5).
-        var undeclared = LayerValidationHelpers.FindUndeclaredEditCapability(
-            descriptor.Service,
-            ResolveEditCapabilityPublication(descriptor, featureType.Visible),
-            operation);
-        return undeclared is null
-            ? null
-            : Wfs20ErrorResults.CreateForbidden(
+        var editPublication = ResolveEditCapabilityPublication(descriptor, featureType.Visible);
+        var undeclared = LayerValidationHelpers.FindUndeclaredEditCapability(descriptor.Service, editPublication, operation);
+        if (undeclared is not null)
+        {
+            return Wfs20ErrorResults.CreateForbidden(
                 context,
                 "OperationNotSupported",
                 LayerValidationHelpers.DescribeUndeclaredEditCapability(undeclared),
                 "Transaction");
+        }
+
+        // A feature type served from a source table cannot take managed writes. Refuse here, before the
+        // target features are resolved from the managed store, which would report an edit of nothing.
+        return ManagedWriteStorage.SourceTableOf(descriptor.Snapshot, editPublication) is null
+            ? null
+            : Wfs20ErrorResults.CreateNotImplemented(context, "OperationNotSupported", ManagedWriteStorage.WriteRefusal, "Transaction");
     }
 
 
@@ -1300,7 +1305,7 @@ internal sealed partial class Wfs20Handler
            WfsPropertyNameResolver.MatchesGeometryProperty(rawName, geometryProperty) &&
            WfsPropertyNameResolver.Resolve(resource, rawName, allowGeometryAlias: true, includeHiddenFields: true) is null;
 
-    private static TransactionFieldResolution? ResolveTransactionField(
+    internal static TransactionFieldResolution? ResolveTransactionField(
         MetadataV2Object resource,
         string rawName,
         string? namespaceName = null)
@@ -1426,6 +1431,15 @@ internal sealed partial class Wfs20Handler
             ? normalizedName[(normalizedName.LastIndexOf(':') + 1)..]
             : normalizedName;
 
+        // GML 2/3 feature schemas use gml:*Property elements (e.g. gml:pointProperty)
+        // for geometry columns; let those resolve through the normal geometry field path.
+        var geometryField = resource.FindPrimaryGeometryField();
+        if (geometryField != null &&
+            geometryField.Name.Equals(localName, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
         var mappedFieldName = localName.ToLowerInvariant() switch
         {
             "name" => "name",
@@ -1521,10 +1535,7 @@ internal sealed partial class Wfs20Handler
             return null;
         }
 
-        var geometryElement = propertyElement.Name.NamespaceName == Wfs20Utilities.GmlNamespace
-            ? propertyElement
-            : propertyElement.Elements()
-                .FirstOrDefault(element => string.Equals(element.Name.NamespaceName, Wfs20Utilities.GmlNamespace, StringComparison.Ordinal));
+        var geometryElement = ResolveTransactionGeometryElement(propertyElement);
 
         if (geometryElement == null)
         {
@@ -1591,6 +1602,23 @@ internal sealed partial class Wfs20Handler
     }
 
 
+    internal static XElement? ResolveTransactionGeometryElement(XElement propertyElement)
+    {
+        if (string.Equals(propertyElement.Name.NamespaceName, Wfs20Utilities.GmlNamespace, StringComparison.Ordinal) &&
+            IsGmlGeometryElementName(propertyElement.Name.LocalName))
+        {
+            return propertyElement;
+        }
+
+        return propertyElement.Elements()
+            .FirstOrDefault(element => string.Equals(element.Name.NamespaceName, Wfs20Utilities.GmlNamespace, StringComparison.Ordinal));
+    }
+
+    private static bool IsGmlGeometryElementName(string localName)
+        => localName is "Point" or "MultiPoint" or "LineString" or "Curve"
+            or "MultiLineString" or "MultiCurve" or "Polygon" or "Surface"
+            or "MultiPolygon" or "MultiSurface";
+
     internal static Geometry ParseTransactionGeometry(XElement geometryElement, int defaultSrid)
     {
         var srsNameValue = geometryElement.Attributes()
@@ -1618,7 +1646,8 @@ internal sealed partial class Wfs20Handler
         }
 
         var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(crsDefinition.Srid);
-        var axisOrder = geometryElement.Annotation<LegacyWfs10Coordinates>() is not null
+        var axisOrder = geometryElement.AncestorsAndSelf()
+            .Any(element => element.Annotation<LegacyWfs10Coordinates>() is not null)
             ? AxisOrder.EastNorth
             : crsDefinition.AxisOrder;
 
@@ -2941,7 +2970,7 @@ internal sealed partial class Wfs20Handler
         public bool RequestGeometryChanged { get; init; }
     }
 
-    private readonly record struct TransactionFieldResolution(
+    internal readonly record struct TransactionFieldResolution(
         MetadataV2Field Field,
         bool IsGmlProperty);
 

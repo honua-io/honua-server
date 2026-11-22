@@ -451,12 +451,12 @@ public sealed class RoutingAsyncWebToolTests
         var fixture = await _routing.StartCaseAsync(provider);
         using var client = fixture.CreateAdminClient();
         var jobId = await SubmitAsync(client, task, new() { [first] = FirstPoint, [second] = SecondPoint });
-        // The default policy retries after 30 s and 60 s. Retain the original
-        // terminal oracle and add precisely those documented delays to its budget.
+        // The default policy retries after 30 s and 60 s. Each requeue's stored backoff is checked
+        // against that policy and the retry is then made due, instead of sleeping through it.
         var retryPolicy = JobRetryPolicy.Default;
-        var budget = GPServerJobWait.JobBudget + retryPolicy.ComputeDelay(2) + retryPolicy.ComputeDelay(3);
-        using var terminal = await GPServerJobWait.UntilRestTerminalAsync(client, JobPath(task, jobId), jobId,
-            fixture.GetService<IExecutionJobStore>(), jobBudget: budget);
+        var jobStore = fixture.GetService<IExecutionJobStore>();
+        await new ScheduledRetryExpediter(fixture.Postgres.DataSource, jobStore).ExpediteAsync(jobId, retryPolicy, GPServerJobWait.JobBudget);
+        using var terminal = await GPServerJobWait.UntilRestTerminalAsync(client, JobPath(task, jobId), jobId, jobStore);
         terminal.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobFailed");
         provider.ReceivedCalls().Count(call => call.GetMethodInfo().Name.StartsWith("Solve", StringComparison.Ordinal)).Should().Be(retryPolicy.MaxAttempts);
         var durable = (await fixture.GetService<IExecutionJobStore>().GetAsync(jobId))!;

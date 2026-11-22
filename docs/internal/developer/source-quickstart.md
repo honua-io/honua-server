@@ -22,7 +22,7 @@ You'll have Honua running in Docker with a published dataset rendered in a brows
 git clone https://github.com/honua-io/honua-server.git && cd honua-server
 ```
 
-2. Build the server image from this checkout, then start the stack (PostGIS, Redis, and Honua Server). The build consumes the repository's GitHub Packages dependency without storing your token in an image layer. The bootstrap stores random per-install PostgreSQL and MinIO passwords in a private `.env` file and preserves them on restart. All published ports bind to loopback unless you explicitly change `HONUA_BIND_ADDRESS`. Keep `.env` with your persistent volumes; changing its passwords does not rotate credentials in an existing database. The repo-root Compose file includes development-only defaults for the admin password, connection-encryption key, Redis control-plane connection, Gate migration policy, and browser origin used below.
+2. Build the server image from this checkout, then start the stack (PostGIS and Honua Server). The build consumes the repository's GitHub Packages dependency without storing your token in an image layer. The bootstrap stores random per-install PostgreSQL, MinIO and admin API key values in a private `.env` file and preserves them on restart. All published ports bind to loopback unless you explicitly change `HONUA_BIND_ADDRESS`. Keep `.env` with your persistent volumes; changing its passwords does not rotate credentials in an existing database. The commands below read the admin API key from `.env` as `HONUA_ADMIN_PASSWORD`. The repo-root Compose file includes development-only defaults for the connection-encryption key, Gate migration policy, and browser origin used below.
 
 <!-- docs-validation:quickstart.start mode=run -->
 ```bash
@@ -33,6 +33,7 @@ if [ -z "${HONUA_SERVER_IMAGE:-}" ]; then
     bash "${repo_root}/scripts/docker/build-with-github-packages.sh" -t honua-server:local "${repo_root}"
 fi
 python3 "${repo_root}/scripts/docker/quickstart.py"
+export HONUA_ADMIN_PASSWORD="$(sed -n 's/^HONUA_ADMIN_PASSWORD=//p' "${repo_root}/.env")"
 ```
 
 3. Wait until the server reports ready.
@@ -55,7 +56,7 @@ The local-only Console development login opens the shell; it does not grant acce
 
 For a deployed installation use HTTPS, an authenticated trusted edge for Console, and the [OIDC configuration guide](../../guides/secure/authentication.md). Keep the public API origin in `HONUA_PUBLIC_BASE_URL` and set the server's `Oidc__AdminAuthCallbackUri` to the external HTTPS Console callback using a Compose override. Do not expose the development login or default credentials. Console's built-in BFF exchanges the operator's server session; the shared admin key is not an interactive operator credential. See [Console authentication](https://github.com/honua-io/honua-console/blob/a0c04a684cf1721ac87027c8090bfb0a8ba1bc95/docs/console-authentication.md).
 
-For headless local runs after enabling the profile, leave Redis enabled and disable only the dashboard:
+For headless local runs after enabling the profile, disable only the dashboard:
 
 <!-- docs-validation:quickstart.console-headless mode=skip reason=optional-console-profile-only -->
 ```bash
@@ -104,7 +105,7 @@ import subprocess
 
 from honua_admin import CreateSecureConnectionRequest, HonuaAdminClient
 
-with HonuaAdminClient(os.environ["HONUA_BASE_URL"], api_key="quickstart-admin-password") as admin:
+with HonuaAdminClient(os.environ["HONUA_BASE_URL"], api_key=os.environ["HONUA_ADMIN_PASSWORD"]) as admin:
     connection = admin.create_connection(CreateSecureConnectionRequest(
         name="local",
         host="postgres",
@@ -134,7 +135,7 @@ from honua_admin import HonuaAdminClient, PublishLayerRequest
 from honua_sdk import HonuaClient
 
 connection_id = Path(".quickstart-connection-id").read_text()
-with HonuaAdminClient(os.environ["HONUA_BASE_URL"], api_key="quickstart-admin-password") as admin:
+with HonuaAdminClient(os.environ["HONUA_BASE_URL"], api_key=os.environ["HONUA_ADMIN_PASSWORD"]) as admin:
     layer = admin.publish_layer(connection_id, PublishLayerRequest(
         schema="honua_data",
         table="quickstart_points",
@@ -148,7 +149,7 @@ with HonuaAdminClient(os.environ["HONUA_BASE_URL"], api_key="quickstart-admin-pa
     ))
     print(layer)
 
-with HonuaClient(os.environ["HONUA_BASE_URL"], api_key="quickstart-admin-password") as client:
+with HonuaClient(os.environ["HONUA_BASE_URL"], api_key=os.environ["HONUA_ADMIN_PASSWORD"]) as client:
     metadata = client.feature_server("quickstart").metadata()
     layer_index = next(item["id"] for item in metadata["layers"] if item["name"] == layer.layer_name)
     Path(".quickstart-layer-id").write_text(str(layer_index))
@@ -168,7 +169,7 @@ cat > map.html <<'EOF'
 const layerId = __LAYER_ID__;
 new maplibregl.Map({container:'map',center:[-122.41,37.79],zoom:12,
  transformRequest:url => url.startsWith('__HONUA_BASE_URL__')
-   ? {url,headers:{'X-API-Key':'quickstart-admin-password'}} : {url},
+   ? {url,headers:{'X-API-Key':'__HONUA_ADMIN_PASSWORD__'}} : {url},
  style:{version:8,
  sources:{
   osm:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OpenStreetMap'},
@@ -181,6 +182,7 @@ new maplibregl.Map({container:'map',center:[-122.41,37.79],zoom:12,
 EOF
 sed -i "s/__LAYER_ID__/$(cat .quickstart-layer-id)/" map.html
 sed -i "s|__HONUA_BASE_URL__|${HONUA_BASE_URL}|" map.html
+sed -i "s|__HONUA_ADMIN_PASSWORD__|${HONUA_ADMIN_PASSWORD}|" map.html
 ```
 
 <!-- docs-validation:quickstart.map-server mode=skip reason=interactive-long-running-process -->
@@ -199,7 +201,7 @@ from pathlib import Path
 from honua_sdk import HonuaClient
 
 layer_id = int(Path(".quickstart-layer-id").read_text())
-with HonuaClient(os.environ["HONUA_BASE_URL"], api_key="quickstart-admin-password") as client:
+with HonuaClient(os.environ["HONUA_BASE_URL"], api_key=os.environ["HONUA_ADMIN_PASSWORD"]) as client:
     result = client.query_features("quickstart", layer_id)
     assert len(result["features"]) == 3
     print("Verified 3 quickstart features")
@@ -212,7 +214,7 @@ The command should report three verified features, and the browser map should sh
 
 - **Tiles return 401 in the browser** — confirm the request hook still carries the local quickstart key and the layer was published to the `quickstart` service.
 - **Blank map and CORS errors in the browser console** — the page must be served from `http://localhost:3000`, not opened as a `file://` URL. Use `HONUA_DEV_CORS_ORIGIN` before `docker compose up -d` if you serve the page from another origin.
-- **Console is not needed after enabling the profile** - use `HONUA_CONSOLE_REPLICAS=0 docker compose up -d`; Redis still starts because durable jobs, proposals, and workflow state use it.
+- **Console is not needed after enabling the profile** - use `HONUA_CONSOLE_REPLICAS=0 docker compose up -d`.
 - **Contract migration is gated on an existing database** - the quickstart sets `HONUA_CONTRACT_APPLY_POLICY=Gate`. Fresh installs still provision fully; for an upgrade with pending contract scripts, approve one run with the nonce printed by the migration safety error and unset it afterward.
 - More help: [Troubleshooting](../../guides/deploy/troubleshooting.md)
 

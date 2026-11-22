@@ -89,14 +89,14 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
         IJobExecutionContext context,
         CancellationToken cancellationToken)
     {
-        if (finalProgress.Status == OperationStatus.Completed && finalProgress.PublishedPublication is { } publication)
+        if (finalProgress.Status == OperationStatus.Completed && finalProgress.PublishedExportVersion is { } publication)
         {
             // Activation has committed. Cancellation can no longer undo it, and a terminal
             // progress/report failure must not make the durable runner retry the publication.
             try
             {
                 await context.RecordCommittedEffectAsync(
-                    "paired-publication:" + publication.DescriptorKey, CancellationToken.None).ConfigureAwait(false);
+                    "export-version:" + publication.CollectionKey, CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
@@ -143,6 +143,7 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
             request.LayerId,
             request.TileMatrixSetId) with
         {
+            ExportId = request.ExportId,
             Status = OperationStatus.Processing,
             CurrentPhase = $"Running {request.Operation} operation"
         };
@@ -211,7 +212,10 @@ internal sealed partial class TileCacheJobExecutor : IJobExecutor
                 _logger,
                 MaxTilesFor(run.Job),
                 scope.ServiceProvider.GetService<ITileCacheGenerationCheckpointStore>())
-            { ProgressWriter = run.Progress.WriteAsync };
+            {
+                ProgressWriter = run.Progress.WriteAsync,
+                JobCreatedAt = run.Job.CreatedAt
+            };
             return await core.ExecuteAsync(started, run.Request, scope.ServiceProvider, cancellationToken)
                 .ConfigureAwait(false);
         }

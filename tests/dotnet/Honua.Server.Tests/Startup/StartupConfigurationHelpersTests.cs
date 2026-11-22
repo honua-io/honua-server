@@ -2,7 +2,9 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Startup;
+using Honua.TestKit;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using NSubstitute;
@@ -99,5 +101,21 @@ public sealed class StartupConfigurationHelpersTests
             Environment.SetEnvironmentVariable(configurationName, null);
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public void ShippedAppSettings_FileStorageDefaultTimeToLive_BindsToTwentyFourHours()
+    {
+        var configuration = new ConfigurationBuilder()
+            .SetBasePath(RepositoryPaths.Resolve("src", "Honua.Server"))
+            .AddJsonFile("appsettings.json", optional: false)
+            .Build();
+
+        var options = configuration.GetSection("FileStorage").Get<CloudStorageOptions>();
+
+        options.Should().NotBeNull();
+        options!.DefaultTimeToLive.Should().Be(TimeSpan.FromHours(24));
     }
 }

@@ -31,7 +31,7 @@ internal static class MultidimensionalCoverageEndpoints
     private const string MultidimCoverageEntitlement = "raster.multidim-coverage";
 
     private const string JobSubstrateUnavailableDetail =
-        "The execution-job substrate (Redis-backed store/queue) is not available, so the GDAL " +
+        "The execution-job substrate (PostgreSQL-backed store/queue) is not available, so the GDAL " +
         "metadata scan cannot be dispatched. Configure the job substrate to enable coverage scans.";
 
     public static void MapMultidimensionalCoverageEndpoints(this IEndpointRouteBuilder endpoints)
@@ -347,8 +347,11 @@ internal static class MultidimensionalCoverageEndpoints
         CancellationToken cancellationToken)
     {
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        // Registrations are keyed by storage handle, which is what the ImageServer, WCS and Zarr
+        // readers look them up by; a publication's LayerIndex is Service-local and names another layer.
         return snapshot.Graph.Publications.Any(publication =>
-            publication.LayerIndex == layerId && snapshot.IsRoutable(publication));
+            snapshot.IsRoutable(publication)
+            && snapshot.ResolveStorageLayerId(publication, resource: null) == layerId);
     }
 
     private static MultidimensionalCoverageRegistrationResponse ToResponse(MultidimensionalCoverageRegistration reg)

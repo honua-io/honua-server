@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Text.Json;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -16,7 +17,9 @@ using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
@@ -141,6 +144,13 @@ internal static partial class FeatureServerEndpoints
                 [parseError ?? "topFilter must be valid JSON."]);
         }
 
+        if (FirstUnavailableTopFilterField(resource, topFilter) is { } unavailableField)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid topFilter parameter",
+                [ErrorMessages.NotFound.FormatField(unavailableField, resource.Metadata.Name)]);
+        }
+
         if (!TryParseBoolValue(values, "returnCountOnly", false, out var returnCountOnly, out var countError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -182,6 +192,15 @@ internal static partial class FeatureServerEndpoints
                 ["resultOffset cannot be negative."]);
         }
 
+        // Same bound and wording as the query operation's pagination validation.
+        var queryLimits = ResolveQueryLimits(context);
+        if (resultOffset > queryLimits.MaxOffset)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "Invalid resultOffset parameter",
+                [$"resultOffset cannot exceed {queryLimits.MaxOffset}. Maximum offset: {queryLimits.MaxOffset}."]);
+        }
+
         if (!TryParseIntValue(values, "resultRecordCount", out var resultRecordCount, out var recordCountError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -213,13 +232,28 @@ internal static partial class FeatureServerEndpoints
             return whereError!;
         }
 
+        // Feature responses page at the service record cap and read one probe row for
+        // exceededTransferLimit; ids responses carry no page cap, as on query. A count-only
+        // response ignores resultOffset and resultRecordCount so it is the paging total.
+        var featurePage = !returnIdsOnly && !returnCountOnly;
+        var countOnlyResponse = returnCountOnly && !returnIdsOnly;
+        int? pageLimit = resultRecordCount;
+        if (featurePage)
+        {
+            pageLimit = ResolveTopFeaturesPageLimit(resultRecordCount, queryLimits.MaxRecordCount);
+        }
+        else if (countOnlyResponse)
+        {
+            pageLimit = null;
+        }
+
         query = query with
         {
             TopFilter = topFilter,
             SpatialReferenceSrid = resource.ReadSrid(),
             OutputSrid = outputSrid,
-            Offset = resultOffset,
-            Limit = resultRecordCount
+            Offset = countOnlyResponse ? null : resultOffset,
+            Limit = featurePage && pageLimit < int.MaxValue ? pageLimit + 1 : pageLimit
         };
 
         var outFieldsStr = GetValueString(values, "outFields");
@@ -245,7 +279,9 @@ internal static partial class FeatureServerEndpoints
         {
             var featureReader = await ResolveAnalyticsFeatureReaderAsync(
                 context, snapshot, service, resource, publication, storageLayerId.Value, cancellationToken).ConfigureAwait(false);
-            result = await featureReader.QueryTopFeaturesAsync(storageLayerId.Value, query, cancellationToken);
+            result = TrimTopFeaturesPage(
+                await featureReader.QueryTopFeaturesAsync(storageLayerId.Value, query, cancellationToken),
+                pageLimit);
         }
         catch (NotSupportedException)
         {
@@ -253,6 +289,8 @@ internal static partial class FeatureServerEndpoints
                 context,
                 "queryTopFeatures is not supported by the configured feature provider for this layer.");
         }
+
+        var schemaResource = await HideMaskedFieldsAsync(context, resource, cancellationToken).ConfigureAwait(false);
 
         // returnIdsOnly: return the objectId-set payload, mirroring the normal query
         // operation. pbf returns the ObjectIdsResult arm; JSON returns
@@ -303,7 +341,7 @@ internal static partial class FeatureServerEndpoints
         {
             var pbfFormatter = context.RequestServices.GetRequiredService<PbfQueryFormatter>();
             var topSrid = outputSrid ?? resource.ReadSrid();
-            var (pbfPayload, _) = pbfFormatter.FormatAsPbfStream(result, resource, new PbfStreamEncodingOptions
+            var (pbfPayload, _) = pbfFormatter.FormatAsPbfStream(result, schemaResource, new PbfStreamEncodingOptions
             {
                 ReturnGeometry = returnGeometry,
                 OutputSrid = topSrid,
@@ -319,8 +357,22 @@ internal static partial class FeatureServerEndpoints
         }
 
         return CreateTopFeaturesJsonResult(
-            BuildTopFeaturesJsonResponse(result, resource, returnGeometry, outputSrid), topFeaturesIsPretty);
+            BuildTopFeaturesJsonResponse(result, schemaResource, returnGeometry, outputSrid), topFeaturesIsPretty);
     }
+
+    internal static int ResolveTopFeaturesPageLimit(int? resultRecordCount, int maxRecordCount)
+    {
+        var cap = Math.Max(1, maxRecordCount);
+        return resultRecordCount is > 0 ? Math.Min(resultRecordCount.Value, cap) : cap;
+    }
+
+    internal static QueryResult<Feature> TrimTopFeaturesPage(QueryResult<Feature> result, int? pageLimit)
+        => pageLimit is int limit && result.Items.Length > limit
+            ? QueryResult<Feature>.Create(limit, result.Items.RemoveRange(limit, result.Items.Length - limit), hasMoreResults: true)
+            : result;
+
+    private static QueryLimits ResolveQueryLimits(HttpContext context)
+        => context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Query;
 
     internal static QueryResponse BuildTopFeaturesJsonResponse(
         QueryResult<Feature> result,
@@ -507,6 +559,14 @@ internal static partial class FeatureServerEndpoints
             return false;
         }
     }
+
+    // topFilter groups and orders only by fields the layer publishes and does not hide; a hidden
+    // field is answered like an undeclared one.
+    private static string? FirstUnavailableTopFilterField(MetadataV2Object resource, TopFilter topFilter)
+        => topFilter.GroupByFields
+            .Concat(topFilter.OrderByFields.Select(clause => clause.Field))
+            .FirstOrDefault(field => resource.FindVisibleSchemaField(field) is null &&
+                (!CallerOrderByFields.AllowedCoreOrderByFields.Contains(field) || resource.IsHiddenSchemaField(field)));
 
     private static ImmutableArray<OrderByClause> ParseOrderByFields(string orderByFieldsStr)
     {

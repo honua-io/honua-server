@@ -45,8 +45,6 @@ internal sealed class ImageServerExportTilesHandler
     private const string ExportTilesTpkContentType = "application/octet-stream";
     private const int ExportTilesTileSizeBytesEstimate = 32 * 1024;
 
-    private readonly record struct ExportTileCoordinate(int Z, int X, int Y);
-
     private sealed record ExportTilesPlan(
         int LayerId,
         RasterMergeStrategy MergeStrategy,
@@ -184,12 +182,16 @@ internal sealed class ImageServerExportTilesHandler
         }
 
         layerId = plan!.LayerId;
-
         if (_storage is null)
         {
             return StandardErrorHelpers.CreateServiceUnavailable(
                 context,
                 "Cloud file storage is not configured. exportTiles requires storage-backed artifacts.");
+        }
+
+        if (context.RequestServices.GetService<ExportTilesArtifactBudget>()?.TryTake(context.User) is { } retryAfter)
+        {
+            return StandardErrorHelpers.CreateTooManyRequests(context, ExportTilesArtifactBudget.RefusedMessage, retryAfter);
         }
 
         ImageServerLog.ExportTilesRequested(_logger, layerId, plan!.Tiles.Length);
@@ -513,9 +515,9 @@ internal sealed class ImageServerExportTilesHandler
         }
 
         var bounds = NormalizeExportTilesBounds(extentTransform.Extent);
-        var allTiles = BuildExportTileCoordinates(bounds, requestedZooms);
-        var exceededTransferLimit = allTiles.Length > maxTiles;
-        var selectedTiles = allTiles.Take(maxTiles).ToArray();
+        var totalTileCount = ExportTileGrid.Count(bounds, requestedZooms);
+        var exceededTransferLimit = totalTileCount > maxTiles;
+        var selectedTiles = ExportTileGrid.Build(bounds, requestedZooms, maxTiles);
         if (selectedTiles.Length == 0)
         {
             return (null, StandardErrorHelpers.CreateBadRequest(context, "exportTiles selected no tiles."));
@@ -760,50 +762,6 @@ internal sealed class ImageServerExportTilesHandler
         var minLat = Math.Clamp(Math.Min(extent.MinY, extent.MaxY), -SpatialConstants.WebMercatorMaxLatitude, SpatialConstants.WebMercatorMaxLatitude);
         var maxLat = Math.Clamp(Math.Max(extent.MinY, extent.MaxY), -SpatialConstants.WebMercatorMaxLatitude, SpatialConstants.WebMercatorMaxLatitude);
         return [minLon, minLat, maxLon, maxLat];
-    }
-
-    private static ExportTileCoordinate[] BuildExportTileCoordinates(double[] bounds, IReadOnlyList<int> levels)
-    {
-        var minLon = bounds[0];
-        var minLat = bounds[1];
-        var maxLon = bounds[2];
-        var maxLat = bounds[3];
-        var coordinates = new List<ExportTileCoordinate>();
-
-        foreach (var z in levels)
-        {
-            var n = 1 << z;
-            var xMin = LonToExportTileX(minLon, z, n);
-            var xMax = LonToExportTileX(maxLon, z, n);
-            var yMin = LatToExportTileY(maxLat, z, n);
-            var yMax = LatToExportTileY(minLat, z, n);
-
-            for (var x = xMin; x <= xMax; x++)
-            {
-                for (var y = yMin; y <= yMax; y++)
-                {
-                    coordinates.Add(new ExportTileCoordinate(z, x, y));
-                }
-            }
-        }
-
-        return [.. coordinates];
-    }
-
-    private static int LonToExportTileX(double lon, int z, int n)
-    {
-        var clampedLon = Math.Clamp(lon, -180d, 180d);
-        var x = (int)Math.Floor((clampedLon + 180d) / 360d * n);
-        return Math.Clamp(x, 0, n - 1);
-    }
-
-    private static int LatToExportTileY(double lat, int z, int n)
-    {
-        var clampedLat = Math.Clamp(lat, -SpatialConstants.WebMercatorMaxLatitude, SpatialConstants.WebMercatorMaxLatitude);
-        var latRad = clampedLat * Math.PI / 180d;
-        var y = (int)Math.Floor(
-            (1d - Math.Log(Math.Tan(latRad) + 1d / Math.Cos(latRad)) / Math.PI) / 2d * n);
-        return Math.Clamp(y, 0, n - 1);
     }
 
     private static bool TryResolveTileExtension(RasterFormat format, out string extension)

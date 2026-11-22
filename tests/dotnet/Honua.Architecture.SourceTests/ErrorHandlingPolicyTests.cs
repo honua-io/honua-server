@@ -46,13 +46,27 @@ public sealed class ErrorHandlingPolicyTests
         // Pure route wiring. Request validation and stream failure handling live in
         // AdminLiveStream (400 for an unknown topic, catch of cancellation and IO).
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "AdminLiveEndpoints.cs"),
+        // Pure route wiring. AssetProfileService shapes every error through AssetCommandHttp
+        // (field-level validation problems, 403/404/409 admin problem details).
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Assets", "AssetProfileEndpoints.cs"),
+        // Pure route wiring. WorkTaskService shapes every error through AssetCommandHttp.
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Tasks", "WorkTaskEndpoints.cs"),
         // Cancellation helpers delegate error shaping to TryReconcileDurableCancelAsync
         // in the main partial; this file only bridges successful results.
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "OperationsProgressEndpoints.CancellationResults.cs"),
+        // Admission partition resolution only: no handler; the session-limit refusal is shaped in FeatureStreamEndpoints.
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Streaming", "FeatureStreamEndpoints.Admission.cs"),
+        // Pure route wiring. FormXlsFormService shapes every import and export failure
+        // (400 query and workbook diagnostics, 404 unpublished package, 422 export diagnostics) as admin problem details.
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Forms", "FormXlsFormEndpoints.cs"),
         // Error shaping uses the alert-admin surface's ApiResponse failure envelope
         // (Results.Json + 400), which the marker scan does not recognize; failures
         // beyond request validation are handled by the global exception middleware.
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "AlertOpsAdminEndpoints.cs"),
+        // Error shaping uses the admin ApiResponse failure envelope (TypedResults.Json
+        // with 400/404/409/422), which the marker scan does not recognize; unexpected
+        // failures are handled by the global exception middleware.
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "Exports", "ExportAdminEndpoints.cs"),
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "FeatureOverviewEndpoints.cs"),
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "GeocodingAdminEndpoints.cs"),
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "LicenseAdminEndpoints.cs"),
@@ -195,8 +209,7 @@ public sealed class ErrorHandlingPolicyTests
         // exception type in parens at all — valid C#, and functionally
         // identical to `catch (Exception) { }`) is just as silent but does not
         // match the typed-catch alternative, so it is matched as a second
-        // alternative below (PA-068 slipped past this test in exactly this
-        // form before it was hardened).
+        // alternative below.
         var pattern = new Regex(
             @"catch\s*\(\s*Exception(?:\s+\w+)?\s*\)\s*(?:when\s*\([^)]*\)\s*)?\{\s*\}|catch\s*\{\s*\}",
             RegexOptions.CultureInvariant);

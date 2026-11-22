@@ -655,7 +655,7 @@ public sealed class StudioMcpOwnershipAuthorizationTests
     [Endpoint("POST /mcp tools/call honua_studio_get_draft")]
     public async Task MissingTarget_NonOwnerReceivesCrossOwnerDenial_AdminLearnsNotFound(DraftToolFamily family)
     {
-        // Existence must not be an oracle (#3429): an unknown id and another owner's resource
+        // Existence must not be an oracle: an unknown id and another owner's resource
         // produce the same governed denial for a non-owner; only an admin sees not-found.
         var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
         lifecycle.GetDraftAsync(DraftId, Arg.Any<CancellationToken>()).Returns((StudioPackageDraft?)null);

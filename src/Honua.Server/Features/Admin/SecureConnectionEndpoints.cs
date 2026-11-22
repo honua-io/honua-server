@@ -7,6 +7,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -52,37 +53,56 @@ internal static partial class SecureConnectionEndpoints
             .RequireAdminAuthorization();
 
         // Connection CRUD operations
-        group.MapGet("/", HandleGetConnections)
-            .WithDisplayName("List Secure Connections")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var list = AdminHttpOperationRouteBinding.ForConnectImport("admin.connections.list", "/connections");
+        group.MapMethods(list.RoutePattern, list.Methods, HandleGetConnections)
+            .WithAdminOperation(list.Definition)
+            .AddEndpointFilter(ObjectStorageConnectionDispatch.ListAsync)
+            .WithDisplayName("List Secure Connections");
 
-        group.MapGet("/{id:guid}", HandleGetConnection)
-            .WithDisplayName("Get Secure Connection")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var get = AdminHttpOperationRouteBinding.ForConnectImport("admin.connections.get", "/connections", "/{id:guid}");
+        group.MapMethods(get.RoutePattern, get.Methods, HandleGetConnection)
+            .WithAdminOperation(get.Definition)
+            .AddEndpointFilter(ObjectStorageConnectionDispatch.GetAsync)
+            .WithDisplayName("Get Secure Connection");
 
-        group.MapPost("/", HandleCreateConnection)
-            .WithDisplayName("Create Secure Connection")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+        var create = AdminHttpOperationRouteBinding.ForConnectImport("admin.connections.create", "/connections");
+        group.MapMethods(create.RoutePattern, create.Methods, HandleCreateConnection)
+            .WithAdminOperation(create.Definition)
+            .AddEndpointFilter(ObjectStorageConnectionDispatch.CreateAsync)
+            .WithDisplayName("Create Secure Connection");
 
-        group.MapPost("/test", HandleTestDraftConnection)
+        var testDraft = AdminHttpOperationRouteBinding.ForConnectImport("admin.connections.test-draft", "/connections");
+        group.MapMethods(testDraft.RoutePattern, testDraft.Methods, HandleTestDraftConnection)
+            .WithAdminOperation(testDraft.Definition)
+            .AddEndpointFilter(ObjectStorageConnectionDispatch.TestDraftAsync)
             .WithDisplayName("Test Secure Connection Draft")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .WithRouteAgentRule("Tests a connection and changes nothing; the attempt is audited.");
 
-        group.MapPut("/{id:guid}", HandleUpdateConnection)
-            .WithDisplayName("Update Secure Connection")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+        var update = AdminHttpOperationRouteBinding.ForConnectImport("admin.connections.update", "/connections", "/{id:guid}");
+        group.MapMethods(update.RoutePattern, update.Methods, HandleUpdateConnection)
+            .WithAdminOperation(update.Definition)
+            .AddEndpointFilter(ObjectStorageConnectionDispatch.UpdateAsync)
+            .WithDisplayName("Update Secure Connection");
 
-        group.MapDelete("/{id:guid}", HandleDeleteConnection)
-            .WithDisplayName("Delete Secure Connection")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
+        var delete = AdminHttpOperationRouteBinding.ForConnectImport("admin.connections.delete", "/connections", "/{id:guid}");
+        group.MapMethods(delete.RoutePattern, delete.Methods, HandleDeleteConnection)
+            .WithAdminOperation(delete.Definition)
+            .AddEndpointFilter(ObjectStorageConnectionDispatch.DeleteAsync)
+            .WithDisplayName("Delete Secure Connection");
 
         // Connection testing and health
-        group.MapPost("/{id:guid}/test", HandleTestConnection)
+        var test = AdminHttpOperationRouteBinding.ForConnectImport("admin.connections.test", "/connections", "/{id:guid}/test");
+        group.MapMethods(test.RoutePattern, test.Methods, HandleTestConnection)
+            .WithAdminOperation(test.Definition)
+            .AddEndpointFilter(ObjectStorageConnectionDispatch.TestAsync)
             .WithDisplayName("Test Connection Health")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .WithRouteAgentRule("Tests a connection and changes nothing; the attempt is audited.");
 
+        MapEncryptionManagementEndpoints(group);
+    }
+
+    private static void MapEncryptionManagementEndpoints(IEndpointRouteBuilder group)
+    {
         // Encryption management
         group.MapPost("/encryption/validate", HandleValidateEncryption)
             .WithDisplayName("Validate Encryption Service")

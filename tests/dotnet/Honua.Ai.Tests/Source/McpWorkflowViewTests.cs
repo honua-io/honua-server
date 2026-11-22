@@ -44,7 +44,7 @@ public sealed partial class McpWorkflowViewTests
     [UnitTest]
     public async Task SetupView_EligibleLifecycleOperationAddedAndRemoved_RefreshesMembership()
     {
-        McpDataAccessSurface Surface(params IMcpToolSource[] sources) => new(
+        static McpDataAccessSurface Surface(params IMcpToolSource[] sources) => new(
             McpTaxonomyAlignmentTests.BuildTools().Where(tool => tool.Name != "honua_studio_reopen_version"),
             [], NullLogger<McpDataAccessSurface>.Instance, toolSources: sources);
         var before = await ListToolsAsync(Surface(), McpWorkflowViewCatalog.SetupViewName);

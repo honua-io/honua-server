@@ -26,7 +26,7 @@ using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.Ge
 
 namespace Honua.Db.Postgres.Features.FeatureStore;
 
-internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IDistinctFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IObjectIdStreamingReader, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore, IPreChangeImageReader
+internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IDistinctFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IPooledTileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IObjectIdStreamingReader, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore, IPreChangeImageReader
 {
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
@@ -658,6 +658,40 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
         return await _dataAccess.GetMvtTileAsync(layerId, tileQuery, tileLimits.MaxTileSize, cancellationToken);
     }
 
+    public async Task<Core.Features.Tiles.PooledTileData?> GetMvtTilePooledAsync(
+        Core.Features.Tiles.MvtTileRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (_dataAccess is not FeatureDataAccess postgresDataAccess)
+        {
+            var bytes = await GetMvtTileAsync(
+                request.LayerId, request.X, request.Y, request.Z, request.Query,
+                request.TileOptions, request.TileLimits, request.GridGeometry, cancellationToken).ConfigureAwait(false);
+            return bytes is null ? null : Core.Features.Tiles.PooledTileData.FromOwnedArray(bytes);
+        }
+
+        var effectiveQuery = request.Query.HasValue
+            ? await ApplyPermanentFilterAsync(request.LayerId, request.Query.Value, cancellationToken).ConfigureAwait(false)
+            : await ApplyPermanentFilterAsync(request.LayerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        if (_queryBuilder is FeatureQueryBuilder postgresBuilder)
+        {
+            return await MvtTileBudgetFitter.ReadPooledAsync(
+                new MvtTileBudgetRead<Honua.Core.Features.FeatureStore.Domain.ParameterizedQuery>(
+                    request.TileLimits.MaxTileSize,
+                    step => postgresBuilder.BuildMvtTileQuery(
+                        request.LayerId, request.X, request.Y, request.Z, effectiveQuery,
+                        request.TileOptions, request.TileLimits, geometryStorageType, request.GridGeometry, step),
+                    (tileQuery, maxTileSize, token) => postgresDataAccess.GetMvtTilePooledAsync(tileQuery, maxTileSize, token)),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        var tileQuery = _queryBuilder.BuildMvtTileQuery(
+            request.LayerId, request.X, request.Y, request.Z, effectiveQuery,
+            request.TileOptions, request.TileLimits, geometryStorageType, request.GridGeometry);
+        return await postgresDataAccess.GetMvtTilePooledAsync(tileQuery, request.TileLimits.MaxTileSize, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<byte[]?> GetH3MvtTileAsync(
         int layerId,
         int x,
@@ -866,11 +900,20 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
 
         if (isKnnQuery)
         {
-            var knnSelectQuery = buildSelect(layerId, query, geometryStorageType);
-            var knnFeatures = await executeSelect(knnSelectQuery, query, layerId, cancellationToken);
-            return knnFeatures.Length == 0
+            // A page cut short of the nearest count reads one probe row so the more-results flag is exact.
+            var probe = query.NearestNeighborCountExceedsLimit();
+            var knnQuery = probe ? query with { Limit = query.Limit + 1 } : query;
+            var knnSelectQuery = buildSelect(layerId, knnQuery, geometryStorageType);
+            var knnFeatures = await executeSelect(knnSelectQuery, knnQuery, layerId, cancellationToken);
+            var hasMoreNearest = probe && knnFeatures.Length > query.Limit;
+            if (hasMoreNearest)
+            {
+                knnFeatures = knnFeatures.RemoveAt(knnFeatures.Length - 1);
+            }
+
+            return knnFeatures.Length == 0 && !hasMoreNearest
                 ? QueryResult<T>.Empty()
-                : QueryResult<T>.Create(knnFeatures.Length, knnFeatures, false);
+                : QueryResult<T>.Create(knnFeatures.Length, knnFeatures, hasMoreNearest);
         }
 
         // PERFORMANCE OPTIMIZATION: Use single query with window function instead of separate count + select

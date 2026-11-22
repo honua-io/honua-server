@@ -60,9 +60,6 @@
          The Linux native asset stays on Server.csproj; consumers that
          actually rasterize already reference Server. -->
     <PackageReference Include="SkiaSharp" />
-    <!-- StackExchange.Redis supports active authentication, progress and
-         post-idle connection recovery paths in the shared hosting surface. -->
-    <PackageReference Include="StackExchange.Redis" />
     <!-- Apache.Arrow + ParquetSharp back the shared GeoParquet feature writer
          (GeoParquetFeatureWriter), lifted here so both the GeoServices
          (f=parquet) and OData ($format=parquet) protocol adapters share a single
@@ -102,6 +99,7 @@
     <InternalsVisibleTo Include="Honua.Server" />
     <InternalsVisibleTo Include="Honua.Protocols.Scene.ComponentTests" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />
+    <InternalsVisibleTo Include="Honua.CloudIntegration.Tests" />
     <InternalsVisibleTo Include="Honua.TestKit" />
     <InternalsVisibleTo Include="Honua.Aws" />
     <InternalsVisibleTo Include="Honua.Azure" />

@@ -234,6 +234,11 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         {
             return LayerComputationBudget.Refusal($"Invalid {HandledProcessId} inputs: {ex.PublicMessage}");
         }
+        catch (DagSourceSelectionException ex)
+        {
+            // Caller-facing selector rejection (e.g. an unsupported where): same refusal as the layer executors.
+            return LayerComputationBudget.Refusal($"Invalid {HandledProcessId} inputs: {ex.Message}");
+        }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
@@ -614,7 +619,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
             cancellationToken.ThrowIfCancellationRequested();
             output.Add(SpatialJoinSupport.Join(
                 target, index, plan.Predicate, plan.Distance, plan.CarryFields, plan.Stats, budget,
-                cancellationToken));
+                cancellationToken: cancellationToken));
         }
 
         return output;

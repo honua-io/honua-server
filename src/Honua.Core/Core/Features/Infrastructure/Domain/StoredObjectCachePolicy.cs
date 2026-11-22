@@ -8,16 +8,19 @@ public enum StoredObjectCachePolicy
 {
     NotShared,
     PublicReplacedInPlace,
+    PublicImmutable,
 }
 
 public static class StoredObjectCacheControl
 {
     public const string NotShared = "private, no-store";
     public const string PublicReplacedInPlace = "public, max-age=60, s-maxage=300";
+    public const string PublicImmutable = "public, max-age=31536000, immutable";
 
     public static string For(StoredObjectCachePolicy policy) => policy switch
     {
         StoredObjectCachePolicy.PublicReplacedInPlace => PublicReplacedInPlace,
+        StoredObjectCachePolicy.PublicImmutable => PublicImmutable,
         _ => NotShared,
     };
 }

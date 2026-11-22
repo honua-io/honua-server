@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Operations.Policy;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -181,6 +182,29 @@ public sealed class DefaultOperatorApprovalEvaluatorTests
         var result = evaluator.Evaluate(CreatePrincipal(), request);
 
         result.IsRequired.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Evaluate_AgentDestructiveExecute_RequiresApprovalEvenWhenDisabled()
+    {
+        var evaluator = CreateEvaluator(destructiveActionsRequireApproval: false);
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Job,
+            Operation = OperatorOperation.Execute,
+            IsDestructive = true
+        };
+        var agent = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, "agent-1"),
+                new Claim(ClaimTypes.Role, AgentApprovalRule.AgentRole)
+            ],
+            "TestScheme"));
+
+        var result = evaluator.Evaluate(agent, request);
+
+        result.IsRequired.Should().BeTrue();
+        result.PolicyRef.Should().Be("operator.destructive.job");
     }
 
     [UnitTest]

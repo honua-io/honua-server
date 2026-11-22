@@ -24,16 +24,19 @@ assert SPEC and SPEC.loader
 SPEC.loader.exec_module(module)
 
 
+from xml.sax.saxutils import quoteattr
+
+
 def trx(results, summary="Completed", counters=None):
     counters = counters or {"total": len(results), "executed": len(results), "passed": len(results), "failed": 0, "notExecuted": 0}
     attrs = " ".join(f'{key}="{value}"' for key, value in counters.items())
     rows = "".join(
-        f'<UnitTestResult testId="test-{index}" testName="{name.replace("_", " ")}" outcome="{outcome}" />'
-        for index, (name, outcome) in enumerate(results)
+        f'<UnitTestResult testId="test-{index}" testName={quoteattr(entry[2] if len(entry) > 2 else entry[0].replace("_", " "))} outcome="{entry[1]}" />'
+        for index, entry in enumerate(results)
     )
     definitions = "".join(
-        f'<UnitTest id="test-{index}" name="{name}"><TestMethod className="Honua.Tests.{name.split(".", 1)[0]}" name="{name.split(".", 1)[1]}" /></UnitTest>'
-        for index, (name, _outcome) in enumerate(results)
+        f'<UnitTest id="test-{index}" name="{entry[0]}"><TestMethod className="Honua.Tests.{entry[0].split(".", 1)[0]}" name="{entry[0].split(".", 1)[1]}" /></UnitTest>'
+        for index, entry in enumerate(results)
     )
     return f'<TestRun><Results>{rows}</Results><TestDefinitions>{definitions}</TestDefinitions><ResultSummary outcome="{summary}"><Counters {attrs} /></ResultSummary></TestRun>'
 
@@ -345,6 +348,32 @@ class ProtocolHarnessFragmentTests(unittest.TestCase):
             path.write_text(trx([("OtherTests.Unowned", "Failed")]), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "ungoverned selected test"):
                 module.parse_trx(path, {"ExampleTests.Get_ReturnsDocument"})
+
+    def test_theory_cases_aggregate_pass_and_preserve_partial_failure(self):
+        test_id = "Wfs20MutationScenarioTests.Transaction_InsertUpdateReplaceDelete_RoundTripsEachState"
+        all_pass = [
+            (test_id, "Passed", f'{test_id}(publicationId: "pub-layer-0")'),
+            (test_id, "Passed", f'{test_id}(publicationId: "roads:primary")'),
+            (test_id, "Passed", f'{test_id}(publicationId: "roads.v2")'),
+        ]
+        partial_fail = [
+            (test_id, "Passed", f'{test_id}(publicationId: "pub-layer-0")'),
+            (test_id, "Failed", f'{test_id}(publicationId: "roads:primary")'),
+            (test_id, "Passed", f'{test_id}(publicationId: "roads.v2")'),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "ogcclassic.trx"
+            path.write_text(trx(all_pass), encoding="utf-8")
+            self.assertEqual({test_id: "pass"}, module.parse_trx(path, {test_id}))
+            path.write_text(
+                trx(
+                    partial_fail,
+                    summary="Failed",
+                    counters={"total": 3, "executed": 3, "passed": 2, "failed": 1, "notExecuted": 0},
+                ),
+                encoding="utf-8",
+            )
+            self.assertEqual({test_id: "fail"}, module.parse_trx(path, {test_id}))
 
     def test_duplicate_or_missing_summary_structure_fails_closed(self):
         for contents in (

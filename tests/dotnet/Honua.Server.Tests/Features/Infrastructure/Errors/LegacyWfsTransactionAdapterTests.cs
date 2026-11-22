@@ -3,10 +3,12 @@
 
 using System.Xml.Linq;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Fes20;
 using Honua.Protocols.Ogc.Classic.Wfs20.Services;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -282,5 +284,90 @@ public sealed class LegacyWfsTransactionAdapterTests
         var response = XElement.Parse(Wfs20Handler.FormatLegacyTransactionResponse(canonical, "1.0.0"));
         response.Descendants(Wfs + "SUCCESS").Should().BeEmpty();
         response.Descendants(Wfs + "PARTIAL").Should().ContainSingle();
+    }
+
+    [UnitTest]
+    public void Wfs10Response_GroupsConsecutiveFeaturesWithSameHandleIntoSingleInsertResult()
+    {
+        var canonical = """
+            <wfs:TransactionResponse xmlns:wfs="http://www.opengis.net/wfs/2.0" xmlns:fes="http://www.opengis.net/fes/2.0">
+              <wfs:TransactionSummary><wfs:totalInserted>3</wfs:totalInserted></wfs:TransactionSummary>
+              <wfs:InsertResults>
+                <wfs:Feature><fes:ResourceId rid="Inserts.1"/></wfs:Feature>
+                <wfs:Feature><fes:ResourceId rid="Inserts.2"/></wfs:Feature>
+                <wfs:Feature handle="second"><fes:ResourceId rid="Inserts.3"/></wfs:Feature>
+              </wfs:InsertResults>
+            </wfs:TransactionResponse>
+            """;
+
+        var response = XElement.Parse(Wfs20Handler.FormatLegacyTransactionResponse(canonical, "1.0.0"));
+        var inserts = response.Elements(Wfs + "InsertResult").ToArray();
+
+        inserts.Should().HaveCount(2);
+        inserts[0].Attribute("handle").Should().BeNull();
+        inserts[0].Elements(Ogc + "FeatureId").Select(element => element.Attribute("fid")!.Value)
+            .Should().Equal("Inserts.1", "Inserts.2");
+        inserts[1].Attribute("handle")!.Value.Should().Be("second");
+        inserts[1].Elements(Ogc + "FeatureId").Select(element => element.Attribute("fid")!.Value)
+            .Should().Equal("Inserts.3");
+    }
+
+    [UnitTest]
+    public void ResolveTransactionField_PreservesGmlGeometryPropertyAndIgnoresBoundedBy()
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource(
+                "resource-inserts",
+                "Inserts",
+                fields:
+                [
+                    new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+                    new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.String, Nullable = true },
+                    new MetadataV2Field { Name = "pointProperty", Type = MetadataV2FieldType.Geometry, Nullable = false }
+                ],
+                spatial: new MetadataV2ObjectSpatial
+                {
+                    GeometryType = MetadataV2GeometryType.Point,
+                    PrimaryGeometryField = "pointProperty"
+                })
+            .Build();
+        var resource = graph.Resources.Single();
+
+        var resolvedGeometry = Wfs20Handler.ResolveTransactionField(resource, "pointProperty", Gml.NamespaceName);
+        var ignoredBounds = Wfs20Handler.ResolveTransactionField(resource, "boundedBy", Gml.NamespaceName);
+
+        resolvedGeometry.Should().NotBeNull();
+        resolvedGeometry!.Value.Field.Name.Should().Be("pointProperty");
+        resolvedGeometry.Value.IsGmlProperty.Should().BeFalse();
+        ignoredBounds.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void ResolveTransactionGeometryElement_UnwrapsGmlGeometryPropertyAndKeepsWfs10AxisOrder()
+    {
+        var source = XElement.Parse("""
+            <wfs:Transaction xmlns:wfs="http://www.opengis.net/wfs" xmlns:gml="http://www.opengis.net/gml"
+                xmlns:cdf="http://www.opengis.net/cite/data" version="1.0.0">
+              <wfs:Insert>
+                <cdf:Inserts>
+                  <gml:pointProperty>
+                    <gml:Point srsName="urn:ogc:def:crs:EPSG::4326">
+                      <gml:coordinates>-157.8,21.3</gml:coordinates>
+                    </gml:Point>
+                  </gml:pointProperty>
+                </cdf:Inserts>
+              </wfs:Insert>
+            </wfs:Transaction>
+            """);
+
+        var normalized = Wfs20Handler.NormalizeLegacyTransaction(source);
+        var property = normalized.Descendants(Gml + "pointProperty").Single();
+        var geometryElement = Wfs20Handler.ResolveTransactionGeometryElement(property);
+
+        geometryElement.Should().NotBeNull();
+        geometryElement!.Name.Should().Be(Gml + "Point");
+        var geometry = Wfs20Handler.ParseTransactionGeometry(geometryElement, 4326);
+        geometry.Coordinate.X.Should().Be(-157.8);
+        geometry.Coordinate.Y.Should().Be(21.3);
     }
 }

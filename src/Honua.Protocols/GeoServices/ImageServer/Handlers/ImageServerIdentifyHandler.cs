@@ -189,6 +189,15 @@ internal sealed class ImageServerIdentifyHandler
                 selectedRasters = selectedRasters.Where(raster => lockedIds.Contains(raster.Id)).ToArray();
             }
 
+            var cogPoint = new ImageServerCogIdentifyRequest(new(snapshot, resolved.Publication, []), x.Value, y.Value) { Srid = srid, HasRenderingRule = rendering is not null };
+            var cog = selectedRasters.Length == 0 ? await ImageServerCogIdentify.TryReadAsync(context, cogPoint, cancellationToken).ConfigureAwait(false) : null;
+            if (cog?.Refusal is { } cogRefusal)
+            {
+                return cogRefusal;
+            }
+
+            selectedRasters = cog?.Raster is { } cogRaster ? [cogRaster] : selectedRasters;
+
             if (selectedRasters.Length == 0)
             {
                 // ArcGIS ImageServer identify returns a 200 NoData document (not a 404) when the
@@ -236,7 +245,7 @@ internal sealed class ImageServerIdentifyHandler
             ImageServerLog.IdentifyStarted(_logger, layerId, x.Value, y.Value);
 
             // Identify pixel values
-            var pixelResult = selectedRasters.Length == 1
+            var pixelResult = cog?.Pixel ?? (selectedRasters.Length == 1
                 ? await _rasterStore.IdentifyAsync(layerId, selectedRasters[0].Id, x.Value, y.Value, srid, rendering, cancellationToken)
                 : await _rasterStore.IdentifyMosaicAsync(
                     layerId,
@@ -248,7 +257,7 @@ internal sealed class ImageServerIdentifyHandler
                     rendering,
                     mosaicRule.ToOrdering(),
                     mosaicRule.ToAttributeSort(),
-                    cancellationToken);
+                    cancellationToken));
 
             // returnGeometry controls whether catalog item footprints are emitted. ArcGIS
             // returns a polygon footprint on each participating catalog feature when

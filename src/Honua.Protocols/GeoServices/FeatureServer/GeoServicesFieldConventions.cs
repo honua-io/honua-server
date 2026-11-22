@@ -7,10 +7,15 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
+internal readonly record struct TemporalAttribute(string Name, object Value, MetadataV2FieldType FieldType);
+
 internal static class GeoServicesFieldConventions
 {
     // String fields never emit a null or non-positive length, because arcpy maps that to 0 and then rejects every insert as field length exceeded.
     internal const int DefaultStringFieldLength = 256;
+
+    private const string CalendarDateFormat = "yyyy-MM-dd";
+    private const int CalendarDateLength = 10;
 
     internal static int ResolveStringFieldLength(int? declaredLength)
         => declaredLength is int length and > 0 ? length : DefaultStringFieldLength;
@@ -23,9 +28,11 @@ internal static class GeoServicesFieldConventions
             MetadataV2FieldType.Integer => "sqlTypeInteger",
             MetadataV2FieldType.BigInteger => "sqlTypeOther",
             MetadataV2FieldType.Double => "sqlTypeFloat",
+            MetadataV2FieldType.Decimal => "sqlTypeNumeric",
             MetadataV2FieldType.Float => "sqlTypeFloat",
             MetadataV2FieldType.Boolean => "sqlTypeOther",
             MetadataV2FieldType.DateTime => "sqlTypeOther",
+            MetadataV2FieldType.TimestampOffset => "sqlTypeOther",
             MetadataV2FieldType.Date => "sqlTypeOther",
             MetadataV2FieldType.Time => "sqlTypeNVarchar",
             MetadataV2FieldType.Json => "sqlTypeNVarchar",
@@ -43,9 +50,11 @@ internal static class GeoServicesFieldConventions
             MetadataV2FieldType.Integer => "esriFieldTypeInteger",
             MetadataV2FieldType.BigInteger => "esriFieldTypeBigInteger",
             MetadataV2FieldType.Double => "esriFieldTypeDouble",
+            MetadataV2FieldType.Decimal => "esriFieldTypeDouble",
             MetadataV2FieldType.Float => "esriFieldTypeSingle",
             MetadataV2FieldType.Boolean => "esriFieldTypeSmallInteger",
             MetadataV2FieldType.DateTime => "esriFieldTypeDate",
+            MetadataV2FieldType.TimestampOffset => "esriFieldTypeDate",
             MetadataV2FieldType.Date => "esriFieldTypeDateOnly",
             MetadataV2FieldType.Time => "esriFieldTypeString",
             MetadataV2FieldType.Json => "esriFieldTypeString",
@@ -156,25 +165,63 @@ internal static class GeoServicesFieldConventions
         return false;
     }
 
+    // Also carries exact Decimal fields: Esri JSON has no exact decimal, so their text becomes a double.
     internal static Dictionary<string, MetadataV2FieldType> ResolveTemporalFieldTypes(MetadataV2Object resource)
         => resource.SchemaFields
-            .Where(static field => field.Type is MetadataV2FieldType.DateTime or MetadataV2FieldType.Date)
+            .Where(static field => field.Type is MetadataV2FieldType.DateTime or MetadataV2FieldType.Date
+                or MetadataV2FieldType.TimestampOffset or MetadataV2FieldType.Decimal)
             .ToDictionary(static field => field.Name, static field => field.Type, StringComparer.OrdinalIgnoreCase);
 
     internal static bool TryConvertTemporalValue(object value, MetadataV2FieldType fieldType, out object? converted)
     {
         converted = null;
-        if (fieldType == MetadataV2FieldType.DateTime && TryConvertToEpochMilliseconds(value, out var epoch))
+        if (fieldType == MetadataV2FieldType.Decimal && ExactAttributeValues.ToFiniteDouble(value) is { } number)
+        {
+            converted = number;
+            return true;
+        }
+        if (fieldType is MetadataV2FieldType.DateTime or MetadataV2FieldType.TimestampOffset
+            && TryConvertToEpochMilliseconds(value, out var epoch))
         {
             converted = epoch;
             return true;
         }
         if (fieldType == MetadataV2FieldType.Date && TryConvertCalendarDate(value, out var date))
         {
-            converted = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            converted = date.ToString(CalendarDateFormat, CultureInfo.InvariantCulture);
             return true;
         }
         return false;
+    }
+
+    // Writes what TryConvertTemporalValue would return without boxing the value or formatting a string.
+    internal static bool TryWriteTemporalValue(Utf8JsonWriter writer, TemporalAttribute attribute)
+    {
+        var (propertyName, value, fieldType) = attribute;
+        if (fieldType == MetadataV2FieldType.Decimal && ExactAttributeValues.ToFiniteDouble(value) is { } number)
+        {
+            writer.WriteNumber(propertyName, number);
+            return true;
+        }
+        if (fieldType is MetadataV2FieldType.DateTime or MetadataV2FieldType.TimestampOffset
+            && TryConvertToEpochMilliseconds(value, out var epoch))
+        {
+            writer.WriteNumber(propertyName, epoch);
+            return true;
+        }
+        if (fieldType == MetadataV2FieldType.Date && TryConvertCalendarDate(value, out var date))
+        {
+            WriteCalendarDate(writer, propertyName, date);
+            return true;
+        }
+        return false;
+    }
+
+    internal static void WriteCalendarDate(Utf8JsonWriter writer, string propertyName, DateOnly date)
+    {
+        Span<char> text = stackalloc char[CalendarDateLength];
+        _ = date.TryFormat(text, out var written, CalendarDateFormat, CultureInfo.InvariantCulture);
+        writer.WriteString(propertyName, text[..written]);
     }
 
     internal static object? NormalizeFieldDefault(MetadataV2Field field)

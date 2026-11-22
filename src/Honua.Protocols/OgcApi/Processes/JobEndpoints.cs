@@ -69,7 +69,7 @@ internal static class JobEndpoints
             .AllowAnonymous();
     }
 
-    private static async Task<IResult> GetJobList(
+    internal static async Task<IResult> GetJobList(
         HttpContext context,
         ILogger<OgcProcessesEndpointsLog> logger,
         IOptions<OgcProcessesOptions> options,
@@ -124,7 +124,10 @@ internal static class JobEndpoints
                     [
                         ExecutionJobStatus.Queued,
                         ExecutionJobStatus.Provisioning,
-                        ExecutionJobStatus.Running
+                        ExecutionJobStatus.Running,
+                        ExecutionJobStatus.Succeeded,
+                        ExecutionJobStatus.Failed,
+                        ExecutionJobStatus.Cancelled
                     ]
                 },
                 context.User,
@@ -140,6 +143,11 @@ internal static class JobEndpoints
         var statusInfosBuilder = ImmutableArray.CreateBuilder<OgcStatusInfo>();
         foreach (var job in page.Items)
         {
+            if (job.Spec.Kind != ExecutionJobKind.Geoprocessing)
+            {
+                continue;
+            }
+
             var jobAuthDecision = await gate.CheckAuthorizationAsync(
                 context.User,
                 new OperatorAuthorizationRequest
@@ -375,23 +383,7 @@ internal static class JobEndpoints
 
         if (OgcProcessesCiteEchoFixture.IsJob(job))
         {
-            if (!TryToCiteEchoResultsDocument(
-                    job,
-                    resultPackage,
-                    executorOptions.CurrentValue.MaxArtifactBytes,
-                    out var citeResultsDocument))
-            {
-                return OgcProcessesResults.Error(
-                    StatusCodes.Status500InternalServerError,
-                    "Invalid certification result",
-                    "The certification fixture produced invalid result evidence.");
-            }
-
-            return Results.Json(
-                citeResultsDocument.Outputs ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal),
-                OgcProcessesJsonContext.Default.DictionaryStringJsonElement,
-                MediaTypes.Json,
-                StatusCodes.Status200OK);
+            return BuildCiteEchoResultsResponse(job, resultPackage, executorOptions.CurrentValue.MaxArtifactBytes);
         }
 
         if (OgcProcessesExecutionMetadata.UsesValueTransmission(job.Spec.Parameters))
@@ -454,6 +446,35 @@ internal static class JobEndpoints
             logger);
         return Results.Json(
             resultsDocument.Outputs ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal),
+            OgcProcessesJsonContext.Default.DictionaryStringJsonElement,
+            MediaTypes.Json,
+            StatusCodes.Status200OK);
+    }
+
+    // The CITE echo fixture returns the same bare-value document as its async results.
+    internal static Task<IResult> BuildSyncDocumentResultsResponseAsync(
+        ExecutionJobRecord job,
+        HttpContext context,
+        AnalysisResultPackage resultPackage)
+        => OgcProcessesCiteEchoFixture.IsJob(job)
+            ? Task.FromResult(BuildCiteEchoResultsResponse(job, resultPackage, GetMaxResponseBytes(context)))
+            : BuildValueResultsResponseAsync(job, context, resultPackage);
+
+    private static IResult BuildCiteEchoResultsResponse(
+        ExecutionJobRecord job,
+        AnalysisResultPackage resultPackage,
+        long maxArtifactBytes)
+    {
+        if (!TryToCiteEchoResultsDocument(job, resultPackage, maxArtifactBytes, out var citeResultsDocument))
+        {
+            return OgcProcessesResults.Error(
+                StatusCodes.Status500InternalServerError,
+                "Invalid certification result",
+                "The certification fixture produced invalid result evidence.");
+        }
+
+        return Results.Json(
+            citeResultsDocument.Outputs ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal),
             OgcProcessesJsonContext.Default.DictionaryStringJsonElement,
             MediaTypes.Json,
             StatusCodes.Status200OK);

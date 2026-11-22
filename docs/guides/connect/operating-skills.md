@@ -5,13 +5,14 @@ description: "Use the quickstart's task-specific Agent Skills and verify their p
 ---
 # Honua operating skills
 
-The Compose quickstart carries five [Agent Skills](https://agentskills.io/specification)
+The Compose quickstart carries six [Agent Skills](https://agentskills.io/specification)
 under `skills/`, alongside `AGENTS.md`. Each directory contains `SKILL.md` and
 supporting references. Installation is explicit; the package does not change
 your home directory or permissions.
 
 | Skill | Use it for | Workflow family |
 | --- | --- | --- |
+| `honua-exports` | Cloud-native file Exports, approvals and public URL readback | Publish Data |
 | `honua-install` | Install, readiness and secret files | Automate / Deploy |
 | `honua-ops` | Findings, approved restarts, upgrades and rollback | Automate / Deploy |
 | `honua-services` | Import, publish and verify filtered results | Publish Data |

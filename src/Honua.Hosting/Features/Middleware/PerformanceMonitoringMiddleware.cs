@@ -37,7 +37,7 @@ internal sealed partial class PerformanceMonitoringMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        var stopwatch = Stopwatch.StartNew();
+        var startTimestamp = Stopwatch.GetTimestamp();
         var endpoint = GetNormalizedEndpoint(context);
         // Not a `using` declaration: `operationScope` starts null and is conditionally
         // reassigned below (only when EnableDetailedRequestTracking is on); C# does not
@@ -92,37 +92,38 @@ internal sealed partial class PerformanceMonitoringMiddleware
             // Log performance impact of exceptions
             var requestPath = context.Request.Path.Value ?? string.Empty;
             var exceptionType = ex.GetType().Name;
+            var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
             PerformanceMonitoringLog.RequestExceptionOccurred(_logger,
                 context.Request.Method,
                 requestPath,
                 exceptionType,
-                stopwatch.Elapsed.TotalMilliseconds);
+                elapsedMs);
             throw;
         }
         finally
         {
-            stopwatch.Stop();
+            var elapsed = Stopwatch.GetElapsedTime(startTimestamp);
 
             // Decrement active request count
             _performanceMonitor.RecordActiveHttpRequestDelta(-1);
 
             // Record request metrics
-            RecordRequestMetrics(context, endpoint, stopwatch.Elapsed);
+            RecordRequestMetrics(context, endpoint, elapsed);
             var isError = requestErrored ||
                           context.Response.StatusCode >= StatusCodes.Status500InternalServerError ||
                           context.Response.StatusCode == StatusCodes.Status408RequestTimeout;
-            _systemMetricsCollector.RecordRequest(stopwatch.Elapsed, isError);
+            _systemMetricsCollector.RecordRequest(elapsed, isError);
 
             operationScope?.WithTag("status_code", context.Response.StatusCode.ToString(CultureInfo.InvariantCulture));
 
             // Log slow requests
-            if (stopwatch.Elapsed > _options.SlowRequestThreshold)
+            if (elapsed > _options.SlowRequestThreshold)
             {
                 var requestPath = context.Request.Path.Value ?? string.Empty;
                 PerformanceMonitoringLog.SlowRequestDetected(_logger,
                     context.Request.Method,
                     requestPath,
-                    stopwatch.Elapsed.TotalMilliseconds,
+                    elapsed.TotalMilliseconds,
                     _options.SlowRequestThreshold.TotalMilliseconds);
             }
 
@@ -138,11 +139,11 @@ internal sealed partial class PerformanceMonitoringMiddleware
         _performanceMonitor.RecordHttpRequest(method, endpoint, statusCode, duration);
 
         // Record additional metrics for detailed monitoring
-        var tags = new Dictionary<string, string>
+        var tags = new TagList
         {
             { "method", method },
             { "endpoint", endpoint },
-            { "status_code", statusCode.ToString() },
+            { "status_code", statusCode.ToString(CultureInfo.InvariantCulture) },
             { "protocol", context.Request.Protocol }
         };
 

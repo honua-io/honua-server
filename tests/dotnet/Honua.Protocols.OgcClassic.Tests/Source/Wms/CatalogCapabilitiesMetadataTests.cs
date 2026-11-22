@@ -55,6 +55,9 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
             .Select(element => element.Value).Should().Contain("roads & bridges");
         document.Descendants().Where(element => element.Name.LocalName is "ElectronicMailAddress" or "ContactElectronicMailAddress")
             .Select(element => element.Value).Should().Contain("ops@example.com");
+        // WMS ContactVoiceTelephone / OWS ows:Phone/ows:Voice satisfy the WMS 1.3 ETS service-contact-info recommendation.
+        document.Descendants().Where(element => element.Name.LocalName is "Voice" or "ContactVoiceTelephone")
+            .Select(element => element.Value).Should().Contain("+1 555 0100");
         identification.Elements().Single(element => element.Name.LocalName == "Fees").Value.Should().Be("USD 5 per request");
         identification.Elements().Single(element => element.Name.LocalName == "AccessConstraints").Value.Should().Be("Registered users");
         text.Should().NotContain("1 Honua Way").And.NotContain("support@honua.local").And.NotContain("Honua Support");
@@ -260,7 +263,7 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
     private void SeedMetadata()
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
-        MetadataV2ObjectMetadata WithAuthoredIdentification(MetadataV2ObjectMetadata metadata, string title) => metadata with
+        static MetadataV2ObjectMetadata WithAuthoredIdentification(MetadataV2ObjectMetadata metadata, string title) => metadata with
         {
             Title = title,
             Description = "Survey <abstract> & details",
@@ -283,6 +286,7 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
         {
             metadata["fees"] = "USD 5 per request";
             metadata["accessConstraints"] = "Registered users";
+            metadata["contactPoint"]!["phone"] = "+1 555 0100";
         }
         var authored = JsonSerializer.Deserialize(json.ToJsonString(), MetadataV2JsonContext.Default.MetadataV2Graph)!;
         ((TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>())

@@ -12,7 +12,7 @@ See the [Honua vocabulary](../../concepts/domain/README.md) for the meanings of 
 
 You'll have a DEM served as Terrain-RGB tiles for MapLibre 3D terrain, plus numeric elevation queries, in about 10 minutes.
 
-**Prerequisites:** A running server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), and a single-band DEM GeoTIFF.
+**Prerequisites:** A running server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), and a single-band DEM GeoTIFF. Raster storage needs the `postgis_raster` extension in the server's database. Without it, as on the feature-only quickstart, `POST /api/v1/admin/import/raster` returns `503` with that operator action (enable `postgis_raster`, then restart the server), and terrain and elevation requests return `404`.
 
 Honua encodes registered single-band raster sources as Mapbox Terrain-RGB PNG tiles and exposes the same data through point/profile elevation endpoints. This guide covers the workflow; the full endpoint contract lives in the [terrain and elevation reference](../../reference/protocols/terrain-and-elevation.md).
 
@@ -28,7 +28,7 @@ Terrain requires exactly one numeric elevation band and a consistent source CRS 
 
 Open `http://localhost:8080/terrain/{layerId}/tile.json` in a browser, substituting the layer id.
 
-`{datasetId}` accepts the numeric layer id or a layer collection name. The response is TileJSON 3.0 plus Honua `encoding`, `source`, and `noData` extensions; check `"supported": true` before wiring up clients.
+`{layerId}` accepts the numeric layer id or the layer's name (its collection id, not the service name). The response is TileJSON 3.0 plus Honua `encoding`, `source`, and `noData` extensions; check `"supported": true` before wiring up clients.
 
 ### 3. Add the source to MapLibre
 

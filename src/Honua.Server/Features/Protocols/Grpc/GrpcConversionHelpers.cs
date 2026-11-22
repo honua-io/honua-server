@@ -62,11 +62,6 @@ internal static class GrpcConversionHelpers
                 : null,
         };
 
-        if (!string.IsNullOrEmpty(request.OrderBy))
-        {
-            query = query with { OrderBy = ParseOrderBy(request.OrderBy) };
-        }
-
         if (request.OutStatistics.Count > 0)
         {
             query = query with
@@ -169,29 +164,33 @@ internal static class GrpcConversionHelpers
             return null;
         }
 
-        if (spatialReference.Wkid > 0)
-        {
-            return spatialReference.Wkid;
-        }
-
         if (spatialReference.LatestWkid > 0)
         {
             return spatialReference.LatestWkid;
         }
 
+        if (spatialReference.Wkid > 0)
+        {
+            return spatialReference.Wkid;
+        }
+
         return null;
     }
 
-    public static GeometryLimits CreateEffectiveGeometryLimits(GeometryLimits baseLimits, Proto.QueryFeaturesRequest request)
+    // geometrySrid is the SRID the response geometries are in (out_sr, else the layer's).
+    public static GeometryLimits CreateEffectiveGeometryLimits(
+        GeometryLimits baseLimits, Proto.QueryFeaturesRequest request, int? geometrySrid = null)
     {
         var precisionOverride = request.GeometryPrecision > 0 ? (int?)request.GeometryPrecision : null;
         var simplifyToleranceOverride = request.MaxAllowableOffset > 0 ? (double?)request.MaxAllowableOffset : null;
 
-        return GeometryOutputProcessor.CreateEffectiveLimits(
-            baseLimits,
-            precisionOverride,
-            simplifyToleranceOverride,
-            forceSimplify: simplifyToleranceOverride.HasValue);
+        return GeometryOutputProcessor.ForGeometrySrid(
+            GeometryOutputProcessor.CreateEffectiveLimits(
+                baseLimits,
+                precisionOverride,
+                simplifyToleranceOverride,
+                forceSimplify: simplifyToleranceOverride.HasValue),
+            geometrySrid);
     }
 
     public static Proto.Feature ToProtoFeature(
@@ -364,7 +363,7 @@ internal static class GrpcConversionHelpers
                 av.BoolValue = b;
                 break;
             case DateTime dt:
-                av.DatetimeValue = new DateTimeOffset(dt, TimeSpan.Zero).ToUnixTimeMilliseconds();
+                av.DatetimeValue = ToUnixMilliseconds(dt);
                 break;
             case DateTimeOffset dto:
                 av.DatetimeValue = dto.ToUnixTimeMilliseconds();
@@ -383,6 +382,32 @@ internal static class GrpcConversionHelpers
                 break;
         }
         return av;
+    }
+
+    // Local times are converted; unspecified ones are stored UTC, as every other read path treats them.
+    internal static long ToUnixMilliseconds(DateTime value) => new DateTimeOffset(
+        value.Kind == DateTimeKind.Local ? value.ToUniversalTime() : DateTime.SpecifyKind(value, DateTimeKind.Utc))
+        .ToUnixTimeMilliseconds();
+
+    // Features carry the object ID as their id, so its field is declared unless the caller passes
+    // none (distinct rows have no object ID, as on FeatureServer).
+    internal static IReadOnlyList<MetadataV2Field> SelectResponseFields(
+        IReadOnlyList<MetadataV2Field> schemaFields,
+        ImmutableArray<string>? outFields,
+        string? objectIdFieldName)
+    {
+        if (outFields is not { IsDefaultOrEmpty: false } requested)
+        {
+            return schemaFields;
+        }
+
+        var names = new HashSet<string>(requested, StringComparer.OrdinalIgnoreCase);
+        if (objectIdFieldName is { Length: > 0 })
+        {
+            names.Add(objectIdFieldName);
+        }
+
+        return schemaFields.Where(field => names.Contains(field.Name)).ToArray();
     }
 
     private static Feature ToDomainFeature(Proto.Feature feature, bool requireId)
@@ -519,6 +544,19 @@ internal static class GrpcConversionHelpers
     }
 
     private static Proto.Geometry ToProtoGeometry(byte[] wkb, GeometryLimits? geometryLimits)
+    {
+        // Without simplification the stored WKB maps straight onto the response geometry.
+        if (geometryLimits is not { SimplifyTolerance: > 0 }
+            && GrpcWkbProjection.Project(wkb, geometryLimits?.MaxCoordinatePrecision ?? -1) is { } projected)
+        {
+            return projected;
+        }
+
+        return ToProtoGeometryThroughNts(wkb, geometryLimits);
+    }
+
+    // The general path: decode, apply simplification and precision limits, then project.
+    internal static Proto.Geometry ToProtoGeometryThroughNts(byte[] wkb, GeometryLimits? geometryLimits)
     {
         var geometry = WkbReader.Read(wkb);
         if (geometryLimits != null)
@@ -768,19 +806,7 @@ internal static class GrpcConversionHelpers
     }
 
     private static int? ResolveSpatialFilterSrid(Proto.SpatialReference? spatialReference)
-    {
-        if (spatialReference == null)
-        {
-            return null;
-        }
-
-        if (spatialReference.Wkid > 0)
-        {
-            return spatialReference.Wkid;
-        }
-
-        return spatialReference.LatestWkid > 0 ? spatialReference.LatestWkid : null;
-    }
+        => TryResolveOutputSrid(spatialReference);
 
     private static void TryProjectGeometryCollection(GeometryCollection collection, Proto.Geometry proto)
     {
@@ -934,37 +960,4 @@ internal static class GrpcConversionHelpers
             OutStatisticFieldName = proto.OutStatisticFieldName
         };
     }
-
-    // Schema field types have to travel with the clause because an untyped managed JSONB attribute sorts a numeric value as text.
-    public static ImmutableArray<OrderByClause> WithSchemaFieldTypes(
-        ImmutableArray<OrderByClause> orderBy,
-        IReadOnlyList<MetadataV2Field> schemaFields)
-        => orderBy
-            .Select(clause => schemaFields.FirstOrDefault(field =>
-                    string.Equals(field.Name, clause.Field, StringComparison.OrdinalIgnoreCase)) is { } declared
-                ? clause with { Field = declared.Name, FieldType = declared.Type }
-                : clause)
-            .ToImmutableArray();
-
-    private static ImmutableArray<OrderByClause> ParseOrderBy(string orderBy)
-    {
-        var clauses = orderBy.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var builder = ImmutableArray.CreateBuilder<OrderByClause>(clauses.Length);
-
-        foreach (var clause in clauses)
-        {
-            var parts = clause.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length == 0)
-                continue;
-
-            var field = parts[0];
-            var ascending = parts.Length < 2 ||
-                !parts[1].Equals("DESC", StringComparison.OrdinalIgnoreCase);
-
-            builder.Add(new OrderByClause(field, ascending));
-        }
-
-        return builder.ToImmutable();
-    }
-
 }

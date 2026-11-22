@@ -53,7 +53,9 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-router-fixtures.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-router-fixtures.py
   run_fixture generated-file-ownership "${PYTHON_BIN}" scripts/ci/check-generated-file-ownership.test.py
   run_fixture workflow-inventory "${PYTHON_BIN}" scripts/ci/generate-workflow-inventory.test.py
+  run_fixture codeql-pr-paths "${PYTHON_BIN}" scripts/ci/codeql-pr-paths.test.py
   run_fixture disabled-workflows "${PYTHON_BIN}" scripts/ci/check-disabled-workflows.test.py
+  run_fixture export-portolan "${PYTHON_BIN}" scripts/ci/check-export-portolan.test.py
   run_fixture shard-identities-tests "${PYTHON_BIN}" scripts/ci/check-shard-identities.test.py
   run_fixture shard-identities "${PYTHON_BIN}" scripts/ci/check-shard-identities.py
   run_fixture publish-authorization-tests "${PYTHON_BIN}" scripts/ci/check-publish-authorization.test.py
@@ -79,6 +81,8 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-testcontainer-images.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-testcontainer-images.py
   run_fixture scripts/ci/fixtures/validate-advisory-runner.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-advisory-runner.py
   run_fixture scripts/ci/fixtures/validate-heavy-runners.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-heavy-runners.py
+  run_fixture scripts/ci/fixtures/validate-heavy-shard-placement.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-heavy-shard-placement.py
+  run_fixture scripts/ci/fixtures/test-server-test-shard-free-disk.py "${PYTHON_BIN}" scripts/ci/fixtures/test-server-test-shard-free-disk.py
   run_fixture scripts/ci/fixtures/test-affected-admission.py "${PYTHON_BIN}" scripts/ci/fixtures/test-affected-admission.py
   run_fixture scripts/ci/fixtures/validate-trunk-affected.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-trunk-affected.py
   run_fixture scripts/ci/fixtures/validate-affected-ci-lanes.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-affected-ci-lanes.py
@@ -162,6 +166,7 @@ jq -e '
         .[]
         | (.prefix | type == "string" and length > 0)
           and (.reason | type == "string" and length > 0)
+          and ((has("prioritize") | not) or (.prioritize | type == "boolean"))
           and (.shards | type == "array" and length > 0)
       ] | all)
     )
@@ -169,6 +174,9 @@ jq -e '
 ' .github/ci-shards.json >/dev/null
 }
 run_fixture shard-structure validate_shard_structure
+if [[ -n "${PYTHON_BIN}" ]]; then
+  run_fixture shard-structure-controls "${PYTHON_BIN}" scripts/ci/fixtures/test-shard-structure.py
+fi
 
 # #2721: the artifact registry must cover the exact unique shard-project set, and
 # its package/restore contract must fail closed on RID leakage, tampering and limits.
@@ -191,6 +199,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/validate-matrix-file-transport.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-matrix-file-transport.py
   run_fixture scripts/ci/fixtures/validate-pr-managed-build.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-managed-build.py
   run_fixture scripts/ci/fixtures/validate-managed-sdk-selection.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-managed-sdk-selection.py
+  run_fixture scripts/ci/fixtures/validate-host-package-fallback.py "${PYTHON_BIN}" scripts/ci/fixtures/validate-host-package-fallback.py
 fi
 run_fixture managed-artifact-client node --test .github/actions/managed-test-artifacts/client.test.mjs
 
@@ -1288,7 +1297,7 @@ assert_descriptor \
 assert_exact_shards \
   "shared-wmts-formatter-bounded-owners" \
   "src/Honua.Protocols/Ogc.Shared/Common/WmtsTileMatrixFormatting.cs" \
-  '["GeoServices ImageServer 1","GeoServices ImageServer 2","GeoServices ImageServer 3","GeoServices ImageServer 4","GeoServices ImageServer 5","GeoServices ImageServer 6","OGC API Tiles Coverages and Processes 1","OGC API Tiles Coverages and Processes 2","OGC API Tiles Coverages and Processes 3","OGC API Tiles Coverages and Processes 4","OGC Classic WMTS 1","OGC Classic WMTS 2","Protocol and Host Components","Protocol Units"]'
+  '["GeoServices ImageServer","OGC API Tiles Coverages and Processes 1","OGC API Tiles Coverages and Processes 2","OGC API Tiles Coverages and Processes 3","OGC API Tiles Coverages and Processes 4","OGC Classic WMTS","Protocol and Host Components","Protocol Units"]'
 
 # An endpoint-ADDING feature PR touches the registration plumbing AND a feature
 # dir under a shard's paths: it runs the smoke subset PLUS that feature's owning
@@ -1869,7 +1878,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Elevation.ElevationEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Elevation and Terrain Analysis 1" \
+    "Elevation and Terrain Analysis" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Cog.CogEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1933,11 +1942,11 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.OData.ODataFilterMatrixTests" \
     "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj" \
-    "OData Advanced and Filters 2" \
+    "OData Advanced and Filters" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles.OgcTilesEndpointTests" \
     "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
-    "OGC API Tiles Endpoints and CRS 1" \
+    "OGC API Tiles Endpoints and CRS" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes.OgcProcessesDismissJobTests" \
     "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
@@ -1977,7 +1986,7 @@ run_fixture scripts/ci/check-server-test-shard-coverage.py "${PYTHON_BIN}" scrip
   --assert-owner \
     "Honua.Server.Tests.Features.Admin.PlatformAdminEndpointsTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Admin Platform and Connections 2" \
+    "Server Features Admin Platform and Connections" \
   --assert-owner \
     "Honua.Server.Tests.Features.Admin.ConfigurationSecretRedactorTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -2162,6 +2171,7 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   run_fixture scripts/ci/fixtures/test-owned-server.py "${PYTHON_BIN}" scripts/ci/fixtures/test-owned-server.py
   run_fixture scripts/ci/fixtures/test-quickstart-console-smoke.py "${PYTHON_BIN}" scripts/ci/fixtures/test-quickstart-console-smoke.py
   run_fixture scripts/ci/test-store-profile-workflows.py "${PYTHON_BIN}" scripts/ci/test-store-profile-workflows.py
+  run_fixture scripts/ci/test-core-package-consumers.py "${PYTHON_BIN}" scripts/ci/test-core-package-consumers.py
   run_fixture scripts/ci/test-manual-rollback-readiness.py "${PYTHON_BIN}" scripts/ci/test-manual-rollback-readiness.py
 fi
 

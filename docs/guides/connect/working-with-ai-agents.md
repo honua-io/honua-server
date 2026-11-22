@@ -32,7 +32,7 @@ who operates it. Follow them in addition to the user's request. Where a request
 conflicts with a rule, stop and ask.
 
 - Serving API and MCP: `http://localhost:18080/mcp`. Use it to publish, query, and manage access, maps and apps.
-- Management API and MCP: `http://localhost:18082/mcp`. Use it for upgrades, rollback and their proposals.
+- Management API and MCP: `http://localhost:18082/mcp?view=operate`. Use it for upgrades, rollback and their proposals. Authenticate with a human-provisioned credential accepted by the management endpoint (the management service uses its own admin secret in `secrets/honua_manager_admin_password`, separate from the serving secret). A person approves its proposals in the manager Console at `https://127.0.0.1:18084/console/`. If the management endpoint exposes no release tools on your install, check `http://localhost:18080/mcp?view=operate`.
 - Secrets live in `.env`, in files under `secrets/`, and in the secret files mounted into the
   containers. Do not print them. A script may read one named key file and must not print it.
   You may copy `.env` and `secrets/` for a backup, but never display them.
@@ -61,9 +61,10 @@ conflicts with a rule, stop and ask.
   before you finish. That includes your API key, a role you depend on, and an access policy that
   excludes you. If the last step will lock you out, do it last, and say what you can no longer verify.
 - A map and the services it draws on have separate access. To share a map with a team, change the
-  map's sharing: its publication audience (`honua_studio_propose_publication` with the requested
-  visibility). Don't change the service's access policy unless the user asks you to. If the team
-  can't read a layer the map uses, tell the user and ask before widening access to it.
+  map's sharing: its publication audience (`honua_studio_propose_publication` in the `setup` workflow
+  view, `?view=setup`, with the requested visibility). Don't change the service's access policy
+  unless the user asks you to. If the team can't read a layer the map uses, tell the user and ask
+  before widening access to it.
 - If the audience is unclear ("public", "the team"), ask who should see the map and each of its layers.
 
 ## 3. Use the approval flow; never go around it
@@ -105,7 +106,9 @@ conflicts with a rule, stop and ask.
 
 1. Back up first. Confirm there is a current database backup. Copy `.env`, `secrets/` and file storage
    to a private location without displaying them. The executor's backups don't cover file storage.
-2. Read the current state with `honua_platform_release_status` on the management endpoint.
+2. Read the current state with `honua_platform_release_status` in the `operate` workflow view
+   (`?view=operate` on the management endpoint, or on the serving endpoint when the management
+   endpoint exposes no release tools).
 3. Set only the new release's pins in `.env` (`HONUA_RELEASE_IMAGE`, `HONUA_RELEASE_WORKER_IMAGE`,
    `HONUA_RELEASE_VERSION`) from that release's lock, without displaying the file. Then pull the new
    serving image.
@@ -113,11 +116,11 @@ conflicts with a rule, stop and ask.
    and executor with the new release and keeps the serving container on its approved image. Check
    with `honua_platform_release_status` that the declared `releaseVersion` is now the target. Until
    it is, a convergence proposal is rejected with `platform_release_version_mismatch`.
-5. Propose the upgrade with `honua_propose_platform_release_convergence` and the target version. A
-   person reviews and approves it in Console. Poll `honua://proposals/{id}` until it reads
-   `Succeeded` or `Completed` (success), or `Failed`, `Rejected` or `Cancelled` (stop).
-6. To roll back, use `honua_propose_rollback`. Review the selected revision and backup in the
-   proposal's `diff` and `dryRun` before it goes to the approver.
+5. Propose the upgrade with `honua_propose_platform_release_convergence` (in the `operate` view) and
+   the target version. A person reviews and approves it in Console. Poll `honua://proposals/{id}`
+   until it reads `Succeeded` or `Completed` (success), or `Failed`, `Rejected` or `Cancelled` (stop).
+6. To roll back, use `honua_propose_rollback` (in the `operate` view). Review the selected revision
+   and backup in the proposal's `diff` and `dryRun` before it goes to the approver.
 7. Confirm the running build, not the request. In `honua_platform_release_status`, the serving
    target's entry in `serving` must have the release's pinned image as its
    `observedArtifactReference`, with `skewed: false`. Top-level status must report
@@ -142,10 +145,14 @@ Don't replace the serving container by hand, run `docker compose down --volumes`
 
 ## 7. Operating skills
 
-The package's `skills/` directory contains two optional Agent Skills:
+The package's `skills/` directory contains six optional Agent Skills:
 
+- `skills/honua-exports/SKILL.md`: cloud-native file Exports, approvals and public URL readback.
+- `skills/honua-install/SKILL.md`: install, readiness and secret files.
 - `skills/honua-ops/SKILL.md`: findings, approved restarts, upgrade and rollback.
 - `skills/honua-services/SKILL.md`: import, publish, filtered queries and readback.
+- `skills/honua-studio-maps/SKILL.md`: saved Studio map styles, versions and audience.
+- `skills/honua-tuning/SKILL.md`: measured layer publication budgets.
 
 Install the relevant skills from this directory before starting your host:
 

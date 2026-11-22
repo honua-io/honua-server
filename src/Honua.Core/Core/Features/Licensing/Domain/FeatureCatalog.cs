@@ -178,9 +178,8 @@ public static class FeatureCatalog
 
         // Geocoding — Enterprise. geocoding.forward and geocoding.reverse moved to
         // CapabilityKeyCatalog.CommunityKeys — the demo/adoption showcase path is
-        // Community; batch geocoding is the volume/enterprise workload that stays gated. Both
-        // shipped Pro in the catalog but unenforced over HTTP before this change (only the MCP
-        // honua_geocode_address tool checked geocoding.forward); see ADR-0024.
+        // Community; batch geocoding is the volume/enterprise workload that stays gated over
+        // HTTP and MCP; see ADR-0024.
         new(BatchGeocodingKey, "Batch Geocoding", Categories.Geocoding,
             HonuaEdition.Enterprise, "Geocode multiple addresses in a single request."),
 
@@ -309,7 +308,7 @@ public static class FeatureCatalog
 
         // Editing — Pro (core branch versioning; organisational approval/policy remains Enterprise)
         new(BranchVersioningKey, "Branch Versioning", Categories.Editing,
-            HonuaEdition.Pro, "Core branch versioning (Pro): named gdb versions, isolated edits, reconcile/post, and gdbVersion-scoped editing/querying. Organisational approval and policy controls remain Enterprise. Preview in 2026.1; the experimental runtime opt-in remains required."),
+            HonuaEdition.Pro, "Core branch versioning (Pro): named gdb versions, isolated edits, reconcile/post, and gdbVersion-scoped editing/querying. Organisational approval and policy controls remain Enterprise. Experimental and off by default in 2026.1; enable with Capabilities:Experimental:versioning.branch:Enabled=true."),
 
         // AI operations — Pro (read/discovery/query surfaces remain Community)
         new(AiSpecApplyKey, "Spec Apply Execution", Categories.Ai,
@@ -345,7 +344,7 @@ public static class FeatureCatalog
         new(FailoverPlaybooksKey, "Failover Playbooks", Categories.DisasterRecovery,
             HonuaEdition.Enterprise, "Enterprise automated active-passive failover playbooks driven by health checks. Essential recovery procedures remain baseline obligations in every edition."),
         new(CacheBackupKey, "Cache State Backup", Categories.DisasterRecovery,
-            HonuaEdition.Enterprise, "Enterprise automation for Redis warm-cache recovery during regional failover. Recovery of enabled durable Redis job/workflow state remains a baseline obligation in every edition."),
+            HonuaEdition.Enterprise, "Enterprise automation for warm-cache recovery during regional failover. Recovery of enabled durable PostgreSQL job/workflow state remains a baseline obligation in every edition."),
         new(RecoveryReportingKey, "RTO/RPO Reporting", Categories.DisasterRecovery,
             HonuaEdition.Enterprise, "Enterprise automated RTO/RPO reporting and recovery-readiness dashboards. Documented recovery expectations and verified restores remain baseline obligations in every edition."),
 

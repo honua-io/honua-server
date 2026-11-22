@@ -170,7 +170,8 @@ public sealed class OidcAuthoritySelectionTests
             wrapped,
             transformation,
             new OidcConfigurationManagerCache(),
-            NullLogger<OidcPortalCredentialVerifier>.Instance);
+            NullLogger<OidcPortalCredentialVerifier>.Instance,
+            replays: new Honua.Infrastructure.Security.InMemoryTokenReplayStore());
     }
 
     private static OidcAuthenticationOptions AllProviders() => new()
@@ -243,7 +244,8 @@ public sealed class OidcAuthoritySelectionTests
             transformation,
             new OidcConfigurationManagerCache(),
             NullLogger<OidcPortalCredentialVerifier>.Instance,
-            runtime);
+            runtime,
+            new Honua.Infrastructure.Security.InMemoryTokenReplayStore());
     }
 
     private static string CreateRsaToken(string issuer, string audience, RSA rsa, string kid)

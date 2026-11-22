@@ -16,6 +16,7 @@ using Honua.Server.Features.Operations.Status;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Monitoring;
 
@@ -29,6 +30,7 @@ internal static class ObservabilityServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         ConfigureOutputCaching(services, configuration);
+        services.AddSingleton(static _ => new MetadataDocumentByteCache());
         services.AddSingleton<OutputCacheInvalidationService>();
         services.AddSingleton<IQueryResponseCacheInvalidator>(sp =>
             sp.GetRequiredService<OutputCacheInvalidationService>());
@@ -79,11 +81,14 @@ internal static class ObservabilityServiceCollectionExtensions
             .Bind(configuration.GetSection(OpsAutonomyOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
-        services.AddSingleton<IManagedComposeObserver, ManagedComposeObserver>();
+        services.AddSingleton<IManagedComposeObserver>(sp => new ManagedComposeObserver(
+            new(sp.GetRequiredService<IComposeExecutorClient>(), sp.GetRequiredService<IOptions<ComposeExecutorOptions>>().Value),
+            sp.GetRequiredService<IOptionsMonitor<ControlPlaneOptions>>(), sp.GetRequiredService<TimeProvider>(),
+            sp.GetService<ILogger<ManagedComposeObserver>>()));
         services.AddScoped<IOpsHealthSnapshotService, OpsHealthSnapshotService>();
         // Singleton: the scoped engine must still report a store source's last successful collection
         // after a failed read in a later scope.
-        services.AddSingleton<OpsFindingsCollectionLedger>();
+        services.AddSingleton(sp => new OpsFindingsCollectionLedger(sp.GetService<ILogger<OpsFindingsCollectionLedger>>()));
         services.AddScoped(sp => new OpsFindingsExtendedSignals
         {
             DatabasePressureSignal = sp.GetService<IOpsDatabasePressureSignal>(),

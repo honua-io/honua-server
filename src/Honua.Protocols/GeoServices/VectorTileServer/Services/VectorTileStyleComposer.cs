@@ -18,6 +18,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Infrastructure.Helpers;
 
 namespace Honua.Protocols.GeoServices.VectorTileServer.Services;
 
@@ -31,26 +32,18 @@ internal static class VectorTileStyleComposer
     private const string DefaultOutlineColor = "#1A4D80";
     private const string DefaultStrokeColor = "#FFFFFF";
 
-    public static string Compose(
-        string? storedMapLibreJson,
-        string serviceName,
-        string sourceId,
-        string tileUrl,
-        MetadataV2GeometryType geometryType,
-        string? spriteUrl = null,
-        string? glyphsUrl = null,
-        string? serviceUrl = null)
+    public static string Compose(VectorTileStyleOptions options)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(serviceName);
-        ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(tileUrl);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentException.ThrowIfNullOrWhiteSpace(options.ServiceName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(options.SourceId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(options.TileUrl);
 
-        var root = TryParseStoredStyle(storedMapLibreJson)
-            ?? BuildDefaultStyle(serviceName, sourceId, tileUrl, geometryType);
+        var root = TryParseStoredStyle(options.StoredMapLibreJson) ?? BuildDefaultStyle(options);
 
-        RewriteSources(root, sourceId, tileUrl, serviceUrl);
-        ApplySpriteAndGlyphs(root, spriteUrl, glyphsUrl);
-        EnsureVersionAndName(root, serviceName);
+        RewriteSources(root, options);
+        ApplySpriteAndGlyphs(root, options.SpriteUrl, options.GlyphsUrl);
+        EnsureVersionAndName(root, options.ServiceName);
 
         return root.ToJsonString(SerializerOptions);
     }
@@ -80,7 +73,7 @@ internal static class VectorTileStyleComposer
     }
 
     // Every style source is rewritten to this service, and a stored URL that names another service is replaced or dropped.
-    private static void RewriteSources(JsonObject root, string sourceId, string tileUrl, string? serviceUrl)
+    private static void RewriteSources(JsonObject root, VectorTileStyleOptions options)
     {
         if (root["sources"] is not JsonObject sources)
         {
@@ -91,34 +84,35 @@ internal static class VectorTileStyleComposer
         // Rewrite any existing vector source in place so layer source-bindings stay valid.
         foreach (var source in sources.ToArray().Select(entry => entry.Value).OfType<JsonObject>())
         {
-            RewriteVectorSource(source, tileUrl, serviceUrl);
+            RewriteVectorSource(source, options);
         }
 
-        if (sources[sourceId] is not JsonObject configured)
+        if (sources[options.SourceId] is not JsonObject configured)
         {
             configured = new JsonObject();
-            sources[sourceId] = configured;
+            sources[options.SourceId] = configured;
         }
 
-        RewriteVectorSource(configured, tileUrl, serviceUrl);
+        RewriteVectorSource(configured, options);
     }
 
-    private static void RewriteVectorSource(JsonObject source, string tileUrl, string? serviceUrl)
+    private static void RewriteVectorSource(JsonObject source, VectorTileStyleOptions options)
     {
         source["type"] = "vector";
         // The url names this service's descriptor, from which clients read the fullExtent and
         // tile map; the direct tile template stays for clients that fetch tiles from
         // the style alone. A stored url never survives: it may name a service we do not serve.
-        if (string.IsNullOrWhiteSpace(serviceUrl))
+        if (string.IsNullOrWhiteSpace(options.ServiceUrl))
         {
             source.Remove("url");
         }
         else
         {
-            source["url"] = serviceUrl;
+            source["url"] = options.ServiceUrl;
         }
 
-        source["tiles"] = new JsonArray(tileUrl);
+        source["tiles"] = new JsonArray(options.TileUrl);
+        StyleSourceZoomRange.Narrow(source, options.TileLimits);
     }
 
     // Sprite and glyph references are added only when the style has a symbol layer and absolute references exist; otherwise they are stripped so the document does not advertise a resource the client would fail to fetch.
@@ -159,24 +153,20 @@ internal static class VectorTileStyleComposer
         }
     }
 
-    private static JsonObject BuildDefaultStyle(
-        string serviceName,
-        string sourceId,
-        string tileUrl,
-        MetadataV2GeometryType geometryType)
+    private static JsonObject BuildDefaultStyle(VectorTileStyleOptions options)
     {
-        var layers = BuildDefaultLayers(sourceId, geometryType);
+        var layers = BuildDefaultLayers(options.SourceId, options.GeometryType);
 
         return new JsonObject
         {
             ["version"] = 8,
-            ["name"] = serviceName,
+            ["name"] = options.ServiceName,
             ["sources"] = new JsonObject
             {
-                [sourceId] = new JsonObject
+                [options.SourceId] = new JsonObject
                 {
                     ["type"] = "vector",
-                    ["tiles"] = new JsonArray(tileUrl)
+                    ["tiles"] = new JsonArray(options.TileUrl)
                 }
             },
             ["layers"] = layers

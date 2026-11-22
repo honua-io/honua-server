@@ -198,6 +198,8 @@ Validate fields, geometry, CRS, source rights, and the intended read policy. Pub
 
 The publish action lists alternative interfaces. `honua_admin_layer_publish` and `honua_publish_service` both publish from connection/schema/table context; they are not a two-call chain. In particular, `honua_publish_service` does not accept an existing layer identifier to attach it to a service. The separate protocol-update binding uses the Admin OpenAPI server base `/api/v1/admin` plus its relative path and changes the existing service's enabled protocols.
 
+Over MCP, `honua_admin_connections_test` and `honua_admin_layer_publish` are listed only in the `configure` workflow view (`/mcp?view=configure`) and in the authenticated `full` catalog; the default view does not list them. Every MCP caller is an agent, administrators included, so `honua_admin_layer_publish` returns `RequiresApproval` with a pending proposal, not a live layer. The layer is created only after a person approves the proposal in Console; see [Approve agent changes](../secure/approve-agent-changes.md). A pending result is not a publication.
+
 Verify the returned identifiers and query the intended endpoint as an intended reader. If the caller asks to “undo,” distinguish unpublishing a newly created layer from deleting data. Preserve shared resources and source tables.
 
 The service/result publication tools document non-idempotent behavior: replay can create another layer. Persist returned identifiers and reconcile catalog and operation state after a timeout. A familiar request body is not an idempotency key.

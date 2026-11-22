@@ -30,21 +30,10 @@ namespace Honua.Server.Tests.Features.Export;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
-public sealed class ExportEndpointTests : IAsyncLifetime
+public sealed class ExportEndpointTests(WebAppFixture fixture) : IClassFixture<WebAppFixture>
 {
-    private readonly WebAppFixture _fixture = new();
-    private HttpClient _client = null!;
-
-    public async Task InitializeAsync()
-    {
-        await _fixture.InitializeAsync();
-        _client = _fixture.Client;
-    }
-
-    public async Task DisposeAsync()
-    {
-        await _fixture.DisposeAsync();
-    }
+    // One default host per class: its cases only read. Cases that replace services build their own.
+    private readonly HttpClient _client = fixture.Client;
 
     [IntegrationTheory]
     [InlineData("geojson")]
@@ -119,7 +108,7 @@ public sealed class ExportEndpointTests : IAsyncLifetime
         entryNames.Should().Contain(".shx");
         entryNames.Should().Contain(".dbf");
 
-        // honua-server#4419: this assertion pointedly stopped before .prj, and the endpoint DOES
+        // This assertion pointedly stopped before .prj, and the endpoint DOES
         // resolve the CRS WKT from the registry before writing (ExportEndpoints.WriteShapefile-
         // ResponseAsync). A shapefile shipped without its .prj is a CRS-less file, so a regression
         // that dropped the sidecar — or a registry lookup that started returning null — would have
@@ -174,7 +163,7 @@ public sealed class ExportEndpointTests : IAsyncLifetime
             var featureCount = await cmd.ExecuteScalarAsync();
             Convert.ToInt64(featureCount, System.Globalization.CultureInfo.InvariantCulture).Should().BeGreaterOrEqualTo(1);
 
-            // honua-server#4419: two COUNT(*) queries passed on a file whose every geometry blob
+            // Two COUNT(*) queries passed on a file whose every geometry blob
             // was garbage and whose CRS was unrecorded. Assert the CRS the GeoPackage
             // specification requires in each of its three places, and decode one geometry.
             cmd.CommandText = "SELECT srs_id FROM gpkg_contents WHERE table_name = 'features'";

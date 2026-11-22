@@ -69,6 +69,9 @@ internal sealed class LayerMetadataResponse
 
     public required int ServiceLayerIndex { get; init; }
 
+    // Deprecated wire alias of ServiceLayerIndex; published clients still read layerId.
+    public int LayerId => ServiceLayerIndex;
+
     public required string LayerName { get; init; }
 
     public string? License { get; init; }
@@ -86,6 +89,8 @@ internal sealed class LayerMetadataResponse
     public TimeInfoResponse? TimeInfo { get; init; }
 
     public RasterMosaicResponse? RasterMosaic { get; init; }
+
+    public MetadataV2ExtrusionInfo? Extrusion { get; init; }
 }
 
 internal sealed class UpdateLayerMetadataRequest
@@ -107,6 +112,8 @@ internal sealed class UpdateLayerMetadataRequest
     public UpdateTimeInfoRequest? TimeInfo { get; init; }
 
     public UpdateRasterMosaicRequest? RasterMosaic { get; init; }
+
+    public MetadataV2ExtrusionInfo? Extrusion { get; init; }
 }
 
 internal sealed class RasterMosaicResponse

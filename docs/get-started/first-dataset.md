@@ -9,7 +9,7 @@ See the [Honua vocabulary](../concepts/domain/README.md) for the meanings of Con
 
 Upload a GeoJSON file, publish it as a layer, and query it through the supported Honua clients.
 
-**Prerequisites:** a running server with an admin password set (steps 1–4 of the [quickstart](quickstart.md)), Python 3.11+ with the pinned clients `honua-admin` 0.3.1 and `honua-sdk` 0.3.1 and the MCP Python client `mcp` 2.1.1 (step 2 installs them), and Node.js with `npx`.
+**Prerequisites:** a running server with an admin password set (steps 1–4 of the [quickstart](quickstart.md)), Python 3.11+ with the pinned clients `honua-admin` 0.3.2 and `honua-sdk` 0.3.2 and the MCP Python client `mcp` 2.1.1 (step 2 installs them), and Node.js with `npx`.
 
 > **Shell.** Every block on this page is `bash` — heredocs, `export`, and `python3`. On Windows run
 > them in WSL or Git Bash, not PowerShell, and note that a bare `python3` there resolves to the
@@ -47,7 +47,7 @@ a database table. Install the pinned clients and the MCP client. MCP tool calls 
 the `X-API-Key` header. HTTP Basic auth is refused.
 
 ```bash
-python3 -m pip install 'honua-admin==0.3.1' 'honua-sdk==0.3.1' 'mcp==2.1.1'
+python3 -m pip install 'honua-admin==0.3.2' 'honua-sdk==0.3.2' 'mcp==2.1.1'
 ```
 
 ```bash
@@ -99,8 +99,10 @@ every feature loaded). Until Step 3 registers a connection to the server's own d
 > them to Step 4. They are returned so that callers do not have to reconstruct the naming
 > convention.
 
-Re-importing the same `datasetName` replaces that table. A file larger than 4 MB does not fit an
-inline tool call, and no client operation uploads a local file yet
+Over `/mcp`, `honua_ingest_dataset` is create-only: re-importing an existing `datasetName` returns
+`success: false` with `rowCount: 0` instead of replacing the table. Pick a new `datasetName`, or
+submit `dataset.stage.import` to stage a replacement as a proposal for human approval. A file larger
+than 4 MB does not fit an inline tool call, and no client operation uploads a local file yet
 ([honua-sdk-python#267](https://github.com/honua-io/honua-sdk-python/issues/267)).
 
 Imports create the table in the `honua_data` schema and default `TargetSrid` to 4326.
@@ -121,7 +123,7 @@ through that connection. The route accepts the connection id (`connection.connec
 connection name; the steps below pass the id.
 
 ```bash
-python3 -m pip install 'honua-admin==0.3.1' 'honua-sdk==0.3.1'
+python3 -m pip install 'honua-admin==0.3.2' 'honua-sdk==0.3.2'
 python3 - <<'PY'
 import os
 
@@ -173,9 +175,9 @@ with HonuaAdminClient(os.environ["HONUA_BASE_URL"], api_key=os.environ["HONUA_AP
     ))
 if not layer.service_name:
     raise SystemExit("publish did not return a service name")
-open("layer.id", "w").write(str(layer.layer_id) + "\n")
+open("layer.id", "w").write(str(layer.storage_layer_id) + "\n")
 open("service.name", "w").write(layer.service_name + "\n")
-print(f"{layer.service_name} {layer.layer_id}")
+print(f"{layer.service_name} {layer.storage_layer_id}")
 PY
 export HONUA_SERVICE="$(cat service.name)"
 export HONUA_LAYER_ID="$(cat layer.id)"
@@ -188,14 +190,14 @@ now available across every enabled protocol.
 ## 5. Query the published layer
 
 ```bash
-npx --yes -p @honua/sdk-js@0.2.10 honua services
-npx --yes -p @honua/sdk-js@0.2.10 honua layers "$HONUA_SERVICE"
-npx --yes -p @honua/sdk-js@0.2.10 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --limit 5
-npx --yes -p @honua/sdk-js@0.2.10 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --limit 5 --format geojson
-npx --yes -p @honua/sdk-js@0.2.10 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --count
+npx --yes -p @honua/sdk-js@0.4.0 honua services
+npx --yes -p @honua/sdk-js@0.4.0 honua layers "$HONUA_SERVICE"
+npx --yes -p @honua/sdk-js@0.4.0 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --limit 5
+npx --yes -p @honua/sdk-js@0.4.0 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --limit 5 --format geojson
+npx --yes -p @honua/sdk-js@0.4.0 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --count
 ```
 
-The `@honua/sdk-js` pin is the release version, 0.2.10. Omit `HONUA_API_KEY` after the service allows anonymous reads.
+The `@honua/sdk-js` pin is the release version, 0.4.0. Omit `HONUA_API_KEY` after the service allows anonymous reads.
 
 The package publishes its CLI as the `honua` binary, so `npx` needs `-p @honua/sdk-js honua`; `npx @honua/sdk-js <command>` looks for a binary named `sdk-js` and fails with `could not determine executable to run`.
 
@@ -206,7 +208,7 @@ The package publishes its CLI as the `honua` binary, so `npx` needs `-p @honua/s
 The count should be `2`. A one-row GeoJSON check should contain Honolulu or Hilo:
 
 ```bash
-npx --yes -p @honua/sdk-js@0.2.10 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --limit 1 --format geojson
+npx --yes -p @honua/sdk-js@0.4.0 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --limit 1 --format geojson
 ```
 
 ## Troubleshoot
@@ -215,7 +217,7 @@ npx --yes -p @honua/sdk-js@0.2.10 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" -
 - **`'datasetName' is required`** — pass a `datasetName` of letters, digits and underscores that does not start with a digit.
 - **`unauthenticated` from the import** — the MCP client must send the `X-API-Key` header. MCP tool calls are refused without it.
 - **`Table 'honua_data.hawaii_cities' was not found`** on publish — publish the physical `imported_hawaii_cities` name, not the logical one you imported under.
-- **`could not determine executable to run`** from `npx` — use `-p @honua/sdk-js@0.2.10 honua <command>`.
+- **`could not determine executable to run`** from `npx` — use `-p @honua/sdk-js@0.4.0 honua <command>`.
 - **`Master key not configured`** — set `Security__ConnectionEncryption__MasterKey` to a 32-or-more-character value before saving connection credentials.
 - **Publishing cannot find the connection** — pass `connection.connection_id` or the name from step 3. The route accepts either.
 - **The collection is missing** — confirm the publish result says `enabled=true`, then run `honua services` and `honua layers "$HONUA_SERVICE"` again.

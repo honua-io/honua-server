@@ -26,10 +26,21 @@ internal sealed record ExecutionJobRow(
 {
     public const string TableName = "execution_jobs";
 
-    // Select list that Read expects, in order.
+    // Select list that Read expects, in order. operation_id and created_at come last so a row
+    // whose record cannot be read can still be named and paged past.
     public const string SelectColumns =
         "version, status, attempt_count, claimed_by, claimed_at, last_heartbeat_at, next_retry_at, "
-        + "completed_at, percent_complete, current_phase, updated_at, record";
+        + "completed_at, percent_complete, current_phase, updated_at, record, operation_id, created_at";
+
+    // The phase of a job failed because its stored record cannot be read.
+    public const string UnreadableRecordPhase = "Failed: unreadable record";
+
+    // Assignments that fail a job whose stored record cannot be read. The record is left as it was
+    // for diagnosis; the columns alone make the job terminal.
+    public const string FailUnreadableAssignments =
+        "status = 'Failed', version = version + 1, claimed_by = NULL, claimed_at = NULL, "
+        + "last_heartbeat_at = NULL, next_retry_at = NULL, queue_visible_at = NULL, queue_priority = NULL, "
+        + "current_phase = '" + UnreadableRecordPhase + "', completed_at = now(), updated_at = now()";
 
     public const string RecordColumns =
         "record, kind, runtime_profile, backend, priority, created_at, tenant_id, cancellation_requested, "
@@ -53,9 +64,11 @@ internal sealed record ExecutionJobRow(
     public static readonly string ActiveStatusList =
         $"'{nameof(ExecutionJobStatus.Queued)}', '{nameof(ExecutionJobStatus.Provisioning)}', '{nameof(ExecutionJobStatus.Running)}'";
 
-    public static ExecutionJobRow From(ExecutionJobRecord job)
-        => new(
-            JsonSerializer.Serialize(job, ControlPlaneJsonContext.Default.ExecutionJobRecord),
+    public static ExecutionJobRow From(ExecutionJobRecord job, IExecutionJobSecretProtector secrets)
+    {
+        job = ExecutionJobSubmitterSeal.Seal(job, secrets);
+        return new(
+            JsonSerializer.Serialize(ExecutionJobSecretParameters.Protect(job, secrets), ControlPlaneJsonContext.Default.ExecutionJobRecord),
             job.Spec.Kind.ToString(),
             RuntimeProfiles.Normalize(job.Spec.RuntimeProfile),
             job.Spec.Backend,
@@ -66,6 +79,7 @@ internal sealed record ExecutionJobRow(
             (job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default).Timeout,
             (job.TimeoutPolicy ?? JobTimeoutPolicy.Default).MaxDuration,
             BuildLookupKeys(job));
+    }
 
     public static short PriorityBand(OperationPriority priority)
         => priority switch
@@ -76,11 +90,36 @@ internal sealed record ExecutionJobRow(
             _ => 2
         };
 
-    public static ExecutionJobRecord Read(NpgsqlDataReader reader)
-    {
-        var record = JsonSerializer.Deserialize(reader.GetString(11), ControlPlaneJsonContext.Default.ExecutionJobRecord)
-            ?? throw new InvalidOperationException("An execution job row holds an empty record.");
+    public static ExecutionJobRecord Read(NpgsqlDataReader reader, IExecutionJobSecretProtector secrets)
+        => TryRead(reader, secrets) ?? throw new InvalidOperationException(
+            $"Execution job {ReadOperationId(reader)} holds a record this build cannot read.");
 
+    public static string ReadOperationId(NpgsqlDataReader reader) => reader.GetString(12);
+
+    public static ExecutionJobCursor ReadCursor(NpgsqlDataReader reader)
+        => new(reader.GetFieldValue<DateTimeOffset>(13), ReadOperationId(reader));
+
+    // Null when the stored record is empty or not a record this build can deserialize, for
+    // example after corruption or when a newer build wrote it. Callers that scan many rows skip
+    // such a row instead of failing the whole read.
+    public static ExecutionJobRecord? TryRead(NpgsqlDataReader reader, IExecutionJobSecretProtector secrets)
+    {
+        ExecutionJobRecord? record;
+        try
+        {
+            record = JsonSerializer.Deserialize(reader.GetString(11), ControlPlaneJsonContext.Default.ExecutionJobRecord);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        if (record is null)
+        {
+            return null;
+        }
+
+        record = ExecutionJobSubmitterSeal.Verify(ExecutionJobSecretParameters.Unprotect(record, secrets), secrets);
         return record with
         {
             Version = reader.GetInt64(0),

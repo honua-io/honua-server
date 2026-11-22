@@ -4,8 +4,11 @@
 using System.ComponentModel.DataAnnotations;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Authorization.Services;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Models;
@@ -42,22 +45,22 @@ internal static partial class RlsPolicyEndpoints
             .WithTags("Admin", "RLS")
             .RequireAdminAuthorization();
 
-        group.MapGet("/", HandleListPolicies)
-            .WithDisplayName("List RLS Policies")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var list = AdminHttpOperationRouteBinding.ForAccess("admin.rls-policy.list", "/rls-policies");
+        group.MapMethods(list.RoutePattern, list.Methods, HandleListPolicies)
+            .WithAdminOperation(list.Definition).WithDisplayName("List RLS Policies");
 
-        group.MapPost("/", HandleCreatePolicy)
-            .WithDisplayName("Create RLS Policy")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+        var create = AdminHttpOperationRouteBinding.ForAccess("admin.rls-policy.create", "/rls-policies");
+        group.MapMethods(create.RoutePattern, create.Methods, HandleCreatePolicy)
+            .WithAdminOperation(create.Definition).WithDisplayName("Create RLS Policy")
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
 
-        group.MapGet("/{id:guid}", HandleGetPolicy)
-            .WithDisplayName("Get RLS Policy")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var get = AdminHttpOperationRouteBinding.ForAccess("admin.rls-policy.get", "/rls-policies", "/{id:guid}");
+        group.MapMethods(get.RoutePattern, get.Methods, HandleGetPolicy)
+            .WithAdminOperation(get.Definition).WithDisplayName("Get RLS Policy");
 
-        group.MapDelete("/{id:guid}", HandleDeletePolicy)
-            .WithDisplayName("Delete RLS Policy")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }))
+        var delete = AdminHttpOperationRouteBinding.ForAccess("admin.rls-policy.delete", "/rls-policies", "/{id:guid}");
+        group.MapMethods(delete.RoutePattern, delete.Methods, HandleDeletePolicy)
+            .WithAdminOperation(delete.Definition).WithDisplayName("Delete RLS Policy")
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants);
     }
 
@@ -70,6 +73,8 @@ internal static partial class RlsPolicyEndpoints
         Attribute = p.Attribute,
         ClaimType = p.ClaimType,
         Comparison = p.Comparison == RlsComparison.Equals ? "equals" : "in",
+        FilterExpression = p.FilterExpression,
+        AreaGeometry = p.AreaGeometry,
         Description = p.Description,
         CreatedAt = p.CreatedAt,
         UpdatedAt = p.UpdatedAt,
@@ -135,6 +140,7 @@ internal static partial class RlsPolicyEndpoints
             CreateRlsPolicyRequest request,
             [FromServices] IRlsPolicyStore store,
             [FromServices] ReadPolicyEnforceabilityChecker enforceability,
+            [FromServices] IFilterExpressionService filters,
             [FromServices] ILogger<RlsPolicyEndpointsLog> logger,
             HttpContext context)
     {
@@ -151,6 +157,16 @@ internal static partial class RlsPolicyEndpoints
             {
                 return TypedResults.BadRequest(
                     ApiResponse<object>.Failure("Comparison must be 'in' or 'equals'."));
+            }
+
+            try
+            {
+                RlsPolicyRestrictions.Parse(filters, request.FilterExpression, request.AreaGeometry, "geometry");
+            }
+            catch (ArgumentException)
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                    "Policy restrictions must contain a valid filter and a nonempty WGS84 polygon or multipolygon."));
             }
 
             // Refuse a policy that a targeted layer's provider cannot enforce; accepting it would
@@ -174,6 +190,8 @@ internal static partial class RlsPolicyEndpoints
                 Attribute = request.Attribute.Trim(),
                 ClaimType = request.ClaimType.Trim(),
                 Comparison = comparison,
+                FilterExpression = request.FilterExpression,
+                AreaGeometry = request.AreaGeometry,
                 Description = request.Description,
             };
 

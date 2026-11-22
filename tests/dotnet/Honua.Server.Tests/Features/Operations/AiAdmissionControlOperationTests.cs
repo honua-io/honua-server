@@ -7,6 +7,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Security.Admission;
@@ -116,8 +117,7 @@ public sealed partial class AiAdmissionControlOperationTests
         using var initial = Services(store, requester);
         var prepared = await new AiAdmissionControlExecutor(Stop, initial).PrepareAsync(Request(), context);
         var mapper = new AiAdmissionControlApprovalMapper(Stop);
-        var mapped = mapper.Map(AiAdmissionControlOperation.Descriptor(Stop), prepared, context,
-            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+        var mapped = mapper.Map(new OperationApprovalRequestContext { Descriptor = AiAdmissionControlOperation.Descriptor(Stop), Request = prepared, Context = context, Decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval } });
         var now = DateTimeOffset.UtcNow;
         var proposal = new OperationProposal
         {
@@ -163,7 +163,7 @@ public sealed partial class AiAdmissionControlOperationTests
         { ScopeGoverned = true, RecognizedScopes = [OperatorScopeCatalog.Read] }).Should().BeTrue();
         OperationScopeMapping.ExceedsScopeAuthority(request, new OperationPolicyContext
         { ScopeGoverned = true, RecognizedScopes = [OperatorScopeCatalog.Update] }).Should().BeFalse();
-        OperationsServiceCollectionExtensions.RedisOffDirectOperationIds.Should().Contain(id);
+        OperationsServiceCollectionExtensions.NonDurableDirectOperationIds.Should().Contain(id);
     }
 
     private static OperationRequest Request(IReadOnlyDictionary<string, string?>? parameters = null)

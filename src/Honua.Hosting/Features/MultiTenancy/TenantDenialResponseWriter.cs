@@ -334,7 +334,7 @@ internal static class TenantDenialResponseWriter
             }
         }
 
-        context.Response.Headers.Append("WWW-Authenticate", challenge);
+        AuthenticationChallenge.AppendUniqueChallenge(context, challenge);
     }
 
     private static string GetMachineCode(TenantDenialKind denial) => denial switch

@@ -59,7 +59,7 @@ internal sealed partial class GeometryFormatConvertJobExecutor : IProcessExecuto
         if (!TryReadInputs(parameters, out var inputs, out var inputError))
         {
             Log.InvalidInputs(_logger, job.OperationId, inputError);
-            return JobExecutionResult.Failed($"Invalid geometry conversion inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid geometry conversion inputs: {inputError}");
         }
 
         Geometry geometry;
@@ -74,12 +74,12 @@ internal sealed partial class GeometryFormatConvertJobExecutor : IProcessExecuto
         catch (Exception ex) when (ex is ParseException or ArgumentException or IndexOutOfRangeException)
         {
             Log.InvalidWkb(_logger, job.OperationId, ex.Message);
-            return JobExecutionResult.Failed("Invalid geometry conversion inputs: WKB payload could not be decoded.");
+            return JobExecutionResult.InvalidInput("Invalid geometry conversion inputs: WKB payload could not be decoded.");
         }
 
         if (geometry is null)
         {
-            return JobExecutionResult.Failed("Invalid geometry conversion inputs: WKB payload decoded to no geometry.");
+            return JobExecutionResult.InvalidInput("Invalid geometry conversion inputs: WKB payload decoded to no geometry.");
         }
 
         // NTS leaves a plain (non-EWKB) input at its factory's default SRID, which is
@@ -99,7 +99,7 @@ internal sealed partial class GeometryFormatConvertJobExecutor : IProcessExecuto
             && geometry.SRID is not (0 or Wgs84Srid))
         {
             Log.InvalidInputs(_logger, job.OperationId, $"projected SRID {geometry.SRID} for the geojson target");
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 $"Invalid geometry conversion inputs: the 'geojson' target is RFC 7946, which is always WGS 84 " +
                 $"longitude/latitude, but the input declares SRID {geometry.SRID.ToString(CultureInfo.InvariantCulture)}. " +
                 "Reproject with 'geometry.project' first, or request 'ewkt' to keep the SRID inside the value.");

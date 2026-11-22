@@ -24,7 +24,7 @@ public sealed class SpatialAnalyticsPerformanceTests : IAsyncLifetime
 {
     private const int SyntheticFeatureCount = 100_000;
 
-    // The #342 acceptance criterion is <5s end-to-end on the *reference* PostGIS
+    // The acceptance criterion is <5s end-to-end on the *reference* PostGIS
     // image. This assertion runs on shared CI runners that host many concurrent
     // agents/jobs, where wall time varies enormously (this suite has been observed
     // taking 54min on one runner and >88min on another for the same green set, and

@@ -419,7 +419,7 @@ public sealed partial class ConsoleJobEndpointsTests
     [Endpoint("POST /api/v1/admin/jobs/{jobId}/cancel")]
     public async Task ListAndGetJob_ScopedAdminReadKeys_HonourReadGrantWithoutWideningExecute()
     {
-        // Regression for #4981: admin:read (with or without admin:approve) must read
+        // Scoped keys: admin:read (with or without admin:approve) must read
         // durable jobs like every other admin GET, while cancel/retry (Execute) stays
         // denied for a read-only scoped key. The shared class fixture runs with
         // dev-auth bypass, which would authenticate any X-API-Key as full admin and
@@ -1157,7 +1157,7 @@ public sealed partial class ConsoleJobEndpointsTests
                 services.RemoveAll<IExecutionJobStore>();
                 services.RemoveAll<IExecutionLogStore>();
                 services.AddSingleton<IExecutionJobStore>(jobStore);
-                services.AddSingleton<IExecutionLogStore>(new InMemoryLogStore());
+                services.AddSingleton<IExecutionLogStore>(LostAttemptLogStore("job-diag-owner", "worker-internal-7"));
             });
         await gatedFixture.InitializeAsync();
         try

@@ -230,7 +230,8 @@ def test_protected_style_keeps_vector_tiles_on_protected_layer(
     credentials = AuthCredentials.from_environment()
     headers = credentials.headers(auth_mode)
     layer = os.getenv("HONUA_CERT_RASTER_LAYER_ID", "2010")
-    response = requests.get(f"{base_url}/api/styles/{layer}.json", headers=headers, timeout=15)
+    publication = os.getenv("HONUA_CERT_RASTER_PUBLICATION_ID", fx.AUTHENTICATED_RASTER_PUBLICATION_ID)
+    response = requests.get(f"{base_url}/api/styles/{publication}.json", headers=headers, timeout=15)
     assert response.status_code == 200
     style = response.json()
     source_id = f"layer-{layer}"

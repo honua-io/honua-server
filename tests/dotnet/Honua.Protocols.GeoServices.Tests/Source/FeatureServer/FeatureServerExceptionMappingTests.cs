@@ -33,7 +33,7 @@ public sealed class FeatureServerExceptionMappingTests
         {
             var response = await fixture.Client.GetAsync("/rest/services/test/FeatureServer/0/query?where=1%3D1&f=json");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             var payload = await response.Content.ReadAsStringAsync();
             payload.Should().NotContain("unexpected query backend failure");
@@ -56,7 +56,7 @@ public sealed class FeatureServerExceptionMappingTests
         {
             var response = await fixture.Client.GetAsync("/rest/services/test/FeatureServer/0/query?where=1%3D1&f=json");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally
@@ -70,11 +70,6 @@ public sealed class FeatureServerExceptionMappingTests
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_WhenReaderThrowsNotSupportedException_ReturnsBadRequest()
     {
-        // MySQL/MariaDB raises NotSupportedException for client-driven query shapes the provider
-        // cannot honour (e.g. distance filter on a polygon layer, projected-SRID distance filter,
-        // KNN/nearest-neighbor, cross-SRID transform, extent on unsupported geometry types). Prior
-        // to this fix the catch (Exception) fall-through mapped them to 500; the new
-        // catch (NotSupportedException) block returns 400 so callers see a client error.
         var fixture = CreateQueryFixture(() => new NotSupportedException(
             "Distance spatial filters require Point or MultiPoint geometry in the MySQL/MariaDB provider."));
         await fixture.InitializeAsync();
@@ -83,7 +78,7 @@ public sealed class FeatureServerExceptionMappingTests
         {
             var response = await fixture.Client.GetAsync("/rest/services/test/FeatureServer/0/query?where=1%3D1&f=json");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             var payload = await response.Content.ReadAsStringAsync();
             payload.Should().NotContain("Distance spatial filters require Point");
@@ -112,7 +107,7 @@ public sealed class FeatureServerExceptionMappingTests
         {
             var response = await fixture.Client.GetAsync("/rest/services/test/FeatureServer/0/query?where=1%3D1&f=json");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             var payload = await response.Content.ReadAsStringAsync();
             payload.Should().NotContain("Feature provider 'mysql' does not support");
@@ -136,7 +131,7 @@ public sealed class FeatureServerExceptionMappingTests
             var response = await fixture.Client.GetAsync(
                 "/rest/services/test/FeatureServer/0/queryRelatedRecords?objectIds=1&relationshipId=1");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             var payload = await response.Content.ReadAsStringAsync();
             payload.Should().NotContain("unexpected related records failure");
@@ -160,7 +155,7 @@ public sealed class FeatureServerExceptionMappingTests
             var response = await fixture.Client.GetAsync(
                 "/rest/services/test/FeatureServer/0/queryRelatedRecords?objectIds=1&relationshipId=1");
 
-            // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
+            // GeoServices always returns HTTP 200; error code is in the JSON body.
             response.StatusCode.Should().Be(HttpStatusCode.OK);
         }
         finally

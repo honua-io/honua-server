@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 # Default rc.2 serving image: chiseled JIT runtime and PostGIS-only database stores.
 # Native AOT remains available separately through docker/Dockerfile.aot.
 # Enhanced security: minimal attack surface, non-root user, read-only filesystem
@@ -47,7 +47,10 @@ COPY --from=restore-inputs /restore-inputs/ ./
 COPY eng/Honua.BuildProfiles.props eng/
 COPY eng/Honua.ProtocolProfiles.props eng/
 COPY eng/protocol-profiles.v1.json eng/
+COPY eng/Honua.ServerLockFiles.props eng/
+COPY eng/nuget-locks/ eng/nuget-locks/
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
+COPY scripts/docker/server-lock-args.sh scripts/docker/
 COPY scripts/ci/analyzer-baseline/ scripts/ci/analyzer-baseline/
 
 ARG TARGETARCH
@@ -76,7 +79,8 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
     if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
     if [ -n "${HONUA_INCLUDE_SNOWFLAKE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeSnowflake=$HONUA_INCLUDE_SNOWFLAKE"; fi && \
-    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaSkipRepoAnalyzers=true -p:RunAnalyzersDuringBuild=false $MODULE_MSBUILD_ARGS" && \
+    LOCK_MSBUILD_ARGS="$(sh scripts/docker/server-lock-args.sh serving)" && \
+    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaSkipRepoAnalyzers=true -p:RunAnalyzersDuringBuild=false $MODULE_MSBUILD_ARGS $LOCK_MSBUILD_ARGS" && \
     sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
       $EXTRA_MSBUILD_ARGS
@@ -105,7 +109,8 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
     if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
     if [ -n "${HONUA_INCLUDE_SNOWFLAKE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeSnowflake=$HONUA_INCLUDE_SNOWFLAKE"; fi && \
-    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaSkipRepoAnalyzers=true -p:RunAnalyzersDuringBuild=false $MODULE_MSBUILD_ARGS" && \
+    LOCK_MSBUILD_ARGS="$(sh scripts/docker/server-lock-args.sh serving)" && \
+    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaSkipRepoAnalyzers=true -p:RunAnalyzersDuringBuild=false $MODULE_MSBUILD_ARGS $LOCK_MSBUILD_ARGS" && \
     sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
       $EXTRA_MSBUILD_ARGS && \
@@ -161,8 +166,10 @@ COPY --from=runtime-assets /runtime-additions/ /
 
 
 WORKDIR /app
-COPY --from=build --chown=1001:1001 /app .
-COPY --chown=1001:1001 LICENSE THIRD-PARTY-NOTICES.md /app/
+# Application files stay root-owned and read-only to the runtime user; its writable state is
+# provisioned under /var/lib/honua and /tmp by stage-runtime.sh.
+COPY --from=build /app .
+COPY LICENSE THIRD-PARTY-NOTICES.md /app/
 
 USER 1001:1001
 
@@ -199,6 +206,7 @@ ENV HOME=/tmp/honua \
     XDG_CACHE_HOME=/tmp/honua/cache \
     TemporaryFiles__StorageDirectory=/tmp/honua/temp \
     FileStorage__LocalStorage__BasePath=/tmp/honua/storage \
+    SceneGeneration__OutputRoot=/var/lib/honua/storage/scenes-generated \
     ASPNETCORE_ENVIRONMENT=Production \
     HONUA_DEFAULT_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
     ASPNETCORE_HTTP_PORTS= \

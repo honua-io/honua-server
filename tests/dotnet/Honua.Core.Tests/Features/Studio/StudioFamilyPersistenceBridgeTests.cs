@@ -124,7 +124,7 @@ public sealed class StudioFamilyPersistenceBridgeTests
         Assert.Equal(1, formsOnly.Total);
         Assert.Single(formsOnly.Items);
 
-        // Owner scoping fails closed for owner-less bridged items (#3018 model).
+        // Owner scoping fails closed for owner-less bridged items.
         var scoped = await store.ListContentItemsAsync(new StudioContentItemQuery
         {
             OwnerId = "somebody",

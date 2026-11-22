@@ -29,7 +29,7 @@ honua services
 honua layers "$SERVICE_ID"
 ```
 
-The URL shape changes: a source URL like `https://gis.example.com/arcgis/rest/services/Public/Parcels/FeatureServer/0` becomes `$HONUA_URL/rest/services/parcels/FeatureServer/{layerIndex}`, with one service id per published Honua service and no folder segment. The source layer number is not carried over: Honua assigns the [layer index](../../reference/protocols/geoservices-rest.md#layer-index) when the layer is published, so read each layer's `id` from `honua layers "$SERVICE_ID"` or `$HONUA_URL/rest/services/parcels/FeatureServer?f=json` and put it in the table. Honua also answers under the `/arcgis` site-root alias ([service path prefix](../../gis/service-path-prefix.md)), but new configuration should use the root form. Build the old-URL → new-URL table for every service before touching client code.
+The URL shape changes: a source URL like `https://gis.example.com/arcgis/rest/services/Public/Parcels/FeatureServer/0` becomes `$HONUA_URL/rest/services/parcels/FeatureServer/{layerIndex}`, with one service id per published Honua service. A service in a Honua [folder](../publish/organize-services-in-folders.md) adds one folder segment, as in `$HONUA_URL/rest/services/Public/parcels/FeatureServer/{layerIndex}`; folders do not nest. The source folder is not carried over unless the service is placed in a folder on Honua. The source layer number is not carried over: Honua assigns the [layer index](../../reference/protocols/geoservices-rest.md#layer-index) when the layer is published, so read each layer's `id` from `honua layers "$SERVICE_ID"` or `$HONUA_URL/rest/services/parcels/FeatureServer?f=json` and put it in the table. Set `LAYER_INDEX` to that `id` for the commands below, for example `export LAYER_INDEX=1`. Honua also answers under the `/arcgis` site-root alias ([service path prefix](../../gis/service-path-prefix.md)), but new configuration should use the root form. Build the old-URL → new-URL table for every service before touching client code.
 
 ### 2. Point JavaScript apps at the compat layer
 
@@ -65,7 +65,7 @@ The codemod is intentionally conservative: it rewrites safe constructor sites (`
 
 ### 4. Repoint desktop clients and native SDKs
 
-Use `honua query "$SERVICE_ID/0" --limit 1` to confirm the repointed service before changing desktop or native-client configuration.
+Use `honua query "$SERVICE_ID/$LAYER_INDEX" --limit 1` to confirm the repointed service before changing desktop or native-client configuration.
 
 Desktop and native SDK clients need no compat layer: paste the Honua `FeatureServer`/`MapServer` URL wherever the source URL was configured. Step-by-step instructions, including portal-style sign-in, are in [connect a GeoServices REST desktop client](../connect/geoservices-desktop-clients.md). Desktop clients and native SDKs keep their own vendor licensing; Honua replaces the server, not the client licence.
 
@@ -82,7 +82,7 @@ Clients that fetched tokens from a source server's `/arcgis/tokens/` or portal `
 | FeatureServer query, edits, attachments, related records | Works unchanged at the Honua URL ([parity detail](../../reference/compatibility/geoservices-parity.md)). |
 | MapServer export, identify, find, legend, tiles | Works unchanged; MapServer WMTS supports WebMercatorQuad, WorldCRS84Quad, and configured custom matrix sets. |
 | Leaflet and REST-client libraries for GeoServices REST | Work by URL swap; no codemod needed. |
-| Service URL shape | Needs attention: one service id per service, no folders; remap every URL (step 1). |
+| Service URL shape | Needs attention: one service id per service, at most one folder segment; remap every URL (step 1). |
 | Token endpoint URL | Needs attention: move to `/sharing/rest/generateToken` (step 5). |
 | Change tracking, true curves, 3D queries (FeatureServer) | Incremental Postgres change tracking, true-curve input densification, and Z/M queries are implemented; other stores use snapshot sync and curves are not preserved losslessly on output. |
 | Portal item/group browsing, scene layers (I3S) | Limited sharing surface; I3S is experimental, off by default, and Enterprise-gated. Verify against the parity reference. |
@@ -91,14 +91,14 @@ Clients that fetched tokens from a source server's `/arcgis/tokens/` or portal `
 
 ```bash
 export HONUA_BASE_URL="$HONUA_URL"
-honua query "$SERVICE_ID/0" --count
+honua query "$SERVICE_ID/$LAYER_INDEX" --count
 ```
 
 The count should match the source service, the repointed app should draw the layer and answer queries, and `honua-js-migrate codemod ./src --report migration-report.json` (dry run) should report no remaining unhandled client sites.
 
 ## Troubleshoot
 
-- **404 on the new URL**: run `honua services` and use the returned service id; remember there are no folder segments.
+- **404 on the new URL**: run `honua services` and use the returned service id; include the folder segment only when the service is in a Honua folder.
 - **Credential prompt loops or 401**: test `/sharing/rest/generateToken` directly (step 5); issuance returns 403 over plain HTTP unless `RequireHttps` is disabled for local testing.
 - **A specific operation fails after the URL swap**: look it up in the [parity reference](../../reference/compatibility/geoservices-parity.md); partial-parity operations need a workaround, not client debugging.
 - **Codemod leaves many manual TODOs**: CommonJS modules and complex constructor sites are skipped by design; work the report entries by hand or gate them with `--max-manual-ratio`.

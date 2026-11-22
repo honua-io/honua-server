@@ -71,6 +71,13 @@ internal sealed class ImageServerComputeTiePointsHandler
                 rasterId = parsedRasterId;
             }
 
+            // Sensor metadata is keyed by raster id alone; the id must belong to the authorized layer.
+            if (rasterId != raster.Id &&
+                await _rasterStore.GetRasterInfoAsync(layerId, rasterId, cancellationToken).ConfigureAwait(false) is null)
+            {
+                return StandardErrorHelpers.CreateNotFound(context, "Raster not found.");
+            }
+
             var metadata = await _rasterStore.GetSensorMetadataAsync([rasterId], cancellationToken).ConfigureAwait(false);
             var sensor = metadata.TryGetValue(rasterId, out var meta) ? meta : raster.SensorMetadata;
 

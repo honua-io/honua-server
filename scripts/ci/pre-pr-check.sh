@@ -385,7 +385,6 @@ if [[ "${FULL}" != "1" ]]; then
         'tests/dotnet/Honua.TestKit.Abstractions/' \
         'tests/dotnet/Honua.TestKit.Postgres/' \
         'tests/dotnet/Honua.TestKit.Core/' \
-        'tests/dotnet/Honua.TestKit.Redis/' \
         'tests/dotnet/Honua.TestKit.Hosting/' \
         'tests/dotnet/Honua.TestKit.Postgres.Hosting/' \
         '.github/ci-shards.json' \

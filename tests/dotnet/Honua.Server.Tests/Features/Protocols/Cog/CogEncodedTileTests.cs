@@ -99,8 +99,8 @@ public sealed class CogEncodedTileTests
             var tiff = await resolver.GetTileAsync(registration, 8, 0, 0, format);
             var encoded = tiff ?? throw new InvalidOperationException("TIFF tile was not produced");
             encoded.ContentType.Should().Be("image/tiff");
-            encoded.Data[..8].Should().Equal(73, 73, 42, 0, 8, 0, 0, 0);
-            encoded.Data[^expected.Length..].Should().Equal(expected);
+            encoded.Data[..8].Should().Equal(73, 73, 42, 0, 192, 0, 0, 0);
+            encoded.Data[^(expected.Length + 4)..^4].Should().Equal(expected);
             // The output is independently covered at tag/value level by CogTiffTileEncoderTests.
             var outputMetadata = await new CogMetadataExtractor().ReadMetadataAsync(
                 new CogPinnedRangeReader(new FixtureReader(encoded.Data), "fixture-v1"), "fixtures", "output");

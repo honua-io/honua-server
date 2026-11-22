@@ -34,8 +34,6 @@
     <!-- ArcGIS source protocol client for import discovery/query/attachments. -->
     <PackageReference Include="Honua.Sdk.GeoServices" />
 
-    <!-- .NET 10 plugins retain the managed codec; .NET 11 uses the runtime implementation. -->
-    <PackageReference Include="ZstdSharp.Port" Condition="'$(TargetFramework)' == 'net10.0'" />
     <PackageReference Include="SharpZipLib" />
 
     <!--
@@ -66,12 +64,15 @@
     <InternalsVisibleTo Include="Honua.Protocols.OgcApi" />
     <InternalsVisibleTo Include="Honua.Import" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />
+    <InternalsVisibleTo Include="Honua.Server" />
     <InternalsVisibleTo Include="Honua.Ai.Tests" />
     <InternalsVisibleTo Include="Honua.Ai.UnitTests" />
     <InternalsVisibleTo Include="Honua.Postgres" />
     <InternalsVisibleTo Include="Honua.Postgres.Shared" />
     <InternalsVisibleTo Include="Honua.Geoprocessing" />
     <InternalsVisibleTo Include="Honua.Geoprocessing.UnitTests" />
+    <InternalsVisibleTo Include="Honua.Worker.Gdal" />
+    <InternalsVisibleTo Include="Honua.Worker.Gdal.Tests" />
     <InternalsVisibleTo Include="Honua.Ai" />
     <InternalsVisibleTo Include="Honua.Postgres.Tests" />
     <InternalsVisibleTo Include="Honua.DuckDB" />

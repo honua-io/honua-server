@@ -11,6 +11,7 @@ using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
@@ -51,8 +52,13 @@ public sealed partial class ServerJobArtifactImporterTests
         var harness = await OperationHarnessAsync();
         var prepared = await harness.PrepareProposalAsync();
         var mapper = new StagedImportApprovalMapper();
-        var gateway = mapper.Map(StagedImportOperation.BuildDescriptors()[1], prepared, harness.Context(),
-            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval, Reason = "operator approval" });
+        var gateway = mapper.Map(new OperationApprovalRequestContext
+        {
+            Descriptor = StagedImportOperation.BuildDescriptors()[1],
+            Request = prepared,
+            Context = harness.Context(),
+            Decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval, Reason = "operator approval" },
+        });
         harness.Recording.Request.Should().BeNull("a proposal must not import");
 
         var replay = mapper.MapReplay(gateway).Request;
@@ -67,6 +73,29 @@ public sealed partial class ServerJobArtifactImporterTests
         harness.Recording.Request.TableName.Should().Be(StagedImportOperation.DestinationTable("tenant-a", "actor-1", "intent-buffer"));
         duplicate.Result!.Details["stagingTable"].Should().Be(first.Result!.Details["stagingTable"]);
         await harness.Recording.Service.Received(1).ImportFileAsync(Arg.Any<ImportRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task StageImport_SchemaRemovedAfterPreview_RefusesProposalBeforeReadingArtifact()
+    {
+        var harness = await OperationHarnessAsync();
+        var preview = await harness.Preview.SubmitAsync(
+            harness.Request(StagedImportOperation.PreviewOperationId), harness.Context(), CancellationToken.None);
+        var fingerprint = preview.Result!.Details[StagedImportOperation.PreviewFingerprintParameter];
+        var configuration = harness.Services.GetRequiredService<IConfiguration>();
+        // The preview destination is absent from the current operational-schema configuration.
+        configuration[ImportTargetSchemaPolicy.DefaultOperationalSchemaConfigurationKey] = "replacement_data";
+        harness.Jobs.ClearReceivedCalls();
+        var request = harness.Request(StagedImportOperation.ImportOperationId,
+            (StagedImportOperation.PreviewFingerprintParameter, fingerprint));
+
+        var act = () => harness.Import.PrepareAsync(request, harness.Context(), CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>()
+            .WithMessage(ImportTargetSchemaPolicy.NotOperationalSchemaMessage);
+        await harness.Jobs.DidNotReceive().GetJobAsync(harness.Reference.JobId,
+            Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>());
+        harness.Recording.Request.Should().BeNull();
     }
 
     [UnitTest]
@@ -226,11 +255,142 @@ public sealed partial class ServerJobArtifactImporterTests
         var import = descriptors.Single(d => d.OperationId == StagedImportOperation.ImportOperationId);
         import.ApprovalModel.Should().Be(OperationApprovalModel.OperatorGate);
         import.InputSchema.Should().NotContain(parameter => parameter.Name == "table");
+        var discard = descriptors.Single(d => d.OperationId == StagedImportOperation.DiscardOperationId);
+        discard.ApprovalModel.Should().Be(OperationApprovalModel.OperatorGate);
+        discard.Policy.SideEffectClass.Should().Be(OperationSideEffectClass.DestroysState);
+        discard.InputSchema.Select(p => p.Name).Should().Equal("intentId");
     }
 
-    private static Task<OperationHarness> OperationHarnessAsync() => OperationHarnessAsync(Principal());
+    [UnitTest]
+    public async Task StageDiscard_ProposeReplayRepeatedAndRetryAfterDiscard_BehavesAsExpected()
+    {
+        var harness = await OperationHarnessAsync();
+        var prepared = await harness.PrepareProposalAsync();
+        var approved = harness.Context() with { ApprovedProposalId = "proposal-1" };
+        await harness.Import.SubmitAsync(prepared, approved, CancellationToken.None);
 
-    private static async Task<OperationHarness> OperationHarnessAsync(ClaimsPrincipal user)
+        var mapper = new StagedImportApprovalMapper(StagedImportOperation.DiscardOperationId);
+        var discardRequest = new OperationRequest
+        {
+            OperationId = StagedImportOperation.DiscardOperationId,
+            Parameters = new Dictionary<string, string?>(StringComparer.Ordinal) { ["intentId"] = "intent-buffer" },
+        };
+        var discardDescriptor = StagedImportOperation.BuildDescriptors()
+            .Single(d => d.OperationId == StagedImportOperation.DiscardOperationId);
+        var gateway = mapper.Map(new OperationApprovalRequestContext
+        {
+            Descriptor = discardDescriptor,
+            Request = discardRequest,
+            Context = harness.Context(),
+            Decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval, Reason = "operator approval" },
+        });
+        var replay = mapper.MapReplay(gateway).Request;
+
+        var first = await harness.Discard.SubmitAsync(replay, approved, CancellationToken.None);
+        first.Result!.Details["alreadyDiscarded"].Should().Be("false");
+        first.Result.Details["stagingTable"].Should().Be(StagedImportOperation.DestinationTable("tenant-a", "actor-1", "intent-buffer"));
+
+        var second = await harness.Discard.SubmitAsync(replay, approved, CancellationToken.None);
+        second.Result!.Details["alreadyDiscarded"].Should().Be("true");
+        second.Result.Details["physicalTable"].Should().Be(first.Result.Details["physicalTable"]);
+
+        var retryImport = () => harness.Import.SubmitAsync(prepared, approved, CancellationToken.None);
+        await retryImport.Should().ThrowAsync<GeoprocessingPreconditionFailedException>()
+            .WithMessage("*already discarded*");
+    }
+
+    [UnitTheory]
+    [InlineData("tenant")]
+    [InlineData("requester")]
+    public async Task StageDiscard_WrongTenantOrRequester_IsRefused(string change)
+    {
+        var harness = await OperationHarnessAsync();
+        var prepared = await harness.PrepareProposalAsync();
+        await harness.Import.SubmitAsync(prepared, harness.Context() with { ApprovedProposalId = "proposal-1" },
+            CancellationToken.None);
+
+        var otherScope = harness.Context() with { ApprovedProposalId = "proposal-2" };
+        otherScope = change == "tenant" ? otherScope with { TenantId = "tenant-b" } : otherScope with { PrincipalId = "actor-2" };
+        var discardRequest = new OperationRequest
+        {
+            OperationId = StagedImportOperation.DiscardOperationId,
+            Parameters = new Dictionary<string, string?>(StringComparer.Ordinal) { ["intentId"] = "intent-buffer" },
+        };
+
+        var act = () => harness.Discard.SubmitAsync(discardRequest, otherScope, CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    public async Task StageDiscard_ReferencedTable_IsRefused()
+    {
+        var ledger = new MemoryServerJobArtifactImportLedger(isReferenced: static (_, _) => true);
+        var harness = await OperationHarnessAsync(Principal(), ledger);
+        var prepared = await harness.PrepareProposalAsync();
+        var approved = harness.Context() with { ApprovedProposalId = "proposal-1" };
+        await harness.Import.SubmitAsync(prepared, approved, CancellationToken.None);
+
+        var discardRequest = new OperationRequest
+        {
+            OperationId = StagedImportOperation.DiscardOperationId,
+            Parameters = new Dictionary<string, string?>(StringComparer.Ordinal) { ["intentId"] = "intent-buffer" },
+        };
+
+        var act = () => harness.Discard.SubmitAsync(discardRequest, approved, CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>()
+            .WithMessage("*referenced*");
+    }
+
+    [UnitTest]
+    public async Task StageDiscard_NotOwnedTable_IsRefused()
+    {
+        var ledger = new MemoryServerJobArtifactImportLedger(isOwned: static (_, _) => false);
+        var harness = await OperationHarnessAsync(Principal(), ledger);
+        var prepared = await harness.PrepareProposalAsync();
+        var approved = harness.Context() with { ApprovedProposalId = "proposal-1" };
+        await harness.Import.SubmitAsync(prepared, approved, CancellationToken.None);
+
+        var discardRequest = new OperationRequest
+        {
+            OperationId = StagedImportOperation.DiscardOperationId,
+            Parameters = new Dictionary<string, string?>(StringComparer.Ordinal) { ["intentId"] = "intent-buffer" },
+        };
+
+        var act = () => harness.Discard.SubmitAsync(discardRequest, approved, CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>()
+            .WithMessage("*not an import-owned*");
+    }
+
+    [UnitTheory]
+    [InlineData("table", "existing_parcels")]
+    [InlineData("schema", "public")]
+    public async Task StageDiscard_CallerSuppliedTableOrSchema_IsRefused(string key, string value)
+    {
+        var harness = await OperationHarnessAsync();
+        var request = new OperationRequest
+        {
+            OperationId = StagedImportOperation.DiscardOperationId,
+            Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["intentId"] = "intent-buffer",
+                [key] = value,
+            },
+        };
+
+        (await harness.Discard.ValidateAsync(request, CancellationToken.None)).IsValid.Should().BeFalse();
+        var act = () => harness.Discard.SubmitAsync(request, harness.Context(), CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>();
+    }
+
+    private static Task<OperationHarness> OperationHarnessAsync() => OperationHarnessAsync(Principal(), null);
+
+    private static Task<OperationHarness> OperationHarnessAsync(ClaimsPrincipal user) => OperationHarnessAsync(user, null);
+
+    private static async Task<OperationHarness> OperationHarnessAsync(ClaimsPrincipal user, IServerJobArtifactImportLedger? ledger)
     {
         var artifact = await BufferArtifactAsync("3857", "10");
         var jobs = Substitute.For<IGeoprocessingJobService>();
@@ -246,9 +406,10 @@ public sealed partial class ServerJobArtifactImporterTests
         authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object?>(), Arg.Any<string>())
             .Returns(AuthorizationResult.Success());
         var services = new ServiceCollection()
+            .AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection().Build())
             .AddSingleton(jobs)
             .AddSingleton(recording.Service)
-            .AddSingleton<IServerJobArtifactImportLedger>(new MemoryServerJobArtifactImportLedger())
+            .AddSingleton<IServerJobArtifactImportLedger>(ledger ?? new MemoryServerJobArtifactImportLedger())
             .AddSingleton<IOperationInstanceStore, Honua.Core.Features.Operations.Services.VolatileOperationInstanceStore>()
             .AddSingleton<TimeProvider>(time)
             .AddSingleton(accessor)
@@ -283,6 +444,8 @@ public sealed partial class ServerJobArtifactImporterTests
         internal StagedImportPreviewExecutor Preview { get; } = new(Services);
 
         internal StagedImportExecutor Import { get; } = new(Services);
+
+        internal StagedImportDiscardExecutor Discard { get; } = new(Services);
 
         internal OperationPolicyContext Context() => new()
         {

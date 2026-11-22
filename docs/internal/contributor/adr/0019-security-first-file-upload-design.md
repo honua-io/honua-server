@@ -76,6 +76,29 @@ private static readonly FrozenDictionary<string, byte[]> _maliciousSignatures = 
 - No direct file system access from uploaded content
 - Temporary storage with automatic cleanup
 
+### Implementation Status (November 2026)
+
+Where the running server differs from the layers above:
+
+- **Layer 1, rate limiting.** The deployment edge (CDN/WAF or reverse proxy) is
+  the primary rate control. The server's own limiter defaults to off in code
+  (`RateLimitingOptions.Enabled`); the shipped `appsettings.Security.json`
+  turns it on, with an upload class of 10 requests per minute
+  (`RateLimiting:UploadRequestsPerMinute`). Request size limits are always
+  enforced in the server.
+- **Layer 5, sandbox.** Server-side imports are parsed by Honua server code (in
+  the request process or a durable import runner), not in an isolated
+  environment. Their containment is layers 2-4 plus archive budgets
+  (`ImportLimits`: entry count, per-entry size, total extracted size and
+  compression ratio), owner-only temporary files (`PrivateTempFile`) and cleanup
+  when the request or import job ends. Only geoprocessing and ETL jobs run in the separate, non-root GDAL
+  worker container, whose application files are root-owned and whose only
+  writable path is its scratch root.
+- **Downloads.** Attachments are served with `Content-Disposition: attachment`
+  and `X-Content-Type-Options: nosniff`, because the stored content type is
+  client-supplied. This is what makes markup-capable uploads such as SVG safe to
+  store; it is covered by `AttachmentEndpointTests` and must stay under test.
+
 ### Implementation Architecture
 
 **Upload Flow**

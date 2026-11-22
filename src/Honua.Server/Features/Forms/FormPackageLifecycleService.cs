@@ -52,6 +52,12 @@ internal sealed class FormPackageLifecycleService
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, "Request body must be a valid form package document.");
         }
 
+        if (!FormPackageIdentifier.IsAcceptable(package.FormId))
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest,
+                "formId must be 1-128 ASCII letters, digits, hyphens or underscores, and must not be a reserved route segment.");
+        }
+
         var actor = ActorResolver.Resolve(context, ActorResolution.SubjectOrName);
         var version = await _store.SaveDraftAsync(package, actor, context.RequestAborted).ConfigureAwait(false);
         ApplyVersionHeaders(context.Response, version, noStore: true);
@@ -383,21 +389,13 @@ internal sealed class FormPackageLifecycleService
         string formId,
         AuditOutcome outcome,
         string details)
-        => _auditLog.RecordAsync(new AuditEvent
+        => FormPackageAudit.RecordAsync(_auditLog, context, new FormPackageAuditEntry
         {
-            Timestamp = DateTimeOffset.UtcNow,
-            EventType = AuditEventType.AdminAction,
-            Actor = ActorResolver.Resolve(context, ActorResolution.SubjectOrName),
-            ActorType = context.User.Identity?.IsAuthenticated == true ? AuditActorType.UserId : AuditActorType.Anonymous,
-            ResourceType = "form_package",
-            ResourceId = formId,
             Action = action,
+            FormId = formId,
             Outcome = outcome,
-            CorrelationId = context.TraceIdentifier,
-            RemoteIp = context.Connection.RemoteIpAddress?.ToString(),
-            UserAgent = context.Request.Headers.UserAgent.ToString(),
             Details = details
-        }, context.RequestAborted);
+        });
 }
 
 internal static partial class FormPackageLog

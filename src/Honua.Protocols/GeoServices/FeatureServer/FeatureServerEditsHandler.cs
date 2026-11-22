@@ -33,7 +33,7 @@ using Honua.ServiceDefaults;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
-internal sealed class FeatureServerEditsHandler(
+internal sealed partial class FeatureServerEditsHandler(
     FeatureServerEditsDependencies dependencies,
     ILogger<FeatureServerEditsHandler> logger)
 {
@@ -179,6 +179,13 @@ internal sealed class FeatureServerEditsHandler(
                 return limitsValidationResult;
             }
 
+            if (request.UseGlobalIds && FeatureServerGlobalIds.ResolveGlobalIdField(resource) is null)
+            {
+                return StandardErrorHelpers.CreateBadRequest(httpContext,
+                    "useGlobalIds is not supported for this layer",
+                    ["The target layer does not have a configured globalIdField."]);
+            }
+
             // Resolve the target branch version (ADR-0051). Absent / SDE.DEFAULT resolves to
             // VersionContext.Default — the byte-identical non-versioned write path. A named version
             // is Pro-gated and Postgres-only.
@@ -259,6 +266,11 @@ internal sealed class FeatureServerEditsHandler(
                 {
                     return deleteError;
                 }
+            }
+
+            if (FeatureServerEditRefusals.ForSourceTable(httpContext, snapshot, publication) is { } sourceTableRefusal)
+            {
+                return sourceTableRefusal;
             }
 
             // Resolve the authenticated principal once so owner-based edit policies
@@ -577,10 +589,14 @@ internal sealed class FeatureServerEditsHandler(
         if (request.Adds == null)
             return;
 
+        var globalIdField = FeatureServerGlobalIds.ResolveGlobalIdField(resource);
         for (var i = 0; i < request.Adds.Length; i++)
         {
             try
             {
+                if (request.UseGlobalIds)
+                    FeatureServerGlobalIds.ValidateClientInsertGlobalId(globalIdField, request.Adds[i].Attributes);
+
                 // Capture request intent before BuildFeatureFromGeoServicesAsync runs;
                 // for adds existingFeature is null so the post-merge geometry equals the
                 // request's, but using request.Adds[i].Geometry directly keeps the rule
@@ -606,6 +622,7 @@ internal sealed class FeatureServerEditsHandler(
                 context.CreateResponseObjectIds.Add(TryGetObjectId(newFeature.Attributes.ToDictionary(), resource, out var responseObjectId)
                     ? responseObjectId
                     : null);
+                context.CreateResponseGlobalIds.Add(FeatureServerGlobalIds.ReadStoredGlobalId(newFeature.Attributes, globalIdField?.Name));
             }
             catch (EditNotPermittedException ex)
             {
@@ -647,56 +664,24 @@ internal sealed class FeatureServerEditsHandler(
         if (request.Updates == null)
             return;
 
-        // First pass: parse the per-slot object ids so the existing rows can be
-        // resolved with a single batched lookup instead of one round-trip per update.
+        var globalIdField = FeatureServerGlobalIds.ResolveGlobalIdField(resource);
         var slotObjectIds = new long?[request.Updates.Length];
-        for (var i = 0; i < request.Updates.Length; i++)
-        {
-            var hasObjectId = TryGetObjectId(request.Updates[i].Attributes, resource, out var parsedObjectId);
-            if (!hasObjectId || parsedObjectId <= 0)
+        var slotGlobalIds = new string?[request.Updates.Length];
+        var existingFeatures = await ResolveUpdateFeaturesAsync(
+            new UpdateSlotRequest
             {
-                context.HasValidationErrors = true;
-                context.UpdateResults![i] = CreateFailureResult(
-                    code: GeoServicesEditErrorCodes.InvalidObjectId,
-                    description: hasObjectId
-                        ? "Invalid Object ID for update operation"
-                        : "ObjectId is required for update operations",
-                    objectId: hasObjectId ? parsedObjectId : null);
-                continue;
-            }
-
-            slotObjectIds[i] = parsedObjectId;
-        }
-
-        IReadOnlyDictionary<long, Feature> existingFeatures;
-        try
-        {
-            existingFeatures = await ResolveFeaturesByGeoServicesObjectIdsAsync(
-                resource,
-                storageLayerId,
-                slotObjectIds,
-                versionContext,
-                cancellationToken).ConfigureAwait(false);
-        }
-        catch (ArgumentException ex)
-        {
-            // ObjectId field translation failed; this is schema-level and would have
-            // failed every slot under the previous per-feature resolve as well.
-            var description = SanitizeEditErrorMessage(ex.Message, InvalidFeatureDataMessage);
-            for (var i = 0; i < slotObjectIds.Length; i++)
-            {
-                if (slotObjectIds[i] is { } failedObjectId)
-                {
-                    context.HasValidationErrors = true;
-                    context.UpdateResults![i] = CreateFailureResult(
-                        code: GeoServicesEditErrorCodes.InvalidObjectId,
-                        description: description,
-                        objectId: failedObjectId);
-                }
-            }
-
+                Request = request,
+                Resource = resource,
+                GlobalIdField = globalIdField,
+                StorageLayerId = storageLayerId,
+                VersionContext = versionContext,
+                Context = context,
+                SlotObjectIds = slotObjectIds,
+                SlotGlobalIds = slotGlobalIds
+            },
+            cancellationToken).ConfigureAwait(false);
+        if (existingFeatures is null)
             return;
-        }
 
         var ownerSnapshots = await ReadOwnerSnapshotsAsync(
             resource,
@@ -748,7 +733,8 @@ internal sealed class FeatureServerEditsHandler(
                     context.UpdateResults![i] = CreateFailureResult(
                         code: GeoServicesEditErrorCodes.FeatureLocked,
                         description: updateLockConflict,
-                        objectId: objectId);
+                        objectId: objectId,
+                        globalId: slotGlobalIds[i]);
                     continue;
                 }
 
@@ -769,7 +755,8 @@ internal sealed class FeatureServerEditsHandler(
                         context.UpdateResults![i] = CreateFailureResult(
                             code: GeoServicesEditErrorCodes.NotFound,
                             description: "Feature not found",
-                            objectId: objectId);
+                            objectId: objectId,
+                            globalId: slotGlobalIds[i]);
                         continue;
                     }
 
@@ -801,6 +788,8 @@ internal sealed class FeatureServerEditsHandler(
                     : CreatePartialUpdateWritePayload(updateFeature, existingFeature.Value, update, requestHasGeometry, resource));
                 context.UpdateIndexes.Add(i);
                 context.UpdateObjectIds.Add(objectId);
+                context.UpdateGlobalIds.Add(slotGlobalIds[i]
+                    ?? FeatureServerGlobalIds.ReadStoredGlobalId(existingFeature.Value.Attributes, globalIdField?.Name));
                 context.UpdateGeometryChanged.Add(requestHasGeometry);
             }
             catch (EditNotPermittedException ex)
@@ -809,7 +798,8 @@ internal sealed class FeatureServerEditsHandler(
                 context.UpdateResults![i] = CreateFailureResult(
                     code: GeoServicesEditErrorCodes.NotPermitted,
                     description: SanitizeEditErrorMessage(ex.Message, "Edit not permitted."),
-                    objectId: objectId);
+                    objectId: objectId,
+                    globalId: slotGlobalIds[i]);
             }
             catch (ArgumentException ex)
             {
@@ -817,7 +807,8 @@ internal sealed class FeatureServerEditsHandler(
                 context.UpdateResults![i] = CreateFailureResult(
                     code: GeoServicesEditErrorCodes.ValidationFailed,
                     description: SanitizeEditErrorMessage(ex.Message, InvalidFeatureDataMessage),
-                    objectId: objectId);
+                    objectId: objectId,
+                    globalId: slotGlobalIds[i]);
             }
             // Intentional catch-all: one update-slot's unexpected failure must not abort the whole
             // batch; it is logged and reported as a per-slot GeoServices edit failure.
@@ -828,7 +819,8 @@ internal sealed class FeatureServerEditsHandler(
                 context.UpdateResults![i] = CreateFailureResult(
                     code: GeoServicesEditErrorCodes.GenericFailure,
                     description: "Failed to update feature",
-                    objectId: objectId);
+                    objectId: objectId,
+                    globalId: slotGlobalIds[i]);
             }
         }
     }
@@ -844,54 +836,22 @@ internal sealed class FeatureServerEditsHandler(
         if (request.Deletes == null)
             return;
 
-        // First pass: parse the per-slot object ids so the existing rows can be
-        // resolved with a single batched lookup instead of one round-trip per delete.
+        var globalIdField = FeatureServerGlobalIds.ResolveGlobalIdField(resource);
         var slotObjectIds = new long?[request.Deletes.Length];
-        for (var i = 0; i < request.Deletes.Length; i++)
-        {
-            if (!FeatureServerValueParser.TryConvertToLong(request.Deletes[i], out var parsedObjectId) ||
-                parsedObjectId <= 0)
+        var slotGlobalIds = new string?[request.Deletes.Length];
+        var existingFeatures = await ResolveDeleteFeaturesAsync(
+            new DeleteSlotRequest
             {
-                context.HasValidationErrors = true;
-                context.DeleteResults![i] = CreateFailureResult(
-                    code: GeoServicesEditErrorCodes.InvalidObjectId,
-                    description: "Invalid Object ID for delete operation",
-                    objectId: parsedObjectId > 0 ? parsedObjectId : null);
-                continue;
-            }
-
-            slotObjectIds[i] = parsedObjectId;
-        }
-
-        IReadOnlyDictionary<long, Feature> existingFeatures;
-        try
-        {
-            existingFeatures = await ResolveFeaturesByGeoServicesObjectIdsAsync(
-                resource,
-                storageLayerId,
-                slotObjectIds,
-                versionContext,
-                cancellationToken).ConfigureAwait(false);
-        }
-        catch (ArgumentException ex)
-        {
-            // ObjectId field translation failed; this is schema-level and would have
-            // failed every slot under the previous per-feature resolve as well.
-            var description = SanitizeEditErrorMessage(ex.Message, InvalidFeatureDataMessage);
-            for (var i = 0; i < slotObjectIds.Length; i++)
-            {
-                if (slotObjectIds[i] is { } failedObjectId)
-                {
-                    context.HasValidationErrors = true;
-                    context.DeleteResults![i] = CreateFailureResult(
-                        code: GeoServicesEditErrorCodes.InvalidObjectId,
-                        description: description,
-                        objectId: failedObjectId);
-                }
-            }
-
+                Request = request,
+                Target = target,
+                GlobalIdField = globalIdField,
+                Context = context,
+                SlotObjectIds = slotObjectIds,
+                SlotGlobalIds = slotGlobalIds
+            },
+            cancellationToken).ConfigureAwait(false);
+        if (existingFeatures is null)
             return;
-        }
 
         var expectedAbsentObjectIds = request.Preconditions.IsDefaultOrEmpty
             ? null
@@ -934,6 +894,7 @@ internal sealed class FeatureServerEditsHandler(
                     // this pre-read.
                     context.DeleteIds.Add(objectId);
                     context.DeleteResponseObjectIds.Add(objectId);
+                    context.DeleteResponseGlobalIds.Add(slotGlobalIds[i]);
                     context.DeleteIndexes.Add(i);
                     context.DeleteFeatures.Add(null);
                     continue;
@@ -950,7 +911,8 @@ internal sealed class FeatureServerEditsHandler(
                     description: expectedAbsentObjectIds?.Contains(objectId) == true
                         ? "Feature identity could not be transactionally verified"
                         : "Feature not found",
-                    objectId: objectId);
+                    objectId: objectId,
+                    globalId: slotGlobalIds[i]);
                 continue;
             }
 
@@ -968,7 +930,8 @@ internal sealed class FeatureServerEditsHandler(
                 context.DeleteResults![i] = CreateFailureResult(
                     code: GeoServicesEditErrorCodes.NotPermitted,
                     description: SanitizeEditErrorMessage(ownerDecision.Reason!, "Edit not permitted."),
-                    objectId: objectId);
+                    objectId: objectId,
+                    globalId: slotGlobalIds[i]);
                 continue;
             }
 
@@ -981,7 +944,8 @@ internal sealed class FeatureServerEditsHandler(
                 context.DeleteResults![i] = CreateFailureResult(
                     code: GeoServicesEditErrorCodes.FeatureLocked,
                     description: deleteLockConflict,
-                    objectId: objectId);
+                    objectId: objectId,
+                    globalId: slotGlobalIds[i]);
                 continue;
             }
 
@@ -992,12 +956,15 @@ internal sealed class FeatureServerEditsHandler(
                 context.DeleteResults![i] = CreateFailureResult(
                     code: GeoServicesEditErrorCodes.NotPermitted,
                     description: "Edit not permitted.",
-                    objectId: objectId);
+                    objectId: objectId,
+                    globalId: slotGlobalIds[i]);
                 continue;
             }
             context.InternalObjectIdsByPublicObjectId[objectId] = internalObjectId;
             context.DeleteIds.Add(internalObjectId);
             context.DeleteResponseObjectIds.Add(objectId);
+            context.DeleteResponseGlobalIds.Add(slotGlobalIds[i]
+                ?? FeatureServerGlobalIds.ReadStoredGlobalId(existingFeature.Value.Attributes, globalIdField?.Name));
             context.DeleteIndexes.Add(i);
             context.DeleteFeatures.Add(existingFeature);
         }
@@ -1148,10 +1115,13 @@ internal sealed class FeatureServerEditsHandler(
         }
 
         ApplyResults(context.AddResults, context.CreateIndexes, editResult.CreateResults, FeatureEditOperationKind.Create);
+        FeatureServerGlobalIdEdits.ApplyResponseGlobalIds(context.AddResults, context.CreateIndexes, context.CreateResponseGlobalIds);
         ApplyCreateResponseObjectIds(context);
         CaptureCreateEventObjectIds(context, editResult.CreateResults);
         ApplyResults(context.UpdateResults, context.UpdateIndexes, editResult.UpdateResults, FeatureEditOperationKind.Update, context.UpdateObjectIds);
+        FeatureServerGlobalIdEdits.ApplyResponseGlobalIds(context.UpdateResults, context.UpdateIndexes, context.UpdateGlobalIds);
         ApplyResults(context.DeleteResults, context.DeleteIndexes, editResult.DeleteResults, FeatureEditOperationKind.Delete, context.DeleteResponseObjectIds);
+        FeatureServerGlobalIdEdits.ApplyResponseGlobalIds(context.DeleteResults, context.DeleteIndexes, context.DeleteResponseGlobalIds);
 
         return editResult;
     }
@@ -1190,8 +1160,11 @@ internal sealed class FeatureServerEditsHandler(
         };
 
         ApplyRollbackResults(context.AddResults, context.CreateIndexes, null, rollbackError);
+        FeatureServerGlobalIdEdits.ApplyResponseGlobalIds(context.AddResults, context.CreateIndexes, context.CreateResponseGlobalIds);
         ApplyRollbackResults(context.UpdateResults, context.UpdateIndexes, context.UpdateObjectIds, rollbackError);
+        FeatureServerGlobalIdEdits.ApplyResponseGlobalIds(context.UpdateResults, context.UpdateIndexes, context.UpdateGlobalIds);
         ApplyRollbackResults(context.DeleteResults, context.DeleteIndexes, context.DeleteResponseObjectIds, rollbackError);
+        FeatureServerGlobalIdEdits.ApplyResponseGlobalIds(context.DeleteResults, context.DeleteIndexes, context.DeleteResponseGlobalIds);
 
         var response = new ApplyEditsResponse
         {
@@ -1454,6 +1427,11 @@ internal sealed class FeatureServerEditsHandler(
             context.CreateResponseObjectIds.RemoveAt(k);
         }
 
+        if (k < context.CreateResponseGlobalIds.Count)
+        {
+            context.CreateResponseGlobalIds.RemoveAt(k);
+        }
+
         if (k < context.CreateGeometryChanged.Count)
         {
             context.CreateGeometryChanged.RemoveAt(k);
@@ -1485,6 +1463,11 @@ internal sealed class FeatureServerEditsHandler(
             context.UpdateObjectIds.RemoveAt(k);
         }
 
+        if (k < context.UpdateGlobalIds.Count)
+        {
+            context.UpdateGlobalIds.RemoveAt(k);
+        }
+
         if (k < context.UpdateGeometryChanged.Count)
         {
             context.UpdateGeometryChanged.RemoveAt(k);
@@ -1511,6 +1494,11 @@ internal sealed class FeatureServerEditsHandler(
             context.DeleteResponseObjectIds.RemoveAt(k);
         }
 
+        if (k < context.DeleteResponseGlobalIds.Count)
+        {
+            context.DeleteResponseGlobalIds.RemoveAt(k);
+        }
+
         if (k < context.DeleteFeatures.Count)
         {
             context.DeleteFeatures.RemoveAt(k);
@@ -1533,6 +1521,7 @@ internal sealed class FeatureServerEditsHandler(
         public List<Feature> CreateFeatures { get; } = new();
         public List<int> CreateIndexes { get; } = new();
         public List<long?> CreateResponseObjectIds { get; } = new();
+        public List<string?> CreateResponseGlobalIds { get; } = new();
         public List<long?> CreateEventObjectIds { get; } = new();
         public List<bool> CreateGeometryChanged { get; } = new();
         public List<Feature> UpdateFeatures { get; } = new();
@@ -1541,10 +1530,12 @@ internal sealed class FeatureServerEditsHandler(
         public Dictionary<long, FeatureEditPrecondition> UpdateSnapshotPreconditions { get; } = new();
         public List<int> UpdateIndexes { get; } = new();
         public List<long> UpdateObjectIds { get; } = new();
+        public List<string?> UpdateGlobalIds { get; } = new();
         public List<bool> UpdateGeometryChanged { get; } = new();
         public List<long> DeleteIds { get; } = new();
         public Dictionary<long, long> InternalObjectIdsByPublicObjectId { get; } = new();
         public List<long> DeleteResponseObjectIds { get; } = new();
+        public List<string?> DeleteResponseGlobalIds { get; } = new();
         public List<Feature?> DeleteFeatures { get; } = new();
         public List<int> DeleteIndexes { get; } = new();
         public bool HasValidationErrors { get; set; }

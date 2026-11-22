@@ -101,7 +101,7 @@ consistent. Bind from `StandardTtl` in configuration:
     "Short":     "00:05:00",
     "Medium":    "00:30:00",
     "Long":      "04:00:00",
-    "VeryLong":  "24:00:00",
+    "VeryLong":  "1.00:00:00",
     "Negative":  "00:01:00"
   }
 }
@@ -115,7 +115,7 @@ Validation enforces `VeryShort ≤ Short ≤ Medium ≤ Long ≤ VeryLong`. In
 ASP.NET Core's `:` → `__` rule applies. Examples:
 
 - `Database:ConnectionString` → `Database__ConnectionString`
-- `Cache:Redis:Password` → `Cache__Redis__Password`
+- `ConnectionStrings:DefaultConnection` → `ConnectionStrings__DefaultConnection`
 
 `[RequiredConfiguration]` error messages include the env-var form, so
 operators see the expected variable name without consulting docs.

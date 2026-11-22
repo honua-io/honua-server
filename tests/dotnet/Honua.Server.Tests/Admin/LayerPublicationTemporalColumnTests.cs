@@ -32,7 +32,8 @@ public sealed partial class LayerPublishingIntegrationTests
         _layerId = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(payload, _jsonOptions)!.Data!.StorageLayerId;
 
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
-        var binding = snapshot.Graph.StorageBindings.Single(candidate => candidate.StorageLayerId == _layerId);
+        var binding = snapshot.Graph.StorageBindings.Single(candidate =>
+            candidate.StorageLayerId == _layerId && candidate.ConnectionId == _connectionId.ToString("D"));
         binding.Options!["temporalColumn"].GetString().Should().Be("valid_from");
 
         var capability = await _client.GetAsync(

@@ -261,7 +261,9 @@ internal static class AdminAuthEndpoints
                 "Operator bearer issuance is not configured on this server.");
         }
 
-        var issuance = bearerTokenService.Issue(session.Claims, session.ExpiresAt);
+        var binding = await sessionStore.BindOperatorBearerAsync(sessionId!, session.ExpiresAt, context.RequestAborted)
+            .ConfigureAwait(false);
+        var issuance = bearerTokenService.Issue(session.Claims, session.ExpiresAt, new OperatorBearerBinding(Session: binding));
         if (issuance is null)
         {
             return StandardErrorHelpers.CreateServiceUnavailable(
@@ -844,18 +846,29 @@ internal static class AdminAuthEndpoints
             HttpOnly = true,
             IsEssential = true,
             SameSite = SameSiteMode.Strict,
-            Secure = context.Request.IsHttps,
+            Secure = UseSecureSessionCookie(context),
             MaxAge = lifetime,
             Path = "/"
         };
     }
+
+    // Behind a TLS-terminating proxy whose forwarded headers are not trusted the request looks
+    // like HTTP; a configured https public base URL still keeps the session cookie off plain
+    // HTTP. Outside Development and Test the cookie is always Secure: the CSRF, password and OIDC
+    // callback endpoints refuse plain HTTP everywhere, so only SAML sign-in changes (it needs HTTPS
+    // at the browser there).
+    internal static bool UseSecureSessionCookie(HttpContext context)
+        => context.Request.IsHttps
+           || (context.RequestServices.GetService<IHostEnvironment>() is { } environment
+               && !environment.IsDevelopment() && !environment.IsEnvironment("Test"))
+           || BaseUrlResolver.GetBaseUrl(context).StartsWith("https://", StringComparison.OrdinalIgnoreCase);
 
     private static void SetCookie(HttpResponse response, string name, string value, CookieOptions options)
     {
         response.Cookies.Append(name, value, options);
     }
 
-    private static void DeleteCookie(HttpResponse response, string name)
+    internal static void DeleteCookie(HttpResponse response, string name)
     {
         response.Cookies.Delete(name, new CookieOptions
         {

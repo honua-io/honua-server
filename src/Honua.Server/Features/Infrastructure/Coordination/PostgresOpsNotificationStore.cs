@@ -11,6 +11,11 @@ namespace Honua.ControlPlane;
 
 internal sealed record OpsNotificationSubject(string Source, string SubjectId, OpsFindingSeverity Severity);
 
+internal readonly record struct OpsNotificationDueQuery(
+    DateTimeOffset Now,
+    int Limit,
+    IReadOnlyList<string>? ActiveFindingSubjects = null);
+
 internal sealed record OpsNotificationSchedule
 {
     public required string Source { get; init; }
@@ -28,6 +33,19 @@ internal sealed class PostgresOpsNotificationStore(
     private readonly string _schedules = database.Table("ops_notification_schedules");
     private readonly string _proposals = database.Table("operation_proposals");
     private readonly string _instances = database.Table("operation_instances");
+
+    // A Warning finding notifies only if it is still open after this window, so boot and deploy transients
+    // (a target group before its first task, a probe during a restart) do not email the operator.
+    // Critical findings and escalations notify at once. The window lives here rather than in
+    // OpsNotificationCadence because Honua.Infrastructure.Monitoring already depends on this namespace.
+    internal static readonly TimeSpan WarningSettle = TimeSpan.FromMinutes(15);
+
+    // Each replica samples some sources on its own cadence (sign-in providers every five minutes), so one replica's
+    // pass can miss a finding another still reports. An episode closes only after no replica has seen it for longer.
+    internal static readonly TimeSpan FindingAbsenceGrace = TimeSpan.FromMinutes(10);
+
+    internal static DateTimeOffset FirstNotice(OpsFindingSeverity severity, DateTimeOffset firstSeen)
+        => severity >= OpsFindingSeverity.Critical ? firstSeen : firstSeen + WarningSettle;
 
     public Task<int> ExpireApprovalsAsync(int limit, CancellationToken cancellationToken = default)
         => database.ExecuteAsync(async (connection, _, token) =>
@@ -61,7 +79,7 @@ internal sealed class PostgresOpsNotificationStore(
                 )
                 INSERT INTO {_schedules} AS schedule
                     (source, subject_id, episode_id, first_seen_at, severity, next_notice_at, last_seen_at)
-                SELECT 'proposal', proposal_id, @episode, now(),
+                SELECT 'proposal', proposal_id, @episode, COALESCE((record->>'createdAt')::timestamptz, now()),
                     CASE WHEN record->'autonomyMetadata'->>'severity' = '2'
                         OR (record->'autonomyMetadata'->>'severity' IS NULL AND record->'plan'->>'riskLevel' = '2')
                         THEN 2 ELSE 1 END, now(), now()
@@ -128,13 +146,19 @@ internal sealed class PostgresOpsNotificationStore(
             await using var command = new NpgsqlCommand($"""
                 INSERT INTO {_schedules} AS schedule
                     (source, subject_id, episode_id, first_seen_at, severity, next_notice_at, last_seen_at)
-                VALUES (@source, @subject, @episode, @now, @severity, @now, @now)
+                VALUES (@source, @subject, @episode, @now, @severity, @first_notice, @now)
                 ON CONFLICT (source, subject_id) DO UPDATE SET
                     episode_id = CASE WHEN schedule.closed_at IS NOT NULL THEN EXCLUDED.episode_id ELSE schedule.episode_id END,
                     first_seen_at = CASE WHEN schedule.closed_at IS NOT NULL THEN @now ELSE schedule.first_seen_at END,
                     notice_number = CASE WHEN schedule.closed_at IS NOT NULL THEN 0 ELSE schedule.notice_number END,
-                    next_notice_at = CASE WHEN schedule.closed_at IS NOT NULL OR @severity > schedule.severity
-                        THEN @now WHEN @severity < schedule.severity THEN @now + interval '24 hours'
+                    next_notice_at = CASE
+                        -- A reopened Warning waits for the settle window and for any notice still pending from an
+                        -- earlier episode's daily cadence, so a flapping alarm sends at most one Warning a day.
+                        WHEN schedule.closed_at IS NOT NULL AND @first_notice > @now
+                            THEN GREATEST(@first_notice, schedule.next_notice_at)
+                        WHEN schedule.closed_at IS NOT NULL THEN @first_notice
+                        WHEN @severity > schedule.severity THEN @now
+                        WHEN @severity < schedule.severity THEN @now + interval '24 hours'
                         ELSE schedule.next_notice_at END,
                     severity = @severity,
                     last_seen_at = @now, closed_at = NULL, revision = schedule.revision + 1
@@ -144,21 +168,45 @@ internal sealed class PostgresOpsNotificationStore(
             command.Parameters.AddWithValue("episode", Guid.NewGuid());
             command.Parameters.AddWithValue("severity", (int)subject.Severity);
             command.Parameters.AddWithValue("now", now);
+            command.Parameters.AddWithValue("first_notice", FirstNotice(subject.Severity, now));
             return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
         }, StatementRepeat.SafeToRepeat, cancellationToken);
 
     public Task<IReadOnlyList<OpsNotificationSchedule>> ListDueAsync(DateTimeOffset now, int limit,
         CancellationToken cancellationToken = default)
+        => ListDueCoreAsync(new(now, limit), cancellationToken);
+
+    // Filter finding rows to subjects this replica actually observed so a replica that does not
+    // see a finding cannot defer another replica's due reminder or starve actionable rows.
+    public Task<IReadOnlyList<OpsNotificationSchedule>> ListDueForDispatchAsync(
+        OpsNotificationDueQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query.ActiveFindingSubjects);
+        return ListDueCoreAsync(query, cancellationToken);
+    }
+
+    private Task<IReadOnlyList<OpsNotificationSchedule>> ListDueCoreAsync(
+        OpsNotificationDueQuery query,
+        CancellationToken cancellationToken)
         => database.ExecuteAsync<IReadOnlyList<OpsNotificationSchedule>>(async (connection, _, token) =>
         {
-            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(query.Limit);
+            var subjectFilter = query.ActiveFindingSubjects is null
+                ? string.Empty
+                : " AND (source = 'proposal' OR (source = 'finding' AND subject_id = ANY(@active)))";
             await using var command = new NpgsqlCommand($"""
                 SELECT source, subject_id, episode_id, first_seen_at, severity, notice_number, revision
-                FROM {_schedules} WHERE closed_at IS NULL AND next_notice_at <= @now
+                FROM {_schedules} WHERE closed_at IS NULL AND next_notice_at <= @now{subjectFilter}
                 ORDER BY next_notice_at, source, subject_id LIMIT @limit
                 """, connection);
-            command.Parameters.AddWithValue("now", now);
-            command.Parameters.AddWithValue("limit", Math.Min(limit, 100));
+            command.Parameters.AddWithValue("now", query.Now);
+            command.Parameters.AddWithValue("limit", Math.Min(query.Limit, 100));
+            if (query.ActiveFindingSubjects is not null)
+            {
+                command.Parameters.Add(new NpgsqlParameter("active", NpgsqlDbType.Array | NpgsqlDbType.Text)
+                { Value = query.ActiveFindingSubjects as string[] ?? query.ActiveFindingSubjects.ToArray() });
+            }
             var schedules = new List<OpsNotificationSchedule>();
             await using var reader = await command.ExecuteReaderAsync(token).ConfigureAwait(false);
             while (await reader.ReadAsync(token).ConfigureAwait(false))
@@ -219,8 +267,10 @@ internal sealed class PostgresOpsNotificationStore(
             await using var command = new NpgsqlCommand($"""
                 UPDATE {_schedules} SET closed_at = @now, revision = revision + 1
                 WHERE source = 'finding' AND closed_at IS NULL AND NOT (subject_id = ANY(@active))
+                    AND last_seen_at <= @seen_before
                 """, connection);
             command.Parameters.AddWithValue("now", now);
+            command.Parameters.AddWithValue("seen_before", now - FindingAbsenceGrace);
             command.Parameters.Add(new NpgsqlParameter("active", NpgsqlDbType.Array | NpgsqlDbType.Text)
             { Value = activeSubjects.ToArray() });
             return await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);

@@ -422,6 +422,11 @@ internal static partial class FeatureServerEndpoints
                 $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not bound to a storage layer.");
         }
 
+        if (FeatureServerEditRefusals.ForSourceTable(context, snapshot, publication) is { } sourceTableRefusal)
+        {
+            return sourceTableRefusal;
+        }
+
         IReadOnlyDictionary<string, StringValues> values = ToCaseInsensitiveDictionary(context.Request.Query);
         if (HttpMethods.IsPost(context.Request.Method))
         {
@@ -967,12 +972,17 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
-        var accessibleLayers = FilterAccessibleLayersV2(access, snapshot, selectedLayers);
-        var domains = accessibleLayers
-            .SelectMany(pair => pair.Resource.SchemaFields
+        // A masked field's domain names the field and lists its coded values, so it is left out as a hidden field's is.
+        var domainList = new List<DomainInfo>();
+        foreach (var pair in FilterAccessibleLayersV2(access, snapshot, selectedLayers))
+        {
+            var schemaResource = await HideMaskedFieldsAsync(context, pair.Resource, cancellationToken).ConfigureAwait(false);
+            domainList.AddRange(schemaResource.SchemaFields
                 .Where(static field => !field.Hidden && field.Domain is not null)
-                .Select(field => MapDomainInfoV2(pair.Publication, pair.Resource, field, snapshot)))
-            .ToArray();
+                .Select(field => MapDomainInfoV2(pair.Publication, pair.Resource, field, snapshot)));
+        }
+
+        var domains = domainList.ToArray();
 
         var response = new QueryDomainsResponse
         {
@@ -1688,54 +1698,32 @@ internal static partial class FeatureServerEndpoints
         }
 
         // sqlType is optional and overloaded across two distinct Esri concepts:
-        //   * a SQL-dialect selector (standard|native): standardized SQL vs native DBMS SQL;
+        //   * a SQL-dialect selector (standard|native) or omitted, validated as a where clause;
         //   * the canonical validateSQL clause-type enum the real ArcGIS clients send
         //     (esriSQLTypeWhere/OrderBy/Expression) plus its short forms (where/orderBy/
         //     expression) and the ArcGIS API for Python's `statement` alias.
-        // Accept both vocabularies uniformly with the service-level endpoint. Dialect values
-        // (and an omitted sqlType) validate as a where-style ArcGIS SQL expression; clause-type
-        // values route through the shared service validator so orderBy is validated correctly.
         var sqlType = GetValueString(values, "sqlType");
         var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
 
+        var clauseType = "where";
         if (!string.IsNullOrWhiteSpace(sqlType) && !IsSqlDialectType(sqlType))
         {
-            var clauseType = NormalizeServiceSqlType(sqlType);
+            clauseType = NormalizeServiceSqlType(sqlType);
             if (!IsSupportedServiceSqlType(clauseType))
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
                     "Invalid sqlType parameter",
                     ["sqlType must be a SQL dialect ('standard'/'native') or a clause type ('where'/'orderBy'/'expression', or the canonical 'esriSQLType*' enum)."]);
             }
-
-            var (isValid, validationError) = ValidateServiceSql(filterService, sqlExpression, clauseType, resource);
-            var clauseResponse = new ValidateSqlResponse
-            {
-                IsValidSql = isValid,
-                ValidationError = isValid ? null : validationError
-            };
-            return Results.Json(clauseResponse, FeatureServerJsonContext.Default.ValidateSqlResponse, contentType: "application/json");
         }
 
-        // Dialect (standard|native) or omitted: parse the SQL expression using the filter service.
-        var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, sqlExpression);
-
-        if (!parseResult.IsSuccess)
+        var (isValid, validationError) = ValidateServiceSql(filterService, sqlExpression, clauseType, resource);
+        var response = new ValidateSqlResponse
         {
-            var response = new ValidateSqlResponse
-            {
-                IsValidSql = false,
-                ValidationError = parseResult.ErrorMessage ?? "Invalid SQL syntax."
-            };
-            return Results.Json(response, FeatureServerJsonContext.Default.ValidateSqlResponse, contentType: "application/json");
-        }
-
-        var validResponse = new ValidateSqlResponse
-        {
-            IsValidSql = true,
-            ValidationError = null
+            IsValidSql = isValid,
+            ValidationError = isValid ? null : validationError
         };
-        return Results.Json(validResponse, FeatureServerJsonContext.Default.ValidateSqlResponse, contentType: "application/json");
+        return Results.Json(response, FeatureServerJsonContext.Default.ValidateSqlResponse, contentType: "application/json");
     }
 
     private static bool IsSqlDialectType(string sqlType)
@@ -1890,10 +1878,7 @@ internal static partial class FeatureServerEndpoints
         {
             try
             {
-                OrderByParsing.ParseFeatureServerOrderBy(
-                    sqlExpression,
-                    resource,
-                    FeatureServerOrderByFields.AllowedCoreOrderByFields);
+                CallerOrderByFields.ParseCallerOrderBy(sqlExpression, resource);
                 return (true, null);
             }
             catch (InvalidOperationException ex)
@@ -1913,7 +1898,8 @@ internal static partial class FeatureServerEndpoints
 
         if (parseResult.Expression != null)
         {
-            var translationResult = filterService.Translate(parseResult.Expression, resource);
+            // A hidden field validates like an undeclared one, so validateSQL is no existence probe.
+            var translationResult = filterService.Translate(parseResult.Expression, resource.WithoutHiddenSchemaFields());
             if (!translationResult.IsSuccess)
             {
                 return (false, translationResult.ErrorMessage ?? "Invalid SQL expression for the service schema.");

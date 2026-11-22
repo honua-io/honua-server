@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.Publishing.Abstractions;
@@ -328,13 +329,14 @@ public sealed partial class McpServiceCollectionExtensionsTests
         sessions.TryGetReader(sessionId, out var reader).Should().BeTrue();
         var publisher = provider.GetRequiredService<IMcpNotificationPublisher>();
 
-        (await publisher.PublishProgress(sessionId, "local-job", 42, 100, "Running")).Should().BeTrue();
-        reader.TryRead(out var progress).Should().BeTrue();
-        progress.Should().Contain("notifications/progress");
+        using var status = JsonDocument.Parse("""{"jobId":"local-job"}""");
+        (await publisher.PublishMessage(sessionId, "info", "honua.jobs", status.RootElement)).Should().BeTrue();
+        reader.TryRead(out var message).Should().BeTrue();
+        message.Should().Contain("notifications/message");
         (await publisher.BroadcastResourcesListChanged()).Should().Be(1);
         reader.TryRead(out var broadcast).Should().BeTrue();
         broadcast.Should().Contain("notifications/resources/list_changed");
-        (await publisher.PublishProgress("unknown-session", "local-job", 42, 100, null)).Should().BeFalse();
+        (await publisher.PublishMessage("unknown-session", "info", "honua.jobs", status.RootElement)).Should().BeFalse();
     }
 
     [UnitTest]
