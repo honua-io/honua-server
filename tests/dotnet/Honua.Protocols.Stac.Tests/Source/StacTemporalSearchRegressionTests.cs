@@ -33,6 +33,24 @@ public sealed class StacTemporalSearchRegressionTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/collections/{collectionId}/items")]
+    public async Task Items_LinksEscapeCollectionIdentifier()
+    {
+        const string collectionId = "Test Layer";
+        using var response = await _fixture.Client.GetAsync(
+            $"/stac/collections/{Uri.EscapeDataString(collectionId)}/items?limit=1");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var links = json.RootElement.GetProperty("links").EnumerateArray().ToArray();
+        links.Single(link => link.GetProperty("rel").GetString() == "collection")
+            .GetProperty("href").GetString().Should().EndWith("/collections/Test%20Layer");
+        links.Where(link => link.GetProperty("rel").GetString() == "next")
+            .Should().ContainSingle().Which.GetProperty("href").GetString()
+            .Should().Contain("/collections/Test%20Layer/items?");
+    }
+
     [IntegrationTheory]
     [InlineData("items", "/2023-01-02T00:00:00Z", HttpStatusCode.BadRequest)]
     [InlineData("get", "/2023-01-02T00:00:00Z", HttpStatusCode.BadRequest)]

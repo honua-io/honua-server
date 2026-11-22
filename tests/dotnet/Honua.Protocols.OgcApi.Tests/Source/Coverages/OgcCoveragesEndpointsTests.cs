@@ -199,6 +199,18 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
+    public async Task Coverages_GetCoverage_ExplicitEpsg4326HasContentCrs()
+    {
+        using var response = await _fixture.Client.GetAsync(
+            $"/ogc/coverages/collections/{WebAppFixture.TestLayerId}/coverage?crs=EPSG:4326");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.GetValues("Content-Crs").Single().Should()
+            .Be("<http://www.opengis.net/def/crs/EPSG/0/4326>");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
     public async Task Coverages_GetCoverage_ContentCrsUsesCanonicalIdentifier()
     {
         using var response = await _fixture.Client.GetAsync(
