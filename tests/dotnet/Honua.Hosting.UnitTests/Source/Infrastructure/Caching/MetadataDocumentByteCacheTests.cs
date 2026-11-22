@@ -216,53 +216,43 @@ public sealed class MetadataDocumentByteCacheTests
     {
         var cache = new MetadataDocumentByteCache();
         var genSource = new MutableGenerationSource(1);
-        var etagService = new ETagService();
         using var services = new ServiceCollection()
             .AddSingleton(cache)
             .AddSingleton<IConfigurationGenerationSource>(genSource)
-            .AddSingleton<IETagService>(etagService)
+            .AddSingleton<IETagService>(new ETagService())
             .BuildServiceProvider();
 
         var buildCount = 0;
-        var context1 = new DefaultHttpContext { RequestServices = services };
-        context1.Response.Body = new MemoryStream();
-        var result1 = await MetadataDocumentByteCache.GetOrBuildJsonAsync(context1, new JsonMetadataCacheRequest<SampleJsonDoc>
-        {
-            CacheKey = "json-key",
-            TypeInfo = SampleJsonDocContext.Default.SampleJsonDoc,
-            BuildAsync = () => Task.FromResult(new SampleJsonDoc("v1", ++buildCount))
-        });
-        await result1.ExecuteAsync(context1);
-
-        var context2 = new DefaultHttpContext { RequestServices = services };
-        context2.Response.Body = new MemoryStream();
-        var result2 = await MetadataDocumentByteCache.GetOrBuildJsonAsync(context2, new JsonMetadataCacheRequest<SampleJsonDoc>
-        {
-            CacheKey = "json-key",
-            TypeInfo = SampleJsonDocContext.Default.SampleJsonDoc,
-            BuildAsync = () => Task.FromResult(new SampleJsonDoc("v1", ++buildCount))
-        });
-        await result2.ExecuteAsync(context2);
+        var (ct1, body1) = await ExecuteCachedJsonAsync(services, "json-key", () => new SampleJsonDoc("v1", ++buildCount));
+        var (ct2, body2) = await ExecuteCachedJsonAsync(services, "json-key", () => new SampleJsonDoc("v1", ++buildCount));
 
         Assert.Equal(1, buildCount);
-        Assert.Equal("application/json; charset=utf-8", context2.Response.ContentType);
-        Assert.Equal(
-            ((MemoryStream)context1.Response.Body).ToArray(),
-            ((MemoryStream)context2.Response.Body).ToArray());
+        Assert.Equal("application/json; charset=utf-8", ct1);
+        Assert.Equal(ct1, ct2);
+        Assert.Equal(body1, body2);
 
         genSource.Generation = 2;
-        var context3 = new DefaultHttpContext { RequestServices = services };
-        context3.Response.Body = new MemoryStream();
-        var result3 = await MetadataDocumentByteCache.GetOrBuildJsonAsync(context3, new JsonMetadataCacheRequest<SampleJsonDoc>
-        {
-            CacheKey = "json-key",
-            TypeInfo = SampleJsonDocContext.Default.SampleJsonDoc,
-            BuildAsync = () => Task.FromResult(new SampleJsonDoc("v2", ++buildCount))
-        });
-        await result3.ExecuteAsync(context3);
+        var (_, body3) = await ExecuteCachedJsonAsync(services, "json-key", () => new SampleJsonDoc("v2", ++buildCount));
 
         Assert.Equal(2, buildCount);
-        Assert.Contains("\"v2\"", Encoding.UTF8.GetString(((MemoryStream)context3.Response.Body).ToArray()), StringComparison.Ordinal);
+        Assert.Contains("\"v2\"", Encoding.UTF8.GetString(body3), StringComparison.Ordinal);
+    }
+
+    private static async Task<(string? ContentType, byte[] Body)> ExecuteCachedJsonAsync(
+        IServiceProvider services,
+        string cacheKey,
+        Func<SampleJsonDoc> build)
+    {
+        var context = new DefaultHttpContext { RequestServices = services };
+        context.Response.Body = new MemoryStream();
+        var result = await MetadataDocumentByteCache.GetOrBuildJsonAsync(context, new JsonMetadataCacheRequest<SampleJsonDoc>
+        {
+            CacheKey = cacheKey,
+            TypeInfo = SampleJsonDocContext.Default.SampleJsonDoc,
+            BuildAsync = () => Task.FromResult(build())
+        });
+        await result.ExecuteAsync(context);
+        return (context.Response.ContentType, ((MemoryStream)context.Response.Body).ToArray());
     }
 
     [UnitTest]

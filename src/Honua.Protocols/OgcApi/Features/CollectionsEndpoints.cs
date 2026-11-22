@@ -204,61 +204,27 @@ internal static class CollectionsEndpoints
             }
 
             var visiblePublications = publicationsByResource.Values.ToList();
-            async Task<Collections> BuildCollectionsAsync()
-            {
-                var collections = await OgcCommonUtilities.ProjectWithLimitedConcurrencyAsync(
-                    visiblePublications,
-                    (entry, ct) => CreateCollectionAsync(
-                        entry.Resource,
-                        entry.Publication,
-                        entry.Service,
-                        snapshot,
-                        baseUrl,
-                        featureReader,
-                        crsRegistry,
-                        coordinateTransformService,
-                        ct),
-                    cancellationToken).ConfigureAwait(false);
-
-                var links = OgcCommonUtilities.BuildFormatLinks(
-                        request,
-                        $"{baseUrl}/ogc/features/collections",
-                        outputFormat,
-                        OgcCommonUtilities.MetadataFormats,
-                        "Collections")
-                    .ToBuilder();
-
-                links.Add(Link.Create(
-                    href: $"{baseUrl}/ogc/features",
-                    rel: "parent",
-                    type: MediaTypes.Json,
-                    title: "Landing page"));
-
-                return new Collections
+            var result = await FormatCollectionsResponseAsync(
+                context,
+                outputFormat,
+                new CollectionsResponseFormatArgs
                 {
-                    CollectionList = collections,
-                    Links = links.ToImmutable()
-                };
-            }
-
-            if (string.Equals(outputFormat, MediaTypes.Json, StringComparison.OrdinalIgnoreCase))
-            {
-                var cacheKey = CollectionsCacheHelper.BuildCollectionsKey(snapshot, context, visiblePublications);
-                var cachedResult = await MetadataDocumentByteCache.GetOrBuildJsonAsync(
-                    context,
-                    new JsonMetadataCacheRequest<Collections>
+                    CacheKey = CollectionsCacheHelper.BuildCollectionsKey(snapshot, context, visiblePublications),
+                    BuildAsync = () => BuildCollectionsPayloadAsync(new CollectionsBuildArgs
                     {
-                        CacheKey = cacheKey,
-                        TypeInfo = OgcJsonContext.Default.Collections,
-                        BuildAsync = BuildCollectionsAsync
-                    }).ConfigureAwait(false);
-                OgcFeaturesLog.CollectionsReturned(logger, visiblePublications.Count);
-                return cachedResult;
-            }
-
-            var response = await BuildCollectionsAsync().ConfigureAwait(false);
-            OgcFeaturesLog.CollectionsReturned(logger, response.CollectionList.Length);
-            return OgcCommonUtilities.FormatMetadataResponse(response, OgcJsonContext.Default.Collections, outputFormat, "Collections");
+                        Request = request,
+                        BaseUrl = baseUrl,
+                        OutputFormat = outputFormat,
+                        VisiblePublications = visiblePublications,
+                        Snapshot = snapshot,
+                        FeatureReader = featureReader,
+                        CrsRegistry = crsRegistry,
+                        CoordinateTransformService = coordinateTransformService,
+                        CancellationToken = cancellationToken
+                    })
+                }).ConfigureAwait(false);
+            OgcFeaturesLog.CollectionsReturned(logger, visiblePublications.Count);
+            return result;
         }
         catch (OperationCanceledException)
             when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
@@ -351,54 +317,31 @@ internal static class CollectionsEndpoints
             var service = validation.Service;
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-            async Task<CollectionInfo> BuildCollectionAsync()
-            {
-                var built = await CreateCollectionAsync(
-                    resource,
-                    publication,
-                    service,
-                    snapshot,
-                    baseUrl,
-                    featureReader,
-                    crsRegistry,
-                    coordinateTransformService,
-                    cancellationToken).ConfigureAwait(false);
-                var collectionSegment = Uri.EscapeDataString(collectionId);
-                var basePath = $"{baseUrl}/ogc/features/collections/{collectionSegment}";
-                var selfHref = $"{basePath}{request.QueryString}";
-                var updatedLinks = built.Links.Select(link =>
-                        string.Equals(link.Rel, RelationTypes.Self, StringComparison.OrdinalIgnoreCase)
-                            ? link with { Href = selfHref, Type = outputFormat }
-                            : link)
-                    .ToImmutableArray();
-
-                updatedLinks = OgcCommonUtilities.AddAlternateLinks(updatedLinks, request, basePath, outputFormat, OgcCommonUtilities.MetadataFormats);
-                return built with { Links = updatedLinks };
-            }
-
-            if (string.Equals(outputFormat, MediaTypes.Json, StringComparison.OrdinalIgnoreCase))
-            {
-                var cacheKey = CollectionsCacheHelper.BuildCollectionKey(
-                    snapshot, context, new OgcCollectionCacheEntry(publication, service, resource));
-                var cachedResult = await MetadataDocumentByteCache.GetOrBuildJsonAsync(
-                    context,
-                    new JsonMetadataCacheRequest<CollectionInfo>
-                    {
-                        CacheKey = cacheKey,
-                        TypeInfo = OgcJsonContext.Default.CollectionInfo,
-                        BuildAsync = BuildCollectionAsync
-                    }).ConfigureAwait(false);
-                OgcFeaturesLog.CollectionReturned(logger, collectionId, resource.Metadata.Name);
-                return cachedResult;
-            }
-
-            var collection = await BuildCollectionAsync().ConfigureAwait(false);
-            OgcFeaturesLog.CollectionReturned(logger, collectionId, resource.Metadata.Name);
-            return OgcCommonUtilities.FormatMetadataResponse(
-                collection,
-                OgcJsonContext.Default.CollectionInfo,
+            var result = await FormatCollectionResponseAsync(
+                context,
                 outputFormat,
-                collection.Title ?? collection.Id);
+                new CollectionResponseFormatArgs
+                {
+                    CacheKey = CollectionsCacheHelper.BuildCollectionKey(
+                        snapshot, context, new OgcCollectionCacheEntry(publication, service, resource)),
+                    BuildAsync = () => BuildSingleCollectionPayloadAsync(new SingleCollectionBuildArgs
+                    {
+                        Request = request,
+                        BaseUrl = baseUrl,
+                        CollectionId = collectionId,
+                        OutputFormat = outputFormat,
+                        Resource = resource,
+                        Publication = publication,
+                        Service = service,
+                        Snapshot = snapshot,
+                        FeatureReader = featureReader,
+                        CrsRegistry = crsRegistry,
+                        CoordinateTransformService = coordinateTransformService,
+                        CancellationToken = cancellationToken
+                    })
+                }).ConfigureAwait(false);
+            OgcFeaturesLog.CollectionReturned(logger, collectionId, resource.Metadata.Name);
+            return result;
         }
         catch (OperationCanceledException)
             when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
@@ -538,6 +481,156 @@ internal static class CollectionsEndpoints
                 context,
                 "An error occurred while retrieving the queryables schema.");
         }
+    }
+
+    private sealed class CollectionsResponseFormatArgs
+    {
+        internal required string CacheKey { get; init; }
+        internal required Func<Task<Collections>> BuildAsync { get; init; }
+    }
+
+    private sealed class CollectionResponseFormatArgs
+    {
+        internal required string CacheKey { get; init; }
+        internal required Func<Task<CollectionInfo>> BuildAsync { get; init; }
+    }
+
+    private sealed class CollectionsBuildArgs
+    {
+        internal required HttpRequest Request { get; init; }
+        internal required string BaseUrl { get; init; }
+        internal required string OutputFormat { get; init; }
+        internal required IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Service Service, MetadataV2Object Resource)> VisiblePublications { get; init; }
+        internal required MetadataV2GraphSnapshot Snapshot { get; init; }
+        internal required IFeatureReader FeatureReader { get; init; }
+        internal required ICrsRegistry CrsRegistry { get; init; }
+        internal required ICoordinateTransformService CoordinateTransformService { get; init; }
+        internal required CancellationToken CancellationToken { get; init; }
+    }
+
+    private sealed class SingleCollectionBuildArgs
+    {
+        internal required HttpRequest Request { get; init; }
+        internal required string BaseUrl { get; init; }
+        internal required string CollectionId { get; init; }
+        internal required string OutputFormat { get; init; }
+        internal required MetadataV2Object Resource { get; init; }
+        internal required MetadataV2Layer Publication { get; init; }
+        internal required MetadataV2Service? Service { get; init; }
+        internal required MetadataV2GraphSnapshot Snapshot { get; init; }
+        internal required IFeatureReader FeatureReader { get; init; }
+        internal required ICrsRegistry CrsRegistry { get; init; }
+        internal required ICoordinateTransformService CoordinateTransformService { get; init; }
+        internal required CancellationToken CancellationToken { get; init; }
+    }
+
+    private static async Task<IResult> FormatCollectionsResponseAsync(
+        HttpContext context,
+        string outputFormat,
+        CollectionsResponseFormatArgs args)
+    {
+        if (string.Equals(outputFormat, MediaTypes.Json, StringComparison.OrdinalIgnoreCase))
+        {
+            return await MetadataDocumentByteCache.GetOrBuildJsonAsync(
+                context,
+                new JsonMetadataCacheRequest<Collections>
+                {
+                    CacheKey = args.CacheKey,
+                    TypeInfo = OgcJsonContext.Default.Collections,
+                    BuildAsync = args.BuildAsync
+                }).ConfigureAwait(false);
+        }
+
+        var response = await args.BuildAsync().ConfigureAwait(false);
+        return OgcCommonUtilities.FormatMetadataResponse(response, OgcJsonContext.Default.Collections, outputFormat, "Collections");
+    }
+
+    private static async Task<IResult> FormatCollectionResponseAsync(
+        HttpContext context,
+        string outputFormat,
+        CollectionResponseFormatArgs args)
+    {
+        if (string.Equals(outputFormat, MediaTypes.Json, StringComparison.OrdinalIgnoreCase))
+        {
+            return await MetadataDocumentByteCache.GetOrBuildJsonAsync(
+                context,
+                new JsonMetadataCacheRequest<CollectionInfo>
+                {
+                    CacheKey = args.CacheKey,
+                    TypeInfo = OgcJsonContext.Default.CollectionInfo,
+                    BuildAsync = args.BuildAsync
+                }).ConfigureAwait(false);
+        }
+
+        var collection = await args.BuildAsync().ConfigureAwait(false);
+        return OgcCommonUtilities.FormatMetadataResponse(
+            collection,
+            OgcJsonContext.Default.CollectionInfo,
+            outputFormat,
+            collection.Title ?? collection.Id);
+    }
+
+    private static async Task<Collections> BuildCollectionsPayloadAsync(CollectionsBuildArgs args)
+    {
+        var collections = await OgcCommonUtilities.ProjectWithLimitedConcurrencyAsync(
+            args.VisiblePublications,
+            (entry, ct) => CreateCollectionAsync(
+                entry.Resource,
+                entry.Publication,
+                entry.Service,
+                args.Snapshot,
+                args.BaseUrl,
+                args.FeatureReader,
+                args.CrsRegistry,
+                args.CoordinateTransformService,
+                ct),
+            args.CancellationToken).ConfigureAwait(false);
+
+        var links = OgcCommonUtilities.BuildFormatLinks(
+                args.Request,
+                $"{args.BaseUrl}/ogc/features/collections",
+                args.OutputFormat,
+                OgcCommonUtilities.MetadataFormats,
+                "Collections")
+            .ToBuilder();
+
+        links.Add(Link.Create(
+            href: $"{args.BaseUrl}/ogc/features",
+            rel: "parent",
+            type: MediaTypes.Json,
+            title: "Landing page"));
+
+        return new Collections
+        {
+            CollectionList = collections,
+            Links = links.ToImmutable()
+        };
+    }
+
+    private static async Task<CollectionInfo> BuildSingleCollectionPayloadAsync(SingleCollectionBuildArgs args)
+    {
+        var built = await CreateCollectionAsync(
+            args.Resource,
+            args.Publication,
+            args.Service,
+            args.Snapshot,
+            args.BaseUrl,
+            args.FeatureReader,
+            args.CrsRegistry,
+            args.CoordinateTransformService,
+            args.CancellationToken).ConfigureAwait(false);
+        var collectionSegment = Uri.EscapeDataString(args.CollectionId);
+        var basePath = $"{args.BaseUrl}/ogc/features/collections/{collectionSegment}";
+        var selfHref = $"{basePath}{args.Request.QueryString}";
+        var updatedLinks = built.Links.Select(link =>
+                string.Equals(link.Rel, RelationTypes.Self, StringComparison.OrdinalIgnoreCase)
+                    ? link with { Href = selfHref, Type = args.OutputFormat }
+                    : link)
+            .ToImmutableArray();
+
+        updatedLinks = OgcCommonUtilities.AddAlternateLinks(
+            updatedLinks, args.Request, basePath, args.OutputFormat, OgcCommonUtilities.MetadataFormats);
+        return built with { Links = updatedLinks };
     }
 
     // Metadata v2 builder for an OGC API Features CollectionInfo. The collection

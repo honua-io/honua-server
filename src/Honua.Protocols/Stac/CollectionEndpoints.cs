@@ -105,41 +105,22 @@ internal static class CollectionEndpoints
             var visible = await StacV2Lookups.ResolveVisibleStacPublicationsAsync(context, cancellationToken)
                 .ConfigureAwait(false);
 
-            var cacheKey = StacCollectionsCacheHelper.BuildCollectionsKey(baseUrl, visible);
             var result = await MetadataDocumentByteCache.GetOrBuildJsonAsync(
                 context,
                 new JsonMetadataCacheRequest<StacCollectionsResponse>
                 {
-                    CacheKey = cacheKey,
+                    CacheKey = StacCollectionsCacheHelper.BuildCollectionsKey(baseUrl, visible),
                     TypeInfo = StacJsonContext.Default.StacCollectionsResponse,
-                    BuildAsync = async () =>
-                    {
-                        var collections = await OgcCommonUtilities.ProjectWithLimitedConcurrencyAsync(
-                            visible,
-                            (resolved, ct) => StacMappingService.MapResourceToCollectionAsync(
-                                resolved,
-                                new(featureReader, baseUrl, coordinateTransformService),
-                                ct),
-                            cancellationToken).ConfigureAwait(false);
-
-                        var links = ImmutableArray.Create(
-                            Link.Create(
-                                href: $"{stacBase}/collections",
-                                rel: RelationTypes.Self,
-                                type: MediaTypes.Json,
-                                title: "Collections"),
-                            Link.Create(
-                                href: stacBase,
-                                rel: StacConstants.StacRelations.Root,
-                                type: MediaTypes.Json,
-                                title: "STAC Catalog"));
-
-                        return new StacCollectionsResponse
+                    BuildAsync = () => BuildStacCollectionsPayloadAsync(
+                        new StacCollectionsBuildArgs
                         {
-                            Collections = collections,
-                            Links = links
-                        };
-                    }
+                            Visible = visible,
+                            BaseUrl = baseUrl,
+                            StacBase = stacBase,
+                            FeatureReader = featureReader,
+                            CoordinateTransformService = coordinateTransformService,
+                            CancellationToken = cancellationToken
+                        })
                 }).ConfigureAwait(false);
 
             StacLog.CollectionsReturned(logger, visible.Length);
@@ -302,6 +283,45 @@ internal static class CollectionEndpoints
             return StandardErrorHelpers.CreateInternalServerError(
                 context, "An error occurred while retrieving the STAC collection queryables.");
         }
+    }
+
+    private sealed class StacCollectionsBuildArgs
+    {
+        internal required StacV2Lookups.ResolvedStacPublication[] Visible { get; init; }
+        internal required string BaseUrl { get; init; }
+        internal required string StacBase { get; init; }
+        internal required IFeatureReader FeatureReader { get; init; }
+        internal required ICoordinateTransformService? CoordinateTransformService { get; init; }
+        internal required CancellationToken CancellationToken { get; init; }
+    }
+
+    private static async Task<StacCollectionsResponse> BuildStacCollectionsPayloadAsync(StacCollectionsBuildArgs args)
+    {
+        var collections = await OgcCommonUtilities.ProjectWithLimitedConcurrencyAsync(
+            args.Visible,
+            (resolved, ct) => StacMappingService.MapResourceToCollectionAsync(
+                resolved,
+                new(args.FeatureReader, args.BaseUrl, args.CoordinateTransformService),
+                ct),
+            args.CancellationToken).ConfigureAwait(false);
+
+        var links = ImmutableArray.Create(
+            Link.Create(
+                href: $"{args.StacBase}/collections",
+                rel: RelationTypes.Self,
+                type: MediaTypes.Json,
+                title: "Collections"),
+            Link.Create(
+                href: args.StacBase,
+                rel: StacConstants.StacRelations.Root,
+                type: MediaTypes.Json,
+                title: "STAC Catalog"));
+
+        return new StacCollectionsResponse
+        {
+            Collections = collections,
+            Links = links
+        };
     }
 
     private static QueryablesSchema BuildCatalogQueryablesSchema(string schemaId)

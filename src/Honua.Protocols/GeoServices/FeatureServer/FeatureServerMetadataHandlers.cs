@@ -122,53 +122,22 @@ internal static partial class FeatureServerEndpoints
         {
             FeatureServerLog.ServiceMetadataRequested(logger, service.Metadata.Name);
 
-            var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-            var supportsGeobufOutput = featureReader is IGeobufFeatureStore;
-            var supportsAttachmentUploads = HasAttachmentSurface(context.RequestServices);
-            var branchVersioningEnabled = await HasBranchVersionedPublicationsAsync(
-                context, service, publications, snapshot, cancellationToken).ConfigureAwait(false);
-            var versionManagementEnabled = IsVersionManagementAvailable(context, branchVersioningEnabled);
-            var offlineSyncEnabled = CapabilityFlagOptions.IsExperimentalEnabled(
-                context.RequestServices.GetRequiredService<IConfiguration>(),
-                "sync.offline");
-            var versionManagementServerUrl = GeoServicesServiceUrls.RequestedLocation(
-                context, service.EffectivePublicName, "VersionManagementServer");
-            var maskedPublications = await HideMaskedFieldsAsync(context, publications, cancellationToken).ConfigureAwait(false);
-
-            var cacheKey = FeatureServerMetadataCacheHelper.BuildServiceMetadataKey(new ServiceMetadataCacheKeyInput
-            {
-                Snapshot = snapshot,
-                Service = service,
-                Publications = maskedPublications,
-                Limits = limits,
-                SupportsGeobufOutput = supportsGeobufOutput,
-                SupportsAttachmentUploads = supportsAttachmentUploads,
-                BranchVersioningEnabled = branchVersioningEnabled,
-                VersionManagementEnabled = versionManagementEnabled,
-                OfflineSyncEnabled = offlineSyncEnabled,
-                VersionManagementServerUrl = versionManagementServerUrl
-            });
+            var cacheInput = await BuildServiceMetadataCacheInputAsync(
+                context,
+                new ServiceMetadataBuildContext
+                {
+                    Service = service,
+                    Publications = publications,
+                    Snapshot = snapshot,
+                    Limits = limits
+                },
+                cancellationToken).ConfigureAwait(false);
 
             var result = await MetadataDocumentByteCache.GetOrBuildJsonAsync(
                 context,
-                new JsonMetadataCacheRequest<FeatureServerResponse>
-                {
-                    CacheKey = cacheKey,
-                    TypeInfo = FeatureServerJsonContext.Default.FeatureServerResponse,
-                    BuildAsync = () => Task.FromResult(MapServiceToResponseV2(
-                        service,
-                        maskedPublications,
-                        snapshot,
-                        limits,
-                        supportsGeobufOutput: supportsGeobufOutput,
-                        supportsAttachmentUploads: supportsAttachmentUploads,
-                        branchVersioningEnabled: branchVersioningEnabled,
-                        versionManagementEnabled: versionManagementEnabled,
-                        offlineSyncEnabled: offlineSyncEnabled,
-                        versionManagementServerUrl: versionManagementServerUrl))
-                }).ConfigureAwait(false);
+                CreateServiceMetadataCacheRequest(cacheInput)).ConfigureAwait(false);
 
-            FeatureServerLog.ServiceMetadataReturned(logger, service.Metadata.Name, maskedPublications.Count);
+            FeatureServerLog.ServiceMetadataReturned(logger, service.Metadata.Name, cacheInput.Publications.Count);
             return result;
         }
         // Intentionally generic: this is a top-level protocol request handler; any
@@ -316,11 +285,6 @@ internal static partial class FeatureServerEndpoints
             FeatureServerLog.LayerMetadataRequested(logger, serviceId, resolvedLayerId);
 
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-            var supportsGeobufOutput = featureReader is IGeobufFeatureStore;
-            var supportsAttachmentUploads = HasAttachmentSurface(context.RequestServices);
-            var offlineSyncEnabled = CapabilityFlagOptions.IsExperimentalEnabled(
-                context.RequestServices.GetRequiredService<IConfiguration>(),
-                "sync.offline");
             var extrusionValidationErrors = ValidateExtrusionInfoV2(resource, out var extrusionInfo);
             if (extrusionValidationErrors.Count > 0)
             {
@@ -331,64 +295,46 @@ internal static partial class FeatureServerEndpoints
             }
 
             var schemaResource = await HideMaskedFieldsAsync(context, resource, cancellationToken).ConfigureAwait(false);
-            var branchVersioningEnabled = await IsPublicationBranchVersioningAvailableAsync(
-                context, service, resource, publication, snapshot, cancellationToken).ConfigureAwait(false);
             var (metadataResource, accessibleRelatedIds) = await ResolveAuthorizedRelationshipsResourceAsync(
                 context,
-                new RelationshipAccessContext(service, resource, schemaResource, snapshot),
+                new RelationshipAccessContext
+                {
+                    Service = service,
+                    Resource = resource,
+                    SchemaResource = schemaResource,
+                    Snapshot = snapshot
+                },
                 cancellationToken).ConfigureAwait(false);
 
-            var cacheKey = FeatureServerMetadataCacheHelper.BuildLayerMetadataKey(new LayerMetadataCacheKeyInput
+            var cacheInput = new LayerMetadataCacheKeyInput
             {
                 Snapshot = snapshot,
                 Service = service,
                 Publication = publication,
                 SchemaResource = schemaResource,
                 Limits = limits,
-                SupportsGeobufOutput = supportsGeobufOutput,
-                SupportsAttachmentUploads = supportsAttachmentUploads,
-                BranchVersioningEnabled = branchVersioningEnabled,
-                OfflineSyncEnabled = offlineSyncEnabled,
+                SupportsGeobufOutput = featureReader is IGeobufFeatureStore,
+                SupportsAttachmentUploads = HasAttachmentSurface(context.RequestServices),
+                BranchVersioningEnabled = await IsPublicationBranchVersioningAvailableAsync(
+                    context, service, resource, publication, snapshot, cancellationToken).ConfigureAwait(false),
+                OfflineSyncEnabled = CapabilityFlagOptions.IsExperimentalEnabled(
+                    context.RequestServices.GetRequiredService<IConfiguration>(),
+                    "sync.offline"),
                 AccessibleRelatedResourceIds = accessibleRelatedIds
-            });
+            };
 
             var result = await MetadataDocumentByteCache.GetOrBuildJsonAsync(
                 context,
-                new JsonMetadataCacheRequest<LayerResponse>
-                {
-                    CacheKey = cacheKey,
-                    TypeInfo = FeatureServerJsonContext.Default.LayerResponse,
-                    BuildAsync = async () =>
+                CreateLayerMetadataCacheRequest(
+                    new LayerMetadataBuildArgs
                     {
-                        var timeInfo = GeoServicesWithheldFields.WithoutWithheldTimeFields(schemaResource, await BuildTimeInfoV2Async(
-                            resource,
-                            publication,
-                            snapshot,
-                            featureReader,
-                            cancellationToken).ConfigureAwait(false));
-                        var drawingInfo = GeoServicesWithheldFields.WithoutWithheldReferences(
-                            ResolveDrawingInfoV2(resource, snapshot), schemaResource) ?? BuildDefaultDrawingInfoV2(resource);
-                        var popupInfo = GeoServicesWithheldFields.WithoutWithheldReferences(ResolvePopupInfoV2(resource), schemaResource);
-
-                        // Edit constraints (composite ownership) come from every relationship, including ones the
-                        // caller cannot see; only the advertised relationship list is filtered.
-                        return MapLayerToResponseV2(
-                            service,
-                            schemaResource,
-                            publication,
-                            snapshot,
-                            limits,
-                            timeInfo,
-                            drawingInfo: drawingInfo,
-                            popupInfo: popupInfo,
-                            extrusionInfo: WithoutWithheldExtrusion(schemaResource, extrusionInfo),
-                            supportsGeobufOutput: supportsGeobufOutput,
-                            supportsAttachmentUploads: supportsAttachmentUploads,
-                            branchVersioningEnabled: branchVersioningEnabled,
-                            offlineSyncEnabled: offlineSyncEnabled,
-                            authorizedRelationships: BuildRelationshipResponseV2(metadataResource, snapshot, service));
-                    }
-                }).ConfigureAwait(false);
+                        CacheInput = cacheInput,
+                        Resource = resource,
+                        MetadataResource = metadataResource,
+                        ExtrusionInfo = extrusionInfo,
+                        FeatureReader = featureReader,
+                        CancellationToken = cancellationToken
+                    })).ConfigureAwait(false);
 
             FeatureServerLog.LayerMetadataReturned(logger, serviceId, resolvedLayerId, resource.Metadata.Name);
             return result;
@@ -408,11 +354,115 @@ internal static partial class FeatureServerEndpoints
         }
     }
 
-    private readonly record struct RelationshipAccessContext(
-        MetadataV2Service Service,
-        MetadataV2Object Resource,
-        MetadataV2Object SchemaResource,
-        MetadataV2GraphSnapshot Snapshot);
+    private sealed class ServiceMetadataBuildContext
+    {
+        internal required MetadataV2Service Service { get; init; }
+        internal required IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Object Resource)> Publications { get; init; }
+        internal required MetadataV2GraphSnapshot Snapshot { get; init; }
+        internal required QueryLimits Limits { get; init; }
+    }
+
+    private sealed class LayerMetadataBuildArgs
+    {
+        internal required LayerMetadataCacheKeyInput CacheInput { get; init; }
+        internal required MetadataV2Object Resource { get; init; }
+        internal required MetadataV2Object MetadataResource { get; init; }
+        internal required FeatureServerExtrusionInfo? ExtrusionInfo { get; init; }
+        internal required IFeatureReader FeatureReader { get; init; }
+        internal required CancellationToken CancellationToken { get; init; }
+    }
+
+    private sealed class RelationshipAccessContext
+    {
+        internal required MetadataV2Service Service { get; init; }
+        internal required MetadataV2Object Resource { get; init; }
+        internal required MetadataV2Object SchemaResource { get; init; }
+        internal required MetadataV2GraphSnapshot Snapshot { get; init; }
+    }
+
+    private static async Task<ServiceMetadataCacheKeyInput> BuildServiceMetadataCacheInputAsync(
+        HttpContext context,
+        ServiceMetadataBuildContext input,
+        CancellationToken cancellationToken)
+    {
+        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var branchVersioningEnabled = await HasBranchVersionedPublicationsAsync(
+            context, input.Service, input.Publications, input.Snapshot, cancellationToken).ConfigureAwait(false);
+        var maskedPublications = await HideMaskedFieldsAsync(context, input.Publications, cancellationToken).ConfigureAwait(false);
+        return new ServiceMetadataCacheKeyInput
+        {
+            Snapshot = input.Snapshot,
+            Service = input.Service,
+            Publications = maskedPublications,
+            Limits = input.Limits,
+            SupportsGeobufOutput = featureReader is IGeobufFeatureStore,
+            SupportsAttachmentUploads = HasAttachmentSurface(context.RequestServices),
+            BranchVersioningEnabled = branchVersioningEnabled,
+            VersionManagementEnabled = IsVersionManagementAvailable(context, branchVersioningEnabled),
+            OfflineSyncEnabled = CapabilityFlagOptions.IsExperimentalEnabled(
+                context.RequestServices.GetRequiredService<IConfiguration>(),
+                "sync.offline"),
+            VersionManagementServerUrl = GeoServicesServiceUrls.RequestedLocation(
+                context, input.Service.EffectivePublicName, "VersionManagementServer")
+        };
+    }
+
+    private static JsonMetadataCacheRequest<FeatureServerResponse> CreateServiceMetadataCacheRequest(
+        ServiceMetadataCacheKeyInput input) =>
+        new()
+        {
+            CacheKey = FeatureServerMetadataCacheHelper.BuildServiceMetadataKey(input),
+            TypeInfo = FeatureServerJsonContext.Default.FeatureServerResponse,
+            BuildAsync = () => Task.FromResult(MapServiceToResponseV2(
+                input.Service,
+                input.Publications,
+                input.Snapshot,
+                input.Limits,
+                supportsGeobufOutput: input.SupportsGeobufOutput,
+                supportsAttachmentUploads: input.SupportsAttachmentUploads,
+                branchVersioningEnabled: input.BranchVersioningEnabled,
+                versionManagementEnabled: input.VersionManagementEnabled,
+                offlineSyncEnabled: input.OfflineSyncEnabled,
+                versionManagementServerUrl: input.VersionManagementServerUrl))
+        };
+
+    private static JsonMetadataCacheRequest<LayerResponse> CreateLayerMetadataCacheRequest(LayerMetadataBuildArgs args) =>
+        new()
+        {
+            CacheKey = FeatureServerMetadataCacheHelper.BuildLayerMetadataKey(args.CacheInput),
+            TypeInfo = FeatureServerJsonContext.Default.LayerResponse,
+            BuildAsync = async () =>
+            {
+                var input = args.CacheInput;
+                var timeInfo = GeoServicesWithheldFields.WithoutWithheldTimeFields(
+                    input.SchemaResource,
+                    await BuildTimeInfoV2Async(
+                        args.Resource, input.Publication, input.Snapshot, args.FeatureReader, args.CancellationToken).ConfigureAwait(false));
+                var drawingInfo = GeoServicesWithheldFields.WithoutWithheldReferences(
+                    ResolveDrawingInfoV2(args.Resource, input.Snapshot), input.SchemaResource)
+                    ?? BuildDefaultDrawingInfoV2(args.Resource);
+                var popupInfo = GeoServicesWithheldFields.WithoutWithheldReferences(
+                    ResolvePopupInfoV2(args.Resource), input.SchemaResource);
+
+                // Edit constraints (composite ownership) come from every relationship, including ones the
+                // caller cannot see; only the advertised relationship list is filtered.
+                return MapLayerToResponseV2(
+                    input.Service,
+                    input.SchemaResource,
+                    input.Publication,
+                    input.Snapshot,
+                    input.Limits,
+                    timeInfo,
+                    drawingInfo: drawingInfo,
+                    popupInfo: popupInfo,
+                    extrusionInfo: WithoutWithheldExtrusion(input.SchemaResource, args.ExtrusionInfo),
+                    supportsGeobufOutput: input.SupportsGeobufOutput,
+                    supportsAttachmentUploads: input.SupportsAttachmentUploads,
+                    branchVersioningEnabled: input.BranchVersioningEnabled,
+                    offlineSyncEnabled: input.OfflineSyncEnabled,
+                    authorizedRelationships: BuildRelationshipResponseV2(args.MetadataResource, input.Snapshot, input.Service));
+            }
+        };
 
     private static async Task<(MetadataV2Object MetadataResource, IReadOnlyList<string> AccessibleRelatedIds)>
         ResolveAuthorizedRelationshipsResourceAsync(
