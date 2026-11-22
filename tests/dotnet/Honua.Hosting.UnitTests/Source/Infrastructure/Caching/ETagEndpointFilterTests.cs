@@ -10,6 +10,7 @@ using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -63,6 +64,8 @@ public sealed class ETagEndpointFilterTests
 
         var etagService = new ETagService();
         using var services = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton(jsonOptions)
             .AddSingleton<IETagService>(etagService)
             .BuildServiceProvider();
 

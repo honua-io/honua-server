@@ -112,7 +112,8 @@ public sealed class CanonicalSecurityActorTests
         Assert.True(CanonicalSecurityActor.RemoveUnstampedAuthorityClaims(principal));
         Assert.False(CanonicalSecurityActor.HasUnstampedAuthorityClaim(identity));
         var remaining = Assert.Single(identity.FindAll("permission"));
-        Assert.Same(stamped, remaining);
+        Assert.True(CanonicalSecurityActor.IsFrameworkOwnedClaim(remaining));
+        Assert.Equal("admin:*", remaining.Value);
         Assert.False(CanonicalSecurityActor.RemoveUnstampedAuthorityClaims(principal));
     }
 
