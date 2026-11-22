@@ -13,6 +13,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Scene;
+using Honua.Scene;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin.Scene;
 using Microsoft.Extensions.DependencyInjection;
@@ -45,7 +46,7 @@ internal static partial class ScenePointCloudIngestEndpoints
         _ = group.MapPost("/pointcloud", HandleIngestPointCloud)
             .AddAgentApprovalFilter(AgentApprovalFilter.AccessGrants)
             .WithName("IngestPointCloudScene")
-            .WithSummary("Ingest a LAS point cloud into a servable 3D Tiles point tileset (Enterprise).")
+            .WithSummary("Ingest a point cloud as 3D Tiles or direct COPC (Enterprise).")
             .Accepts<IFormFile>("multipart/form-data")
             .Produces<PointCloudIngestResponse>(StatusCodes.Status201Created)
             .Produces<SceneJobAcceptedResponse>(StatusCodes.Status202Accepted)
@@ -116,6 +117,26 @@ internal static partial class ScenePointCloudIngestEndpoints
             return SceneIngestRequestHelpers.CreateAsyncDisabledResult(context);
         }
 
+        var requestedFormat = SceneServingFormat.ThreeDTiles;
+        var rawServingFormat = NullIfBlank(form["servingFormat"]);
+        if (rawServingFormat is not null &&
+            (!SceneServingProjection.TryParseServingFormat(rawServingFormat, out requestedFormat)
+             || requestedFormat is not (SceneServingFormat.ThreeDTiles or SceneServingFormat.Copc)))
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status400BadRequest,
+                $"Unsupported point-cloud servingFormat '{rawServingFormat}'. Allowed: 3d-tiles, copc.");
+        }
+
+        if (asyncRequested && requestedFormat == SceneServingFormat.Copc)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status400BadRequest,
+                "Direct COPC ingest requires synchronous execution.");
+        }
+
         var coordinator = asyncRequested
             ? context.RequestServices.GetService<SceneJobCoordinator>()
             : null;
@@ -126,6 +147,18 @@ internal static partial class ScenePointCloudIngestEndpoints
         }
 
         var document = await SceneIngestRequestHelpers.ReadUploadAsync(file, cancellationToken).ConfigureAwait(false);
+
+        if (requestedFormat == SceneServingFormat.Copc)
+        {
+            return await HandleDirectCopcIngestAsync(
+                context,
+                form,
+                document,
+                cacheMaxAge,
+                requiresAuth ?? false,
+                logger,
+                cancellationToken).ConfigureAwait(false);
+        }
 
         // Auto-dispatch: a compressed (LAZ/COPC) buffer or a projected
         // source CRS cannot be tiled by the pure-managed reader, so route it
@@ -254,6 +287,75 @@ internal static partial class ScenePointCloudIngestEndpoints
             ScenePointCloudIngestLog.IngestFailed(logger, ex);
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError,
                 "Failed to ingest LAS point cloud.");
+        }
+    }
+
+    private static async Task<IResult> HandleDirectCopcIngestAsync(
+        HttpContext context,
+        IFormCollection form,
+        byte[] document,
+        int? cacheMaxAge,
+        bool requiresAuth,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        if (!LasPointCloudReader.TryReadCopcInfo(document, out _, out var copcError))
+        {
+            if (PointCloudCompressionDetector.HasLasfSignature(document))
+            {
+                ScenePointCloudIngestLog.IngestRejected(logger, "COPC_CONVERSION_REQUIRED", copcError);
+                return ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status409Conflict,
+                    $"Untiled LAS/LAZ cannot be registered directly as COPC without conversion: {copcError}");
+            }
+
+            ScenePointCloudIngestLog.IngestRejected(logger, SceneGenerationErrorCodes.ModelAssetInvalid, copcError);
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status400BadRequest,
+                $"{SceneGenerationErrorCodes.ModelAssetInvalid}: {copcError}");
+        }
+
+        var request = new CopcSceneIngestRequest(
+            Source: document,
+            SceneId: NullIfBlank(form["sceneId"]),
+            DisplayName: NullIfBlank(form["displayName"]),
+            Description: NullIfBlank(form["description"]),
+            EditionGate: NullIfBlank(form["editionGate"]),
+            CacheMaxAgeSeconds: cacheMaxAge,
+            RequiresAuth: requiresAuth,
+            CreatedBy: context.User.Identity?.Name);
+
+        var executor = context.RequestServices.GetRequiredService<CopcScenePublishExecutor>();
+        try
+        {
+            var outcome = await executor.IngestAsync(request, cancellationToken).ConfigureAwait(false);
+            await InvalidateSceneCacheAsync(context, outcome.SceneId, logger, cancellationToken).ConfigureAwait(false);
+
+            var baseUrl = BaseUrlResolver.GetBaseUrl(context);
+            var copcUrl = SceneUrls.AbsoluteCopcUrl(baseUrl, outcome.SceneId);
+            var response = new PointCloudIngestResponse
+            {
+                SceneId = outcome.SceneId,
+                TilesetUrl = string.Empty,
+                CopcUrl = copcUrl,
+                ServingFormat = SceneServingProjection.CopcWireFormat,
+                ContentKind = SceneServingProjection.PointCloudWireContentKind,
+                PointCount = outcome.CopcInfo.PointCount > int.MaxValue ? int.MaxValue : (int)outcome.CopcInfo.PointCount,
+                TileCount = 1,
+                HasColor = outcome.CopcInfo.HasColor
+            };
+
+            return Results.Json(
+                response,
+                ScenePointCloudIngestJsonContext.Default.PointCloudIngestResponse,
+                statusCode: StatusCodes.Status201Created);
+        }
+        catch (ValidationException vex)
+        {
+            var (status, detail) = ClassifyValidationError(vex.Message);
+            return ProblemDetailsHelpers.CreateAdminProblem(context, status, detail);
         }
     }
 

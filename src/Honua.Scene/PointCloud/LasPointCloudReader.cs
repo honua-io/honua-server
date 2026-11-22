@@ -7,7 +7,7 @@ using Honua.Core.Features.Scene.Domain;
 
 namespace Honua.Core.Features.Scene.PointCloud;
 
-public static class LasPointCloudReader
+public static partial class LasPointCloudReader
 {
     private const int PublicHeaderMinLength = 227; // LAS 1.2 public header size.
 

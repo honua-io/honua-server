@@ -44,6 +44,8 @@ public static partial class EndpointRegistry
         new("GET", "/scenes/{sceneId}/exports/openusd/stage.usda"),
         new("GET", "/scenes/{sceneId}/tileset.json"),
         new("HEAD", "/scenes/{sceneId}/tileset.json"),
+        new("GET", "/scenes/{sceneId}/copc"),
+        new("HEAD", "/scenes/{sceneId}/copc"),
 
         // Esri I3S SceneServer serving at the canonical GeoServices path
         // (Enterprise-gated). The /scenes/{sceneId}/SceneServer routes

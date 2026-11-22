@@ -167,6 +167,7 @@ anonymous GET /rest/services/{serviceId}/VersionManagementServer/versions/{versi
 anonymous GET /saml/login
 anonymous GET /saml/metadata
 anonymous GET /scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/root/geometries/{geometryId:int}
+anonymous GET /scenes/{sceneId}/copc
 anonymous GET /scim/v2/Groups/
 anonymous GET /scim/v2/Groups/{id}
 anonymous GET /scim/v2/ResourceTypes
@@ -194,6 +195,7 @@ anonymous GET /sharing/rest/portals/self
 anonymous GET /sharing/rest/search
 anonymous GET /wps
 anonymous GET /wps/conformance/results/{token}
+anonymous HEAD /scenes/{sceneId}/copc
 anonymous PATCH /healthz/deep
 anonymous PATCH /odata/Features(LayerId={layerId:int},ObjectId={objectId:long})
 anonymous PATCH /odata/Features({layerId:int},{objectId:long})

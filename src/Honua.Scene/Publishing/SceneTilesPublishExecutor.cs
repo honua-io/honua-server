@@ -1044,6 +1044,8 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             AssetStoragePrefix = assetStoragePrefix,
             TilesetFileName = "tileset.json",
             DatasetType = SceneDatasetType.HostedTiles,
+            ServingFormat = SceneServingFormat.ThreeDTiles,
+            ContentKind = SceneContentKind.Vector3D,
             Extent = new SceneExtent(bounds[0], bounds[1], bounds[2], bounds[3]),
             Crs = "EPSG:4979",
             CachePolicy = new SceneCachePolicy(cacheMaxAgeSeconds, NoStore: false),

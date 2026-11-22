@@ -77,6 +77,13 @@ internal sealed class ConfigurationSceneDatasetRegistry : ISceneDatasetRegistry
         // can match parent walks against this canonical form.
         var canonical = Path.TrimEndingDirectorySeparator(Path.GetFullPath(assetRoot));
 
+        SceneServingFormat? servingFormat = SceneServingProjection.TryParseServingFormat(entry.ServingFormat, out var parsedFormat)
+            ? parsedFormat
+            : null;
+        SceneContentKind? contentKind = SceneServingProjection.TryParseContentKind(entry.ContentKind, out var parsedKind)
+            ? parsedKind
+            : null;
+
         dataset = new SceneDataset
         {
             Id = entry.Id,
@@ -86,6 +93,8 @@ internal sealed class ConfigurationSceneDatasetRegistry : ISceneDatasetRegistry
             TilesetFileName = string.IsNullOrWhiteSpace(entry.TilesetFileName)
                 ? "tileset.json"
                 : entry.TilesetFileName!,
+            ServingFormat = servingFormat,
+            ContentKind = contentKind,
             AccessPolicy = entry.AccessPolicy?.ToAccessPolicy()
         };
         return true;

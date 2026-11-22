@@ -112,6 +112,9 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("honua_apply_style_preset", "apply_style_preset", "execution"),
             ("honua_resolve_entity", "resolve_entity", "results"),
             ("honua_list_capabilities", "list_capabilities", "results"),
+            ("honua_scene_list", "scene_list", "results"),
+            ("honua_scene_get", "scene_get", "results"),
+            ("honua_scene_resolve", "scene_resolve", "results"),
 
             // Studio draft lifecycle + composition tools. Honua-specific
             // extensions — not (yet) part of the geospatial-mcp standard's
