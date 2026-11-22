@@ -13,20 +13,25 @@ parity roster, and honua-samples all resolve against this file's `key` values.
 This repo already has an edition-gated entitlement vocabulary,
 [`FeatureCatalog`](../../src/Honua.Core/Core/Features/Licensing/Domain/FeatureCatalog.cs)
 (`docs generator`: `src/Honua.Core/Core/Features/Licensing/Domain/FeatureCatalog.cs`),
-which enumerates only the Pro/Enterprise keys `LicenseGate` enforces.
+which enumerates the entitlement keys `LicenseGate` enforces (mostly Pro and
+Enterprise, plus a few Community entries).
 `capability-keys.v1.json` is generated from a strictly broader C# type,
 [`CapabilityKeyCatalog`](../../src/Honua.Core/Core/Features/Licensing/Domain/CapabilityKeyCatalog.cs)
-(`CapabilityKeyCatalog.All = CapabilityKeyCatalog.CommunityKeys ++
-CapabilityKeyCatalog.DescriptiveKeys ++ FeatureCatalog.All`). Community keys
-describe capabilities that ship ungated. Descriptive keys capture minimum
+(`CapabilityKeyCatalog.All = CommunityKeys ++ RoutedExperimentalKeys ++
+RoutedPreviewKeys ++ RoutedDependentKeys ++ DescriptiveKeys ++ FeatureCatalog.All`,
+with any `FeatureCatalog` key that `RoutedPreviewKeys` redefines taken from
+`RoutedPreviewKeys`). Community keys describe capabilities that ship ungated.
+`RoutedExperimentalKeys` and `RoutedPreviewKeys` carry an explicit `status` for
+routed surfaces that are not GA. `RoutedDependentKeys` have no entitlement of
+their own: every route they name is gated by the keys in their `Requires` list. Descriptive keys capture minimum
 edition and release posture for runtime-gated surfaces, such as the
 off-by-default warehouse providers, without adding an entitlement-enforcement
 path. Adding either kind of key is a description-layer change only.
 
 Both lists share one naming rule: every key is dot-namespaced lowercase,
-`<category>.<name>` (e.g. `editing.feature-edits`, `serve.wms`,
-`import.file`), enforced by `CapabilityKeyCatalogTests` in
-`Honua.Core.Tests`.
+`<category>.<name>` (e.g. `editing.featureserver-edits`, `serve.wms`,
+`import.file`). `CapabilityKeyCatalogTests` in `Honua.Core.Tests` enforces it
+for `CommunityKeys`; every key in `capability-keys.v1.json` follows it today.
 
 ## Document shape
 
@@ -61,10 +66,10 @@ Both lists share one naming rule: every key is dot-namespaced lowercase,
 |---|---|---|
 | `key` | string | Canonical, stable identifier. Never renamed once published; deprecate additively. |
 | `displayName` | string | Human-readable name for UI/sales-checklist rendering. |
-| `category` | string | Grouping label — one of `FeatureCatalog.Categories` (Alerts, Editing, …) or `CapabilityKeyCatalog.Categories` (Serve, Discovery, ControlPlane, Ops, DataProviders, Format, Process, Collaboration, Demo, Enrichment). |
+| `category` | string | Grouping label — one of `FeatureCatalog.Categories` (Alerts, Editing, …) or `CapabilityKeyCatalog.Categories` (Serve, Discovery, ControlPlane, Internal, Ops, DataProviders, Format, Process, Collaboration, Demo, Enrichment, Jobs). |
 | `edition` | string | `Community`, `Pro`, or `Enterprise` — the minimum `HonuaEdition` required. |
 | `description` | string | One- or two-sentence description of what the capability does. |
-| `status` | string or null | Optional explicit release posture. Customer-alert trigger and delivery-channel keys use `preview`; warehouse-provider keys use `experimental`; the provider-neutral GeoArrow format key uses `live`. Absence preserves the existing maturity/evidence projection. |
+| `status` | string or null | Optional explicit release posture. `preview`: real but not covered by the release compatibility promise (the customer-alert trigger and delivery-channel keys, `fieldops.offline-sync`, `process.geoprocessing`, `process.ogc-api-processes`, `serve.ogc-api-coverages`, `serve.ogc-api-edr`, `serve.wmts`, `serve.wps`). `experimental`: the warehouse providers, `serve.i3s-scene`, `collaboration.map-sessions`, `streaming.feature-subscriptions`. `internal`: Honua's own hosted operation, never offered to a licensee (`admin.multi-tenancy`). `live`: the provider-neutral GeoArrow format key. Absence preserves the existing maturity/evidence projection. |
 
 ### `crosswalks`
 
@@ -117,21 +122,17 @@ says explicitly it will retire in favor of pointing `seed_path` at
 every `slug` value must stay stable across that swap so existing `cap/*`
 labels, open issues, and the issue-form capability field are never relabeled.
 
-20 of the seed's 25 slugs are a straight kebab-case projection of a
-`CapabilityKeyCatalog`/`FeatureCatalog` `category` value already (for example
-`StaticMap` → `static-map`, `FieldOps` → `field-ops`,
-`DisasterRecovery` → `disaster-recovery`) — no rename was needed here to keep
-those stable. The remaining 5 seed slugs (`serve-geoservices`, `serve-ogc`,
-`serve-tiles`, `serve-odata`, `serve-stac`) are a coarse, deliberately partial
-grouping of what this catalog models as ~24 individual `serve.*` keys under a
-single `Serve` category (plus `serve.sensorthings`, `serve.3d-tiles-scene`,
-`serve.i3s-scene`, and `serve.elevation`, which the seed does not cover at
-all). Deriving a label-sync-compatible slug list from `Serve` therefore needs
-a many-to-one grouping decision (which `serve.*` keys fold into
-`serve-geoservices` vs. `serve-ogc`, and what slug the uncovered protocols get)
-that is out of scope for this issue; it is left for whoever picks up the
-seed-retirement swap, tracked by the `TODO(#2893)` comments already in
-`label-sync.yml` and the seed file itself.
+The seed has 28 slugs, and every one is a projection of a `category` value:
+20 (source `feature-catalog`) come from `FeatureCatalog.Categories` and 8 (source
+`capability-keys`: `collaboration`, `control-plane`, `demo`, `discovery`,
+`enrichment`, `ops`, `process`, `serve`) from `CapabilityKeyCatalog.Categories`.
+27 are a straight kebab-case projection (for example `StaticMap` → `static-map`,
+`FieldOps` → `field-ops`, `DisasterRecovery` → `disaster-recovery`); `ai` maps to
+`AI`. All 26 `serve.*` keys share the single `serve` slug. The `Internal`, `Jobs`,
+`DataProviders` and `Format` categories have no slug. Swapping `seed_path` to
+`capability-keys.v1.json` therefore needs no grouping decision, only a projection
+that keeps these slugs; it is still tracked by the `TODO(#2893)` comments in
+`label-sync.yml` and the seed file.
 
 ## GA criteria (#2946)
 
@@ -141,7 +142,7 @@ flag) only when all four hold:
 1. **Interface-level proving tests exercising the core operation.** At least one
    `[IntegrationTest]` proving test drives the capability's actual operation (not only
    its error/validation paths) through a real protocol surface, and that test runs on
-   the PR-or-train CI path (a weekly-only conformance cron does not count as the
+   the PR Gate or trunk CI path (a weekly-only conformance cron does not count as the
    proving evidence for GA).
 2. **Matrix-joined evidence where applicable.** Where an official conformance suite or
    parity crosswalk exists for the capability (OGC CITE, `geoservices-rest-parity.json`
@@ -176,7 +177,8 @@ There are exactly two levers, and they answer different questions:
 2. **[`capability-maturity-overrides.v1.json`](data/capability-maturity-overrides.v1.json)**
    — the *claim* lever, for a key outside that roster whose routes should keep serving
    exactly as they do today while the capability stops being advertised as GA for this
-   release. `FeatureCatalogGenerator.ResolveMaturity` takes the **lower** of the
+   release. `CapabilityMaturityOverrides.ResolveEffective` (which wraps
+   `FeatureCatalogGenerator.ResolveMaturity`) takes the **lower** of the
    registry-resolved tier and the override tier, so a row can only demote, never promote.
    Every row carries a reason code, a verifiable reason, and the decision it implements;
    `CapabilityKeyDriftTests` fails the build on a row that promotes, matches no catalog
@@ -211,8 +213,8 @@ per-key re-grade decision record produced by applying this bar (#2946).
 2. Every canonical capability key has ≥1 `feature-catalog.json` entry **or**
    an entry in `capability-no-surface-allowlist.v1.json`.
 3. `capability-keys.v1.json`'s `capabilities` list matches
-   `CapabilityKeyCatalog.All` key-for-key (name, category, edition,
-   description).
+   `CapabilityKeyCatalog.All` key-for-key (displayName, category, edition,
+   description, status).
 4. Every crosswalk row's `capability` resolves to a real key.
 5. Every `honua-esri-assess` `hard_lock_in` key appears in
    `capability-no-go-allowlist.v1.json`, not in the `geoservicesAssess` crosswalk.
@@ -230,8 +232,11 @@ in lockstep with `CapabilityKeyCatalog.cs` by the drift tests above (unlike
 `feature-catalog.json`, they are not emitted by a `[Fact]`). When you add a
 capability key:
 
-1. Add it to `CapabilityKeyCatalog.CommunityKeys` (or, for an entitlement-gated
-   key, to `FeatureCatalog.All`).
+1. Add it to `CapabilityKeyCatalog.CommunityKeys`; for an entitlement-gated key,
+   to `FeatureCatalog.All`; for a routed key that is not GA, to
+   `RoutedExperimentalKeys` or `RoutedPreviewKeys` with its `status`; for a key
+   gated only by other entitlements, to `RoutedDependentKeys`; for a
+   description-only key with no route, to `DescriptiveKeys`.
 2. Add a rule to `capability-route-mapping.v1.json` for every route family it
    should claim, or add it to `capability-no-surface-allowlist.v1.json` with a
    reason if it has no distinct route.
