@@ -16,7 +16,7 @@ public readonly record struct ResolvedScene(SceneDatasetRecord? Record, SceneDat
 
     public string Name => Record?.Name ?? Scene!.Name;
 
-    public string? Description => Record?.Description ?? Scene!.Description;
+    public string? Description => Record is { } record ? record.Description : Scene?.Description;
 
     public SceneServingFormat ServingFormat => Record is { } record
         ? SceneServingProjection.ResolveServingFormat(record)

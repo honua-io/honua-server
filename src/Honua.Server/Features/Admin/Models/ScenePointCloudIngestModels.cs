@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
+
 namespace Honua.Server.Features.Admin.Models;
 
 public sealed class PointCloudIngestResponse
@@ -21,5 +23,6 @@ public sealed class PointCloudIngestResponse
 
     public bool HasColor { get; set; }
 
-    public double[] BoundingRegionDegrees { get; set; } = [0, 0, 0, 0];
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double[]? BoundingRegionDegrees { get; set; }
 }

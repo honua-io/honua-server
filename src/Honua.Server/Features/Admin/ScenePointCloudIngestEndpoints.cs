@@ -298,8 +298,7 @@ internal static partial class ScenePointCloudIngestEndpoints
                 ContentKind = SceneServingProjection.PointCloudWireContentKind,
                 PointCount = outcome.CopcInfo.PointCount > int.MaxValue ? int.MaxValue : (int)outcome.CopcInfo.PointCount,
                 TileCount = 1,
-                HasColor = outcome.CopcInfo.HasColor,
-                BoundingRegionDegrees = outcome.BoundsDegrees
+                HasColor = outcome.CopcInfo.HasColor
             };
 
             return Results.Json(

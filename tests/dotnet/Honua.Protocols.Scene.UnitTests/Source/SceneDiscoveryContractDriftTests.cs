@@ -119,6 +119,17 @@ public sealed class SceneDiscoveryContractDriftTests
     }
 
     [UnitTest]
+    public void PublicSceneDiscovery_RegistryRecordWithoutDescription_IsDiscoverable()
+    {
+        var record = BuildCopcRecord();
+        var entry = SceneCatalog.ToEntry(record);
+
+        SceneDiscoveryEndpoints.ToSummary(entry, BaseUrl).Description.Should().BeNull();
+        SceneDiscoveryEndpoints.ToMetadata(entry, BaseUrl).Description.Should().BeNull();
+        SceneDiscoveryEndpoints.ToResolution(entry, BaseUrl).SceneId.Should().Be(record.Id);
+    }
+
+    [UnitTest]
     public void PublicSceneResolve_CopcScene_MatchesGoldenContractFixture()
     {
         var resolution = SceneDiscoveryEndpoints.ToResolution(SceneCatalog.ToEntry(BuildCopcRecord()), BaseUrl);

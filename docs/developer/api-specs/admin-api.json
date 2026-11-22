@@ -17715,7 +17715,7 @@
                   },
                   "sourceCrsAxisOrder": {
                     "type": "string",
-                    "description": "Geographic axis order of the source point cloud. Accepts lonlat/longlat/xy or latlon/latlong/yx. Defaults to longitude-first.",
+                    "description": "Geographic axis order used for 3D Tiles conversion. Accepts lonlat/longlat/xy or latlon/latlong/yx. Defaults to longitude-first.",
                     "enum": [
                       "lonlat",
                       "longlat",
@@ -17728,7 +17728,7 @@
                   },
                   "sourceEpsg": {
                     "type": "string",
-                    "description": "Source CRS as a positive EPSG code or an AUTHORITY:CODE token (e.g. 32610 or EPSG:32610). A projected source triggers reprojection to EPSG:4979 through the translate worker; geographic tokens (EPSG:4326/4979/4269, OGC:CRS84) are treated as pass-through.",
+                    "description": "Source CRS for 3D Tiles conversion as a positive EPSG code or an AUTHORITY:CODE token (e.g. 32610 or EPSG:32610). A projected source triggers reprojection to EPSG:4979 through the translate worker; geographic tokens (EPSG:4326/4979/4269, OGC:CRS84) are treated as pass-through.",
                     "example": "EPSG:32610"
                   },
                   "servingFormat": {
@@ -48542,7 +48542,7 @@
           },
           "boundingRegionDegrees": {
             "type": "array",
-            "description": "Bounding region in WGS-84 degrees, ordered [west, south, east, north].",
+            "description": "Bounding region in WGS-84 degrees, ordered [west, south, east, north]. Omitted for direct COPC ingest.",
             "items": {
               "type": "number",
               "format": "double"

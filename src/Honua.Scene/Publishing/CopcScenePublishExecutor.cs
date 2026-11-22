@@ -79,7 +79,6 @@ internal sealed partial class CopcScenePublishExecutor
                     cancellationToken).ConfigureAwait(false);
             }
 
-            var extent = TryBuildExtent(copcInfo);
             var registeredId = await TryRegisterAsync(
                 newDatasetId,
                 sceneId,
@@ -88,7 +87,6 @@ internal sealed partial class CopcScenePublishExecutor
                 outputDirectory,
                 storagePrefix,
                 fileName,
-                extent,
                 request.CacheMaxAgeSeconds ?? DefaultCacheMaxAgeSeconds,
                 request.EditionGate,
                 request.RequiresAuth,
@@ -117,8 +115,7 @@ internal sealed partial class CopcScenePublishExecutor
                 sceneId,
                 outputDirectory,
                 fileName,
-                copcInfo,
-                extent is null ? [0, 0, 0, 0] : [extent.XMin, extent.YMin, extent.XMax, extent.YMax]);
+                copcInfo);
         }
         finally
         {
@@ -129,12 +126,6 @@ internal sealed partial class CopcScenePublishExecutor
                     ex => Log.StagingCleanupFailed(_logger, stagingToCleanup, ex));
             }
         }
-    }
-
-    private static SceneExtent? TryBuildExtent(CopcInfo info)
-    {
-        var candidate = new SceneExtent(info.MinX, info.MinY, info.MaxX, info.MaxY);
-        return SceneDatasetValidator.TryValidateExtent(candidate, out _) ? candidate : null;
     }
 
     private static string ResolveSceneId(string? explicitId, string intentId)
@@ -198,7 +189,6 @@ internal sealed partial class CopcScenePublishExecutor
         string outputDirectory,
         string? assetStoragePrefix,
         string fileName,
-        SceneExtent? extent,
         int cacheMaxAgeSeconds,
         string? editionGate,
         bool requiresAuth,
@@ -222,8 +212,6 @@ internal sealed partial class CopcScenePublishExecutor
             DatasetType = SceneDatasetType.PointCloud,
             ServingFormat = SceneServingFormat.Copc,
             ContentKind = SceneContentKind.PointCloud,
-            Extent = extent,
-            Crs = extent is not null ? "EPSG:4979" : null,
             CachePolicy = new SceneCachePolicy(cacheMaxAgeSeconds, NoStore: false),
             EditionGate = editionGate,
             RequiresAuth = requiresAuth,
@@ -277,5 +265,4 @@ internal sealed record CopcSceneIngestOutcome(
     string SceneId,
     string AssetRoot,
     string FileName,
-    CopcInfo CopcInfo,
-    double[] BoundsDegrees);
+    CopcInfo CopcInfo);
