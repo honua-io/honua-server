@@ -103,3 +103,5 @@ Generated from the org fleet-rules source; do not edit this block. Start with or
 9. Read failed required-check logs and fix in one push. For red trunk, fix forward or revert within the repository's current ruling deadline; see org skills `honua-red-pr` and `honua-trunk-red`.
 10. Never commit secrets, deployment identifiers, private repository names or infrastructure details. Security findings belong in the private tracker. Archived repos get no issues or PRs; public instructions name org skills only.
 <!-- fleet:end -->
+
+Schema migrations are forward-only. They must be idempotent and tested on an installed stack. There is no rolling-rollback or N-1 reader compatibility contract.

@@ -1,19 +1,19 @@
 ---
 type: guide
 title: "Upgrade and roll back"
-description: "You'll roll a new Honua version forward safely — preflight first, backward-compatible migrations, app rollback before database restore."
+description: "You'll roll a new Honua version forward safely — preflight first, forward-only migrations and verified recovery."
 ---
 # Upgrade and roll back
 
-You'll roll a new Honua version forward safely — preflight first, backward-compatible migrations, app rollback before database restore.
+You'll roll a new Honua version forward safely — preflight first, forward-only migrations and verified recovery.
 
 **Prerequisites:** Admin access (`X-API-Key` header), a current database backup ([Back up and restore](backup-and-restore.md)), and the target image tag.
 
 ## Policy
 
-1. Zero-downtime upgrades are supported only for backward-compatible (expand-contract) migrations: add columns/tables first, deploy, drop old columns in a later release. Potentially breaking migrations carry an explicit `-- honua:compatibility-review` marker in the SQL — treat those as gated rollouts with a documented rollback path. On an existing database you can require explicit approval before those apply: set `Database__MigrationSafety__ContractApplyPolicy=Gate` (fresh installs are unaffected), set `HONUA_APPROVE_CONTRACT_MIGRATIONS` to the nonce printed by the migration safety error, and optionally run a pre-migration backup hook via `Database__MigrationSafety__BackupCommand` — see [Deploy with Docker Compose — Upgrade & Rollback](docker-compose.md#upgrade--rollback).
-2. Application rollback is allowed only when the previous reader qualifies every applied migration. A reader qualifies a migration it ships. It can also qualify one it does not ship, but only when the migration is expand-only and the reader verifies the forward-compatibility declaration the newer server recorded for it (see [Rollback across additive migrations](#rollback-across-additive-migrations)). On startup any other unrecognized journal entry raises `DatabaseSchemaCompatibilityException` with code `schema_reader_incompatible`, before serving. The check runs the same way with `HONUA_SKIP_MIGRATIONS=true`, and degraded-start mode cannot bypass it. A migration's presence alone never proves that an older image can serve it.
-3. Database restore is the last resort when the previous version cannot safely serve the live schema or the data is corrupt. On an installed Compose project with the [Compose executor](../../get-started/quickstart.md#approved-operations-and-recovery) enabled, that restore is part of an approved rollback: the executor checks the backup, restores it, and only then starts the prior image.
+Schema migrations are forward-only. They must be idempotent and tested on an installed stack. There is no rolling-rollback or N-1 reader compatibility contract, before or after rc.2. Apply upgrades with the matching application, verify migrated data and readiness, and fix failures forward.
+
+Image rollback does not undo schema changes. Recovery to an older image requires its matching database backup unless that specific recovery has been qualified. Existing migration safety approval settings and schema-reader startup refusals remain runtime safeguards; they do not impose a release-wide compatibility promise.
 
 ### Database migration deadlocks
 
@@ -52,121 +52,7 @@ and cancellation retain the last durable status for the replacement controller.
 It does not prove that the Batch job failed or stopped. Keep the durable job
 store and worker definitions available across both directions of a switch.
 
-**2026.1-rc.2 is the supported rollback floor.** Any supported release from rc.2
-onward must allow application rollback to rc.2 or any later supported release
-without restoring the database. Rollback to an image older than rc.2 is unsupported;
-restore its matching pre-upgrade backup if that recovery is necessary.
-
-The pre-rc.2 exceptions are pinned by exact name and SHA-256 in
-`eng/schema/schema-release-boundary.v1.json`: `142_CreateAiFinancialAccounting.sql`,
-`144_RenameGeoServicesRestSourceKind.sql`, and `145_ProtectImportDependencies.sql`.
-The same boundary also pins `183_RemoveUnusedFeatureIndexes.sql` for the reviewed
-rc.2 index removal. These exact pins do not authorize other incompatible migrations. CODEOWNERS designates the founder as the reviewer for boundary changes.
-
-The frozen reader baseline is `eng/schema/schema-reader-baseline.v1.json`.
-Every migration, including each newly added script, must also be hash-pinned in
-`eng/schema/migration-hashes/<migration-path>.sha256`, mirroring the SQL path
-from the repository root (for example,
-`eng/schema/migration-hashes/src/Honua.Server/Migrations/146_AddX.sql.sha256`).
-Add a new pin file alongside each new expand migration; existing pin files do not
-need editing. Keep existing hashes and script names immutable. A new pin does not
-extend the frozen reader baseline or exempt a script from contract checks. Hashes
-are uppercase SHA-256 over UTF-8 SQL with LF line endings.
-From rc.2, a migration carrying `honua:reader-incompatible` or classified as
-contract by the reader fails CI unless its exact name and hash match the release boundary.
-Every migration above the baseline (server 145, raster 008), except an exact
-release-boundary pin, must declare `expand` and be accepted by the rc.2 reader. A compatibility-review annotation cannot waive these rules.
-Redesign incompatible changes as additive migrations with compatible application
-reads and writes; defer removals until an explicitly approved future release boundary.
-
-The shared runtime classifier detects removals of views, types, routines, triggers,
-policies and indexes, as well as table contractions, renames, schema moves and
-truncation. Historical scripts that acquire a contract classification under these
-broader checks use their exact frozen name and hash as the review record; their SQL
-is never rewritten to add annotations. They still require contract-apply approval
-when pending against a nonempty migration journal. Fresh installs remain unaffected.
-
-Reader compatibility and contract-apply approval are separate checks. Migration
-`183_RemoveUnusedFeatureIndexes.sql` removes eight optional feature indexes and
-is classified as a contract migration. Its exact name and normalized SQL hash are
-pinned in the release boundary; changed SQL or another script name has no exemption.
-The canonical SQL is `eng/schema/remove-unused-feature-indexes.sql`; this resource
-does not itself run as a migration. Applying the migration to an existing database
-requires contract-apply approval, including the exact migration hash in the Compose
-allowlist. The current image must pass feature import, edit and read checks after
-applying it. Older readers must refuse the contract declaration with
-`schema_reader_incompatible`; that refusal is the expected N-1 compatibility result,
-not proof of a successful application rollback. Recovery to an unsupported image
-older than rc.2 requires its matching pre-upgrade database backup.
-
-The release promise journey must retain the GP operation ID before each update
-or rollback, wait for that same job afterward, and verify the decoded output and
-its metadata, one execution, one terminal transition, no remaining queue claim,
-and the original Batch provider ID where applicable. Exercise an incompatible
-reader separately and record `schema_reader_incompatible` as a startup refusal,
-never as successful serving. Local handoff tests use real PostgreSQL and the geometry
-executor with substituted AWS transport; they do not replace the two-candidate
-ECS and Lambda + Batch journey receipts.
-Qualify the actual rollback image: it must itself contain the drain and schema-reader
-protections described here. Installing a newer image cannot add those checks to an
-older image.
-
-### Rollback across additive migrations
-
-After each successful migration run, the server records a forward-compatibility
-declaration in `public.schema_version_reader_compatibility` for every journaled
-script it ships. Migration `135_RecordMigrationReaderCompatibility.sql`, an expand
-migration, creates that table. Each declaration holds the script's classification
-(`expand`, `contract` or `reader-incompatible`), its SHA-256, its LF-normalized
-text and the oldest reader schema it is declared safe for. Existing declarations
-are never rewritten.
-
-An image rolled back onto that database accepts a journal entry it does not ship
-only when all of these hold. That is true whether it starts with migrations
-enabled (the default) or with `HONUA_SKIP_MIGRATIONS=true` after an out-of-band
-[migrate-only](#run-migrations-out-of-band) upgrade, and also during degraded-start
-recovery:
-
-1. The entry has a declaration, and the declaration says `expand`.
-2. The declared minimum reader schema is at most the reader's own schema number
-   (its highest numbered migration).
-3. The recorded text matches the recorded hash, and the reader's own classifier,
-   run on that text, also reaches `expand` with the same minimum reader schema.
-   A newer image's claim is never trusted on its own.
-
-Any other unknown entry keeps the `schema_reader_incompatible` refusal. That
-covers contract-phase scripts, opted-out scripts and tampered declarations. It
-also covers journals with no declaration, such as journals written before 135.
-The refusal message names each refused declaration and the reason. Nothing is
-applied or reversed during a rollback, refused or not. With
-`HONUA_SKIP_MIGRATIONS=true` the check only reads: the serving image records no
-declarations of its own.
-
-**This only helps rollbacks to images that contain this reader logic** (schema 135
-and later). Older images (schema 134 and earlier) still refuse any migration
-they do not ship. To roll back to them, restore the
-matching backup. Some schema 135 images predate the skip-path check. They accept
-declarations only with migrations enabled, and with `HONUA_SKIP_MIGRATIONS=true`
-they still require every applied migration to be one they ship.
-
-**Rules for migration authors.** The shared classifier detects potentially
-contracting DDL, but additive-looking SQL can still break an older reader: stored
-enum rewrites, constraints, defaults or triggers can change what it reads or writes.
-Design those changes to preserve rc.2 readers. `honua:reader-incompatible` records a
-refusal for the immutable pre-rc.2 exceptions; it is not an author opt-out from CI.
-A `honua:reader-compatible-from schema=<N>` annotation must not raise the reader
-floor above rc.2. An annotation the reader cannot parse counts as incompatible.
-Annotations are part of the hash-pinned script text; never edit shipped migrations.
-
-**Every migration change is checked against the previous image.** The pull
-request check `PR Gate / N-1 reader compatibility` applies the full migration set
-to a fresh database and starts the latest published platform release image using
-its recorded digest. With migrations enabled, it must become ready and read and
-write a seeded layer. A typed refusal is accepted only for exact hash-pinned
-pre-rc.2 exceptions or frozen historical contracting migrations. A review annotation
-and a rollback note alone never permit a new incompatible script. A refusal from
-an unsupported pre-rc.2 image does not prove the supported rc.2 rollback promise;
-the release journey must verify an rc.2 image on the upgraded schema.
+Migration SQL and its hashes in `eng/schema/migration-hashes/` remain immutable. Historical exact-byte classifier review records live in `eng/schema/reviewed-migration-hashes.v1.json`; they are not a supported-reader baseline or an exception process for new migrations. Existing contract-apply approval remains separate from recovery qualification.
 
 ### Historical pre-rc.2 import replacement boundary
 
@@ -325,7 +211,7 @@ Single-instance Docker is not zero-downtime: pull the new tag, stop the old cont
 
 ## Run migrations out of band
 
-Run the target image once with `HONUA_MIGRATE_ONLY=true` before the serving replicas start, then serve with `HONUA_SKIP_MIGRATIONS=true`. The serving replicas verify the journal against their binary at startup and never migrate themselves, so a rolling update cannot race migrations. Migrate-only records the forward-compatibility declarations, so rolling the serving replicas back to the previous image keeps the database when every newer migration is expand-only (see [Rollback across additive migrations](#rollback-across-additive-migrations)). The same switch is accepted on the command line as `--HONUA_MIGRATE_ONLY=true`.
+Run the target image once with `HONUA_MIGRATE_ONLY=true` before the serving replicas start, then serve with `HONUA_SKIP_MIGRATIONS=true`. The serving replicas verify the journal against their binary at startup and never migrate themselves, so a rolling update cannot race migrations. Migrate-only records the forward-compatibility declarations, so rolling the serving replicas back to the previous image keeps the database when every newer migration is expand-only (see the specific target image’s runtime checks). The same switch is accepted on the command line as `--HONUA_MIGRATE_ONLY=true`.
 
 ### Upgrading a journal that stops at 091
 
@@ -550,7 +436,7 @@ carries a bounded, operator-safe code for the current phase.
 
 ## Rollback
 
-Application rollback first — whenever readiness fails, errors or latency regress, and migrations were additive:
+For a specifically qualified image rollback where readiness fails or errors or latency regress:
 
 ```bash
 helm rollback honua --namespace honua
@@ -648,7 +534,7 @@ against the schema it will find. Image rollback never reverses migrations.
 - **Roll back only to images that include the schema-reader guard.** Across
   additive (expand-only) migrations, that means schema 135 or later: those
   images verify the forward-compatibility declarations described in
-  [Rollback across additive migrations](#rollback-across-additive-migrations).
+  the specific target image’s runtime checks.
 - **Never roll back across a contract-phase migration without a restore.** This
   applies to scripts marked `-- honua:reader-incompatible` too. Restore the
   backup that matches the target revision instead
@@ -708,7 +594,7 @@ Expected: `Ready`, then a preflight payload with `readyForCoordinatedDeploy: tru
 
 ## Troubleshoot
 
-- **New pods never ready after upgrade** — check logs for migration failure; roll back the image (migrations that already applied are additive by policy, so the old version still runs).
+- **New pods never ready after upgrade** — check logs for migration failure; fix forward or restore the matching database backup before recovering to an older image.
 - **Preflight reports pending migrations you didn't expect** — the image tag is newer than intended, or a prior out-of-band migration run was skipped; reconcile via `GET /api/v1/admin/observability/migrations` before proceeding.
 - **Deploy operation stuck in `Reconciling`** — the platform hasn't converged (ECS draining, Argo mid-ramp) or telemetry hasn't accumulated minimum samples; check `GET .../operations/{operationId}` for the specific pending gate. If the promotion gate can never clear (a `telemetry`-gated target whose metrics connection is unreachable, or a `manual`-gated rollout), force the cutover with `POST .../operations/{operationId}/promote`. Installed Compose targets (`honua-compose`) promote on the health gate by default and need no telemetry backend — see [Promotion requirements](#promotion-requirements).
 - **Rollback returns `ManualInterventionRequired`** — read the reason in the operation's current phase. With no captured previous revision, re-point the alias/weights/slot manually through the cloud console or CLI. With `rollback.functional_query_unproven`, traffic may already be back on the prior revision but nothing proved it answers correctly: verify it yourself, and set the functional query parameters in [Rollback completion proof](#rollback-completion-proof) on later deploys.
@@ -722,6 +608,6 @@ Expected: `Ready`, then a preflight payload with `readyForCoordinatedDeploy: tru
 
 ### Investigation incident references
 
-`193_AllowIncidentInvestigationReferences.sql` adds companion tables for incident links and pinned incident versions. It preserves the existing investigation tables, discriminator checks and identifiers. Apply the migration before deploying the incident-writing API. Older images continue reading their original tables; incident references remain stored in the companion tables and become visible again when an incident-capable image is deployed. The shared pin and link sequences prevent identifiers from colliding across the original and companion tables. No contract approval or database restore is needed for an image rollback.
+`193_AllowIncidentInvestigationReferences.sql` adds companion tables for incident links and pinned incident versions. It preserves the existing investigation tables, discriminator checks and identifiers. Apply the migration before deploying the incident-writing API. Older images continue reading their original tables; incident references remain stored in the companion tables and become visible again when an incident-capable image is deployed. The shared pin and link sequences prevent identifiers from colliding across the original and companion tables. This migration does not establish a general image rollback guarantee.
 
 The companion tables follow the existing investigation family. When a deployment configures a different schema but the original migration created the investigation tables in `honua`, the new tables stay in `honua` alongside them. The migration does not move existing investigation data.

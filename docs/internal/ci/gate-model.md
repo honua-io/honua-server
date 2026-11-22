@@ -1,5 +1,7 @@
 # CI Gate Model
 
+The prior-reader compatibility job was removed on 22 November 2026. Migrations are forward-only, idempotent and tested on an installed stack; CI does not certify rolling rollback to an older reader. Required check names and the remaining PR Gate dependencies are unchanged.
+
 Every source path has at least one shard owner inside the PR time budget. `test-pr-owner-coverage.py` fails when a path's owners are all over budget.
 
 #7678 split the nine over-budget shards that were still the only owners of 61 source paths (Admin Catalog and Configuration, Admin Network and Jobs, Admin Platform and Connections, OData Mutations and Batch, Miscellaneous 1 and 2, Cloud and Streaming Import, SensorThings, gRPC Protocol and Scene) into 28 children from the TRX class spans of full run `43580101834`. Classes longer than a child's 5.5-minute share are cut at method boundaries, and classes with no shard time in that run (Tier Fast or Slow) stay in the last child, which also owns future tests. Child ranks are estimates in `full-run-capacity-contracts.json` until the next passing full run measures them. Miscellaneous children continue that family's numbering (3 to 8).
