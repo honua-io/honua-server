@@ -199,11 +199,13 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
             ? new GeoServicesSpatialReference { Wkid = srid, LatestWkid = srid }
             : null;
 
-        var effectiveGeometryLimits = GeometryOutputProcessor.CreateEffectiveLimits(
-            _geometryLimits,
-            geometryPrecision,
-            maxAllowableOffset,
-            forceSimplify: maxAllowableOffset is > 0);
+        var effectiveGeometryLimits = GeometryOutputProcessor.ForGeometrySrid(
+            GeometryOutputProcessor.CreateEffectiveLimits(
+                _geometryLimits,
+                geometryPrecision,
+                maxAllowableOffset,
+                forceSimplify: maxAllowableOffset is > 0),
+            srid);
 
         var featuresByOriginId = new Dictionary<long, List<Feature>>();
 

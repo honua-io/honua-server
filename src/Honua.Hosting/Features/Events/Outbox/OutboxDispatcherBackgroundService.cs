@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -17,6 +18,8 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
     private readonly OutboxMetrics _metrics;
     private readonly ILogger<OutboxDispatcherBackgroundService> _logger;
     private readonly string _nodeId;
+    private readonly IdlePollPacer _pacer;
+    private bool _lastPassFailed;
 
     private DateTimeOffset _lastRecoveryAt = DateTimeOffset.MinValue;
     private DateTimeOffset? _lastDispatchAt;
@@ -48,6 +51,12 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
         _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _nodeId = $"{Environment.MachineName}:{Environment.ProcessId}";
+        // Empty passes back off from IdlePollIntervalMs to MaxIdlePollIntervalMs. An outbox row written by this
+        // process wakes the loop; rows from other processes wait at most the idle cap.
+        _pacer = new IdlePollPacer(
+            services.GetService<PollWakeSignal<IFeatureChangeOutboxRepository>>(),
+            TimeSpan.FromMilliseconds(Math.Max(1, _options.IdlePollIntervalMs)),
+            TimeSpan.FromMilliseconds(Math.Max(_options.MaxIdlePollIntervalMs, Math.Max(1, _options.IdlePollIntervalMs))));
     }
 
     public bool IsDispatcherRunning => Volatile.Read(ref _running) == 1;
@@ -105,12 +114,17 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
         {
             while (!stoppingToken.IsCancellationRequested)
             {
+                _pacer.BeginPoll();
                 var dispatched = await ExecuteOnceAsync(stoppingToken).ConfigureAwait(false);
-                if (dispatched == 0)
+                if (dispatched > 0)
+                {
+                    _pacer.ResetIdleInterval();
+                }
+                else
                 {
                     try
                     {
-                        await Task.Delay(_options.IdlePollIntervalMs, stoppingToken).ConfigureAwait(false);
+                        await WaitForNextPassAsync(stoppingToken).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                     {
@@ -126,8 +140,13 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
         }
     }
 
+    // A failed pass, or one that left rows to retry, keeps the short interval; an empty pass backs off.
+    private Task WaitForNextPassAsync(CancellationToken cancellationToken)
+        => _lastPassFailed ? _pacer.WaitAfterWorkAsync(cancellationToken) : _pacer.WaitIdleAsync(cancellationToken);
+
     internal async Task<int> ExecuteOnceAsync(CancellationToken cancellationToken)
     {
+        _lastPassFailed = false;
         await using var scope = _services.CreateAsyncScope();
         IFeatureChangeOutboxRepository? repository;
         try
@@ -141,6 +160,7 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
         {
             Log.RepositoryResolutionFailed(_logger, ex);
             _lastClaimPollFailureAt = DateTimeOffset.UtcNow;
+            _lastPassFailed = true;
             return 0;
         }
 
@@ -167,6 +187,7 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
         {
             Log.ClaimFailed(_logger, ex);
             _lastClaimPollFailureAt = DateTimeOffset.UtcNow;
+            _lastPassFailed = true;
             // Still try to refresh the backlog snapshot so health reflects the latest
             // state if backlog reads still work. The backlog success does not clear
             // the pending claim-poll failure because each kind tracks its own
@@ -186,6 +207,8 @@ internal sealed partial class OutboxDispatcherBackgroundService : BackgroundServ
             }
         }
 
+        // Rows that failed or lost their claim are retried on the short interval, not after an idle back-off.
+        _lastPassFailed = dispatched < claimed.Count;
         await UpdateBacklogAsync(repository, cancellationToken).ConfigureAwait(false);
         return dispatched;
     }

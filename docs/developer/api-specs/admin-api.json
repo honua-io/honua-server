@@ -6891,7 +6891,7 @@
           "Compliance"
         ],
         "summary": "Advance Compliance Key-Version Posture",
-        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event — it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
+        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event \u2014 it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
         "operationId": "rotateComplianceEncryptionKey",
         "responses": {
           "200": {
@@ -7350,7 +7350,7 @@
           "Import"
         ],
         "summary": "List GeoServer Import Jobs",
-        "description": "Returns the GeoServer import jobs that are still active — that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
+        "description": "Returns the GeoServer import jobs that are still active \u2014 that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
         "operationId": "listGeoServerImportJobs",
         "responses": {
           "200": {
@@ -7668,7 +7668,7 @@
           "Import"
         ],
         "summary": "List GeoServices Import Jobs",
-        "description": "Returns the GeoServices import jobs that are still active — that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
+        "description": "Returns the GeoServices import jobs that are still active \u2014 that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
         "operationId": "listGeoservicesImportJobs",
         "responses": {
           "200": {
@@ -22907,7 +22907,7 @@
             "name": "events",
             "in": "query",
             "required": false,
-            "description": "Maximum number of recent events. Values outside 1–500 are rejected.",
+            "description": "Maximum number of recent events. Values outside 1\u2013500 are rejected.",
             "schema": {
               "type": "integer",
               "minimum": 1,
@@ -24929,6 +24929,322 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/metadata/history": {
+      "get": {
+        "operationId": "getAdminMetadataHistory",
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "List metadata field edit history",
+        "description": "Returns field-level metadata edit history across items, optionally filtered by item kind, item id, and field path prefix.",
+        "parameters": [
+          {
+            "name": "itemKind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional item kind filter (for example 'dataset', 'service', 'resources', or 'services')."
+          },
+          {
+            "name": "itemId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional metadata entity identifier filter."
+          },
+          {
+            "name": "field",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional field path prefix filter (for example 'title' or 'custom.steward')."
+          },
+          {
+            "name": "beforeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "Keyset pagination cursor returning entries with id < beforeId."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Maximum number of history entries to return (default 50)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Field-level metadata change history page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataFieldHistoryEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/metadata/layers/{storageLayerId}/history": {
+      "get": {
+        "operationId": "getAdminLayerMetadataHistory",
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "List layer metadata field edit history",
+        "description": "Returns field-level metadata edit history for the storage layer's shared resource.",
+        "parameters": [
+          {
+            "name": "storageLayerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Internal storage layer identifier."
+          },
+          {
+            "name": "field",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional field path prefix filter (for example 'title' or 'custom.steward')."
+          },
+          {
+            "name": "beforeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "Keyset pagination cursor returning entries with id < beforeId."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Maximum number of history entries to return (default 50)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Field-level metadata change history page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataFieldHistoryEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "404": {
+            "description": "Target not found"
+          }
+        }
+      }
+    },
+    "/services/{serviceName}/history": {
+      "get": {
+        "operationId": "getAdminServiceMetadataHistory",
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "List service metadata field edit history",
+        "description": "Returns field-level metadata edit history for the logical service.",
+        "parameters": [
+          {
+            "name": "serviceName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Logical service name."
+          },
+          {
+            "name": "field",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional field path prefix filter (for example 'title' or 'custom.steward')."
+          },
+          {
+            "name": "beforeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "Keyset pagination cursor returning entries with id < beforeId."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Maximum number of history entries to return (default 50)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Field-level metadata change history page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataFieldHistoryEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "404": {
+            "description": "Target not found"
+          }
+        }
+      }
+    },
+    "/metadata/schemas": {
+      "get": {
+        "operationId": "getAdminMetadataSchemas",
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Read per-environment custom metadata field schemas",
+        "description": "Returns the active custom metadata field schema definitions and current ETag for the environment.",
+        "responses": {
+          "200": {
+            "description": "Per-environment custom metadata field schemas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataCustomFieldSchemasEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateAdminMetadataSchemas",
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Replace per-environment custom metadata field schemas",
+        "description": "Replaces the environment's custom metadata field schema definitions. Requires the ETag returned by GET and rejects stale revisions with 409.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetadataCustomFieldSchemasUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved custom metadata field schemas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataCustomFieldSchemasEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid schema definitions"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access or human approval required"
+          },
+          "409": {
+            "description": "Metadata changed; reload before saving"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -54117,7 +54433,8 @@
         "properties": {
           "etag": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "Optimistic concurrency token supplied by the caller from the current layer discovery metadata."
           },
           "title": {
             "type": "string",
@@ -55376,6 +55693,176 @@
           },
           "pointerKey": {
             "type": "string"
+          }
+        }
+      },
+      "MetadataFieldHistoryEntry": {
+        "type": "object",
+        "required": [
+          "id",
+          "itemKind",
+          "itemId",
+          "fieldPath",
+          "actor",
+          "changedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "itemKind": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "fieldPath": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "oldValue": {
+            "nullable": true
+          },
+          "newValue": {
+            "nullable": true
+          },
+          "actor": {
+            "type": "string"
+          },
+          "changedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "MetadataFieldHistoryResponse": {
+        "type": "object",
+        "required": [
+          "items",
+          "hasMore"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MetadataFieldHistoryEntry"
+            }
+          },
+          "nextBeforeId": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "hasMore": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MetadataFieldHistoryEnvelope": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MetadataFieldHistoryResponse"
+          }
+        }
+      },
+      "MetadataCustomFieldSchema": {
+        "type": "object",
+        "required": [
+          "name",
+          "type"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "type": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "allowedValues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "appliesTo": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "facetable": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MetadataCustomFieldSchemasResponse": {
+        "type": "object",
+        "required": [
+          "etag",
+          "environment",
+          "schemas"
+        ],
+        "properties": {
+          "etag": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "schemas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MetadataCustomFieldSchema"
+            }
+          }
+        }
+      },
+      "MetadataCustomFieldSchemasEnvelope": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MetadataCustomFieldSchemasResponse"
+          }
+        }
+      },
+      "MetadataCustomFieldSchemasUpdateRequest": {
+        "type": "object",
+        "required": [
+          "etag",
+          "schemas"
+        ],
+        "properties": {
+          "etag": {
+            "type": "string"
+          },
+          "schemas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MetadataCustomFieldSchema"
+            }
           }
         }
       }

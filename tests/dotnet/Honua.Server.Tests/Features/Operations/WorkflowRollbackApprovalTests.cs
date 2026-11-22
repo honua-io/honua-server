@@ -46,15 +46,21 @@ public sealed class WorkflowRollbackApprovalTests
             [WorkflowRollbackOperations.ApprovedRequiresApproval] = "True",
         };
         var accepted = new OperationRequest { OperationId = operationId, Parameters = parameters };
-        var mapped = mapper.Map(descriptor, accepted, new OperationPolicyContext
+        var mapped = mapper.Map(new OperationApprovalRequestContext
         {
-            PrincipalId = "operator",
-            OperationInstanceId = "instance",
-            CorrelationId = "correlation",
-            IdempotencyKey = "scoped-key",
-            TenantId = "tenant-a",
-            SchemaName = "tenant_a",
-        }, new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+            Descriptor = descriptor,
+            Request = accepted,
+            Context = new OperationPolicyContext
+            {
+                PrincipalId = "operator",
+                OperationInstanceId = "instance",
+                CorrelationId = "correlation",
+                IdempotencyKey = "scoped-key",
+                TenantId = "tenant-a",
+                SchemaName = "tenant_a",
+            },
+            Decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval },
+        });
 
         mapped.Kind.Should().Be(OperationClass.Deploy);
         mapped.Plan!.RiskLevel.Should().Be(ProposalRiskLevel.High);
@@ -93,8 +99,13 @@ public sealed class WorkflowRollbackApprovalTests
                 [WorkflowRollbackOperations.TargetOperationId] = "workflow",
             },
         };
-        var map = () => mapper.Map(descriptor, request, new OperationPolicyContext(),
-            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+        var map = () => mapper.Map(new OperationApprovalRequestContext
+        {
+            Descriptor = descriptor,
+            Request = request,
+            Context = new OperationPolicyContext(),
+            Decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval },
+        });
         map.Should().Throw<ArgumentException>();
     }
 }

@@ -58,7 +58,7 @@ internal sealed partial class GeometryDissolveJobExecutor : IProcessExecutor
         if (!TryReadInputs(parameters, out var inputs, out var inputError))
         {
             Log.InvalidInputs(_logger, job.OperationId, inputError);
-            return JobExecutionResult.Failed($"Invalid dissolve inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid dissolve inputs: {inputError}");
         }
 
         var reader = new WKBReader { HandleSRID = true };
@@ -77,14 +77,14 @@ internal sealed partial class GeometryDissolveJobExecutor : IProcessExecutor
             catch (FormatException)
             {
                 Log.InvalidWkb(_logger, job.OperationId, i, "is not valid base64");
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid dissolve inputs: wkbs[{i}] is not valid base64.");
             }
 
             if (bytes.Length == 0)
             {
                 Log.InvalidWkb(_logger, job.OperationId, i, "decoded to zero bytes");
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid dissolve inputs: wkbs[{i}] decoded to zero bytes.");
             }
 
@@ -96,21 +96,21 @@ internal sealed partial class GeometryDissolveJobExecutor : IProcessExecutor
             catch (Exception ex) when (ex is ParseException or ArgumentException or IndexOutOfRangeException)
             {
                 Log.InvalidWkb(_logger, job.OperationId, i, $"could not be decoded ({ex.GetType().Name})");
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid dissolve inputs: wkbs[{i}] could not be decoded.");
             }
 
             if (geometry == null || geometry.IsEmpty)
             {
                 Log.InvalidWkb(_logger, job.OperationId, i, "decoded to an empty geometry");
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid dissolve inputs: wkbs[{i}] decoded to an empty geometry.");
             }
 
             if (!GeometrySridGuard.TryValidateEmbeddedSrid(geometry, inputs.Srid, out var sridError))
             {
                 Log.InvalidWkb(_logger, job.OperationId, i, sridError);
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid dissolve inputs: wkbs[{i}] {sridError}.");
             }
 

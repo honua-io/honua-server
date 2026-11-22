@@ -1,12 +1,15 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using FluentAssertions;
+using Honua.Core.Features.Exports;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Admin.Exports;
 using Honua.Server.Features.Admin.TileOperations;
+using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -280,5 +283,138 @@ public sealed class PublicExportRevocationTests
                 It.IsAny<CancellationToken>()),
             Times.Once);
         privateStorage.Verify(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [UnitTest]
+    public async Task OnAdministrativeAccessChange_WhenExportHasNoActivePointer_RevokesExportAsUnpublished()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var privateStorage = CreatePrivateExportStorage(new Dictionary<string, byte[]>(StringComparer.Ordinal)
+        {
+            ["exports/roads/current.json"] = JsonSerializer.SerializeToUtf8Bytes(
+                new ExportPointer("roads", "v1", "v1/collection.json", now),
+                ExportVersionJsonContext.Default.ExportPointer)
+        });
+        var harness = RevocationHarness.Create(new RevocationScenario
+        {
+            AnonymousAllowed = true,
+            PrivateStorage = privateStorage
+        });
+
+        await harness.Service.OnAdministrativeAccessChangeAsync(serviceId: null, layerIds: null, CancellationToken.None);
+
+        harness.StateStore.Revocations.Values.Should().ContainSingle(r =>
+            r.PublicationId == "parcels" &&
+            r.Reason == PublicExportRevocationService.ReasonUnpublished &&
+            r.State == PublicExportRevocationState.Completed);
+        harness.StateStore.Promoted.Keys.Should().Equal("roads");
+    }
+
+    [UnitTest]
+    public async Task OnAdministrativeAccessChange_WhenUnpublishedMarkerIsNewerThanPointer_RevokesExportAsUnpublished()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var privateStorage = CreatePrivateExportStorage(new Dictionary<string, byte[]>(StringComparer.Ordinal)
+        {
+            ["exports/parcels/current.json"] = JsonSerializer.SerializeToUtf8Bytes(
+                new ExportPointer("parcels", "v1", "v1/collection.json", now.AddMinutes(-2)),
+                ExportVersionJsonContext.Default.ExportPointer),
+            ["exports/parcels/unpublished.json"] = JsonSerializer.SerializeToUtf8Bytes(
+                new ExportUnpublishedMarker
+                {
+                    ExportId = "parcels",
+                    ServiceId = "svc-parcels",
+                    LayerId = "7",
+                    UnpublishedAt = now.AddMinutes(-1)
+                },
+                ExportVersionJsonContext.Default.ExportUnpublishedMarker),
+            ["exports/roads/current.json"] = JsonSerializer.SerializeToUtf8Bytes(
+                new ExportPointer("roads", "v1", "v1/collection.json", now),
+                ExportVersionJsonContext.Default.ExportPointer)
+        });
+        var harness = RevocationHarness.Create(new RevocationScenario
+        {
+            AnonymousAllowed = true,
+            PrivateStorage = privateStorage
+        });
+
+        await harness.Service.OnAdministrativeAccessChangeAsync(serviceId: null, layerIds: null, CancellationToken.None);
+
+        harness.StateStore.Revocations.Values.Should().ContainSingle(r =>
+            r.PublicationId == "parcels" &&
+            r.Reason == PublicExportRevocationService.ReasonUnpublished &&
+            r.State == PublicExportRevocationState.Completed);
+        harness.StateStore.Promoted.Keys.Should().Equal("roads");
+    }
+
+    [UnitTest]
+    public async Task OnAdministrativeAccessChange_WhenRepublishedAfterStaleUnpublishedMarker_KeepsPromotedExport()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var privateStorage = CreatePrivateExportStorage(new Dictionary<string, byte[]>(StringComparer.Ordinal)
+        {
+            ["exports/parcels/current.json"] = JsonSerializer.SerializeToUtf8Bytes(
+                new ExportPointer("parcels", "v2", "v2/collection.json", now),
+                ExportVersionJsonContext.Default.ExportPointer),
+            ["exports/parcels/unpublished.json"] = JsonSerializer.SerializeToUtf8Bytes(
+                new ExportUnpublishedMarker
+                {
+                    ExportId = "parcels",
+                    ServiceId = "svc-parcels",
+                    LayerId = "7",
+                    UnpublishedAt = now.AddMinutes(-5)
+                },
+                ExportVersionJsonContext.Default.ExportUnpublishedMarker),
+            ["exports/roads/current.json"] = JsonSerializer.SerializeToUtf8Bytes(
+                new ExportPointer("roads", "v1", "v1/collection.json", now),
+                ExportVersionJsonContext.Default.ExportPointer)
+        });
+        var harness = RevocationHarness.Create(new RevocationScenario
+        {
+            AnonymousAllowed = true,
+            PrivateStorage = privateStorage
+        });
+
+        await harness.Service.OnAdministrativeAccessChangeAsync(serviceId: null, layerIds: null, CancellationToken.None);
+
+        harness.StateStore.Revocations.Should().BeEmpty();
+        harness.StateStore.Promoted.Keys.Should().BeEquivalentTo(["parcels", "roads"]);
+    }
+
+    [UnitTest]
+    public async Task OnAdministrativeAccessChange_WhenPrivateStorageThrowsForOneExport_StillRevokesIneligibleSiblingAndRethrows()
+    {
+        var storage = new Mock<ICloudFileStorage>();
+        storage.Setup(s => s.DownloadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IOException("transient storage timeout"));
+        var harness = RevocationHarness.Create(new RevocationScenario
+        {
+            AnonymousAllowed = false,
+            PrivateStorage = storage.Object
+        });
+
+        var act = () => harness.Service.OnAdministrativeAccessChangeAsync(serviceId: null, layerIds: null, CancellationToken.None);
+
+        await act.Should().ThrowAsync<IOException>().WithMessage("*transient storage timeout*");
+        harness.StateStore.Revocations.Values.Should().ContainSingle(r =>
+            r.PublicationId == "parcels" &&
+            r.Reason == PublicExportRevocationService.ReasonAccessRestricted &&
+            r.State == PublicExportRevocationState.Completed);
+        harness.StateStore.Promoted.Keys.Should().Equal("roads");
+    }
+
+    // Keys are relative to the default publish root, which ExportStore prepends (for example "pmtiles/").
+    private static ICloudFileStorage CreatePrivateExportStorage(Dictionary<string, byte[]> objects)
+    {
+        var root = PMTilesPublishKeyRoot.Resolve(new CloudStorageOptions());
+        var rooted = objects.ToDictionary(
+            entry => string.IsNullOrEmpty(root) ? entry.Key : $"{root}/{entry.Key}",
+            entry => entry.Value,
+            StringComparer.Ordinal);
+        var storage = new Mock<ICloudFileStorage>();
+        storage.Setup(s => s.DownloadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string key, CancellationToken _) =>
+                rooted.TryGetValue(key, out var bytes) ? new MemoryStream(bytes, writable: false) : null);
+        return storage.Object;
     }
 }

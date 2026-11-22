@@ -51,12 +51,12 @@ internal sealed partial class GdalRasterReprojectJobExecutor(
 
         if (!GdalJobInputReader.TryGetInput(parameters, "targetSrs", out var targetSrs))
         {
-            return JobExecutionResult.Failed("Invalid reprojection inputs: missing required input 'targetSrs'.");
+            return JobExecutionResult.InvalidInput("Invalid reprojection inputs: missing required input 'targetSrs'.");
         }
 
         if (!GdalSrsToken.IsValid(targetSrs))
         {
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 $"Invalid reprojection inputs: 'targetSrs' value '{targetSrs}' is not an accepted CRS token " +
                 "(expected an EPSG code like 'EPSG:3857' or a positive integer).");
         }
@@ -66,7 +66,7 @@ internal sealed partial class GdalRasterReprojectJobExecutor(
         if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var inputError))
         {
             Log.InvalidInputs(logger, job.OperationId, inputError);
-            return JobExecutionResult.Failed($"Invalid reprojection inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid reprojection inputs: {inputError}");
         }
 
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
@@ -82,7 +82,7 @@ internal sealed partial class GdalRasterReprojectJobExecutor(
             // decompression-bomb allocation.
             if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
-                return JobExecutionResult.Failed($"Invalid raster input: {dimensionError}");
+                return JobExecutionResult.InvalidInput($"Invalid raster input: {dimensionError}");
             }
 
             if (sourceInput.InlineBytes is { } inlineBytes)

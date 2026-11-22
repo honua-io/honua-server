@@ -163,10 +163,13 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests
             // Production mapper decides what a proposal carries; the production gateway seals and
             // persists it through the real proposal store.
             var gatewayRequest = new AdminOperateOperationApprovalRequestMapper(definition, secretStore).Map(
-                descriptor,
-                new OperationRequest { OperationId = operationId, Parameters = parameters },
-                context,
-                new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+                new OperationApprovalRequestContext
+                {
+                    Descriptor = descriptor,
+                    Request = new OperationRequest { OperationId = operationId, Parameters = parameters },
+                    Context = context,
+                    Decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval },
+                });
             var result = await gateway.CreateApprovalProposalAsync(
                 operationInstanceId,
                 gatewayRequest with

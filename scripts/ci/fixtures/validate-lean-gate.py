@@ -160,6 +160,7 @@ assert TEXT.index('Regenerate projections') < TEXT.index('Run .NET Tests (Archit
 assert "default: 'all'" in TEXT and 'all|build|test)' in TEXT
 assert TEXT.count('/p:RunAnalyzers="${GATE_RUN_ANALYZERS}"') == 2
 assert re.search(r"run-analyzers:.*?\n(?:.*\n)*?\s+default: 'true'", TEXT)
+assert TEXT.count('/p:PublishAot=false') == 3
 assert TEXT.count('/p:UseSharedCompilation=false') == 2
 assert '--projects-file "${PRODUCER_PROJECTS_FILE}"' in TEXT
 assert '--base-filter "${GATE_BUILD_FILTER}" --output "${GATE_BUILD_FILTER}"' in TEXT

@@ -133,7 +133,7 @@ class ConsoleLifecycleTests(QuickstartFixture, unittest.TestCase):
             with patch('compose_quickstart.subprocess.call', side_effect=compose), patch.object(sys, 'argv', argv):
                 self.assertEqual(0, compose_quickstart.main())
             self.assertEqual(['docker', 'compose', 'up', '-d', '--wait', '--wait-timeout', '180',
-                              '--force-recreate', '--no-deps', 'console'], calls[1])
+                              '--force-recreate', '--no-deps', 'console', 'console-manager'], calls[1])
             self.assertFalse(marker.exists())
 
             calls.clear()

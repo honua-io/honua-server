@@ -11,6 +11,13 @@ internal static class FilterExpressionHelpers
         FilterExpression upper,
         bool negate)
     {
+        FilterParserGuard.EnsureCompatibleLiteralComparison(target, lower);
+        FilterParserGuard.EnsureCompatibleLiteralComparison(target, upper);
+        if (target is not PropertyReference)
+        {
+            FilterParserGuard.EnsureCompatibleLiteralComparison(lower, upper);
+        }
+
         var lowerExpr = new BinaryExpression(target, BinaryOperator.GreaterThanOrEqual, lower);
         var upperExpr = new BinaryExpression(target, BinaryOperator.LessThanOrEqual, upper);
         var combined = new BinaryExpression(lowerExpr, BinaryOperator.And, upperExpr);

@@ -54,11 +54,16 @@ internal sealed class AdminConnectImportOperationExecutor(
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
         var current = httpContextAccessor.HttpContext ?? throw new InvalidOperationException("Admin operations require an active authenticated request.");
-        var path = BindPath(request, request.DryRun && definition.SupportsDryRun ? definition.DryRunPath! : definition.Path);
-        var routeNames = RouteNames(path);
-        var query = definition.Method == HttpMethod.Get
-            ? request.Parameters.Where(pair => !routeNames.Contains(pair.Key) && pair.Value is not null).Select(pair => $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value!)}").ToArray()
-            : [];
+        var template = request.DryRun && definition.SupportsDryRun ? definition.DryRunPath! : definition.Path;
+        var routeNames = RouteNames(template);
+        var path = BindPath(request, template);
+        var queryNames = AdminConnectImportOperationCatalog.QueryParametersFor(OperationId);
+        var query = request.Parameters
+            .Where(pair => !routeNames.Contains(pair.Key)
+                && pair.Value is not null
+                && (definition.Method == HttpMethod.Get || queryNames.Contains(pair.Key)))
+            .Select(pair => $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value!)}")
+            .ToArray();
         var localPort = current.Connection.LocalPort;
         if (localPort <= 0)
             throw new InvalidOperationException("Admin operation replay requires a local server port.");
@@ -127,7 +132,11 @@ internal sealed class AdminConnectImportOperationExecutor(
             OperationLineageHeaders.Apply(
                 message, new OperationLoopbackHop(context, current) { Admission = admission }, lineageAttestationStore);
             if (definition.Method != HttpMethod.Get && definition.Method != HttpMethod.Delete)
-                message.Content = definition.ContentType == "multipart/form-data" ? BuildMultipart(request, routeNames) : BuildJson(request, routeNames, OperationId);
+            {
+                var bodyExcluded = new HashSet<string>(routeNames, StringComparer.Ordinal);
+                bodyExcluded.UnionWith(queryNames);
+                message.Content = definition.ContentType == "multipart/form-data" ? BuildMultipart(request, bodyExcluded) : BuildJson(request, bodyExcluded, OperationId);
+            }
             response = await httpClientFactory.CreateClient(HttpClientName).SendAsync(message, cancellationToken).ConfigureAwait(false);
         }
         finally

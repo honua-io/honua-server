@@ -24,6 +24,12 @@ heartbeats, terminal frames, or authorization checks to a handler, and a transpo
 register its sessions emits none of the per-session signals below. Verify every transport
 on a live rolling restart before treating the lifecycle journey as passed.
 
+Registered transports: admin live (`/api/v1/admin/live`, SSE), feature streams
+(`/api/v1/streaming/features`, SSE and WebSocket), layer and job notifications
+(`/api/v1/streaming/layers`, `/api/v1/streaming/jobs`, SSE) and SensorThings observations
+(`/sta/v1.1/ObservationsStream`, SSE and WebSocket). The shared helper is
+`RealtimeStreamAdmission` in `Honua.Hosting`; a new stream endpoint must use it as well.
+
 ## Signals and recommended alarms
 
 The meter is `Honua`. Prometheus normalizes dots to underscores; counters also acquire

@@ -71,7 +71,7 @@ for (const f of features.slice(0, 5)) console.log(f.attributes);
 console.log(`Returned ${features.length} features`);
 ```
 
-A wrong or missing API key surfaces as an authentication error from the client. Confirm `HONUA_API_KEY` is set, then rerun the authenticated query above.
+A wrong or missing API key surfaces as a `HonuaHttpError` from the client (see Troubleshoot below). Confirm `HONUA_API_KEY` is set, then rerun the authenticated query above.
 
 ## Available surfaces
 
@@ -88,9 +88,9 @@ A wrong or missing API key surfaces as an authentication error from the client. 
 
 | Symptom | Fix |
 |---|---|
-| Authentication error / 401 | `apiKey` is unset or wrong; set it and rerun the authenticated SDK query above. |
+| `HonuaHttpError` with `statusCode` 499 (FeatureServer) or 401 | `apiKey` is unset or wrong. FeatureServer reports this as GeoServices error code 499 in an HTTP 200 body; OGC API endpoints answer HTTP 401. Set the key and rerun the authenticated SDK query above. |
 | `ERR_REQUIRE_ESM` / import errors | The SDK is ESM-only; use `import`, `"type": "module"`, and Node ≥ 22.12. |
-| `checkCompatibility()` reports unsupported | The server is older than the SDK's minimum supported version; align release channels per the [compatibility rules](../../concepts/ecosystem.md#sdk-to-server-compatibility). |
+| `checkCompatibility()` reports unsupported | The server is older than the SDK's minimum supported version, or it is a development (`dev` channel) build such as a nightly; align release channels per the [compatibility rules](../../concepts/ecosystem.md#sdk-to-server-compatibility). |
 | CORS errors in the browser | Add your page origin to the server's allowed origins (see the [quickstart](../../get-started/quickstart.md) CORS note). |
 
 More general failures: [Troubleshooting](../../guides/deploy/troubleshooting.md).

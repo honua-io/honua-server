@@ -9,6 +9,7 @@ using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin.Services;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
@@ -61,9 +62,11 @@ internal static class AdminEndpoints
             .WithDisplayName("Get Admin OpenAPI Specification Method Not Allowed");
 
         // Use Map with explicit HTTP method metadata to avoid MapGet reflection
-        _ = adminGroup.MapMethods("/connections/{id}/tables", [HttpMethods.Get], HandleGetConnectionTables)
-            .WithDisplayName("Get Connection Tables")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var discoverTables = AdminHttpOperationRouteBinding.ForConnectImport(
+            "admin.connections.tables.discover", "/api/v{version:apiVersion}/admin");
+        _ = adminGroup.MapMethods(discoverTables.RoutePattern, discoverTables.Methods, HandleGetConnectionTables)
+            .WithAdminOperation(discoverTables.Definition)
+            .WithDisplayName("Get Connection Tables");
         _ = adminGroup.MapMethods("/connections/{id}/tables", _nonGetMethods, HandleGetOnlyMethodNotAllowed)
             .WithDisplayName("Get Connection Tables Method Not Allowed");
 

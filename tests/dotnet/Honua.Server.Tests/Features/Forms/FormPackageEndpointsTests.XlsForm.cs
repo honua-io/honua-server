@@ -95,6 +95,24 @@ public sealed partial class FormPackageEndpointsTests
         response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
     }
 
+    [IntegrationTheory]
+    [InlineData("import")]
+    [InlineData("survey.v2")]
+    [Operation(Operations.Configuration)]
+    [Endpoint("POST /api/v1/admin/forms/import")]
+    public async Task XlsFormImport_UnsafeFormId_ReportsSettingsCellAndCreatesNoDraft(string formId)
+    {
+        using var file = XlsFormUpload("text", formId);
+        using var content = new MultipartFormDataContent();
+        content.Add(file, "file", "survey.xlsx");
+        using var response = await _fixture.Client.PostAsync(XlsFormImportUrl(), content);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("settings").And.Contain("form_id");
+        var packages = await GetJsonAsync("/api/v1/admin/forms", FormPackageJsonContext.Default.FormPackageSummaryArray);
+        packages.Should().NotContain(package => package.FormId == formId);
+    }
+
     private readonly string _xlsFormId = $"survey_{Guid.NewGuid():N}";
 
     private async Task<FormPackageVersion> ImportXlsFormAsync(HttpContent file, string fileName)
@@ -120,7 +138,7 @@ public sealed partial class FormPackageEndpointsTests
     private static string XlsFormImportUrl()
         => $"/api/v1/admin/forms/import?serviceId={Uri.EscapeDataString(WebAppFixture.TestServiceId)}&layerId={WebAppFixture.TestLayerId}";
 
-    private ByteArrayContent XlsFormUpload(string fieldType)
+    private ByteArrayContent XlsFormUpload(string fieldType, string? formId = null)
     {
         using var buffer = new MemoryStream();
         using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
@@ -134,7 +152,7 @@ public sealed partial class FormPackageEndpointsTests
             WriteXlsFormPart(archive, "xl/worksheets/survey.xml", XlsFormSheet(
                 ["type", "name", "label", "required"], [fieldType, "name", "Name", "yes"]));
             WriteXlsFormPart(archive, "xl/worksheets/settings.xml", XlsFormSheet(
-                ["form_id", "form_title"], [_xlsFormId, "Workbook inspection"]));
+                ["form_id", "form_title"], [formId ?? _xlsFormId, "Workbook inspection"]));
         }
 
         return new ByteArrayContent(buffer.ToArray())

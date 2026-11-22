@@ -1550,4 +1550,27 @@ public sealed class SpatialAnalyticsRestTests : IClassFixture<SpatialAnalyticsRe
 
         anyChecked.Should().BeTrue("spatial join should emit at least one target geometry to validate");
     }
+
+    [IntegrationTheory]
+    [InlineData("queryBufferAggregate", "{\"distance\":100,\"unit\":\"meters\",\"dissolve\":true,\"groupByFields\":\"name\\r\\n[ERR] FORGED_SA_GRP\",\"f\":\"json\"}")]
+    [InlineData("queryDensity", "{\"mode\":\"hex\",\"cellSize\":1000,\"weightField\":\"id\\r\\n[ERR] FORGED_SA_WGT\",\"f\":\"json\"}")]
+    [InlineData("spatialJoin", "{\"joinLayerId\":1,\"predicate\":\"intersects\",\"carryFields\":\"name\\r\\n[ERR] FORGED_SA_CARRY\",\"f\":\"json\"}")]
+    [InlineData("queryClusters", "{\"algorithm\":\"dbscan\",\"eps\":50000,\"minPoints\":1,\"returnHullPerCluster\":true,\"outStatistics\":[{\"statisticType\":\"count\",\"onStatisticField\":\"id\\r\\n[ERR] FORGED_SA_STAT\",\"outStatisticFieldName\":\"cnt\"}],\"f\":\"json\"}")]
+    [Operation(Operations.QueryBufferAggregate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryBufferAggregate")]
+    public async Task SpatialAnalytics_CrLfFieldNames_AreRejectedWithoutEchoingRawPayload(
+        string operation,
+        string payload)
+    {
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await _client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/{operation}",
+            content);
+
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.TryGetProperty("error", out var errorElement).Should().BeTrue();
+        errorElement.GetProperty("code").GetInt32().Should().Be(400);
+        body.Should().NotContain("FORGED_SA_");
+    }
 }
