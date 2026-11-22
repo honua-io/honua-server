@@ -109,7 +109,7 @@ internal static partial class SceneWorkflowEndpoints
             .Produces<SceneAssetLifecycleResponse[]>(StatusCodes.Status200OK);
 
         _ = assetsGroup.MapGet("/{sceneId}", HandleGetAsset)
-            .WithName("GetSceneAsset")
+            .WithName("GetSceneAssetLifecycle")
             .WithSummary("Get the unified 3D scene asset lifecycle view for a scene.")
             .Produces<SceneAssetLifecycleResponse>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status404NotFound);
