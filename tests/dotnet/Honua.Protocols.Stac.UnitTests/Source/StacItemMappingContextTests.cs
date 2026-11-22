@@ -20,7 +20,10 @@ public sealed class StacItemMappingContextTests
         var f2 = NewFeature(2, "Beta", 20);
         var context = new StacMappingService.StacItemMappingContext(new StacMappingService.StacItemMappingOptions
         {
-            Resource = resource, Publication = publication, LayerIndex = 0, BaseUrl = "https://example.test"
+            Resource = resource,
+            Publication = publication,
+            LayerIndex = 0,
+            BaseUrl = "https://example.test"
         });
 
         var item1 = StacMappingService.MapFeatureToItem(f1, context);

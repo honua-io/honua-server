@@ -568,8 +568,13 @@ internal static class SearchEndpoints
                         var matchedCog = await CogForLayerAsync(layerId, cancellationToken);
                         var mappingContext = new StacMappingService.StacItemMappingContext(new StacMappingService.StacItemMappingOptions
                         {
-                            Resource = target.Resource, Publication = target.Publication, LayerIndex = layerId, BaseUrl = baseUrl,
-                            SelectedProperties = projection?.SelectedProperties, GeometrySrid = Wgs84Srid, CogArtifact = matchedCog
+                            Resource = target.Resource,
+                            Publication = target.Publication,
+                            LayerIndex = layerId,
+                            BaseUrl = baseUrl,
+                            SelectedProperties = projection?.SelectedProperties,
+                            GeometrySrid = Wgs84Srid,
+                            CogArtifact = matchedCog
                         });
                         var takeEnd = Math.Min(matchedFeatures.Length, remainingSkip + remaining);
                         for (var i = remainingSkip; i < takeEnd; i++)
@@ -685,8 +690,13 @@ internal static class SearchEndpoints
                         var pageCog = await CogForLayerAsync(layerId, cancellationToken);
                         var mappingContext = new StacMappingService.StacItemMappingContext(new StacMappingService.StacItemMappingOptions
                         {
-                            Resource = target.Resource, Publication = target.Publication, LayerIndex = layerId, BaseUrl = baseUrl,
-                            SelectedProperties = projection?.SelectedProperties, GeometrySrid = Wgs84Srid, CogArtifact = pageCog
+                            Resource = target.Resource,
+                            Publication = target.Publication,
+                            LayerIndex = layerId,
+                            BaseUrl = baseUrl,
+                            SelectedProperties = projection?.SelectedProperties,
+                            GeometrySrid = Wgs84Srid,
+                            CogArtifact = pageCog
                         });
                         foreach (var f in page.Items)
                         {
@@ -718,8 +728,13 @@ internal static class SearchEndpoints
                     var layerCog = await CogForLayerAsync(layerId, cancellationToken);
                     var mappingContext = new StacMappingService.StacItemMappingContext(new StacMappingService.StacItemMappingOptions
                     {
-                        Resource = target.Resource, Publication = target.Publication, LayerIndex = layerId, BaseUrl = baseUrl,
-                        SelectedProperties = projection?.SelectedProperties, GeometrySrid = Wgs84Srid, CogArtifact = layerCog
+                        Resource = target.Resource,
+                        Publication = target.Publication,
+                        LayerIndex = layerId,
+                        BaseUrl = baseUrl,
+                        SelectedProperties = projection?.SelectedProperties,
+                        GeometrySrid = Wgs84Srid,
+                        CogArtifact = layerCog
                     });
                     foreach (var f in result.Items)
                     {
@@ -738,8 +753,13 @@ internal static class SearchEndpoints
                     var layerCog = await CogForLayerAsync(layerId, cancellationToken);
                     var mappingContext = new StacMappingService.StacItemMappingContext(new StacMappingService.StacItemMappingOptions
                     {
-                        Resource = target.Resource, Publication = target.Publication, LayerIndex = layerId, BaseUrl = baseUrl,
-                        SelectedProperties = projection?.SelectedProperties, GeometrySrid = Wgs84Srid, CogArtifact = layerCog
+                        Resource = target.Resource,
+                        Publication = target.Publication,
+                        LayerIndex = layerId,
+                        BaseUrl = baseUrl,
+                        SelectedProperties = projection?.SelectedProperties,
+                        GeometrySrid = Wgs84Srid,
+                        CogArtifact = layerCog
                     });
                     foreach (var f in result.Features)
                     {

@@ -99,9 +99,14 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
         var geographic = request.GridGeometry?.IsGeographic ?? targetSrid == 4326;
         return new TileBuildSpec
         {
-            Request = request, EffectiveQuery = effectiveQuery, Bounds = bounds,
-            TargetSrid = targetSrid, TileExtent = tileExtent, TileWidth = tileWidth,
-            BufferMapUnits = bufferMapUnits, Geographic = geographic
+            Request = request,
+            EffectiveQuery = effectiveQuery,
+            Bounds = bounds,
+            TargetSrid = targetSrid,
+            TileExtent = tileExtent,
+            TileWidth = tileWidth,
+            BufferMapUnits = bufferMapUnits,
+            Geographic = geographic
         };
     }
 
@@ -162,8 +167,12 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
                 : DatumTransformSql.BuildTransformExpression(bufferedEnvelope, _storageSrid, DatumOutputSelection.Inverse(selection), spec.TargetSrid);
         return new TileGeometryExpressions
         {
-            Step = step, TileEnvelope = tileEnvelope, EnvelopeForFilter = envelopeForFilter,
-            Geometry = geometry, GeometryForTile = geometryForTile, OriginalGeometryForTile = originalGeometryForTile
+            Step = step,
+            TileEnvelope = tileEnvelope,
+            EnvelopeForFilter = envelopeForFilter,
+            Geometry = geometry,
+            GeometryForTile = geometryForTile,
+            OriginalGeometryForTile = originalGeometryForTile
         };
     }
 

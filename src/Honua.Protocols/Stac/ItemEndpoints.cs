@@ -174,8 +174,12 @@ internal static class ItemEndpoints
                     .ConfigureAwait(false);
             var mappingContext = new StacMappingService.StacItemMappingContext(new StacMappingService.StacItemMappingOptions
             {
-                Resource = resource, Publication = publication, LayerIndex = layerId, BaseUrl = baseUrl,
-                GeometrySrid = Wgs84Srid, CogArtifact = cogArtifact
+                Resource = resource,
+                Publication = publication,
+                LayerIndex = layerId,
+                BaseUrl = baseUrl,
+                GeometrySrid = Wgs84Srid,
+                CogArtifact = cogArtifact
             });
             var itemBuilder = ImmutableArray.CreateBuilder<StacItem>(result.Items.Length);
             foreach (var f in result.Items)
