@@ -60,6 +60,73 @@ public static class EmbedPolicyEvaluator
         return EmbedPolicyDecision.Allow;
     }
 
+    public static EmbedPolicyDecision EvaluateRequestAccess(
+        EmbedKeyRecord key,
+        string? origin,
+        long requestsConsumedInWindow,
+        DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+
+        if (key.GetStatus(now) != EmbedKeyStatus.Active)
+        {
+            return EmbedPolicyDecision.Deny(EmbedPolicyDenyReason.KeyInactive, "embed key is not active");
+        }
+
+        var scope = key.Scope;
+        if (!IsOriginAllowed(origin, scope.AllowedEmbedOrigins))
+        {
+            return EmbedPolicyDecision.Deny(
+                EmbedPolicyDenyReason.OriginNotAllowed,
+                $"origin '{origin ?? "(none)"}' is not allowed for this key");
+        }
+
+        if (scope.RateLimitRequestsPerWindow > 0
+            && requestsConsumedInWindow > scope.RateLimitRequestsPerWindow)
+        {
+            return EmbedPolicyDecision.Deny(
+                EmbedPolicyDenyReason.RateLimited,
+                "embed key has exceeded its rate budget for the current window");
+        }
+
+        return EmbedPolicyDecision.Allow;
+    }
+
+    public static EmbedPolicyDecision EvaluateEventScope(
+        EmbedKeyRecord key,
+        string? serviceId,
+        string? contentId,
+        string? tenantId)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        var scope = key.Scope;
+
+        if (!IsMemberAllowed(serviceId, scope.AllowedServiceOrigins))
+        {
+            return EmbedPolicyDecision.Deny(
+                EmbedPolicyDenyReason.ServiceNotAllowed,
+                $"service '{serviceId}' is not allowed for this key");
+        }
+
+        if (!IsMemberAllowed(contentId, scope.AllowedContentIds))
+        {
+            return EmbedPolicyDecision.Deny(
+                EmbedPolicyDenyReason.ContentNotAllowed,
+                $"content '{contentId}' is not allowed for this key");
+        }
+
+        if (!string.IsNullOrWhiteSpace(scope.TenantId)
+            && !string.IsNullOrWhiteSpace(tenantId)
+            && !string.Equals(scope.TenantId, tenantId, StringComparison.OrdinalIgnoreCase))
+        {
+            return EmbedPolicyDecision.Deny(
+                EmbedPolicyDenyReason.TenantMismatch,
+                "request tenant does not match the key's bound tenant");
+        }
+
+        return EmbedPolicyDecision.Allow;
+    }
+
     public static EmbedPolicy BuildPolicy(EmbedKeyRecord key)
     {
         ArgumentNullException.ThrowIfNull(key);

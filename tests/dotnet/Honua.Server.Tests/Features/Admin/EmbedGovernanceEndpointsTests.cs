@@ -415,21 +415,82 @@ public sealed class EmbedGovernanceEndpointsTests : IAsyncLifetime
         Assert.Equal(0L, await UsageTotalAsync("victim"));
     }
 
-    private async Task<EmbedKeySecretResponse> CreateKeyAsync(
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/embed/analytics")]
+    public async Task IngestAnalytics_ServiceScopedKey_AllowsMatchingAndDeniesMismatchedService()
+    {
+        var serviceScoped = await CreateKeyAsync(
+            "analytics-service-scoped",
+            new EmbedKeyScopeDto
+            {
+                AllowedEmbedOrigins = ["https://app.example.com"],
+                AllowedServiceOrigins = ["services/Roads"],
+                IntegrationId = "site-scoped-svc",
+            });
+
+        var okResponse = await PostAnalyticsAsync(serviceScoped.Key, new IngestEmbedAnalyticsRequest
+        {
+            Events = [new EmbedAnalyticsEventDto { EventType = "view", ServiceId = "services/Roads" }],
+        });
+        Assert.Equal(HttpStatusCode.OK, okResponse.StatusCode);
+
+        var deniedResponse = await PostAnalyticsAsync(serviceScoped.Key, new IngestEmbedAnalyticsRequest
+        {
+            Events =
+            [
+                new EmbedAnalyticsEventDto { EventType = "view", ServiceId = "services/Roads" },
+                new EmbedAnalyticsEventDto { EventType = "view", ServiceId = "services/Secret" },
+            ],
+        });
+        Assert.Equal(HttpStatusCode.Forbidden, deniedResponse.StatusCode);
+        Assert.Contains("ServiceNotAllowed", await deniedResponse.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/embed/analytics")]
+    public async Task IngestAnalytics_ContentScopedKey_AllowsMatchingAndDeniesMismatchedContent()
+    {
+        var contentScoped = await CreateKeyAsync(
+            "analytics-content-scoped",
+            new EmbedKeyScopeDto
+            {
+                AllowedEmbedOrigins = ["https://app.example.com"],
+                AllowedContentIds = ["layer-1"],
+                IntegrationId = "site-scoped-content",
+            });
+
+        var okContent = await PostAnalyticsAsync(contentScoped.Key, new IngestEmbedAnalyticsRequest
+        {
+            Events = [new EmbedAnalyticsEventDto { EventType = "view", LayerId = "layer-1" }],
+        });
+        Assert.Equal(HttpStatusCode.OK, okContent.StatusCode);
+
+        var deniedContent = await PostAnalyticsAsync(contentScoped.Key, new IngestEmbedAnalyticsRequest
+        {
+            Events = [new EmbedAnalyticsEventDto { EventType = "view", LayerId = "layer-other" }],
+        });
+        Assert.Equal(HttpStatusCode.Forbidden, deniedContent.StatusCode);
+        Assert.Contains("ContentNotAllowed", await deniedContent.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    private Task<EmbedKeySecretResponse> CreateKeyAsync(
         string name,
         IReadOnlyList<string> origins,
         string? integrationId = null,
         int rateLimit = 0)
+        => CreateKeyAsync(name, new EmbedKeyScopeDto
+        {
+            AllowedEmbedOrigins = origins,
+            IntegrationId = integrationId,
+            RateLimitRequestsPerWindow = rateLimit,
+        });
+
+    private async Task<EmbedKeySecretResponse> CreateKeyAsync(string name, EmbedKeyScopeDto scope)
     {
         var request = new CreateEmbedKeyRequest
         {
             Name = name,
-            Scope = new EmbedKeyScopeDto
-            {
-                AllowedEmbedOrigins = origins,
-                IntegrationId = integrationId,
-                RateLimitRequestsPerWindow = rateLimit,
-            },
+            Scope = scope,
         };
 
         var response = await _client.PostAsJsonAsync("/api/v1/admin/embed/keys", request, _jsonOptions);
