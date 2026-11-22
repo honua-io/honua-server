@@ -45,26 +45,9 @@ internal static class Cql2BooleanExpression
             return true;
         }
 
-        if (function.FunctionName.Equals("COALESCE", StringComparison.OrdinalIgnoreCase) && function.Arguments.Count > 0)
+        if (function.FunctionName.Equals("COALESCE", StringComparison.OrdinalIgnoreCase))
         {
-            var hasPredicate = false;
-            for (var i = 0; i < function.Arguments.Count; i++)
-            {
-                var arg = function.Arguments[i];
-                if (arg is Literal { Type: LiteralType.Null })
-                {
-                    continue;
-                }
-
-                if (!IsPredicate(arg))
-                {
-                    return false;
-                }
-
-                hasPredicate = true;
-            }
-
-            return hasPredicate;
+            return IsBooleanCoalesce(function.Arguments);
         }
 
         if (function.FunctionName.Equals("IIF", StringComparison.OrdinalIgnoreCase) && function.Arguments.Count == 3)
@@ -80,6 +63,28 @@ internal static class Cql2BooleanExpression
         }
 
         return false;
+    }
+
+    private static bool IsBooleanCoalesce(IReadOnlyList<FilterExpression> arguments)
+    {
+        var hasPredicate = false;
+        for (var i = 0; i < arguments.Count; i++)
+        {
+            var arg = arguments[i];
+            if (arg is Literal { Type: LiteralType.Null })
+            {
+                continue;
+            }
+
+            if (!IsPredicate(arg))
+            {
+                return false;
+            }
+
+            hasPredicate = true;
+        }
+
+        return hasPredicate;
     }
 
     internal static void EnsurePredicateOperands(string operatorName, IReadOnlyList<FilterExpression> operands)
