@@ -83,17 +83,20 @@ public static class FilterExpressionNormalizer
 
     private static TemporalPredicate NormalizeTemporalPredicate(TemporalPredicate temporal, FilterFieldSchema schema)
     {
-        EnsureTemporalOperand(temporal.Left, schema);
-        EnsureTemporalOperand(temporal.Right, schema);
+        EnsureTemporalOperand(temporal.Left, temporal.Right, schema);
+        EnsureTemporalOperand(temporal.Right, temporal.Left, schema);
         return new TemporalPredicate(
             temporal.Operator,
             NormalizeCore(temporal.Left, schema),
             NormalizeCore(temporal.Right, schema));
     }
 
-    private static void EnsureTemporalOperand(FilterExpression operand, FilterFieldSchema schema)
+    // Against a literal the property is compared with a timestamp parameter, which only date and
+    // time columns support. Property-to-property comparisons are cast by the provider and stay open.
+    private static void EnsureTemporalOperand(FilterExpression operand, FilterExpression other, FilterFieldSchema schema)
     {
-        if (operand is PropertyReference property &&
+        if (other is Literal or IntervalLiteral &&
+            operand is PropertyReference property &&
             schema.TryGetFieldType(property.PropertyName, out var fieldType) &&
             fieldType is not (MetadataV2FieldType.DateTime or MetadataV2FieldType.TimestampOffset
                 or MetadataV2FieldType.Date or MetadataV2FieldType.Time))

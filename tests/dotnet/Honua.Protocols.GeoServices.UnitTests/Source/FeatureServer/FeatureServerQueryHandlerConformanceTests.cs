@@ -77,6 +77,21 @@ public sealed class FeatureServerQueryHandlerConformanceTests
         error.Should().Contain("outStatisticFieldName");
     }
 
+    [Fact]
+    public void TryParseStatisticsDefinitions_AliasAtPostgreSqlIdentifierLimit_IsAccepted()
+    {
+        var alias = "_" + new string('a', 62);
+
+        var accepted = FeatureServerQueryHandler.TryParseStatisticsDefinitions(
+            $$"""[{"statisticType":"count","onStatisticField":"fid","outStatisticFieldName":"{{alias}}"}]""",
+            CreateCustomOidResource("fid"),
+            out var definitions,
+            out var error);
+
+        accepted.Should().BeTrue(error);
+        definitions[0].OutStatisticFieldName.Should().Be(alias);
+    }
+
     private static MetadataV2Object CreateCustomOidResource(string objectIdFieldName) => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "custom-oid", Name = "custom-oid" },

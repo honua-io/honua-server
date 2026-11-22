@@ -194,6 +194,25 @@ public sealed class FilterExpressionNormalizerTests
         normalized.Should().BeOfType<TemporalPredicate>();
     }
 
+    [UnitTest]
+    public void Normalize_TemporalPredicateBetweenStringAndTimestampFields_IsLeftToTheProvider()
+    {
+        var expression = new TemporalPredicate(TemporalOperator.Intersects,
+            new PropertyReference("label"), new PropertyReference("observed"));
+        var resource = new MetadataV2Object
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "audit", Name = "Audit" },
+            Type = MetadataV2ObjectType.FeatureDataset,
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "label", Type = MetadataV2FieldType.String },
+                new MetadataV2Field { Name = "observed", Type = MetadataV2FieldType.TimestampOffset }
+            ]
+        };
+
+        FilterExpressionNormalizer.Normalize(expression, resource).Should().BeOfType<TemporalPredicate>();
+    }
+
     private static TemporalPredicate TemporalAfter2020(string field) => new(
         TemporalOperator.Intersects,
         new PropertyReference(field),
