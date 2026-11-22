@@ -17,6 +17,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Progress;
 using Honua.Infrastructure.Services;
 using Honua.Io.Export;
+using Honua.Io.Export.Writers;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
@@ -177,6 +178,32 @@ public sealed class GeoParquetExportJobTests
         result.Status.Should().Be(ExecutionJobStatus.Failed);
         result.IsRetryable.Should().BeFalse();
         await storage.DidNotReceive().UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task Encode_GeoParquetWithStorageEpochAndDifferentOutputCrs_RejectsExport()
+    {
+        var request = new GeoParquetExportRequest
+        {
+            LayerName = "coast",
+            Fields = [new ExportField("name", ExportFieldType.String, true)],
+            GeometryType = ExportGeometryType.Point,
+            OutputSrid = 3857,
+            SourceSpatial = new MetadataV2ObjectSpatial
+            {
+                StorageCrs = new MetadataV2SpatialReference { Srid = 4326 },
+                StorageCrsCoordinateEpoch = 2024.5
+            },
+            Limits = new LimitsOptions(),
+            Logger = NullLogger.Instance
+        };
+
+        var encode = () => GeoParquetExportWriter.EncodeStreamAsync(
+            InterleavedCoastPointsAsync(), request, CancellationToken.None);
+
+        await encode.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage(GeoParquetFeatureWriter.CoordinateEpochOutputUnsupportedMessage);
     }
 
     private static async Task<JobExecutionResult> ExecuteAsync(

@@ -151,6 +151,16 @@ internal static partial class ExportEndpoints
                 queryError);
         }
 
+        var outputSrid = outSR ?? layerSrid;
+        if (builtInFormat == BuiltInExportFormat.GeoParquet
+            && GetGeoParquetCrsError(resource.Spatial, geometryType, outputSrid) is { } geoParquetCrsError)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status400BadRequest,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                geoParquetCrsError);
+        }
+
         var query = ApplyOutputFieldProjection(countQuery, selectedFields, outFields);
         var count = await CountFeaturesAsync(featureReader,
             new(storageLayerId, countQuery, cancellationToken)
@@ -162,16 +172,6 @@ internal static partial class ExportEndpoints
         activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, count);
 
         ExportLog.ExportRequested(logger, serviceName, serviceLayerIndex, format, count);
-
-        var outputSrid = outSR ?? layerSrid;
-        if (builtInFormat == BuiltInExportFormat.GeoParquet
-            && TryValidateGeoParquetCrs(resource.Spatial, geometryType, outputSrid, out var geoParquetCrsError))
-        {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                StatusCodes.Status400BadRequest,
-                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
-                geoParquetCrsError!);
-        }
 
         // Async path for large exports. Restricted to built-in formats: the durable export-job
         // pipeline dispatches the built-in writers by format string, so a plugin-contributed format
@@ -275,9 +275,14 @@ internal static partial class ExportEndpoints
                     crsRegistry, serviceName, logger, sw, activity, cancellationToken),
                 BuiltInExportFormat.GeoParquet => await WriteGeoParquetResponseAsync(
                     httpContext, features,
-                    new GeoParquetResponseRequest(
-                        serviceName, serviceLayerIndex, sw, activity,
-                        new GeoParquetExportRequest
+                    new GeoParquetResponseRequest
+                    {
+                        ServiceName = serviceName,
+                        ServiceLayerIndex = serviceLayerIndex,
+                        Stopwatch = sw,
+                        Activity = activity,
+                        CancellationToken = cancellationToken,
+                        Export = new GeoParquetExportRequest
                         {
                             LayerName = layerName,
                             Fields = selectedFields,
@@ -286,8 +291,8 @@ internal static partial class ExportEndpoints
                             SourceSpatial = resource.Spatial,
                             Limits = httpContext.RequestServices.GetService<IOptions<LimitsOptions>>()?.Value ?? new LimitsOptions(),
                             Logger = logger
-                        }),
-                    cancellationToken),
+                        }
+                    }),
                 _ => ProblemDetailsHelpers.CreateAdminProblem(
                     StatusCodes.Status400BadRequest,
                     ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
@@ -446,37 +451,46 @@ internal static partial class ExportEndpoints
         }
     }
 
-    private static bool TryValidateGeoParquetCrs(
-        MetadataV2ObjectSpatial? spatial, ExportGeometryType geometryType, int outputSrid, out string? error)
+    private static string? GetGeoParquetCrsError(
+        MetadataV2ObjectSpatial? spatial, ExportGeometryType geometryType, int outputSrid)
     {
         try
         {
             _ = GeoParquetFeatureWriter.ResolveGeoParquetCrsProjJson(
                 geometryType != ExportGeometryType.None, outputSrid);
-            error = geometryType != ExportGeometryType.None
+            return geometryType != ExportGeometryType.None
                 && spatial?.StorageCrsCoordinateEpoch is { } epoch
                 && (!double.IsFinite(epoch) || spatial.StorageCrs?.ResolveSrid() != outputSrid)
                 ? GeoParquetFeatureWriter.CoordinateEpochOutputUnsupportedMessage
                 : null;
-            return error is not null;
         }
         catch (InvalidOperationException ex)
         {
-            error = ex.Message;
-            return true;
+            return ex.Message;
         }
     }
 
-    private sealed record GeoParquetResponseRequest(
-        string ServiceName, int ServiceLayerIndex, Stopwatch Stopwatch, Activity? Activity, GeoParquetExportRequest Export);
+    private sealed record GeoParquetResponseRequest
+    {
+        public required string ServiceName { get; init; }
+        public required int ServiceLayerIndex { get; init; }
+        public required Stopwatch Stopwatch { get; init; }
+        public Activity? Activity { get; init; }
+        public required CancellationToken CancellationToken { get; init; }
+        public required GeoParquetExportRequest Export { get; init; }
+    }
 
     private static async Task<IResult> WriteGeoParquetResponseAsync(
         HttpContext httpContext,
         IAsyncEnumerable<Feature> features,
-        GeoParquetResponseRequest request,
-        CancellationToken cancellationToken)
+        GeoParquetResponseRequest request)
     {
-        var (serviceName, serviceLayerIndex, sw, activity, export) = request;
+        var serviceName = request.ServiceName;
+        var serviceLayerIndex = request.ServiceLayerIndex;
+        var sw = request.Stopwatch;
+        var activity = request.Activity;
+        var export = request.Export;
+        var cancellationToken = request.CancellationToken;
         var layerName = export.LayerName;
         var logger = export.Logger;
         try
