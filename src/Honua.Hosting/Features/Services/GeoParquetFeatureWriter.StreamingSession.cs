@@ -8,7 +8,6 @@ using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Microsoft.Extensions.Logging;
 using ParquetSharp.Arrow;
 
 namespace Honua.Infrastructure.Services;
