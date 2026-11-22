@@ -11,7 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 [CollectionDefinition("ControlPlaneProbeTransport", DisableParallelization = true)]
-public sealed class ControlPlaneProbeTransportCollection;
+public sealed class ControlPlaneProbeTransportTestGroup;
 
 [Collection("ControlPlaneProbeTransport")]
 public sealed class ControlPlaneProbeTransportTests : IDisposable
@@ -84,7 +84,7 @@ public sealed class ControlPlaneProbeTransportTests : IDisposable
     {
         var resolutions = 0;
         Task<IPAddress[]> ResolveAsync(string host, CancellationToken cancellationToken)
-            => Task.FromResult(new[] { ++resolutions == 1 ? IPAddress.Parse("8.8.8.8") : IPAddress.Loopback });
+            => Task.FromResult(new[] { ++resolutions <= 2 ? IPAddress.Parse("8.8.8.8") : IPAddress.Loopback });
         const string url = "https://probe.example/healthz";
         var validation = await DeployProbeUrlPolicy.ValidateAsync(url, false, ResolveAsync, CancellationToken.None);
         validation.IsValid.Should().BeTrue();
@@ -95,7 +95,7 @@ public sealed class ControlPlaneProbeTransportTests : IDisposable
 
         await send.Should().ThrowAsync<HttpRequestException>()
             .WithMessage("*outside the configured connection policy*");
-        resolutions.Should().Be(2);
+        resolutions.Should().Be(3);
     }
 
     [Fact]
@@ -118,8 +118,67 @@ public sealed class ControlPlaneProbeTransportTests : IDisposable
         using var response = await client.GetAsync($"http://probe.example:{port}/healthz", cancellation.Token);
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
-        resolutions.Should().Be(1);
+        resolutions.Should().Be(2);
         await serve;
+    }
+
+    [Fact]
+    public async Task AddControlPlaneHttpClients_PrivateNetworkOption_AppliesToConnections()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.Configure<ControlPlaneOptions>(options => options.AllowPrivateNetworkProbes = true);
+        services.AddControlPlaneHttpClients();
+        using var provider = services.BuildServiceProvider();
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var serve = ServeResponseAsync(listener, cancellation.Token);
+        using var client = provider.GetRequiredService<IHttpClientFactory>().CreateClient(ControlPlaneHttpClients.Probe);
+
+        using var response = await client.GetAsync($"http://127.0.0.1:{port}/healthz", cancellation.Token);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        await serve;
+    }
+
+    [Fact]
+    public async Task SendAsync_ReusedConnection_AppliesRequestPolicy()
+    {
+        Environment.SetEnvironmentVariable(DeployProbeUrlPolicy.AllowPrivateNetworksEnvVar, "true");
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var serve = ServePersistentResponseAsync(listener, cancellation.Token);
+        using var handler = new DeployProbeTransport((_, _) => Task.FromResult(new[] { IPAddress.Loopback }))
+            .CreateHandler();
+        using var client = new HttpClient(handler);
+        using var response = await client.GetAsync($"http://probe.example:{port}/healthz", cancellation.Token);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var send = () => client.GetAsync($"http://user:password@probe.example:{port}/healthz", cancellation.Token);
+
+        await send.Should().ThrowAsync<HttpRequestException>()
+            .WithMessage("*outside the configured connection policy*");
+        client.Dispose();
+        (await serve).Should().BeNull();
+    }
+
+    private static async Task<string?> ServePersistentResponseAsync(TcpListener listener, CancellationToken cancellationToken)
+    {
+        using var socket = await listener.AcceptTcpClientAsync(cancellationToken);
+        await using var stream = socket.GetStream();
+        using var reader = new StreamReader(stream, leaveOpen: true);
+        while (!string.IsNullOrEmpty(await reader.ReadLineAsync(cancellationToken)))
+        {
+            // Consume the request headers before returning the response.
+        }
+
+        await stream.WriteAsync(Encoding.ASCII.GetBytes(
+            "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"), cancellationToken);
+        return await reader.ReadLineAsync(cancellationToken);
     }
 
     private static async Task ServeResponseAsync(TcpListener listener, CancellationToken cancellationToken)
@@ -129,6 +188,7 @@ public sealed class ControlPlaneProbeTransportTests : IDisposable
         using var reader = new StreamReader(stream, leaveOpen: true);
         while (!string.IsNullOrEmpty(await reader.ReadLineAsync(cancellationToken)))
         {
+            // Consume the request headers before returning the response.
         }
 
         await stream.WriteAsync(Encoding.ASCII.GetBytes(

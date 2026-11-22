@@ -60,7 +60,8 @@ public sealed class ControlPlaneHttpClientsTests
     [Fact]
     public async Task RestoreCustomerProbe_ConfiguredUrl_UsesTheProbeClient()
     {
-        var factory = new RecordingHttpClientFactory(new CandidateAndPrometheusHandler());
+        using var handler = new CandidateAndPrometheusHandler();
+        var factory = new RecordingHttpClientFactory(handler);
         var probe = new HttpServingCustomerProbe(factory, Options.Create(new RestoreCellOptions
         {
             CustomerProbeUrl = "https://example.com/customer"
