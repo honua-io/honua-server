@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security;
 using Honua.Protocols.Stac.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
@@ -139,7 +140,7 @@ public sealed class StacV2LookupsMatchesCollectionIdTests
 
     private static DefaultHttpContext BuildTwoServiceLayerZeroContext()
     {
-        var anonymousAccess = new MetadataV2AccessPolicy { AllowAnonymous = true };
+        var anonymousAccess = new AccessPolicy { AllowAnonymous = true };
         var graph = new TestMetadataV2GraphBuilder()
             .AddService("svc-a", "svc-a", protocols: ["Stac"], accessPolicy: anonymousAccess)
             .AddService("svc-b", "svc-b", protocols: ["Stac"], accessPolicy: anonymousAccess)
