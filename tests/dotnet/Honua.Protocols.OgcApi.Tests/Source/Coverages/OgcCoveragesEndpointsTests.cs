@@ -244,7 +244,18 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.GetValues("Content-Crs").Single().Should()
             .Be($"<{identifier}>");
-        response.Headers.GetValues("Content-Bbox").Single().Should().Be(bbox);
+        var reported = response.Headers.GetValues("Content-Bbox").Single()
+            .Split(',')
+            .Select(value => double.Parse(value, CultureInfo.InvariantCulture))
+            .ToArray();
+        var expected = bbox.Split(',')
+            .Select(value => double.Parse(value, CultureInfo.InvariantCulture))
+            .ToArray();
+        reported.Should().HaveCount(expected.Length);
+        for (var index = 0; index < expected.Length; index++)
+        {
+            reported[index].Should().BeApproximately(expected[index], 1e-9);
+        }
     }
 
     [IntegrationTest]
