@@ -111,13 +111,19 @@ Feature activation is entitlement-based: Community-tier features are active on C
 
 ## Configuration
 
+Run the following from a published server directory, replacing the license path and
+public-key placeholder with your deployment's values. `env` passes the hyphenated
+key ID to the server process without treating it as a Bash variable name.
+
 ```bash
-Licensing__Mode=Enabled
-Licensing__Edition=Pro
-Licensing__LicensePath=/etc/honua/license.honua-license.json
-Licensing__TrustedKeys__honua-2026-q2=base64url:<32-byte-raw-ed25519-public-key>
-Licensing__AllowAdminUpload=false   # default
-Licensing__ExpiryWarningDays=30     # default
+env \
+  Licensing__Mode=Enabled \
+  Licensing__Edition=Pro \
+  Licensing__LicensePath=/etc/honua/license.honua-license.json \
+  'Licensing__TrustedKeys__honua-2026-q2=base64url:<32-byte-raw-ed25519-public-key>' \
+  Licensing__AllowAdminUpload=false \
+  Licensing__ExpiryWarningDays=30 \
+  dotnet Honua.Server.dll
 ```
 
 - `Licensing__Mode` — `Enabled` (server default) or `Disabled`, case-insensitive. Unknown values refuse startup. Changing the mode requires restart.
