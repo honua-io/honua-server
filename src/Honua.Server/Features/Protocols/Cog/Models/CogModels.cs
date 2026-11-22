@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Server.Features.Protocols.Cog.Models;
 
@@ -21,12 +22,26 @@ internal sealed record RegisterCogRequest
 
     public bool IsValid(out string error)
     {
-        if (LayerId <= 0) { error = "LayerId must be a positive integer."; return false; }
-        if (string.IsNullOrWhiteSpace(Name)) { error = "Name is required."; return false; }
-        if (string.IsNullOrWhiteSpace(Bucket)) { error = "Bucket is required."; return false; }
-        if (string.IsNullOrWhiteSpace(ObjectKey)) { error = "ObjectKey is required."; return false; }
-        if (!Enum.IsDefined(Provider)) { error = "Provider must be one of: AwsS3, AzureBlob."; return false; }
-        if (Provider == CloudStorageProvider.Local) { error = "Local storage is not supported for COG serving."; return false; }
+        if (CloudRasterRegistrationValidation.ValidateMetadata(LayerId, Name, Description) is { } metadataError)
+        {
+            error = metadataError;
+            return false;
+        }
+        if (CloudRasterRegistrationValidation.ValidateStorageLocation(Bucket, ObjectKey, "objectKey") is { } storageError)
+        {
+            error = storageError;
+            return false;
+        }
+        if (!Enum.IsDefined(Provider))
+        {
+            error = "Provider must be one of: AwsS3, AzureBlob.";
+            return false;
+        }
+        if (Provider == CloudStorageProvider.Local)
+        {
+            error = "Local storage is not supported for COG serving.";
+            return false;
+        }
         error = string.Empty;
         return true;
     }

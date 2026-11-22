@@ -54,7 +54,7 @@ public partial class StudioPackageLifecycleServiceTests
         var version = await StoreHistoricalVersionAsync(store, new StudioPackageEnvelope
         {
             Family = StudioPackageFamily.App, SchemaVersion = "1.0",
-            Body = JsonDocument.Parse(json).RootElement.Clone(),
+            Body = JsonElement.Parse(json),
         });
         var service = provider.GetRequiredService<IStudioPackageLifecycleService>();
         await Assert.ThrowsAsync<JsonException>(() =>
@@ -72,8 +72,7 @@ public partial class StudioPackageLifecycleServiceTests
         var version = await StoreHistoricalVersionAsync(store, new StudioPackageEnvelope
         {
             Family = StudioPackageFamily.App, SchemaVersion = "1.0", Format = "honua_app.v1",
-            Body = JsonDocument.Parse("{\"appId\":\"app-one\",\"mapPackageId\":\"map-one\",\"mapId\":\"map-one\"}")
-                .RootElement.Clone(),
+            Body = JsonElement.Parse("{\"appId\":\"app-one\",\"mapPackageId\":\"map-one\",\"mapId\":\"map-one\"}"),
         });
         var service = provider.GetRequiredService<IStudioPackageLifecycleService>();
         var reopened = await service.ReopenVersionAsync(version.ItemId, version.VersionId, "tester");
@@ -85,13 +84,16 @@ public partial class StudioPackageLifecycleServiceTests
         Assert.Equal("honua_app.v1", reopened.Envelope.Format);
     }
 
-    private static Task<StudioContentVersion> StoreHistoricalVersionAsync(
-        IStudioPackageStore store, StudioPackageEnvelope envelope) => store.CreateVersionAsync(
-        new StudioPackageDraft
+    private static async Task<StudioContentVersion> StoreHistoricalVersionAsync(
+        IStudioPackageStore store, StudioPackageEnvelope envelope)
+    {
+        var draft = await store.CreateDraftAsync(new StudioPackageDraft
         {
             DraftId = Guid.NewGuid(), ItemId = Guid.NewGuid(), PackageKey = "legacy-map-app",
             Family = envelope.Family, Envelope = envelope, CreatedAt = DateTimeOffset.UnixEpoch,
             UpdatedAt = DateTimeOffset.UnixEpoch,
-        }, "saved before vocabulary change", "tester");
+        });
+        return await store.CreateVersionAsync(draft, "saved before vocabulary change", "tester");
+    }
 
 }

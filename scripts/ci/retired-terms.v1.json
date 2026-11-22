@@ -2,54 +2,9 @@
   "version": 1,
   "rules": [
     {
-      "id": "dataset-reference",
-      "literal": "resourceId",
-      "replacement": "the actual kind ID (datasetId for data)"
-    },
-    {
-      "id": "map-envelope",
-      "literal": "MapPackage",
-      "replacement": "Map"
-    },
-    {
-      "id": "layer-membership",
-      "literal": "publicationIds",
-      "replacement": "layerIds"
-    },
-    {
-      "id": "api-key",
-      "literal": "HonuaApiToken",
-      "replacement": "ApiKey"
-    },
-    {
-      "id": "layer-type",
-      "literal": "publicationType",
-      "replacement": "layerType"
-    },
-    {
-      "id": "graph-publication",
-      "literal": "MetadataV2Publication",
+      "id": "serving-target",
+      "literal": "serving target",
       "replacement": "Layer"
-    },
-    {
-      "id": "hosted-layer",
-      "literal": "hosted layer",
-      "replacement": "Layer"
-    },
-    {
-      "id": "graph-resource-index",
-      "literal": "metadata_v2_resources_idx",
-      "replacement": "typed kind indexes"
-    },
-    {
-      "id": "sharing-index",
-      "literal": "portal_item_shares",
-      "replacement": "kind-aware sharing"
-    },
-    {
-      "id": "app-envelope",
-      "literal": "AppPackage",
-      "replacement": "App"
     },
     {
       "id": "content-item",
@@ -57,19 +12,9 @@
       "replacement": "the actual kind (Map, App, Dashboard, Report, Form, Process, Query, Workflow, GP, ETL or Document)"
     },
     {
-      "id": "graph-resource",
-      "literal": "MetadataV2Resource",
-      "replacement": "the actual kind; Dataset only for data"
-    },
-    {
-      "id": "serving-target",
-      "literal": "serving target",
+      "id": "hosted-layer",
+      "literal": "hosted layer",
       "replacement": "Layer"
-    },
-    {
-      "id": "workspace-grouping",
-      "literal": "workspace grouping",
-      "replacement": "Folder"
     },
     {
       "id": "hosted-map",
@@ -77,21 +22,91 @@
       "replacement": "Map"
     },
     {
+      "id": "map-envelope",
+      "literal": "MapPackage",
+      "replacement": "Map"
+    },
+    {
+      "id": "app-envelope",
+      "literal": "AppPackage",
+      "replacement": "App"
+    },
+    {
+      "id": "api-key",
+      "literal": "HonuaApiToken",
+      "replacement": "ApiKey"
+    },
+    {
+      "id": "graph-resource",
+      "literal": "MetadataV2Resource",
+      "replacement": "the actual kind; Dataset only for data"
+    },
+    {
+      "id": "graph-publication",
+      "literal": "MetadataV2Publication",
+      "replacement": "Layer"
+    },
+    {
+      "id": "layer-membership",
+      "literal": "publicationIds",
+      "replacement": "layerIds"
+    },
+    {
+      "id": "layer-type",
+      "literal": "publicationType",
+      "replacement": "layerType"
+    },
+    {
+      "id": "workspace-grouping",
+      "literal": "workspace grouping",
+      "replacement": "Folder"
+    },
+    {
+      "id": "graph-resource-index",
+      "literal": "metadata_v2_resources_idx",
+      "replacement": "typed kind indexes"
+    },
+    {
       "id": "graph-layer-index",
       "literal": "metadata_v2_publications_idx",
       "replacement": "metadata_v2_layers_idx"
+    },
+    {
+      "id": "sharing-index",
+      "literal": "portal_item_shares",
+      "replacement": "kind-aware sharing"
+    },
+    {
+      "id": "dataset-reference",
+      "literal": "resourceId",
+      "replacement": "the actual kind ID (datasetId for data)"
     }
   ],
   "reviewRules": [
+    {
+      "literal": "resource",
+      "replacement": "Dataset for data; otherwise the actual kind",
+      "exceptions": "HTTP/MCP protocol resources and generic operating-system usage"
+    },
     {
       "literal": "publication",
       "replacement": "Layer for a data exposure; Release for a saved Version activation",
       "exceptions": "Protocol-required wire fields and immutable historical migrations"
     },
     {
-      "literal": "resource",
-      "replacement": "Dataset for data; otherwise the actual kind",
-      "exceptions": "HTTP/MCP protocol resources and generic operating-system usage"
+      "literal": "slot",
+      "replacement": "Environment when referring to a server connection",
+      "exceptions": "Build scheduling and other non-domain allocation"
+    },
+    {
+      "literal": "projection",
+      "replacement": "Layer when referring to a Dataset exposure",
+      "exceptions": "Coordinate projections and technical query projections"
+    },
+    {
+      "literal": "workspace",
+      "replacement": "Environment for a server connection; Folder when grouping Services",
+      "exceptions": "Actual agent collaboration workspaces and filesystem/build workspaces"
     },
     {
       "literal": "package",
@@ -107,21 +122,6 @@
       "literal": "Map/App identity",
       "replacement": "Use Map/App, MapId/AppId, mapId/appId, honua_map.v1/honua_app.v1, maps/apps routes and MCP resources in both models and user contracts; rename outright without aliases.",
       "exceptions": "Immutable historical versions and forward migration input fixtures retain their original bytes; migrate mutable persisted references explicitly and verify identity, expiry and concurrency revisions."
-    },
-    {
-      "literal": "slot",
-      "replacement": "Environment when referring to a server connection",
-      "exceptions": "Build scheduling and other non-domain allocation"
-    },
-    {
-      "literal": "workspace",
-      "replacement": "Environment for a server connection; Folder when grouping Services",
-      "exceptions": "Actual agent collaboration workspaces and filesystem/build workspaces"
-    },
-    {
-      "literal": "projection",
-      "replacement": "Layer when referring to a Dataset exposure",
-      "exceptions": "Coordinate projections and technical query projections"
     }
   ]
 }

@@ -14,16 +14,20 @@ merged Server commit.
 
 ## Provenance
 
-The schema tree and upstream JSON fixtures are refreshed from geospatial-mcp
+The base schema tree and upstream JSON fixtures are refreshed from geospatial-mcp
 commit **`f494393a119fcff4f53ca6998a8df5160ff1203e`** on `fix/s-vocab-map-app-wire-contract`. This is a pre-merge
 pin for the coordinated Map/App contract migration; its reference manifest is
 still awaiting regeneration from the matching server producer. The pinned changes rename identifiers and resource references without compatibility
 aliases and align control identifiers with runtime validation.
 
-The schema files are copied from `spec/schemas/`, fixtures from
+The base schema files come from `spec/schemas/`, fixtures from
 `conformance/fixtures/`, and the skills catalog and live-surface contract from
-`skills/`. Do not hand-edit upstream files. Refresh the whole tree from one
-pinned commit and record the pin here.
+`skills/`. Do not hand-edit upstream files. Refresh upstream files from a
+pinned commit and record the pin here; retain the scoped pins below.
+
+Existing server input-validation constraints and the scoped upstream updates
+below remain layered over the base snapshot. These include closed input
+objects, paired service selectors and the server catalog declarations.
 
 Server-only tool and result schemas remain Honua extensions. Composition
 control and interaction fixtures retain the documented Honua draft reference
@@ -31,12 +35,37 @@ shape (`draftId` and `generation`) rather than the standard's Map identity;
 these variants are validated against both the standard and live tool schemas.
 The server-owned `ops-parity-map.yaml` remains separate from upstream schemas.
 
+## Service-local selectors (pre-merge pin)
+
+The `query_features`, `render_map`, `get_style`, `apply_style_preset`,
+`list_layers` and `resolve_entity` input/result schema files and fixture
+directories, plus `common/service-layer-reference.schema.json`, retain the selector contract from geospatial-mcp commit
+**`7a6132ef66393139fe03648ac4670c7db18cec5e`**, reviewed in
+[PR #187](https://github.com/honua-io/geospatial-mcp/pull/187).
+They use `serviceLayerIndex` and reject the obsolete `layerId` selector.
+The Map/App snapshot and existing server validation constraints layer over
+these selectors; the obsolete selector remains rejected.
+Refresh this pin to the merged upstream commit after certification against the
+matching server candidate passes.
+
 ## Honua catalog extensions
 
 The vendored `index.json` includes the upstream catalog plus server-only tools
 and results. Those entries preserve reference-implementation coverage while the
 upstream catalog owns standard names and resource families. `resolve_entity`
 and `list_capabilities` now use their upstream schemas and fixtures.
+
+## Platform-operation result contracts (scoped upstream pin)
+
+`geospatial-mcp/tools/deploy_operations.result.schema.json` and
+`geospatial-mcp/tools/platform_release_status.result.schema.json`, plus the
+`deploy_operations_result_posture.json` and
+`platform_release_status_result_null_{serving,execution}.json` fixtures, are
+copied byte for byte from geospatial-mcp commit
+**`5c844454e7170727d8f7adb1eb7db655a75f5519`**, reviewed in
+[PR #196](https://github.com/honua-io/geospatial-mcp/pull/196).
+This scoped refresh accepts canonical evidence posture and nullable release-plane
+runtime/artifact fields; other schema families retain their documented pins.
 
 ## Server-only operation result contract
 
