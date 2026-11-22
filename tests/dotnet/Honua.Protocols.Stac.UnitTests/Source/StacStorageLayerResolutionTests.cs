@@ -87,7 +87,7 @@ public sealed class StacStorageLayerResolutionTests
             new StacMappingService.CollectionMappingContext(reader, "https://example.test", null),
             CancellationToken.None);
 
-        collection.Id.Should().Be("3");
+        collection.Id.Should().Be(ParcelsStorageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture));
         collection.Extent.Temporal.Interval.Single().Should().OnlyContain(value => value != null);
         await reader.DidNotReceive().GetTemporalExtentAsync(
             CollectionLayerIndex, Arg.Any<string>(), Arg.Any<TemporalPropertyType>(), Arg.Any<CancellationToken>());

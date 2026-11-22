@@ -64,7 +64,7 @@ public sealed class ODataEndpointTests : IClassFixture<ODataProHost>, IAsyncLife
                     : publication).ToArray()
         }, schema: fixture.CurrentSchema);
         var id = await fixture.InsertFeatureAsync(TestLayerId, "IdentityProbe");
-        var filterLayerId = conflicting ? TestLayerId : publicLayerId;
+        var filterLayerId = conflicting ? publicLayerId : TestLayerId;
         var filter = $"LayerId eq {filterLayerId} and ObjectId eq {id}";
         var collection = conflicting ? $"/odata/Layers({publicLayerId})/Features" : "/odata/Features";
         var path = operation == "count" ? $"{collection}/$count" : collection;
@@ -75,7 +75,7 @@ public sealed class ODataEndpointTests : IClassFixture<ODataProHost>, IAsyncLife
             _ => ""
         };
 
-        var routingFilter = operation == "apply" ? $"LayerId eq {publicLayerId}" : filter;
+        var routingFilter = operation == "apply" ? $"LayerId eq {TestLayerId}" : filter;
         using var request = new HttpRequestMessage(HttpMethod.Get, $"{path}?$filter={Uri.EscapeDataString(routingFilter)}{suffix}");
         if (operation == "delta")
         {
@@ -106,7 +106,7 @@ public sealed class ODataEndpointTests : IClassFixture<ODataProHost>, IAsyncLife
             values.GetArrayLength().Should().Be(conflicting ? 0 : 1);
             if (!conflicting)
             {
-                values[0].GetProperty("LayerId").GetInt32().Should().Be(publicLayerId);
+                values[0].GetProperty("LayerId").GetInt32().Should().Be(TestLayerId);
                 values[0].GetProperty("ObjectId").GetInt64().Should().Be(id);
             }
         }

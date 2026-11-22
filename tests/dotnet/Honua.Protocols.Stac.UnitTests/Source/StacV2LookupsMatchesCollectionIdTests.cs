@@ -139,9 +139,10 @@ public sealed class StacV2LookupsMatchesCollectionIdTests
 
     private static DefaultHttpContext BuildTwoServiceLayerZeroContext()
     {
+        var anonymousAccess = new MetadataV2AccessPolicy { AllowAnonymous = true };
         var graph = new TestMetadataV2GraphBuilder()
-            .AddService("svc-a", "svc-a", protocols: ["Stac"])
-            .AddService("svc-b", "svc-b", protocols: ["Stac"])
+            .AddService("svc-a", "svc-a", protocols: ["Stac"], accessPolicy: anonymousAccess)
+            .AddService("svc-b", "svc-b", protocols: ["Stac"], accessPolicy: anonymousAccess)
             .AddResource("res-a", "parcels_a")
             .AddResource("res-b", "roads_b")
             .AddStorageBinding("bind-a", "res-a", "public.parcels_a", storageLayerId: 10)

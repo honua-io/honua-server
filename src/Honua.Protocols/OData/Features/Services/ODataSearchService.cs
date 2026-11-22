@@ -542,7 +542,7 @@ internal sealed partial class ODataSearchService
         var reader = await _providerResolver.ResolveQueryReaderAsync(
             snapshot, snapshot.Index.ServicesById[selected.Publication.ServiceId], selected.Resource, selected.Publication, selected.StorageLayerId,
             requireCount, requireTextSearch, cancellationToken).ConfigureAwait(false);
-        return new ResolvedODataLayer(reader, selected.Publication, selected.Resource, layerId, selected.StorageLayerId);
+        return new ResolvedODataLayer(reader, selected.Publication, selected.Resource, selected.StorageLayerId, selected.StorageLayerId);
     }
 
     private static async Task<List<AccessibleODataLayer>> CollectAccessibleLayersAsync(
