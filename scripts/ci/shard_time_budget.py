@@ -12,6 +12,7 @@ from typing import Any, Sequence
 TIME_BUDGET_KEY = "pr_time_budget"
 DEFERRED_SKIP_REASON = "affected_shards_deferred_to_trunk"
 BUDGET_FIELDS = ("max_shard_minutes", "max_total_minutes")
+HEAVY_PLACEMENT_KEY = "pr_heavy_placement"
 
 
 class TimeBudgetError(ValueError):
@@ -95,3 +96,24 @@ def deferred_summary(result: dict[str, Any]) -> list[str]:
         for entry in result["deferred_to_trunk"]
     ]
     return lines
+
+
+def load_heavy_slowdown(config: dict[str, Any]) -> float:
+    policy = config.get(HEAVY_PLACEMENT_KEY)
+    value = policy.get("heavy_slowdown") if isinstance(policy, dict) else None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 1:
+        raise TimeBudgetError(f"{HEAVY_PLACEMENT_KEY}.heavy_slowdown must be a number greater than 1")
+    return float(value)
+
+
+def place_heavy(lane: Sequence[dict[str, Any]], slowdown: float) -> list[dict[str, Any]]:
+    """Mark the shards the slower heavy pool can run without setting the lane's wall clock.
+
+    Shortest first and at most half the lane (rounded up), and only while the
+    heavy estimate stays within the lane's longest shard, which stays hosted.
+    """
+    ranks = [entry.get("dispatch_rank") or 0.0 for entry in lane]
+    longest = max(ranks, default=0.0)
+    eligible = sorted((rank, index) for index, rank in enumerate(ranks) if 0 < rank * slowdown <= longest)
+    chosen = {index for _, index in eligible[: (len(lane) + 1) // 2]}
+    return [{**entry, "heavy": index in chosen} for index, entry in enumerate(lane)]

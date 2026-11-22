@@ -172,10 +172,21 @@ internal static class ItemEndpoints
                 ? null
                 : await cogArtifactLocator.TryResolveAsync(layerId, cancellationToken)
                     .ConfigureAwait(false);
-            var items = result.Items
-                .Select(f => StacMappingService.MapFeatureToItem(f, resource, publication,
-                    layerId, baseUrl, geometrySrid: Wgs84Srid, cogArtifact: cogArtifact))
-                .ToImmutableArray();
+            var mappingContext = new StacMappingService.StacItemMappingContext(new StacMappingService.StacItemMappingOptions
+            {
+                Resource = resource,
+                Publication = publication,
+                LayerIndex = layerId,
+                BaseUrl = baseUrl,
+                GeometrySrid = Wgs84Srid,
+                CogArtifact = cogArtifact
+            });
+            var itemBuilder = ImmutableArray.CreateBuilder<StacItem>(result.Items.Length);
+            foreach (var f in result.Items)
+            {
+                itemBuilder.Add(StacMappingService.MapFeatureToItem(f, mappingContext));
+            }
+            var items = itemBuilder.MoveToImmutable();
 
             var stacBase = $"{baseUrl}/stac";
             var itemsPath = $"{stacBase}/collections/{collectionId}/items";

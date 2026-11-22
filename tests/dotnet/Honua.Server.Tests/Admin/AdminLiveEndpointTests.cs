@@ -90,6 +90,52 @@ public sealed class AdminLiveEndpointTests
         body.Should().EndWith("event: reset\ndata: {\"reason\":\"slow-consumer\",\"head\":256}\n\n");
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/live")]
+    public async Task GetLive_WhileDraining_ReturnsServiceUnavailableWithRetryAfter()
+    {
+        using var factory = CreateFactory(CreateIdleProvider());
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
+        factory.Services.GetRequiredService<IRealtimeStreamLifecycle>().BeginDrain();
+
+        using var response = await client.GetAsync("/api/v1/admin/live?topics=proposals");
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        response.Headers.GetValues("Retry-After").Should().Equal("2");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/live")]
+    public async Task GetLive_DrainSignal_EndsStreamWithRetryFrame()
+    {
+        using var factory = CreateFactory(CreateIdleProvider());
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
+        using var response = await client.GetAsync("/api/v1/admin/live?topics=proposals",
+            HttpCompletionOption.ResponseHeadersRead);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        await factory.Services.GetRequiredService<IRealtimeStreamLifecycle>()
+            .DrainAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(10));
+        var body = await response.Content.ReadAsStringAsync().WaitAsync(TimeSpan.FromSeconds(10));
+
+        body.Should().StartWith("id: admin:0\nevent: status\n");
+        body.Should().MatchRegex(@"\nretry: [1-5][0-9]{3}\n\n$");
+        var retry = int.Parse(body[(body.LastIndexOf("retry: ", StringComparison.Ordinal) + 7)..].Trim(),
+            System.Globalization.CultureInfo.InvariantCulture);
+        retry.Should().BeInRange(1000, 5000);
+    }
+
+    private static IRealtimeFanoutProvider CreateIdleProvider()
+    {
+        var provider = Substitute.For<IRealtimeFanoutProvider>();
+        provider.GetWindowAsync(RealtimeFamily.Admin, Arg.Any<CancellationToken>())
+            .Returns(new RealtimeLogWindow(RealtimeFamily.Admin, 0, 0));
+        provider.Subscribe(Arg.Any<RealtimeSubscriptionRequest>()).Returns(Substitute.For<IRealtimeSubscription>());
+        return provider;
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(IRealtimeFanoutProvider? provider = null)
         => ConfiguredWebApplicationFactory.Create(builder =>
         {

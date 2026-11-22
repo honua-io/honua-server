@@ -46,7 +46,7 @@ public static class OperationScopeMapping
         {
             "service.publish" or "style.apply-preset" => OperatorOperation.Publish,
             "control-plane.deploy.rollback" or "control-plane.coordinated-release.rollback" => OperatorOperation.Rollback,
-            "studio.draft.create" or "studio.draft.update" or "studio.draft.save-version" or
+            "studio.draft.create" or "studio.draft.update" or "studio.draft.restore-revision" or "studio.draft.save-version" or
                 "studio.draft.delete" or "studio.draft.validate" or "studio.draft.preview-plan" or
                 "studio.content.reopen-version" or "studio.content.create-publication-request" or
                 "studio.content.rollback" => ResolveStudioOperation(request.OperationId),
@@ -64,6 +64,7 @@ public static class OperationScopeMapping
                 "admin.layer.style.set" or "admin.layer.style.import-sld" or
                 "admin.services.protocols.set" or "admin.services.access-policy.set" or
                 "admin.services.timeinfo.set" or "admin.services.layer-metadata.set" or
+                "admin.metadata.layer-discovery.set" or "admin.metadata.service-discovery.set" or
                 "admin.connections.update" or "admin.connections.extents.refresh" or
                 "admin.connections.features.refresh" => OperatorOperation.Update,
             _ => ResolveUnlistedOperation(request.OperationId),
@@ -76,12 +77,21 @@ public static class OperationScopeMapping
     private static OperatorOperation ResolveUnlistedOperation(string operationId)
     {
         var layer = ResolveLayerConfiguration(operationId);
-        return layer != default ? layer : ResolveDatasetInspection(operationId);
+        if (layer != default)
+        {
+            return layer;
+        }
+
+        var dataset = ResolveDatasetInspection(operationId);
+        return dataset != default ? dataset : ResolveAdminOperateOperation(operationId);
     }
 
     private static OperatorOperation ResolveLayerConfiguration(string operationId) => operationId switch
     {
-        "admin.layer.display.get" or "admin.layer.spatial.get" => OperatorOperation.Read,
+        "admin.layer.display.get" or "admin.layer.spatial.get" or "admin.layer.fields.get" or
+            "admin.layer.filter.get" or "admin.layer.popup-info.get" or "admin.layer.drawing-info.get" or
+            "admin.layer.style.get" or "admin.layer.style.export-sld" or
+            "admin.services.list" or "admin.services.settings.get" => OperatorOperation.Read,
         "admin.layer.display.set" or "admin.layer.spatial.set" => OperatorOperation.Update,
         _ => default,
     };
@@ -89,7 +99,25 @@ public static class OperationScopeMapping
     private static OperatorOperation ResolveDatasetInspection(string operationId) => operationId switch
     {
         "admin.import.formats" or "admin.import.limits" or "admin.import.preview" or
-            "admin.import.preview-url" or "admin.connections.tables.validate" => OperatorOperation.Read,
+            "admin.import.preview-url" or "admin.connections.tables.validate" or
+            "admin.connections.get" or "admin.connections.test-draft" or "admin.connections.test" or
+            "admin.import.jobs.list" or "admin.import.jobs.get" or
+            "admin.import.uploads.progress" => OperatorOperation.Read,
+        _ => default,
+    };
+
+    private static OperatorOperation ResolveAdminOperateOperation(string operationId) => operationId switch
+    {
+        "admin.metadata.release-packages.list" or "admin.metadata.release-packages.get" or
+            "admin.metadata.release-packages.gitops-manifest" or "admin.metadata.releases.status" or
+            "admin.cache.status" or "admin.license.status" or "admin.license.entitlements" or
+            "admin.configuration.summary" or "admin.configuration.secrets.validate" or
+            "admin.server.capabilities" or "admin.server.features" => OperatorOperation.Read,
+        "admin.metadata.release-packages.create" or "admin.metadata.prevalidate" => OperatorOperation.Create,
+        "admin.metadata.releases.activate" => OperatorOperation.Publish,
+        "admin.metadata.coordinated-releases.rollback" => OperatorOperation.Rollback,
+        "admin.cache.invalidate" => OperatorOperation.Delete,
+        "admin.license.upload" => OperatorOperation.Update,
         _ => default,
     };
 
@@ -125,7 +153,7 @@ public static class OperationScopeMapping
         => operationId switch
         {
             "studio.draft.create" or "studio.content.reopen-version" => OperatorOperation.Create,
-            "studio.draft.update" or "studio.draft.save-version" => OperatorOperation.Update,
+            "studio.draft.update" or "studio.draft.restore-revision" or "studio.draft.save-version" => OperatorOperation.Update,
             "studio.draft.delete" => OperatorOperation.Delete,
             "studio.draft.validate" or "studio.draft.preview-plan" => OperatorOperation.Read,
             "studio.content.create-publication-request" => OperatorOperation.Publish,

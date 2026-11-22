@@ -6,12 +6,14 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -21,6 +23,7 @@ namespace Honua.Server.Tests.Features.Admin;
 public sealed class ProviderOnlyServiceSettingsTests : IAsyncLifetime
 {
     private const string AdminPassword = "provider-only-settings-admin-key";
+    private readonly ErrorLogCapture _logs = new();
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
@@ -33,6 +36,7 @@ public sealed class ProviderOnlyServiceSettingsTests : IAsyncLifetime
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                builder.ConfigureLogging(logging => logging.AddProvider(_logs));
             })
             .ConfigureServices(services => services.RemoveAll<IMetadataV2GraphStore>());
     }
@@ -72,4 +76,27 @@ public sealed class ProviderOnlyServiceSettingsTests : IAsyncLifetime
         mutation.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
     }
 
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/mapserver")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/timeinfo")]
+    public async Task UpdateMapServerAndTimeInfo_WithCrLfServiceName_SanitizesLogOutput()
+    {
+        var mapServerResponse = await _client.PutAsJsonAsync(
+            "/api/v1/admin/services/nosvc%0d%0a%5BERR%5D%20FORGED_MAPSERVER/mapserver",
+            new { maxImageWidth = 2048 });
+        mapServerResponse.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+
+        var timeInfoResponse = await _client.PutAsJsonAsync(
+            "/api/v1/admin/services/nosvc%0d%0a%5BERR%5D%20FORGED_TIMEINFO/timeinfo",
+            new { startTimeField = "start_time" });
+        timeInfoResponse.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+
+        var diagnostics = _logs.Diagnostics;
+        diagnostics.Should().Contain("nosvc__[ERR] FORGED_MAPSERVER");
+        diagnostics.Should().Contain("nosvc__[ERR] FORGED_TIMEINFO");
+        diagnostics.Should().NotContain("\r\n[ERR] FORGED_MAPSERVER");
+        diagnostics.Should().NotContain("\n[ERR] FORGED_MAPSERVER");
+        diagnostics.Should().NotContain("\r\n[ERR] FORGED_TIMEINFO");
+        diagnostics.Should().NotContain("\n[ERR] FORGED_TIMEINFO");
+    }
 }

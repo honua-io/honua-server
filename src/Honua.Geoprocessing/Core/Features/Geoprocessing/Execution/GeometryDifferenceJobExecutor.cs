@@ -54,31 +54,31 @@ internal sealed partial class GeometryDifferenceJobExecutor : IProcessExecutor
         if (!TryReadInputs(parameters, out var inputs, out var inputError))
         {
             Log.InvalidInputs(_logger, job.OperationId, inputError);
-            return JobExecutionResult.Failed($"Invalid difference inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid difference inputs: {inputError}");
         }
 
         if (!TryDecodeGeometry(inputs.TargetWkb, out var target, out var decodeError))
         {
             Log.InvalidWkb(_logger, job.OperationId, "targetWkb", decodeError);
-            return JobExecutionResult.Failed($"Invalid difference inputs: targetWkb {decodeError}");
+            return JobExecutionResult.InvalidInput($"Invalid difference inputs: targetWkb {decodeError}");
         }
 
         if (!TryDecodeGeometry(inputs.EraserWkb, out var eraser, out decodeError))
         {
             Log.InvalidWkb(_logger, job.OperationId, "eraserWkb", decodeError);
-            return JobExecutionResult.Failed($"Invalid difference inputs: eraserWkb {decodeError}");
+            return JobExecutionResult.InvalidInput($"Invalid difference inputs: eraserWkb {decodeError}");
         }
 
         if (!GeometrySridGuard.TryValidateEmbeddedSrid(target, inputs.Srid, out var targetSridError))
         {
             Log.InvalidWkb(_logger, job.OperationId, "targetWkb", targetSridError);
-            return JobExecutionResult.Failed($"Invalid difference inputs: targetWkb {targetSridError}.");
+            return JobExecutionResult.InvalidInput($"Invalid difference inputs: targetWkb {targetSridError}.");
         }
 
         if (!GeometrySridGuard.TryValidateEmbeddedSrid(eraser, inputs.Srid, out var eraserSridError))
         {
             Log.InvalidWkb(_logger, job.OperationId, "eraserWkb", eraserSridError);
-            return JobExecutionResult.Failed($"Invalid difference inputs: eraserWkb {eraserSridError}.");
+            return JobExecutionResult.InvalidInput($"Invalid difference inputs: eraserWkb {eraserSridError}.");
         }
 
         target.SRID = inputs.Srid;

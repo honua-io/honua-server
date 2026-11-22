@@ -38,6 +38,8 @@ using Honua.Server.Features.Geocoding;
 using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Forms;
 using Honua.Server.Features.Mobile.FieldCollection.Automations;
+using Honua.Server.Features.Assets;
+using Honua.Server.Features.Tasks;
 using Honua.Server.Features.FieldWorkflows;
 using Honua.Server.Features.FieldWorkflows.Export;
 using Honua.Server.Features.FieldWorkflows.Review;
@@ -124,6 +126,7 @@ internal static class FeatureRegistrationExtensions
         services.AddGeocoding(configuration);
         services.AddForms(configuration);
         services.AddFieldWorkflows();
+        services.AddAssets();
         services.AddCogServices(configuration);
         services.AddMultidimensionalCoverageServices();
         services.AddZarrServices();
@@ -320,6 +323,8 @@ internal static class FeatureRegistrationExtensions
 #endif
         endpoints.MapFormPackageEndpoints();
         endpoints.MapFieldReviewEndpoints();
+        endpoints.MapAssetProfileEndpoints();
+        endpoints.MapWorkTaskEndpoints();
         endpoints.MapFieldExportEndpoints();
         endpoints.MapCogEndpoints();
         endpoints.MapMultidimensionalCoverageEndpoints();

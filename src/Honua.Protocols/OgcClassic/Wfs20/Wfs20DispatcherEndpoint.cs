@@ -429,15 +429,8 @@ internal static class Wfs20DispatcherEndpoint
                 "updateSequence");
         }
 
-        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var capabilities = await handler.HandleGetCapabilitiesAsync(
-            context, acceptVersions, requestedSections, baseUrl, cancellationToken);
-
-        // Render the typed capabilities model by hand instead of via XmlSerializer:
-        // XmlSerializer requires runtime code generation, which is unavailable under
-        // PublishAot=true and throws at runtime (HTTP 500) for WfsCapabilities. The
-        // hand-written writer mirrors the exact XmlSerializer output shape.
-        return BuildCapabilitiesResult(capabilities);
+        return await handler.HandleGetCapabilitiesResultAsync(
+            context, requestedSections, baseUrl).ConfigureAwait(false);
     }
 
     private static async Task<IResult> HandleDescribeFeatureType(

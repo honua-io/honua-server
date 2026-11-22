@@ -77,6 +77,21 @@ internal sealed partial class FeatureQueryBuilder
         }
     }
 
+    internal static bool IsSupportedWhereClause(string whereClause)
+    {
+        ArgumentNullException.ThrowIfNull(whereClause);
+        var scratchIndex = 1;
+        try
+        {
+            ParseAndParameterizeWhereClause(whereClause.Trim(), ref scratchIndex, []);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
     internal static string ParseAndParameterizeWhereClause(string whereClause, ref int paramIndex, List<object> parameters)
     {
         var dangerousPattern = FindDangerousPattern(whereClause);

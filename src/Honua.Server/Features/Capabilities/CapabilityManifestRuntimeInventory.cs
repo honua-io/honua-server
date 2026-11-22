@@ -33,7 +33,9 @@ internal sealed class CapabilityManifestRuntimeInventory(
 
     public IReadOnlyList<IDeployBackend> DeployBackends { get; } = deployBackends.ToArray();
 
-    public bool HasDurableOperationStore { get; } = workflowOperationStores.Any();
+    public IReadOnlyList<IWorkflowOperationStore> WorkflowOperationStores { get; } = workflowOperationStores.ToArray();
+
+    public bool HasDurableOperationStore => WorkflowOperationStores.Count > 0;
 
     public bool HasAutonomyPolicyStore { get; } = opsAutonomyPolicyStores.Any();
 

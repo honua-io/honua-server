@@ -702,41 +702,64 @@ public static partial class MetadataV2GraphValidator
 
     private static void ValidateObjectMetadataUniversals(List<string> errors, MetadataV2Graph graph)
     {
-        ValidateOneMetadata(errors, "graph", graph.Metadata);
+        var schemas = graph.CustomFieldSchemas ?? [];
+        if (schemas.Count > 0)
+        {
+            MetadataV2CustomFieldValidation.ValidateSchemas(errors, schemas);
+        }
+
+        ValidateOneMetadata(errors, new("graph", MetadataV2CustomFieldKinds.Graph, schemas), graph.Metadata);
+        foreach (var catalog in graph.Catalogs)
+        {
+            ValidateOneMetadata(errors, new($"catalog '{catalog.Metadata.Id}'", MetadataV2CustomFieldKinds.Catalog, schemas), catalog.Metadata);
+        }
         foreach (var folder in graph.Folders)
         {
-            ValidateOneMetadata(errors, $"folder '{folder.Metadata.Id}'", folder.Metadata);
+            ValidateOneMetadata(errors, new($"folder '{folder.Metadata.Id}'", MetadataV2CustomFieldKinds.Folder, schemas), folder.Metadata);
         }
         foreach (var r in graph.Resources)
         {
-            ValidateOneMetadata(errors, $"resource '{r.Metadata.Id}'", r.Metadata);
+            ValidateOneMetadata(errors, new($"resource '{r.Metadata.Id}'", MetadataV2CustomFieldKinds.Dataset, schemas), r.Metadata);
         }
         foreach (var c in graph.Connections)
         {
-            ValidateOneMetadata(errors, $"connection '{c.Metadata.Id}'", c.Metadata);
+            ValidateOneMetadata(errors, new($"connection '{c.Metadata.Id}'", "connection", schemas), c.Metadata);
         }
         foreach (var sb in graph.StorageBindings)
         {
-            ValidateOneMetadata(errors, $"storage binding '{sb.Metadata.Id}'", sb.Metadata);
+            ValidateOneMetadata(errors, new($"storage binding '{sb.Metadata.Id}'", "storageBinding", schemas), sb.Metadata);
         }
         foreach (var s in graph.Services)
         {
-            ValidateOneMetadata(errors, $"service '{s.Metadata.Id}'", s.Metadata);
+            ValidateOneMetadata(errors, new($"service '{s.Metadata.Id}'", MetadataV2CustomFieldKinds.Service, schemas), s.Metadata);
         }
         foreach (var p in graph.Publications)
         {
-            ValidateOneMetadata(errors, $"publication '{p.Metadata.Id}'", p.Metadata);
+            ValidateOneMetadata(errors, new($"publication '{p.Metadata.Id}'", MetadataV2CustomFieldKinds.Layer, schemas), p.Metadata);
         }
     }
 
-    private static void ValidateOneMetadata(List<string> errors, string ownerLabel, MetadataV2ObjectMetadata metadata)
+    private readonly record struct MetadataOwner(
+        string Label,
+        string ItemKind,
+        IReadOnlyList<MetadataV2CustomFieldSchema> Schemas);
+
+    private static void ValidateOneMetadata(List<string> errors, MetadataOwner owner, MetadataV2ObjectMetadata metadata)
     {
+        var ownerLabel = owner.Label;
         if (!SpdxLicensePolicy.IsValidCanonicalValue(metadata.License))
         {
             errors.Add(
                 $"{ownerLabel} metadata.license must be a canonical SPDX expression or the literal 'proprietary' without padding or control characters and must not exceed {SpdxLicensePolicy.MaxExpressionLength} characters.");
         }
         MetadataV2DescriptiveValidation.Validate(errors, ownerLabel, metadata);
+        if (owner.Schemas.Count > 0 || metadata.CustomFields is { Count: > 0 })
+        {
+            MetadataV2CustomFieldValidation.ValidateItemCustomFields(
+                errors,
+                new MetadataV2CustomFieldOwner(ownerLabel, owner.ItemKind, metadata.CustomFields),
+                owner.Schemas);
+        }
 
         if (!IsValidGovernanceText(metadata.Attribution, MetadataV2ObjectMetadata.MaxAttributionLength))
         {

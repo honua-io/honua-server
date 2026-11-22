@@ -114,6 +114,13 @@ internal static class McpTestFactory
                 await lifecycle.UpdateDraftAsync(draftId, command, cancellationToken).ConfigureAwait(false),
                 "studio.draft.update");
 
+        public async Task<StudioDraftMutationReceipt<StudioPackageDraft>> RestoreRevisionAsync(
+            StudioDraftRevisionRestore restore,
+            StudioDraftMutationContext context,
+            CancellationToken cancellationToken = default) => Receipt(
+                await lifecycle.RestoreDraftRevisionAsync(restore.DraftId, restore.Command, cancellationToken).ConfigureAwait(false),
+                "studio.draft.restore-revision");
+
         public async Task<StudioDraftMutationReceipt<bool>> DeleteAsync(
             Guid draftId,
             StudioDraftMutationContext context,

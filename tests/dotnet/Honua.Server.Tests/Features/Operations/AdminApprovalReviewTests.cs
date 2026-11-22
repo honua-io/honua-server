@@ -18,16 +18,21 @@ public sealed class AdminApprovalReviewTests
         var definition = AdminApiOperationCatalog.Definitions.Single(d => d.OperationId == "admin.layer.filter.set");
         var descriptor = AdminApiOperationCatalog.Descriptors.Single(d => d.OperationId == definition.OperationId);
         var mapper = new AdminApiOperationApprovalRequestMapper(definition);
-        var proposal = mapper.Map(descriptor, new OperationRequest
+        var proposal = mapper.Map(new OperationApprovalRequestContext
         {
-            OperationId = definition.OperationId,
-            Parameters = new Dictionary<string, string?>
+            Descriptor = descriptor,
+            Request = new OperationRequest
             {
-                ["storageLayerId"] = "123",
-                ["permanentFilter"] = """{"expression":"status = 'open'","language":"arcgis-sql"}"""
-            }
-        }, new OperationPolicyContext { PrincipalId = "requester", TenantId = "tenant-a" },
-            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+                OperationId = definition.OperationId,
+                Parameters = new Dictionary<string, string?>
+                {
+                    ["storageLayerId"] = "123",
+                    ["permanentFilter"] = """{"expression":"status = 'open'","language":"arcgis-sql"}"""
+                }
+            },
+            Context = new OperationPolicyContext { PrincipalId = "requester", TenantId = "tenant-a" },
+            Decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval },
+        });
 
         // ProposalEndpoints.ToDetail exposes these fields, not ExecutionPayload.
         var reviewerText = string.Join("\n", new[] { proposal.Plan!.Summary }
@@ -90,8 +95,20 @@ public sealed class AdminApprovalReviewTests
         var request = new OperationRequest { OperationId = definition.OperationId };
         var context = new OperationPolicyContext { TenantId = "tenant-a", PrincipalId = "requester" };
         var decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval };
-        var committing = mapper.Map(descriptor, request, context, decision).Plan!;
-        var preview = mapper.Map(descriptor, request with { DryRun = true }, context, decision).Plan!;
+        var committing = mapper.Map(new OperationApprovalRequestContext
+        {
+            Descriptor = descriptor,
+            Request = request,
+            Context = context,
+            Decision = decision,
+        }).Plan!;
+        var preview = mapper.Map(new OperationApprovalRequestContext
+        {
+            Descriptor = descriptor,
+            Request = request with { DryRun = true },
+            Context = context,
+            Decision = decision,
+        }).Plan!;
         Review(preview).Should().Contain("dry-run").And.NotBe(Review(committing));
     }
 
@@ -122,14 +139,19 @@ public sealed class AdminApprovalReviewTests
                 AdminConnectImportOperationCatalog.Definitions.Single(item => item.OperationId == operationId));
             descriptor = AdminConnectImportOperationCatalog.Descriptors.Single(item => item.OperationId == operationId);
         }
-        return mapper.Map(descriptor, new OperationRequest
+        return mapper.Map(new OperationApprovalRequestContext
         {
-            OperationId = operationId,
-            ConnectionId = "connection-a",
-            ServiceName = "service-a",
-            Parameters = parameters
-        }, new OperationPolicyContext { TenantId = "tenant-a", PrincipalId = "requester" },
-            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval }).Plan!;
+            Descriptor = descriptor,
+            Request = new OperationRequest
+            {
+                OperationId = operationId,
+                ConnectionId = "connection-a",
+                ServiceName = "service-a",
+                Parameters = parameters
+            },
+            Context = new OperationPolicyContext { TenantId = "tenant-a", PrincipalId = "requester" },
+            Decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval },
+        }).Plan!;
     }
 
     private static string Review(OperationProposalPlan plan) =>

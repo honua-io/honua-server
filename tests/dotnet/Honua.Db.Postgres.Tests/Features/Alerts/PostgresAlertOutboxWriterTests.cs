@@ -55,6 +55,32 @@ public sealed class PostgresAlertOutboxWriterTests(PostgresFixture fixture)
         (await CountDispatchForEventAsync(first!.Value)).Should().Be(1, "the duplicate write enqueues no new dispatch row");
     }
 
+    [IntegrationTest]
+    public async Task AppendAndEnqueueAsync_OpsNotice_GetsRecoveryRetryBudget()
+    {
+        await EnsureAlertSchemaAsync();
+        await ClearAlertTablesAsync();
+        await InsertRuleAsync();
+        var writer = new PostgresAlertOutboxWriter(new TestConnectionProvider(fixture.DataSource));
+        var channels = ImmutableArray.Create(AlertChannelType.Email);
+
+        var ops = await writer.AppendAndEnqueueAsync(Envelope("ops:ops-reminders:retry") with { Source = AlertEventSources.Ops }, channels);
+        var rule = await writer.AppendAndEnqueueAsync(Envelope("rule-retry"), channels);
+
+        (await MaxAttemptsForEventAsync(ops!.Value)).Should().Be(AlertOutboxCommands.OpsDispatchAttempts,
+            "a reminder due during a short channel outage must still be delivered after recovery");
+        (await MaxAttemptsForEventAsync(rule!.Value)).Should().Be(AlertOutboxCommands.DefaultDispatchAttempts);
+    }
+
+    private async Task<int> MaxAttemptsForEventAsync(long eventId)
+    {
+        await using var connection = await fixture.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT max_attempts FROM honua.alert_dispatch WHERE event_id = @event_id;";
+        command.Parameters.AddWithValue("event_id", eventId);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     private static AlertEventEnvelope Envelope(string dedupeKey)
         => new()
         {

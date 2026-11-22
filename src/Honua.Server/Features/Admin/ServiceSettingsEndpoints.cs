@@ -4,6 +4,7 @@
 using System.Data.Common;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -171,7 +172,7 @@ internal static partial class ServiceSettingsEndpoints
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            ServiceSettingsLog.GetServiceSettingsFailed(logger, serviceName, ex);
+            ServiceSettingsLog.GetServiceSettingsFailed(logger, LogValueRedactor.SanitizeForLog(serviceName), ex);
             return TypedResults.Problem(
                 title: "Service settings retrieval failed",
                 detail: "An internal error occurred while retrieving service settings.",
@@ -233,7 +234,7 @@ internal static partial class ServiceSettingsEndpoints
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            ServiceSettingsLog.UpdateProtocolsFailed(logger, serviceName, ex);
+            ServiceSettingsLog.UpdateProtocolsFailed(logger, LogValueRedactor.SanitizeForLog(serviceName), ex);
             return TypedResults.Problem(
                 title: "Protocol update failed",
                 detail: "An internal error occurred while updating service protocols.",
@@ -256,7 +257,7 @@ internal static partial class ServiceSettingsEndpoints
         _ = request;
         ServiceSettingsLog.UpdateMapServerSettingsFailed(
             logger,
-            serviceName,
+            LogValueRedactor.SanitizeForLog(serviceName),
             new NotSupportedException(
                 "MapServer settings have no Metadata v2 representation yet (#1035 cutover gap)."));
         return Task.FromResult<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>(
@@ -317,7 +318,7 @@ internal static partial class ServiceSettingsEndpoints
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            ServiceSettingsLog.UpdateAccessPolicyFailed(logger, serviceName, ex);
+            ServiceSettingsLog.UpdateAccessPolicyFailed(logger, LogValueRedactor.SanitizeForLog(serviceName), ex);
             return TypedResults.Problem(
                 title: "Access policy update failed",
                 detail: "An internal error occurred while updating access policy.",
@@ -342,7 +343,7 @@ internal static partial class ServiceSettingsEndpoints
         _ = request;
         ServiceSettingsLog.UpdateTimeInfoFailed(
             logger,
-            serviceName,
+            LogValueRedactor.SanitizeForLog(serviceName),
             new NotSupportedException(
                 "Service-level TimeInfo has no Metadata v2 representation. Use the per-layer endpoint."));
         return Task.FromResult<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>(
@@ -378,7 +379,7 @@ internal static partial class ServiceSettingsEndpoints
             {
                 ServiceSettingsLog.UpdateLayerMetadataFailed(
                     logger,
-                    serviceName,
+                    LogValueRedactor.SanitizeForLog(serviceName),
                     serviceLayerIndex,
                     new NotSupportedException("Raster mosaic settings have no Metadata v2 representation yet."));
                 return TypedResults.Problem(
@@ -508,7 +509,7 @@ internal static partial class ServiceSettingsEndpoints
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            ServiceSettingsLog.UpdateLayerMetadataFailed(logger, serviceName, serviceLayerIndex, ex);
+            ServiceSettingsLog.UpdateLayerMetadataFailed(logger, LogValueRedactor.SanitizeForLog(serviceName), serviceLayerIndex, ex);
             return TypedResults.Problem(
                 title: "Layer metadata update failed",
                 detail: "An internal error occurred while updating layer metadata.",
@@ -869,7 +870,7 @@ internal static partial class ServiceSettingsEndpoints
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            ServiceSettingsLog.InvalidateServiceCatalogCacheFailed(logger, serviceName, ex);
+            ServiceSettingsLog.InvalidateServiceCatalogCacheFailed(logger, LogValueRedactor.SanitizeForLog(serviceName), ex);
         }
     }
 

@@ -9,7 +9,7 @@ groups:
         annotations:
           summary: "Honua target is down"
           description: "Prometheus has not scraped {{ $labels.instance }} for 2 minutes."
-          runbook: "docs/devops/runbooks/server-down.md"
+          runbook_url: "https://honua.io/docs/guides/deploy/troubleshooting/#emergency-procedures"
 
       - alert: HonuaHigh5xxRate
         expr: |
@@ -23,7 +23,7 @@ groups:
         annotations:
           summary: "Honua 5xx rate is high"
           description: "5xx ratio is above 5% for 5 minutes."
-          runbook: "docs/devops/runbooks/high-error-rate.md"
+          runbook_url: "https://honua.io/docs/guides/deploy/troubleshooting/#quick-triage"
 
       - alert: HonuaHighLatencyP95
         expr: |
@@ -36,7 +36,7 @@ groups:
         annotations:
           summary: "Honua p95 latency is high"
           description: "p95 latency is above 2000ms for 5 minutes."
-          runbook: "docs/devops/runbooks/high-response-time.md"
+          runbook_url: "https://honua.io/docs/guides/deploy/troubleshooting/#memory-and-performance"
 
       - alert: HonuaHighActiveRequests
         expr: sum(honua_http_active_requests) > 200
@@ -46,7 +46,7 @@ groups:
         annotations:
           summary: "Honua active requests are elevated"
           description: "Active requests exceeded 200 for 10 minutes."
-          runbook: "docs/devops/runbooks/high-cpu-usage.md"
+          runbook_url: "https://honua.io/docs/guides/deploy/troubleshooting/#memory-and-performance"
 
       - alert: HonuaDatabaseLatencyP95
         expr: |
@@ -59,4 +59,4 @@ groups:
         annotations:
           summary: "Honua database latency is high"
           description: "p95 database query latency is above 250ms for 10 minutes."
-          runbook: "docs/devops/runbooks/database-issues.md"
+          runbook_url: "https://honua.io/docs/guides/deploy/troubleshooting/#database-connections"

@@ -54,7 +54,7 @@ internal sealed partial class GdalPolygonizeJobExecutor(
         if (GdalJobInputReader.TryGetInput(parameters, "band", out var bandRaw) && !string.IsNullOrWhiteSpace(bandRaw)
             && (!int.TryParse(bandRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out band) || band < 1))
         {
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 $"Invalid polygonize inputs: 'band' must be a positive integer; got '{bandRaw}'.");
         }
 
@@ -68,7 +68,7 @@ internal sealed partial class GdalPolygonizeJobExecutor(
             }
             else if (!string.Equals(conn, "4", StringComparison.Ordinal))
             {
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid polygonize inputs: 'connectedness' must be 4 or 8; got '{connRaw}'.");
             }
         }
@@ -78,7 +78,7 @@ internal sealed partial class GdalPolygonizeJobExecutor(
         {
             if (!GdalFieldName.IsValid(fieldRaw))
             {
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid polygonize inputs: 'fieldName' must match ^[A-Za-z_][A-Za-z0-9_]*$; got '{fieldRaw}'.");
             }
             fieldName = fieldRaw.Trim();
@@ -87,7 +87,7 @@ internal sealed partial class GdalPolygonizeJobExecutor(
         if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
-            return JobExecutionResult.Failed($"Invalid polygonize inputs: {sourceError}");
+            return JobExecutionResult.InvalidInput($"Invalid polygonize inputs: {sourceError}");
         }
 
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
@@ -103,7 +103,7 @@ internal sealed partial class GdalPolygonizeJobExecutor(
             // decompression-bomb allocation.
             if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
-                return JobExecutionResult.Failed($"Invalid raster input: {dimensionError}");
+                return JobExecutionResult.InvalidInput($"Invalid raster input: {dimensionError}");
             }
 
             if (sourceInput.InlineBytes is { } inlineBytes)

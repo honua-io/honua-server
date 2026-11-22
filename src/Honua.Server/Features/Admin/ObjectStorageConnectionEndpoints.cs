@@ -8,6 +8,7 @@ using Honua.Core.Features.ObjectStorage;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
@@ -22,7 +23,7 @@ internal static class ObjectStorageConnectionEndpoints
     internal const string ConnectorUnavailableMessage = "Object storage is not available on this host.";
 
     internal const string TooManySetupsMessage =
-        "Too many object storage setups are open. Finish or abandon one; unused setups expire after a day.";
+        "Too many object storage setups are open on this server. Unused setups expire a day after they are created; try again later.";
 
     private const string QuickCreateBase = "https://console.aws.amazon.com/cloudformation/home#/stacks/quickcreate";
 
@@ -40,10 +41,11 @@ internal static class ObjectStorageConnectionEndpoints
             .WithDisplayName("Create Object Storage Connection Setup")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
-        group.MapGet("/{id:guid}/objects", HandleBrowseAsync)
-            .WithName("ListConnectionObjects")
-            .WithDisplayName("Browse Connection Objects")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+        var browse = AdminHttpOperationRouteBinding.ForConnectImport(
+            "admin.connections.objects.list", "/connections", "/{id:guid}/objects");
+        group.MapMethods(browse.RoutePattern, browse.Methods, HandleBrowseAsync)
+            .WithAdminOperation(browse.Definition)
+            .WithDisplayName("Browse Connection Objects");
     }
 
     // Mints a single-use external id for one bucket and prefix, bound to the caller. The id is returned once and never logged.
