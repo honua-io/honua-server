@@ -9,15 +9,21 @@ namespace Honua.Core.Features.Tiles;
 
 public sealed class PooledTileData : IDisposable
 {
+    private enum BufferOwnership
+    {
+        Owned,
+        Pooled
+    }
+
     private byte[]? _buffer;
     private readonly int _length;
-    private readonly bool _pooled;
+    private readonly BufferOwnership _ownership;
 
-    private PooledTileData(byte[] buffer, int length, bool pooled)
+    private PooledTileData(byte[] buffer, int length, BufferOwnership ownership)
     {
         _buffer = buffer;
         _length = length;
-        _pooled = pooled;
+        _ownership = ownership;
     }
 
     public int Length => _length;
@@ -45,22 +51,22 @@ public sealed class PooledTileData : IDisposable
         ArgumentOutOfRangeException.ThrowIfNegative(exactLength);
         if (exactLength == 0)
         {
-            return new PooledTileData([], 0, pooled: false);
+            return new PooledTileData([], 0, BufferOwnership.Owned);
         }
 
-        return new PooledTileData(ArrayPool<byte>.Shared.Rent(exactLength), exactLength, pooled: true);
+        return new PooledTileData(ArrayPool<byte>.Shared.Rent(exactLength), exactLength, BufferOwnership.Pooled);
     }
 
     public static PooledTileData FromOwnedArray(byte[] data)
     {
         ArgumentNullException.ThrowIfNull(data);
-        return new PooledTileData(data, data.Length, pooled: false);
+        return new PooledTileData(data, data.Length, BufferOwnership.Owned);
     }
 
     public void Dispose()
     {
         var buffer = Interlocked.Exchange(ref _buffer, null);
-        if (buffer is not null && _pooled)
+        if (buffer is not null && _ownership == BufferOwnership.Pooled)
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }

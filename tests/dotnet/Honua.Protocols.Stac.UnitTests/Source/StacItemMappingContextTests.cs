@@ -14,32 +14,13 @@ public sealed class StacItemMappingContextTests
     [UnitTest]
     public void MapFeatureToItem_WithSharedContext_ReusesStaticLinksAndMatchesDirectMapping()
     {
-        var resource = new MetadataV2Object
-        {
-            Metadata = new MetadataV2ObjectMetadata { Id = "res-1", Name = "parks", Title = "City Parks" }
-        };
+        var resource = new MetadataV2Object { Metadata = new MetadataV2ObjectMetadata { Id = "res-1", Name = "parks", Title = "City Parks" } };
         var publication = new MetadataV2Layer();
-        var f1 = new Feature
-        {
-            Id = 1,
-            ObjectId = 1,
-            Geometry = null,
-            Attributes = ImmutableDictionary<string, object?>.Empty.Add("name", "Alpha").Add("area", 10)
-        };
-        var f2 = new Feature
-        {
-            Id = 2,
-            ObjectId = 2,
-            Geometry = null,
-            Attributes = ImmutableDictionary<string, object?>.Empty.Add("name", "Beta").Add("area", 20)
-        };
-
+        var f1 = NewFeature(1, "Alpha", 10);
+        var f2 = NewFeature(2, "Beta", 20);
         var context = new StacMappingService.StacItemMappingContext(new StacMappingService.StacItemMappingOptions
         {
-            Resource = resource,
-            Publication = publication,
-            LayerIndex = 0,
-            BaseUrl = "https://example.test"
+            Resource = resource, Publication = publication, LayerIndex = 0, BaseUrl = "https://example.test"
         });
 
         var item1 = StacMappingService.MapFeatureToItem(f1, context);
@@ -54,4 +35,12 @@ public sealed class StacItemMappingContextTests
         Assert.Same(item1.Links.Value[2], item2.Links.Value[2]);
         Assert.Same(item1.Links.Value[3], item2.Links.Value[3]);
     }
+
+    private static Feature NewFeature(int id, string name, int area) => new()
+    {
+        Id = id,
+        ObjectId = id,
+        Geometry = null,
+        Attributes = ImmutableDictionary<string, object?>.Empty.Add("name", name).Add("area", area)
+    };
 }

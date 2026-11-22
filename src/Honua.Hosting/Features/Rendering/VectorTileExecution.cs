@@ -64,13 +64,10 @@ internal static partial class VectorTileExecution
 
         if (tileProvider is IPooledTileProvider pooledProvider)
         {
-            var request = new MvtTileRequest
-            {
-                LayerId = storageLayerId, X = tileCol, Y = tileRow, Z = zoomLevel,
-                Query = query.Value, TileOptions = tileOptions, TileLimits = tileLimits, GridGeometry = gridGeometry
-            };
-            var responseContext = new TileResponseContext(context, activity, serviceId, layerId, tileMatrixSetId, cancellationToken);
-            return await ExecutePooledAsync(pooledProvider, request, responseContext).ConfigureAwait(false);
+            return await ExecutePooledAsync(
+                pooledProvider,
+                new MvtTileRequest { LayerId = storageLayerId, X = tileCol, Y = tileRow, Z = zoomLevel, Query = query.Value, TileOptions = tileOptions, TileLimits = tileLimits, GridGeometry = gridGeometry },
+                new TileResponseContext { HttpContext = context, Activity = activity, ServiceId = serviceId, LayerId = layerId, TileMatrixSetId = tileMatrixSetId, CancellationToken = cancellationToken }).ConfigureAwait(false);
         }
 
         byte[]? tileData;
@@ -114,13 +111,15 @@ internal static partial class VectorTileExecution
         return Results.Bytes(tileData, MvtContentType);
     }
 
-    private readonly record struct TileResponseContext(
-        HttpContext HttpContext,
-        Activity? Activity,
-        string? ServiceId,
-        string? LayerId,
-        string? TileMatrixSetId,
-        CancellationToken CancellationToken);
+    private readonly record struct TileResponseContext
+    {
+        internal required HttpContext HttpContext { get; init; }
+        internal Activity? Activity { get; init; }
+        internal string? ServiceId { get; init; }
+        internal string? LayerId { get; init; }
+        internal string? TileMatrixSetId { get; init; }
+        internal CancellationToken CancellationToken { get; init; }
+    }
 
     private static async Task<IResult> ExecutePooledAsync(
         IPooledTileProvider pooledProvider, MvtTileRequest request, TileResponseContext response)
@@ -137,6 +136,11 @@ internal static partial class VectorTileExecution
                 ex.EncodedBytes, request.TileLimits.MaxTileSize);
         }
 
+        return FinalizePooledTile(tileData, request, response);
+    }
+
+    private static IResult FinalizePooledTile(PooledTileData? tileData, MvtTileRequest request, TileResponseContext response)
+    {
         try
         {
             response.CancellationToken.ThrowIfCancellationRequested();

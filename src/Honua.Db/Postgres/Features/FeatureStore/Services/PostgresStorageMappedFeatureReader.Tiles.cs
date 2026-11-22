@@ -66,15 +66,17 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
             cancellationToken).ConfigureAwait(false);
     }
 
-    private readonly record struct TileBuildSpec(
-        MvtTileRequest Request,
-        FeatureQuery EffectiveQuery,
-        TileBounds Bounds,
-        int TargetSrid,
-        int TileExtent,
-        double TileWidth,
-        double BufferMapUnits,
-        bool Geographic);
+    private readonly record struct TileBuildSpec
+    {
+        internal required MvtTileRequest Request { get; init; }
+        internal required FeatureQuery EffectiveQuery { get; init; }
+        internal required TileBounds Bounds { get; init; }
+        internal required int TargetSrid { get; init; }
+        internal required int TileExtent { get; init; }
+        internal required double TileWidth { get; init; }
+        internal required double BufferMapUnits { get; init; }
+        internal required bool Geographic { get; init; }
+    }
 
     private TileBuildSpec ResolveTileBuildSpec(MvtTileRequest request, FeatureQuery effectiveQuery)
     {
@@ -95,16 +97,23 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
             ? (request.TileOptions.TileBuffer / (double)tileExtent) * tileWidth
             : 0d;
         var geographic = request.GridGeometry?.IsGeographic ?? targetSrid == 4326;
-        return new TileBuildSpec(request, effectiveQuery, bounds, targetSrid, tileExtent, tileWidth, bufferMapUnits, geographic);
+        return new TileBuildSpec
+        {
+            Request = request, EffectiveQuery = effectiveQuery, Bounds = bounds,
+            TargetSrid = targetSrid, TileExtent = tileExtent, TileWidth = tileWidth,
+            BufferMapUnits = bufferMapUnits, Geographic = geographic
+        };
     }
 
-    private readonly record struct TileGeometryExpressions(
-        MvtTileBudgetStep Step,
-        string TileEnvelope,
-        string EnvelopeForFilter,
-        string Geometry,
-        string GeometryForTile,
-        string OriginalGeometryForTile);
+    private readonly record struct TileGeometryExpressions
+    {
+        internal required MvtTileBudgetStep Step { get; init; }
+        internal required string TileEnvelope { get; init; }
+        internal required string EnvelopeForFilter { get; init; }
+        internal required string Geometry { get; init; }
+        internal required string GeometryForTile { get; init; }
+        internal required string OriginalGeometryForTile { get; init; }
+    }
 
     private SqlBuilder BuildMvtTileSql(TileBuildSpec spec, MvtTileBudgetStep step)
     {
@@ -151,7 +160,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
             : selection is null
                 ? $"ST_Transform({bufferedEnvelope}, {_storageSrid})"
                 : DatumTransformSql.BuildTransformExpression(bufferedEnvelope, _storageSrid, DatumOutputSelection.Inverse(selection), spec.TargetSrid);
-        return new TileGeometryExpressions(step, tileEnvelope, envelopeForFilter, geometry, geometryForTile, originalGeometryForTile);
+        return new TileGeometryExpressions
+        {
+            Step = step, TileEnvelope = tileEnvelope, EnvelopeForFilter = envelopeForFilter,
+            Geometry = geometry, GeometryForTile = geometryForTile, OriginalGeometryForTile = originalGeometryForTile
+        };
     }
 
     private void AppendTileSelectSql(SqlBuilder sql, TileBuildSpec spec, TileGeometryExpressions geom)
