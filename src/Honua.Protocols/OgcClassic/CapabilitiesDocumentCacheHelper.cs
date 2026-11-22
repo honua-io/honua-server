@@ -63,8 +63,14 @@ internal static class CapabilitiesDocumentCacheHelper
             return hit.ToResult();
         }
 
-        var degraded = CapabilitiesBuildDegradation.Begin();
-        var result = await buildAsync().ConfigureAwait(false);
+        PooledUtf8ContentResult result;
+        bool isDegraded;
+        using (var degradation = CapabilitiesBuildDegradation.Begin())
+        {
+            result = await buildAsync().ConfigureAwait(false);
+            isDegraded = degradation.IsDegraded;
+        }
+
         CachedMetadataDocument cached;
         try
         {
@@ -78,7 +84,7 @@ internal static class CapabilitiesDocumentCacheHelper
             await result.ReleaseAsync().ConfigureAwait(false);
         }
 
-        return degraded.Value ? cached.ToResult() : docCache.Set(stamp, cacheKey, cached).ToResult();
+        return isDegraded ? cached.ToResult() : docCache.Set(stamp, cacheKey, cached).ToResult();
     }
 
     internal static string BuildWmtsKey(WmtsCapabilitiesCacheRequest request, ReadOnlySpan<CachedLayerIdentity> layers)

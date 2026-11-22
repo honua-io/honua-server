@@ -125,14 +125,8 @@ internal sealed class MetadataDocumentByteCache
 
     internal static string HashKey(StringBuilder keyBuilder)
     {
-        using var buffer = new PooledByteBuffer(Encoding.UTF8.GetMaxByteCount(keyBuilder.Length));
-        foreach (var chunk in keyBuilder.GetChunks())
-        {
-            var span = chunk.Span;
-            var maxBytes = Encoding.UTF8.GetMaxByteCount(span.Length);
-            var written = Encoding.UTF8.GetBytes(span, buffer.GetSpan(maxBytes));
-            buffer.Advance(written);
-        }
+        using var buffer = new PooledByteBuffer(Math.Max(keyBuilder.Length, 1));
+        PooledTextBuilder.EncodeUtf8(keyBuilder, buffer);
 
         Span<byte> hash = stackalloc byte[SHA256.HashSizeInBytes];
         SHA256.HashData(buffer.WrittenSpan, hash);

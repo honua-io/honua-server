@@ -51,6 +51,26 @@ public sealed class CapabilitiesDocumentCacheHelperTests
         Assert.Equal(1, builds);
     }
 
+    [UnitTest]
+    public async Task GetOrBuildAsync_QueryTokenPresent_BypassesCache()
+    {
+        using var services = new ServiceCollection().AddSingleton(new MetadataDocumentByteCache()).BuildServiceProvider();
+        var builds = 0;
+
+        Task<PooledUtf8ContentResult> BuildCompleteAsync() => BuildAsync(() =>
+        {
+            builds++;
+            return Task.CompletedTask;
+        });
+
+        var context = NewContext(services);
+        context.Request.QueryString = new QueryString("?token=secret");
+        await CapabilitiesDocumentCacheHelper.GetOrBuildAsync(context, "wms-key", BuildCompleteAsync);
+        await CapabilitiesDocumentCacheHelper.GetOrBuildAsync(context, "wms-key", BuildCompleteAsync);
+
+        Assert.Equal(2, builds);
+    }
+
     private static async Task<PooledUtf8ContentResult> BuildAsync(Func<Task> buildLayers)
     {
         await buildLayers();

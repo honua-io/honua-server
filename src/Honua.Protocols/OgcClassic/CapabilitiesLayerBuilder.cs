@@ -37,11 +37,12 @@ internal static class CapabilitiesBuildDegradation
 {
     private static readonly AsyncLocal<StrongBox<bool>?> Current = new();
 
-    internal static StrongBox<bool> Begin()
+    internal static Scope Begin()
     {
+        var previous = Current.Value;
         var degraded = new StrongBox<bool>();
         Current.Value = degraded;
-        return degraded;
+        return new Scope(previous, degraded);
     }
 
     internal static void Mark()
@@ -50,5 +51,21 @@ internal static class CapabilitiesBuildDegradation
         {
             degraded.Value = true;
         }
+    }
+
+    internal readonly struct Scope : IDisposable
+    {
+        private readonly StrongBox<bool>? _previous;
+        private readonly StrongBox<bool> _degraded;
+
+        internal Scope(StrongBox<bool>? previous, StrongBox<bool> degraded)
+        {
+            _previous = previous;
+            _degraded = degraded;
+        }
+
+        internal bool IsDegraded => _degraded.Value;
+
+        public void Dispose() => Current.Value = _previous;
     }
 }

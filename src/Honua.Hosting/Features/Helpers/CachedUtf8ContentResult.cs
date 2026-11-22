@@ -28,6 +28,11 @@ internal sealed class CachedUtf8ContentResult : IResult
         var response = httpContext.Response;
         response.ContentType = ContentType;
         response.ContentLength = _content.Length;
+        if (HttpMethods.IsHead(httpContext.Request.Method))
+        {
+            return Task.CompletedTask;
+        }
+
         return response.BodyWriter.WriteAsync(_content).AsTask();
     }
 }
