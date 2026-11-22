@@ -3194,3 +3194,40 @@ Streaming Transports, SensorThings 5 and MCP and Sessions 1. Shard filters are
 unchanged, so every case runs in the same shards on selected PR runs and
 twice-daily full trunk runs. No workflow, shard definition, required check name or
 aggregate `needs` changed.
+
+### Isolated test host boot and teardown overhead
+
+Three changes cut per-host boot and teardown cost across all isolated `WebAppFixture`
+integration suites without reducing any assertion:
+- `ResourceLeakDetector` (#9097): when `_trackedResources` is empty, `ScanForLeaksAsync`
+  returns the same empty `ResourceLeakScanResult` immediately instead of running two
+  forced blocking gen-2 collections and `GC.WaitForPendingFinalizers()` on every
+  Test/Development host stop. Scans with tracked resources are unchanged.
+- `PostgresFixture` (#9110): `GlobalSharedState` retains its shared data source and
+  migrated pool across a 30-second idle grace (`ReleaseIdleNowAsync` plus `ProcessExit`
+  hook) instead of tearing down and re-running extensions/migrations between sequential
+  isolated cases. Private `PostgresSharedState` instances keep `TimeSpan.Zero`.
+- Request Delegate Generator (#9123): enabled `EnableRequestDelegateGenerator` on
+  `Honua.Server` and the 11 endpoint Web SDK libraries so Minimal API delegates are
+  source-generated at compile time rather than JIT-compiled on each isolated host boot.
+- `McpSessionManager.StopAsync`: made idempotent under concurrent host stops exposed by
+  faster teardown.
+
+Measured on the build host (Release, 3 interleaved base/head rounds of the
+`Server Features Capabilities` shard filter, 100/100 passing on all 6 runs):
+- Shard wall time: base 524.8 / 477.5 / 370.2 s (median 477.5 s, 7.96 min) to
+  head 74.8 / 67.6 / 56.1 s (median 67.6 s, 1.13 min); median saving 6.83 min
+  (5.24 min on the lowest-load pair).
+- Per-class median TRX case time (total 1039.0 to 178.3 s):
+  `CapabilityManifestEndpointTests` (40) 411.8 to 45.2 s;
+  `ExperimentalCapabilityGatingIntegrationTests` (34) 263.8 to 35.2 s;
+  `DeploymentCapabilityProfileIntegrationTests` (11) 151.8 to 36.6 s;
+  `CapabilityManifestEndpointTests+RollbackTargets` (5) 111.9 to 31.1 s;
+  `DeploymentCapabilityProfileManifestTests` (4) 80.8 to 28.4 s;
+  `CapabilityManifestEndpointTests+ProductionJobSubstrate` (1) 9.7 to 1.0 s;
+  `CapabilityGateEndpointFilterTests` (3) 0.2 to 0.3 s;
+  `CapabilityGateOpenApiDocumentTransformerTests` (2) 0.4 to 0.3 s.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR runs
+and twice-daily full trunk runs. No workflow, shard definition, required check name or
+aggregate `needs` changed.
