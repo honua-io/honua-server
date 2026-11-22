@@ -581,7 +581,11 @@ internal partial class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorB
             return TranslateLikeEscape(function, context, negate: true);
         }
 
-        var args = function.Arguments.Select(arg => TranslateExpression(arg, context)).ToArray();
+        var args = function.Arguments
+            .Select(arg => arg is GeometryLiteral
+                ? TranslateGeometryExpression(arg, context)
+                : TranslateExpression(arg, context))
+            .ToArray();
         var argString = string.Join(", ", args);
 
         var admitted = TranslateAdmittedFunction(function.FunctionName.ToUpperInvariant(), args, argString);
@@ -809,7 +813,9 @@ internal partial class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorB
             throw new ArgumentException("LIKE ... ESCAPE requires a value, a pattern, and an escape character.");
         }
 
-        var value = TranslateExpression(function.Arguments[0], context);
+        var value = function.Arguments[0] is GeometryLiteral
+            ? TranslateGeometryExpression(function.Arguments[0], context)
+            : TranslateExpression(function.Arguments[0], context);
         var pattern = TranslateExpression(function.Arguments[1], context);
         var escape = TranslateExpression(function.Arguments[2], context);
         var op = negate ? "NOT LIKE" : "LIKE";
@@ -843,7 +849,9 @@ internal partial class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorB
             throw new ArgumentException($"{function.FunctionName} target type must be a constant type name.");
         }
 
-        var value = TranslateExpression(function.Arguments[0], context);
+        var value = function.Arguments[0] is GeometryLiteral
+            ? TranslateGeometryExpression(function.Arguments[0], context)
+            : TranslateExpression(function.Arguments[0], context);
         var targetType = targetTypeRaw.Trim('\'', '"').ToUpperInvariant();
 
         // Split an optional length/precision argument list off the base type token,

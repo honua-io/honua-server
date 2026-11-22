@@ -961,6 +961,10 @@ repository-wide artifact collection. Full creation-ordered histories preserve di
 of recent reruns of old source runs. The sweep selects each shard's highest attempt and
 inspects artifacts for at most 25 source runs, including runs with no evidence. Completed
 run versions let equal-timestamp backlogs advance without repeatedly spending that budget.
+When more than 25 unprocessed run versions remain, five slots serve the oldest pending
+runs and twenty serve the newest. This preserves historical reconciliation while new
+evidence avoids waiting behind months of empty runs; processed versions do not spend
+either allocation again. Deferred evidence remains behind the watermark.
 Source completion and attempt identity are rechecked after artifact discovery; a racing
 rerun is deferred without consuming its artifacts. Its update watermark retains a five-minute overlap and
 never passes the oldest deferred run, including runs with equal timestamps. Remaining

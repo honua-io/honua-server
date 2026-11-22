@@ -145,6 +145,35 @@ public sealed class OgcTilesRasterTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             "/ogc/tiles/tiles/WebMercatorQuad/0/0/0?collections=0&f=geojson");
 
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /ogc/tiles/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
+    public async Task GetTile_WithPngFormatAndIncompatibleAccept_ReturnsNotAcceptable()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/ogc/tiles/tiles/WebMercatorQuad/0/0/0?collections=0&f=png");
+        request.Headers.Accept.Clear();
+        request.Headers.Accept.ParseAdd("application/json");
+
+        var response = await _fixture.Client.SendAsync(request);
+
         response.StatusCode.Should().Be(HttpStatusCode.NotAcceptable);
+    }
+
+    [IntegrationTheory]
+    [InlineData("/ogc/tiles/collections/0/tiles/WebMercatorQuad/99/0/0")]
+    [InlineData("/ogc/tiles/collections/0/tiles/WebMercatorQuad/0/5/0")]
+    [InlineData("/ogc/tiles/collections/0/tiles/WebMercatorQuad/0/0/5")]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
+    public async Task GetCollectionTile_WithOutOfBoundsCoordinates_ReturnsNotFound(string path)
+    {
+        var response = await _fixture.Client.GetAsync(path);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 }

@@ -49,22 +49,49 @@ internal static class OgcCoverageSpatialSubset
                 geographicNames = isGeographic;
 
                 var limits = raw[(open + 1)..^1].Split(':', StringSplitOptions.TrimEntries);
-                if (limits.Length != 2 ||
-                    !double.TryParse(limits[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var low) ||
-                    !double.TryParse(limits[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var high) ||
-                    !double.IsFinite(low) || !double.IsFinite(high) || low >= high ||
+                double low;
+                double high;
+                if (limits.Length == 1)
+                {
+                    if (!double.TryParse(limits[0], NumberStyles.Float, CultureInfo.InvariantCulture, out low))
+                    {
+                        return false;
+                    }
+
+                    high = low;
+                }
+                else if (limits.Length == 2)
+                {
+                    if (!double.TryParse(limits[0], NumberStyles.Float, CultureInfo.InvariantCulture, out low) ||
+                        !double.TryParse(limits[1], NumberStyles.Float, CultureInfo.InvariantCulture, out high))
+                    {
+                        return false;
+                    }
+                }
+                else
+                {
+                    return false;
+                }
+
+                if (!double.IsFinite(low) || !double.IsFinite(high) ||
                     (isX ? x.HasValue : y.HasValue))
                 {
                     return false;
                 }
 
-                if (isGeographic || storageSrid == 4326)
+                var isGeographicAxis = isGeographic || storageSrid == 4326;
+                if (isGeographicAxis)
                 {
                     var limit = isX ? 180 : 90;
-                    if (low < -limit || high > limit)
+                    if (low < -limit || low > limit || high < -limit || high > limit)
                     {
                         return false;
                     }
+                }
+
+                if (low > high && !(isX && isGeographicAxis))
+                {
+                    return false;
                 }
 
                 if (isX)

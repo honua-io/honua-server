@@ -240,6 +240,9 @@ anonymous POST /rest/admin/{folderName}/{serviceName}.{serviceType}
 anonymous POST /rest/admin/{serviceName}.{serviceType}
 anonymous POST /rest/services/GeocodeServer
 anonymous POST /rest/services/GeocodeServer/findAddressCandidates
+anonymous POST /rest/services/GeocodeServer/geocodeAddresses
+anonymous POST /rest/services/GeocodeServer/reverseGeocode
+anonymous POST /rest/services/GeocodeServer/suggest
 anonymous POST /rest/services/Utilities/Geometry/GeometryServer
 anonymous POST /rest/services/Utilities/Geometry/GeometryServer/areasAndLengths
 anonymous POST /rest/services/Utilities/Geometry/GeometryServer/autoComplete
@@ -653,6 +656,7 @@ none GET /rest/services/{serviceId}/GPServer/{taskName}
 none GET /rest/services/{serviceId}/GPServer/{taskName}/execute
 none GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}
 none GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel
+none GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/messages
 none GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}
 none GET /rest/services/{serviceId}/GPServer/{taskName}/submitJob
 none GET /rest/services/{serviceId}/ImageServer/WCS

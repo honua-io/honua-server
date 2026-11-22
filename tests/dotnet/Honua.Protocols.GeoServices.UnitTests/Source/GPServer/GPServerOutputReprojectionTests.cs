@@ -4,6 +4,7 @@
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.GeoServices.GPServer;
 using Honua.TestKit.Attributes;
 using NetTopologySuite.Geometries;
@@ -158,6 +159,50 @@ public sealed class GPServerOutputReprojectionTests
             """{"type":"Point","coordinates":[5.0,5.0]}""");
 
         GPServerOutputReprojection.NormalizeGeoJsonWinding(collection).Should().Be(collection);
+    }
+
+    [UnitTest]
+    public void TryReprojectGeoJsonDataUri_FeatureCollection_ReprojectsAllFeaturesAndUpdatesSpatialReference()
+    {
+        var rawJson = """
+            {
+              "type": "FeatureCollection",
+              "honua:spatialReference": { "state": "known", "srid": 4326, "wkid": 4326, "latestWkid": 4326 },
+              "features": [
+                {
+                  "type": "Feature",
+                  "geometry": { "type": "Point", "coordinates": [-122.4194, 37.7749] },
+                  "properties": { "id": 1 }
+                },
+                {
+                  "type": "Feature",
+                  "geometry": { "type": "Point", "coordinates": [-77.0365, 38.8977] },
+                  "properties": { "id": 2 }
+                }
+              ]
+            }
+            """;
+        var dataUri = GeoJsonDataUriPrefix + Convert.ToBase64String(Encoding.UTF8.GetBytes(rawJson));
+
+        var outcome = GPServerOutputReprojection.TryReprojectGeoJsonValue(dataUri, 4326, 3857);
+
+        outcome.Reprojected.Should().BeTrue();
+        outcome.Value.Should().NotBeNull();
+        using var doc = DecodeDataUri(outcome.Value!);
+        var root = doc.RootElement;
+        root.GetProperty("type").GetString().Should().Be("FeatureCollection");
+
+        var sr = root.GetProperty("honua:spatialReference");
+        sr.GetProperty("srid").GetInt32().Should().Be(3857);
+        sr.GetProperty("wkid").GetInt32().Should().Be(3857);
+        sr.GetProperty("latestWkid").GetInt32().Should().Be(3857);
+
+        var features = root.GetProperty("features");
+        features.GetArrayLength().Should().Be(2);
+        var (expectedX0, expectedY0) = WebMercatorMath.LonLatToWebMercator(-122.4194, 37.7749);
+        var coords0 = features[0].GetProperty("geometry").GetProperty("coordinates");
+        coords0[0].GetDouble().Should().BeApproximately(expectedX0, 1e-3);
+        coords0[1].GetDouble().Should().BeApproximately(expectedY0, 1e-3);
     }
 
     private static string BuildFeatureDataUri(Geometry geometry) =>

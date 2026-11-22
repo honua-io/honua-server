@@ -15,6 +15,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
@@ -206,10 +207,141 @@ internal static partial class FeatureServerEndpoints
 
         var response = new QueryResponse
         {
+            Fields = BuildBinFields(resource, binDefinition),
             Features = responseFeatures
         };
 
         return Results.Json(response, FeatureServerJsonContext.Default.QueryResponse, contentType: "application/json");
+    }
+
+    internal static GeoServicesFieldInfo[] BuildBinFields(MetadataV2Object resource, BinDefinition binDefinition)
+    {
+        var fields = new List<GeoServicesFieldInfo>();
+        switch (binDefinition.Type)
+        {
+            case BinType.FixedInterval:
+            case BinType.AutoInterval:
+            case BinType.FixedBoundaries:
+                fields.Add(new GeoServicesFieldInfo
+                {
+                    Name = "lowerBoundary",
+                    Type = "esriFieldTypeDouble",
+                    Alias = "lowerBoundary",
+                    Editable = false,
+                    Nullable = true
+                });
+                fields.Add(new GeoServicesFieldInfo
+                {
+                    Name = "upperBoundary",
+                    Type = "esriFieldTypeDouble",
+                    Alias = "upperBoundary",
+                    Editable = false,
+                    Nullable = true
+                });
+                break;
+
+            case BinType.Date:
+                fields.Add(new GeoServicesFieldInfo
+                {
+                    Name = "boundary",
+                    Type = "esriFieldTypeDate",
+                    Alias = "boundary",
+                    Editable = false,
+                    Nullable = true
+                });
+                break;
+
+            case BinType.Classification:
+                var sourceField = !string.IsNullOrWhiteSpace(binDefinition.Field)
+                    ? resource.FindVisibleSchemaField(binDefinition.Field)
+                    : null;
+                if (sourceField is not null)
+                {
+                    var mapped = MapFieldInfoV2(sourceField, string.Empty);
+                    fields.Add(new GeoServicesFieldInfo
+                    {
+                        Name = mapped.Name,
+                        Type = mapped.Type,
+                        SqlType = mapped.SqlType,
+                        Alias = mapped.Alias,
+                        Length = mapped.Length,
+                        Nullable = mapped.Nullable,
+                        Editable = false,
+                        DefaultValue = mapped.DefaultValue,
+                        Domain = mapped.Domain,
+                        Visible = mapped.Visible
+                    });
+                }
+                else if (!string.IsNullOrWhiteSpace(binDefinition.Field))
+                {
+                    fields.Add(new GeoServicesFieldInfo
+                    {
+                        Name = binDefinition.Field,
+                        Type = "esriFieldTypeString",
+                        Alias = binDefinition.Field,
+                        Editable = false,
+                        Nullable = true
+                    });
+                }
+                break;
+        }
+
+        AppendBinStatisticsFields(fields, resource, binDefinition.OutStatistics ?? ImmutableArray<StatisticDefinition>.Empty);
+        return [.. fields];
+    }
+
+    internal static void AppendBinStatisticsFields(
+        List<GeoServicesFieldInfo> fields,
+        MetadataV2Object resource,
+        ImmutableArray<StatisticDefinition> outStatistics)
+    {
+        if (outStatistics.IsDefaultOrEmpty)
+        {
+            fields.Add(new GeoServicesFieldInfo
+            {
+                Name = "count",
+                Type = "esriFieldTypeInteger",
+                Alias = "count",
+                Editable = false,
+                Nullable = false
+            });
+            return;
+        }
+
+        foreach (var stat in outStatistics)
+        {
+            var fieldName = !string.IsNullOrWhiteSpace(stat.OutStatisticFieldName)
+                ? stat.OutStatisticFieldName
+                : $"{stat.StatisticType.ToString().ToLowerInvariant()}_{stat.OnStatisticField}";
+            var fieldType = stat.StatisticType switch
+            {
+                StatisticType.Count => "esriFieldTypeInteger",
+                StatisticType.Min or StatisticType.Max => ResolveStatisticFieldType(resource, stat.OnStatisticField),
+                _ => "esriFieldTypeDouble"
+            };
+            fields.Add(new GeoServicesFieldInfo
+            {
+                Name = fieldName,
+                Type = fieldType,
+                Alias = fieldName,
+                Editable = false,
+                Nullable = stat.StatisticType != StatisticType.Count
+            });
+        }
+    }
+
+    private static string ResolveStatisticFieldType(MetadataV2Object resource, string? fieldName)
+    {
+        if (!string.IsNullOrWhiteSpace(fieldName))
+        {
+            var schemaField = resource.FindVisibleSchemaField(fieldName);
+            if (schemaField is not null)
+            {
+                return GeoServicesFieldConventions.MapFieldType(schemaField.Type);
+            }
+        }
+
+        return "esriFieldTypeDouble";
     }
 
     // Publisher-hidden fields are treated as absent so bins cannot aggregate a hidden column.

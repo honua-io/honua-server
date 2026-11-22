@@ -1303,11 +1303,11 @@ public static partial class GeoParquetFeatureWriter
     {
         if (emitZ)
         {
-            _wkbWriter3D ??= new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: false);
+            _wkbWriter3D ??= new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: true, emitM: false) { Strict = true };
             return _wkbWriter3D;
         }
 
-        _wkbWriter2D ??= new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: false, emitM: false);
+        _wkbWriter2D ??= new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: false, emitM: false) { Strict = true };
         return _wkbWriter2D;
     }
 

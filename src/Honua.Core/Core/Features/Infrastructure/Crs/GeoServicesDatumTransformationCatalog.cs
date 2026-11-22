@@ -65,7 +65,10 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
         _byPair = byPair.ToFrozenDictionary();
         _byArea = byArea.ToFrozenDictionary(
             pair => pair.Key,
-            pair => pair.Value.OrderByDescending(candidate => candidate.Priority).ToArray());
+            pair => pair.Value
+                .OrderByDescending(candidate => candidate.Priority)
+                .ThenBy(candidate => ComputeEnvelopeArea(candidate.Envelope))
+                .ToArray());
         _byWkid = byWkid.ToFrozenDictionary();
         _byName = byName.ToFrozenDictionary(StringComparer.Ordinal);
     }
@@ -93,31 +96,19 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
         IReadOnlyList<AreaCandidate> candidates,
         DatumAreaEnvelope envelope)
     {
-        DatumTransformationSelection? selection = null;
-        int? priority = null;
         foreach (var candidate in candidates)
         {
-            if (priority is not null && candidate.Priority < priority)
+            if (CoversEnvelope(candidate, envelope))
             {
-                break;
+                return candidate.Selection;
             }
-
-            if (!CoversEnvelope(candidate, envelope))
-            {
-                continue;
-            }
-
-            if (selection is not null)
-            {
-                return null;
-            }
-
-            selection = candidate.Selection;
-            priority = candidate.Priority;
         }
 
-        return selection;
+        return null;
     }
+
+    private static double ComputeEnvelopeArea(DatumAreaEnvelope area)
+        => LongitudeWidth(area.West, area.East) * Math.Max(0d, area.North - area.South);
 
     private static bool CoversEnvelope(AreaCandidate candidate, DatumAreaEnvelope envelope)
         => Contains(candidate.Envelope, envelope)
@@ -148,9 +139,17 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
             return false;
         }
 
-        var areaWidth = LongitudeWidth(area.West, area.East);
-        var offset = LongitudeWidth(area.West, envelope.West);
-        return offset + LongitudeWidth(envelope.West, envelope.East) <= areaWidth;
+        if (area.West > area.East)
+        {
+            return envelope.West > envelope.East
+                ? envelope.West >= area.West && envelope.East <= area.East
+                : (envelope.West >= area.West && envelope.East >= area.West)
+                    || (envelope.West <= area.East && envelope.East <= area.East);
+        }
+
+        return envelope.West <= envelope.East
+            && envelope.West >= area.West
+            && envelope.East <= area.East;
     }
 
     private static bool IsValid(DatumAreaEnvelope envelope)

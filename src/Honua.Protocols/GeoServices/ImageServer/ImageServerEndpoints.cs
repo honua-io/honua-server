@@ -3893,7 +3893,7 @@ internal static class ImageServerEndpoints
             Time = null,
         };
 
-    private static IdentifyRequest CreateIdentifyRequest(IReadOnlyDictionary<string, StringValues> values)
+    internal static IdentifyRequest CreateIdentifyRequest(IReadOnlyDictionary<string, StringValues> values)
         => new()
         {
             Geometry = ImageServerRequestValues.GetString(values, "geometry") ?? string.Empty,
@@ -3902,7 +3902,7 @@ internal static class ImageServerEndpoints
             MosaicRule = ImageServerRequestValues.GetString(values, "mosaicRule"),
             RenderingRule = ImageServerRequestValues.GetString(values, "renderingRule"),
             MultidimensionalDefinition = ImageServerRequestValues.GetString(values, "multidimensionalDefinition"),
-            PixelSize = TryGetInt(values, "pixelSize"),
+            PixelSize = TryParsePixelSize(values, "pixelSize"),
             Time = ImageServerRequestValues.GetString(values, "time"),
             ReturnGeometry = TryGetBool(values, "returnGeometry") ?? true,
             ReturnCatalogItems = TryGetBool(values, "returnCatalogItems") ?? false,
@@ -3911,6 +3911,103 @@ internal static class ImageServerEndpoints
 
     private static int? TryGetInt(IReadOnlyDictionary<string, StringValues> values, string key)
         => int.TryParse(ImageServerRequestValues.GetString(values, key), CultureInfo.InvariantCulture, out var value) ? value : null;
+
+    internal static int? TryParsePixelSize(IReadOnlyDictionary<string, StringValues> values, string key)
+    {
+        var raw = ImageServerRequestValues.GetString(values, key);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        var trimmed = raw.Trim();
+        if (int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
+        {
+            return intValue;
+        }
+
+        if (double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue) &&
+            double.IsFinite(doubleValue))
+        {
+            return TryRoundPositivePixelSize(Math.Abs(doubleValue));
+        }
+
+        if (trimmed.Contains(','))
+        {
+            var parts = trimmed.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length >= 2 &&
+                double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var px) &&
+                double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var py) &&
+                double.IsFinite(px) &&
+                double.IsFinite(py))
+            {
+                return TryRoundPositivePixelSize((Math.Abs(px) + Math.Abs(py)) / 2.0);
+            }
+        }
+
+        if (trimmed.StartsWith('{') && trimmed.EndsWith('}'))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(trimmed);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object)
+                {
+                    var hasX = TryReadJsonDouble(doc.RootElement, "x", out var px);
+                    var hasY = TryReadJsonDouble(doc.RootElement, "y", out var py);
+                    if (hasX && hasY)
+                    {
+                        return TryRoundPositivePixelSize((Math.Abs(px) + Math.Abs(py)) / 2.0);
+                    }
+
+                    if (hasX)
+                    {
+                        return TryRoundPositivePixelSize(Math.Abs(px));
+                    }
+                }
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+        }
+
+        return null;
+
+        static int? TryRoundPositivePixelSize(double magnitude)
+        {
+            if (magnitude <= 0d || magnitude > int.MaxValue)
+            {
+                return null;
+            }
+
+            var rounded = Math.Round(magnitude, MidpointRounding.AwayFromZero);
+            return rounded is >= 1d and <= int.MaxValue ? (int)rounded : 1;
+        }
+    }
+
+    private static bool TryReadJsonDouble(JsonElement obj, string propertyName, out double value)
+    {
+        foreach (var prop in obj.EnumerateObject())
+        {
+            if (string.Equals(prop.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                if (prop.Value.ValueKind == JsonValueKind.Number && prop.Value.TryGetDouble(out value) && double.IsFinite(value))
+                {
+                    return true;
+                }
+
+                if (prop.Value.ValueKind == JsonValueKind.String &&
+                    double.TryParse(prop.Value.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out value) &&
+                    double.IsFinite(value))
+                {
+                    return true;
+                }
+            }
+        }
+
+        value = 0;
+        return false;
+    }
 
     private static bool? TryGetBool(IReadOnlyDictionary<string, StringValues> values, string key)
         => bool.TryParse(ImageServerRequestValues.GetString(values, key), out var value) ? value : null;
