@@ -51,7 +51,6 @@ internal sealed partial class Wfs20Handler
             "wfs20.get_capabilities", ActivityKind.Internal);
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Wfs20);
         activity?.SetTag(HonuaTelemetry.Tags.Operation, Wfs20Utilities.Operations.GetCapabilities);
-
         Wfs20Log.GetCapabilitiesRequested(_logger);
 
         try
@@ -59,37 +58,25 @@ internal sealed partial class Wfs20Handler
             var featureTypes = SelectAdvertisedFeatureTypes(
                 await GetPublishedFeatureTypesAsync(context, cancellationToken).ConfigureAwait(false));
             var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var docCache = MetadataDocumentByteCache.HasQueryToken(context.Request)
-                ? null
-                : context.RequestServices.GetService<MetadataDocumentByteCache>();
-            var cacheKey = docCache is null
-                ? null
-                : BuildWfsCapabilitiesCacheKey(new WfsCapabilitiesCacheScope(snapshot.Etag, baseUrl, requestedSections), featureTypes);
-            var configGeneration = docCache is null
-                ? 0
-                : await MetadataDocumentByteCache.ResolveConfigGenerationAsync(context, cancellationToken).ConfigureAwait(false);
-            if (docCache is not null && cacheKey is not null && docCache.Get(configGeneration, cacheKey) is { } cachedDocument)
+            var cacheKey = CapabilitiesDocumentCacheHelper.BuildWfsKey(
+                new WfsCapabilitiesCacheRequest
+                {
+                    SnapshotEtag = snapshot.Etag,
+                    BaseUrl = baseUrl,
+                    SectionsMask = ComputeWfsSectionsMask(requestedSections)
+                },
+                featureTypes);
+            var result = await CapabilitiesDocumentCacheHelper.GetOrBuildAsync(context, cacheKey, async () =>
             {
-                Wfs20Log.GetCapabilitiesReturned(_logger);
-                return cachedDocument.ToResult();
-            }
-
-            var capabilities = await BuildCapabilitiesModelAsync(
-                context,
-                new WfsCapabilitiesBuildInput(snapshot, requestedSections, baseUrl, featureTypes),
-                cancellationToken).ConfigureAwait(false);
-            var result = Wfs20DispatcherEndpoint.BuildCapabilitiesResult(capabilities);
-            if (docCache is not null && cacheKey is not null)
-            {
-                var cached = MetadataDocumentByteCache.CreateDocument(
-                    result.Content.Span,
-                    result.ContentType,
-                    context.RequestServices.GetService<IETagService>());
-                await result.ReleaseAsync().ConfigureAwait(false);
-                Wfs20Log.GetCapabilitiesReturned(_logger);
-                return docCache.Set(configGeneration, cacheKey, cached).ToResult();
-            }
-
+                var model = await BuildCapabilitiesModelAsync(context, new WfsCapabilitiesBuildInput
+                {
+                    Snapshot = snapshot,
+                    RequestedSections = requestedSections,
+                    BaseUrl = baseUrl,
+                    FeatureTypes = featureTypes
+                }, cancellationToken).ConfigureAwait(false);
+                return Wfs20DispatcherEndpoint.BuildCapabilitiesResult(model);
+            }).ConfigureAwait(false);
             Wfs20Log.GetCapabilitiesReturned(_logger);
             return result;
         }
@@ -122,7 +109,13 @@ internal sealed partial class Wfs20Handler
             var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var capabilities = await BuildCapabilitiesModelAsync(
                 context,
-                new WfsCapabilitiesBuildInput(snapshot, requestedSections, baseUrl, featureTypes),
+                new WfsCapabilitiesBuildInput
+                {
+                    Snapshot = snapshot,
+                    RequestedSections = requestedSections,
+                    BaseUrl = baseUrl,
+                    FeatureTypes = featureTypes
+                },
                 cancellationToken).ConfigureAwait(false);
             Wfs20Log.GetCapabilitiesReturned(_logger);
             return capabilities;
@@ -135,11 +128,24 @@ internal sealed partial class Wfs20Handler
         }
     }
 
-    private readonly record struct WfsCapabilitiesBuildInput(
-        MetadataV2GraphSnapshot Snapshot,
-        IReadOnlySet<string>? RequestedSections,
-        string BaseUrl,
-        ImmutableArray<WfsFeatureTypeDescriptor> FeatureTypes);
+    private sealed class WfsCapabilitiesBuildInput
+    {
+        internal required MetadataV2GraphSnapshot Snapshot { get; init; }
+        internal required IReadOnlySet<string>? RequestedSections { get; init; }
+        internal required string BaseUrl { get; init; }
+        internal required ImmutableArray<WfsFeatureTypeDescriptor> FeatureTypes { get; init; }
+    }
+
+    private static int ComputeWfsSectionsMask(IReadOnlySet<string>? requestedSections)
+    {
+        var mask = 0;
+        if (ShouldIncludeCapabilitiesSection(requestedSections, "ServiceIdentification")) mask |= 1 << 0;
+        if (ShouldIncludeCapabilitiesSection(requestedSections, "ServiceProvider")) mask |= 1 << 1;
+        if (ShouldIncludeCapabilitiesSection(requestedSections, "OperationsMetadata")) mask |= 1 << 2;
+        if (ShouldIncludeCapabilitiesSection(requestedSections, "FeatureTypeList")) mask |= 1 << 3;
+        if (ShouldIncludeCapabilitiesSection(requestedSections, "Filter_Capabilities")) mask |= 1 << 4;
+        return mask;
+    }
 
     private async Task<WfsCapabilities> BuildCapabilitiesModelAsync(
         HttpContext context,
@@ -178,41 +184,6 @@ internal sealed partial class Wfs20Handler
         }
 
         return capabilities;
-    }
-
-    private readonly record struct WfsCapabilitiesCacheScope(
-        string SnapshotEtag,
-        string BaseUrl,
-        IReadOnlySet<string>? RequestedSections);
-
-    private static string BuildWfsCapabilitiesCacheKey(
-        WfsCapabilitiesCacheScope scope,
-        ImmutableArray<WfsFeatureTypeDescriptor> featureTypes)
-    {
-        var sb = PooledTextBuilder.Rent();
-        try
-        {
-            var sectionMask = 0;
-            if (ShouldIncludeCapabilitiesSection(scope.RequestedSections, "ServiceIdentification")) sectionMask |= 1 << 0;
-            if (ShouldIncludeCapabilitiesSection(scope.RequestedSections, "ServiceProvider")) sectionMask |= 1 << 1;
-            if (ShouldIncludeCapabilitiesSection(scope.RequestedSections, "OperationsMetadata")) sectionMask |= 1 << 2;
-            if (ShouldIncludeCapabilitiesSection(scope.RequestedSections, "FeatureTypeList")) sectionMask |= 1 << 3;
-            if (ShouldIncludeCapabilitiesSection(scope.RequestedSections, "Filter_Capabilities")) sectionMask |= 1 << 4;
-
-            sb.Append("wfs|").Append(scope.SnapshotEtag).Append('|').Append(scope.BaseUrl).Append('|').Append(sectionMask);
-            foreach (var ft in featureTypes)
-            {
-                sb.Append('|').Append(ft.StorageLayerId)
-                    .Append(':').Append(ft.QualifiedName)
-                    .Append(':').Append(ft.NamespaceUri);
-            }
-
-            return MetadataDocumentByteCache.HashKey(sb);
-        }
-        finally
-        {
-            PooledTextBuilder.Return(sb);
-        }
     }
 
 

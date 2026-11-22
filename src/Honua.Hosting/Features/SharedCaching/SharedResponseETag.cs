@@ -34,14 +34,9 @@ internal static class SharedResponseETag
                 file.EnableRangeProcessing, file.LastModified, EntityTagHeaderValue.Parse(etag));
         }
 
-        if (result is CachedUtf8ContentResult cached)
+        if (result is CachedUtf8ContentResult or PooledUtf8ContentResult)
         {
-            return await ApplyToCachedContentAsync(context, cached, tags).ConfigureAwait(false);
-        }
-
-        if (result is PooledUtf8ContentResult pooled)
-        {
-            return await ApplyToPooledContentAsync(context, pooled, tags).ConfigureAwait(false);
+            return await ApplyToUtf8ContentAsync(context, result, tags).ConfigureAwait(false);
         }
 
         if (result is ContentHttpResult { StatusCode: null or StatusCodes.Status200OK } text)
@@ -54,19 +49,19 @@ internal static class SharedResponseETag
         return result;
     }
 
-    // Same hash as the ContentHttpResult branch: ComputeETag(string) hashes the UTF-8 bytes.
-    private static async ValueTask<object?> ApplyToPooledContentAsync(HttpContext context, PooledUtf8ContentResult pooled, IETagService tags)
+    private static async ValueTask<object?> ApplyToUtf8ContentAsync(HttpContext context, object result, IETagService tags)
     {
+        if (result is CachedUtf8ContentResult cached)
+        {
+            var rawTag = cached.ContentETag ?? tags.ComputeETag(cached.Content.Span);
+            var cachedEtag = await ConfigurationResponseETag.ForResponseAsync(context, rawTag, cached.ContentType).ConfigureAwait(false);
+            return new ConditionalTextResult(cached, cachedEtag, tags);
+        }
+
+        var pooled = (PooledUtf8ContentResult)result;
         var etag = await ConfigurationResponseETag.ForResponseAsync(context,
             tags.ComputeETag(pooled.Content.Span), pooled.ContentType).ConfigureAwait(false);
         return new ConditionalTextResult(pooled, etag, tags);
-    }
-
-    private static async ValueTask<object?> ApplyToCachedContentAsync(HttpContext context, CachedUtf8ContentResult cached, IETagService tags)
-    {
-        var rawTag = cached.ContentETag ?? tags.ComputeETag(cached.Content.Span);
-        var etag = await ConfigurationResponseETag.ForResponseAsync(context, rawTag, cached.ContentType).ConfigureAwait(false);
-        return new ConditionalTextResult(cached, etag, tags);
     }
 
     private sealed class ConditionalTextResult(IResult result, string etag, IETagService tags) : IResult
