@@ -283,6 +283,61 @@ public sealed class TypedProposalCurrentApiKeyTests(TypedProposalCurrentApiKeyTe
         _executor.Calls.Should().Be(1);
     }
 
+    // Approval re-checks the proposer's persisted key, and the bootstrap credential has none,
+    // so a proposal it filed could never be approved. Both channels refuse before filing one.
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/operations/{id}/submit")]
+    public async Task BootstrapCredential_RestSubmit_RefusesWithoutFilingProposal()
+    {
+        int before = await CountActiveProposalsAsync();
+        using HttpResponseMessage response = await Client(WebAppFixture.SharedAdminPassword).PostAsJsonAsync(
+            "/api/v1/operations/service.publish/submit", new
+            {
+                connectionId = Guid.NewGuid().ToString("D"),
+                serviceName = "synthetic-bootstrap",
+                parameters = new { schema = "public", table = "synthetic", layerName = "Synthetic" }
+            });
+        string body = await response.Content.ReadAsStringAsync();
+        using var assertions = new AssertionScope();
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden, body);
+        body.Should().Contain("/api/v1/admin/api-keys");
+        (await CountActiveProposalsAsync()).Should().Be(before);
+        _executor.Calls.Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /mcp tools/call honua_publish_service")]
+    public async Task BootstrapCredential_McpToolCall_RefusesWithoutFilingProposal()
+    {
+        int before = await CountActiveProposalsAsync();
+        using HttpResponseMessage response = await Client(WebAppFixture.SharedAdminPassword).PostAsJsonAsync("/mcp", new
+        {
+            jsonrpc = "2.0",
+            id = 1,
+            method = "tools/call",
+            @params = new
+            {
+                name = "honua_publish_service",
+                arguments = new
+                {
+                    connectionId = Guid.NewGuid().ToString("D"),
+                    schema = "public",
+                    table = "synthetic",
+                    layerName = "Synthetic",
+                    serviceName = "synthetic-bootstrap-mcp"
+                }
+            }
+        });
+        string body = await response.Content.ReadAsStringAsync();
+        using var assertions = new AssertionScope();
+        body.Should().Contain("/api/v1/admin/api-keys").And.NotContain("\"proposalId\":\"");
+        (await CountActiveProposalsAsync()).Should().Be(before);
+        _executor.Calls.Should().Be(0);
+    }
+
+    private async Task<int> CountActiveProposalsAsync()
+        => (await _proposals.ListActiveAsync(cancellationToken: CancellationToken.None)).Count;
+
     private Task<AdminApiKeyCreateResult> CreateKeyAsync(string name) =>
         _keys.CreateAsync($"{name}-{Guid.NewGuid():N}", ["admin:*"], DateTimeOffset.UtcNow.AddHours(1), "test", CancellationToken.None);
 
