@@ -83,7 +83,7 @@ internal sealed partial class GdalRasterMosaicJobExecutor(
             mosaicOperator = operatorRaw.Trim();
             if (!SupportedOperators.Contains(mosaicOperator))
             {
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid mosaic inputs: 'operator' value '{operatorRaw}' is not supported by the native worker " +
                     "(supported operators: first, last). Statistical operators (min, max, mean, sum) are not yet available.");
             }
@@ -96,7 +96,7 @@ internal sealed partial class GdalRasterMosaicJobExecutor(
             && !string.IsNullOrWhiteSpace(resamplingRaw)
             && !ResamplingMap.TryGetValue(resamplingRaw.Trim(), out resamplingFlag))
         {
-            return JobExecutionResult.Failed(
+            return JobExecutionResult.InvalidInput(
                 $"Invalid mosaic inputs: 'resampling' value '{resamplingRaw}' is not in the allowed set " +
                 "(nearestneighbor, bilinear, cubic, lanczos).");
         }
@@ -104,7 +104,7 @@ internal sealed partial class GdalRasterMosaicJobExecutor(
         if (!TryDecodeSources(parameters, opts.MaxArtifactBytes, out var sources, out var sourcesError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourcesError);
-            return JobExecutionResult.Failed($"Invalid mosaic inputs: {sourcesError}");
+            return JobExecutionResult.InvalidInput($"Invalid mosaic inputs: {sourcesError}");
         }
 
         // Bound the DECLARED pixel footprint of every tile before any file is
@@ -113,7 +113,7 @@ internal sealed partial class GdalRasterMosaicJobExecutor(
         if (!GdalRasterDimensionGuard.TryAdmitSources(sources, opts, out var dimensionError))
         {
             Log.InvalidInputs(logger, job.OperationId, dimensionError);
-            return JobExecutionResult.Failed($"Invalid mosaic inputs: {dimensionError}");
+            return JobExecutionResult.InvalidInput($"Invalid mosaic inputs: {dimensionError}");
         }
 
         // 'first' wins is achieved by reversing the source order so the desired

@@ -84,8 +84,10 @@ internal sealed class HonuaLayerDagSource : IDagFeatureSource
         var wkbReader = new WKBReader();
         var geoJsonWriter = new GeoJsonWriter();
 
-        await foreach (var feature in _streamingStore
-            .StreamFeaturesAsync(layerId, query, cancellationToken)
+        await foreach (var feature in UnsupportedWhereSelection.Explain(
+                _streamingStore.StreamFeaturesAsync(layerId, query, cancellationToken),
+                query.SqlFilter is null ? request.Where : null,
+                cancellationToken)
             .ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
