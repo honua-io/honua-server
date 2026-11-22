@@ -64,6 +64,7 @@ public static class OperationScopeMapping
                 "admin.layer.style.set" or "admin.layer.style.import-sld" or
                 "admin.services.protocols.set" or "admin.services.access-policy.set" or
                 "admin.services.timeinfo.set" or "admin.services.layer-metadata.set" or
+                "admin.metadata.layer-discovery.set" or "admin.metadata.service-discovery.set" or
                 "admin.connections.update" or "admin.connections.extents.refresh" or
                 "admin.connections.features.refresh" => OperatorOperation.Update,
             _ => ResolveUnlistedOperation(request.OperationId),

@@ -358,6 +358,7 @@ PUT /api/v{version:apiVersion}/admin/metadata/layers/{storageLayerId:int}/popup-
 PUT /api/v{version:apiVersion}/admin/metadata/layers/{storageLayerId:int}/relationships
 PUT /api/v{version:apiVersion}/admin/metadata/layers/{storageLayerId:int}/spatial
 PUT /api/v{version:apiVersion}/admin/metadata/layers/{storageLayerId:int}/style
+PUT /api/v{version:apiVersion}/admin/metadata/schemas
 PUT /api/v{version:apiVersion}/admin/network-datasets/{id}
 PUT /api/v{version:apiVersion}/admin/oauth-scopes/
 PUT /api/v{version:apiVersion}/admin/observability/autonomy/policies/{rule}

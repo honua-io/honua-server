@@ -55,11 +55,11 @@ public sealed class McpToolRosterDriftTests
     }
 
     [UnitTest]
-    public void ConnectionDiscovery_IsInPublishingViewsAndFullCatalog_AndRosterHas162Tools()
+    public void ConnectionDiscovery_IsInPublishingViewsAndFullCatalog_AndRosterHas164Tools()
     {
         var roster = Generate();
         var discovery = new[] { "honua_admin_connections_list", "honua_admin_connection_tables_list" };
-        roster.Static.Concat(roster.ProjectedAdmin).Should().HaveCount(162);
+        roster.Static.Concat(roster.ProjectedAdmin).Should().HaveCount(164);
         roster.ProjectedAdmin.Should().Contain(discovery);
         roster.ProjectedAdmin.Should().Contain("honua_admin_connection_layers_list");
         roster.Views.Values.SelectMany(static members => members)
