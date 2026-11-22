@@ -363,7 +363,7 @@ internal static partial class FeatureServerEndpoints
                 : $"{paramName}.intervalUnit must be one of seconds, minutes, hours, days or weeks.");
         }
 
-        const long maxTimeSpanSeconds = TimeSpan.MaxValue.Ticks / TimeSpan.TicksPerSecond;
+        var maxTimeSpanSeconds = TimeSpan.MaxValue.Ticks / TimeSpan.TicksPerSecond;
         var totalSeconds = count * secondsPerUnit.Value;
         if (totalSeconds > maxTimeSpanSeconds)
         {
