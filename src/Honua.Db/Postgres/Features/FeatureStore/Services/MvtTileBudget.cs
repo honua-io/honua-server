@@ -153,4 +153,46 @@ internal static class MvtTileBudgetFitter
             throw refusal ?? new TileSizeLimitExceededException(-1, maxTileSize);
         }
     }
+
+    internal static async Task<PooledTileData?> ReadPooledAsync<TQuery>(
+        long maxTileSize,
+        Func<MvtTileBudgetStep, TQuery> build,
+        Func<TQuery, long, CancellationToken, Task<PooledTileData?>> execute,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(build);
+        ArgumentNullException.ThrowIfNull(execute);
+
+        var step = MvtTileBudgetStep.Full;
+        TileSizeLimitExceededException? refusal = null;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            PooledTileData? tile;
+            try
+            {
+                tile = await execute(build(step), maxTileSize, cancellationToken).ConfigureAwait(false);
+            }
+            catch (TileSizeLimitExceededException ex) when (step.Next() is { } next)
+            {
+                refusal = ex;
+                step = next;
+                continue;
+            }
+
+            if (tile is { Length: > 0 } || step.IsFull)
+            {
+                return tile;
+            }
+
+            tile?.Dispose();
+            if (step.Next() is { } nextStep)
+            {
+                step = nextStep;
+                continue;
+            }
+
+            throw refusal ?? new TileSizeLimitExceededException(-1, maxTileSize);
+        }
+    }
 }

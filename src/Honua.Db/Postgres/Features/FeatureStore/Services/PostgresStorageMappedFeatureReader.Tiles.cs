@@ -10,7 +10,7 @@ using Honua.Core.Features.Tiles;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
+internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider, IPooledTileProvider
 {
     public async Task<byte[]?> GetMvtTileAsync(
         int layerId,
@@ -23,141 +23,188 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
         GridGeometry? gridGeometry = null,
         CancellationToken cancellationToken = default)
     {
+        using var pooled = await GetMvtTilePooledAsync(
+            new MvtTileRequest
+            {
+                LayerId = layerId,
+                X = x,
+                Y = y,
+                Z = z,
+                Query = query,
+                TileOptions = tileOptions,
+                TileLimits = tileLimits,
+                GridGeometry = gridGeometry
+            },
+            cancellationToken).ConfigureAwait(false);
+        return pooled is null ? null : pooled.Span.ToArray();
+    }
+
+    public async Task<PooledTileData?> GetMvtTilePooledAsync(
+        MvtTileRequest request,
+        CancellationToken cancellationToken = default)
+    {
         if (_geometryColumn is null)
         {
             return null;
         }
 
-        ArgumentNullException.ThrowIfNull(tileOptions);
-        ArgumentNullException.ThrowIfNull(tileLimits);
+        ArgumentNullException.ThrowIfNull(request.TileOptions);
+        ArgumentNullException.ThrowIfNull(request.TileLimits);
 
         var effectiveQuery = await ApplyReadSecurityAsync(
-            query ?? new FeatureQuery(),
+            request.Query ?? new FeatureQuery(),
             cancellationToken).ConfigureAwait(false);
-        var targetSrid = gridGeometry?.Srid
-            ?? (effectiveQuery.OutputSrid == 4326 ? 4326 : 3857);
-        var bounds = gridGeometry is null
-            ? targetSrid == 4326
-                ? TileMath.GetTileBoundsGeographic(x, y, z)
-                : TileMath.GetTileBounds(x, y, z)
-            : gridGeometry.GetTileBounds(x, y, z)
-                ?? throw new ArgumentOutOfRangeException(
-                    nameof(z),
-                    $"Tile matrix level '{z}' is not part of gridset '{gridGeometry.Id}'.");
-
-        var tileExtent = tileOptions.TileExtent > 0 ? tileOptions.TileExtent : 4096;
-        var tileWidth = bounds.XMax - bounds.XMin;
-        var bufferMapUnits = tileOptions.TileBuffer > 0
-            ? (tileOptions.TileBuffer / (double)tileExtent) * tileWidth
-            : 0d;
-        var geographic = gridGeometry?.IsGeographic ?? targetSrid == 4326;
+        var spec = ResolveTileBuildSpec(request, effectiveQuery);
 
         // Tiles within the byte budget use one encode. Only oversized tiles require
         // additional fitting passes.
-        return await MvtTileBudgetFitter.ReadAsync(
-            tileLimits.MaxTileSize,
-            BuildTileSql,
-            ExecuteTileAsync,
+        return await MvtTileBudgetFitter.ReadPooledAsync(
+            request.TileLimits.MaxTileSize,
+            step => BuildMvtTileSql(spec, step),
+            ExecuteTilePooledAsync,
             cancellationToken).ConfigureAwait(false);
+    }
 
-        SqlBuilder BuildTileSql(MvtTileBudgetStep step)
+    private readonly record struct TileBuildSpec(
+        MvtTileRequest Request,
+        FeatureQuery EffectiveQuery,
+        TileBounds Bounds,
+        int TargetSrid,
+        int TileExtent,
+        double TileWidth,
+        double BufferMapUnits,
+        bool Geographic);
+
+    private TileBuildSpec ResolveTileBuildSpec(MvtTileRequest request, FeatureQuery effectiveQuery)
+    {
+        var targetSrid = request.GridGeometry?.Srid
+            ?? (effectiveQuery.OutputSrid == 4326 ? 4326 : 3857);
+        var bounds = request.GridGeometry is null
+            ? targetSrid == 4326
+                ? TileMath.GetTileBoundsGeographic(request.X, request.Y, request.Z)
+                : TileMath.GetTileBounds(request.X, request.Y, request.Z)
+            : request.GridGeometry.GetTileBounds(request.X, request.Y, request.Z)
+                ?? throw new ArgumentOutOfRangeException(
+                    nameof(request),
+                    $"Tile matrix level '{request.Z}' is not part of gridset '{request.GridGeometry.Id}'.");
+
+        var tileExtent = request.TileOptions.TileExtent > 0 ? request.TileOptions.TileExtent : 4096;
+        var tileWidth = bounds.XMax - bounds.XMin;
+        var bufferMapUnits = request.TileOptions.TileBuffer > 0
+            ? (request.TileOptions.TileBuffer / (double)tileExtent) * tileWidth
+            : 0d;
+        var geographic = request.GridGeometry?.IsGeographic ?? targetSrid == 4326;
+        return new TileBuildSpec(request, effectiveQuery, bounds, targetSrid, tileExtent, tileWidth, bufferMapUnits, geographic);
+    }
+
+    private readonly record struct TileGeometryExpressions(
+        MvtTileBudgetStep Step,
+        string TileEnvelope,
+        string EnvelopeForFilter,
+        string Geometry,
+        string GeometryForTile,
+        string OriginalGeometryForTile);
+
+    private SqlBuilder BuildMvtTileSql(TileBuildSpec spec, MvtTileBudgetStep step)
+    {
+        var sql = new SqlBuilder();
+        var expressions = BuildTileGeometryExpressions(sql, spec, step);
+        AppendTileSelectSql(sql, spec, expressions);
+        return sql;
+    }
+
+    private TileGeometryExpressions BuildTileGeometryExpressions(SqlBuilder sql, TileBuildSpec spec, MvtTileBudgetStep step)
+    {
+        var req = spec.Request;
+        var tileEnvelope = BuildTileEnvelope(sql, spec.Bounds, spec.TargetSrid, req.X, req.Y, req.Z, req.GridGeometry is not null);
+        var bufferedEnvelope = $"ST_Expand({tileEnvelope}, {sql.AddParameter(spec.BufferMapUnits)})";
+        if (req.GridGeometry is null)
         {
-            var sql = new SqlBuilder();
-            var tileEnvelope = BuildTileEnvelope(sql, bounds, targetSrid, x, y, z, gridGeometry is not null);
-            var bufferedEnvelope = $"ST_Expand({tileEnvelope}, {sql.AddParameter(bufferMapUnits)})";
-            if (gridGeometry is null)
-            {
-                bufferedEnvelope = targetSrid == 4326
-                    ? $"ST_Intersection({bufferedEnvelope}, ST_MakeEnvelope(-180, -90, 180, 90, 4326))"
-                    : $"ST_Intersection({bufferedEnvelope}, ST_TileEnvelope(0, 0, 0))";
-            }
-
-            var geometry = $"{_geometryColumn}::geometry";
-            var tileArea = DatumOutputSelection.AreaForTile(bounds.XMin, bounds.YMin, bounds.XMax, bounds.YMax, targetSrid);
-            var selection = effectiveQuery.OutputDatumTransformation
-                ?? (_storageSrid == targetSrid
-                    ? null
-                    : DatumOutputSelection.Resolve(DatumCatalog.Shared, _storageSrid, targetSrid, tileArea));
-            var geometryForTile = _storageSrid == targetSrid
-                ? geometry
-                : selection is null
-                    ? DatumTransformSql.CachedTransformExpression(geometry, _storageSrid, targetSrid)
-                    : DatumTransformSql.BuildTransformExpression(geometry, targetSrid, selection, _storageSrid);
-            var originalGeometryForTile = geometryForTile;
-            if (!step.IsFull)
-            {
-                geometryForTile = MvtTileBudget.Generalize(
-                    geometryForTile,
-                    MvtTileBudget.Tolerance(
-                        z,
-                        tileWidth,
-                        tileExtent,
-                        geographic,
-                        step,
-                        useWebMercatorZoomFloor: gridGeometry is null),
-                    value => sql.AddParameter(value));
-            }
-
-            var envelopeForFilter = _storageSrid == targetSrid
-                ? bufferedEnvelope
-                : selection is null
-                    ? $"ST_Transform({bufferedEnvelope}, {_storageSrid})"
-                    : DatumTransformSql.BuildTransformExpression(
-                        bufferedEnvelope,
-                        _storageSrid,
-                        DatumOutputSelection.Inverse(selection),
-                        targetSrid);
-            var extentParameter = sql.AddParameter(tileExtent);
-            var bufferParameter = sql.AddParameter(tileOptions.TileBuffer);
-            var attributes = step.OmitAttributes ? null : BuildAttributesJsonbExpression(effectiveQuery, sql);
-
-            if (attributes is null)
-            {
-                sql.Append(CultureInfo.InvariantCulture, $"""
-                    SELECT ST_AsMVT(tile, 'layer', {extentParameter}, 'geom')
-                    FROM (
-                        SELECT
-                            {_primaryKeyColumn}::bigint AS objectid,
-                            {MvtTileBudget.EncodeGeometry(geometryForTile, originalGeometryForTile, new(tileEnvelope, extentParameter, bufferParameter))} AS geom
-                        FROM {BuildFeatureSource(effectiveQuery, sql)}
-                    """);
-            }
-            else
-            {
-                sql.Append(CultureInfo.InvariantCulture, $"""
-                    SELECT ST_AsMVT(tile, 'layer', {extentParameter}, 'geom')
-                    FROM (
-                        SELECT
-                            {_primaryKeyColumn}::bigint AS objectid,
-                            {attributes} AS attributes,
-                            {MvtTileBudget.EncodeGeometry(geometryForTile, originalGeometryForTile, new(tileEnvelope, extentParameter, bufferParameter))} AS geom
-                        FROM {BuildFeatureSource(effectiveQuery, sql)}
-                    """);
-            }
-
-            AppendFilter(sql, effectiveQuery);
-            sql.Append(
-                CultureInfo.InvariantCulture,
-                $" {BuildWhereJoiner(sql)} {geometry} && {envelopeForFilter}" +
-                $" AND ST_Intersects({geometry}, {envelopeForFilter})");
-
-            if (tileLimits.MaxFeaturesPerTile > 0)
-            {
-                sql.Append(CultureInfo.InvariantCulture,
-                    $" ORDER BY {_primaryKeyColumn} LIMIT {sql.AddParameter(tileLimits.MaxFeaturesPerTile)}");
-            }
-
-            sql.Append(CultureInfo.InvariantCulture, " ) AS tile");
-
-            return sql;
+            bufferedEnvelope = spec.TargetSrid == 4326
+                ? $"ST_Intersection({bufferedEnvelope}, ST_MakeEnvelope(-180, -90, 180, 90, 4326))"
+                : $"ST_Intersection({bufferedEnvelope}, ST_TileEnvelope(0, 0, 0))";
         }
 
-        async Task<byte[]?> ExecuteTileAsync(SqlBuilder sql, long maxTileSize, CancellationToken token)
+        var geometry = $"{_geometryColumn}::geometry";
+        var tileArea = DatumOutputSelection.AreaForTile(spec.Bounds.XMin, spec.Bounds.YMin, spec.Bounds.XMax, spec.Bounds.YMax, spec.TargetSrid);
+        var selection = spec.EffectiveQuery.OutputDatumTransformation
+            ?? (_storageSrid == spec.TargetSrid
+                ? null
+                : DatumOutputSelection.Resolve(DatumCatalog.Shared, _storageSrid, spec.TargetSrid, tileArea));
+        var geometryForTile = _storageSrid == spec.TargetSrid
+            ? geometry
+            : selection is null
+                ? DatumTransformSql.CachedTransformExpression(geometry, _storageSrid, spec.TargetSrid)
+                : DatumTransformSql.BuildTransformExpression(geometry, spec.TargetSrid, selection, _storageSrid);
+        var originalGeometryForTile = geometryForTile;
+        if (!step.IsFull)
         {
-            await using var connection = await OpenConnectionAsync(token).ConfigureAwait(false);
-            await using var command = CreateReadCommand(connection, sql);
-            return await PostgresMvtReader.ReadAsync(command, maxTileSize, token).ConfigureAwait(false);
+            geometryForTile = MvtTileBudget.Generalize(
+                geometryForTile,
+                MvtTileBudget.Tolerance(req.Z, spec.TileWidth, spec.TileExtent, spec.Geographic, step, useWebMercatorZoomFloor: req.GridGeometry is null),
+                value => sql.AddParameter(value));
         }
+
+        var envelopeForFilter = _storageSrid == spec.TargetSrid
+            ? bufferedEnvelope
+            : selection is null
+                ? $"ST_Transform({bufferedEnvelope}, {_storageSrid})"
+                : DatumTransformSql.BuildTransformExpression(bufferedEnvelope, _storageSrid, DatumOutputSelection.Inverse(selection), spec.TargetSrid);
+        return new TileGeometryExpressions(step, tileEnvelope, envelopeForFilter, geometry, geometryForTile, originalGeometryForTile);
+    }
+
+    private void AppendTileSelectSql(SqlBuilder sql, TileBuildSpec spec, TileGeometryExpressions geom)
+    {
+        var req = spec.Request;
+        var extentParameter = sql.AddParameter(spec.TileExtent);
+        var bufferParameter = sql.AddParameter(req.TileOptions.TileBuffer);
+        var attributes = geom.Step.OmitAttributes ? null : BuildAttributesJsonbExpression(spec.EffectiveQuery, sql);
+        var geomSql = MvtTileBudget.EncodeGeometry(geom.GeometryForTile, geom.OriginalGeometryForTile, new(geom.TileEnvelope, extentParameter, bufferParameter));
+        var source = BuildFeatureSource(spec.EffectiveQuery, sql);
+
+        if (attributes is null)
+        {
+            sql.Append(CultureInfo.InvariantCulture, $"""
+                SELECT ST_AsMVT(tile, 'layer', {extentParameter}, 'geom')
+                FROM (
+                    SELECT
+                        {_primaryKeyColumn}::bigint AS objectid,
+                        {geomSql} AS geom
+                    FROM {source}
+                """);
+        }
+        else
+        {
+            sql.Append(CultureInfo.InvariantCulture, $"""
+                SELECT ST_AsMVT(tile, 'layer', {extentParameter}, 'geom')
+                FROM (
+                    SELECT
+                        {_primaryKeyColumn}::bigint AS objectid,
+                        {attributes} AS attributes,
+                        {geomSql} AS geom
+                    FROM {source}
+                """);
+        }
+
+        AppendFilter(sql, spec.EffectiveQuery);
+        sql.Append(
+            CultureInfo.InvariantCulture,
+            $" {BuildWhereJoiner(sql)} {geom.Geometry} && {geom.EnvelopeForFilter} AND ST_Intersects({geom.Geometry}, {geom.EnvelopeForFilter})");
+
+        if (req.TileLimits.MaxFeaturesPerTile > 0)
+        {
+            sql.Append(CultureInfo.InvariantCulture,
+                $" ORDER BY {_primaryKeyColumn} LIMIT {sql.AddParameter(req.TileLimits.MaxFeaturesPerTile)}");
+        }
+
+        sql.Append(CultureInfo.InvariantCulture, " ) AS tile");
+    }
+
+    private async Task<PooledTileData?> ExecuteTilePooledAsync(SqlBuilder sql, long maxTileSize, CancellationToken token)
+    {
+        await using var connection = await OpenConnectionAsync(token).ConfigureAwait(false);
+        await using var command = CreateReadCommand(connection, sql);
+        return await PostgresMvtReader.ReadPooledAsync(command, maxTileSize, token).ConfigureAwait(false);
     }
 
     public Task<byte[]?> GetH3MvtTileAsync(

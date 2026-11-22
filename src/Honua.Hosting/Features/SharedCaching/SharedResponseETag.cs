@@ -39,6 +39,11 @@ internal static class SharedResponseETag
             return await ApplyToPooledContentAsync(context, pooled, tags).ConfigureAwait(false);
         }
 
+        if (result is PooledTileContentResult pooledTile)
+        {
+            return await ApplyToPooledTileAsync(context, pooledTile, tags).ConfigureAwait(false);
+        }
+
         if (result is ContentHttpResult { StatusCode: null or StatusCodes.Status200OK } text)
         {
             var etag = await ConfigurationResponseETag.ForResponseAsync(context,
@@ -55,6 +60,13 @@ internal static class SharedResponseETag
         var etag = await ConfigurationResponseETag.ForResponseAsync(context,
             tags.ComputeETag(pooled.Content.Span), pooled.ContentType).ConfigureAwait(false);
         return new ConditionalTextResult(pooled, etag, tags);
+    }
+
+    private static async ValueTask<object?> ApplyToPooledTileAsync(HttpContext context, PooledTileContentResult pooledTile, IETagService tags)
+    {
+        var etag = await ConfigurationResponseETag.ForResponseAsync(context,
+            tags.ComputeETag(pooledTile.Content.Span), pooledTile.ContentType).ConfigureAwait(false);
+        return new ConditionalTextResult(pooledTile, etag, tags);
     }
 
     private sealed class ConditionalTextResult(IResult result, string etag, IETagService tags) : IResult
@@ -80,6 +92,19 @@ internal static class SharedResponseETag
             await result.ExecuteAsync(httpContext).ConfigureAwait(false);
         }
 
-        private ValueTask ReleaseAsync() => result is PooledUtf8ContentResult pooled ? pooled.ReleaseAsync() : ValueTask.CompletedTask;
+        private ValueTask ReleaseAsync()
+        {
+            if (result is PooledUtf8ContentResult pooled)
+            {
+                return pooled.ReleaseAsync();
+            }
+
+            if (result is PooledTileContentResult pooledTile)
+            {
+                pooledTile.Release();
+            }
+
+            return ValueTask.CompletedTask;
+        }
     }
 }
