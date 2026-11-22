@@ -64,7 +64,7 @@ internal static class AdminApiOperationCatalog
         new("folder.delete", "Delete folder", HttpMethod.Delete, "/folders/{id}", "deleteFolder", true, QueryParameters: new HashSet<string>(["namespace"], StringComparer.Ordinal)),
         new("service.move", "Move service", HttpMethod.Put, "/services/{serviceName}/folder", "moveService", true, QueryParameters: new HashSet<string>(["namespace"], StringComparer.Ordinal)),
         new("admin.services.list", "List services", HttpMethod.Get, "/services", "listServices", false,
-            QueryParameters: new HashSet<string>(["folderId", "page", "pageSize", "q"], StringComparer.Ordinal)),
+            QueryParameters: new HashSet<string>(["folderId", "page", "pageSize", "q", "connectionId", "storageLayerId"], StringComparer.Ordinal)),
         new("admin.services.settings.get", "Get service settings", HttpMethod.Get, "/services/{serviceName}/settings", "getServiceSettings", false),
         new("admin.services.protocols.set", "Set service protocols", HttpMethod.Put, "/services/{serviceName}/protocols", "updateServiceProtocols", true),
         new("admin.services.access-policy.set", "Set service access policy", HttpMethod.Put, "/services/{serviceName}/access-policy", "updateServiceAccessPolicy", true),
