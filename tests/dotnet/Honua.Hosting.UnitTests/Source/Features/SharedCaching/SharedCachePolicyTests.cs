@@ -219,4 +219,31 @@ public sealed class SharedCachePolicyTests
 
         context.Response.Headers.CacheControl.ToString().Should().Be("public, max-age=0, s-maxage=20, stale-if-error=86400");
     }
+
+    [UnitTest]
+    public void UseClass_OverridesEndpointMetadataClassForMultiOperationEndpoints()
+    {
+        var context = SharedCacheTestContexts.AnonymousGet(ResponseCacheClass.MetadataDocument);
+        ResponseAccessVerdict.Record(context, AccessDecision.Allowed());
+        SharedCacheResponse.UseClass(context, ResponseCacheClass.Tile);
+
+        SharedCacheResponse.Apply(context);
+        SharedCacheGuard.Apply(context);
+
+        context.Response.Headers.CacheControl.ToString().Should().Be(
+            "public, max-age=60, s-maxage=300, stale-while-revalidate=60, stale-if-error=86400");
+        context.Response.Headers.Vary.ToString().Should().NotContain("Accept-Language");
+    }
+
+    [UnitTest]
+    public void DoNotShare_PreventsPublicHeaderEvenOnAnonymousGranted200Response()
+    {
+        var context = SharedCacheTestContexts.GrantedTile();
+        SharedCacheResponse.DoNotShare(context);
+
+        SharedCacheResponse.Apply(context);
+        SharedCacheGuard.Apply(context);
+
+        context.Response.Headers.CacheControl.ToString().Should().Be(SharedCacheGuard.NotShared);
+    }
 }

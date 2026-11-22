@@ -170,6 +170,54 @@ public sealed class FilterExpressionNormalizerTests
         act.Should().Throw<ArgumentException>().WithMessage("*expects a boolean value*");
     }
 
+    [UnitTheory]
+    [InlineData(MetadataV2FieldType.String)]
+    [InlineData(MetadataV2FieldType.Integer)]
+    [InlineData(MetadataV2FieldType.Boolean)]
+    public void Normalize_TemporalPredicateOnNonTemporalField_RejectsAsClientError(MetadataV2FieldType type)
+    {
+        var expression = TemporalAfter2020("name");
+
+        FluentActions.Invoking(() => FilterExpressionNormalizer.Normalize(expression, ResourceWithField("name", type)))
+            .Should().Throw<ArgumentException>().WithMessage("Field 'name' is not a date or time field*");
+    }
+
+    [UnitTheory]
+    [InlineData(MetadataV2FieldType.DateTime)]
+    [InlineData(MetadataV2FieldType.TimestampOffset)]
+    [InlineData(MetadataV2FieldType.Date)]
+    public void Normalize_TemporalPredicateOnTemporalField_IsAccepted(MetadataV2FieldType type)
+    {
+        var normalized = FilterExpressionNormalizer.Normalize(TemporalAfter2020("observed"),
+            ResourceWithField("observed", type));
+
+        normalized.Should().BeOfType<TemporalPredicate>();
+    }
+
+    [UnitTest]
+    public void Normalize_TemporalPredicateBetweenStringAndTimestampFields_IsLeftToTheProvider()
+    {
+        var expression = new TemporalPredicate(TemporalOperator.Intersects,
+            new PropertyReference("label"), new PropertyReference("observed"));
+        var resource = new MetadataV2Object
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "audit", Name = "Audit" },
+            Type = MetadataV2ObjectType.FeatureDataset,
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "label", Type = MetadataV2FieldType.String },
+                new MetadataV2Field { Name = "observed", Type = MetadataV2FieldType.TimestampOffset }
+            ]
+        };
+
+        FilterExpressionNormalizer.Normalize(expression, resource).Should().BeOfType<TemporalPredicate>();
+    }
+
+    private static TemporalPredicate TemporalAfter2020(string field) => new(
+        TemporalOperator.Intersects,
+        new PropertyReference(field),
+        new IntervalLiteral(new Literal(new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero), LiteralType.DateTime), null));
+
     private static MetadataV2Object ResourceWithField(string name, MetadataV2FieldType type)
         => new()
         {

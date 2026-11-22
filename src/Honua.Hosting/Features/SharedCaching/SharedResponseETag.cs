@@ -34,14 +34,9 @@ internal static class SharedResponseETag
                 file.EnableRangeProcessing, file.LastModified, EntityTagHeaderValue.Parse(etag));
         }
 
-        if (result is PooledUtf8ContentResult pooled)
+        if (result is CachedUtf8ContentResult or PooledUtf8ContentResult or PooledTileContentResult)
         {
-            return await ApplyToPooledContentAsync(context, pooled, tags).ConfigureAwait(false);
-        }
-
-        if (result is PooledTileContentResult pooledTile)
-        {
-            return await ApplyToPooledTileAsync(context, pooledTile, tags).ConfigureAwait(false);
+            return await ApplyToBufferedContentAsync(context, result, tags).ConfigureAwait(false);
         }
 
         if (result is ContentHttpResult { StatusCode: null or StatusCodes.Status200OK } text)
@@ -54,9 +49,31 @@ internal static class SharedResponseETag
         return result;
     }
 
-    // Same hash as the ContentHttpResult branch: ComputeETag(string) hashes the UTF-8 bytes.
-    private static async ValueTask<object?> ApplyToPooledContentAsync(HttpContext context, PooledUtf8ContentResult pooled, IETagService tags)
+    private static async ValueTask<object?> ApplyToBufferedContentAsync(HttpContext context, object result, IETagService tags)
     {
+        if (result is CachedUtf8ContentResult cached)
+        {
+            var rawTag = cached.ContentETag ?? tags.ComputeETag(cached.Content.Span);
+            var cachedEtag = await ConfigurationResponseETag.ForResponseAsync(context, rawTag, cached.ContentType).ConfigureAwait(false);
+            return new ConditionalTextResult(cached, cachedEtag, tags);
+        }
+
+        if (result is PooledTileContentResult pooledTile)
+        {
+            try
+            {
+                var tileEtag = await ConfigurationResponseETag.ForResponseAsync(context,
+                    tags.ComputeETag(pooledTile.Content.Span), pooledTile.ContentType).ConfigureAwait(false);
+                return new ConditionalTextResult(pooledTile, tileEtag, tags);
+            }
+            catch
+            {
+                pooledTile.Release();
+                throw;
+            }
+        }
+
+        var pooled = (PooledUtf8ContentResult)result;
         try
         {
             var etag = await ConfigurationResponseETag.ForResponseAsync(context,
@@ -66,21 +83,6 @@ internal static class SharedResponseETag
         catch
         {
             await pooled.ReleaseAsync().ConfigureAwait(false);
-            throw;
-        }
-    }
-
-    private static async ValueTask<object?> ApplyToPooledTileAsync(HttpContext context, PooledTileContentResult pooledTile, IETagService tags)
-    {
-        try
-        {
-            var etag = await ConfigurationResponseETag.ForResponseAsync(context,
-                tags.ComputeETag(pooledTile.Content.Span), pooledTile.ContentType).ConfigureAwait(false);
-            return new ConditionalTextResult(pooledTile, etag, tags);
-        }
-        catch
-        {
-            pooledTile.Release();
             throw;
         }
     }

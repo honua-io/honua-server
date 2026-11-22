@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>$(HonuaTargetFramework)</TargetFramework>
+    <EnableRequestDelegateGenerator>true</EnableRequestDelegateGenerator>
     <OutputType>Library</OutputType>
     <InvariantGlobalization>true</InvariantGlobalization>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>

@@ -22,6 +22,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
     private readonly ICacheRefreshCoordinator? _refreshCoordinator;
     private readonly ILogger<OutputCacheInvalidationService> _logger;
     private readonly CdnInvalidationService? _cdnInvalidation;
+    private readonly MetadataDocumentByteCache? _metadataDocumentCache;
 
     public OutputCacheInvalidationService(
         IOutputCacheStore? cacheStore,
@@ -39,6 +40,8 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _refreshCoordinator = refreshCoordinator;
         _logger = logger;
+        using var scope = _scopeFactory.CreateScope();
+        _metadataDocumentCache = scope.ServiceProvider.GetService<MetadataDocumentByteCache>();
     }
 
     public async Task InvalidateStorageLayerAsync(int storageLayerId, CancellationToken cancellationToken)
@@ -172,6 +175,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
 
     public async Task InvalidateQueryResponsesAsync(CancellationToken cancellationToken = default)
     {
+        InvalidateMetadataDocumentCache();
         await EvictResponseCacheAsync(
             [
                 ResponseCacheUtilities.BuildFeatureServerPattern(),
@@ -283,6 +287,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
 
     private async Task EvictTagsAsync(IEnumerable<string> tags, CancellationToken cancellationToken)
     {
+        InvalidateMetadataDocumentCache();
         if (_cacheStore == null)
         {
             return;
@@ -300,6 +305,8 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
             }
         }
     }
+
+    private void InvalidateMetadataDocumentCache() => _metadataDocumentCache?.Invalidate();
 
     private async Task EvictResponseCacheAsync(IEnumerable<string> patterns, CancellationToken cancellationToken)
     {

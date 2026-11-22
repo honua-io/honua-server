@@ -5,6 +5,7 @@ using System.Data;
 using System.Data.Common;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Infrastructure.Events.Outbox;
@@ -199,6 +200,48 @@ public sealed class FeatureChangePrefixDriverTests(FeatureChangeDatabaseFixture 
         (await TickAsync(repository)).Should().BeEmpty();
         provider.Releases.Should().Be(provider.Opens);
     }
+
+    [IntegrationTest(Timeout = 120000)]
+    public async Task WriteOutboxRow_WakesTheDispatcherSignal_AndTheRowIsClaimedAfterCommit()
+    {
+        await ExecuteAsync("""
+            ALTER TABLE honua.feature_changes
+                ADD COLUMN IF NOT EXISTS event_id text,
+                ADD COLUMN IF NOT EXISTS operation_instance_id text,
+                ADD COLUMN IF NOT EXISTS correlation_id text,
+                ADD COLUMN IF NOT EXISTS audit_id text,
+                ADD COLUMN IF NOT EXISTS proposal_id text;
+            """);
+        var wake = new PollWakeSignal<IFeatureChangeOutboxRepository>();
+        await using var provider = new GatedProvider(database.ConnectionString);
+        var repository = new PostgresFeatureChangeOutboxRepository(provider, wake);
+        await using var writer = await database.DataSource.OpenConnectionAsync();
+        await using var transaction = await writer.BeginTransactionAsync();
+        await AllocateAsync(writer);
+
+        await repository.WriteOutboxRowAsync(writer, transaction, NewEntry("wake-event"), CancellationToken.None);
+
+        wake.Version.Should().Be(1, "a local outbox write must end the dispatcher's idle wait");
+        (await TickAsync(repository)).Should().BeEmpty("the row is not visible before the writer commits");
+        await transaction.CommitAsync();
+        (await TickAsync(repository)).Should().ContainSingle().Which.EventId.Should().Be("wake-event");
+    }
+
+    private static FeatureChangeOutboxEntry NewEntry(string eventId) => new()
+    {
+        OutboxId = Guid.NewGuid(),
+        ServiceId = "service",
+        LayerId = 734401,
+        ObjectId = 1,
+        Operation = "insert",
+        Protocol = "test",
+        RequestId = "request",
+        EventId = eventId,
+        EventPayload = "{}",
+        Status = OutboxStatuses.Pending,
+        RetryCount = 0,
+        CreatedAt = DateTimeOffset.UtcNow,
+    };
 
     private static Task<IReadOnlyList<FeatureChangeOutboxEntry>> TickAsync(
         PostgresFeatureChangeOutboxRepository repository)
