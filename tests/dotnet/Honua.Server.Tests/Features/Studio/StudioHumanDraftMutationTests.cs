@@ -5,13 +5,16 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Guardrails;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
+using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Studio.Models;
+using System.Net.Http.Json;
 using Honua.Server.Tests.Features.Admin;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -161,7 +164,7 @@ public sealed class StudioHumanDraftMutationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/studio/package-drafts")]
-    public async Task CreateDraft_AdminApiKeyWithAssertedHumanOrigin_StillRequiresApproval()
+    public async Task CreateDraft_BootstrapWithAssertedHumanOrigin_RefusesWithoutProposal()
     {
         using var client = _fixture.CreateAdminClient();
         client.DefaultRequestHeaders.Add("X-Honua-Initiation-Kind", "Human");
@@ -169,19 +172,57 @@ public sealed class StudioHumanDraftMutationTests : IAsyncLifetime
 
         using var response = await CreateDraftAsync(client);
 
-        await AssertPendingAsync(response);
+        await AssertBootstrapRefusedAsync(response);
     }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/studio/package-drafts")]
-    public async Task CreateDraft_InteractiveSessionWithExplicitApiKey_StillRequiresApproval()
+    public async Task CreateDraft_InteractiveSessionWithExplicitBootstrap_RefusesWithoutProposal()
     {
         using var human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider);
         human.Client.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword);
 
         using var response = await CreateDraftAsync(human.Client);
 
+        await AssertBootstrapRefusedAsync(response);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/package-drafts")]
+    public async Task CreateDraft_PersistedScopedApiKey_RecordsCanonicalProposer()
+    {
+        using var bootstrap = _fixture.CreateAdminClient();
+        using var created = await bootstrap.PostAsJsonAsync("/api/v1/admin/api-keys",
+            new CreateAdminApiKeyRequest { Name = $"studio-draft-{Guid.NewGuid():N}", Permissions = ["admin:write"] },
+            AdminApiKeyJsonContext.Default.CreateAdminApiKeyRequest);
+        created.StatusCode.Should().Be(HttpStatusCode.Created, await created.Content.ReadAsStringAsync());
+        var key = (await created.Content.ReadFromJsonAsync(
+            AdminApiKeyJsonContext.Default.ApiResponseAdminApiKeySecretResponse))!.Data!;
+        using var client = _fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", key.Key));
+
+        using var response = await CreateDraftAsync(client);
+
         await AssertPendingAsync(response);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var proposalId = body.RootElement.GetProperty("data").GetProperty("proposalId").GetString()!;
+        using var scope = _fixture.Services.CreateScope();
+        var proposal = await scope.ServiceProvider.GetRequiredService<IOperationProposalStore>().GetAsync(proposalId);
+        proposal.Should().NotBeNull();
+        proposal!.RequestedBy.Should().Be($"ApiKey:api-key:{key.ApiKey.Id:D}");
+    }
+
+    private async Task AssertBootstrapRefusedAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden, body);
+        body.Should().Contain("scoped API key").And.Contain("/api/v1/admin/api-keys");
+        using var scope = _fixture.Services.CreateScope();
+        var proposals = await scope.ServiceProvider.GetRequiredService<IOperationProposalStore>()
+            .ListActiveAsync(OperationClass.StudioDraftMutation);
+        proposals.Should().BeEmpty();
+        var drafts = await _fixture.Services.GetRequiredService<IStudioPackageStore>()
+            .ListDraftsAsync(new StudioPackageDraftQuery());
+        drafts.Items.Should().BeEmpty();
     }
 
     [IntegrationTest]
