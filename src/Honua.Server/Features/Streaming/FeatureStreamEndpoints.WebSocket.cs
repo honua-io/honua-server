@@ -1240,8 +1240,7 @@ internal static partial class FeatureStreamEndpoints
                     authService = layer.Service;
                 }
 
-                var accessError = RequireStreamLayerAccess(context, layer.Resource, authService);
-                if (accessError is not null)
+                if (!AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, authService))
                 {
                     return (null, "Access to the requested stream layer is forbidden.");
                 }
@@ -1264,8 +1263,7 @@ internal static partial class FeatureStreamEndpoints
 
             foreach (var layer in serviceLayers)
             {
-                var accessError = RequireStreamLayerAccess(context, layer.Resource, service);
-                if (accessError is not null)
+                if (!AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
                 {
                     return (null, "Access to the requested stream service is forbidden.");
                 }
