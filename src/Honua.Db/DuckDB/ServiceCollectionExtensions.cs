@@ -24,6 +24,7 @@ using Honua.Db.DuckDB.Features.FeatureStore.Services;
 using Honua.Db.DuckDB.Features.HealthCheck;
 using DuckDB.NET.Data;
 using Honua.Db.DuckDB.Features.Infrastructure;
+using Honua.Db.DuckDB.Queries.Filters;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
