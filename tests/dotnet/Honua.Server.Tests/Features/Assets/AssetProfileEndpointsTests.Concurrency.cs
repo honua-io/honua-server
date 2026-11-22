@@ -66,7 +66,7 @@ public sealed partial class AssetProfileEndpointsTests
 
         var get = await _fixture.Client.GetAsync($"{ProfilesPath}/{profileId}");
         var list = await _fixture.Client.GetFromJsonAsync($"{ProfilesPath}?serviceId={WebAppFixture.TestServiceId}", AssetsJsonContext.Default.AssetProfileListResult);
-        var update = await _fixture.Client.PutAsJsonAsync($"{ProfilesPath}/{profileId}", new AssetProfileWriteRequest
+        var update = await _fixture.Client.PutAsJsonAsync($"/api/v1/assets/profiles/{profileId}", new AssetProfileWriteRequest
         {
             CommandId = Guid.NewGuid(),
             ExpectedVersion = 1,
