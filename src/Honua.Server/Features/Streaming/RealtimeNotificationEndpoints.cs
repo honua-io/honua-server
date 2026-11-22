@@ -155,13 +155,7 @@ internal static partial class RealtimeNotificationEndpoints
                         realtime.RecordDelivery(item.Value.CreatedAt);
                         break;
                     case RealtimeDelivery.Reset reset:
-                        await WriteFrameAsync(context.Response, new StreamFrame(new RealtimePosition(request.Family, reset.Head), "reset", writer =>
-                        {
-                            writer.WriteStartObject();
-                            writer.WriteString("reason", reset.Reason);
-                            writer.WriteNumber("head", reset.Head);
-                            writer.WriteEndObject();
-                        }), lifetime.Token).ConfigureAwait(false);
+                        await WriteFrameAsync(context.Response, ResetFrame(request.Family, reset), lifetime.Token).ConfigureAwait(false);
                         realtime.RecordReset(reset.Reason);
                         return;
                     case RealtimeDelivery.Heartbeat:
@@ -191,6 +185,15 @@ internal static partial class RealtimeNotificationEndpoints
         }
         await WriteServiceRestartAsync(context, realtime).ConfigureAwait(false);
     }
+
+    private static StreamFrame ResetFrame(RealtimeFamily family, RealtimeDelivery.Reset reset)
+        => new(new RealtimePosition(family, reset.Head), "reset", writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("reason", reset.Reason);
+            writer.WriteNumber("head", reset.Head);
+            writer.WriteEndObject();
+        });
 
     // The drain signal ended the stream; tell the client when to reconnect, normally to another task.
     private static async Task WriteServiceRestartAsync(HttpContext context, IRealtimeStreamSession realtime)

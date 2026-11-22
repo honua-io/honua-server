@@ -204,15 +204,7 @@ internal static partial class ObservationStreamEndpoints
             {
                 var message = FormatDelivery(frame);
                 await SendSocketAsync(socket, message.Json, writeToken).ConfigureAwait(false);
-                if (frame is RealtimeDelivery.Event item)
-                {
-                    session.Lifecycle?.RecordDelivery(item.Value.CreatedAt);
-                }
-                else if (frame is RealtimeDelivery.Reset reset)
-                {
-                    session.Lifecycle?.RecordReset(reset.Reason);
-                    return;
-                }
+                if (RecordDeliveredFrame(session, frame)) return;
             }
         }
     }

@@ -228,15 +228,7 @@ internal static partial class ObservationStreamEndpoints
                         string.Concat(message.Cursor is null ? "" : "id: " + message.Cursor + "\n",
                             "event: ", message.Event, "\ndata: ", message.Json, "\n\n"), ct).ConfigureAwait(false);
                     await context.Response.Body.FlushAsync(ct).ConfigureAwait(false);
-                    if (frame is RealtimeDelivery.Event item)
-                    {
-                        session.Lifecycle?.RecordDelivery(item.Value.CreatedAt);
-                    }
-                    else if (frame is RealtimeDelivery.Reset reset)
-                    {
-                        session.Lifecycle?.RecordReset(reset.Reason);
-                        return;
-                    }
+                    if (RecordDeliveredFrame(session, frame)) return;
                 }
 
                 await context.Response.Body.FlushAsync(ct).ConfigureAwait(false);
@@ -268,6 +260,22 @@ internal static partial class ObservationStreamEndpoints
     }
 
     // The drain signal ends delivery; tell the client when to reconnect, normally to another task.
+    // Meters a written frame on the shared lifecycle session; true when the frame ends the stream.
+    private static bool RecordDeliveredFrame(ObservationStreamSession session, RealtimeDelivery frame)
+    {
+        switch (frame)
+        {
+            case RealtimeDelivery.Event item:
+                session.Lifecycle?.RecordDelivery(item.Value.CreatedAt);
+                return false;
+            case RealtimeDelivery.Reset reset:
+                session.Lifecycle?.RecordReset(reset.Reason);
+                return true;
+            default:
+                return false;
+        }
+    }
+
     private static async Task WriteSseServiceRestartAsync(HttpContext context, ObservationStreamSession session)
     {
         if (session.Lifecycle is not { } realtime || !realtime.DrainingToken.IsCancellationRequested

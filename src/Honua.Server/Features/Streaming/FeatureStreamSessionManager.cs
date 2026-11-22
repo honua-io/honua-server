@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Streaming;
 
-internal sealed class FeatureStreamSessionManager : IDisposable
+internal sealed partial class FeatureStreamSessionManager : IDisposable
 {
     internal const string DefaultSubscriptionId = "default";
     private static readonly TimeSpan RoutabilityRefreshInterval = TimeSpan.FromSeconds(1);
@@ -330,30 +330,6 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         if (_sessions.TryGetValue(sessionId, out var entry))
         {
             entry.SetDrainGrace(0);
-        }
-    }
-
-    internal void AttachLifecycle(Guid sessionId, IRealtimeStreamSession lifecycle)
-    {
-        if (_sessions.TryGetValue(sessionId, out var entry))
-        {
-            entry.Lifecycle = lifecycle;
-        }
-    }
-
-    internal void RecordDelivery(Guid sessionId, DateTimeOffset committedAt)
-    {
-        if (_sessions.TryGetValue(sessionId, out var entry))
-        {
-            entry.Lifecycle?.RecordDelivery(committedAt);
-        }
-    }
-
-    internal void RecordReset(Guid sessionId, string reason)
-    {
-        if (_sessions.TryGetValue(sessionId, out var entry))
-        {
-            entry.Lifecycle?.RecordReset(reason);
         }
     }
 
