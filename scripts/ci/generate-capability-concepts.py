@@ -264,6 +264,8 @@ def render(entry: dict, facts: dict, documented: list[tuple[str, str]] | None = 
             lines.append(f"- [{label}](../../{rel})")
         if status in OPT_IN_STATUS:
             lines += ["", *availability_note(key, status)]
+    elif status == "live" and (no_surface := facts.get("noSurface") or {}).get("reasonCode") == "content-negotiation":
+        lines.extend(["## How to use it", "", no_surface["reason"], "", "- [All capabilities](README.md)"])
     elif not facts.get("entryCount") and not facts.get("provingTestCount"):
         # No route in the generated feature catalog and no proving test. This is
         # a registry entry for something that is not built, and saying "no page

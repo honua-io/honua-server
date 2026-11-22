@@ -17,8 +17,9 @@ internal sealed record GeoParquetExportRequest
     public required ExportField[] Fields { get; init; }
     public required ExportGeometryType GeometryType { get; init; }
     public required int OutputSrid { get; init; }
+    public MetadataV2ObjectSpatial? SourceSpatial { get; init; }
     public required LimitsOptions Limits { get; init; }
-    public ILogger? Logger { get; init; }
+    public required ILogger Logger { get; init; }
 }
 
 internal static class GeoParquetExportWriter
@@ -106,7 +107,9 @@ internal static class GeoParquetExportWriter
                 : new MetadataV2ObjectSpatial
                 {
                     GeometryType = MapToMetadataGeometryType(request.GeometryType),
-                    SpatialReference = new MetadataV2SpatialReference { Srid = request.OutputSrid }
+                    SpatialReference = new MetadataV2SpatialReference { Srid = request.OutputSrid },
+                    StorageCrs = request.SourceSpatial?.StorageCrs,
+                    StorageCrsCoordinateEpoch = request.SourceSpatial?.StorageCrsCoordinateEpoch
                 },
             SchemaFields = schemaFields
         };

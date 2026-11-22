@@ -281,6 +281,7 @@ internal sealed class ExportJobExecutor(
                             Fields = job.Fields,
                             GeometryType = job.GeometryType,
                             OutputSrid = job.OutputSrid,
+                            SourceSpatial = job.GeoParquetSpatial,
                             Limits = limits,
                             Logger = logger
                         },

@@ -13,6 +13,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Progress;
 using Honua.Infrastructure.Services;
 using Honua.Io.Export;
@@ -82,6 +83,11 @@ public sealed class GeoParquetExportJobTests
                 new ExportField("name", ExportFieldType.String, true)
             ],
             OutputSrid = 4326,
+            GeoParquetSpatial = new MetadataV2ObjectSpatial
+            {
+                StorageCrs = new MetadataV2SpatialReference { Srid = 4326 },
+                StorageCrsCoordinateEpoch = 2024.5
+            },
             TotalFeatures = 32
         };
 
@@ -124,6 +130,7 @@ public sealed class GeoParquetExportJobTests
 
         using var geo = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
         var geometryColumn = geo.RootElement.GetProperty("columns").GetProperty("geometry");
+        geometryColumn.GetProperty("epoch").GetDouble().Should().Be(2024.5);
         geometryColumn.GetProperty("covering").GetProperty("bbox").GetProperty("xmin")
             .EnumerateArray().Select(v => v.GetString()).Should().Equal("bbox", "xmin");
 
