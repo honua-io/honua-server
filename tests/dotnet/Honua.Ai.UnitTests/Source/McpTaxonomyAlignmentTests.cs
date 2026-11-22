@@ -91,6 +91,9 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_apply_style_preset",
         "honua_resolve_entity",
         "honua_list_capabilities",
+        "honua_scene_list",
+        "honua_scene_get",
+        "honua_scene_resolve",
         "honua_studio_save_version",
         "honua_studio_get_version",
         "honua_studio_list_items",
@@ -186,6 +189,7 @@ public sealed partial class McpTaxonomyAlignmentTests
         services.AddSingleton(Substitute.For<Honua.Geocoding.Features.Geocoding.Abstractions.IGeocodeCoordinatorService>());
         services.AddSingleton(Substitute.For<Honua.Core.Features.FileImport.Abstractions.IFileImportService>());
         services.AddSingleton(Substitute.For<Honua.Routing.Features.Routing.Abstractions.IRoutingProvider>());
+        services.AddSingleton(Substitute.For<Honua.Core.Features.Scene.Abstractions.ISceneCatalogReader>());
         services.AddSingleton(Substitute.For<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>());
         services.AddSingleton(Substitute.For<Honua.Core.Features.FeatureStore.Abstractions.IFeatureReader>());
         services.AddSingleton(Substitute.For<Honua.Core.Features.Raster.Abstractions.IRasterMapRenderer>());
@@ -401,6 +405,9 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_get_style",
         "honua_resolve_entity",
         "honua_list_capabilities",
+        "honua_scene_list",
+        "honua_scene_get",
+        "honua_scene_resolve",
         "honua_studio_get_draft",
         "honua_studio_get_version",
         "honua_studio_list_items",

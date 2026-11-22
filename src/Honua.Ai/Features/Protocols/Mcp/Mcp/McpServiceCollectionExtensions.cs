@@ -335,6 +335,13 @@ internal static class McpServiceCollectionExtensions
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, RouteTool>());
         }
 
+        if (services.Any(d => d.ServiceType == typeof(Honua.Core.Features.Scene.Abstractions.ISceneCatalogReader)))
+        {
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, SceneTools.SceneListTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, SceneTools.SceneGetTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, SceneTools.SceneResolveTool>());
+        }
+
         // Catalog-discovery and feature-query tools (#1xxx) are thin adapters
         // over the canonical Metadata v2 graph and the shared feature-query
         // pipeline. They are only advertised when the host composition has wired

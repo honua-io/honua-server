@@ -18224,7 +18224,7 @@
           "Scenes"
         ],
         "summary": "Ingest Point Cloud Scene",
-        "description": "Uploads a LAS/LAZ/COPC point cloud (multipart/form-data, `file` field, 256 MiB maximum) and converts it into a 3D Tiles point tileset (`.pnts` quadtree), registering the result as a servable scene. Compressed input and projected source CRSs are dispatched to the out-of-tree point-cloud translate worker when one is configured; without a compatible worker the request fails explicitly with 400. Enterprise-gated: an operator without the `scene.pointcloud-ingest` entitlement receives 402. Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs and uses a bounded queue on the admitting instance. If capacity is exhausted, the server returns 429 with Retry-After.",
+        "description": "Uploads a LAS/LAZ/COPC point cloud (multipart/form-data, `file` field, 256 MiB maximum) and converts it into a 3D Tiles point tileset (`.pnts` quadtree), registering the result as a servable scene. Compressed input and projected source CRSs are dispatched to the out-of-tree point-cloud translate worker when one is configured; without a compatible worker the request fails explicitly with 400. Enterprise-gated: an operator without the `scene.pointcloud-ingest` entitlement receives 402. Set servingFormat to copc to register a validated COPC upload directly for HTTP range reads. This mode requires a COPC source and returns 409 for LAS/LAZ requiring conversion. Direct COPC ingest is synchronous. Experimental async requires the server setting SceneGeneration:EnableExperimentalAsyncJobs and uses a bounded queue on the admitting instance. If capacity is exhausted, the server returns 429 with Retry-After.",
         "operationId": "ingestPointCloudScene",
         "parameters": [
           {
@@ -18289,7 +18289,7 @@
                   },
                   "sourceCrsAxisOrder": {
                     "type": "string",
-                    "description": "Geographic axis order of the source point cloud. Accepts lonlat/longlat/xy or latlon/latlong/yx. Defaults to longitude-first.",
+                    "description": "Geographic axis order used for 3D Tiles conversion. Accepts lonlat/longlat/xy or latlon/latlong/yx. Defaults to longitude-first.",
                     "enum": [
                       "lonlat",
                       "longlat",
@@ -18302,8 +18302,17 @@
                   },
                   "sourceEpsg": {
                     "type": "string",
-                    "description": "Source CRS as a positive EPSG code or an AUTHORITY:CODE token (e.g. 32610 or EPSG:32610). A projected source triggers reprojection to EPSG:4979 through the translate worker; geographic tokens (EPSG:4326/4979/4269, OGC:CRS84) are treated as pass-through.",
+                    "description": "Source CRS for 3D Tiles conversion as a positive EPSG code or an AUTHORITY:CODE token (e.g. 32610 or EPSG:32610). A projected source triggers reprojection to EPSG:4979 through the translate worker; geographic tokens (EPSG:4326/4979/4269, OGC:CRS84) are treated as pass-through.",
                     "example": "EPSG:32610"
+                  },
+                  "servingFormat": {
+                    "type": "string",
+                    "enum": [
+                      "3d-tiles",
+                      "copc"
+                    ],
+                    "default": "3d-tiles",
+                    "description": "Generate a 3D Tiles point tileset or serve the uploaded COPC directly."
                   }
                 }
               }
@@ -18312,7 +18321,7 @@
         },
         "responses": {
           "201": {
-            "description": "The ingested scene, tileset URL, and point/tile counts.",
+            "description": "The ingested scene, serving URL, and point/tile counts.",
             "content": {
               "application/json": {
                 "schema": {
@@ -48749,6 +48758,29 @@
             "format": "date-time",
             "description": "Last-update timestamp.",
             "nullable": true
+          },
+          "servingFormat": {
+            "type": "string",
+            "description": "Scene delivery format.",
+            "enum": [
+              "3d-tiles",
+              "i3s",
+              "copc",
+              "quantized-mesh",
+              "terrain-rgb"
+            ]
+          },
+          "contentKind": {
+            "type": "string",
+            "description": "Scene content classification.",
+            "enum": [
+              "unclassified",
+              "mesh",
+              "buildings",
+              "point-cloud",
+              "terrain",
+              "vector-3d"
+            ]
           }
         }
       },
@@ -48858,6 +48890,29 @@
             "format": "date-time",
             "description": "Last-update timestamp.",
             "nullable": true
+          },
+          "servingFormat": {
+            "type": "string",
+            "description": "Scene delivery format.",
+            "enum": [
+              "3d-tiles",
+              "i3s",
+              "copc",
+              "quantized-mesh",
+              "terrain-rgb"
+            ]
+          },
+          "contentKind": {
+            "type": "string",
+            "description": "Scene content classification.",
+            "enum": [
+              "unclassified",
+              "mesh",
+              "buildings",
+              "point-cloud",
+              "terrain",
+              "vector-3d"
+            ]
           }
         }
       },
@@ -48880,7 +48935,7 @@
           },
           "tilesetUrl": {
             "type": "string",
-            "description": "Absolute URL of the root tileset document."
+            "description": "Absolute URL of the root tileset document when available. Empty otherwise."
           },
           "extent": {
             "$ref": "#/components/schemas/SceneDatasetExtent"
@@ -48917,6 +48972,77 @@
           "honuaSceneSnippet": {
             "type": "string",
             "description": "Honua scene custom-element snippet for the tileset."
+          },
+          "servingFormat": {
+            "type": "string",
+            "description": "Scene delivery format.",
+            "enum": [
+              "3d-tiles",
+              "i3s",
+              "copc",
+              "quantized-mesh",
+              "terrain-rgb"
+            ]
+          },
+          "contentKind": {
+            "type": "string",
+            "description": "Scene content classification.",
+            "enum": [
+              "unclassified",
+              "mesh",
+              "buildings",
+              "point-cloud",
+              "terrain",
+              "vector-3d"
+            ]
+          },
+          "copcUrl": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true,
+            "description": "Absolute URL of the COPC object when served as COPC."
+          },
+          "endpoints": {
+            "type": "array",
+            "description": "Serving endpoints and any required access session.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "endpointFormat": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "mediaType": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "requiresAuthentication": {
+                  "type": "boolean"
+                },
+                "accessSession": {
+                  "type": "object",
+                  "nullable": true,
+                  "properties": {
+                    "href": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "method": {
+                      "type": "string",
+                      "enum": [
+                        "POST"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       },
@@ -48994,6 +49120,29 @@
             "items": {
               "type": "string"
             }
+          },
+          "servingFormat": {
+            "type": "string",
+            "description": "Scene delivery format.",
+            "enum": [
+              "3d-tiles",
+              "i3s",
+              "copc",
+              "quantized-mesh",
+              "terrain-rgb"
+            ]
+          },
+          "contentKind": {
+            "type": "string",
+            "description": "Scene content classification.",
+            "enum": [
+              "unclassified",
+              "mesh",
+              "buildings",
+              "point-cloud",
+              "terrain",
+              "vector-3d"
+            ]
           }
         }
       },
@@ -49085,6 +49234,29 @@
             "type": "boolean",
             "description": "Pass true to clear the allowed-roles list.",
             "nullable": true
+          },
+          "servingFormat": {
+            "type": "string",
+            "description": "Scene delivery format.",
+            "enum": [
+              "3d-tiles",
+              "i3s",
+              "copc",
+              "quantized-mesh",
+              "terrain-rgb"
+            ]
+          },
+          "contentKind": {
+            "type": "string",
+            "description": "Scene content classification.",
+            "enum": [
+              "unclassified",
+              "mesh",
+              "buildings",
+              "point-cloud",
+              "terrain",
+              "vector-3d"
+            ]
           }
         }
       },
@@ -49259,7 +49431,7 @@
           },
           "tilesetUrl": {
             "type": "string",
-            "description": "Routable URL for the generated point tileset's root document."
+            "description": "URL of the generated root tileset document. Empty for direct COPC ingest."
           },
           "pointCount": {
             "type": "integer",
@@ -49269,19 +49441,38 @@
           "tileCount": {
             "type": "integer",
             "format": "int32",
-            "description": "Number of .pnts tile content files written under the scene asset root."
+            "description": "Number of generated .pnts tiles, or 1 for direct COPC ingest."
           },
           "hasColor": {
             "type": "boolean",
-            "description": "True when the source carried per-point RGB preserved in the output tiles."
+            "description": "True when the served point cloud carries per-point RGB."
           },
           "boundingRegionDegrees": {
             "type": "array",
-            "description": "Bounding region in WGS-84 degrees, ordered [west, south, east, north].",
+            "description": "Bounding region in WGS-84 degrees, ordered [west, south, east, north]. Omitted for direct COPC ingest.",
             "items": {
               "type": "number",
               "format": "double"
             }
+          },
+          "copcUrl": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true,
+            "description": "Absolute URL of the COPC object when served as COPC."
+          },
+          "servingFormat": {
+            "type": "string",
+            "enum": [
+              "3d-tiles",
+              "copc"
+            ]
+          },
+          "contentKind": {
+            "type": "string",
+            "enum": [
+              "point-cloud"
+            ]
           }
         }
       },

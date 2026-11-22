@@ -151,6 +151,9 @@ public sealed partial class McpTaxonomyAlignmentTests
             // The geospatial-mcp standard has no job-artifact source kind; browser-file
             // and local-process-artifact remain separate dataset-import variants.
             "honua_ingest_job_artifact",
+            "honua_scene_list",
+            "honua_scene_get",
+            "honua_scene_resolve",
             // Studio draft lifecycle + composition tools are
             // Honua extensions with vendored index.json entries (family "Studio
             // composition and lifecycle (Honua extension)") but no published
