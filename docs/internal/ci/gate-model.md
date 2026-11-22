@@ -3385,6 +3385,33 @@ process startup are excluded from the shard measurement; process durations
 were 205.689 / 151.173 seconds at base and 158.666 / 164.087 at head.
 No end-to-end PR Gate critical-path reduction is claimed.
 
+### Experimental capability manifest schema lifetime
+
+The thirteen separately configured manifest GET cases in
+`ExperimentalCapabilityGatingIntegrationTests` borrow the seeded schema from the
+existing eager `DisabledPostureHost` class fixture. Each case still starts its
+own application with the same global/per-capability flags, registry composition,
+Pro edition, tenant, services and fresh client. Per-host metadata stays separate.
+The owner outlives the serial cases; borrowers do not create, seed or drop another
+schema. The mTLS-enabled admin case retains its private schema and application.
+All 32 assertion lines, four assertion-helper calls, 55 test metadata lines and
+14 test methods are unchanged. No parallel collection or polling changes apply.
+
+Four interleaved base/head Release runs of the unchanged Server Features
+Capabilities shard passed the same 103 cases with zero skips, including 34 target
+class cases, on one runner before and after. Target class summed case seconds
+were 34.685 / 27.959 at base and 28.704 / 24.533 at head: median 31.322 to
+26.618 seconds. Fixture-inclusive TRX session seconds were 85.201 / 60.185 at
+base and 72.939 / 62.115 at head: median 72.693 to 67.527 seconds, saving
+5.166 seconds (0.086 runner-minutes). The first shard pair improved by 12.262
+seconds; the second regressed by 1.930 seconds, so variability remains substantial.
+Both external benchmark variants include the same neighboring GeoParquet manifest
+assertion correction required after trunk added the writer; that correction is
+only a common measurement precondition and is not committed in this suite change.
+Process durations were 646.397 / 179.941 seconds at base and 198.986 / 154.497
+at head, including compilation (the first run was cold). They are separate from
+the fixture-inclusive session figures. No PR Gate critical-path saving is claimed.
+
 Every case remains in the same selected PR shard and twice-daily full trunk runs.
 Shard filters, workflow files, required check names and the required aggregate's
 `needs` contract are unchanged.
