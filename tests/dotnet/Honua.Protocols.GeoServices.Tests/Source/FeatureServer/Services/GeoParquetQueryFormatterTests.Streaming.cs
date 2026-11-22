@@ -152,6 +152,66 @@ public sealed partial class GeoParquetQueryFormatterTests
     }
 
     [UnitTest]
+    public async Task FormatAsGeoParquetStreamAsync_LateAttributesCollideWithGeneratedColumns_PreservesBoth()
+    {
+        var resource = CreateResource(Field("name", MetadataV2FieldType.String));
+        var firstGeometry = CreatePointWkb(-122.4, 37.7);
+        var secondGeometry = CreatePointWkb(-122.3, 37.8);
+        var features = ImmutableArray.Create(
+            Feature.Create(1, firstGeometry, ImmutableDictionary<string, object?>.Empty),
+            Feature.Create(2, secondGeometry, ImmutableDictionary<string, object?>.Empty
+                .Add("geometry", "surveyed").Add("bbox", 12)));
+
+        var (stream, _) = await GeoParquetFeatureWriter.FormatAsGeoParquetStreamAsync(
+            ToAsyncFeatures(features),
+            resource,
+            new GeoParquetStreamEncodingOptions
+            {
+                ObjectIdFieldName = "objectid",
+                ReturnGeometry = true,
+                OutputSrid = 4326,
+                GeometryLimits = new GeometryLimits(),
+                EncodingLimits = new GeoParquetLimits { MaxRowsPerBatch = 1 }.ForQuery()
+            });
+
+        await using (stream)
+        using (var reader = ArrowParquetTestReader.OpenLeavingStreamOpen(stream))
+        using (var geo = JsonDocument.Parse(reader.Schema.Metadata["geo"]))
+        using (var batches = reader.GetRecordBatchReader())
+        {
+            geo.RootElement.GetProperty("primary_column").GetString().Should().Be("geometry_1");
+            var geometries = new List<byte[]>();
+            var attributes = new List<string?>();
+            var boxes = new List<int?>();
+            var boundingX = new List<double?>();
+            while (await batches.ReadNextRecordBatchAsync() is { } batch)
+            {
+                using (batch)
+                {
+                    var geometry = (BinaryArray)batch.Column("geometry_1");
+                    var name = (StringArray)batch.Column("geometry");
+                    var bbox = (Int32Array)batch.Column("bbox");
+                    var xmin = (DoubleArray)((StructArray)batch.Column("bbox_1")).Fields[0];
+                    for (var i = 0; i < batch.Length; i++)
+                    {
+                        geometries.Add(geometry.GetBytes(i).ToArray());
+                        attributes.Add(name.GetString(i));
+                        boxes.Add(bbox.GetValue(i));
+                        boundingX.Add(xmin.GetValue(i));
+                    }
+                }
+            }
+
+            geometries.Should().HaveCount(2);
+            geometries[0].Should().Equal(firstGeometry);
+            geometries[1].Should().Equal(secondGeometry);
+            attributes.Should().Equal(null, "surveyed");
+            boxes.Should().Equal(null, 12);
+            boundingX.Should().Equal(-122.4, -122.3);
+        }
+    }
+
+    [UnitTest]
     public async Task FormatAsGeoParquetStreamAsync_ExceedsMaxResponseBytes_ThrowsLimitExceededAndDeletesSpool()
     {
         var resource = CreateResource(Field("name", MetadataV2FieldType.String));
