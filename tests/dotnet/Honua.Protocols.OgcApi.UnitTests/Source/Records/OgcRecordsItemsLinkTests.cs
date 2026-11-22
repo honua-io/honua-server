@@ -59,9 +59,8 @@ public sealed class OgcRecordsItemsLinkTests
         OgcRecordsEndpoints.TryParseDatetime("01/15/2020", out _, out _).Should().BeFalse();
         OgcRecordsEndpoints.TryParseDatetime("2020-01-01T12:00:00", out _, out _).Should().BeFalse();
         OgcRecordsEndpoints.TryParseDatetime("/2020-01-01T00:00:00Z", out _, out _).Should().BeFalse();
+        OgcRecordsEndpoints.TryParseDatetime("2020-01-01", out _, out _).Should().BeFalse();
 
-        OgcRecordsEndpoints.TryParseDatetime("2020-01-01", out var dateFilter, out _).Should().BeTrue();
-        dateFilter.Should().NotBeNull();
         OgcRecordsEndpoints.TryParseDatetime("../2020-01-01T00:00:00Z", out var openStart, out _).Should().BeTrue();
         openStart!.Start.Should().BeNull();
         openStart.End.Should().NotBeNull();

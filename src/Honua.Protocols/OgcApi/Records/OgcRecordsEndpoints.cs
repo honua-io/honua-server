@@ -938,20 +938,6 @@ internal static partial class OgcRecordsEndpoints
             return false;
         }
 
-        if (value.Length == 10 &&
-            value[4] == '-' &&
-            value[7] == '-' &&
-            DateTimeOffset.TryParseExact(
-                value,
-                "yyyy-MM-dd",
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
-                out var dateOnly))
-        {
-            result = dateOnly;
-            return true;
-        }
-
         if (Rfc3339DateTime().IsMatch(value) &&
             DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed))
         {
