@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics;
 using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -15,21 +16,21 @@ using Testcontainers.PostgreSql;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
-// Job execution across a PostgreSQL outage. Each test owns its container, because it stops and
-// starts it, which the process-wide shared container cannot survive.
+// Job execution across a PostgreSQL outage. This class owns one restartable container so it can
+// stop and start Postgres without disturbing the process-wide shared container.
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.TestInfrastructure)]
-public sealed class PostgresJobExecutionResilienceTests
+public sealed class PostgresJobExecutionResilienceTests(PostgresJobExecutionResilienceTests.RestartableSubstrate substrate)
+    : IClassFixture<PostgresJobExecutionResilienceTests.RestartableSubstrate>
 {
     private const string MigrationResourceName = "Honua.Server.Migrations.147_CreateJobSubstrate.sql";
 
     [IntegrationTest]
     public async Task JobExecutionService_WhenPostgresRestartsMidJob_JobCompletesExactlyOnce()
     {
-        await using var substrate = await RestartableSubstrate.StartAsync();
         var operationId = $"job-postgres-restart-{Guid.NewGuid():N}";
         var callback = new RecordingTerminalCallback();
-        var executor = new CountingDelayedExecutor(TimeSpan.FromSeconds(15));
+        var executor = new GatedExecutor();
         using var service = substrate.CreateWorker(executor, callback);
         await substrate.JobStore.TryCreateAsync(CreateQueuedJob(operationId, JobHeartbeatPolicy.Default, maxAttempts: 5));
         await substrate.Queue.EnqueueAsync(operationId);
@@ -40,6 +41,7 @@ public sealed class PostgresJobExecutionResilienceTests
             await executor.Started.WaitAsync(TimeSpan.FromSeconds(30));
 
             await substrate.RestartAsync(downFor: TimeSpan.FromSeconds(3));
+            executor.Release();
 
             var terminal = await callback.WhenCompleted.WaitAsync(TimeSpan.FromSeconds(90));
             terminal.Status.Should().Be(ExecutionJobStatus.Succeeded);
@@ -52,6 +54,7 @@ public sealed class PostgresJobExecutionResilienceTests
         }
         finally
         {
+            executor.Release();
             await service.StopAsync(CancellationToken.None);
         }
     }
@@ -59,45 +62,29 @@ public sealed class PostgresJobExecutionResilienceTests
     [IntegrationTest]
     public async Task JobReconciliation_AfterAnOutageLongerThanTheHeartbeatTimeout_DoesNotExpireALiveWorkersJob()
     {
-        await using var substrate = await RestartableSubstrate.StartAsync();
         var operationId = $"job-long-outage-{Guid.NewGuid():N}";
         var heartbeat = new JobHeartbeatPolicy { Interval = TimeSpan.FromSeconds(1), Timeout = TimeSpan.FromSeconds(4) };
         var callback = new RecordingTerminalCallback();
-        var executor = new CountingDelayedExecutor(TimeSpan.FromSeconds(30));
+        var executor = new GatedExecutor();
         using var worker = substrate.CreateWorker(executor, callback);
         using var reconciler = substrate.CreateReconciler(callback);
         // One attempt only: an expiry would fail the job outright instead of hiding behind a retry.
         await substrate.JobStore.TryCreateAsync(CreateQueuedJob(operationId, heartbeat, maxAttempts: 1));
         await substrate.Queue.EnqueueAsync(operationId);
 
-        using var sweeping = new CancellationTokenSource();
-        var failedSweeps = 0;
-        var sweeps = Task.Run(async () =>
-        {
-            while (!sweeping.IsCancellationRequested)
-            {
-                try
-                {
-                    await reconciler.SweepActiveJobsAsync(CancellationToken.None);
-                }
-                catch (Exception exception) when (exception is NpgsqlException or TimeoutException or InvalidOperationException)
-                {
-                    Interlocked.Increment(ref failedSweeps);
-                }
-
-                await Task.Delay(TimeSpan.FromMilliseconds(500));
-            }
-        });
-
+        await using var sweepLoop = new OutageSweepLoop(reconciler, heartbeat.Timeout);
         await worker.StartAsync(CancellationToken.None);
         try
         {
             await executor.Started.WaitAsync(TimeSpan.FromSeconds(30));
 
             await substrate.RestartAsync(downFor: heartbeat.Timeout * 2);
+            sweepLoop.MarkRecovered();
+            await sweepLoop.PostGraceSweepCompleted.WaitAsync(TimeSpan.FromSeconds(30));
+            executor.Release();
 
             var terminal = await callback.WhenCompleted.WaitAsync(TimeSpan.FromSeconds(120));
-            failedSweeps.Should().BePositive("the reconciler must have swept during the outage for this proof to mean anything");
+            sweepLoop.FailedSweeps.Should().BePositive("the reconciler must have swept during the outage for this proof to mean anything");
             terminal.Status.Should().Be(
                 ExecutionJobStatus.Succeeded,
                 "the worker was alive throughout; only the database was away");
@@ -106,9 +93,67 @@ public sealed class PostgresJobExecutionResilienceTests
         }
         finally
         {
-            await sweeping.CancelAsync();
-            await sweeps;
+            executor.Release();
             await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    private sealed class OutageSweepLoop : IAsyncDisposable
+    {
+        private readonly JobReconciliationService _reconciler;
+        private readonly TimeSpan _gracePeriod;
+        private readonly CancellationTokenSource _cts = new();
+        private readonly TaskCompletionSource _postGraceSweepCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly Task _loop;
+        private int _failedSweeps;
+        private long _recoveredAt;
+
+        public OutageSweepLoop(JobReconciliationService reconciler, TimeSpan gracePeriod)
+        {
+            _reconciler = reconciler;
+            _gracePeriod = gracePeriod;
+            _loop = RunAsync();
+        }
+
+        public int FailedSweeps => Volatile.Read(ref _failedSweeps);
+
+        public Task PostGraceSweepCompleted => _postGraceSweepCompleted.Task;
+
+        public void MarkRecovered() => Volatile.Write(ref _recoveredAt, Stopwatch.GetTimestamp());
+
+        public async ValueTask DisposeAsync()
+        {
+            await _cts.CancelAsync();
+            await _loop;
+            _cts.Dispose();
+        }
+
+        private async Task RunAsync()
+        {
+            while (!_cts.IsCancellationRequested)
+            {
+                await SweepOnceAsync();
+                await Task.Delay(TimeSpan.FromMilliseconds(500));
+            }
+        }
+
+        private async Task SweepOnceAsync()
+        {
+            try
+            {
+                await _reconciler.SweepActiveJobsAsync(CancellationToken.None);
+            }
+            catch (Exception exception) when (exception is NpgsqlException or TimeoutException or InvalidOperationException)
+            {
+                Interlocked.Increment(ref _failedSweeps);
+                return;
+            }
+
+            var recoveredTimestamp = Volatile.Read(ref _recoveredAt);
+            if (recoveredTimestamp != 0 && Stopwatch.GetElapsedTime(recoveredTimestamp) >= _gracePeriod)
+            {
+                _postGraceSweepCompleted.TrySetResult();
+            }
         }
     }
 
@@ -140,53 +185,46 @@ public sealed class PostgresJobExecutionResilienceTests
         };
     }
 
-    private sealed class RestartableSubstrate : IAsyncDisposable
+    public sealed class RestartableSubstrate : IAsyncLifetime
     {
-        private readonly PostgreSqlContainer _container;
-        private readonly NpgsqlDataSource _dataSource;
+        private PostgreSqlContainer? _container;
+        private NpgsqlDataSource? _dataSource;
 
-        private RestartableSubstrate(PostgreSqlContainer container, NpgsqlDataSource dataSource)
-        {
-            _container = container;
-            _dataSource = dataSource;
-            var database = new JobStoreDatabase(dataSource);
-            var options = Options.Create(new JobStoreOptions());
-            JobStore = new PostgresExecutionJobStore(database, options, NullLogger<PostgresExecutionJobStore>.Instance);
-            Queue = new PostgresJobQueue(database, NullLogger<PostgresJobQueue>.Instance);
-            LogStore = new PostgresExecutionLogStore(database, options, NullLogger<PostgresExecutionLogStore>.Instance);
-        }
+        internal PostgresExecutionJobStore JobStore { get; private set; } = null!;
 
-        public PostgresExecutionJobStore JobStore { get; }
+        internal PostgresJobQueue Queue { get; private set; } = null!;
 
-        public PostgresJobQueue Queue { get; }
+        internal PostgresExecutionLogStore LogStore { get; private set; } = null!;
 
-        public PostgresExecutionLogStore LogStore { get; }
-
-        public static async Task<RestartableSubstrate> StartAsync()
+        public async Task InitializeAsync()
         {
             // A fixed host port: the mapping of a dynamically published port can change across
             // a stop and start, which would leave the pool pointing at a dead port.
-            var container = new PostgreSqlBuilder()
+            _container = new PostgreSqlBuilder()
                 .WithImage("postgis/postgis:18-3.6")
                 .WithPortBinding(ReserveLoopbackPort(), 5432)
                 .Build();
-            await container.StartAsync();
-            var dataSource = NpgsqlDataSource.Create(container.GetConnectionString());
-            await using (var migrate = dataSource.CreateCommand(
+            await _container.StartAsync();
+            _dataSource = NpgsqlDataSource.Create(_container.GetConnectionString());
+            await using (var migrate = _dataSource.CreateCommand(
                              $"CREATE SCHEMA {JobStoreDatabase.DefaultSchemaName}; "
                              + ReadMigration().Replace("$HonuaSchema$", JobStoreDatabase.DefaultSchemaName, StringComparison.Ordinal)))
             {
                 await migrate.ExecuteNonQueryAsync();
             }
 
-            return new RestartableSubstrate(container, dataSource);
+            var database = new JobStoreDatabase(_dataSource);
+            var options = Options.Create(new JobStoreOptions());
+            JobStore = new PostgresExecutionJobStore(database, options, NullLogger<PostgresExecutionJobStore>.Instance);
+            Queue = new PostgresJobQueue(database, NullLogger<PostgresJobQueue>.Instance);
+            LogStore = new PostgresExecutionLogStore(database, options, NullLogger<PostgresExecutionLogStore>.Instance);
         }
 
-        public JobExecutionService CreateWorker(IJobExecutor executor, IJobTerminalCallback callback)
+        internal JobExecutionService CreateWorker(IJobExecutor executor, IJobTerminalCallback callback)
             => new(Queue, JobStore, [executor], new ExecutionJobCancellationTokens(), [callback], LogStore,
                 NullLogger<JobExecutionService>.Instance);
 
-        public JobReconciliationService CreateReconciler(IJobTerminalCallback callback)
+        internal JobReconciliationService CreateReconciler(IJobTerminalCallback callback)
             => new(
                 JobStore,
                 Queue,
@@ -198,17 +236,24 @@ public sealed class PostgresJobExecutionResilienceTests
                 JobStore,
                 JobStore);
 
-        public async Task RestartAsync(TimeSpan downFor)
+        internal async Task RestartAsync(TimeSpan downFor)
         {
-            await _container.StopAsync();
+            await _container!.StopAsync();
             await Task.Delay(downFor);
             await _container.StartAsync();
         }
 
-        public async ValueTask DisposeAsync()
+        public async Task DisposeAsync()
         {
-            await _dataSource.DisposeAsync();
-            await _container.DisposeAsync();
+            if (_dataSource is not null)
+            {
+                await _dataSource.DisposeAsync();
+            }
+
+            if (_container is not null)
+            {
+                await _container.DisposeAsync();
+            }
         }
 
         private static string ReadMigration()
@@ -234,9 +279,10 @@ public sealed class PostgresJobExecutionResilienceTests
         }
     }
 
-    private sealed class CountingDelayedExecutor(TimeSpan delay) : IJobExecutor
+    private sealed class GatedExecutor : IJobExecutor
     {
         private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int _executions;
 
         public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
@@ -245,6 +291,8 @@ public sealed class PostgresJobExecutionResilienceTests
 
         public int Executions => Volatile.Read(ref _executions);
 
+        public void Release() => _release.TrySetResult();
+
         public async Task<JobExecutionResult> ExecuteAsync(
             ExecutionJobRecord job,
             IJobExecutionContext context,
@@ -252,7 +300,7 @@ public sealed class PostgresJobExecutionResilienceTests
         {
             Interlocked.Increment(ref _executions);
             _started.TrySetResult();
-            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+            await _release.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
             return JobExecutionResult.Succeeded();
         }
     }
