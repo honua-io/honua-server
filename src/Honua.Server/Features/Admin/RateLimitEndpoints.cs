@@ -235,17 +235,9 @@ internal static partial class RateLimitEndpoints
     {
         try
         {
-            var validationResults = new List<ValidationResult>();
-            if (!Validator.TryValidateObject(request, new ValidationContext(request), validationResults, true))
+            if (ValidateUpdatePolicyRequest(request) is { } validationError)
             {
-                var errors = string.Join(", ", validationResults.Select(r => r.ErrorMessage));
-                return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {errors}"));
-            }
-
-            if (request.Name is not null && (string.IsNullOrWhiteSpace(request.Name) || request.Name.Any(char.IsControl)))
-            {
-                return TypedResults.BadRequest(ApiResponse<object>.Failure(
-                    "Validation failed: name must not be empty or contain control characters."));
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(validationError));
             }
 
             var result = await store.UpdatePolicyAsync(id, existing => new RateLimitPolicy
@@ -279,6 +271,23 @@ internal static partial class RateLimitEndpoints
                 detail: "An internal error occurred while updating the rate limit policy.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
+    }
+
+    private static string? ValidateUpdatePolicyRequest(UpdateRateLimitPolicyRequest request)
+    {
+        var validationResults = new List<ValidationResult>();
+        if (!Validator.TryValidateObject(request, new ValidationContext(request), validationResults, true))
+        {
+            var errors = string.Join(", ", validationResults.Select(r => r.ErrorMessage));
+            return $"Validation failed: {errors}";
+        }
+
+        if (request.Name is not null && (string.IsNullOrWhiteSpace(request.Name) || request.Name.Any(char.IsControl)))
+        {
+            return "Validation failed: name must not be empty or contain control characters.";
+        }
+
+        return null;
     }
 
     private static async Task<Results<Ok<ApiResponse<object>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>

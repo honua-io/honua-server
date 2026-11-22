@@ -29,7 +29,7 @@ internal sealed partial class MetadataReleaseControlService(
     private static readonly Regex UnsafeOperationIdCharacters = new("[^a-z0-9]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private readonly IWorkflowOperationStore? _workflowStore = workflowStores.FirstOrDefault();
 
-    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]{0,127}$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"\A[A-Za-z_][A-Za-z0-9_]{0,127}\z", RegexOptions.CultureInvariant)]
     private static partial Regex FieldIdentifierPattern();
 
     public async Task<WorkflowOperationRecord> CreateAsync(
@@ -42,7 +42,8 @@ internal sealed partial class MetadataReleaseControlService(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        ValidateRequest(plan, reason, idempotencyKey, correlationId);
+        ValidatePlan(plan);
+        ValidateAuditFields(reason, idempotencyKey, correlationId);
         var root = RootProvisioningOperationIds.Normalize(rootProvisioningOperationId);
         EnsureDurableStoreConfigured();
 
@@ -185,48 +186,61 @@ internal sealed partial class MetadataReleaseControlService(
         }
     }
 
-    private static void ValidateRequest(
-        MetadataReleaseExecutionPlan plan,
-        string? reason,
-        string? idempotencyKey,
-        string? correlationId)
+    private static void ValidatePlan(MetadataReleaseExecutionPlan plan)
     {
         ValidateRequiredBoundedText(plan.PackageId, "packageId", MaxPackageIdLength);
         ValidateRequiredBoundedText(plan.TargetEnvironment, "targetEnvironment", MaxTargetEnvironmentLength);
         ValidateRequiredBoundedText(plan.ResourceSemanticId, "resourceSemanticId", MaxResourceSemanticIdLength);
         ValidateFieldIdentifier(plan.NewFieldName, "newFieldName");
-
         ValidateOptionalBoundedText(plan.DataPopulateWorkloadId, "dataPopulateWorkloadId", MaxWorkloadIdLength);
+        ValidateDataPopulateFields(plan.DataPopulateFields);
+        ValidateScript(plan.Script);
+    }
+
+    private static void ValidateAuditFields(string? reason, string? idempotencyKey, string? correlationId)
+    {
         ValidateOptionalBoundedText(reason, "reason", MaxReasonLength);
         ValidateOptionalBoundedText(idempotencyKey, "idempotencyKey", MaxIdempotencyKeyLength);
         ValidateOptionalBoundedText(correlationId, "correlationId", MaxCorrelationIdLength);
+    }
 
-        if (plan.DataPopulateFields is not null)
+    private static void ValidateDataPopulateFields(IReadOnlyList<string>? fields)
+    {
+        if (fields is null)
         {
-            if (plan.DataPopulateFields.Count > MaxDataPopulateFieldsCount)
-            {
-                throw new ArgumentException($"dataPopulateFields must contain {MaxDataPopulateFieldsCount} entries or fewer.");
-            }
-
-            foreach (var field in plan.DataPopulateFields)
-            {
-                ValidateFieldIdentifier(field, "dataPopulateFields");
-            }
+            return;
         }
 
-        if (plan.Script is not null)
+        if (fields.Count > MaxDataPopulateFieldsCount)
         {
-            ValidateRequiredBoundedText(plan.Script.ScriptId, "scriptId", MaxScriptIdLength);
+            throw new ArgumentException($"dataPopulateFields must contain {MaxDataPopulateFieldsCount} entries or fewer.");
+        }
 
-            if (plan.Script.ForwardOperations is not null)
-            {
-                foreach (var operation in plan.Script.ForwardOperations)
-                {
-                    ValidateRequiredBoundedText(operation.ResourceSemanticId, "resourceSemanticId", MaxResourceSemanticIdLength);
-                    ValidateFieldIdentifier(operation.FieldName, "newFieldName");
-                    ValidateOptionalBoundedText(operation.FieldType, "newFieldType", MaxFieldTypeLength);
-                }
-            }
+        foreach (var field in fields)
+        {
+            ValidateFieldIdentifier(field, "dataPopulateFields");
+        }
+    }
+
+    private static void ValidateScript(MetadataReleaseScript? script)
+    {
+        if (script is null)
+        {
+            return;
+        }
+
+        ValidateRequiredBoundedText(script.ScriptId, "scriptId", MaxScriptIdLength);
+
+        if (script.ForwardOperations is null)
+        {
+            return;
+        }
+
+        foreach (var operation in script.ForwardOperations)
+        {
+            ValidateRequiredBoundedText(operation.ResourceSemanticId, "resourceSemanticId", MaxResourceSemanticIdLength);
+            ValidateFieldIdentifier(operation.FieldName, "newFieldName");
+            ValidateOptionalBoundedText(operation.FieldType, "newFieldType", MaxFieldTypeLength);
         }
     }
 

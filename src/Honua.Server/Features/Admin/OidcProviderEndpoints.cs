@@ -179,12 +179,43 @@ internal static partial class OidcProviderEndpoints
         HandleUndoProviderChange(Guid id, UndoSettingsChangeRequest request, HttpContext context)
         => SettingsRevisionHandlers.UndoAsync(new(ProviderDocument(id), DeletedDocumentUndo.Refuse), request, context);
 
-    private static async Task<string?> ValidateProviderInputAsync(
-        object request,
-        string? name,
-        string? authority,
-        bool isUpdate,
+    private static async Task<string?> ValidateCreateProviderAsync(
+        CreateOidcProviderRequest request,
         CancellationToken cancellationToken)
+    {
+        if (ValidateDataAnnotations(request) is { } annotationError)
+        {
+            return annotationError;
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Any(char.IsControl))
+        {
+            return "Validation failed: name must not be empty or contain control characters.";
+        }
+
+        return await ValidateAuthorityAsync(request.Authority, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<string?> ValidateUpdateProviderAsync(
+        UpdateOidcProviderRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (ValidateDataAnnotations(request) is { } annotationError)
+        {
+            return annotationError;
+        }
+
+        if (request.Name is not null && (string.IsNullOrWhiteSpace(request.Name) || request.Name.Any(char.IsControl)))
+        {
+            return "Validation failed: name must not be empty or contain control characters.";
+        }
+
+        return request.Authority is null
+            ? null
+            : await ValidateAuthorityAsync(request.Authority, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static string? ValidateDataAnnotations(object request)
     {
         var validationResults = new List<ValidationResult>();
         if (!Validator.TryValidateObject(request, new ValidationContext(request), validationResults, true))
@@ -193,26 +224,20 @@ internal static partial class OidcProviderEndpoints
             return $"Validation failed: {errors}";
         }
 
-        if ((name is not null || !isUpdate) && (string.IsNullOrWhiteSpace(name) || name.Any(char.IsControl)))
-        {
-            return "Validation failed: name must not be empty or contain control characters.";
-        }
-
-        if (authority is not null || !isUpdate)
-        {
-            if (string.IsNullOrWhiteSpace(authority) || authority.Any(char.IsControl))
-            {
-                return "Validation failed: authority must be a valid HTTPS URL without control characters.";
-            }
-
-            var ssrf = await OutboundHttpUrlValidator.ValidateAsync(authority, cancellationToken).ConfigureAwait(false);
-            if (!ssrf.IsValid && !ssrf.IsHostResolutionUnavailable)
-            {
-                return $"Validation failed: authority {ssrf.ErrorMessage}";
-            }
-        }
-
         return null;
+    }
+
+    private static async Task<string?> ValidateAuthorityAsync(string? authority, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(authority) || authority.Any(char.IsControl))
+        {
+            return "Validation failed: authority must be a valid HTTPS URL without control characters.";
+        }
+
+        var ssrf = await OutboundHttpUrlValidator.ValidateAsync(authority, cancellationToken).ConfigureAwait(false);
+        return !ssrf.IsValid && !ssrf.IsHostResolutionUnavailable
+            ? $"Validation failed: authority {ssrf.ErrorMessage}"
+            : null;
     }
 
     private static ConfigurationDocumentKey ProviderDocument(Guid id) => new(PostgresOidcProviderStore.DocumentKind, id.ToString("D"));
@@ -266,8 +291,7 @@ internal static partial class OidcProviderEndpoints
     {
         try
         {
-            var validationError = await ValidateProviderInputAsync(
-                request, request.Name, request.Authority, isUpdate: false, context.RequestAborted);
+            var validationError = await ValidateCreateProviderAsync(request, context.RequestAborted);
             if (validationError is not null)
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure(validationError));
@@ -353,8 +377,7 @@ internal static partial class OidcProviderEndpoints
     {
         try
         {
-            var validationError = await ValidateProviderInputAsync(
-                request, request.Name, request.Authority, isUpdate: true, context.RequestAborted);
+            var validationError = await ValidateUpdateProviderAsync(request, context.RequestAborted);
             if (validationError is not null)
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure(validationError));

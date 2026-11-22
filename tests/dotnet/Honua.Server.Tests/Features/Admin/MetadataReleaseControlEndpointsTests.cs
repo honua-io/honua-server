@@ -102,7 +102,8 @@ public sealed class MetadataReleaseControlEndpointsTests : IAsyncLifetime
             "1starts_with_digit",
             "bad-hyphen",
             "has space",
-            "col\r\nforged"
+            "col\r\nforged",
+            "owner_email\n"
         ];
 
         foreach (var invalidFieldName in invalidFieldNames)
@@ -112,7 +113,8 @@ public sealed class MetadataReleaseControlEndpointsTests : IAsyncLifetime
                 packageId = "pkg-invalid-field",
                 targetEnvironment = "dev",
                 resourceSemanticId = "res-1",
-                newFieldName = invalidFieldName
+                newFieldName = invalidFieldName,
+                scriptId = "add-safe-script"
             });
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -135,6 +137,17 @@ public sealed class MetadataReleaseControlEndpointsTests : IAsyncLifetime
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var trailingNewlineResponse = await _client.PostAsJsonAsync("/api/v1/admin/metadata/releases/operations", new
+        {
+            packageId = "pkg-invalid-pop-lf",
+            targetEnvironment = "dev",
+            resourceSemanticId = "res-1",
+            newFieldName = "owner_email",
+            dataPopulateFields = new[] { "owner_email\n" }
+        });
+
+        trailingNewlineResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await _workflowStore.ListActiveAsync()).Should().BeEmpty();
     }
 

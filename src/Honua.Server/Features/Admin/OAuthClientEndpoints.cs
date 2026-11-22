@@ -229,11 +229,14 @@ internal static partial class OAuthClientEndpoints
             return false;
         }
 
-        if (!TryParseClientType(request.ClientType, out clientType))
+        var parsedClientType = ParseClientType(request.ClientType);
+        if (parsedClientType is null)
         {
             validationMessage = "Validation failed: clientType must be 'confidential' or 'public'";
             return false;
         }
+
+        clientType = parsedClientType.Value;
 
         if (request.AllowedGrantTypes is not null && request.AllowedGrantTypes.Any(string.IsNullOrWhiteSpace))
         {
@@ -257,24 +260,21 @@ internal static partial class OAuthClientEndpoints
         return true;
     }
 
-    private static bool TryParseClientType(string? rawClientType, out OAuthClientType clientType)
+    private static OAuthClientType? ParseClientType(string? rawClientType)
     {
         var rawType = rawClientType?.Trim();
         if (string.IsNullOrWhiteSpace(rawType) ||
             string.Equals(rawType, "confidential", StringComparison.OrdinalIgnoreCase))
         {
-            clientType = OAuthClientType.Confidential;
-            return true;
+            return OAuthClientType.Confidential;
         }
 
         if (string.Equals(rawType, "public", StringComparison.OrdinalIgnoreCase))
         {
-            clientType = OAuthClientType.Public;
-            return true;
+            return OAuthClientType.Public;
         }
 
-        clientType = OAuthClientType.Confidential;
-        return false;
+        return null;
     }
 
     private static bool IsValidRedirectUri(string? value)
