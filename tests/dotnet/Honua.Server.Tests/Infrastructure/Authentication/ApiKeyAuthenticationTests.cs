@@ -56,24 +56,24 @@ public class ApiKeyAuthenticationTests : IClassFixture<ApiKeyAuthenticationTests
 
     public sealed class ApiKeyHosts : IDisposable
     {
-        private WebApplicationFactory<Program>? _productionAdmin;
-        private WebApplicationFactory<Program>? _productionBasicAuthHttps;
+        private ManagedFactory? _productionAdmin;
+        private ManagedFactory? _productionBasicAuthHttps;
 
-        public WebApplicationFactory<Program> GetProductionAdminHost(string connectionString) =>
-            _productionAdmin ??= CreateTestFactory(connectionString, "Production", builder =>
+        internal HttpClient CreateProductionAdminClient(string connectionString) =>
+            (_productionAdmin ??= CreateManagedFactory(connectionString, "Production", builder =>
             {
                 builder.UseEnvironment("Production");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
-            });
+            })).CreateClient();
 
-        public WebApplicationFactory<Program> GetProductionBasicAuthHttpsHost(string connectionString) =>
-            _productionBasicAuthHttps ??= CreateTestFactory(connectionString, "Production", builder =>
+        internal HttpClient CreateProductionBasicAuthHttpsClient(string connectionString) =>
+            (_productionBasicAuthHttps ??= CreateManagedFactory(connectionString, "Production", builder =>
             {
                 builder.UseEnvironment("Production");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", TestBasicPassword);
                 builder.UseSetting("HONUA_ENABLE_BASIC_AUTH_COMPAT", "true");
                 builder.UseSetting("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH", "true");
-            });
+            })).CreateClient();
 
         public void Dispose()
         {
@@ -82,53 +82,92 @@ public class ApiKeyAuthenticationTests : IClassFixture<ApiKeyAuthenticationTests
         }
     }
 
-    private WebApplicationFactory<Program> CreateTestFactory(
+    private sealed class ManagedFactory : IDisposable
+    {
+        private readonly WebApplicationFactory<Program> _root;
+        private readonly WebApplicationFactory<Program> _derived;
+
+        public ManagedFactory(
+            string connectionString,
+            string environmentName,
+            Action<IWebHostBuilder> configure)
+        {
+            _root = TestWebApplicationFactory.CreateForEnvironment(environmentName);
+            try
+            {
+                _derived = _root.WithWebHostBuilder(builder => ConfigureTestWebHost(builder, connectionString, configure));
+            }
+            catch
+            {
+                _root.Dispose();
+                throw;
+            }
+        }
+
+        public HttpClient CreateClient() => _derived.CreateClient();
+
+        public void Dispose()
+        {
+            try
+            {
+                _derived.Dispose();
+            }
+            finally
+            {
+                _root.Dispose();
+            }
+        }
+    }
+
+    private ManagedFactory CreateTestFactory(
         string environmentName,
         Action<IWebHostBuilder> configure) =>
-        CreateTestFactory(TestPostgresConnectionString, environmentName, configure);
+        new(TestPostgresConnectionString, environmentName, configure);
 
-    private static WebApplicationFactory<Program> CreateTestFactory(
+    private static ManagedFactory CreateManagedFactory(
         string connectionString,
         string environmentName,
+        Action<IWebHostBuilder> configure) =>
+        new(connectionString, environmentName, configure);
+
+    private static void ConfigureTestWebHost(
+        IWebHostBuilder builder,
+        string connectionString,
         Action<IWebHostBuilder> configure)
     {
-        return TestWebApplicationFactory.CreateForEnvironment(environmentName)
-            .WithWebHostBuilder(builder =>
+        // Apply additional test-specific configuration first
+        configure?.Invoke(builder);
+
+        // Default to the test environment unless the caller explicitly requested one.
+        if (string.IsNullOrWhiteSpace(builder.GetSetting(WebHostDefaults.EnvironmentKey)))
+        {
+            builder.UseEnvironment("Test");
+        }
+
+        // Configure test connection string to avoid connection string errors (must be last)
+        builder.ConfigureAppConfiguration((context, configBuilder) =>
+        {
+            configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                // Apply additional test-specific configuration first
-                configure?.Invoke(builder);
-
-                // Default to the test environment unless the caller explicitly requested one.
-                if (string.IsNullOrWhiteSpace(builder.GetSetting(WebHostDefaults.EnvironmentKey)))
-                {
-                    builder.UseEnvironment("Test");
-                }
-
-                // Configure test connection string to avoid connection string errors (must be last)
-                builder.ConfigureAppConfiguration((context, configBuilder) =>
-                {
-                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
-                    {
-                        ["ConnectionStrings:DefaultConnection"] = connectionString,
-                        ["ConnectionStrings:honua"] = connectionString,
-                        ["Security:ConnectionEncryption:MasterKey"] = TestConnectionEncryptionMasterKey,
-                        ["HONUA_ADMIN_PASSWORD"] = builder.GetSetting("HONUA_ADMIN_PASSWORD"),
-                        ["HONUA_DEV_AUTH"] = builder.GetSetting("HONUA_DEV_AUTH"),
-                        ["HONUA_DEV_AUTH_ALLOW_BYPASS"] = builder.GetSetting("HONUA_DEV_AUTH_ALLOW_BYPASS"),
-                        ["HONUA_ENABLE_BASIC_AUTH_COMPAT"] = builder.GetSetting("HONUA_ENABLE_BASIC_AUTH_COMPAT"),
-                        ["HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH"] = builder.GetSetting("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH"),
-                        ["ForwardedHeaders:Enabled"] = builder.GetSetting("ForwardedHeaders:Enabled")
-                    });
-                });
-
-                builder.ConfigureTestServices(services =>
-                {
-                    services.RemoveAll<IDatabaseCompatibilityChecker>();
-                    services.AddSingleton<IDatabaseCompatibilityChecker, AlwaysCompatibleDatabaseCompatibilityChecker>();
-                    services.RemoveAll<NpgsqlDataSource>();
-                    services.AddSingleton(_ => NpgsqlDataSource.Create(connectionString));
-                });
+                ["ConnectionStrings:DefaultConnection"] = connectionString,
+                ["ConnectionStrings:honua"] = connectionString,
+                ["Security:ConnectionEncryption:MasterKey"] = TestConnectionEncryptionMasterKey,
+                ["HONUA_ADMIN_PASSWORD"] = builder.GetSetting("HONUA_ADMIN_PASSWORD"),
+                ["HONUA_DEV_AUTH"] = builder.GetSetting("HONUA_DEV_AUTH"),
+                ["HONUA_DEV_AUTH_ALLOW_BYPASS"] = builder.GetSetting("HONUA_DEV_AUTH_ALLOW_BYPASS"),
+                ["HONUA_ENABLE_BASIC_AUTH_COMPAT"] = builder.GetSetting("HONUA_ENABLE_BASIC_AUTH_COMPAT"),
+                ["HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH"] = builder.GetSetting("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH"),
+                ["ForwardedHeaders:Enabled"] = builder.GetSetting("ForwardedHeaders:Enabled")
             });
+        });
+
+        builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<IDatabaseCompatibilityChecker>();
+            services.AddSingleton<IDatabaseCompatibilityChecker, AlwaysCompatibleDatabaseCompatibilityChecker>();
+            services.RemoveAll<NpgsqlDataSource>();
+            services.AddSingleton(_ => NpgsqlDataSource.Create(connectionString));
+        });
     }
 
     private static void AddFeatureServerTestServices(
@@ -276,7 +315,7 @@ public class ApiKeyAuthenticationTests : IClassFixture<ApiKeyAuthenticationTests
     public async Task AdminEndpoint_ProductionEnvironment_NoBypass_RequiresAuth()
     {
         // Arrange - Production environment without bypass
-        using var client = _hosts.GetProductionAdminHost(TestPostgresConnectionString).CreateClient();
+        using var client = _hosts.CreateProductionAdminClient(TestPostgresConnectionString);
 
         // Act - Access admin endpoint without API key
         var response = await client.GetAsync("/api/v1/admin/connections/test/tables");
@@ -362,7 +401,7 @@ public class ApiKeyAuthenticationTests : IClassFixture<ApiKeyAuthenticationTests
     {
         // Arrange
         const string adminPassword = TestAdminPassword;
-        using var client = _hosts.GetProductionAdminHost(TestPostgresConnectionString).CreateClient();
+        using var client = _hosts.CreateProductionAdminClient(TestPostgresConnectionString);
 
         // Act - Access admin endpoint with valid API key
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
@@ -404,7 +443,7 @@ public class ApiKeyAuthenticationTests : IClassFixture<ApiKeyAuthenticationTests
     public async Task AdminEndpoint_EmptyApiKey_DeniesAccess()
     {
         // Arrange
-        using var client = _hosts.GetProductionAdminHost(TestPostgresConnectionString).CreateClient();
+        using var client = _hosts.CreateProductionAdminClient(TestPostgresConnectionString);
 
         // Act - Access admin endpoint with empty API key
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
@@ -420,7 +459,7 @@ public class ApiKeyAuthenticationTests : IClassFixture<ApiKeyAuthenticationTests
     public async Task AdminEndpoint_NoApiKeyHeader_DeniesAccess()
     {
         // Arrange
-        using var client = _hosts.GetProductionAdminHost(TestPostgresConnectionString).CreateClient();
+        using var client = _hosts.CreateProductionAdminClient(TestPostgresConnectionString);
 
         // Act - Access admin endpoint without API key header
         var response = await client.GetAsync("/api/v1/admin/connections/test/tables");
@@ -490,7 +529,7 @@ public class ApiKeyAuthenticationTests : IClassFixture<ApiKeyAuthenticationTests
     {
         // Arrange
         const string adminPassword = TestBasicPassword;
-        using var client = _hosts.GetProductionBasicAuthHttpsHost(TestPostgresConnectionString).CreateClient();
+        using var client = _hosts.CreateProductionBasicAuthHttpsClient(TestPostgresConnectionString);
 
         // Act
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
@@ -514,7 +553,7 @@ public class ApiKeyAuthenticationTests : IClassFixture<ApiKeyAuthenticationTests
     {
         // Arrange
         const string adminPassword = TestBasicPassword;
-        using var client = _hosts.GetProductionBasicAuthHttpsHost(TestPostgresConnectionString).CreateClient();
+        using var client = _hosts.CreateProductionBasicAuthHttpsClient(TestPostgresConnectionString);
 
         // Act
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/connections/test/tables");
@@ -613,7 +652,7 @@ public class ApiKeyAuthenticationTests : IClassFixture<ApiKeyAuthenticationTests
     public async Task HealthEndpoint_NoAuth_AlwaysAccessible()
     {
         // Arrange - Production environment with auth required
-        using var client = _hosts.GetProductionAdminHost(TestPostgresConnectionString).CreateClient();
+        using var client = _hosts.CreateProductionAdminClient(TestPostgresConnectionString);
 
         // Act - Access public health endpoint without API key
         var response = await client.GetAsync("/healthz/live");
