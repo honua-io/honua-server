@@ -22,11 +22,11 @@ public sealed class PooledTileData : IDisposable
 
     public int Length => _length;
 
-    public ReadOnlyMemory<byte> Memory => _buffer is { } buffer
+    public ReadOnlyMemory<byte> Memory => Volatile.Read(ref _buffer) is { } buffer
         ? buffer.AsMemory(0, _length)
         : ReadOnlyMemory<byte>.Empty;
 
-    public ReadOnlySpan<byte> Span => _buffer is { } buffer
+    public ReadOnlySpan<byte> Span => Volatile.Read(ref _buffer) is { } buffer
         ? buffer.AsSpan(0, _length)
         : ReadOnlySpan<byte>.Empty;
 

@@ -86,10 +86,6 @@ internal sealed class CapabilityManifestService(
     private static readonly CapabilityManifestPackages StaticPackages = BuildPackages();
     private static readonly CapabilityManifestLink[] StaticLinks = BuildLinks();
 
-    private CapabilityManifestServerInfo? _cachedServerInfo;
-    private CapabilityManifestTransports? _cachedTransports;
-    private string[]? _cachedInstalledProviders;
-
     public async Task<CapabilityManifestDocument> GetManifestAsync(
         CapabilityManifestRequest request,
         CancellationToken cancellationToken = default)
@@ -158,17 +154,18 @@ internal sealed class CapabilityManifestService(
                     : CapabilityReasonCodes.InsufficientPolicy,
                 Authenticated = request.Authenticated
             },
-            Server = _cachedServerInfo ??= BuildServerInfo(),
+            Server = options.GetOrCreateServerInfo(runtimeInventory.EnvironmentName, BuildServerInfo),
             Environment = environment,
             Packages = packages,
             Capabilities = capabilities,
-            Transports = _cachedTransports ??= BuildTransports(),
+            Transports = options.GetOrCreateTransports(BuildTransports),
             Limits = limits,
             Policies = BuildPolicies(snapshot, callerCapabilities),
             DeploymentProfile = options.DeploymentProfile,
             DataStores = request.Authenticated ? new CapabilityManifestDataStores
             {
-                InstalledProviders = _cachedInstalledProviders ??= runtimeInventory.FeatureDataProviders.Order(StringComparer.Ordinal).ToArray()
+                InstalledProviders = options.GetOrCreateInstalledProviders(
+                    () => runtimeInventory.FeatureDataProviders.Order(StringComparer.Ordinal).ToArray())
             } : null,
             Links = StaticLinks
         };

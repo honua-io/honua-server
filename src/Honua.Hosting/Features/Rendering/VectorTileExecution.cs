@@ -123,9 +123,7 @@ internal static partial class VectorTileExecution
         CancellationToken CancellationToken);
 
     private static async Task<IResult> ExecutePooledAsync(
-        IPooledTileProvider pooledProvider,
-        MvtTileRequest request,
-        TileResponseContext response)
+        IPooledTileProvider pooledProvider, MvtTileRequest request, TileResponseContext response)
     {
         PooledTileData? tileData;
         try
@@ -139,32 +137,35 @@ internal static partial class VectorTileExecution
                 ex.EncodedBytes, request.TileLimits.MaxTileSize);
         }
 
-        if (response.CancellationToken.IsCancellationRequested)
+        try
         {
-            tileData?.Dispose();
             response.CancellationToken.ThrowIfCancellationRequested();
-        }
+            if (tileData is { Length: > 0 } && tileData.Length > request.TileLimits.MaxTileSize)
+            {
+                var encodedBytes = tileData.Length;
+                tileData.Dispose();
+                return RefuseOversizedTile(
+                    response.HttpContext, response.Activity, request.LayerId, request.X, request.Y, request.Z,
+                    encodedBytes, request.TileLimits.MaxTileSize);
+            }
 
-        if (tileData is { Length: > 0 } && tileData.Length > request.TileLimits.MaxTileSize)
-        {
-            var encodedBytes = tileData.Length;
-            tileData.Dispose();
-            return RefuseOversizedTile(
-                response.HttpContext, response.Activity, request.LayerId, request.X, request.Y, request.Z,
-                encodedBytes, request.TileLimits.MaxTileSize);
-        }
+            response.Activity?.SetStatus(ActivityStatusCode.Ok);
+            UseTilesetLifetime(response.HttpContext, request.TileOptions, response.ServiceId, response.LayerId, request.LayerId, response.TileMatrixSetId);
+            if (tileData is null || tileData.Length == 0)
+            {
+                tileData?.Dispose();
+                response.Activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, 0);
+                return Results.NoContent();
+            }
 
-        response.Activity?.SetStatus(ActivityStatusCode.Ok);
-        UseTilesetLifetime(response.HttpContext, request.TileOptions, response.ServiceId, response.LayerId, request.LayerId, response.TileMatrixSetId);
-        if (tileData is null || tileData.Length == 0)
+            response.Activity?.SetTag("honua.tile.bytes", tileData.Length);
+            return new PooledTileContentResult(tileData, MvtContentType);
+        }
+        catch
         {
             tileData?.Dispose();
-            response.Activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, 0);
-            return Results.NoContent();
+            throw;
         }
-
-        response.Activity?.SetTag("honua.tile.bytes", tileData.Length);
-        return new PooledTileContentResult(tileData, MvtContentType);
     }
 
     // The over-budget refusal is logged because a cached refusal skips this path, so the line is once per tile per cache lifetime.

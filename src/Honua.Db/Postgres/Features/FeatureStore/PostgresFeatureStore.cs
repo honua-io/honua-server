@@ -677,11 +677,12 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
         if (_queryBuilder is FeatureQueryBuilder postgresBuilder)
         {
             return await MvtTileBudgetFitter.ReadPooledAsync(
-                request.TileLimits.MaxTileSize,
-                step => postgresBuilder.BuildMvtTileQuery(
-                    request.LayerId, request.X, request.Y, request.Z, effectiveQuery,
-                    request.TileOptions, request.TileLimits, geometryStorageType, request.GridGeometry, step),
-                (tileQuery, maxTileSize, token) => postgresDataAccess.GetMvtTilePooledAsync(tileQuery, maxTileSize, token),
+                new MvtTileBudgetRead<CoreParameterizedQuery>(
+                    request.TileLimits.MaxTileSize,
+                    step => postgresBuilder.BuildMvtTileQuery(
+                        request.LayerId, request.X, request.Y, request.Z, effectiveQuery,
+                        request.TileOptions, request.TileLimits, geometryStorageType, request.GridGeometry, step),
+                    (tileQuery, maxTileSize, token) => postgresDataAccess.GetMvtTilePooledAsync(tileQuery, maxTileSize, token)),
                 cancellationToken).ConfigureAwait(false);
         }
 

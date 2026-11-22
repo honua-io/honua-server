@@ -59,9 +59,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
         // Tiles within the byte budget use one encode. Only oversized tiles require
         // additional fitting passes.
         return await MvtTileBudgetFitter.ReadPooledAsync(
-            request.TileLimits.MaxTileSize,
-            step => BuildMvtTileSql(spec, step),
-            ExecuteTilePooledAsync,
+            new MvtTileBudgetRead<SqlBuilder>(
+                request.TileLimits.MaxTileSize,
+                step => BuildMvtTileSql(spec, step),
+                ExecuteTilePooledAsync),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -156,39 +157,23 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
     private void AppendTileSelectSql(SqlBuilder sql, TileBuildSpec spec, TileGeometryExpressions geom)
     {
         var req = spec.Request;
-        var extentParameter = sql.AddParameter(spec.TileExtent);
-        var bufferParameter = sql.AddParameter(req.TileOptions.TileBuffer);
+        var extentParam = sql.AddParameter(spec.TileExtent);
+        var bufferParam = sql.AddParameter(req.TileOptions.TileBuffer);
         var attributes = geom.Step.OmitAttributes ? null : BuildAttributesJsonbExpression(spec.EffectiveQuery, sql);
-        var geomSql = MvtTileBudget.EncodeGeometry(geom.GeometryForTile, geom.OriginalGeometryForTile, new(geom.TileEnvelope, extentParameter, bufferParameter));
-        var source = BuildFeatureSource(spec.EffectiveQuery, sql);
+        var geomSql = MvtTileBudget.EncodeGeometry(geom.GeometryForTile, geom.OriginalGeometryForTile, new(geom.TileEnvelope, extentParam, bufferParam));
+        var attrColumn = attributes is null ? string.Empty : $",\n                        {attributes} AS attributes";
 
-        if (attributes is null)
-        {
-            sql.Append(CultureInfo.InvariantCulture, $"""
-                SELECT ST_AsMVT(tile, 'layer', {extentParameter}, 'geom')
-                FROM (
-                    SELECT
-                        {_primaryKeyColumn}::bigint AS objectid,
-                        {geomSql} AS geom
-                    FROM {source}
-                """);
-        }
-        else
-        {
-            sql.Append(CultureInfo.InvariantCulture, $"""
-                SELECT ST_AsMVT(tile, 'layer', {extentParameter}, 'geom')
-                FROM (
-                    SELECT
-                        {_primaryKeyColumn}::bigint AS objectid,
-                        {attributes} AS attributes,
-                        {geomSql} AS geom
-                    FROM {source}
-                """);
-        }
+        sql.Append(CultureInfo.InvariantCulture, $"""
+            SELECT ST_AsMVT(tile, 'layer', {extentParam}, 'geom')
+            FROM (
+                SELECT
+                    {_primaryKeyColumn}::bigint AS objectid{attrColumn},
+                    {geomSql} AS geom
+                FROM {BuildFeatureSource(spec.EffectiveQuery, sql)}
+            """);
 
         AppendFilter(sql, spec.EffectiveQuery);
-        sql.Append(
-            CultureInfo.InvariantCulture,
+        sql.Append(CultureInfo.InvariantCulture,
             $" {BuildWhereJoiner(sql)} {geom.Geometry} && {geom.EnvelopeForFilter} AND ST_Intersects({geom.Geometry}, {geom.EnvelopeForFilter})");
 
         if (req.TileLimits.MaxFeaturesPerTile > 0)

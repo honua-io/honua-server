@@ -110,6 +110,11 @@ internal static class MvtTileBudget
 // A pass that already fits is returned immediately. An empty retry is not a fit.
 // Exhausting the bounded ladder refuses the tile instead of returning a feature subset.
 // A genuinely empty first pass still returns no tile.
+internal readonly record struct MvtTileBudgetRead<TQuery>(
+    long MaxTileSize,
+    Func<MvtTileBudgetStep, TQuery> Build,
+    Func<TQuery, long, CancellationToken, Task<PooledTileData?>> Execute);
+
 internal static class MvtTileBudgetFitter
 {
     internal static async Task<byte[]?> ReadAsync<TQuery>(
@@ -118,50 +123,25 @@ internal static class MvtTileBudgetFitter
         Func<TQuery, long, CancellationToken, Task<byte[]?>> execute,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(build);
         ArgumentNullException.ThrowIfNull(execute);
-
-        var step = MvtTileBudgetStep.Full;
-        TileSizeLimitExceededException? refusal = null;
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            byte[]? tile;
-            try
+        var read = new MvtTileBudgetRead<TQuery>(
+            maxTileSize,
+            build,
+            async (q, limit, token) =>
             {
-                tile = await execute(build(step), maxTileSize, cancellationToken).ConfigureAwait(false);
-            }
-            catch (TileSizeLimitExceededException ex) when (step.Next() is { } next)
-            {
-                refusal = ex;
-                step = next;
-                continue;
-            }
-
-            if (tile is { Length: > 0 } || step.IsFull)
-            {
-                return tile;
-            }
-
-            if (step.Next() is { } nextStep)
-            {
-                step = nextStep;
-                continue;
-            }
-
-            // The first pass was over budget, so an empty retry is a refusal, not an empty tile.
-            throw refusal ?? new TileSizeLimitExceededException(-1, maxTileSize);
-        }
+                var bytes = await execute(q, limit, token).ConfigureAwait(false);
+                return bytes is null ? null : PooledTileData.FromOwnedArray(bytes);
+            });
+        using var pooled = await ReadPooledAsync(read, cancellationToken).ConfigureAwait(false);
+        return pooled is null ? null : pooled.Span.ToArray();
     }
 
     internal static async Task<PooledTileData?> ReadPooledAsync<TQuery>(
-        long maxTileSize,
-        Func<MvtTileBudgetStep, TQuery> build,
-        Func<TQuery, long, CancellationToken, Task<PooledTileData?>> execute,
+        MvtTileBudgetRead<TQuery> read,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(build);
-        ArgumentNullException.ThrowIfNull(execute);
+        ArgumentNullException.ThrowIfNull(read.Build);
+        ArgumentNullException.ThrowIfNull(read.Execute);
 
         var step = MvtTileBudgetStep.Full;
         TileSizeLimitExceededException? refusal = null;
@@ -171,7 +151,7 @@ internal static class MvtTileBudgetFitter
             PooledTileData? tile;
             try
             {
-                tile = await execute(build(step), maxTileSize, cancellationToken).ConfigureAwait(false);
+                tile = await read.Execute(read.Build(step), read.MaxTileSize, cancellationToken).ConfigureAwait(false);
             }
             catch (TileSizeLimitExceededException ex) when (step.Next() is { } next)
             {
@@ -192,7 +172,7 @@ internal static class MvtTileBudgetFitter
                 continue;
             }
 
-            throw refusal ?? new TileSizeLimitExceededException(-1, maxTileSize);
+            throw refusal ?? new TileSizeLimitExceededException(-1, read.MaxTileSize);
         }
     }
 }

@@ -57,36 +57,60 @@ internal static class SharedResponseETag
     // Same hash as the ContentHttpResult branch: ComputeETag(string) hashes the UTF-8 bytes.
     private static async ValueTask<object?> ApplyToPooledContentAsync(HttpContext context, PooledUtf8ContentResult pooled, IETagService tags)
     {
-        var etag = await ConfigurationResponseETag.ForResponseAsync(context,
-            tags.ComputeETag(pooled.Content.Span), pooled.ContentType).ConfigureAwait(false);
-        return new ConditionalTextResult(pooled, etag, tags);
+        try
+        {
+            var etag = await ConfigurationResponseETag.ForResponseAsync(context,
+                tags.ComputeETag(pooled.Content.Span), pooled.ContentType).ConfigureAwait(false);
+            return new ConditionalTextResult(pooled, etag, tags);
+        }
+        catch
+        {
+            await pooled.ReleaseAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 
     private static async ValueTask<object?> ApplyToPooledTileAsync(HttpContext context, PooledTileContentResult pooledTile, IETagService tags)
     {
-        var etag = await ConfigurationResponseETag.ForResponseAsync(context,
-            tags.ComputeETag(pooledTile.Content.Span), pooledTile.ContentType).ConfigureAwait(false);
-        return new ConditionalTextResult(pooledTile, etag, tags);
+        try
+        {
+            var etag = await ConfigurationResponseETag.ForResponseAsync(context,
+                tags.ComputeETag(pooledTile.Content.Span), pooledTile.ContentType).ConfigureAwait(false);
+            return new ConditionalTextResult(pooledTile, etag, tags);
+        }
+        catch
+        {
+            pooledTile.Release();
+            throw;
+        }
     }
 
     private sealed class ConditionalTextResult(IResult result, string etag, IETagService tags) : IResult
     {
         public async Task ExecuteAsync(HttpContext httpContext)
         {
-            if (!string.IsNullOrEmpty(httpContext.Request.Headers.IfMatch) &&
-                !tags.MatchesPrecondition(httpContext.Request.Headers.IfMatch.ToString(), etag))
+            try
             {
-                httpContext.Response.StatusCode = StatusCodes.Status412PreconditionFailed;
-                await ReleaseAsync().ConfigureAwait(false);
-                return;
-            }
+                if (!string.IsNullOrEmpty(httpContext.Request.Headers.IfMatch) &&
+                    !tags.MatchesPrecondition(httpContext.Request.Headers.IfMatch.ToString(), etag))
+                {
+                    httpContext.Response.StatusCode = StatusCodes.Status412PreconditionFailed;
+                    await ReleaseAsync().ConfigureAwait(false);
+                    return;
+                }
 
-            tags.SetCacheHeaders(httpContext.Response, etag);
-            if (!tags.IsModified(httpContext.Request.Headers.IfNoneMatch.ToString(), etag))
+                tags.SetCacheHeaders(httpContext.Response, etag);
+                if (!tags.IsModified(httpContext.Request.Headers.IfNoneMatch.ToString(), etag))
+                {
+                    httpContext.Response.StatusCode = StatusCodes.Status304NotModified;
+                    await ReleaseAsync().ConfigureAwait(false);
+                    return;
+                }
+            }
+            catch
             {
-                httpContext.Response.StatusCode = StatusCodes.Status304NotModified;
                 await ReleaseAsync().ConfigureAwait(false);
-                return;
+                throw;
             }
 
             await result.ExecuteAsync(httpContext).ConfigureAwait(false);

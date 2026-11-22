@@ -51,6 +51,10 @@ internal sealed class StacMappingService
             IdFieldName = options.Resource.FindPrimaryIdField()?.Name ?? "objectid";
             StartTimeField = StacFilterHelpers.ResolveTemporalField(options.Resource, out var endField);
             EndTimeField = endField;
+            FallbackDatetime = FormatTemporalValue(ResolveFallbackInstant(options.Resource));
+            FallbackDatetimeSource = options.Resource.Temporal?.Extent is { Start: not null } or { End: not null }
+                ? "collection_extent"
+                : "unknown";
             DeclaredExtensions = options.Resource.ResolveDeclaredExtensions();
             GeometrySrid = options.GeometrySrid ?? options.Resource.ReadSrid() ?? 4326;
             SelectedPropertiesLookup = options.SelectedProperties is null
@@ -85,6 +89,8 @@ internal sealed class StacMappingService
         internal string IdFieldName { get; }
         internal string? StartTimeField { get; }
         internal string? EndTimeField { get; }
+        internal string FallbackDatetime { get; }
+        internal string FallbackDatetimeSource { get; }
         internal ImmutableArray<string>? DeclaredExtensions { get; }
         internal int GeometrySrid { get; }
         internal HashSet<string>? SelectedPropertiesLookup { get; }
@@ -331,7 +337,7 @@ internal sealed class StacMappingService
             ? escapedItemId
             : Uri.EscapeDataString(ogcItemId);
 
-        IReadOnlyDictionary<string, object?> attributes = feature.Attributes ?? ImmutableDictionary<string, object?>.Empty;
+        var attributes = feature.Attributes ?? ImmutableDictionary<string, object?>.Empty;
         var properties = new Dictionary<string, object?>(attributes.Count + 3);
         PopulateTemporalPropertiesV2(attributes, context, properties);
         CopyIncludedAttributes(attributes, context.SelectedPropertiesLookup, properties);
@@ -483,10 +489,8 @@ internal sealed class StacMappingService
         // Preserve the legacy readable-item contract and STAC 1.0's required datetime.
         // Explicitly identify this display fallback: it is not an acquisition timestamp,
         // and cannot make an undated collection match a datetime search.
-        properties["datetime"] = FormatTemporalValue(ResolveFallbackInstant(resource));
-        properties["honua:datetime_source"] = resource.Temporal?.Extent is { Start: not null } or { End: not null }
-            ? "collection_extent"
-            : "unknown";
+        properties["datetime"] = context.FallbackDatetime;
+        properties["honua:datetime_source"] = context.FallbackDatetimeSource;
     }
 
     private static DateTimeOffset ResolveFallbackInstant(MetadataV2Object resource)
