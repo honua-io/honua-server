@@ -49,6 +49,11 @@ public sealed class Cql2JsonParser
             _expressionDepth = 0;
             using var document = JsonDocument.Parse(cql2Json);
             var expression = ParseExpression(document.RootElement);
+            if (!Cql2BooleanExpression.IsPredicate(expression))
+            {
+                throw new ArgumentException("CQL2-JSON filter must be a predicate or boolean expression.");
+            }
+
             FilterParserGuard.EnsureExpressionTree(expression);
             return expression;
         }

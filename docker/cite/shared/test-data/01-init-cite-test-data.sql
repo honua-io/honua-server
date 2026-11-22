@@ -76,6 +76,15 @@ VALUES
     (14, 'Locks', 'WFS 1.0 CITE lock placeholder feature', 'public', 'features', 'Point', 32615,
         ST_Transform(ST_MakeEnvelope(500000, 500000, 500100, 500100, 32615), 4326), TRUE,
         '{"accessPolicy":{"allowAnonymous":true,"allowAnonymousWrite":true}}'::jsonb, TRUE),
+    (15, 'Inserts', 'WFS 1.0 CITE transactional insert feature', 'public', 'features', 'Point', 32615,
+        ST_Transform(ST_MakeEnvelope(500000, 500000, 500100, 500100, 32615), 4326), TRUE,
+        '{"accessPolicy":{"allowAnonymous":true,"allowAnonymousWrite":true}}'::jsonb, TRUE),
+    (16, 'Updates', 'WFS 1.0 CITE transactional update feature', 'public', 'features', 'Point', 32615,
+        ST_Transform(ST_MakeEnvelope(500000, 500000, 500100, 500100, 32615), 4326), TRUE,
+        '{"accessPolicy":{"allowAnonymous":true,"allowAnonymousWrite":true}}'::jsonb, TRUE),
+    (17, 'Deletes', 'WFS 1.0 CITE transactional delete feature', 'public', 'features', 'Point', 32615,
+        ST_Transform(ST_MakeEnvelope(500000, 500000, 500100, 500100, 32615), 4326), TRUE,
+        '{"accessPolicy":{"allowAnonymous":true,"allowAnonymousWrite":true}}'::jsonb, TRUE),
     (20, 'Points', 'WFS 1.0 CITE point geometry feature', 'public', 'features', 'Point', 32615,
         ST_Transform(ST_MakeEnvelope(500000, 500000, 500100, 500100, 32615), 4326), TRUE,
         '{"accessPolicy":{"allowAnonymous":true,"allowAnonymousWrite":true}}'::jsonb, TRUE),
@@ -285,7 +294,7 @@ SET metadata = metadata || jsonb_build_object('wfs', jsonb_build_object(
             'hiddenFields', jsonb_build_array('objectid', 'name'),
             'gmlFields', jsonb_build_array('pointProperty', 'lineStringProperty', 'polygonProperty', 'multiPointProperty', 'multiLineStringProperty', 'multiPolygonProperty'),
             'wfs10Schema', (SELECT document FROM cite_wfs10_schema WHERE namespace = 'cdf'))))
-WHERE layer_id IN (13, 14);
+WHERE layer_id IN (13, 14, 15, 16, 17);
 
 UPDATE honua.layers
 SET metadata = metadata || jsonb_build_object('wfs', jsonb_build_object(
@@ -308,6 +317,9 @@ VALUES
     ('cite', 12, 12),
     ('cite', 13, 13),
     ('cite', 14, 14),
+    ('cite', 15, 15),
+    ('cite', 16, 16),
+    ('cite', 17, 17),
     ('cite', 20, 20),
     ('cite', 21, 21),
     ('cite', 22, 22),
@@ -373,6 +385,15 @@ VALUES
     (14, 'objectid', 'Integer', 0, NULL, FALSE, NULL, 'Primary key'),
     (14, 'id', 'String', 1, 255, FALSE, NULL, 'WFS 1.0 CITE lock identifier'),
     (14, 'pointProperty', 'Geometry', 2, NULL, TRUE, NULL, 'WFS 1.0 CITE point'),
+    (15, 'objectid', 'Integer', 0, NULL, FALSE, NULL, 'Primary key'),
+    (15, 'id', 'String', 1, 255, TRUE, NULL, 'WFS 1.0 CITE transaction identifier'),
+    (15, 'pointProperty', 'Geometry', 2, NULL, FALSE, NULL, 'WFS 1.0 CITE point'),
+    (16, 'objectid', 'Integer', 0, NULL, FALSE, NULL, 'Primary key'),
+    (16, 'id', 'String', 1, 255, TRUE, NULL, 'WFS 1.0 CITE transaction identifier'),
+    (16, 'pointProperty', 'Geometry', 2, NULL, FALSE, NULL, 'WFS 1.0 CITE point'),
+    (17, 'objectid', 'Integer', 0, NULL, FALSE, NULL, 'Primary key'),
+    (17, 'id', 'String', 1, 255, TRUE, NULL, 'WFS 1.0 CITE transaction identifier'),
+    (17, 'pointProperty', 'Geometry', 2, NULL, FALSE, NULL, 'WFS 1.0 CITE point'),
     (20, 'objectid', 'Integer', 0, NULL, FALSE, NULL, 'Primary key'),
     (20, 'id', 'String', 1, 255, FALSE, NULL, 'WFS 1.0 CITE geometry identifier'),
     (20, 'pointProperty', 'Geometry', 2, NULL, TRUE, NULL, 'WFS 1.0 CITE point'),
@@ -517,6 +538,48 @@ VALUES
         14,
         ST_GeomFromText('POINT(500050 500050)', 32615),
         jsonb_build_object('id', 'lock-1')
+    ),
+    (
+        1601,
+        16,
+        ST_GeomFromText('POINT(500050 500050)', 32615),
+        jsonb_build_object('id', 'tu0001')
+    ),
+    (
+        1602,
+        16,
+        ST_GeomFromText('POINT(500050 500050)', 32615),
+        jsonb_build_object('id', 'tu0002')
+    ),
+    (
+        1603,
+        16,
+        ST_GeomFromText('POINT(500050 500050)', 32615),
+        jsonb_build_object('id', 'tu0003')
+    ),
+    (
+        1604,
+        16,
+        ST_GeomFromText('POINT(500050 500050)', 32615),
+        jsonb_build_object('id', 'tu0004')
+    ),
+    (
+        1701,
+        17,
+        ST_GeomFromText('POINT(500050 500050)', 32615),
+        jsonb_build_object('id', 'td0001')
+    ),
+    (
+        1702,
+        17,
+        ST_GeomFromText('POINT(500050 500050)', 32615),
+        jsonb_build_object('id', 'td0002')
+    ),
+    (
+        1703,
+        17,
+        ST_GeomFromText('POINT(500050 500050)', 32615),
+        jsonb_build_object('id', 'td0003')
     ),
     (
         2001,

@@ -139,6 +139,8 @@ internal static class FeatureEventsAndStreamingRegistration
         // still constructs and immediately exits because SupportsTransactionalOutbox is false.
         services.TryAddSingleton<IOutboxCapabilityProvider, NoOpOutboxCapabilityProvider>();
         services.AddSingleton<OutboxMetrics>();
+        // Shared by the outbox repository (wakes on a local outbox write) and the dispatcher's idle pacer.
+        services.TryAddSingleton(typeof(PollWakeSignal<>));
         services.AddSingleton<OutboxDispatcherBackgroundService>();
         services.AddSingleton<IOutboxHealth>(sp =>
             sp.GetRequiredService<OutboxDispatcherBackgroundService>());

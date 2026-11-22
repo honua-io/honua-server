@@ -10,6 +10,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Rendering;
 using Honua.Infrastructure.Services;
+using Honua.Infrastructure.SharedCaching;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Classic;
 using Honua.Protocols.Ogc.Common;
@@ -30,6 +31,7 @@ internal static partial class WmsRequestHandlers
         string serviceId,
         ILogger logger)
     {
+        SharedCacheResponse.UseClass(context, ResponseCacheClass.Tile);
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         OgcClassicLog.WmsRequested(logger, serviceId, "GetMap");
         var stopwatch = Stopwatch.StartNew();
@@ -162,6 +164,10 @@ internal static partial class WmsRequestHandlers
         // validated above before repeated storage layers collapse to their first occurrence.
         // Each surviving layer is queried and drawn once.
         (renderLayers, var layerFilters) = DeduplicateWmsLayers(renderLayers, filterResult.Filters);
+        if (renderLayers.Length == 1)
+        {
+            SharedCacheResponse.UsePublication(context, service, renderLayers[0].Publication);
+        }
         activity?.SetTag("wms.filter_applied", layerFilters is not null);
 
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
