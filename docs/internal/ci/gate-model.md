@@ -1220,9 +1220,18 @@ Full trunk runs include every case; PR routing selects affected ImageServer shar
 ### Geocoding response fixture lifetime
 
 `GeocodingEndpointTests` uses one class-lifetime Community application for
-request-derived default-provider responses. Each case owns its HTTP client.
-Request-capture, custom-provider and Enterprise configurations own separate
-applications. Full trunk runs include every case; PR routing selects affected geocoding shards.
+request-derived default-provider responses and eleven default-provider capture
+cases. Each case owns its HTTP client. Capture cases clear all four recorded
+provider requests before sending a request; the serial class owns the singleton
+provider and its application until all cases finish. Custom providers, failover,
+disabled settings, alternate limits and Enterprise configurations retain their
+separate applications. Configured factories are owned directly so disposal also
+releases the application, without an undisposed parent factory.
+
+All 272 assertion lines, 278 metadata lines and 68 test methods are preserved.
+Every case remains in the Geocoding shard on selected PR runs and twice-daily
+full trunk runs. No workflow, shard definition, runner count, required check
+name or aggregate dependency changes.
 
 ### Governance capacity split
 

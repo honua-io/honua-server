@@ -822,9 +822,13 @@ without a database fixture in the ImageServer Rendering and Support shard.
 
 ### Geocoding endpoint fixtures
 
-The geocoding shard includes the endpoint response and provider request-contract
-cases. See [Geocoding response fixture lifetime](gate-model.md#geocoding-response-fixture-lifetime)
-for their application isolation rules.
+The Geocoding shard retains every endpoint response and provider request-contract
+case. Eleven default-provider capture cases reuse the existing class application,
+with fresh clients and all four request captures reset before each case. Custom
+configurations retain private hosts and directly owned factories. See
+[Geocoding response fixture lifetime](gate-model.md#geocoding-response-fixture-lifetime)
+for application ownership and isolation. All assertions, cases, PR/trunk routing,
+required check names and aggregate dependencies remain unchanged.
 
 ### Governance capacity split
 
