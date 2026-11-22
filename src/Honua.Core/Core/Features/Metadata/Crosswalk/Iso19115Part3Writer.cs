@@ -71,7 +71,21 @@ public static class Iso19115Part3Writer
             iso.Keywords(metadata.Keywords, type: null),
             iso.Keywords(metadata.Themes, type: "theme"),
             iso.LegalConstraints(metadata),
-            new XElement(Mri + "defaultLocale", Locale(iso, metadata.Language)));
+            new XElement(Mri + "defaultLocale", Locale(iso, metadata.Language)),
+            CustomFieldsElement(iso, metadata));
+
+    private static XElement? CustomFieldsElement(IsoXml iso, DescriptiveMetadata metadata)
+    {
+        if (metadata.CustomFields.Count == 0)
+        {
+            return null;
+        }
+
+        var pairs = metadata.CustomFields
+            .OrderBy(static pair => pair.Key, StringComparer.Ordinal)
+            .Select(static pair => $"\"{pair.Key}\":{pair.Value.GetRawText()}");
+        return new XElement(Mri + "supplementalInformation", iso.Text($"honua:customFields={{{string.Join(',', pairs)}}}"));
+    }
 
     private static IEnumerable<MetadataV2ResponsibleParty> Parties(DescriptiveMetadata metadata)
     {

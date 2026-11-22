@@ -69,7 +69,9 @@ internal static class AdminApiOperationCatalog
         new("admin.services.protocols.set", "Set service protocols", HttpMethod.Put, "/services/{serviceName}/protocols", "updateServiceProtocols", true),
         new("admin.services.access-policy.set", "Set service access policy", HttpMethod.Put, "/services/{serviceName}/access-policy", "updateServiceAccessPolicy", true),
         new("admin.services.timeinfo.set", "Set service time info", HttpMethod.Put, "/services/{serviceName}/timeinfo", "updateServiceTimeInfo", true),
-        new("admin.services.layer-metadata.set", "Set service layer metadata", HttpMethod.Put, "/services/{serviceName}/layers/{serviceLayerIndex}/metadata", "updateLayerMetadata", true)
+        new("admin.services.layer-metadata.set", "Set service layer metadata", HttpMethod.Put, "/services/{serviceName}/layers/{serviceLayerIndex}/metadata", "updateLayerMetadata", true),
+        new("admin.metadata.layer-discovery.set", "Set layer discovery metadata", HttpMethod.Put, "/metadata/layers/{storageLayerId}/discovery", "updateAdminLayerDiscovery", true),
+        new("admin.metadata.service-discovery.set", "Set service discovery metadata", HttpMethod.Put, "/services/{serviceName}/discovery", "updateAdminServiceDiscovery", true)
     ];
 
     public static IReadOnlyList<OperationDescriptor> Descriptors { get; } = BuildDescriptors();

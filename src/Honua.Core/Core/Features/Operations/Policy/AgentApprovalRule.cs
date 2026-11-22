@@ -28,6 +28,8 @@ public static class AgentApprovalRule
     private static readonly HashSet<string> GatedOperationIds = new(StringComparer.Ordinal)
     {
         "admin.services.access-policy.set",
+        "admin.metadata.layer-discovery.set",
+        "admin.metadata.service-discovery.set",
         "admin.layer.publish",
         "admin.connections.create",
         "admin.connections.update",

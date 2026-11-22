@@ -819,6 +819,8 @@ builder.Services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IPermi
 builder.Services.TryAddScoped<Honua.Core.Features.Authorization.Abstractions.IRlsPolicyStore,
     Honua.Server.Features.Admin.Services.InMemoryRlsPolicyStore>();
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton<Honua.Core.Features.Metadata.Abstractions.IMetadataActorProvider,
+    Honua.Server.Features.Admin.HttpContextMetadataActorProvider>();
 builder.Services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IRowLevelSecurityFilterSource,
     Honua.Infrastructure.Authentication.RowLevelSecurityFilterSource>();
 // Field-level security (column masking), the field-level companion to RLS.
