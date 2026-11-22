@@ -8,6 +8,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Forms.Packages;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
@@ -15,30 +16,32 @@ using Honua.Core.Queries.Filters;
 namespace Honua.Server.Features.Tasks;
 
 internal sealed class WorkTaskAssetGeometry(
-    IFeatureReader featureReader,
+    FeatureProviderQueryRouter providerQueryRouter,
     IFilterExpressionService filters,
     ILayerAccessAuthorizer layerAccess)
 {
     private const int Wgs84 = 4326;
 
     public async Task<WorkTaskLocation> LocateAsync(
-        FormTargetMetadataResolution target,
+        (MetadataV2GraphSnapshot Snapshot, FormTargetMetadataResolution Target) resolution,
         (AssetProfile Profile, string AssetId, ClaimsPrincipal User) asset,
         CancellationToken cancellationToken)
     {
+        var target = resolution.Target;
         var access = await layerAccess.AuthorizePublicationAsync(
             asset.User, target.Publication!, target.Resource!, target.Service, AuthorizationOperation.Query, cancellationToken)
             .ConfigureAwait(false);
         return access.IsAllowed
-            ? await CopyAsync(target, (asset.Profile, asset.AssetId), cancellationToken).ConfigureAwait(false)
+            ? await CopyAsync(resolution, (asset.Profile, asset.AssetId), cancellationToken).ConfigureAwait(false)
             : WorkTaskLocation.Fail("assetId", "No asset with this ID exists on the layer.");
     }
 
     public async Task<WorkTaskLocation> CopyAsync(
-        FormTargetMetadataResolution target,
+        (MetadataV2GraphSnapshot Snapshot, FormTargetMetadataResolution Target) resolution,
         (AssetProfile Profile, string AssetId) asset,
         CancellationToken cancellationToken)
     {
+        var (snapshot, target) = resolution;
         var (profile, assetId) = asset;
         var resource = target.Resource!;
         if (AssetIdLiteral(resource, profile.Fields.AssetId!, assetId) is not { } literal)
@@ -54,19 +57,35 @@ internal sealed class WorkTaskAssetGeometry(
         }
 
         // Two rows are read so a non-unique asset ID is refused rather than resolved arbitrarily.
-        var result = await featureReader.QueryAsync(
+        var reader = await ResolveReaderAsync(snapshot, target, cancellationToken).ConfigureAwait(false);
+        var result = await reader.QueryAsync(
             target.StorageLayerId!.Value,
             new FeatureQuery { SqlFilter = translation.SqlFilter, Limit = 2, OutputSrid = resource.ReadSrid() ?? Wgs84 },
             cancellationToken).ConfigureAwait(false);
-        var features = result.Items.Take(2).ToList();
-        return features switch
+        return ToLocation(result.Items.Take(2).ToList(), resource.ReadSrid() ?? Wgs84, literal);
+    }
+
+    private Task<IFeatureReader> ResolveReaderAsync(
+        MetadataV2GraphSnapshot snapshot,
+        FormTargetMetadataResolution target,
+        CancellationToken cancellationToken)
+        => providerQueryRouter.ResolveReaderAsync(
+            snapshot,
+            target.Service!,
+            target.Resource!,
+            target.Publication!,
+            target.StorageLayerId!.Value,
+            FeatureProviderReadOperation.Query,
+            cancellationToken);
+
+    private static WorkTaskLocation ToLocation(List<Feature> features, int srid, Literal literal)
+        => features switch
         {
             [] => WorkTaskLocation.Fail("assetId", "No asset with this ID exists on the layer."),
-            [{ Geometry: { Length: > 0 } wkb }] => WorkTaskLocation.FromAsset(wkb, resource.ReadSrid() ?? Wgs84, CanonicalId(literal)),
+            [{ Geometry: { Length: > 0 } wkb }] => WorkTaskLocation.FromAsset(wkb, srid, CanonicalId(literal)),
             [_] => WorkTaskLocation.Fail("assetId", "The asset has no geometry."),
             _ => WorkTaskLocation.Fail("assetId", "The asset ID is not unique on the layer; fix the data or the profile's ID field."),
         };
-    }
 
     // Tasks and summaries key on this spelling, so "007" and "7" name one numeric asset.
     private static string CanonicalId(Literal literal) => Convert.ToString(literal.Value, CultureInfo.InvariantCulture)!;

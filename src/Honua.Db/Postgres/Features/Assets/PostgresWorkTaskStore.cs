@@ -30,7 +30,7 @@ internal sealed class PostgresWorkTaskStore : IWorkTaskStore
             _commit.Rows.SelectWithProfileSql(
                 """
                 t.service_id = @service_id AND t.object_id > @after
-                    AND (@allowed_layer_ids::integer[] IS NULL OR t.profile_id IS NULL OR p.layer_id = ANY(@allowed_layer_ids))
+                    AND (@allowed_layer_ids::integer[] IS NULL OR (@include_assetless AND t.profile_id IS NULL) OR p.layer_id = ANY(@allowed_layer_ids))
                     AND (@status::text IS NULL OR t.status = @status)
                     AND (@assignee::text IS NULL OR t.assignee = @assignee)
                     AND (@task_type::text IS NULL OR t.task_type = @task_type)
@@ -184,6 +184,7 @@ internal sealed class PostgresWorkTaskStore : IWorkTaskStore
         command.Parameters.AddWithValue("service_id", NpgsqlDbType.Text, query.ServiceId);
         command.Parameters.AddWithValue("after", NpgsqlDbType.Bigint, query.AfterObjectId);
         command.Parameters.AddWithValue("allowed_layer_ids", NpgsqlDbType.Array | NpgsqlDbType.Integer, query.AllowedLayerIds?.ToArray() ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("include_assetless", NpgsqlDbType.Boolean, query.IncludeAssetless);
         command.Parameters.AddWithValue("status", NpgsqlDbType.Text, (object?)query.Status ?? DBNull.Value);
         command.Parameters.AddWithValue("assignee", NpgsqlDbType.Text, (object?)query.Assignee ?? DBNull.Value);
         command.Parameters.AddWithValue("task_type", NpgsqlDbType.Text, (object?)query.Type ?? DBNull.Value);

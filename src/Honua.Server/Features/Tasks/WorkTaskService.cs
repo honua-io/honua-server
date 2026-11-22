@@ -21,8 +21,8 @@ internal sealed class WorkTaskService(
     public async Task<IResult> ListAsync(HttpContext context)
     {
         var query = context.Request.Query;
-        var grant = await WorkTaskAccess.RequireAsync(context, query["serviceId"].ToString(), null).ConfigureAwait(false);
-        if (grant.Denied is { } denied)
+        var access = await WorkTaskAccess.RequireListAsync(context, query["serviceId"].ToString()).ConfigureAwait(false);
+        if (access.Grant.Denied is { } denied)
         {
             return denied;
         }
@@ -38,12 +38,12 @@ internal sealed class WorkTaskService(
             return AssetCommandHttp.Rejected(context, "cursor", "cursor is not valid.");
         }
 
-        var allowedLayers = await AssetServiceAccess.AuthorizedLayerIdsAsync(context, grant).ConfigureAwait(false);
         var result = await store.ListAsync(
             new WorkTaskQuery
             {
-                ServiceId = grant.ServiceId,
-                AllowedLayerIds = allowedLayers,
+                ServiceId = access.Grant.ServiceId,
+                AllowedLayerIds = access.AllowedLayerIds,
+                IncludeAssetless = access.IncludeAssetless,
                 Status = status,
                 Assignee = Optional(query["assignee"]),
                 Type = Optional(query["type"]),
@@ -135,7 +135,7 @@ internal sealed class WorkTaskService(
             return AssetCommandHttp.Rejected(context, [invalid]);
         }
 
-        var location = await locator.LocateAsync(request, context.User, context.RequestAborted).ConfigureAwait(false);
+        var location = await locator.LocateAsync(request, (context.User, grant.Snapshot!), context.RequestAborted).ConfigureAwait(false);
         var (form, formError) = await formBinding.PinAsync(request, (grant.Service!, context), context.RequestAborted).ConfigureAwait(false);
         AssetFieldError[] errors = [.. new[] { location.Error, formError }.OfType<AssetFieldError>()];
         if (errors.Length > 0)

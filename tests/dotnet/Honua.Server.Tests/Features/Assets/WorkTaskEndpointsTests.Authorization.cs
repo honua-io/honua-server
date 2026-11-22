@@ -5,7 +5,11 @@ using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Honua.Core.Features.Assets;
+using Honua.Core.Features.Forms.Packages;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Forms;
 using Honua.Server.Tests.Features.Admin;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -26,13 +30,19 @@ public sealed partial class WorkTaskEndpointsTests
         })
         .ConfigureServices(services =>
         {
-            services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, RlsClaimsTestAuthHandler>(
-                RlsClaimsTestAuthHandler.SchemeName, _ => { });
+            services.AddAuthentication()
+                .AddScheme<AuthenticationSchemeOptions, RlsClaimsTestAuthHandler>(RlsClaimsTestAuthHandler.SchemeName, _ => { })
+                .AddPolicyScheme("TestOrApiKey", "Test or API key", options =>
+                {
+                    options.ForwardDefaultSelector = context => context.Request.Headers.ContainsKey("X-API-Key")
+                        ? "ApiKey"
+                        : RlsClaimsTestAuthHandler.SchemeName;
+                });
             services.PostConfigureAll<AuthenticationOptions>(options =>
             {
-                options.DefaultAuthenticateScheme = RlsClaimsTestAuthHandler.SchemeName;
-                options.DefaultChallengeScheme = RlsClaimsTestAuthHandler.SchemeName;
-                options.DefaultScheme = RlsClaimsTestAuthHandler.SchemeName;
+                options.DefaultAuthenticateScheme = "TestOrApiKey";
+                options.DefaultChallengeScheme = "TestOrApiKey";
+                options.DefaultScheme = "TestOrApiKey";
             });
         });
 
@@ -94,6 +104,45 @@ public sealed partial class WorkTaskEndpointsTests
         start.StatusCode.Should().Be(HttpStatusCode.OK, await start.Content.ReadAsStringAsync());
         var task = await _fixture.Client.GetFromJsonAsync($"{TasksPath}/{taskId}", AssetsJsonContext.Default.WorkTask);
         task!.Status.Should().Be(WorkTaskStatus.InProgress);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /api/v1/tasks")]
+    public async Task ListTasks_LayerScopedApiKey_ReturnsOnlyAuthorizedLayerTasksAndHidesAssetless()
+    {
+        var assetTask = await PostAsync(TasksPath, InspectionRequest(_assets[0].AssetId));
+        assetTask.StatusCode.Should().Be(HttpStatusCode.Created, await assetTask.Content.ReadAsStringAsync());
+        var assetTaskId = Guid.Parse((await AssetTestData.ReadJsonAsync(assetTask))["task"]!["taskId"]!.GetValue<string>());
+        await CreateRepairAsync();
+
+        var snapshot = await _fixture.Services.GetRequiredService<IMetadataV2GraphProvider>().GetCurrentAsync();
+        var target = FormTargetMetadataResolver.Resolve(snapshot,
+            new FormTargetDefinition { ServiceId = WebAppFixture.TestServiceId, LayerId = WebAppFixture.TestLayerId });
+        var keyStore = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var layerKey = await keyStore.CreateAsync("layer-crew",
+            [$"write:{target.Service!.Metadata.Name}/{target.Resource!.Metadata.Name}"], DateTimeOffset.UtcNow.AddMinutes(5), "test", CancellationToken.None);
+        var otherLayerKey = await keyStore.CreateAsync("other-layer-crew",
+            [$"write:{target.Service!.Metadata.Name}/other-layer"], DateTimeOffset.UtcNow.AddMinutes(5), "test", CancellationToken.None);
+        try
+        {
+            using var layerClient = _fixture.CreateClient();
+            layerClient.DefaultRequestHeaders.Add("X-API-Key", layerKey.Key);
+            var allowed = await layerClient.GetAsync($"{TasksPath}?serviceId={WebAppFixture.TestServiceId}");
+            allowed.StatusCode.Should().Be(HttpStatusCode.OK, await allowed.Content.ReadAsStringAsync());
+            var result = await allowed.Content.ReadFromJsonAsync(AssetsJsonContext.Default.WorkTaskListResult);
+            result!.Items.Select(static item => item.TaskId).Should().Equal(assetTaskId);
+
+            using var otherClient = _fixture.CreateClient();
+            otherClient.DefaultRequestHeaders.Add("X-API-Key", otherLayerKey.Key);
+            var denied = await otherClient.GetAsync($"{TasksPath}?serviceId={WebAppFixture.TestServiceId}");
+            denied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+        finally
+        {
+            await keyStore.RevokeAsync(layerKey.Record.Id, CancellationToken.None);
+            await keyStore.RevokeAsync(otherLayerKey.Record.Id, CancellationToken.None);
+        }
     }
 
     private HttpClient CrewClient(string user)

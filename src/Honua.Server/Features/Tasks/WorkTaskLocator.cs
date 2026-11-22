@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using Honua.Core.Features.Assets;
 using Honua.Core.Features.Forms.Packages;
+using Honua.Core.Features.Metadata.Domain.V2;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -22,7 +23,10 @@ internal sealed class WorkTaskLocator(
     private const int MaxLocationVertices = 10_000;
     private static readonly Envelope Wgs84Bounds = new(-180, 180, -90, 90);
 
-    public async Task<WorkTaskLocation> LocateAsync(WorkTaskCreateRequest request, ClaimsPrincipal user, CancellationToken cancellationToken)
+    public async Task<WorkTaskLocation> LocateAsync(
+        WorkTaskCreateRequest request,
+        (ClaimsPrincipal User, MetadataV2GraphSnapshot Snapshot) context,
+        CancellationToken cancellationToken)
     {
         if (request.ProfileId is null && request.AssetId is null)
         {
@@ -54,7 +58,7 @@ internal sealed class WorkTaskLocator(
             return WorkTaskLocation.Fail("profileId", "The profiled layer is no longer published.");
         }
 
-        return await assetGeometry.LocateAsync(target, (profile, assetId, user), cancellationToken).ConfigureAwait(false);
+        return await assetGeometry.LocateAsync((context.Snapshot, target), (profile, assetId, context.User), cancellationToken).ConfigureAwait(false);
     }
 
     private static WorkTaskLocation ParseExplicit(JsonElement? location)

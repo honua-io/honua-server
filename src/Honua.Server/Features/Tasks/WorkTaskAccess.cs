@@ -61,7 +61,33 @@ internal static class WorkTaskAccess
         return await AssetServiceAccess.RequireLayerEditorAsync(context, grant, profile.LayerId).ConfigureAwait(false);
     }
 
+    public static async Task<WorkTaskListGrant> RequireListAsync(HttpContext context, string? serviceId)
+    {
+        var grant = await AssetServiceAccess.ResolveServiceAsync(context, serviceId).ConfigureAwait(false);
+        if (grant.Denied is not null)
+        {
+            return new() { Grant = grant };
+        }
+
+        var serviceDenied = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+            context, grant.Service!, context.RequestAborted).ConfigureAwait(false);
+        var allowedLayers = await AssetServiceAccess.AuthorizedLayerIdsAsync(context, grant).ConfigureAwait(false);
+        if (serviceDenied is not null && allowedLayers.Length == 0)
+        {
+            return new() { Grant = AssetServiceGrant.Deny(serviceDenied) };
+        }
+
+        return new() { Grant = grant, IncludeAssetless = serviceDenied is null, AllowedLayerIds = allowedLayers };
+    }
+
     private static AssetServiceGrant Missing(HttpContext context)
         => AssetServiceGrant.Deny(ProblemDetailsHelpers.CreateAdminProblem(
             context, StatusCodes.Status404NotFound, "The task target was not found."));
+}
+
+internal sealed record WorkTaskListGrant
+{
+    public required AssetServiceGrant Grant { get; init; }
+    public bool IncludeAssetless { get; init; }
+    public int[] AllowedLayerIds { get; init; } = [];
 }

@@ -265,6 +265,8 @@ public sealed record WorkTaskQuery
 
     public IReadOnlyList<int>? AllowedLayerIds { get; init; }
 
+    public bool IncludeAssetless { get; init; } = true;
+
     public string? Status { get; init; }
 
     public string? Assignee { get; init; }
