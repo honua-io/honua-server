@@ -121,7 +121,7 @@ internal sealed class SceneAccessEnvelopeService
                 Scheme: uri.Scheme.ToLowerInvariant(),
                 Host: uri.IdnHost.ToLowerInvariant(),
                 Port: uri.Port,
-                PathPrefix: SceneUrls.SceneAssetPathPrefix(sceneId))
+                PathPrefix: string.Concat(uri.AbsolutePath.TrimEnd('/'), SceneUrls.SceneAssetPathPrefix(sceneId)))
         ];
     }
 
