@@ -169,7 +169,7 @@ internal static partial class WmsRequestHandlers
 
                 OgcClassicLog.WmsRequested(logger, serviceId, "GetCapabilities");
                 var cacheKey = CapabilitiesDocumentCacheHelper.BuildWmsKey(
-                    new WmsCapabilitiesCacheRequest { Context = context, SnapshotEtag = snapshot.Etag, ServiceId = serviceId, Version = capabilitiesVersion },
+                    new WmsCapabilitiesCacheRequest { Context = context, SnapshotEtag = snapshot.Etag, ServiceId = svcDef.Metadata.Name, Version = capabilitiesVersion },
                     Array.ConvertAll(accessibleLayers, static l => new CachedLayerIdentity(l.StorageLayerId, l.Resource, l.Publication)),
                     Array.ConvertAll(challengeLayers, static l => new CachedLayerIdentity(l.StorageLayerId, l.Resource, l.Publication)));
                 return await CapabilitiesDocumentCacheHelper.GetOrBuildAsync(context, cacheKey, async () =>

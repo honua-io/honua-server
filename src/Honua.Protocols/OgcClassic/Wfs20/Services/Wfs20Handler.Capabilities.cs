@@ -196,10 +196,11 @@ internal sealed partial class Wfs20Handler
 
     private async Task<ImmutableArray<WfsFeatureTypeDescriptor>> GetPublishedFeatureTypesAsync(
         HttpContext context,
-        CancellationToken cancellationToken,
-        bool enforceAccess = true)
+        PublishedFeatureTypeQuery query,
+        CancellationToken cancellationToken)
     {
-        var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var snapshot = query.Snapshot;
+        var enforceAccess = query.AccessMode == FeatureTypeAccessMode.Enforce;
         var candidates = new List<(int StorageLayerId, MetadataV2Object Resource, MetadataV2Layer Publication, MetadataV2Service Service)>();
         foreach (var publication in snapshot.Graph.Publications)
         {
@@ -400,10 +401,9 @@ internal sealed partial class Wfs20Handler
         string[] unknownTypes,
         CancellationToken cancellationToken)
     {
-        var allPublishedTypes = await GetPublishedFeatureTypesAsync(
+        var allPublishedTypes = await GetAllPublishedFeatureTypesAsync(
             context,
-            cancellationToken,
-            enforceAccess: false).ConfigureAwait(false);
+            cancellationToken).ConfigureAwait(false);
         return unknownTypes.Any(name => GetUnknownRequestedFeatureTypes(allPublishedTypes, [name]).Length == 0)
             && context.User.Identity?.IsAuthenticated != true;
     }

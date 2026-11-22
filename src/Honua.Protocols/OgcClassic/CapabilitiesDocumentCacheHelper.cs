@@ -57,18 +57,27 @@ internal static class CapabilitiesDocumentCacheHelper
         var configGeneration = await MetadataDocumentByteCache
             .ResolveConfigGenerationAsync(context, context.RequestAborted)
             .ConfigureAwait(false);
-        if (docCache.Get(configGeneration, cacheKey) is { } hit)
+        var stamp = docCache.CaptureStamp(configGeneration);
+        if (docCache.Get(stamp, cacheKey) is { } hit)
         {
             return hit.ToResult();
         }
 
         var result = await buildAsync().ConfigureAwait(false);
-        var cached = MetadataDocumentByteCache.CreateDocument(
-            result.Content.Span,
-            result.ContentType,
-            context.RequestServices.GetService<IETagService>());
-        await result.ReleaseAsync().ConfigureAwait(false);
-        return docCache.Set(configGeneration, cacheKey, cached).ToResult();
+        CachedMetadataDocument cached;
+        try
+        {
+            cached = MetadataDocumentByteCache.CreateDocument(
+                result.Content.Span,
+                result.ContentType,
+                context.RequestServices.GetService<IETagService>());
+        }
+        finally
+        {
+            await result.ReleaseAsync().ConfigureAwait(false);
+        }
+
+        return docCache.Set(stamp, cacheKey, cached).ToResult();
     }
 
     internal static string BuildWmtsKey(WmtsCapabilitiesCacheRequest request, ReadOnlySpan<CachedLayerIdentity> layers)
@@ -77,8 +86,7 @@ internal static class CapabilitiesDocumentCacheHelper
         try
         {
             sb.Append("wmts|").Append(request.SnapshotEtag).Append('|').Append(request.ServiceId)
-                .Append('|').Append(BaseUrlResolver.GetBaseUrl(request.Context))
-                .Append('|').Append(request.Context.Request.Path.Value)
+                .Append('|').Append(GeoServicesServiceUrls.RequestedProtocol(request.Context, "WMTS"))
                 .Append('|').Append(request.ResponseMimeType)
                 .Append('|').Append(request.SectionsMask)
                 .Append('|').Append(request.MaxZoom);

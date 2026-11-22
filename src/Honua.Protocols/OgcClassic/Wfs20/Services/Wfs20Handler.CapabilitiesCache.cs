@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Diagnostics;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.ServiceDefaults;
@@ -12,6 +13,40 @@ namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
 internal sealed partial class Wfs20Handler
 {
+    private enum FeatureTypeAccessMode
+    {
+        Enforce,
+        Bypass
+    }
+
+    private readonly record struct PublishedFeatureTypeQuery(
+        MetadataV2GraphSnapshot Snapshot,
+        FeatureTypeAccessMode AccessMode);
+
+    private async Task<ImmutableArray<WfsFeatureTypeDescriptor>> GetPublishedFeatureTypesAsync(
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        return await GetPublishedFeatureTypesAsync(
+                context,
+                new PublishedFeatureTypeQuery(snapshot, FeatureTypeAccessMode.Enforce),
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<ImmutableArray<WfsFeatureTypeDescriptor>> GetAllPublishedFeatureTypesAsync(
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        return await GetPublishedFeatureTypesAsync(
+                context,
+                new PublishedFeatureTypeQuery(snapshot, FeatureTypeAccessMode.Bypass),
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     public async Task<IResult> HandleGetCapabilitiesResultAsync(
         HttpContext context,
         IReadOnlySet<string>? requestedSections,
@@ -44,9 +79,12 @@ internal sealed partial class Wfs20Handler
         string baseUrl)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var featureTypes = SelectAdvertisedFeatureTypes(
-            await GetPublishedFeatureTypesAsync(context, cancellationToken).ConfigureAwait(false));
         var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var featureTypes = SelectAdvertisedFeatureTypes(
+            await GetPublishedFeatureTypesAsync(
+                context,
+                new PublishedFeatureTypeQuery(snapshot, FeatureTypeAccessMode.Enforce),
+                cancellationToken).ConfigureAwait(false));
         var cacheKey = BuildWfsCapabilitiesCacheKey(
             new WfsCapabilitiesCacheRequest
             {

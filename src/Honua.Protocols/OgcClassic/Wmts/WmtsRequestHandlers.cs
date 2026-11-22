@@ -343,7 +343,7 @@ internal static class WmtsRequestHandlers
                     {
                         Context = context,
                         SnapshotEtag = snapshot.Etag,
-                        ServiceId = serviceId,
+                        ServiceId = svcDef.Metadata.Name,
                         ResponseMimeType = responseMimeType,
                         SectionsMask = (int)sections,
                         MaxZoom = wmtsMaxZoom

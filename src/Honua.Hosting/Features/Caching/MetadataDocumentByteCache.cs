@@ -11,6 +11,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.Caching;
 
+internal readonly record struct MetadataCacheStamp(long ConfigGeneration, long InvalidationGeneration);
+
 internal sealed class CachedMetadataDocument(byte[] bytes, string contentType, string? contentETag)
 {
     internal byte[] Bytes { get; } = bytes;
@@ -25,11 +27,28 @@ internal sealed class CachedMetadataDocument(byte[] bytes, string contentType, s
 internal sealed class MetadataDocumentByteCache
 {
     private const int MaxEntriesPerGeneration = 256;
+    private static readonly TimeSpan DefaultEntryTtl = TimeSpan.FromSeconds(60);
 
+    private readonly TimeProvider _timeProvider;
+    private readonly TimeSpan _entryTtl;
     private long _invalidationGeneration;
     private volatile GenerationBucket _bucket = new(0, 0);
 
+    internal MetadataDocumentByteCache()
+        : this(TimeProvider.System, DefaultEntryTtl)
+    {
+    }
+
+    internal MetadataDocumentByteCache(TimeProvider timeProvider, TimeSpan entryTtl)
+    {
+        _timeProvider = timeProvider;
+        _entryTtl = entryTtl;
+    }
+
     internal void Invalidate() => Interlocked.Increment(ref _invalidationGeneration);
+
+    internal MetadataCacheStamp CaptureStamp(long configGeneration) =>
+        new(configGeneration, Volatile.Read(ref _invalidationGeneration));
 
     internal static async ValueTask<long> ResolveConfigGenerationAsync(HttpContext context, CancellationToken cancellationToken)
     {
@@ -37,18 +56,39 @@ internal sealed class MetadataDocumentByteCache
         return source is null ? 0 : await source.GetGenerationAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    internal CachedMetadataDocument? Get(long configGeneration, string key)
+    internal CachedMetadataDocument? Get(MetadataCacheStamp stamp, string key)
     {
-        var bucket = GetCurrentBucket(configGeneration);
-        return bucket.Entries.TryGetValue(key, out var document) ? document : null;
+        if (Volatile.Read(ref _invalidationGeneration) != stamp.InvalidationGeneration)
+        {
+            return null;
+        }
+
+        var bucket = TryGetOrAdvanceBucket(stamp);
+        if (bucket is null || !bucket.Entries.TryGetValue(key, out var entry))
+        {
+            return null;
+        }
+
+        if (_timeProvider.GetElapsedTime(entry.CreatedTicks) <= _entryTtl)
+        {
+            return entry.Document;
+        }
+
+        bucket.Entries.TryRemove(new KeyValuePair<string, CacheEntry>(key, entry));
+        return null;
     }
 
-    internal CachedMetadataDocument Set(long configGeneration, string key, CachedMetadataDocument document)
+    internal CachedMetadataDocument Set(MetadataCacheStamp stamp, string key, CachedMetadataDocument document)
     {
-        var bucket = GetCurrentBucket(configGeneration);
-        if (bucket.Entries.Count < MaxEntriesPerGeneration)
+        if (Volatile.Read(ref _invalidationGeneration) != stamp.InvalidationGeneration)
         {
-            bucket.Entries[key] = document;
+            return document;
+        }
+
+        var bucket = TryGetOrAdvanceBucket(stamp);
+        if (bucket is not null && bucket.Entries.Count < MaxEntriesPerGeneration)
+        {
+            bucket.Entries[key] = new CacheEntry(document, _timeProvider.GetTimestamp());
         }
 
         return document;
@@ -80,26 +120,44 @@ internal sealed class MetadataDocumentByteCache
         return Convert.ToHexString(hash[..16]);
     }
 
-    private GenerationBucket GetCurrentBucket(long configGeneration)
+    private GenerationBucket? TryGetOrAdvanceBucket(MetadataCacheStamp stamp)
     {
-        var invalidationGeneration = Volatile.Read(ref _invalidationGeneration);
-        var current = _bucket;
-        if (current.ConfigGeneration == configGeneration && current.InvalidationGeneration == invalidationGeneration)
+        while (true)
         {
-            return current;
-        }
+            var current = _bucket;
+            var comparison = CompareStamps(stamp, current.Stamp);
+            if (comparison == 0)
+            {
+                return current;
+            }
 
-        var replacement = new GenerationBucket(configGeneration, invalidationGeneration);
-        var prior = Interlocked.CompareExchange(ref _bucket, replacement, current);
-        return prior == current ? replacement : _bucket;
+            if (comparison < 0)
+            {
+                return null;
+            }
+
+            var replacement = new GenerationBucket(stamp.ConfigGeneration, stamp.InvalidationGeneration);
+            if (Interlocked.CompareExchange(ref _bucket, replacement, current) == current)
+            {
+                return replacement;
+            }
+        }
     }
+
+    private static int CompareStamps(MetadataCacheStamp left, MetadataCacheStamp right)
+    {
+        var configCompare = left.ConfigGeneration.CompareTo(right.ConfigGeneration);
+        return configCompare != 0
+            ? configCompare
+            : left.InvalidationGeneration.CompareTo(right.InvalidationGeneration);
+    }
+
+    private readonly record struct CacheEntry(CachedMetadataDocument Document, long CreatedTicks);
 
     private sealed class GenerationBucket(long configGeneration, long invalidationGeneration)
     {
-        internal long ConfigGeneration { get; } = configGeneration;
+        internal MetadataCacheStamp Stamp { get; } = new(configGeneration, invalidationGeneration);
 
-        internal long InvalidationGeneration { get; } = invalidationGeneration;
-
-        internal ConcurrentDictionary<string, CachedMetadataDocument> Entries { get; } = new(StringComparer.Ordinal);
+        internal ConcurrentDictionary<string, CacheEntry> Entries { get; } = new(StringComparer.Ordinal);
     }
 }
