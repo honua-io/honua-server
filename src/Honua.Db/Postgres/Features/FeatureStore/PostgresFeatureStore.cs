@@ -26,7 +26,7 @@ using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.Ge
 
 namespace Honua.Db.Postgres.Features.FeatureStore;
 
-internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IDistinctFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IObjectIdStreamingReader, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore, IPreChangeImageReader
+internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IDistinctFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IPooledTileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IObjectIdStreamingReader, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore, IPreChangeImageReader
 {
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
@@ -656,6 +656,40 @@ internal sealed partial class PostgresFeatureStoreRefactored : IFeatureDataProvi
 
         var tileQuery = _queryBuilder.BuildMvtTileQuery(layerId, x, y, z, query, tileOptions, tileLimits, geometryStorageType, gridGeometry);
         return await _dataAccess.GetMvtTileAsync(layerId, tileQuery, tileLimits.MaxTileSize, cancellationToken);
+    }
+
+    public async Task<Core.Features.Tiles.PooledTileData?> GetMvtTilePooledAsync(
+        Core.Features.Tiles.MvtTileRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (_dataAccess is not FeatureDataAccess postgresDataAccess)
+        {
+            var bytes = await GetMvtTileAsync(
+                request.LayerId, request.X, request.Y, request.Z, request.Query,
+                request.TileOptions, request.TileLimits, request.GridGeometry, cancellationToken).ConfigureAwait(false);
+            return bytes is null ? null : Core.Features.Tiles.PooledTileData.FromOwnedArray(bytes);
+        }
+
+        var effectiveQuery = request.Query.HasValue
+            ? await ApplyPermanentFilterAsync(request.LayerId, request.Query.Value, cancellationToken).ConfigureAwait(false)
+            : await ApplyPermanentFilterAsync(request.LayerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        if (_queryBuilder is FeatureQueryBuilder postgresBuilder)
+        {
+            return await MvtTileBudgetFitter.ReadPooledAsync(
+                new MvtTileBudgetRead<Honua.Core.Features.FeatureStore.Domain.ParameterizedQuery>(
+                    request.TileLimits.MaxTileSize,
+                    step => postgresBuilder.BuildMvtTileQuery(
+                        request.LayerId, request.X, request.Y, request.Z, effectiveQuery,
+                        request.TileOptions, request.TileLimits, geometryStorageType, request.GridGeometry, step),
+                    (tileQuery, maxTileSize, token) => postgresDataAccess.GetMvtTilePooledAsync(tileQuery, maxTileSize, token)),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        var tileQuery = _queryBuilder.BuildMvtTileQuery(
+            request.LayerId, request.X, request.Y, request.Z, effectiveQuery,
+            request.TileOptions, request.TileLimits, geometryStorageType, request.GridGeometry);
+        return await postgresDataAccess.GetMvtTilePooledAsync(tileQuery, request.TileLimits.MaxTileSize, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<byte[]?> GetH3MvtTileAsync(

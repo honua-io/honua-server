@@ -64,8 +64,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         NpgsqlConnection connection, NpgsqlTransaction? transaction, IReadOnlySet<int> layerIds,
         Guid? connectionId, CancellationToken cancellationToken)
     {
-        const string sql = """
-            SELECT layer_id FROM honua.layers
+        var sql = $"""
+            SELECT layer_id FROM {LayersTable}
             WHERE layer_id = ANY(@layerIds)
               AND COALESCE(storage_options ->> 'managedStore', 'false') = 'true';
             """;

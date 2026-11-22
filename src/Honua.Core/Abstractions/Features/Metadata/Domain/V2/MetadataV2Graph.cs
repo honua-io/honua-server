@@ -121,6 +121,10 @@ public sealed record MetadataV2Graph : ExtensibleJsonRecord, IJsonOnDeserializin
     [JsonPropertyName("extensionPoints")]
     public IReadOnlyList<MetadataV2ExtensionPoint> ExtensionPoints { get; init; } = Array.Empty<MetadataV2ExtensionPoint>();
 
+    [JsonPropertyName("customFieldSchemas")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<MetadataV2CustomFieldSchema>? CustomFieldSchemas { get; init; }
+
     [JsonPropertyName("extensions")]
     public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
 }

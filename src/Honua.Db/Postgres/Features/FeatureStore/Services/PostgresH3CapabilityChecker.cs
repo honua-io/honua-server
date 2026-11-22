@@ -68,7 +68,8 @@ internal sealed partial class PostgresH3CapabilityChecker : IH3CapabilityChecker
 
             await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
             await using var command = new NpgsqlCommand(
-                "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'h3')", connection);
+                // The aggregation SQL passes PostGIS geometries to h3 functions, which h3_postgis provides.
+                "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'h3_postgis')", connection);
             command.CommandTimeout = 10;
 
             var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);

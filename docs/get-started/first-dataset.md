@@ -99,8 +99,10 @@ every feature loaded). Until Step 3 registers a connection to the server's own d
 > them to Step 4. They are returned so that callers do not have to reconstruct the naming
 > convention.
 
-Re-importing the same `datasetName` replaces that table. A file larger than 4 MB does not fit an
-inline tool call, and no client operation uploads a local file yet
+Over `/mcp`, `honua_ingest_dataset` is create-only: re-importing an existing `datasetName` returns
+`success: false` with `rowCount: 0` instead of replacing the table. Pick a new `datasetName`, or
+submit `dataset.stage.import` to stage a replacement as a proposal for human approval. A file larger
+than 4 MB does not fit an inline tool call, and no client operation uploads a local file yet
 ([honua-sdk-python#267](https://github.com/honua-io/honua-sdk-python/issues/267)).
 
 Imports create the table in the `honua_data` schema and default `TargetSrid` to 4326.
@@ -195,7 +197,7 @@ npx --yes -p @honua/sdk-js@0.4.0 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --
 npx --yes -p @honua/sdk-js@0.4.0 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --count
 ```
 
-The `@honua/sdk-js` pin is the release version, 0.2.10. Omit `HONUA_API_KEY` after the service allows anonymous reads.
+The `@honua/sdk-js` pin is the release version, 0.4.0. Omit `HONUA_API_KEY` after the service allows anonymous reads.
 
 The package publishes its CLI as the `honua` binary, so `npx` needs `-p @honua/sdk-js honua`; `npx @honua/sdk-js <command>` looks for a binary named `sdk-js` and fails with `could not determine executable to run`.
 

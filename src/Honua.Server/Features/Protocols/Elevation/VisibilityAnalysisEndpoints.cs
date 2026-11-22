@@ -3,6 +3,7 @@
 
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Infrastructure.Licensing;
@@ -100,9 +101,10 @@ internal static partial class VisibilityAnalysisEndpoints
         // endpoint; any malformed-JSON failure is logged and mapped to a 400 response below.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            if (logger is not null)
+            if (logger is not null && logger.IsEnabled(LogLevel.Warning))
             {
-                LogLineOfSightRequestParseFailed(logger, datasetId, ex);
+                var sanitizedDatasetId = LogValueRedactor.SanitizeForLog(datasetId);
+                LogLineOfSightRequestParseFailed(logger, sanitizedDatasetId, ex);
             }
             return StandardErrorHelpers.CreateBadRequest(context, "Request body must be valid JSON.");
         }
@@ -231,9 +233,10 @@ internal static partial class VisibilityAnalysisEndpoints
         // endpoint; any malformed-JSON failure is logged and mapped to a 400 response below.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            if (logger is not null)
+            if (logger is not null && logger.IsEnabled(LogLevel.Warning))
             {
-                LogViewshedRequestParseFailed(logger, datasetId, ex);
+                var sanitizedDatasetId = LogValueRedactor.SanitizeForLog(datasetId);
+                LogViewshedRequestParseFailed(logger, sanitizedDatasetId, ex);
             }
             return StandardErrorHelpers.CreateBadRequest(context, "Request body must be valid JSON.");
         }

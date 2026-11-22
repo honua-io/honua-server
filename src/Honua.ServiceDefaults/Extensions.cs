@@ -466,7 +466,12 @@ public static partial class Extensions
             // ApplyExporterSpanEventLimit). This tag records how many it will drop.
             if (_maxEvents > 0)
             {
-                var eventCount = activity.Events.Count();
+                var eventCount = 0;
+                foreach (var _ in activity.EnumerateEvents())
+                {
+                    eventCount++;
+                }
+
                 if (eventCount > _maxEvents)
                 {
                     activity.SetTag("otel.events.truncated", eventCount - _maxEvents);
@@ -551,15 +556,24 @@ public static partial class Extensions
 
         private static void TrimTags(Activity activity, int maxAttributes)
         {
-            var excessTags = activity.TagObjects.Skip(maxAttributes).ToList();
-            if (excessTags.Count == 0)
+            var count = 0;
+            List<string>? excessKeys = null;
+            foreach (var tag in activity.EnumerateTagObjects())
+            {
+                if (++count > maxAttributes)
+                {
+                    (excessKeys ??= []).Add(tag.Key);
+                }
+            }
+
+            if (excessKeys is null)
             {
                 return;
             }
 
-            foreach (var tag in excessTags)
+            for (var i = 0; i < excessKeys.Count; i++)
             {
-                activity.SetTag(tag.Key, null);
+                activity.SetTag(excessKeys[i], null);
             }
         }
     }

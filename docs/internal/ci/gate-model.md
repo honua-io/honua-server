@@ -686,8 +686,8 @@ matrix, affected-shard selection, the affected-shard aggregate, CI router valida
 and the required aggregate each set `TMPDIR`, `TEMP` and `TMP` to that job's
 `RUNNER_TEMP` before any other step. Verdict fixtures select the named verdict
 step so setup steps cannot replace the failure checks under test. Several self-hosted accounts share one host,
-and a fixed `/tmp` path collides across them. The existing
-even-index affected-shard split additionally requires independent version-1 heavy
+and a fixed `/tmp` path collides across them. Affected-shard heavy placement
+(below) additionally requires independent version-1 heavy
 availability from the same current-instance heartbeat. An integer idle-heavy count
 from 1 through 8 permits the configured heavy JSON selector; absent, invalid,
 stale, future-dated or replaced-instance proof keeps shards hosted. Producer
@@ -1210,32 +1210,28 @@ Successful baseline run 42685503356 took 15.28 minutes. Scaling its class timing
 spans to the recent timeout estimates child durations of 7.89, 7.22, and 7.47
 minutes, including setup allowance. These initialized the dispatch ranks.
 
-Measured ranks (17 Nov 2026): each recorded `dispatch_rank` is the exact median
+Measured ranks (21 Nov 2026): each recorded `dispatch_rank` is the exact median
 passing job duration (whole-second job timestamps), rounded half-to-even to
-0.1 minute, across full trunk runs 43348507021, 43471044721, 43540829683,
-43564575677, 43580101834, 43612492209, 43709972683, 43819793722 and
-44013566836. Runs 43661416329, 43703260559 and 43726623779 were also read but
-started no server test children, so they supply no samples. A sample counts
-only when the shard's filter and project selection at the run's head match the
-current definition. Passing children count even when their full workflow fails
-or is cancelled; failed, skipped and cancelled children do not supply timing
-samples.
+0.1 minute, across the 26 "CI full" trunk runs completed after the previous
+record (newest run 44013566836) that supplied at least one matching sample, from
+44131638572 to 44921455496. Post-merge "CI affected" runs are not samples. A sample counts only when the shard's filter and
+project selection at the run's head match the current definition. A run supplies
+at most one sample per child (its latest passing attempt). Passing children count
+even when their full workflow fails or is cancelled; failed, skipped and cancelled
+children do not supply timing samples. Runs before the previous record are not
+reused: shared-host test fixtures have since cut many children's duration, and
+older samples no longer predict them.
 
-The latest completed run, [44013566836](https://github.com/honua-io/honua-server/actions/runs/44013566836),
-passed all 225 current server children on trunk `532565b`. Every current
-definition now has matching passing samples: 1 to 8 each, median 3; 16 have
-one sample (the ten timing-repair children, Migration 3, Migration Source
-Imports, File and Raster Import 1–3 and Server Features Miscellaneous 8). Samples from
-before a definition's filter or project change are excluded, so those 16 rest
-on the single run since their change. Failed duration is not a successful
+The latest passing scheduled run, [44819335862](https://github.com/honua-io/honua-server/actions/runs/44819335862),
+passed all 225 current server children on trunk `a997a37`. Every current
+definition has 20 to 26 matching passing samples (median 22). Failed duration is not a successful
 completion estimate, and failures remain gating.
 
 `scripts/ci/fixtures/measured-dispatch-ranks.json` records the ranks and runs;
 `test-full-run-capacity-partitions.py` rejects rank drift. Split children use
 their measured rank, else their contract estimate, else the parent's rank.
 Remove a child's estimate once measured; the estimate-sum conservation rule
-applies only while every child is estimated. This refresh removes the last
-eleven child estimates, including the ten timing-repair children.
+applies only while every child is estimated. No child estimate remains.
 The timing repair's exact partitions, execution policies and evidence remain intact.
 
 An explicit Temporal source override uses `prioritize: true` to keep a narrow
@@ -1244,11 +1240,10 @@ counts tie. It changes ranking only: candidate admission, the six-job cap and
 time budgets still apply. Unmarked overrides retain their previous ranking.
 The schema accepts only boolean override priorities; malformed values fail validation.
 
-Ranks sum to 1,522.3 runner-minutes, previously 1,581.4;
-203 of 225 children fit the unchanged 10-minute PR shard budget, previously 196.
+Ranks sum to 877.5 runner-minutes, previously 1,522.3;
+all 225 children fit the unchanged 10-minute PR shard budget, previously 203.
 These are scheduling estimates, not measured runtime savings. The separate tiny-shard
 consolidation measurement remains 75.38 to 12.11 runner-minutes (63.27 saved).
-The 16 single-sample ranks need subsequent passing full-run evidence.
 
 ### Standalone tooling in affected producer builds
 
@@ -1624,6 +1619,22 @@ rank, including existing PR budget deferral, until scheduled trunk CI measures
 them. The coverage guard proves exact ownership of the former selection.
 See [the capacity evidence and qualification requirement](shard-timeout-budgets.md#admin-authentication-capacity-split-12-november-2026).
 
+### Affected-shard heavy placement
+
+The same shard ran a median 1.83 times longer on `honua-heavy` than on a hosted
+runner (27 shards that ran on both pools, 75 green PR Gate runs, 21-22 November
+2026). The heavy pool also queued longer at the tail (p90 12.8 min against 5.9
+min hosted). The former even-index split put matrix index 0, the longest shard,
+on that pool, and a heavy shard was the last job in 26 of 47 runs with shards.
+The selector now marks an entry `heavy` only when
+`dispatch_rank * pr_heavy_placement.heavy_slowdown` fits within the longest
+shard of its producer lane. It takes the shortest shards first and at most half
+the lane, rounded up. The longest shard of each lane stays hosted.
+`affected-shard` and `affected-shard-held` read `matrix.heavy`, and the existing
+pool proof and fork guards are unchanged. Replaying those 47 runs with measured
+durations moves the median shard-run wall from 23.7 to 20.8 min, with 47 heavy
+jobs instead of 100. Fixtures: `scripts/ci/fixtures/validate-heavy-shard-placement.py`.
+
 ### Managed producer memory budget
 
 The shared lean gate bounds restore and build to four MSBuild workers and sets
@@ -1945,6 +1956,12 @@ needed to verify it.
 After the existing scoped restore, each test analyzer job evaluates `IsTestProject` after SDK and NuGet imports and builds those test roots. All multi-targeted roots remain selected conservatively because test ownership can depend on the inner target framework. Forward project references still compile; the independent source analyzer job retains all source roots and source diagnostics. An empty evaluated root set skips compilation explicitly. Restore scope, diagnostic policy, required job names and job dependencies are unchanged. Standalone single-targeted source roots no longer compile merely because they are solution members.
 
 Baseline: #7807's hosted general test analyzer ran 14.67 minutes, including 0.43 minutes scoped restore and 13.60 minutes compilation; the server test analyzer ran 10.32 minutes. Both passed. A completed hosted run is required to measure the resulting runtime; no saving is assumed.
+
+### Server-test shard disk-headroom guard and measured shard re-packing
+
+`scripts/ci/server-test-shard-free-disk.sh` checks available space on `/` (`HONUA_FREE_DISK_PATH`, default `/`) before spawning the background `sudo rm -rf` cleanup of preinstalled Android, Swift, GHCup, and CodeQL toolchains. When available space already meets `HONUA_MIN_FREE_DISK_GB` (default `40` GiB; invalid values fall back to `40`), the helper removes any stale PID file, logs the current `df -h` reading, and returns immediately so `Wait for free disk space` (`--await`) finishes without waiting on toolchain deletion. If `df -Pk` fails, returns non-numeric output, or reports less than the threshold, the helper fails safe and runs the existing background cleanup and `--await` barrier unchanged. Measured baseline on full trunk run `44819335862` (`225` `ubuntu-latest` server-test shards with `145` GiB root volumes): `Wait for free disk space` consumed `142.43` runner-minutes total (`36.0` s median, `72.0` s p90, `171.0` s max). Covered by `scripts/ci/fixtures/test-server-test-shard-free-disk.py`.
+
+Eleven over-split full-run capacity parents whose combined `Run server test shard` step durations on full trunk run `44921455496` totaled `1.20`–`3.30` minutes (`33` child shards, 26-run median rank sum `103.6` runner-minutes) are re-packed back into their original single-job definitions (`225` → `203` server shards, saving `22` runner setups; remaining `28` full-run capacity contracts intact; `192` shards keep measured ranks and the `11` restored parents use conservative `2.5 + sum(run_m)` estimates of `3.7`–`5.8` minutes, bringing the scheduling rank sum from `877.5` to `827.1` runner-minutes). Every filter, path list, timeout, and report flag is conserved and checked by `check-server-test-shard-coverage.py` and `test-full-run-capacity-partitions.py`.
 
 ### SensorThings collection host lifetime
 
@@ -3192,4 +3209,41 @@ These cases run in Server Features Streaming Endpoints 1, 2 and 4, Server Featur
 Streaming Transports, SensorThings 5 and MCP and Sessions 1. Shard filters are
 unchanged, so every case runs in the same shards on selected PR runs and
 twice-daily full trunk runs. No workflow, shard definition, required check name or
+aggregate `needs` changed.
+
+### Isolated test host boot and teardown overhead
+
+Three changes cut per-host boot and teardown cost across all isolated `WebAppFixture`
+integration suites without reducing any assertion:
+- `ResourceLeakDetector` (#9097): when `_trackedResources` is empty, `ScanForLeaksAsync`
+  returns the same empty `ResourceLeakScanResult` immediately instead of running two
+  forced blocking gen-2 collections and `GC.WaitForPendingFinalizers()` on every
+  Test/Development host stop. Scans with tracked resources are unchanged.
+- `PostgresFixture` (#9110): `GlobalSharedState` retains its shared data source and
+  migrated pool across a 30-second idle grace (`ReleaseIdleNowAsync` plus `ProcessExit`
+  hook) instead of tearing down and re-running extensions/migrations between sequential
+  isolated cases. Private `PostgresSharedState` instances keep `TimeSpan.Zero`.
+- Request Delegate Generator (#9123): enabled `EnableRequestDelegateGenerator` on
+  `Honua.Server` and the 11 endpoint Web SDK libraries so Minimal API delegates are
+  source-generated at compile time rather than JIT-compiled on each isolated host boot.
+- `McpSessionManager.StopAsync`: made idempotent under concurrent host stops exposed by
+  faster teardown.
+
+Measured on the build host (Release, 3 interleaved base/head rounds of the
+`Server Features Capabilities` shard filter, 100/100 passing on all 6 runs):
+- Shard wall time: base 524.8 / 477.5 / 370.2 s (median 477.5 s, 7.96 min) to
+  head 74.8 / 67.6 / 56.1 s (median 67.6 s, 1.13 min); median saving 6.83 min
+  (5.24 min on the lowest-load pair).
+- Per-class median TRX case time (total 1039.0 to 178.3 s):
+  `CapabilityManifestEndpointTests` (40) 411.8 to 45.2 s;
+  `ExperimentalCapabilityGatingIntegrationTests` (34) 263.8 to 35.2 s;
+  `DeploymentCapabilityProfileIntegrationTests` (11) 151.8 to 36.6 s;
+  `CapabilityManifestEndpointTests+RollbackTargets` (5) 111.9 to 31.1 s;
+  `DeploymentCapabilityProfileManifestTests` (4) 80.8 to 28.4 s;
+  `CapabilityManifestEndpointTests+ProductionJobSubstrate` (1) 9.7 to 1.0 s;
+  `CapabilityGateEndpointFilterTests` (3) 0.2 to 0.3 s;
+  `CapabilityGateOpenApiDocumentTransformerTests` (2) 0.4 to 0.3 s.
+
+Shard filters are unchanged, so every case runs in the same shards on selected PR runs
+and twice-daily full trunk runs. No workflow, shard definition, required check name or
 aggregate `needs` changed.

@@ -10,6 +10,7 @@ using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Console;
 using Honua.Server.Features.Console.Models;
 using Honua.Server.Features.Console.Services;
+using Honua.Server.Features.Operations;
 
 namespace Honua.Server.Features.Admin;
 
@@ -28,6 +29,12 @@ internal static class AgentApprovalFilter
     internal const string LayerMetadataRef = "operator.agent.layer-metadata";
 
     private const string ProposalGuidance = OperatorApprovalGate.AgentApprovalGuidance;
+
+    private static readonly HashSet<string> MetadataOperationIds = new(StringComparer.Ordinal)
+    {
+        "admin.metadata.layer-discovery.set",
+        "admin.metadata.service-discovery.set",
+    };
 
     internal const string ConsoleGuidance =
         "Agent changes to layers, access grants and published content need a person: ask one to make this change in Console. " +
@@ -145,6 +152,39 @@ internal static class AgentApprovalFilter
                 ? AccessPolicyRef
                 : LayerMetadataRef,
             ProposalGuidance);
+
+    // People with the right role edit metadata directly; changes from an AI agent or a stored API
+    // key become a proposal approved by one person. Approved proposals replay here with a
+    // server-minted credential; a gateway dispatch carries attested lineage because the gateway
+    // already applied MetadataApprovalRefusal to its caller.
+    public static ValueTask<object?> MetadataDiscovery(EndpointFilterInvocationContext invocation, EndpointFilterDelegate next)
+    {
+        var context = invocation.HttpContext;
+        if (context.Features.Get<AttestedOperationLineage>() is not null)
+        {
+            return next(invocation);
+        }
+
+        return MetadataApprovalRefusal(context, operationId: null) is { } refusal
+            ? ValueTask.FromResult<object?>(refusal)
+            : next(invocation);
+    }
+
+    // The operations gateway admits a standard stored key through the administrator exemption, so
+    // the metadata operations refuse it there too; operationId null means a direct metadata route.
+    internal static IResult? MetadataApprovalRefusal(HttpContext context, string? operationId)
+    {
+        if (operationId is not null && !MetadataOperationIds.Contains(operationId))
+        {
+            return null;
+        }
+
+        var user = context.User;
+        var isStoredApiKey = string.Equals(user.FindFirst("auth_type")?.Value, "admin-api-key", StringComparison.OrdinalIgnoreCase);
+        return !AdminApiKeyPermission.IsServerMintedApprovedOperation(user) && (AgentPrincipal.IsAgent(user) || isStoredApiKey)
+            ? OperatorApprovalGate.AgentApprovalRequired(context, LayerMetadataRef, ProposalGuidance)
+            : null;
+    }
 
     private static ValueTask<object?> Refuse(
         EndpointFilterInvocationContext invocation,

@@ -6,22 +6,25 @@ services:
   # PostgreSQL with PostGIS (shared by all Honua instances)
   postgres:
     image: postgis/postgis:17-3.5
+    command:
+      - postgres
+      - -c
+      - log_connections=on
+      - -c
+      - log_disconnections=on
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=1GB
     environment:
       POSTGRES_DB: honua_scale_test
       POSTGRES_USER: honua_user
       POSTGRES_PASSWORD: honua_password
       POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
-      # Enable encryption at rest and security features
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C --data-checksums"
       POSTGRES_HOST_AUTH_METHOD: "scram-sha-256"
-      POSTGRESQL_CONF_ssl: "on"
-      POSTGRESQL_CONF_password_encryption: "scram-sha-256"
-      POSTGRESQL_CONF_log_connections: "on"
-      POSTGRESQL_CONF_log_disconnections: "on"
-      # Scale-out specific optimizations
-      POSTGRESQL_CONF_max_connections: "200"
-      POSTGRESQL_CONF_shared_buffers: "256MB"
-      POSTGRESQL_CONF_effective_cache_size: "1GB"
     ports:
       - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_SCALE_TEST_POSTGRES_PORT:-5434}:5432"
     volumes:

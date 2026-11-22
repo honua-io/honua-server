@@ -101,4 +101,20 @@ public sealed partial class McpRequestCancellationTests
         Assert.Equal(0, manager.ActiveRequestCount);
         Assert.True(store.Contains(session));
     }
+
+    [UnitTest]
+    public async Task Stop_AfterTheHostDisposedTheManager_CompletesWithoutTouchingDisposedState()
+    {
+        var manager = new McpSessionManager(store: new McpSessionSharedStoreTests.FakeSharedSessionStore(TimeProvider.System));
+        var session = (await manager.TryCreateSessionAsync(Alice, false, null, CancellationToken.None))!;
+        var lifetime = manager.GetLifetimeToken(session);
+
+        var concurrentStop = manager.StopAsync(CancellationToken.None);
+        await manager.DisposeAsync();
+        await concurrentStop.WaitAsync(TimeSpan.FromSeconds(4));
+        await manager.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(4));
+
+        Assert.True(lifetime.IsCancellationRequested);
+        Assert.Null(await manager.TryCreateSessionAsync(Alice, false, null, CancellationToken.None));
+    }
 }

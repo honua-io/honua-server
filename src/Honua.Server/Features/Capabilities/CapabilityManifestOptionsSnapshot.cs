@@ -132,4 +132,27 @@ internal sealed class CapabilityManifestOptionsSnapshot
     public CapabilityManifestDeploymentProfile DeploymentProfile { get; }
 
     public DeploymentIdentity DeploymentIdentity { get; }
+
+    private CapabilityManifestTransports? _cachedTransports;
+    private CapabilityManifestServerInfo? _cachedServerInfo;
+    private string[]? _cachedInstalledProviders;
+
+    internal CapabilityManifestTransports GetOrCreateTransports(Func<CapabilityManifestTransports> factory)
+        => _cachedTransports ??= factory();
+
+    internal CapabilityManifestServerInfo GetOrCreateServerInfo(string environmentName, Func<CapabilityManifestServerInfo> factory)
+    {
+        var existing = _cachedServerInfo;
+        if (existing is not null && string.Equals(existing.DeploymentEnvironment, environmentName, StringComparison.Ordinal))
+        {
+            return existing;
+        }
+
+        var created = factory();
+        _cachedServerInfo = created;
+        return created;
+    }
+
+    internal string[] GetOrCreateInstalledProviders(Func<string[]> factory)
+        => _cachedInstalledProviders ??= factory();
 }

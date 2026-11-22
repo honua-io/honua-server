@@ -60,7 +60,21 @@ public static class Iso19139Writer
             new XElement(Gmd + "characterSet", iso.Code(Gmd + "MD_CharacterSetCode", "utf8")),
             metadata.TopicCategories.Where(MetadataV2DescriptiveCodes.Iso19139TopicCategories.Contains)
                 .Select(category => new XElement(Gmd + "topicCategory", new XElement(Gmd + "MD_TopicCategoryCode", category))),
-            iso.Extent(metadata));
+            iso.Extent(metadata),
+            CustomFieldsElement(iso, metadata));
+
+    private static XElement? CustomFieldsElement(IsoXml iso, DescriptiveMetadata metadata)
+    {
+        if (metadata.CustomFields.Count == 0)
+        {
+            return null;
+        }
+
+        var pairs = metadata.CustomFields
+            .OrderBy(static pair => pair.Key, StringComparer.Ordinal)
+            .Select(static pair => $"\"{pair.Key}\":{pair.Value.GetRawText()}");
+        return new XElement(Gmd + "supplementalInformation", iso.Text($"honua:customFields={{{string.Join(',', pairs)}}}"));
+    }
 
     private static XElement? Distribution(IsoXml iso, DescriptiveMetadata metadata) =>
         metadata.Distributions.Count == 0

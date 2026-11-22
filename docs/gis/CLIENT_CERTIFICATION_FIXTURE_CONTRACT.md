@@ -198,7 +198,7 @@ principal in this fixture, which is what makes the private tier the denial arm o
 ## 5. Profiles and overlays
 
 - **local-unlicensed** (PR and nightly): source-built server on the client-compat docker network,
-  PostGIS 16-3.4, Redis, HTTP only. `CERT-CONN-02` is not applicable here
+  PostGIS 16-3.4, HTTP only. `CERT-CONN-02` is not applicable here
   (`tls-not-exercised-in-local-profile`).
 - **exact-candidate** (release): the exact candidate image behind TLS, same seeds applied by the
   same applier. Additive only — it may pin the image digest and enable TLS and may not change any

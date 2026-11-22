@@ -105,15 +105,74 @@ internal static class LayerScopedWriteKey
     }
 
     public static bool IsScopedWritePrincipal(ClaimsPrincipal? principal)
-        => principal is not null &&
-           (principal.HasClaim("auth_type", AuthType) ||
-            principal.HasClaim("auth_type", ScopedJobTokenIssuer.AuthTypeClaimValue));
+    {
+        if (principal is null)
+        {
+            return false;
+        }
+
+        foreach (var identity in principal.Identities)
+        {
+            foreach (var claim in identity.Claims)
+            {
+                if (string.Equals(claim.Type, "auth_type", StringComparison.OrdinalIgnoreCase)
+                    && (string.Equals(claim.Value, AuthType, StringComparison.Ordinal)
+                        || string.Equals(claim.Value, ScopedJobTokenIssuer.AuthTypeClaimValue, StringComparison.Ordinal)))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
 
     public static bool IsScopeGovernedPrincipal(ClaimsPrincipal? principal)
-        => principal is not null &&
-           (IsScopedWritePrincipal(principal)
-            || ScopeGovernanceRoles.Any(role =>
-                principal.IsInRole(role) || principal.HasClaim(ClaimTypes.Role, role)));
+    {
+        if (principal is null)
+        {
+            return false;
+        }
+
+        foreach (var identity in principal.Identities)
+        {
+            var roleClaimType = identity.RoleClaimType;
+            foreach (var claim in identity.Claims)
+            {
+                if (IsScopedGovernanceClaim(claim, roleClaimType))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsScopedGovernanceClaim(Claim claim, string roleClaimType)
+    {
+        if (string.Equals(claim.Type, "auth_type", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Equals(claim.Value, AuthType, StringComparison.Ordinal)
+                || string.Equals(claim.Value, ScopedJobTokenIssuer.AuthTypeClaimValue, StringComparison.Ordinal);
+        }
+
+        if (!string.Equals(claim.Type, roleClaimType, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(claim.Type, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        for (var i = 0; i < ScopeGovernanceRoles.Count; i++)
+        {
+            if (string.Equals(claim.Value, ScopeGovernanceRoles[i], StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     internal static readonly IReadOnlyList<string> ScopeGovernanceRoles =
     [

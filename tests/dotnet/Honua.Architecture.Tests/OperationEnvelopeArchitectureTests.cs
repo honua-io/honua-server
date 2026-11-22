@@ -703,11 +703,7 @@ public sealed class OperationEnvelopeArchitectureTests
     {
         public string OperationId => operationId;
 
-        public OperationGatewayRequest Map(
-            IOperationDescriptor descriptor,
-            OperationRequest request,
-            OperationPolicyContext context,
-            PolicyDecision decision)
+        public OperationGatewayRequest Map(OperationApprovalRequestContext input)
             => new() { Kind = OperationClass.ServicePublish };
 
         public OperationApprovalReplayMapping MapReplay(OperationGatewayRequest request)

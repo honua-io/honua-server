@@ -4,6 +4,7 @@
 using System.Data;
 using System.Data.Common;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Coordination;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
@@ -16,10 +17,14 @@ internal sealed class PostgresFeatureChangeOutboxRepository : IFeatureChangeOutb
     private const string TableName = "honua.feature_change_outbox";
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
+    private readonly PollWakeSignal<IFeatureChangeOutboxRepository>? _wake;
 
-    public PostgresFeatureChangeOutboxRepository(IAdoNetDatabaseConnectionProvider connectionProvider)
+    public PostgresFeatureChangeOutboxRepository(
+        IAdoNetDatabaseConnectionProvider connectionProvider,
+        PollWakeSignal<IFeatureChangeOutboxRepository>? wake = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+        _wake = wake;
     }
 
     public async Task WriteOutboxRowAsync(
@@ -37,6 +42,18 @@ internal sealed class PostgresFeatureChangeOutboxRepository : IFeatureChangeOutb
         command.Transaction = (NpgsqlTransaction)transaction;
         _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
+        await JoinChangeLogRowAsync((NpgsqlTransaction)transaction, entry, cancellationToken).ConfigureAwait(false);
+
+        // Wake this process's idle dispatcher. This runs before the caller commits, so the woken pass can miss
+        // the row; the pacer is back on its short interval, so the next pass (about 1 s later) claims it.
+        _wake?.Wake();
+    }
+
+    private static async Task JoinChangeLogRowAsync(
+        NpgsqlTransaction transaction,
+        FeatureChangeOutboxEntry entry,
+        CancellationToken cancellationToken)
+    {
         const string joinSql = @"
 UPDATE honua.feature_changes
 SET event_id = @event_id,
@@ -47,7 +64,7 @@ SET event_id = @event_id,
 WHERE generation = currval('honua.sync_generation')
   AND layer_id = @layer_id
   AND objectid = @object_id";
-        await using var join = new NpgsqlCommand(joinSql, npgsql, (NpgsqlTransaction)transaction);
+        await using var join = new NpgsqlCommand(joinSql, transaction.Connection, transaction);
         join.Parameters.AddWithValue("event_id", NpgsqlDbType.Text, entry.EventId);
         join.Parameters.AddWithValue("operation_instance_id", NpgsqlDbType.Text, (object?)entry.OperationInstanceId ?? DBNull.Value);
         join.Parameters.AddWithValue("correlation_id", NpgsqlDbType.Text, (object?)entry.CorrelationId ?? DBNull.Value);

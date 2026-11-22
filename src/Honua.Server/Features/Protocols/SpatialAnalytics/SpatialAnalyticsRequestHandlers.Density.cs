@@ -177,6 +177,13 @@ internal static partial class SpatialAnalyticsRequestHandlers
         {
             weightField = null;
         }
+        else if (!IsValidAnalyticsFieldName(weightField))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Invalid weightField",
+                ["weightField must be a valid field identifier."]);
+        }
 
         // Feature query (where + SQL filter + objectIds + spatial + temporal).
         var (featureQuery, filterError) = await AnalyticsFeatureQueryFactory.TryBuildAsync(
@@ -214,10 +221,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         // a generic reader-failure response below.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            if (logger != null)
-            {
-                SpatialAnalyticsLog.RequestFailed(logger, DensityOperation, layerId, ex.Message, ex);
-            }
+            LogRequestFailed(logger, (DensityOperation, layerId), ex);
             return CreateReaderFailureResult(context, DensityOperation, ex);
         }
 

@@ -16,7 +16,8 @@ public class Cql2EnhancedFunctionTests
     [InlineData("ST_Area(shape) > 1000")]
     [InlineData("ST_Length(road) < 500")]
     [InlineData("ST_Distance(point1, point2) BETWEEN 100 AND 200")]
-    [InlineData("ST_Buffer(geom, 50)")]
+    [InlineData("ST_Area(ST_Buffer(geom, 50)) > 0")]
+    [InlineData("ST_IsValid(shape)")]
     [InlineData("ST_IsValid(shape) = TRUE")]
     public void Parse_SpatialFunctions_ShouldGenerateCorrectAST(string cql)
     {

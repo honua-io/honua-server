@@ -17,15 +17,13 @@ internal sealed class WorkflowRollbackApprovalRequestMapper(string operationId) 
             ? operationId
             : throw new ArgumentException("Unsupported rollback operation.", nameof(operationId));
 
-    public OperationGatewayRequest Map(
-        IOperationDescriptor descriptor,
-        OperationRequest request,
-        OperationPolicyContext context,
-        PolicyDecision decision)
+    public OperationGatewayRequest Map(OperationApprovalRequestContext input)
     {
+        ArgumentNullException.ThrowIfNull(input);
+        var (descriptor, request, context, decision) = (input.Descriptor, input.Request, input.Context, input.Decision);
         if (descriptor.OperationId != OperationId || request.OperationId != OperationId)
         {
-            throw new ArgumentException("Rollback approval requires the exact operation identity.", nameof(request));
+            throw new ArgumentException("Rollback approval requires the exact operation identity.", nameof(input));
         }
 
         Validate(request);

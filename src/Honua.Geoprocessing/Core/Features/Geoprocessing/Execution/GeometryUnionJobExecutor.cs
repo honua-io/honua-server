@@ -56,7 +56,7 @@ internal sealed partial class GeometryUnionJobExecutor : IProcessExecutor
         if (!TryReadInputs(parameters, out var inputs, out var inputError))
         {
             Log.InvalidInputs(_logger, job.OperationId, inputError);
-            return JobExecutionResult.Failed($"Invalid union inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid union inputs: {inputError}");
         }
 
         var geometries = new List<Geometry>(inputs.WkbItems.Count);
@@ -72,14 +72,14 @@ internal sealed partial class GeometryUnionJobExecutor : IProcessExecutor
             catch (FormatException)
             {
                 Log.InvalidWkb(_logger, job.OperationId, i, "is not valid base64");
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid union inputs: wkbs[{i}] is not valid base64.");
             }
 
             if (bytes.Length == 0)
             {
                 Log.InvalidWkb(_logger, job.OperationId, i, "decoded to zero bytes");
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid union inputs: wkbs[{i}] decoded to zero bytes.");
             }
 
@@ -91,21 +91,21 @@ internal sealed partial class GeometryUnionJobExecutor : IProcessExecutor
             catch (Exception ex) when (ex is ParseException or ArgumentException or IndexOutOfRangeException)
             {
                 Log.InvalidWkb(_logger, job.OperationId, i, $"could not be decoded ({ex.GetType().Name})");
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid union inputs: wkbs[{i}] could not be decoded.");
             }
 
             if (geometry == null || geometry.IsEmpty)
             {
                 Log.InvalidWkb(_logger, job.OperationId, i, "decoded to an empty geometry");
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid union inputs: wkbs[{i}] decoded to an empty geometry.");
             }
 
             if (!GeometrySridGuard.TryValidateEmbeddedSrid(geometry, inputs.Srid, out var sridError))
             {
                 Log.InvalidWkb(_logger, job.OperationId, i, sridError);
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid union inputs: wkbs[{i}] {sridError}.");
             }
 

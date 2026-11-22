@@ -101,6 +101,7 @@ public sealed class GeoServicesSqlParser
 
         var expression = ParseExpression();
         Consume(TokenType.EndOfFile, "Unexpected trailing tokens.");
+        EnsureSqlBooleanExpression(expression, "WHERE clause");
         FilterParserGuard.EnsureExpressionTree(expression);
         return expression;
     }
@@ -113,8 +114,10 @@ public sealed class GeoServicesSqlParser
         var operands = 1;
         while (Match(TokenType.Or))
         {
+            EnsureSqlBooleanExpression(expression, "OR");
             FilterParserGuard.EnsureLogicalOperandCount(++operands);
             var right = ParseAnd();
+            EnsureSqlBooleanExpression(right, "OR");
             expression = new BinaryExpression(expression, BinaryOperator.Or, right);
         }
 
@@ -127,8 +130,10 @@ public sealed class GeoServicesSqlParser
         var operands = 1;
         while (Match(TokenType.And))
         {
+            EnsureSqlBooleanExpression(expression, "AND");
             FilterParserGuard.EnsureLogicalOperandCount(++operands);
             var right = ParseNot();
+            EnsureSqlBooleanExpression(right, "AND");
             expression = new BinaryExpression(expression, BinaryOperator.And, right);
         }
 
@@ -141,6 +146,7 @@ public sealed class GeoServicesSqlParser
             if (Match(TokenType.Not))
             {
                 var operand = ParseNot();
+                EnsureSqlBooleanExpression(operand, "NOT");
                 return new UnaryExpression(UnaryOperator.Not, operand);
             }
 
@@ -241,6 +247,11 @@ public sealed class GeoServicesSqlParser
     private FilterExpression ParseLikeRemainder(FilterExpression left, bool negate)
     {
         var pattern = ParseConcat();
+        if (left is Literal { Type: not LiteralType.Text and not LiteralType.Null }
+            || pattern is Literal { Type: not LiteralType.Text and not LiteralType.Null })
+        {
+            throw Error("LIKE requires string operands.");
+        }
 
         if (!TryMatchKeyword("ESCAPE"))
         {
@@ -365,10 +376,23 @@ public sealed class GeoServicesSqlParser
                 _ => BinaryOperator.Modulo
             };
             var right = ParseUnary();
+            if (op is BinaryOperator.Divide or BinaryOperator.Modulo && FilterPredicateValidation.IsZeroNumericLiteral(right))
+            {
+                throw Error("Division or modulo by zero is not allowed.");
+            }
+
             expression = new BinaryExpression(expression, op, right);
         }
 
         return expression;
+    }
+
+    private void EnsureSqlBooleanExpression(FilterExpression expression, string context)
+    {
+        if (!FilterPredicateValidation.IsGeoServicesSqlBooleanExpression(expression))
+        {
+            throw Error($"{context} requires a boolean expression.");
+        }
     }
 
     private FilterExpression ParseUnary()

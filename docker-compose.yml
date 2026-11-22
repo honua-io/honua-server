@@ -7,18 +7,13 @@ services:
       args:
         BASE_IMAGE: pgrouting/pgrouting:17-3.5-3.7.3
     pull_policy: missing
+    command: ["postgres", "-c", "log_connections=on", "-c", "log_disconnections=on"]
     environment:
       POSTGRES_DB: honua_dev
       POSTGRES_USER: honua_user
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Run python3 scripts/docker/quickstart.py to initialize per-install credentials}"
-      # Enable encryption at rest and security features
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C --data-checksums"
       POSTGRES_HOST_AUTH_METHOD: "scram-sha-256"
-      # Enable encryption and security features
-      POSTGRESQL_CONF_ssl: "on"
-      POSTGRESQL_CONF_password_encryption: "scram-sha-256"
-      POSTGRESQL_CONF_log_connections: "on"
-      POSTGRESQL_CONF_log_disconnections: "on"
     ports:
       - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:

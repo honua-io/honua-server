@@ -32,10 +32,14 @@ fail() {
 
 # The installs mount the password as a file only root can read; the entrypoint reads it as root.
 start() {
+  local image="$1"
+  local volume="$2"
+  shift 2
   docker rm -f "$container" >/dev/null 2>&1 || true
-  docker run -d --name "$container" -v "$2:/var/lib/postgresql/data" \
+  docker run -d --name "$container" -v "$volume:/var/lib/postgresql/data" \
     -v "$secrets/postgres_password:/run/secrets/postgres_password:ro" \
-    -e POSTGRES_USER=honua -e POSTGRES_DB=honua -e POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password "$1" >/dev/null
+    -e POSTGRES_USER=honua -e POSTGRES_DB=honua -e POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password \
+    "$image" "$@" >/dev/null
 }
 
 relation_file() {
@@ -94,7 +98,17 @@ docker restart "$container" >/dev/null
 wait_ready
 expect "refreshes after a restart" "$(docker logs "$container" 2>&1 | grep -c '^honua: rebuilding text indexes in database honua ')" 1
 
-start "$new_image" "$fresh_volume"
+# The image must not ship Debian's default ssl-cert snakeoil key or any other private key.
+expect "shipped private key files in /etc/ssl/private" \
+  "$(docker run --rm --entrypoint sh "$new_image" -c 'find /etc/ssl/private -type f 2>/dev/null | wc -l')" 0
+expect "shipped snakeoil certificate" \
+  "$(docker run --rm --entrypoint sh "$new_image" -c 'test ! -e /etc/ssl/certs/ssl-cert-snakeoil.pem && echo absent || echo present')" absent
+
+start "$new_image" "$fresh_volume" postgres -c log_connections=on -c log_disconnections=on
 wait_ready
 expect "fresh volume extensions" \
   "$(sql "CREATE EXTENSION postgis; CREATE EXTENSION postgis_raster; CREATE EXTENSION pgrouting; SELECT count(*) FROM pg_extension WHERE extname IN ('postgis', 'postgis_raster', 'pgrouting')")" 3
+expect "effective ssl setting" "$(sql "SHOW ssl")" off
+expect "effective log_connections setting" "$(sql "SHOW log_connections")" on
+expect "effective log_disconnections setting" "$(sql "SHOW log_disconnections")" on
+expect "effective password_encryption setting" "$(sql "SHOW password_encryption")" scram-sha-256
