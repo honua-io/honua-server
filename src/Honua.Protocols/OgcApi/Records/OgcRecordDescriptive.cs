@@ -20,6 +20,7 @@ internal static class OgcRecordDescriptive
         License = metadata.License,
         Rights = metadata.AccessConstraints.Length == 0 ? null : metadata.AccessConstraints,
         Contacts = Contacts(metadata),
+        CustomFields = metadata.CustomFields.Count == 0 ? null : metadata.CustomFields,
     };
 
     public static IEnumerable<Link> GovernanceLinks(DescriptiveMetadata metadata)

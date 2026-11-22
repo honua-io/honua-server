@@ -14,6 +14,7 @@ import time
 from collections.abc import Callable, Iterator
 
 DEFAULT_DELAYS = (10, 30, 60, 120)
+LISTING_RETRY_DELAYS = (2, 5, 10)
 PAGE_SIZE = 100
 
 
@@ -45,34 +46,72 @@ def get_json(path: str, error: type[Exception] = RuntimeError,
     raise AssertionError("unreachable")
 
 
+class _CountMismatch(Exception):
+    """Internal signal for a transient total_count / row-count mismatch while paging."""
+
+
 class Listing:
     """Paged GitHub listings read through `fetch`; malformed or truncated listings raise `error`."""
 
-    def __init__(self, fetch: Callable[[str], object], error: type[Exception] = RuntimeError) -> None:
+    def __init__(self, fetch: Callable[[str], object], error: type[Exception] = RuntimeError,
+                 retry_delays: tuple[int, ...] = LISTING_RETRY_DELAYS) -> None:
         self.fetch = fetch
         self.error = error
+        self.retry_delays = retry_delays
 
     def pages(self, path: str, key: str | None = None) -> Iterator[dict]:
         """Every row of a paged listing, newest page first.
 
         With `key` the response is an object holding the rows under `key`; its `total_count` must not
-        move while paging and must match the rows seen, so a truncated listing raises.
+        move while paging and must match the rows seen. Transient mismatches (e.g. a workflow run
+        changing status between count and page read) are retried according to `retry_delays` before
+        raising `error`.
         """
+        if not key:
+            yield from self._stream_uncounted(path)
+            return
+        yield from self._read_counted(path, key)
+
+    def _stream_uncounted(self, path: str) -> Iterator[dict]:
         separator = "&" if "?" in path else "?"
-        page, seen, total = 1, 0, None
+        page = 1
         while True:
             result = self.fetch(f"{path}{separator}per_page={PAGE_SIZE}&page={page}")
-            rows, count = self._rows(result, f"{path} page {page}", key)
-            if total is not None and count != total:
-                raise self.error(f"{path} total_count moved from {total} to {count} while paging")
-            total = count
-            seen += len(rows)
+            rows, _ = self._rows(result, f"{path} page {page}", None)
             yield from rows
             if len(rows) < PAGE_SIZE:
                 break
             page += 1
-        if isinstance(total, int) and seen != total:
-            raise self.error(f"{path} returned {seen} of {total} {key}; refusing a truncated listing")
+
+    def _read_counted_once(self, path: str, key: str) -> list[dict]:
+        separator = "&" if "?" in path else "?"
+        page, total = 1, None
+        collected: list[dict] = []
+        while True:
+            result = self.fetch(f"{path}{separator}per_page={PAGE_SIZE}&page={page}")
+            rows, count = self._rows(result, f"{path} page {page}", key)
+            if total is not None and count != total:
+                raise _CountMismatch(f"{path} total_count moved from {total} to {count} while paging")
+            total = count
+            collected.extend(rows)
+            if len(rows) < PAGE_SIZE:
+                break
+            page += 1
+        if isinstance(total, int) and len(collected) != total:
+            raise _CountMismatch(f"{path} returned {len(collected)} of {total} {key}; refusing a truncated listing")
+        return collected
+
+    def _read_counted(self, path: str, key: str) -> list[dict]:
+        for attempt in range(len(self.retry_delays) + 1):
+            try:
+                return self._read_counted_once(path, key)
+            except _CountMismatch as exc:
+                if attempt == len(self.retry_delays):
+                    raise self.error(str(exc)) from None
+                delay = self.retry_delays[attempt]
+                print(f"::warning::listing {path} inconsistent ({exc}); retrying in {delay}s", file=sys.stderr)
+                time.sleep(delay)
+        raise AssertionError("unreachable")
 
     def _rows(self, result: object, label: str, key: str | None) -> tuple[list, object]:
         if not key:

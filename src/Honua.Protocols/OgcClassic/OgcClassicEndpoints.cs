@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Infrastructure.SharedCaching;
 using Honua.Protocols.Ogc.Classic.Wms;
 using Honua.Protocols.Ogc.Classic.Wmts;
 using Honua.Protocols.Ogc.Classic.Wps20;
@@ -22,7 +23,8 @@ internal static class OgcClassicEndpoints
             .WithSummary("OGC WMTS endpoint")
             .WithDescription("Provides OGC WMTS GetCapabilities, GetTile, and GetFeatureInfo operations")
             .WithTags("WMTS", "OGC", "MapServer")
-            .CacheOutput(policy => policy.NoCache());
+            .CacheOutput(policy => policy.NoCache())
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument);
 
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/WMTS/{**restPath}",
                 static (HttpContext context, CancellationToken cancellationToken) => WmtsRequestHandlers.HandleWmtsRestful(context))
@@ -31,7 +33,8 @@ internal static class OgcClassicEndpoints
             .WithSummary("OGC WMTS RESTful endpoint")
             .WithDescription("Provides OGC WMTS RESTful resources for capabilities, tiles, and feature info")
             .WithTags("WMTS", "OGC", "MapServer")
-            .CacheOutput(policy => policy.NoCache());
+            .CacheOutput(policy => policy.NoCache())
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument);
 
         endpoints.MapGet("/ogc/services/{serviceId}/wmts",
                 static (HttpContext context, CancellationToken cancellationToken) => WmtsRequestHandlers.HandleWmts(context))
@@ -40,7 +43,8 @@ internal static class OgcClassicEndpoints
             .WithSummary("OGC WMTS endpoint (service-scoped alias)")
             .WithDescription("Service-scoped OGC WMTS endpoint")
             .WithTags("WMTS", "OGC")
-            .CacheOutput(policy => policy.NoCache());
+            .CacheOutput(policy => policy.NoCache())
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument);
 
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/WMS",
                 static (HttpContext context, CancellationToken cancellationToken) => WmsRequestHandlers.HandleWms(context))
@@ -48,7 +52,8 @@ internal static class OgcClassicEndpoints
             .WithName("MapServerWms")
             .WithSummary("OGC WMS endpoint")
             .WithDescription("Provides OGC WMS GetCapabilities, GetMap, and GetFeatureInfo operations")
-            .WithTags("WMS", "OGC", "MapServer");
+            .WithTags("WMS", "OGC", "MapServer")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument);
 
         endpoints.MapGet("/ogc/services/{serviceId}/wms",
                 static (HttpContext context, CancellationToken cancellationToken) => WmsRequestHandlers.HandleWms(context))
@@ -56,7 +61,8 @@ internal static class OgcClassicEndpoints
             .WithName("OgcServiceWms")
             .WithSummary("OGC WMS endpoint (service-scoped alias)")
             .WithDescription("Service-scoped OGC WMS endpoint")
-            .WithTags("WMS", "OGC");
+            .WithTags("WMS", "OGC")
+            .WithSharedCacheClass(ResponseCacheClass.MetadataDocument);
 
         return endpoints;
     }

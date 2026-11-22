@@ -34,9 +34,9 @@ internal static class SharedResponseETag
                 file.EnableRangeProcessing, file.LastModified, EntityTagHeaderValue.Parse(etag));
         }
 
-        if (result is PooledUtf8ContentResult pooled)
+        if (result is CachedUtf8ContentResult or PooledUtf8ContentResult or PooledTileContentResult)
         {
-            return await ApplyToPooledContentAsync(context, pooled, tags).ConfigureAwait(false);
+            return await ApplyToBufferedContentAsync(context, result, tags).ConfigureAwait(false);
         }
 
         if (result is ContentHttpResult { StatusCode: null or StatusCodes.Status200OK } text)
@@ -49,37 +49,88 @@ internal static class SharedResponseETag
         return result;
     }
 
-    // Same hash as the ContentHttpResult branch: ComputeETag(string) hashes the UTF-8 bytes.
-    private static async ValueTask<object?> ApplyToPooledContentAsync(HttpContext context, PooledUtf8ContentResult pooled, IETagService tags)
+    private static async ValueTask<object?> ApplyToBufferedContentAsync(HttpContext context, object result, IETagService tags)
     {
-        var etag = await ConfigurationResponseETag.ForResponseAsync(context,
-            tags.ComputeETag(pooled.Content.Span), pooled.ContentType).ConfigureAwait(false);
-        return new ConditionalTextResult(pooled, etag, tags);
+        if (result is CachedUtf8ContentResult cached)
+        {
+            var rawTag = cached.ContentETag ?? tags.ComputeETag(cached.Content.Span);
+            var cachedEtag = await ConfigurationResponseETag.ForResponseAsync(context, rawTag, cached.ContentType).ConfigureAwait(false);
+            return new ConditionalTextResult(cached, cachedEtag, tags);
+        }
+
+        if (result is PooledTileContentResult pooledTile)
+        {
+            try
+            {
+                var tileEtag = await ConfigurationResponseETag.ForResponseAsync(context,
+                    tags.ComputeETag(pooledTile.Content.Span), pooledTile.ContentType).ConfigureAwait(false);
+                return new ConditionalTextResult(pooledTile, tileEtag, tags);
+            }
+            catch
+            {
+                pooledTile.Release();
+                throw;
+            }
+        }
+
+        var pooled = (PooledUtf8ContentResult)result;
+        try
+        {
+            var etag = await ConfigurationResponseETag.ForResponseAsync(context,
+                tags.ComputeETag(pooled.Content.Span), pooled.ContentType).ConfigureAwait(false);
+            return new ConditionalTextResult(pooled, etag, tags);
+        }
+        catch
+        {
+            await pooled.ReleaseAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 
     private sealed class ConditionalTextResult(IResult result, string etag, IETagService tags) : IResult
     {
         public async Task ExecuteAsync(HttpContext httpContext)
         {
-            if (!string.IsNullOrEmpty(httpContext.Request.Headers.IfMatch) &&
-                !tags.MatchesPrecondition(httpContext.Request.Headers.IfMatch.ToString(), etag))
+            try
             {
-                httpContext.Response.StatusCode = StatusCodes.Status412PreconditionFailed;
-                await ReleaseAsync().ConfigureAwait(false);
-                return;
-            }
+                if (!string.IsNullOrEmpty(httpContext.Request.Headers.IfMatch) &&
+                    !tags.MatchesPrecondition(httpContext.Request.Headers.IfMatch.ToString(), etag))
+                {
+                    httpContext.Response.StatusCode = StatusCodes.Status412PreconditionFailed;
+                    await ReleaseAsync().ConfigureAwait(false);
+                    return;
+                }
 
-            tags.SetCacheHeaders(httpContext.Response, etag);
-            if (!tags.IsModified(httpContext.Request.Headers.IfNoneMatch.ToString(), etag))
+                tags.SetCacheHeaders(httpContext.Response, etag);
+                if (!tags.IsModified(httpContext.Request.Headers.IfNoneMatch.ToString(), etag))
+                {
+                    httpContext.Response.StatusCode = StatusCodes.Status304NotModified;
+                    await ReleaseAsync().ConfigureAwait(false);
+                    return;
+                }
+            }
+            catch
             {
-                httpContext.Response.StatusCode = StatusCodes.Status304NotModified;
                 await ReleaseAsync().ConfigureAwait(false);
-                return;
+                throw;
             }
 
             await result.ExecuteAsync(httpContext).ConfigureAwait(false);
         }
 
-        private ValueTask ReleaseAsync() => result is PooledUtf8ContentResult pooled ? pooled.ReleaseAsync() : ValueTask.CompletedTask;
+        private ValueTask ReleaseAsync()
+        {
+            if (result is PooledUtf8ContentResult pooled)
+            {
+                return pooled.ReleaseAsync();
+            }
+
+            if (result is PooledTileContentResult pooledTile)
+            {
+                pooledTile.Release();
+            }
+
+            return ValueTask.CompletedTask;
+        }
     }
 }

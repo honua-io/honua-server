@@ -105,35 +105,27 @@ internal static class CollectionEndpoints
             var visible = await StacV2Lookups.ResolveVisibleStacPublicationsAsync(context, cancellationToken)
                 .ConfigureAwait(false);
 
-            var collections = await OgcCommonUtilities.ProjectWithLimitedConcurrencyAsync(
-                visible,
-                (resolved, ct) => StacMappingService.MapResourceToCollectionAsync(
-                    resolved,
-                    new(featureReader, baseUrl, coordinateTransformService),
-                    ct),
-                cancellationToken).ConfigureAwait(false);
+            var result = await MetadataDocumentByteCache.GetOrBuildJsonAsync(
+                context,
+                new JsonMetadataCacheRequest<StacCollectionsResponse>
+                {
+                    CacheKey = StacCollectionsCacheHelper.BuildCollectionsKey(baseUrl, visible),
+                    TypeInfo = StacJsonContext.Default.StacCollectionsResponse,
+                    BuildAsync = () => BuildStacCollectionsPayloadAsync(
+                        new StacCollectionsBuildArgs
+                        {
+                            Visible = visible,
+                            BaseUrl = baseUrl,
+                            StacBase = stacBase,
+                            FeatureReader = featureReader,
+                            CoordinateTransformService = coordinateTransformService,
+                            CancellationToken = cancellationToken
+                        })
+                }).ConfigureAwait(false);
 
-            var links = ImmutableArray.Create(
-                Link.Create(
-                    href: $"{stacBase}/collections",
-                    rel: RelationTypes.Self,
-                    type: MediaTypes.Json,
-                    title: "Collections"),
-                Link.Create(
-                    href: stacBase,
-                    rel: StacConstants.StacRelations.Root,
-                    type: MediaTypes.Json,
-                    title: "STAC Catalog"));
-
-            var response = new StacCollectionsResponse
-            {
-                Collections = collections,
-                Links = links
-            };
-
-            StacLog.CollectionsReturned(logger, collections.Length);
-            StacTelemetry.SetResultCount(activity, collections.Length);
-            return Results.Json(response, StacJsonContext.Default.StacCollectionsResponse, MediaTypes.Json);
+            StacLog.CollectionsReturned(logger, visible.Length);
+            StacTelemetry.SetResultCount(activity, visible.Length);
+            return result;
         }
         catch (OperationCanceledException ex)
             when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
@@ -187,13 +179,22 @@ internal static class CollectionEndpoints
             }
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            var collection = await StacMappingService.MapResourceToCollectionAsync(
-                resolved.Value,
-                new(featureReader, baseUrl, coordinateTransformService),
-                cancellationToken).ConfigureAwait(false);
+            var resolvedEntry = resolved.Value;
+            var cacheKey = StacCollectionsCacheHelper.BuildCollectionKey(baseUrl, resolvedEntry);
+            var result = await MetadataDocumentByteCache.GetOrBuildJsonAsync(
+                context,
+                new JsonMetadataCacheRequest<StacCollection>
+                {
+                    CacheKey = cacheKey,
+                    TypeInfo = StacJsonContext.Default.StacCollection,
+                    BuildAsync = () => StacMappingService.MapResourceToCollectionAsync(
+                        resolvedEntry,
+                        new(featureReader, baseUrl, coordinateTransformService),
+                        cancellationToken)
+                }).ConfigureAwait(false);
 
             StacTelemetry.SetResultCount(activity, 1);
-            return Results.Json(collection, StacJsonContext.Default.StacCollection, MediaTypes.Json);
+            return result;
         }
         catch (OperationCanceledException ex)
             when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
@@ -282,6 +283,45 @@ internal static class CollectionEndpoints
             return StandardErrorHelpers.CreateInternalServerError(
                 context, "An error occurred while retrieving the STAC collection queryables.");
         }
+    }
+
+    private sealed class StacCollectionsBuildArgs
+    {
+        internal required StacV2Lookups.ResolvedStacPublication[] Visible { get; init; }
+        internal required string BaseUrl { get; init; }
+        internal required string StacBase { get; init; }
+        internal required IFeatureReader FeatureReader { get; init; }
+        internal required ICoordinateTransformService? CoordinateTransformService { get; init; }
+        internal required CancellationToken CancellationToken { get; init; }
+    }
+
+    private static async Task<StacCollectionsResponse> BuildStacCollectionsPayloadAsync(StacCollectionsBuildArgs args)
+    {
+        var collections = await OgcCommonUtilities.ProjectWithLimitedConcurrencyAsync(
+            args.Visible,
+            (resolved, ct) => StacMappingService.MapResourceToCollectionAsync(
+                resolved,
+                new(args.FeatureReader, args.BaseUrl, args.CoordinateTransformService),
+                ct),
+            args.CancellationToken).ConfigureAwait(false);
+
+        var links = ImmutableArray.Create(
+            Link.Create(
+                href: $"{args.StacBase}/collections",
+                rel: RelationTypes.Self,
+                type: MediaTypes.Json,
+                title: "Collections"),
+            Link.Create(
+                href: args.StacBase,
+                rel: StacConstants.StacRelations.Root,
+                type: MediaTypes.Json,
+                title: "STAC Catalog"));
+
+        return new StacCollectionsResponse
+        {
+            Collections = collections,
+            Links = links
+        };
     }
 
     private static QueryablesSchema BuildCatalogQueryablesSchema(string schemaId)

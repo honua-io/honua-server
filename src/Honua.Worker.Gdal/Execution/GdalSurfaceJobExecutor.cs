@@ -75,7 +75,7 @@ internal sealed partial class GdalSurfaceJobExecutor(
         if (!GdalJobInputReader.TryGetRasterInput(parameters, "source", opts.MaxArtifactBytes, out var sourceInput, out var inputError))
         {
             Log.InvalidInputs(logger, job.OperationId, inputError);
-            return JobExecutionResult.Failed($"Invalid {processId} inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid {processId} inputs: {inputError}");
         }
 
         if (!TryBuildArguments(processId, parameters, out var subcommand, out var modeArgs, out var failure))
@@ -94,7 +94,7 @@ internal sealed partial class GdalSurfaceJobExecutor(
             // decompression-bomb allocation.
             if (!sourceInput.TryAdmit(opts, out var dimensionError))
             {
-                return JobExecutionResult.Failed($"Invalid raster input: {dimensionError}");
+                return JobExecutionResult.InvalidInput($"Invalid raster input: {dimensionError}");
             }
 
             using var remoteInputScope = GdalRemoteInputScope.Trust(sourceInput.ReferencedPath);

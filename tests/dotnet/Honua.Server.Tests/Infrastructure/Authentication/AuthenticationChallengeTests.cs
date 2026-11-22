@@ -75,6 +75,30 @@ public sealed class AuthenticationChallengeTests
         Assert.Equal([AuthenticationChallenge.ApiKeyChallenge], Challenges(context));
     }
 
+    [UnitTest]
+    public void AccessDenial_RepeatedAppends_DeduplicateCredentialChallenges()
+    {
+        var context = CreateContext(new() { EnableBasicAuthCompatibility = true, RequireHttpsForBasicAuth = true }, "https");
+
+        AccessPolicyHelpers.AppendAuthenticationChallenge(context);
+        AccessPolicyHelpers.AppendAuthenticationChallenge(context);
+        AuthenticationChallenge.AppendCredentialChallenges(context);
+
+        Assert.Equal([AuthenticationChallenge.ApiKeyChallenge, AuthenticationChallenge.BasicChallenge], Challenges(context));
+    }
+
+    [UnitTest]
+    public void AccessDenial_RepeatedBearerAppends_EmitSingleBearerChallenge()
+    {
+        var context = CreateContext(new() { EnableBasicAuthCompatibility = true, RequireHttpsForBasicAuth = true }, "https");
+        context.Request.Headers.Authorization = "Bearer expired-token";
+
+        AccessPolicyHelpers.AppendAuthenticationChallenge(context);
+        AccessPolicyHelpers.AppendAuthenticationChallenge(context);
+
+        Assert.Equal(["Bearer"], Challenges(context));
+    }
+
     private static DefaultHttpContext CreateContext(ApiKeyAuthenticationOptions options, string scheme)
     {
         var services = new ServiceCollection();

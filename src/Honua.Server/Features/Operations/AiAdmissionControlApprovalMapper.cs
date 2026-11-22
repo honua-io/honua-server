@@ -14,8 +14,10 @@ internal sealed class AiAdmissionControlApprovalMapper(string operationId) : IOp
 {
     public string OperationId => operationId;
 
-    public OperationGatewayRequest Map(IOperationDescriptor descriptor, OperationRequest request, OperationPolicyContext context, PolicyDecision decision)
+    public OperationGatewayRequest Map(OperationApprovalRequestContext input)
     {
+        ArgumentNullException.ThrowIfNull(input);
+        var (descriptor, request, context, decision) = (input.Descriptor, input.Request, input.Context, input.Decision);
         if (request.OperationId != OperationId || descriptor.OperationId != OperationId
             || !request.Parameters.TryGetValue(AiAdmissionControlOperation.ActorPin, out var actor)
             || string.IsNullOrWhiteSpace(actor) || actor != context.PrincipalId)

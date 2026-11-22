@@ -263,6 +263,7 @@ internal static partial class WmsRequestHandlers
                 layer.StorageLayerId,
                 GetWmsLayerDisplayName(layer),
                 ex);
+            CapabilitiesBuildDegradation.Mark();
             return null;
         }
     }

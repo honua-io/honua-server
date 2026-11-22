@@ -47,7 +47,24 @@ public static class DcatApWriter
         Add(node, "dct:temporal", Temporal(metadata.TemporalExtent));
         Add(node, "foaf:page", metadata.MetadataLink("describedby") is { } page ? Reference(page) : null);
         AddAccess(node, metadata);
+        AddCustomFields(node, metadata);
         return node;
+    }
+
+    private static void AddCustomFields(JsonObject node, DescriptiveMetadata metadata)
+    {
+        if (metadata.CustomFields.Count == 0)
+        {
+            return;
+        }
+
+        node["@context"]!.AsObject()["honua"] = "https://honua.io/ns/metadata#";
+        var custom = new JsonObject();
+        foreach (var (key, value) in metadata.CustomFields.OrderBy(static pair => pair.Key, StringComparer.Ordinal))
+        {
+            custom[key] = JsonNode.Parse(value.GetRawText());
+        }
+        node["honua:customFields"] = custom;
     }
 
     // xsd:decimal has no exponent. Values outside the decimal range are whole numbers, so they are

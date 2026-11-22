@@ -77,7 +77,7 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
         var inputs = new StepInputReader(job.Spec.Parameters);
         if (!inputs.TryGetRequired("input", out var inputUri, out var inputError))
         {
-            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid {HandledProcessId} inputs: {inputError}");
         }
 
         // Accept both the inline back-compat data URI and a spilled honua-feature-stream
@@ -90,7 +90,7 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
                 inputUri, out var parseError, out var source, _options.CurrentValue.MaxArtifactBytes,
                 _options.CurrentValue.OutputRootDirectory, context))
         {
-            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
+            return JobExecutionResult.InvalidInput($"Invalid {HandledProcessId} inputs: 'input' {parseError}");
         }
 
         string schema;
@@ -115,7 +115,7 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
         }
         catch (TransformInputException ex)
         {
-            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {ex.PublicMessage}");
+            return JobExecutionResult.InvalidInput($"Invalid {HandledProcessId} inputs: {ex.PublicMessage}");
         }
 
         var batchId = inputs.GetOrDefault("batchId", job.OperationId);
@@ -168,7 +168,7 @@ internal sealed partial class HonuaLayerSinkExecutor : IProcessExecutor
                 // loads through a single transactional batch (by design it is not a
                 // distributed data engine). Fail closed with a clear, actionable message
                 // instead of growing the in-memory row buffer without limit.
-                return JobExecutionResult.Failed(
+                return JobExecutionResult.InvalidInput(
                     $"Invalid {HandledProcessId} inputs: 'input' exceeds the configured limit of " +
                     $"{maxFeatures} features for a single honua-layer sink load.");
             }

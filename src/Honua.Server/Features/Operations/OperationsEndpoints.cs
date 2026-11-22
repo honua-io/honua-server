@@ -440,12 +440,17 @@ internal static class OperationsEndpoints
     // An agent's change continues to the dispatcher, whose agent rule files a proposal for a person
     // to approve. Any other operator-gated operation is refused for an agent whatever the
     // OperatorApproval settings.
-    private static IResult? OperatorGateRefusal(HttpContext context, IOperationDescriptor descriptor)
+    private static IResult? OperatorGateRefusal(HttpContext context, OperationDescriptor descriptor)
     {
         var roles = AgentPrincipal.EffectiveRoles(context.User);
         if (AgentApprovalRule.Applies(descriptor, roles))
         {
             return null;
+        }
+
+        if (AgentApprovalFilter.MetadataApprovalRefusal(context, descriptor.OperationId) is { } metadataRefusal)
+        {
+            return metadataRefusal;
         }
 
         return AgentApprovalRule.IsAgent(roles)

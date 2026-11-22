@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text.Json;
 using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Metadata.Crosswalk;
@@ -125,9 +126,41 @@ public static class DescriptiveMetadataResolver
             SpatialResolution = own.Select(metadata => metadata.SpatialResolution).FirstOrDefault(value => value is not null),
             TemporalResolution = First(own, metadata => metadata.TemporalResolution),
             Links = governance.Links,
+            CustomFields = MergeCustomFields(own),
             MetadataDate = item.UpdatedAt ?? item.CreatedAt ?? graph.GeneratedAt,
         };
     }
+
+    private static IReadOnlyDictionary<string, JsonElement> MergeCustomFields(MetadataV2ObjectMetadata[] own)
+    {
+        Dictionary<string, JsonElement>? merged = null;
+        for (var i = own.Length - 1; i >= 0; i--)
+        {
+            var fields = own[i].CustomFields;
+            if (fields is null || fields.Count == 0)
+            {
+                continue;
+            }
+
+            merged ??= new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+            foreach (var (key, value) in fields)
+            {
+                if (value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+                {
+                    merged.Remove(key);
+                }
+                else
+                {
+                    merged[key] = value.Clone();
+                }
+            }
+        }
+
+        return merged is { Count: > 0 } ? merged : EmptyCustomFields;
+    }
+
+    private static readonly IReadOnlyDictionary<string, JsonElement> EmptyCustomFields =
+        new Dictionary<string, JsonElement>(StringComparer.Ordinal);
 
     private static MetadataV2ObjectMetadata Fold(MetadataV2ObjectMetadata[] chain)
         => chain.Skip(1).Aggregate(chain[0], (effective, parent) => effective.WithServiceGovernanceFallbacks(parent));

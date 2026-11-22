@@ -145,7 +145,7 @@ internal sealed partial class ImageryInferenceJobExecutor : IProcessExecutor
                 out var inputError))
         {
             Log.InvalidInputs(_logger, job.OperationId, inputError);
-            return JobExecutionResult.Failed($"Invalid imagery.classify inputs: {inputError}");
+            return JobExecutionResult.InvalidInput($"Invalid imagery.classify inputs: {inputError}");
         }
         string? verifiedRun = null;
         if (_workflowRuns is not null && parameters.TryGetValue("orchestration.runId", out var runId)

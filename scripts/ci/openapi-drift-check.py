@@ -331,7 +331,12 @@ def derive_method_not_allowed_routes(
     silently exempted.
     """
 
-    derived: set[tuple[str, str]] = set()
+    script_dir = str(Path(__file__).resolve().parent)
+    if script_dir not in sys.path:
+        sys.path.insert(0, script_dir)
+    from openapi_bound_routes import derive_bound_method_not_allowed_routes
+
+    derived = derive_bound_method_not_allowed_routes(REPO_ROOT, protocol_paths, normalize_route)
     for source in sorted((REPO_ROOT / "src").rglob("*.cs")):
         text = source.read_text(encoding="utf-8")
         if "MethodNotAllowed" not in text:

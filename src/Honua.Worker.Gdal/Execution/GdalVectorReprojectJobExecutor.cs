@@ -54,24 +54,24 @@ internal sealed partial class GdalVectorReprojectJobExecutor(
 
         if (!TryReadSrid(parameters, "fromSrid", out var fromSrid, out var fromError))
         {
-            return JobExecutionResult.Failed($"Invalid reprojection inputs: {fromError}");
+            return JobExecutionResult.InvalidInput($"Invalid reprojection inputs: {fromError}");
         }
 
         if (!TryReadSrid(parameters, "toSrid", out var toSrid, out var toError))
         {
-            return JobExecutionResult.Failed($"Invalid reprojection inputs: {toError}");
+            return JobExecutionResult.InvalidInput($"Invalid reprojection inputs: {toError}");
         }
 
         if (!GdalJobInputReader.TryGetInput(parameters, "input", out var inputUri)
             || string.IsNullOrWhiteSpace(inputUri))
         {
-            return JobExecutionResult.Failed("Invalid reprojection inputs: missing required input 'input'.");
+            return JobExecutionResult.InvalidInput("Invalid reprojection inputs: missing required input 'input'.");
         }
 
         if (!TryDecodeGeoJsonDataUri(inputUri, opts.MaxArtifactBytes, out var sourceBytes, out var decodeError))
         {
             Log.InvalidInputs(logger, job.OperationId, decodeError);
-            return JobExecutionResult.Failed($"Invalid reprojection inputs: 'input' {decodeError}");
+            return JobExecutionResult.InvalidInput($"Invalid reprojection inputs: 'input' {decodeError}");
         }
 
         var workspace = GdalScratch.CreateWorkspace(opts.ScratchRoot, job.OperationId);
