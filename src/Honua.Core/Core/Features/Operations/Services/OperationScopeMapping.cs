@@ -81,7 +81,7 @@ public static class OperationScopeMapping
 
     private static OperatorOperation ResolveLayerConfiguration(string operationId) => operationId switch
     {
-        "admin.layer.display.get" or "admin.layer.spatial.get" => OperatorOperation.Read,
+        "admin.layer.display.get" or "admin.layer.spatial.get" or "admin.layer.fields.get" => OperatorOperation.Read,
         "admin.layer.display.set" or "admin.layer.spatial.set" => OperatorOperation.Update,
         _ => default,
     };
