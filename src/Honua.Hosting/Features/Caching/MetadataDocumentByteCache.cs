@@ -4,6 +4,8 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Infrastructure.Helpers;
 using Microsoft.AspNetCore.Http;
@@ -12,6 +14,17 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Honua.Infrastructure.Caching;
 
 internal readonly record struct MetadataCacheStamp(long ConfigGeneration, long InvalidationGeneration);
+
+internal sealed class JsonMetadataCacheRequest<T>
+{
+    internal required string? CacheKey { get; init; }
+
+    internal required JsonTypeInfo<T> TypeInfo { get; init; }
+
+    internal string ContentType { get; init; } = "application/json; charset=utf-8";
+
+    internal required Func<Task<T>> BuildAsync { get; init; }
+}
 
 internal sealed class CachedMetadataDocument(byte[] bytes, string contentType, string? contentETag)
 {
@@ -117,6 +130,34 @@ internal sealed class MetadataDocumentByteCache
         var copy = bytes.ToArray();
         var etag = etagService?.ComputeETag(copy);
         return new CachedMetadataDocument(copy, contentType, etag);
+    }
+
+    internal static async Task<IResult> GetOrBuildJsonAsync<T>(
+        HttpContext context,
+        JsonMetadataCacheRequest<T> request)
+    {
+        var cacheKey = request.CacheKey;
+        if (cacheKey is null ||
+            HasQueryToken(context.Request) ||
+            context.RequestServices.GetService<MetadataDocumentByteCache>() is not { } docCache)
+        {
+            var uncached = await request.BuildAsync().ConfigureAwait(false);
+            return Results.Json(uncached, request.TypeInfo, contentType: request.ContentType);
+        }
+
+        var configGeneration = await ResolveConfigGenerationAsync(context, context.RequestAborted)
+            .ConfigureAwait(false);
+        var stamp = docCache.CaptureStamp(configGeneration);
+        if (docCache.Get(stamp, cacheKey) is { } hit)
+        {
+            return hit.ToResult();
+        }
+
+        var payload = await request.BuildAsync().ConfigureAwait(false);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, request.TypeInfo);
+        var etag = context.RequestServices.GetService<IETagService>()?.ComputeETag(bytes);
+        var document = new CachedMetadataDocument(bytes, request.ContentType, etag);
+        return docCache.Set(stamp, cacheKey, document).ToResult();
     }
 
     // Must match the query keys BaseUrlResolver.PreserveToken copies into document links.

@@ -406,7 +406,7 @@ internal static class GeometryServiceRequestParser
                     var i = 0;
                     foreach (var item in doc.RootElement.EnumerateArray())
                     {
-                        if (!item.TryGetDouble(out var d))
+                        if (!item.TryGetDouble(out var d) || !double.IsFinite(d))
                         {
                             return ([], $"Invalid number in distances array at index {i}.");
                         }
@@ -433,7 +433,7 @@ internal static class GeometryServiceRequestParser
         var result = new double[parts.Length];
         for (var i = 0; i < parts.Length; i++)
         {
-            if (!double.TryParse(parts[i].Trim(), CultureInfo.InvariantCulture, out var d))
+            if (!double.TryParse(parts[i].Trim(), CultureInfo.InvariantCulture, out var d) || !double.IsFinite(d))
             {
                 return ([], $"Invalid number in distances: '{parts[i].Trim()}'.");
             }

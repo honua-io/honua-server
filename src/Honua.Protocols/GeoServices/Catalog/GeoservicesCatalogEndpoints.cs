@@ -883,7 +883,10 @@ internal static class GeoservicesCatalogEndpoints
             entries,
             accessError,
             accessStatusCode,
-            imageServerServices.Count > 0 && successfulImageServerProbes == 0 && failedImageServerProbes > 0);
+            imageServerServices.Count > 0 && successfulImageServerProbes == 0 && failedImageServerProbes > 0)
+        {
+            AnyImageServerProbeFailed = failedImageServerProbes > 0
+        };
     }
 
     private static void AppendGeocodeServerEntry(
@@ -979,27 +982,40 @@ internal static class GeoservicesCatalogEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Output format must be json or pjson.");
         }
 
+        var (scopedSnapshot, cacheSlot, hit) = await GeoservicesCatalogCacheHelper
+            .TryLookupAnonymousDirectoryAsync(context, graphProvider, licenseStatusProvider)
+            .ConfigureAwait(false);
+        if (hit is not null)
+        {
+            return hit.ToResult();
+        }
+
         var projection = await BuildServiceDirectoryProjectionAsync(
-            context,
-            graphProvider,
-            rasterStore,
-            licenseStatusProvider,
-            logger).ConfigureAwait(false);
+            context, graphProvider, rasterStore, licenseStatusProvider, logger, scopedSnapshot).ConfigureAwait(false);
         if (projection.AccessError is not null)
         {
             AppendChallengeIfUnauthorized(context, projection.AccessStatusCode);
             return projection.AccessError;
         }
 
+        return FormatServicesDirectoryResult(context, projection, cacheSlot);
+    }
+
+    private static IResult FormatServicesDirectoryResult(
+        HttpContext context,
+        ServiceDirectoryProjection projection,
+        DirectoryCacheSlot? cacheSlot)
+    {
         var response = new ServicesDirectoryResponse
         {
             Folders = GeoServicesCatalogDirectory.FolderNames(projection.Entries),
             Services = GeoServicesCatalogDirectory.InFolder(projection.Entries, null)
         };
-
+        var logger = context.RequestServices.GetRequiredService<ILogger<GeoservicesCatalogLog>>();
         GeoservicesCatalogEndpointLogging.LogServicesDirectoryReturned(logger, response.Services.Length);
-
-        return Results.Json(response, GeoservicesCatalogJsonContext.Default.ServicesDirectoryResponse, contentType: JsonContentType);
+        return cacheSlot is { } activeSlot && !projection.AnyImageServerProbeFailed
+            ? GeoservicesCatalogCacheHelper.StoreAndReturn(context, activeSlot, response)
+            : Results.Json(response, GeoservicesCatalogJsonContext.Default.ServicesDirectoryResponse, contentType: JsonContentType);
     }
 
     private static async Task<IResult> HandleGetServiceFolder(
@@ -1326,7 +1342,10 @@ internal static class GeoservicesCatalogEndpoints
         IReadOnlyList<ServiceDirectoryEntry> Entries,
         IResult? AccessError,
         int? AccessStatusCode,
-        bool AllImageServerProbesFailed);
+        bool AllImageServerProbesFailed)
+    {
+        public bool AnyImageServerProbeFailed { get; init; }
+    }
 
     private sealed record ImageServerProbeCandidate(
         MetadataV2Service Service,
