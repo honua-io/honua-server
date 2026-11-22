@@ -2263,6 +2263,37 @@ baseline/candidate shard pairs were 55.15/41.01 and 41.76/41.99 seconds: the sec
 pair was slightly slower, so the shard saving is variable. Build time is excluded;
 these results do not establish a reduction in the parallel PR Gate critical path.
 
+### Capability plugin discovery schema lifetime
+
+The six `CapabilityManifestEndpointTests.GetManifest_FilePluginWriters_UsesLicensedEnabledDiscovery`
+theory cases retain separate applications, service registries, license editions
+and fresh clients. Each application borrows the initialized class fixture's seeded
+schema rather than creating and seeding another schema. The fixture owner outlives
+all serial class cases; borrowers never drop its schema. Requests only read the
+capability manifest. Per-host metadata and plugin registries remain separate.
+The schema-reuse change preserves every assertion. The same suite also repairs
+a stale manifest contract after trunk added the implemented GeoParquet writer:
+the exact writer list includes GeoParquet and the two total-format counts are
+17. Both measured variants include that correction; their only difference is
+the six plugin hosts borrowing the initialized schema.
+
+Four interleaved base/head Release runs of the complete Server Features
+Capabilities shard passed the identical 103 cases with no skips on one runner
+before and after. Fixture-inclusive TRX session seconds were 88.657 / 67.712
+at base and 65.149 / 74.636 at head: median 78.184 to 69.893 seconds,
+a measured saving of 8.292 seconds (0.138 runner-minutes). The first pair
+improved by 23.508 seconds; the second regressed by 6.925 seconds, so these
+runs show substantial variability rather than a consistent per-run saving.
+The target class's 43 cases summed to 56.155 / 39.371 seconds at base and
+42.806 / 45.035 at head: median 47.763 to 43.920 seconds. Compilation and
+process startup are excluded from the shard measurement; process durations
+were 205.689 / 151.173 seconds at base and 158.666 / 164.087 at head.
+No end-to-end PR Gate critical-path reduction is claimed.
+
+Every case remains in the same selected PR shard and twice-daily full trunk runs.
+Shard filters, workflow files, required check names and the required aggregate's
+`needs` contract are unchanged.
+
 ## Additional workflows
 
 | Workflow file | Name | Triggers | Notes |
