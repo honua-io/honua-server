@@ -3,6 +3,7 @@
 
 using DbUp.Engine;
 using DbUp.Engine.Transactions;
+using Honua.Core.Features.Infrastructure.Migrations;
 
 namespace Honua.Db.Postgres.Features.Infrastructure.Migrations;
 
@@ -14,10 +15,26 @@ internal sealed class RegistrySchemaScriptProvider(IScriptProvider source, strin
     private readonly string _quotedSchema = SchemaSearchPath.ValidateAndQuote(registrySchema);
 
     public IEnumerable<SqlScript> GetScripts(IConnectionManager connectionManager)
-        => source.GetScripts(connectionManager).Select(script =>
-            script.Name == PostgresCoreSchemaGuard.RasterTablesMigration
-                ? new SqlScript(script.Name, script.Contents.Replace(
-                    "REFERENCES honua.layers(layer_id)",
-                    $"REFERENCES {_quotedSchema}.layers(layer_id)", StringComparison.Ordinal), script.SqlScriptOptions)
-                : script);
+        => source.GetScripts(connectionManager).Select(Render);
+
+    internal SqlScript Render(SqlScript script)
+    {
+        if (script.Name != PostgresCoreSchemaGuard.RasterTablesMigration)
+        {
+            return script;
+        }
+
+        var contents = script.Contents.Replace("REFERENCES honua.layers(layer_id)",
+            $"REFERENCES {_quotedSchema}.layers(layer_id)", StringComparison.Ordinal);
+        // Binding the FK changes the frozen script's hash. Carry its existing review
+        // into the rendered script only after validating the original exact bytes;
+        // an altered historical resource must still fail the safety guard.
+        if (MigrationSafetyClassifier.Classify(script.Name, script.Contents).Classification ==
+            MigrationSafetyClassification.ContractAnnotated)
+        {
+            contents += "\n-- honua:compatibility-review reason=Preserve reviewed raster migration with FK bound to the active registry schema\n";
+        }
+
+        return new SqlScript(script.Name, contents, script.SqlScriptOptions);
+    }
 }
