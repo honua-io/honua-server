@@ -146,6 +146,63 @@ public sealed class CacheOperationsEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/operations/cache/invalidate")]
+    public async Task PostInvalidate_WithControlCharactersOrOversizedFields_Returns400()
+    {
+        var oversized = new string('a', 257);
+        object[] payloads =
+        [
+            new { keyPattern = "test\r\n[ERR] FORGED" },
+            new { serviceId = "svc\nFORGED" },
+            new { scope = "all\r\nFORGED" },
+            new { keyPattern = oversized },
+            new { serviceId = oversized },
+        ];
+
+        foreach (var payload in payloads)
+        {
+            var response = await _client.PostAsJsonAsync("/api/v1/admin/operations/cache/invalidate", payload);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/cache/invalidate")]
+    public async Task PostAdminCacheInvalidate_WithControlCharactersOrUnknownScope_Returns400WithoutEchoingScope()
+    {
+        var oversized = new string('s', 257);
+        object[] payloads =
+        [
+            new { scope = "bad\r\n[ERR] FORGED_CACHE_SCOPE" },
+            new { scope = "<script>alert(1)</script>" },
+            new { scope = "service", serviceId = "svc\r\nFORGED" },
+            new { scope = "layer", serviceId = oversized, layerId = 0 },
+            new { scope = "collection", collectionId = "col\nFORGED" },
+        ];
+
+        foreach (var payload in payloads)
+        {
+            var response = await _client.PostAsJsonAsync("/api/v1/admin/cache/invalidate", payload);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var body = await response.Content.ReadAsStringAsync();
+            body.Should().NotContain("FORGED");
+            body.Should().NotContain("<script>");
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/cache/invalidate")]
+    public async Task PostAdminCacheInvalidate_WithValidScope_ReturnsSuccess()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/cache/invalidate", new { scope = "OGC-Metadata" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("success").GetBoolean().Should().BeTrue();
+        document.RootElement.GetProperty("data").GetProperty("scope").GetString().Should().Be("ogc-metadata");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/operations/cache/invalidate")]
     public async Task PostInvalidate_WhenCacheServiceThrows_ReturnsSanitizedError()
     {
         var cacheService = Substitute.For<ICacheService>();

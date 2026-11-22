@@ -150,6 +150,16 @@ internal static class CacheOperationsEndpoints
         HttpContext context,
         ILogger<CacheOperationsEndpointsLog> logger)
     {
+        if (!CacheInvalidationValidation.TryValidateOptionalField(request.KeyPattern, "KeyPattern", out var validationError) ||
+            !CacheInvalidationValidation.TryValidateOptionalField(request.ServiceId, "ServiceId", out validationError) ||
+            !CacheInvalidationValidation.TryValidateOptionalField(request.Scope, "Scope", out validationError))
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status400BadRequest,
+                validationError!);
+        }
+
         var hasKeyPattern = !string.IsNullOrWhiteSpace(request.KeyPattern);
         var hasServiceId = !string.IsNullOrWhiteSpace(request.ServiceId);
         var hasScope = !string.IsNullOrWhiteSpace(request.Scope);
