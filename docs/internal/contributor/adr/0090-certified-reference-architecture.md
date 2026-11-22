@@ -50,8 +50,8 @@ data source, feature locks, OAuth scopes and analysis reports are durable
 [ReportingServiceCollectionExtensions](../../../../src/Honua.Server/Features/Reporting/ReportingServiceCollectionExtensions.cs)).
 [TenantCatalog](../../../../src/Honua.Server/Features/Infrastructure/MultiTenancy/InMemoryTenantCatalog.cs)
 and [TenantUsageMeter](../../../../src/Honua.Server/Features/Infrastructure/MultiTenancy/InMemoryTenantUsageMeter.cs)
-are still in memory. They need durable implementations, production registration, and
-two-replica and restart tests. A full deployment dependency audit must also prove that the
+are still in memory. They need durable implementations registered in place of the in-memory
+defaults, and two-replica and restart tests. A full deployment dependency audit must also prove that the
 certified shape requires none of the excluded services or additional workload images.
 
 ### 2. Published reads use cloud-native files behind the CDN
@@ -149,14 +149,16 @@ execution; the agent cannot supply its own approval. This makes delegated work i
 without requiring a separate operator channel for every tool.
 
 **Today.** [AgentApprovalRule](../../../../src/Honua.Core/Core/Features/Operations/Policy/AgentApprovalRule.cs)
-requires human approval for the named agent access-policy and publication operations.
+requires one human approval for every operation by an agent principal that is not read-only,
+and its MCP tool always files a proposal, for any caller, for a gated list (access policy,
+publication, connections, import, Studio publication and rollback).
 [AiExecutionAdmissionCoordinator](../../../../src/Honua.Hosting/Features/Security/Admission/AiExecutionAdmissionCoordinator.cs)
 and [PostgresAiExecutionAdmissionStore](../../../../src/Honua.Db/Postgres/Features/Security/Admission/PostgresAiExecutionAdmissionStore.cs)
 provide admission and durable budget accounting.
 [OperationApprovalReplayVerifier](../../../../src/Honua.Server/Features/Operations/OperationApprovalReplayVerifier.cs)
 provides approval replay verification.
 
-**Gap.** The named approval operations are not proof that every agent workflow has scoped
+**Gap.** A blanket approval rule is not proof that every agent workflow has scoped
 identity, budget, preview, bound approval and undo. Qualify these together, including expiry,
 revocation, changed evidence, retries and duplicate approval. Actions with no safe undo must
 say so in their preview and remain subject to their operation policy. This rule does not
