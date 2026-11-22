@@ -1375,7 +1375,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                  AND a.attnum > 0
                  AND NOT a.attisdropped
                 WHERE (
-                    (n.nspname = @schema AND c.relname <> ALL(@sensing_objects) AND (
+                    (n.nspname = @schema AND c.relname <> ALL(@sensing_objects)
+                        AND (NOT @legacy_registry OR c.relname <> ALL(@initial_schema_tables)) AND (
                         @schema = @canonical_schema OR
                         (c.relname <> ALL(@lineage_tables) AND c.relname <> ALL(@lineage_indexes))))
                     OR
@@ -1383,7 +1384,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                     OR
                     (n.nspname = @canonical_schema AND
                         (c.relname = ANY(@lineage_tables) OR c.relname = ANY(@lineage_indexes) OR
-                         c.relname = ANY(@initial_schema_tables)))
+                         (@legacy_registry AND c.relname = ANY(@initial_schema_tables))))
                 )
                   AND (c.relname = ANY(@tables) OR c.relname = ANY(@indexes))
                   AND c.relkind IN ('r', 'p', 'i', 'I', 'S')
@@ -1403,6 +1404,10 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             canonicalSchemaParameter.ParameterName = "canonical_schema";
             canonicalSchemaParameter.Value = PostgresSchemaConfiguration.DefaultMetadataSchema;
             schemaCommand.Parameters.Add(canonicalSchemaParameter);
+
+            schemaCommand.Parameters.Add(new NpgsqlParameter("legacy_registry",
+                _migrations.ConfiguredRegistryAdoptionMigration is not { } registryAdoption ||
+                !appliedScripts.Contains(registryAdoption)));
 
             var initialSchemaTablesParameter = schemaCommand.CreateParameter();
             initialSchemaTablesParameter.ParameterName = "initial_schema_tables";

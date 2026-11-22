@@ -114,7 +114,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 _includeConfiguredSchemaAdoption,
                 _migrations.ConfiguredSchemaAdoptionMigration,
                 attachmentSchema, _migrations.Attachments,
-                _migrations.ResidentTables);
+                _migrations.ResidentTables, _migrations.ConfiguredRegistryAdoptionMigration);
             var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
             var readerVerified = await VerifyReaderCompatibilityAsync(
                 upgrader, migrationsAssembly, usesCanonicalMigrationRoots, connection,
@@ -321,7 +321,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 _includeConfiguredSchemaAdoption,
                 _migrations.ConfiguredSchemaAdoptionMigration,
                 attachmentSchema, _migrations.Attachments,
-                _migrations.ResidentTables);
+                _migrations.ResidentTables, _migrations.ConfiguredRegistryAdoptionMigration);
             var upgrader = CreateUpgrader();
             var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
             var readerVerified = await VerifyReaderCompatibilityAsync(
@@ -547,7 +547,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         string configuredSchemaAdoptionMigration,
         string? attachmentSchema = null,
         PostgresAttachmentMigrationContract? attachmentContract = null,
-        IReadOnlyList<HonuaResidentTableBinding>? residentTableBindings = null)
+        IReadOnlyList<HonuaResidentTableBinding>? residentTableBindings = null,
+        string? configuredRegistryAdoptionMigration = null)
     {
         var builder = DeployChanges.To
             .PostgresqlDatabase(connectionString)
@@ -569,13 +570,14 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
 
         foreach (var assembly in migrationAssemblies)
         {
-            // Migration 109 is a contract-phase move that only has meaning for a
+            // Configured-schema adoption is a contract-phase move that only has meaning for a
             // non-default Database:Schema. Omitting it at discovery time keeps an
             // existing default-schema upgrade out of the nonce gate altogether.
             var provider = new EmbeddedScriptProvider(assembly,
                 name => name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase) &&
                     (includeConfiguredSchemaAdoption ||
-                     !string.Equals(name, configuredSchemaAdoptionMigration, StringComparison.Ordinal)));
+                     (!string.Equals(name, configuredSchemaAdoptionMigration, StringComparison.Ordinal) &&
+                      !string.Equals(name, configuredRegistryAdoptionMigration, StringComparison.Ordinal))));
             IScriptProvider schemaBoundProvider = bindsResidentTablesToHonua && residentTableBindings is { Count: > 0 }
                 ? new HonuaResidentTableScriptProvider(provider, residentTableBindings)
                 : provider;

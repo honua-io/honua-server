@@ -199,6 +199,22 @@ Rollback](docker-compose.md#upgrade--rollback). An rc.1 image does not qualify t
 migration, so rollback to rc.1 after it applies is by restoring the pre-upgrade
 database backup.
 
+### Registry tables with a configured database schema
+
+For a non-default `Database:Schema`, migration
+`226_AdoptConfiguredRegistrySchema.sql` moves `services`, `layers`,
+`service_layers`, and `layer_fields` from `honua` into the configured schema.
+It preserves rows, table identities, foreign keys, and owned sequences. Conflicting
+tables in the target schema stop the migration without overwriting either registry.
+The default `honua` schema skips this migration.
+
+For an existing database, back up the database and stop all older server and worker
+instances before running migrate-only. Review the migration plan and apply its
+one-shot contract approval nonce, then start the new instances with identical
+`Database:Schema` settings. Older instances still use the previous table locations;
+application-only rollback across this move is unsupported. Restore the backup and
+matching configuration and image together if rollback is required.
+
 ### Compose database image in rc.2
 
 The Compose installs' database moves to Honua's image: PostgreSQL 17 with the same
