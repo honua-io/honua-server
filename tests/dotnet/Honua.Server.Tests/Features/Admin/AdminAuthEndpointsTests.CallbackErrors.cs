@@ -15,17 +15,14 @@ public sealed partial class AdminAuthEndpointsTests
 {
     [Protocol(TestProtocols.Admin)]
     [Operation(Operations.Configuration)]
-    public sealed class CallbackErrors
+    public sealed class CallbackErrors(OidcCallbackSessionHost oidcHost) : IClassFixture<OidcCallbackSessionHost>
     {
         [IntegrationTest]
         [Endpoint("GET /admin/auth/callback")]
         [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
         public async Task BrowserCallback_ProviderError_RendersReadablePageAndEndsAttempt()
         {
-            using var stubFactory = CreateCallbackStub();
-            await using var fixture = CreateGenericOidcFixture(stubFactory);
-            await fixture.InitializeAsync();
-            using var browser = CreateHttpsBrowser(fixture);
+            using var browser = CreateHttpsBrowser(oidcHost);
             var state = await StartBrowserSignInAsync(browser);
 
             using var callback = await browser.GetAsync(
@@ -48,10 +45,7 @@ public sealed partial class AdminAuthEndpointsTests
         [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
         public async Task BrowserCallback_ProviderErrorThatIsNotAToken_ShowsNeutralCode()
         {
-            using var stubFactory = CreateCallbackStub();
-            await using var fixture = CreateGenericOidcFixture(stubFactory);
-            await fixture.InitializeAsync();
-            using var browser = CreateHttpsBrowser(fixture);
+            using var browser = CreateHttpsBrowser(oidcHost);
             var state = await StartBrowserSignInAsync(browser);
 
             using var callback = await browser.GetAsync(
@@ -67,10 +61,7 @@ public sealed partial class AdminAuthEndpointsTests
         [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/authorize-url")]
         public async Task BrowserCallback_ForgedProviderError_DoesNotCancelSignIn()
         {
-            using var stubFactory = CreateCallbackStub();
-            await using var fixture = CreateGenericOidcFixture(stubFactory);
-            await fixture.InitializeAsync();
-            using var browser = CreateHttpsBrowser(fixture);
+            using var browser = CreateHttpsBrowser(oidcHost);
             var state = await StartBrowserSignInAsync(browser);
 
             using var forged = await browser.GetAsync("/admin/auth/callback?error=access_denied&state=forged");
@@ -83,9 +74,9 @@ public sealed partial class AdminAuthEndpointsTests
         }
 
 
-        private static HttpClient CreateHttpsBrowser(WebAppFixture fixture)
+        private static HttpClient CreateHttpsBrowser(OidcCallbackSessionHost host)
         {
-            var browser = fixture.CreateClient(allowAutoRedirect: false);
+            var browser = host.CreateBrowserWithoutRedirects();
             browser.BaseAddress = new Uri("https://localhost");
             return browser;
         }
