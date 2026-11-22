@@ -416,15 +416,15 @@ follow [upgrade and rollback](upgrade-and-rollback.md). Keep the Gate migration
 policy; a contract migration needs its specific approval nonce. Never skip
 migrations or erase volumes to bypass a failure.
 
-Image rollback keeps the migrated database. Roll back only to images that
-include the schema-reader guard: schema 135 or later for additive migrations,
-and never across a contract-phase migration without a restore. `honua-2026.1`
-is not a safe rollback target across any migration, and the only safe way back
-to 2026.1 is restoring the backup taken before the upgrade. That image predates
-the schema-reader guard, so it starts and serves on a newer schema with no
-refusal. There is no release-named immutable tag for it yet
-([honua-io/honua-release#776](https://github.com/honua-io/honua-release/issues/776)).
-The rules are in
+Schema migrations are forward-only and must be idempotent and verified on an
+installed stack. An upgrade does not promise compatibility with an older image.
+Keep the target image and migrated database together and fix failures forward.
+An image switch never reverses migrations. Recover to a prior image only after
+restoring its matching verified backup, unless that exact image has been
+qualified against the installed schema. Stop all database writers before a
+restore, then verify readiness and retained data before admitting traffic.
+The schema-reader guard and contract-apply approval remain safeguards, not a
+rollback guarantee. See
 [Rollback target eligibility](upgrade-and-rollback.md#rollback-target-eligibility).
 
 To see the migrations apply, or refuse, before the new server starts, run them
@@ -444,10 +444,13 @@ read `contractApproval.nonce` from the summary, review the scripts it names,
 and re-run with `-e HONUA_APPROVE_CONTRACT_MIGRATIONS=<nonce>`. Every other
 exit code and field is listed in
 [Run migrations out of band](upgrade-and-rollback.md#run-migrations-out-of-band).
-If the run refuses, nothing was applied: restore the previous image tag in
-`.env` and start the old server while you resolve it. After a successful run
-the new server finds the journal current and applies nothing, so
-`HONUA_SKIP_MIGRATIONS=true` is only needed where several servers start at once.
+If the run fails or refuses, inspect its summary and migration journal before
+choosing recovery. Do not assume the database is unchanged: a failure after the migration
+transaction commits can still leave the schema upgraded. Fix forward with the target image, or stop
+all writers and restore the matching pre-upgrade backup before starting the
+previous image. After a successful run, the new server finds the journal current
+and applies nothing. Use `HONUA_SKIP_MIGRATIONS=true` only after a successful
+out-of-band run; it does not bypass schema-reader startup checks.
 
 ## Diagnostics and scoped teardown
 
