@@ -108,7 +108,7 @@ internal static partial class GeoJsonFeatureBaseBuilder
             if (attributes.TryGetValue(fieldName, out var value))
             {
                 properties[fieldName] = isObjectIdField && shouldIncludeObjectId
-                    ? NormalizeIdValue(value) ?? featureId
+                    ? UseCanonicalIdForNull(value, featureId)
                     : CoerceProperty(fieldName, value, schema);
             }
             else if (isObjectIdField && shouldIncludeObjectId)
@@ -125,7 +125,7 @@ internal static partial class GeoJsonFeatureBaseBuilder
                 {
                     if (shouldIncludeObjectId && !properties.ContainsKey(fieldName))
                     {
-                        properties[fieldName] = NormalizeIdValue(value) ?? featureId;
+                        properties[fieldName] = UseCanonicalIdForNull(value, featureId);
                     }
 
                     continue;
@@ -340,11 +340,14 @@ internal static partial class GeoJsonFeatureBaseBuilder
         return false;
     }
 
+    private static object UseCanonicalIdForNull(object? value, long featureId)
+        => value is null or JsonElement { ValueKind: JsonValueKind.Null } ? featureId : value;
+
     private static object? NormalizeIdValue(object? value)
         => value switch
         {
             JsonElement jsonElement when jsonElement.ValueKind == JsonValueKind.Number =>
-                jsonElement.TryGetInt64(out var longValue) ? longValue : jsonElement.GetDouble(),
+                jsonElement.TryGetInt64(out var longValue) ? (object)longValue : jsonElement.GetDouble(),
             JsonElement jsonElement when jsonElement.ValueKind == JsonValueKind.String =>
                 jsonElement.GetString(),
             JsonElement jsonElement when jsonElement.ValueKind == JsonValueKind.True => true,
