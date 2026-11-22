@@ -18,14 +18,20 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class ODataCloudNativeRegressionTests
 {
-    [Theory]
-    [InlineData(false, "")]
-    [InlineData(true, "/$entity")]
-    public void ContextUrl_WithExpansion_IdentifiesNavigationProperty(bool isSingle, string suffix)
+    [Fact]
+    public void CollectionContextUrl_WithExpansion_IdentifiesNavigationProperty()
     {
-        ODataUtilityService.BuildContextUrl("https://example.test", "Features", isSingle,
+        ODataUtilityService.BuildContextUrl("https://example.test", "Features", false,
                 select: "ObjectId", expand: "Landmarks")
-            .Should().Be("https://example.test/odata/$metadata#Features(ObjectId,Landmarks())" + suffix);
+            .Should().Be("https://example.test/odata/$metadata#Features(ObjectId,Landmarks())");
+    }
+
+    [Fact]
+    public void EntityContextUrl_WithExpansion_IdentifiesNavigationProperty()
+    {
+        ODataUtilityService.BuildContextUrl("https://example.test", "Features", true,
+                select: "ObjectId", expand: "Landmarks")
+            .Should().Be("https://example.test/odata/$metadata#Features(ObjectId,Landmarks())/$entity");
     }
 
     [Theory]

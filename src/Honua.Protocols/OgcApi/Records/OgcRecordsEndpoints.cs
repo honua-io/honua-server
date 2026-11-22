@@ -259,20 +259,10 @@ internal static partial class OgcRecordsEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
         }
 
-        if (!OgcCommonUtilities.TryGetOutputFormat(
-                f, context,
-                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                {
-                    ["json"] = MediaTypes.GeoJson,
-                    ["geojson"] = MediaTypes.GeoJson,
-                },
-                [MediaTypes.GeoJson, MediaTypes.Json], MediaTypes.GeoJson,
-                out _, out var formatError))
+        if (PrepareItemsFormat(context, f) is { } formatError)
         {
-            return OgcCommonUtilities.CreateFormatError(context, formatError);
+            return formatError;
         }
-
-        context.Response.Headers.Append(HeaderNames.Vary, HeaderNames.Accept);
 
         if (!TryParseLimitOffset(limit, offset, out var pageLimit, out var pageOffset, out var pageError))
         {
@@ -307,6 +297,26 @@ internal static partial class OgcRecordsEndpoints
         };
 
         return Results.Json(response, OgcRecordsJsonContext.Default.OgcRecordFeatureCollection, MediaTypes.GeoJson);
+    }
+
+    private static IResult? PrepareItemsFormat(HttpContext context, string? f)
+    {
+        if (!OgcCommonUtilities.TryGetOutputFormat(
+                f, context,
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["json"] = MediaTypes.GeoJson,
+                    ["geojson"] = MediaTypes.GeoJson,
+                },
+                [MediaTypes.GeoJson, MediaTypes.Json], MediaTypes.GeoJson,
+                out _, out var formatError))
+        {
+            return OgcCommonUtilities.CreateFormatError(context, formatError);
+        }
+
+        context.Response.Headers.Append(HeaderNames.Vary, HeaderNames.Accept);
+
+        return null;
     }
 
     private static async Task<IResult> HandleGetItem(
@@ -873,21 +883,19 @@ internal static partial class OgcRecordsEndpoints
             return false;
         }
 
+        error = ValidateDateTimeInterval(start, end);
+        filter = error is null ? new DateTimeFilter(start, end) : null;
+        return error is null;
+    }
+
+    private static string? ValidateDateTimeInterval(DateTimeOffset? start, DateTimeOffset? end)
+    {
         if (start is null && end is null)
         {
-            error = "datetime must contain at least one RFC 3339 instant.";
-            return false;
+            return "datetime must contain at least one RFC 3339 instant.";
         }
 
-        filter = new DateTimeFilter(start, end);
-        if (filter.Start is not null && filter.End is not null && filter.Start.Value > filter.End.Value)
-        {
-            error = "datetime start must be less than or equal to datetime end.";
-            filter = null;
-            return false;
-        }
-
-        return true;
+        return start > end ? "datetime start must be less than or equal to datetime end." : null;
     }
 
     private static bool TryParseDatePart(string value, out DateTimeOffset? result)

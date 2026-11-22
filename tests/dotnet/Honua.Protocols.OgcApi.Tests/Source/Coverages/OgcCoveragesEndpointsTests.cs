@@ -566,7 +566,7 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
             "subset=",
             "subset=Lon(NaN:1),Lat(0:1)",
             "subset=Lon(0:Infinity),Lat(0:1)",
-            "subset=Lon(1:0),Lat(0:1)",
+            "subset=Lon(0:1),Lat(1:0)",
             "subset=Lon(0:1),Lon(2:3)",
             "subset=Time(0:1),Lat(0:1)",
             "subset=Lon(0:1),Lat(0:91)",

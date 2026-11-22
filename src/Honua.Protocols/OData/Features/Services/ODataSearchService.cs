@@ -853,7 +853,7 @@ internal sealed partial class ODataSearchService
             return optionsByName;
         }
 
-        var segments = ODataUtilityService.SplitTopLevel(expand);
+        var segments = ODataContextSelection.SplitTopLevel(expand);
         for (var segmentIndex = 0; segmentIndex < segments.Count; segmentIndex++)
         {
             var trimmed = segments[segmentIndex].Trim();

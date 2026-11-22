@@ -205,12 +205,11 @@ public static partial class OgcMapsEndpoints
 
     private static async Task<IResult> GetConformance(
         HttpContext context,
-        string? f,
         OgcMapsConformanceHandler handler,
         CancellationToken cancellationToken = default)
     {
         if (!OgcCoreMetadataUtilities.TryPrepareMetadataResponse(
-                context, f, MetadataQueryParameters, out var outputFormat, out var errorResult))
+                context, context.Request.Query["f"], MetadataQueryParameters, out var outputFormat, out var errorResult))
         {
             return errorResult!;
         }

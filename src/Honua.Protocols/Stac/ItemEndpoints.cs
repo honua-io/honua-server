@@ -66,12 +66,10 @@ internal static class ItemEndpoints
             collectionId);
         StacLog.ItemsRequested(logger, collectionId, limit);
 
-        var validationError = OgcCommonUtilities.ValidateQueryParameters(
-            context.Request, StacConstants.AllowedQueryParameters.Items);
-        if (validationError is not null)
+        if (ValidateItemQuery(context, StacConstants.AllowedQueryParameters.Items) is { } queryError)
         {
             StacTelemetry.SetFailed(activity, "invalid_query_parameters");
-            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+            return queryError;
         }
 
         try
@@ -254,6 +252,12 @@ internal static class ItemEndpoints
         }
     }
 
+    private static IResult? ValidateItemQuery(HttpContext context, IReadOnlySet<string> allowedParameters)
+    {
+        var error = OgcCommonUtilities.ValidateQueryParameters(context.Request, allowedParameters);
+        return error is null ? null : StandardErrorHelpers.CreateBadRequest(context, error.Value ?? "Invalid query parameters.");
+    }
+
     private static async Task<IResult> HandleGetItem(
         string collectionId,
         string itemId,
@@ -270,11 +274,10 @@ internal static class ItemEndpoints
             itemId);
         StacLog.ItemRequested(logger, collectionId, itemId);
 
-        var validationError = OgcCommonUtilities.ValidateQueryParameters(
-            context.Request, StacConstants.AllowedQueryParameters.Catalog);
-        if (validationError is not null)
+        if (ValidateItemQuery(context, StacConstants.AllowedQueryParameters.Catalog) is { } queryError)
         {
-            return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
+            StacTelemetry.SetFailed(activity, "invalid_query_parameters");
+            return queryError;
         }
 
         try

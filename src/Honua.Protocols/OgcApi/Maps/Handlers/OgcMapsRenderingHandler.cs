@@ -90,28 +90,11 @@ internal sealed class OgcMapsRenderingHandler
             }
             var (resource, service) = collection!;
 
-            // Create map render request
-            if (ValidateAcceptFormat(request, context) is { } formatError)
+            var (renderRequest, requestError) = await PrepareCollectionRenderRequestAsync(
+                (request, resource, layerId), context, cancellationToken).ConfigureAwait(false);
+            if (requestError is not null)
             {
-                return formatError;
-            }
-
-            var (renderRequest, validationError) = CreateMapRenderRequest(request, resource, layerId, context);
-            if (renderRequest == null)
-            {
-                OgcMapsLog.InvalidMapParameters(_logger, layerId, validationError!);
-                return CreateBadRequestResult(context, validationError!);
-            }
-
-            var parsedRenderRequest = renderRequest.Value;
-            (renderRequest, validationError) = await NormalizeBoundingBoxForOutputCrsAsync(
-                parsedRenderRequest,
-                context,
-                cancellationToken).ConfigureAwait(false);
-            if (renderRequest == null)
-            {
-                OgcMapsLog.InvalidMapParameters(_logger, layerId, validationError!);
-                return CreateBadRequestResult(context, validationError!);
+                return requestError;
             }
 
             var editionError = RequireProEditionForDatetime(context, renderRequest.Value);
@@ -466,28 +449,11 @@ internal sealed class OgcMapsRenderingHandler
                 return CreateNotFoundResult(context, $"Style '{styleId}' is not associated with collection {layerId}");
             }
 
-            // Create map render request
-            if (ValidateAcceptFormat(request, context) is { } formatError)
+            var (renderRequest, requestError) = await PrepareCollectionRenderRequestAsync(
+                (request, resource, layerId), context, cancellationToken).ConfigureAwait(false);
+            if (requestError is not null)
             {
-                return formatError;
-            }
-
-            var (renderRequest, validationError) = CreateMapRenderRequest(request, resource, layerId, context);
-            if (renderRequest == null)
-            {
-                OgcMapsLog.InvalidMapParameters(_logger, layerId, validationError!);
-                return CreateBadRequestResult(context, validationError!);
-            }
-
-            var parsedRenderRequest = renderRequest.Value;
-            (renderRequest, validationError) = await NormalizeBoundingBoxForOutputCrsAsync(
-                parsedRenderRequest,
-                context,
-                cancellationToken).ConfigureAwait(false);
-            if (renderRequest == null)
-            {
-                OgcMapsLog.InvalidMapParameters(_logger, layerId, validationError!);
-                return CreateBadRequestResult(context, validationError!);
+                return requestError;
             }
 
             var editionError = RequireProEditionForDatetime(context, renderRequest.Value);
@@ -958,6 +924,33 @@ internal sealed class OgcMapsRenderingHandler
 
         // Default to PNG when no format preference is expressed
         return RasterFormat.PNG;
+    }
+
+    private async Task<(MapRenderRequest? Request, IResult? Error)> PrepareCollectionRenderRequestAsync(
+        (OgcMapRequest Request, MetadataV2Object Resource, int LayerId) parameters,
+        HttpContext? context,
+        CancellationToken cancellationToken)
+    {
+        if (ValidateAcceptFormat(parameters.Request, context) is { } formatError)
+        {
+            return (null, formatError);
+        }
+
+        var (renderRequest, validationError) = CreateMapRenderRequest(
+            parameters.Request, parameters.Resource, parameters.LayerId, context);
+        if (renderRequest is not null)
+        {
+            (renderRequest, validationError) = await NormalizeBoundingBoxForOutputCrsAsync(
+                renderRequest.Value, context, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (renderRequest is not null)
+        {
+            return (renderRequest, null);
+        }
+
+        OgcMapsLog.InvalidMapParameters(_logger, parameters.LayerId, validationError!);
+        return (null, CreateBadRequestResult(context, validationError!));
     }
 
     private (MapRenderRequest?, string?) CreateMapRenderRequest(
