@@ -94,7 +94,7 @@ public sealed class AntimeridianCutTests
         var cut = AntimeridianCutter.Cut(geometry);
 
         cut.NumGeometries.Should().Be(2);
-        var boundaries = cut.Coordinates.Where(coordinate => Math.Abs(coordinate.X) == 180d).ToArray();
+        var boundaries = cut.Coordinates.Where(coordinate => Math.Abs(Math.Abs(coordinate.X) - 180d) < 1e-9).ToArray();
         boundaries.Should().HaveCount(2);
         foreach (var boundary in boundaries)
         {

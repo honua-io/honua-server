@@ -19,6 +19,7 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.ZarrParser;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation;
 using Honua.Core.Features.Validation.Abstractions;
@@ -403,6 +404,7 @@ public sealed class OgcClassicConformance8725Tests
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "svc1", Name = "svc1" },
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+            AccessPolicy = new AccessPolicy { AllowAnonymous = true },
             Protocols = [ServiceProtocols.Wmts]
         };
         var publication = new MetadataV2Layer
