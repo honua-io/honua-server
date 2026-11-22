@@ -231,19 +231,17 @@ internal sealed class AdminOperateOperationApprovalRequestMapper(
 {
     public string OperationId => definition.OperationId;
 
-    public OperationGatewayRequest Map(
-        IOperationDescriptor descriptor,
-        OperationRequest request,
-        OperationPolicyContext context,
-        PolicyDecision decision)
+    public OperationGatewayRequest Map(OperationApprovalRequestContext input)
     {
+        ArgumentNullException.ThrowIfNull(input);
+        var (descriptor, request, context, decision) = (input.Descriptor, input.Request, input.Context, input.Decision);
         ArgumentNullException.ThrowIfNull(descriptor);
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(decision);
         if (descriptor.OperationId != OperationId || request.OperationId != OperationId)
         {
-            throw new ArgumentException($"The mapper only accepts {OperationId} requests.", nameof(request));
+            throw new ArgumentException($"The mapper only accepts {OperationId} requests.", nameof(input));
         }
 
         var payload = AdminApiOperationApprovalPayload.From(request, context, secretStore);
