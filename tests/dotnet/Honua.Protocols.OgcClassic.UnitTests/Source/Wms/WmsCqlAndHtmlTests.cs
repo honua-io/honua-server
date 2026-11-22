@@ -186,7 +186,7 @@ public sealed class WmsCqlAndHtmlTests
             .Returns(call =>
             {
                 onQuery?.Invoke(call.Arg<FeatureQuery>());
-                return ToAsyncEnumerable([feature]);
+                return Task.FromResult(new QueryResult<Feature> { Items = [feature], TotalCount = 1 });
             });
         return reader;
     }
@@ -306,16 +306,6 @@ public sealed class WmsCqlAndHtmlTests
         context.Response.Body.Position = 0;
         using var reader = new StreamReader(context.Response.Body, Encoding.UTF8);
         return (context.Response.StatusCode, await reader.ReadToEndAsync());
-    }
-
-    private static async IAsyncEnumerable<Feature> ToAsyncEnumerable(IEnumerable<Feature> features)
-    {
-        foreach (var f in features)
-        {
-            yield return f;
-        }
-
-        await Task.CompletedTask;
     }
 
     private sealed class StaticGraphProvider(MetadataV2GraphSnapshot snapshot) : IMetadataV2GraphProvider
