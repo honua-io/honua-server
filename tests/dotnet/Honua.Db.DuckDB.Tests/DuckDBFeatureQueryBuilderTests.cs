@@ -415,11 +415,96 @@ public class DuckDBFeatureQueryBuilderTests
     }
 
     [Fact]
-    public void BuildH3AggregationQuery_ThrowsNotSupported()
+    public void BuildH3AggregationQuery_BasicResolution_EmitsDuckDbH3PushdownSql()
     {
-        Assert.Throws<NotSupportedException>(() =>
-            _builder.BuildH3AggregationQuery(TestLayerId, new FeatureQuery(),
-                new H3AggregationQuery { Resolution = 5 }));
+        var result = _builder.BuildH3AggregationQuery(
+            TestLayerId,
+            new FeatureQuery(),
+            new H3AggregationQuery
+            {
+                Resolution = 7,
+                MaxCells = 500,
+            });
+
+        Assert.Contains("h3_latlng_to_cell(ST_Y(ST_Centroid(\"geom\")), ST_X(ST_Centroid(\"geom\")), $1)", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("h3_h3_to_string(_h3cell) AS \"cellIndex\"", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ST_AsGeoJSON(ST_GeomFromText(h3_cell_to_boundary_wkt(_h3cell))) AS \"cellGeometry\"", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("COUNT(\"id\") AS \"count\"", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("GROUP BY _h3cell ORDER BY COUNT(*) DESC LIMIT $2", result.Sql, StringComparison.Ordinal);
+        Assert.Equal(7, result.WhereParameters[0]);
+        Assert.Equal(500, result.WhereParameters[1]);
+    }
+
+    [Fact]
+    public void BuildH3AggregationQuery_WithPolyfillKRingAndNon4326Layer_TransformsTo4326AndExpandsDisk()
+    {
+        var projectedMapping = new DuckDBLayerMapping
+        {
+            LayerId = 99,
+            TableName = "parcels_3857",
+            GeometryColumn = "geom",
+            ObjectIdColumn = "id",
+            Srid = 3857,
+            AttributeColumns = ["area"],
+            BboxColumn = "bbox",
+        };
+        var builder = new DuckDBFeatureQueryBuilder(new DuckDBLayerRegistry([projectedMapping]));
+        var result = builder.BuildH3AggregationQuery(
+            99,
+            new FeatureQuery(),
+            new H3AggregationQuery
+            {
+                Resolution = 6,
+                PolyfillGeometry = [0x01, 0x03, 0x00, 0x00, 0x00],
+                PolyfillSrid = 4326,
+                KRingDistance = 1,
+                OutStatistics = ImmutableArray.Create(new StatisticDefinition
+                {
+                    StatisticType = StatisticType.Sum,
+                    OnStatisticField = "area",
+                    OutStatisticFieldName = "total_area",
+                }),
+                MaxCells = 100,
+            });
+
+        Assert.Contains("WITH polyfill_cells AS (SELECT UNNEST(h3_polygon_wkt_to_cells(", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ST_Transform(\"geom\", 'EPSG:3857', 'EPSG:4326', always_xy := true)", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("UNNEST(h3_grid_disk(a._h3cell,", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("SUM(a.\"total_area\") AS \"total_area\"", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WithGeoParquetBboxColumn_PushesDownRowGroupBboxPredicates()
+    {
+        var mapping = new DuckDBLayerMapping
+        {
+            LayerId = 12,
+            TableName = "s3_parcels",
+            GeometryColumn = "geom",
+            ObjectIdColumn = "id",
+            Srid = 4326,
+            AttributeColumns = ["name"],
+            BboxColumn = "bbox",
+        };
+        var builder = new DuckDBFeatureQueryBuilder(new DuckDBLayerRegistry([mapping]));
+        var filter = SpatialFilter.Create(
+            geometry: [0x01, 0x03, 0x00, 0x00, 0x00],
+            spatialRelationship: SpatialRelationship.Intersects,
+            srid: 4326,
+            isSimpleEnvelope: true,
+            envelopeMinX: -122.5,
+            envelopeMinY: 37.7,
+            envelopeMaxX: -122.3,
+            envelopeMaxY: 37.8);
+
+        var result = builder.BuildSelectQuery(12, new FeatureQuery { SpatialFilter = filter });
+
+        Assert.Contains("\"bbox\".xmax >= $1 AND \"bbox\".xmin <= $2 AND \"bbox\".ymax >= $3 AND \"bbox\".ymin <= $4", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("ST_Intersects(\"geom\", ST_GeomFromWKB($5))", result.Sql, StringComparison.Ordinal);
+        Assert.Equal(-122.5, result.WhereParameters[0]);
+        Assert.Equal(-122.3, result.WhereParameters[1]);
+        Assert.Equal(37.7, result.WhereParameters[2]);
+        Assert.Equal(37.8, result.WhereParameters[3]);
     }
 
     [Fact]

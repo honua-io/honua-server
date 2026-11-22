@@ -10,9 +10,12 @@ using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.ObjectStorage;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Warehouse.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Db.DuckDB.Features.FeatureStore;
 using Honua.Db.DuckDB.Features.FeatureStore.Services;
@@ -126,8 +129,11 @@ internal static class ServiceCollectionExtensions
             sp.GetRequiredService<IFeatureDataAccess>(),
             sp.GetRequiredService<IFeatureCacheManager>(),
             Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp),
-            sp.GetService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>(),
-            sp.GetService<Honua.Core.Queries.Filters.IFilterExpressionService>()));
+            sp.GetService<IMetadataV2GraphProvider>(),
+            sp.GetService<IFilterExpressionService>(),
+            sp.GetService<IObjectStorageConnectionResolver>()));
+
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IWarehouseProviderCapabilityDescriptor, DuckDbWarehouseCapabilityDescriptor>());
 
         // Register segregated interfaces
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
@@ -222,7 +228,14 @@ internal static class ServiceCollectionExtensions
                 ObjectIdColumn = layerOpt.ObjectIdColumn,
                 Srid = layerOpt.Srid,
                 AttributeColumns = attributeColumns,
-                AttributeColumnTypes = attributeColumnTypes
+                AttributeColumnTypes = attributeColumnTypes,
+                ExternalSourcePaths = layerOpt.ExternalSource is null
+                    ? []
+                    : [.. DuckDBExternalSourceSql.GetConfiguredPaths(layerOpt.ExternalSource)],
+                ExternalSourceFormat = layerOpt.ExternalSource?.Format,
+                ObjectStorageConnectionId = layerOpt.ExternalSource?.ObjectStorageConnectionId,
+                ObjectStorageKey = layerOpt.ExternalSource?.ObjectStorageKey,
+                BboxColumn = layerOpt.ExternalSource?.BboxColumn,
             });
         }
 

@@ -3,10 +3,19 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using Honua.Core.Queries.Filters;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.ObjectStorage;
+using Honua.Core.Queries.Filters;
 
 namespace Honua.Db.DuckDB.Features.Infrastructure;
+
+internal sealed record DuckDBResolvedObjectStorageBinding(
+    Guid ConnectionId,
+    string Bucket,
+    string Region,
+    ImmutableArray<string> SourceUris,
+    ImmutableArray<string> RequiredExtensions,
+    ImmutableArray<DuckDBBootstrapSqlCommand> ConnectionSettings);
 
 internal static class DuckDBExternalSourceSql
 {
@@ -24,6 +33,74 @@ internal static class DuckDBExternalSourceSql
         return string.IsNullOrWhiteSpace(source.Path)
             ? []
             : [source.Path];
+    }
+
+    public static IReadOnlyList<string> GetConfiguredObjectStorageKeys(DuckDBExternalSourceOptions source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        if (source.ObjectStorageKeys is { Length: > 0 })
+        {
+            return source.ObjectStorageKeys
+                .Where(key => !string.IsNullOrWhiteSpace(key))
+                .ToArray();
+        }
+
+        return string.IsNullOrWhiteSpace(source.ObjectStorageKey)
+            ? []
+            : [source.ObjectStorageKey];
+    }
+
+    public static async Task<DuckDBResolvedObjectStorageBinding> ResolveObjectStorageBindingAsync(
+        IObjectStorageConnectionResolver resolver,
+        Guid connectionId,
+        IReadOnlyList<string> keys,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(resolver);
+        ArgumentNullException.ThrowIfNull(keys);
+
+        if (connectionId == Guid.Empty)
+        {
+            throw new ArgumentException("Object storage connection id must not be empty.", nameof(connectionId));
+        }
+
+        if (keys.Count == 0)
+        {
+            throw new ArgumentException("At least one object storage key is required.", nameof(keys));
+        }
+
+        var uris = ImmutableArray.CreateBuilder<string>(keys.Count);
+        ObjectStorageConnection? connection = null;
+        foreach (var key in keys)
+        {
+            var resolution = await resolver.ResolveObjectAsync(connectionId, key, cancellationToken).ConfigureAwait(false);
+            if (!resolution.Succeeded || resolution.Connection is null)
+            {
+                throw new InvalidOperationException(
+                    string.IsNullOrWhiteSpace(resolution.Message)
+                        ? "Failed to resolve object storage binding for DuckDB external source."
+                        : resolution.Message);
+            }
+
+            connection ??= resolution.Connection;
+            DuckDBOptionsValidator.ThrowIfUnsafeSourcePath(resolution.SourceUri);
+            uris.Add(resolution.SourceUri);
+        }
+
+        var settings = ImmutableArray.CreateBuilder<DuckDBBootstrapSqlCommand>();
+        if (!string.IsNullOrWhiteSpace(connection!.Region))
+        {
+            AddStringSetting(settings, "s3_region", connection.Region, "configure S3 region from object storage connection");
+        }
+
+        return new DuckDBResolvedObjectStorageBinding(
+            connection.Id,
+            connection.Bucket,
+            connection.Region,
+            uris.ToImmutable(),
+            ["spatial", "httpfs"],
+            settings.ToImmutable());
     }
 
     public static ImmutableArray<string> GetRequiredExtensions(DuckDBOptions options)
@@ -79,29 +156,77 @@ internal static class DuckDBExternalSourceSql
                 continue;
             }
 
-            var sql = BuildCreateTempViewSql(layer);
-            var requiredExtensions = ImmutableArray.CreateBuilder<string>();
-            if (DuckDBOptionsValidator.UsesHttpFs(layer.ExternalSource))
+            if (GetConfiguredPaths(layer.ExternalSource).Count == 0 && layer.ExternalSource.ObjectStorageConnectionId.HasValue)
             {
-                requiredExtensions.Add("httpfs");
+                continue;
             }
 
-            if (DuckDBOptionsValidator.UsesAzure(layer.ExternalSource))
-            {
-                requiredExtensions.Add("azure");
-            }
-
-            plans.Add(new DuckDBExternalSourcePlan(
-                layer.Id,
-                layer.Table,
-                sql,
-                requiredExtensions.ToImmutable())
-            {
-                SourcePaths = [.. GetConfiguredPaths(layer.ExternalSource)],
-            });
+            plans.Add(BuildExternalSourcePlan(layer, resolvedPaths: null));
         }
 
         return plans.ToImmutable();
+    }
+
+    public static DuckDBExternalSourcePlan BuildExternalSourcePlan(
+        DuckDBLayerOptions layer,
+        IReadOnlyList<string>? resolvedPaths)
+    {
+        ArgumentNullException.ThrowIfNull(layer);
+        if (layer.ExternalSource is null)
+        {
+            throw new ArgumentException("Layer does not configure an external source.", nameof(layer));
+        }
+
+        var effectiveSource = resolvedPaths is { Count: > 0 }
+            ? new DuckDBExternalSourceOptions
+            {
+                Format = layer.ExternalSource.Format,
+                Paths = resolvedPaths.ToArray(),
+                BboxColumn = layer.ExternalSource.BboxColumn,
+                HivePartitioning = layer.ExternalSource.HivePartitioning,
+                UnionByName = layer.ExternalSource.UnionByName,
+            }
+            : layer.ExternalSource;
+
+        var effectiveLayer = new DuckDBLayerOptions
+        {
+            Id = layer.Id,
+            Name = layer.Name,
+            Description = layer.Description,
+            Table = layer.Table,
+            ExternalSource = effectiveSource,
+            GeometryColumn = layer.GeometryColumn,
+            ObjectIdColumn = layer.ObjectIdColumn,
+            Srid = layer.Srid,
+            GeometryType = layer.GeometryType,
+            Attributes = layer.Attributes,
+        };
+
+        var sql = BuildCreateTempViewSql(effectiveLayer);
+        var requiredExtensions = ImmutableArray.CreateBuilder<string>();
+        if (effectiveSource.Format.Equals("GeoParquet", StringComparison.OrdinalIgnoreCase))
+        {
+            requiredExtensions.Add("spatial");
+        }
+
+        if (DuckDBOptionsValidator.UsesHttpFs(effectiveSource) || layer.ExternalSource.ObjectStorageConnectionId.HasValue)
+        {
+            requiredExtensions.Add("httpfs");
+        }
+
+        if (DuckDBOptionsValidator.UsesAzure(effectiveSource))
+        {
+            requiredExtensions.Add("azure");
+        }
+
+        return new DuckDBExternalSourcePlan(
+            layer.Id,
+            layer.Table,
+            sql,
+            requiredExtensions.ToImmutable())
+        {
+            SourcePaths = [.. GetConfiguredPaths(effectiveSource)],
+        };
     }
 
     public static string BuildCreateTempViewSql(DuckDBLayerOptions layer)
@@ -126,6 +251,11 @@ internal static class DuckDBExternalSourceSql
         if (paths.Count == 0)
         {
             throw new ArgumentException("External source must configure Path or Paths.", nameof(source));
+        }
+
+        foreach (var path in paths)
+        {
+            DuckDBOptionsValidator.ThrowIfUnsafeSourcePath(path);
         }
 
         var arguments = new List<string>

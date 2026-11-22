@@ -259,6 +259,147 @@ internal static class DatabricksFeatureQueryBuilder
         return new DatabricksSqlStatement(sql.ToString(), parameters);
     }
 
+    public static DatabricksSqlStatement BuildH3Aggregation(
+        DatabricksLayerMapping mapping,
+        FeatureQuery query,
+        H3AggregationQuery h3Query)
+    {
+        ArgumentNullException.ThrowIfNull(mapping);
+        EnsureSupported(query);
+
+        if (h3Query.Resolution is < H3AggregationQuery.MinResolution or > H3AggregationQuery.MaxResolution)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(h3Query),
+                $"H3 resolution must be between {H3AggregationQuery.MinResolution} and {H3AggregationQuery.MaxResolution}.");
+        }
+
+        if (h3Query.KRingDistance is < 0 or > H3AggregationQuery.MaxKRingDistance)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(h3Query),
+                $"H3 k-ring distance must be between 0 and {H3AggregationQuery.MaxKRingDistance}.");
+        }
+
+        if (mapping.Srid != 4326)
+        {
+            throw new NotSupportedException(
+                $"Databricks H3 aggregation requires WGS 84 (EPSG:4326) geometry; layer {mapping.LayerId} uses SRID {mapping.Srid}.");
+        }
+
+        var parameters = new List<DatabricksSqlParameter>
+        {
+            new("h3_res", h3Query.Resolution.ToString(CultureInfo.InvariantCulture), "INT"),
+        };
+
+        var sql = new StringBuilder();
+        var geom = Dialect.QuoteIdentifier(mapping.GeometryColumn);
+        var cellExpr = $"h3_longlatash3string(st_x(st_centroid({geom})), st_y(st_centroid({geom})), :h3_res)";
+        var polyfillCteLength = 0;
+
+        if (h3Query.PolyfillGeometry is { Length: > 0 })
+        {
+            if (h3Query.PolyfillSrid is > 0 and not 4326)
+            {
+                throw new NotSupportedException(
+                    $"Databricks H3 polyfill requires WGS 84 (EPSG:4326) geometry; received SRID {h3Query.PolyfillSrid.Value}.");
+            }
+
+            var wkb = WkbSridNormalizer.RemoveEmbeddedSrid(h3Query.PolyfillGeometry);
+            parameters.Add(new DatabricksSqlParameter("h3_polyfill", Convert.ToHexString(wkb), "STRING"));
+            sql.Append("WITH polyfill_cells AS (SELECT EXPLODE(h3_polyfillash3string(st_astext(st_geomfromwkb(unhex(:h3_polyfill), 4326)), :h3_res)) AS cell)");
+            polyfillCteLength = sql.Length;
+            sql.Append(' ');
+        }
+
+        sql.Append("SELECT _h3cell AS `cellIndex`, h3_boundaryasgeojson(_h3cell) AS `cellGeometry`");
+        if (h3Query.OutStatistics is { IsDefaultOrEmpty: false } stats)
+        {
+            sql.Append(", ").Append(BuildStatisticColumns(stats));
+        }
+        else
+        {
+            sql.Append(", COUNT(").Append(Dialect.QuoteIdentifier(mapping.PrimaryKeyColumn)).Append(") AS `count`");
+        }
+
+        sql.Append(" FROM (SELECT *, ").Append(cellExpr).Append(" AS _h3cell FROM ").Append(mapping.QualifiedTable());
+        var innerWhere = new StringBuilder();
+        AppendWhere(innerWhere, mapping, query, parameters);
+        if (innerWhere.Length > 0)
+        {
+            sql.Append(innerWhere).Append(" AND ").Append(geom).Append(" IS NOT NULL");
+        }
+        else
+        {
+            sql.Append(" WHERE ").Append(geom).Append(" IS NOT NULL");
+        }
+
+        sql.Append(") _src");
+
+        if (polyfillCteLength > 0)
+        {
+            sql.Append(" WHERE _h3cell IN (SELECT cell FROM polyfill_cells)");
+        }
+
+        sql.Append(" GROUP BY _h3cell");
+
+        if (h3Query.KRingDistance is > 0)
+        {
+            var innerSql = sql.ToString();
+            sql.Clear();
+            if (polyfillCteLength > 0)
+            {
+                sql.Append(innerSql[..polyfillCteLength]);
+                sql.Append(", aggregated AS (");
+                sql.Append(innerSql[(polyfillCteLength + 1)..]);
+            }
+            else
+            {
+                sql.Append("WITH aggregated AS (");
+                sql.Append(innerSql);
+            }
+
+            parameters.Add(new DatabricksSqlParameter("h3_kring", h3Query.KRingDistance.Value.ToString(CultureInfo.InvariantCulture), "INT"));
+            sql.Append(") SELECT neighbor AS `cellIndex`, h3_boundaryasgeojson(neighbor) AS `cellGeometry`");
+            AppendH3KRingReaggregateColumns(sql, h3Query);
+            sql.Append(" FROM aggregated a LATERAL VIEW EXPLODE(h3_kring(a.`cellIndex`, :h3_kring)) _k AS neighbor GROUP BY neighbor");
+        }
+        else
+        {
+            sql.Append(" ORDER BY COUNT(*) DESC");
+        }
+
+        if (h3Query.MaxCells is > 0)
+        {
+            sql.Append(" LIMIT ").Append(h3Query.MaxCells.Value.ToString(CultureInfo.InvariantCulture));
+        }
+
+        return new DatabricksSqlStatement(sql.ToString(), parameters);
+    }
+
+    private static void AppendH3KRingReaggregateColumns(StringBuilder sql, H3AggregationQuery h3Query)
+    {
+        if (h3Query.OutStatistics is not { IsDefaultOrEmpty: false } stats)
+        {
+            sql.Append(", SUM(a.`count`) AS `count`");
+            return;
+        }
+
+        foreach (var stat in stats)
+        {
+            DatabricksIdentifier.ValidateIdentifier(stat.OutStatisticFieldName);
+            var alias = Dialect.QuoteIdentifier(stat.OutStatisticFieldName);
+            var agg = stat.StatisticType switch
+            {
+                StatisticType.Count or StatisticType.Sum => $"SUM(a.{alias})",
+                StatisticType.Min => $"MIN(a.{alias})",
+                StatisticType.Max => $"MAX(a.{alias})",
+                _ => $"AVG(a.{alias})",
+            };
+            sql.Append(", ").Append(agg).Append(" AS ").Append(alias);
+        }
+    }
+
     private static List<string> BuildGroupByColumns(FeatureQuery query)
     {
         var columns = new List<string>();

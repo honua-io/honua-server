@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.ObjectStorage;
 
 namespace Honua.Db.DuckDB.Features.Infrastructure;
 
@@ -17,6 +19,16 @@ internal static class DuckDBOptionsValidator
     {
         "http",
         "https",
+        "s3",
+        "s3a",
+        "s3n",
+        "gs",
+        "gcs",
+        "r2"
+    };
+
+    private static readonly HashSet<string> ObjectStoreBucketSchemes = new(StringComparer.OrdinalIgnoreCase)
+    {
         "s3",
         "s3a",
         "s3n",
@@ -49,7 +61,11 @@ internal static class DuckDBOptionsValidator
         "token",
         "signature",
         "credential",
-        "sig="
+        "sig=",
+        "aws_access_key_id",
+        "x-amz-credential",
+        "x-amz-security-token",
+        "x-amz-signature"
     ];
 
     public static IReadOnlyList<string> Validate(DuckDBOptions options)
@@ -72,6 +88,16 @@ internal static class DuckDBOptionsValidator
 
         throw new InvalidOperationException(
             "Invalid DuckDB configuration: " + string.Join("; ", errors));
+    }
+
+    public static void ThrowIfUnsafeSourcePath(string path, int layerId = 0)
+    {
+        var errors = new List<string>();
+        ValidateSourcePath(layerId, path, errors);
+        if (errors.Count > 0)
+        {
+            throw new ArgumentException(string.Join("; ", errors), nameof(path));
+        }
     }
 
     private static void ValidateLayers(DuckDBOptions options, List<string> errors)
@@ -111,16 +137,34 @@ internal static class DuckDBOptionsValidator
         DuckDBExternalSourceOptions source,
         List<string> errors)
     {
-        if (!string.IsNullOrWhiteSpace(source.Path) && source.Paths is { Length: > 0 })
-        {
-            errors.Add(FormattableString.Invariant(
-                $"Layer {layerId} external source must configure either Path or Paths, not both."));
-        }
-
         if (!SupportedFormats.Contains(source.Format))
         {
             errors.Add(FormattableString.Invariant(
                 $"Layer {layerId} external source format '{source.Format}' is not supported. Use Parquet or GeoParquet."));
+        }
+
+        if (!string.IsNullOrWhiteSpace(source.BboxColumn) && !FeatureFieldNameSyntax.IsValid(source.BboxColumn))
+        {
+            errors.Add(FormattableString.Invariant(
+                $"Layer {layerId} external source bbox column '{source.BboxColumn}' is not a valid identifier."));
+        }
+
+        var hasDirectPaths = !string.IsNullOrWhiteSpace(source.Path) || source.Paths is { Length: > 0 };
+        var hasConnectionBinding = source.ObjectStorageConnectionId.HasValue
+            || !string.IsNullOrWhiteSpace(source.ObjectStorageKey)
+            || source.ObjectStorageKeys is { Length: > 0 };
+
+        if (hasDirectPaths && hasConnectionBinding)
+        {
+            errors.Add(FormattableString.Invariant(
+                $"Layer {layerId} external source must configure either Path/Paths or ObjectStorageConnectionId, not both."));
+            return;
+        }
+
+        if (hasConnectionBinding)
+        {
+            ValidateObjectStorageBinding(layerId, source, errors);
+            return;
         }
 
         if (!string.IsNullOrWhiteSpace(source.Path) && source.Paths is { Length: > 0 })
@@ -143,12 +187,61 @@ internal static class DuckDBOptionsValidator
         }
     }
 
+    private static void ValidateObjectStorageBinding(
+        int layerId,
+        DuckDBExternalSourceOptions source,
+        List<string> errors)
+    {
+        if (!source.ObjectStorageConnectionId.HasValue || source.ObjectStorageConnectionId.Value == Guid.Empty)
+        {
+            errors.Add(FormattableString.Invariant(
+                $"Layer {layerId} external source requires a valid ObjectStorageConnectionId."));
+        }
+
+        if (!string.IsNullOrWhiteSpace(source.ObjectStorageKey) && source.ObjectStorageKeys is { Length: > 0 })
+        {
+            errors.Add(FormattableString.Invariant(
+                $"Layer {layerId} external source must configure either ObjectStorageKey or ObjectStorageKeys, not both."));
+        }
+
+        var keys = DuckDBExternalSourceSql.GetConfiguredObjectStorageKeys(source);
+        if (keys.Count == 0)
+        {
+            errors.Add(FormattableString.Invariant(
+                $"Layer {layerId} external source must configure ObjectStorageKey or ObjectStorageKeys when ObjectStorageConnectionId is set."));
+            return;
+        }
+
+        foreach (var key in keys)
+        {
+            if (!ObjectStoragePolicy.IsKeyUnderPrefix(string.Empty, key) || ContainsSqlInjectionSyntax(key))
+            {
+                errors.Add(FormattableString.Invariant(
+                    $"Layer {layerId} external source object storage key '{key}' is invalid."));
+            }
+        }
+    }
+
     private static void ValidateSourcePath(int layerId, string path, List<string> errors)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
             errors.Add(FormattableString.Invariant(
                 $"Layer {layerId} external source contains an empty path."));
+            return;
+        }
+
+        if (ContainsSqlInjectionSyntax(path))
+        {
+            errors.Add(FormattableString.Invariant(
+                $"Layer {layerId} external source path contains disallowed control characters or SQL syntax."));
+            return;
+        }
+
+        if (ContainsPathTraversalOrVsi(path))
+        {
+            errors.Add(FormattableString.Invariant(
+                $"Layer {layerId} external source path must not contain path traversal segments or virtual filesystem prefixes."));
             return;
         }
 
@@ -163,6 +256,21 @@ internal static class DuckDBOptionsValidator
         {
             errors.Add(FormattableString.Invariant(
                 $"Layer {layerId} external source path scheme '{scheme}' is not supported."));
+            return;
+        }
+
+        var authorityAndRest = path[(scheme.Length + 3)..];
+        var slashIndex = authorityAndRest.IndexOf('/', StringComparison.Ordinal);
+        var authority = slashIndex >= 0 ? authorityAndRest[..slashIndex] : authorityAndRest;
+        if (authority.Contains('@', StringComparison.Ordinal))
+        {
+            errors.Add(FormattableString.Invariant(
+                $"Layer {layerId} external source path must not include embedded URI credentials."));
+        }
+
+        if (ObjectStoreBucketSchemes.Contains(scheme))
+        {
+            ValidateObjectStoreUri(layerId, authority, slashIndex >= 0 ? authorityAndRest[(slashIndex + 1)..] : string.Empty, errors);
         }
 
         var queryIndex = path.IndexOf('?', StringComparison.Ordinal);
@@ -175,6 +283,56 @@ internal static class DuckDBOptionsValidator
                     $"Layer {layerId} external source path must not include credential query parameters; configure credentials through DuckDB:HttpFs or DuckDB:Azure."));
             }
         }
+    }
+
+    private static void ValidateObjectStoreUri(int layerId, string bucket, string keyAndQuery, List<string> errors)
+    {
+        if (!ObjectStoragePolicy.IsValidBucketName(bucket))
+        {
+            errors.Add(FormattableString.Invariant(
+                $"Layer {layerId} external source bucket '{bucket}' is not a valid object-storage bucket name."));
+        }
+
+        var queryIndex = keyAndQuery.IndexOf('?', StringComparison.Ordinal);
+        var key = queryIndex >= 0 ? keyAndQuery[..queryIndex] : keyAndQuery;
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            errors.Add(FormattableString.Invariant(
+                $"Layer {layerId} external source URI must include a non-empty object key."));
+        }
+        else if (key.Contains('\\', StringComparison.Ordinal) || key.Contains('\'', StringComparison.Ordinal))
+        {
+            errors.Add(FormattableString.Invariant(
+                $"Layer {layerId} external source object key contains disallowed characters."));
+        }
+    }
+
+    private static bool ContainsSqlInjectionSyntax(string value)
+        => value.Any(char.IsControl)
+            || value.Contains(';', StringComparison.Ordinal)
+            || value.Contains("--", StringComparison.Ordinal);
+
+    private static bool ContainsPathTraversalOrVsi(string value)
+    {
+        if (value.Contains("/vsi", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("vsi", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var queryIndex = value.IndexOf('?', StringComparison.Ordinal);
+        var withoutQuery = queryIndex >= 0 ? value[..queryIndex] : value;
+        var schemeIndex = withoutQuery.IndexOf("://", StringComparison.Ordinal);
+        var pathPart = schemeIndex >= 0 ? withoutQuery[(schemeIndex + 3)..] : withoutQuery;
+        foreach (var segment in pathPart.Split(['/', '\\']))
+        {
+            if (segment == "..")
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static void ValidateObjectStoreOptions(DuckDBOptions options, List<string> errors)
@@ -194,8 +352,9 @@ internal static class DuckDBOptionsValidator
     }
 
     internal static bool UsesHttpFs(DuckDBExternalSourceOptions source)
-        => DuckDBExternalSourceSql.GetConfiguredPaths(source).Any(path =>
-            TryGetScheme(path, out var scheme) && HttpFsSchemes.Contains(scheme));
+        => source.ObjectStorageConnectionId.HasValue
+            || DuckDBExternalSourceSql.GetConfiguredPaths(source).Any(path =>
+                TryGetScheme(path, out var scheme) && HttpFsSchemes.Contains(scheme));
 
     internal static bool UsesAzure(DuckDBExternalSourceOptions source)
         => DuckDBExternalSourceSql.GetConfiguredPaths(source).Any(path =>

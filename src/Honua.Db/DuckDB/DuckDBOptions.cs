@@ -53,6 +53,14 @@ public sealed class DuckDBExternalSourceOptions
 
     public string[]? Paths { get; set; }
 
+    public Guid? ObjectStorageConnectionId { get; set; }
+
+    public string? ObjectStorageKey { get; set; }
+
+    public string[]? ObjectStorageKeys { get; set; }
+
+    public string? BboxColumn { get; set; }
+
     public bool HivePartitioning { get; set; }
 
     public bool UnionByName { get; set; }

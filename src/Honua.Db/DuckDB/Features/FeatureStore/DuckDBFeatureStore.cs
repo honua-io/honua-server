@@ -8,8 +8,10 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.ObjectStorage;
 using Honua.Core.Queries.Filters;
 using Honua.Db.DuckDB.Features.FeatureStore.Services;
+using Honua.Db.DuckDB.Features.Infrastructure;
 
 namespace Honua.Db.DuckDB.Features.FeatureStore;
 
@@ -27,6 +29,7 @@ internal sealed class DuckDBFeatureStore :
     private readonly IMetadataV2GraphProvider? _v2Provider;
     private readonly IFilterExpressionService? _filterExpressionService;
     private readonly LayerReadSecurityResolver _readSecurity;
+    private readonly IObjectStorageConnectionResolver? _objectStorageResolver;
     private readonly FeatureProviderBinding? _binding;
 
     public DuckDBFeatureStore(
@@ -35,8 +38,9 @@ internal sealed class DuckDBFeatureStore :
         IFeatureCacheManager cacheManager,
         LayerReadSecurityResolver readSecurity,
         IMetadataV2GraphProvider? v2Provider = null,
-        IFilterExpressionService? filterExpressionService = null)
-        : this(queryBuilder, dataAccess, cacheManager, v2Provider, filterExpressionService, readSecurity, binding: null)
+        IFilterExpressionService? filterExpressionService = null,
+        IObjectStorageConnectionResolver? objectStorageResolver = null)
+        : this(queryBuilder, dataAccess, cacheManager, v2Provider, filterExpressionService, readSecurity, objectStorageResolver, binding: null)
     {
     }
 
@@ -47,6 +51,7 @@ internal sealed class DuckDBFeatureStore :
         IMetadataV2GraphProvider? v2Provider,
         IFilterExpressionService? filterExpressionService,
         LayerReadSecurityResolver readSecurity,
+        IObjectStorageConnectionResolver? objectStorageResolver,
         FeatureProviderBinding? binding)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
@@ -55,6 +60,7 @@ internal sealed class DuckDBFeatureStore :
         _v2Provider = v2Provider;
         _filterExpressionService = filterExpressionService;
         _readSecurity = readSecurity ?? throw new ArgumentNullException(nameof(readSecurity));
+        _objectStorageResolver = objectStorageResolver;
         _binding = binding;
     }
 
@@ -68,6 +74,7 @@ internal sealed class DuckDBFeatureStore :
             _v2Provider,
             _filterExpressionService,
             _readSecurity,
+            _objectStorageResolver,
             binding);
     }
 
@@ -202,7 +209,44 @@ internal sealed class DuckDBFeatureStore :
     public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
         int layerId, FeatureQuery query, H3AggregationQuery h3Query, CancellationToken cancellationToken = default)
     {
-        throw new NotSupportedException("DuckDB provider does not support H3 hexagonal aggregation.");
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var h3SqlQuery = _queryBuilder.BuildH3AggregationQuery(layerId, query, h3Query, geometryStorageType);
+        return await _dataAccess.ExecuteStatisticsQueryAsync(h3SqlQuery, query, layerId, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task<DuckDBResolvedObjectStorageBinding?> ResolveExternalObjectStorageBindingAsync(
+        int layerId,
+        CancellationToken cancellationToken = default)
+    {
+        if (_binding is null)
+        {
+            return null;
+        }
+
+        var mapping = DuckDBLayerMapping.FromStorage(layerId, _binding.StorageMapping, []);
+        if (!mapping.ObjectStorageConnectionId.HasValue)
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(mapping.ObjectStorageKey))
+        {
+            throw new InvalidOperationException(
+                $"DuckDB layer {layerId} specifies objectStorageConnectionId without an objectStorageKey.");
+        }
+
+        if (_objectStorageResolver is null)
+        {
+            throw new InvalidOperationException(
+                $"DuckDB layer {layerId} requires an IObjectStorageConnectionResolver to bind object storage sources.");
+        }
+
+        return await DuckDBExternalSourceSql.ResolveObjectStorageBindingAsync(
+            _objectStorageResolver,
+            mapping.ObjectStorageConnectionId.Value,
+            [mapping.ObjectStorageKey],
+            cancellationToken).ConfigureAwait(false);
     }
 
     #endregion
@@ -312,6 +356,7 @@ internal sealed class DuckDBFeatureStore :
         CancellationToken cancellationToken)
     {
         await EnsureRowAndFieldPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
+        await ResolveExternalObjectStorageBindingAsync(layerId, cancellationToken).ConfigureAwait(false);
 
         if (query.EnforcedSqlFilter != null)
         {
