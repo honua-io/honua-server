@@ -399,7 +399,7 @@ public static partial class GeoParquetFeatureWriter
         private static TArray ClonePrimitive<T, TArray, TBuilder>(
             PrimitiveArray<T> source,
             PrimitiveArrayBuilder<T, TArray, TBuilder> builder)
-            where T : struct
+            where T : struct, IEquatable<T>
             where TArray : IArrowArray
             where TBuilder : PrimitiveArrayBuilder<T, TArray, TBuilder>
         {
@@ -567,7 +567,7 @@ public static partial class GeoParquetFeatureWriter
 
         private static TArray FillNulls<T, TArray, TBuilder>(
             PrimitiveArrayBuilder<T, TArray, TBuilder> builder, int length)
-            where T : struct
+            where T : struct, IEquatable<T>
             where TArray : IArrowArray
             where TBuilder : PrimitiveArrayBuilder<T, TArray, TBuilder>
         {
