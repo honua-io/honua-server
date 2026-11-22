@@ -793,7 +793,7 @@
       "displayName": "Branch Versioning",
       "category": "Editing",
       "edition": "Pro",
-      "status": "experimental",
+      "status": null,
       "entryCount": 20,
       "provingTestCount": 96,
       "maturity": {
@@ -1015,7 +1015,7 @@
       "displayName": "mTLS Client-Certificate Authentication",
       "category": "Identity",
       "edition": "Enterprise",
-      "status": "experimental",
+      "status": null,
       "entryCount": 13,
       "provingTestCount": 35,
       "maturity": {
@@ -1581,7 +1581,7 @@
       "displayName": "CityGML/BIM Scene Ingest",
       "category": "Scene",
       "edition": "Enterprise",
-      "status": "experimental",
+      "status": null,
       "entryCount": 1,
       "provingTestCount": 7,
       "maturity": {
@@ -1599,7 +1599,7 @@
       "displayName": "Scene Catalog",
       "category": "Scene",
       "edition": "Community",
-      "status": "experimental",
+      "status": null,
       "entryCount": 3,
       "provingTestCount": 15,
       "maturity": {
@@ -1617,7 +1617,7 @@
       "displayName": "Point Cloud Scene Ingest",
       "category": "Scene",
       "edition": "Enterprise",
-      "status": "experimental",
+      "status": null,
       "entryCount": 1,
       "provingTestCount": 11,
       "maturity": {
@@ -1635,7 +1635,7 @@
       "displayName": "3D Tiles Scene Serving",
       "category": "Serve",
       "edition": "Community",
-      "status": "experimental",
+      "status": null,
       "entryCount": 6,
       "provingTestCount": 78,
       "maturity": {
@@ -2229,7 +2229,7 @@
       "displayName": "OGC SensorThings API",
       "category": "Serve",
       "edition": "Community",
-      "status": "preview",
+      "status": null,
       "entryCount": 64,
       "provingTestCount": 250,
       "maturity": {

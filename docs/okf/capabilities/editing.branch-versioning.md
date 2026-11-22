@@ -1,7 +1,7 @@
 ---
 type: capability
 title: "Branch Versioning"
-description: "Core branch versioning (Pro): named gdb versions, isolated edits, reconcile/post, and gdbVersion-scoped editing/querying. Organisational approval and policy controls remain Enterprise. Experimental and off by default in 2026.1; enable with Capabilities:Experimental:versioning.branch:Enabled=true."
+description: "Core branch versioning (Pro): named gdb versions, isolated edits, reconcile/post, and gdbVersion-scoped editing/querying. Organisational approval and policy controls remain Enterprise. Preview in 2026.1; the experimental runtime opt-in remains required."
 resource: "honua://capability/editing.branch-versioning"
 tags: [capability, editing, pro]
 ---
@@ -9,7 +9,7 @@ tags: [capability, editing, pro]
 
 # Branch Versioning
 
-Core branch versioning (Pro): named gdb versions, isolated edits, reconcile/post, and gdbVersion-scoped editing/querying. Organisational approval and policy controls remain Enterprise. Experimental and off by default in 2026.1; enable with Capabilities:Experimental:versioning.branch:Enabled=true.
+Core branch versioning (Pro): named gdb versions, isolated edits, reconcile/post, and gdbVersion-scoped editing/querying. Organisational approval and policy controls remain Enterprise. Preview in 2026.1; the experimental runtime opt-in remains required.
 
 | | |
 | --- | --- |

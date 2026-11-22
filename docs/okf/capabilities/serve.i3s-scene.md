@@ -1,7 +1,7 @@
 ---
 type: capability
 title: "I3S Scene Serving"
-description: "Serve I3S metadata previews through Enterprise-gated SceneServer handlers. Off by default: the routes return HTTP 404 until Capabilities:Experimental:serve.i3s-scene:Enabled=true; once enabled, unlicensed requests return HTTP 402."
+description: "Serve I3S metadata previews through Enterprise-gated SceneServer handlers; unlicensed requests return HTTP 402."
 resource: "honua://capability/serve.i3s-scene"
 tags: [capability, serve, enterprise]
 ---
@@ -9,7 +9,7 @@ tags: [capability, serve, enterprise]
 
 # I3S Scene Serving
 
-Serve I3S metadata previews through Enterprise-gated SceneServer handlers. Off by default: the routes return HTTP 404 until Capabilities:Experimental:serve.i3s-scene:Enabled=true; once enabled, unlicensed requests return HTTP 402.
+Serve I3S metadata previews through Enterprise-gated SceneServer handlers; unlicensed requests return HTTP 402.
 
 | | |
 | --- | --- |
