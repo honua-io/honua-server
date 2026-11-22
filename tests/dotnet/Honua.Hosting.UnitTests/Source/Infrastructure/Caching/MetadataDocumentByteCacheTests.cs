@@ -270,7 +270,10 @@ public sealed class MetadataDocumentByteCacheTests
     public async Task GetOrBuildJsonAsync_WhenQueryTokenPresent_BypassesCache()
     {
         var cache = new MetadataDocumentByteCache();
-        using var services = new ServiceCollection().AddSingleton(cache).BuildServiceProvider();
+        using var services = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton(cache)
+            .BuildServiceProvider();
 
         var buildCount = 0;
         for (var i = 0; i < 2; i++)
