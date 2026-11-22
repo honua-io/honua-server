@@ -189,7 +189,8 @@ internal static class ItemEndpoints
             var items = itemBuilder.MoveToImmutable();
 
             var stacBase = $"{baseUrl}/stac";
-            var itemsPath = $"{stacBase}/collections/{collectionId}/items";
+            var collectionSegment = Uri.EscapeDataString(collectionId);
+            var itemsPath = $"{stacBase}/collections/{collectionSegment}/items";
             var requestedItemsUrl = $"{baseUrl}{context.Request.Path}{context.Request.QueryString}";
             var collectionTitle = StacMappingService.ResolveDisplayName(publication, resource, layerId);
             var linksBuilder = ImmutableArray.CreateBuilder<Link>();
@@ -199,7 +200,7 @@ internal static class ItemEndpoints
                 type: MediaTypes.GeoJson,
                 title: "Items"));
             linksBuilder.Add(Link.Create(
-                href: $"{stacBase}/collections/{collectionId}",
+                href: $"{stacBase}/collections/{collectionSegment}",
                 rel: RelationTypes.Collection,
                 type: MediaTypes.Json,
                 title: collectionTitle));

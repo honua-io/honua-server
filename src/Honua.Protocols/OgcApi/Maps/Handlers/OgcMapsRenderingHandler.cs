@@ -91,6 +91,11 @@ internal sealed class OgcMapsRenderingHandler
             var (resource, service) = collection!;
 
             // Create map render request
+            if (ValidateAcceptFormat(request, context) is { } formatError)
+            {
+                return formatError;
+            }
+
             var (renderRequest, validationError) = CreateMapRenderRequest(request, resource, layerId, context);
             if (renderRequest == null)
             {
@@ -334,6 +339,11 @@ internal sealed class OgcMapsRenderingHandler
                 datasetExtent = combinedExtent;
             }
 
+            if (ValidateAcceptFormat(request, context) is { } formatError)
+            {
+                return formatError;
+            }
+
             var (renderRequest, validationError) = CreateMapRenderRequest(
                 request,
                 defaultExtentResource,
@@ -457,6 +467,11 @@ internal sealed class OgcMapsRenderingHandler
             }
 
             // Create map render request
+            if (ValidateAcceptFormat(request, context) is { } formatError)
+            {
+                return formatError;
+            }
+
             var (renderRequest, validationError) = CreateMapRenderRequest(request, resource, layerId, context);
             if (renderRequest == null)
             {
@@ -670,6 +685,19 @@ internal sealed class OgcMapsRenderingHandler
             styleResource.Type == MetadataV2ObjectType.Style &&
             string.Equals(styleResource.Metadata.Name, styleId, StringComparison.Ordinal));
 
+    private static IResult? ValidateAcceptFormat(OgcMapRequest request, HttpContext? context)
+    {
+        if (!string.IsNullOrWhiteSpace(request.F) || ResolveOutputFormat(request.F, context) is not null)
+        {
+            return null;
+        }
+
+        const string message = "No supported image format matches the Accept header. Supported formats: png, jpeg, tiff.";
+        return context is not null
+            ? StandardErrorHelpers.CreateNotAcceptable(context, message)
+            : Results.Problem(message, statusCode: StatusCodes.Status406NotAcceptable);
+    }
+
     private static IResult CreateBadRequestResult(HttpContext? context, string message)
         => context is not null
             ? StandardErrorHelpers.CreateBadRequest(context, message)
@@ -809,6 +837,11 @@ internal sealed class OgcMapsRenderingHandler
             }
 
             var contentCrsHeader = FormatContentCrsHeader(bboxSrid);
+            if (SpatialReferenceHelpers.TryParseCrsDefinition(context.Request.Query["crs"].ToString(), out var outputCrs) &&
+                outputCrs.Srid == bboxSrid)
+            {
+                contentCrsHeader = $"<{outputCrs.Uri}>";
+            }
             if (contentCrsHeader != null)
             {
                 context.Response.Headers["Content-Crs"] = contentCrsHeader;
@@ -871,10 +904,10 @@ internal sealed class OgcMapsRenderingHandler
 
         if (srid == SpatialReference.WGS84.Wkid)
         {
-            return "<https://www.opengis.net/def/crs/OGC/1.3/CRS84>";
+            return "<http://www.opengis.net/def/crs/OGC/1.3/CRS84>";
         }
 
-        return FormattableString.Invariant($"<https://www.opengis.net/def/crs/EPSG/0/{srid.Value}>");
+        return FormattableString.Invariant($"<http://www.opengis.net/def/crs/EPSG/0/{srid.Value}>");
     }
 
     private static string FormatContentBboxHeader(RasterExtent extent)

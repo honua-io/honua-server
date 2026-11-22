@@ -14,7 +14,7 @@ internal static class OgcCoverageSpatialSubset
     internal static bool TryParse(StringValues values, RasterInfo raster, int storageSrid, out Bounds bounds, out string error)
     {
         bounds = default;
-        error = "subset must contain finite spatial trims such as Lon(west:east),Lat(south:north) or x(min:max),y(min:max).";
+        error = "subset must contain finite spatial slices or trims such as Lon(west:east),Lat(south:north) or x(min:max),y(min:max).";
         (double Low, double High)? x = null;
         (double Low, double High)? y = null;
         bool? geographicNames = null;
@@ -49,10 +49,11 @@ internal static class OgcCoverageSpatialSubset
                 geographicNames = isGeographic;
 
                 var limits = raw[(open + 1)..^1].Split(':', StringSplitOptions.TrimEntries);
-                if (limits.Length != 2 ||
+                if (limits.Length is not (1 or 2) ||
                     !double.TryParse(limits[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var low) ||
-                    !double.TryParse(limits[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var high) ||
-                    !double.IsFinite(low) || !double.IsFinite(high) || low >= high ||
+                    !double.TryParse(limits[^1], NumberStyles.Float, CultureInfo.InvariantCulture, out var high) ||
+                    !double.IsFinite(low) || !double.IsFinite(high) ||
+                    (limits.Length == 2 && (low == high || (low > high && !(isX && (isGeographic || storageSrid == 4326))))) ||
                     (isX ? x.HasValue : y.HasValue))
                 {
                     return false;
@@ -61,7 +62,7 @@ internal static class OgcCoverageSpatialSubset
                 if (isGeographic || storageSrid == 4326)
                 {
                     var limit = isX ? 180 : 90;
-                    if (low < -limit || high > limit)
+                    if (low < -limit || low > limit || high < -limit || high > limit)
                     {
                         return false;
                     }

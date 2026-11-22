@@ -180,6 +180,15 @@ internal static class ProcessEndpoints
                 MediaTypes.Json,
                 "This document"));
 
+        if (offset > 0)
+        {
+            links.Add(Link.Create(
+                BuildProcessListUrl(processListUrl, limit, Math.Max(0, offset - (limit ?? offset))),
+                RelationTypes.Prev,
+                MediaTypes.Json,
+                "Previous page"));
+        }
+
         var nextOffset = pageStart + pageSize;
         if (limit.HasValue && nextOffset < allProcesses.Count)
         {

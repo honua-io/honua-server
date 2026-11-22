@@ -1848,7 +1848,11 @@ internal sealed class OgcCoveragesHandler
         }
 
         var resultSrid = outputCrs?.Srid ?? result.Srid;
-        if (resultSrid.HasValue && resultSrid.Value != SpatialReference.WGS84.Wkid)
+        if (outputCrs is { } requestedCrs)
+        {
+            context.Response.Headers.Append("Content-Crs", $"<{requestedCrs.Uri}>");
+        }
+        else if (resultSrid.HasValue && resultSrid.Value != SpatialReference.WGS84.Wkid)
         {
             context.Response.Headers.Append("Content-Crs", FormatContentCrsHeader(resultSrid.Value));
         }
@@ -1900,7 +1904,7 @@ internal sealed class OgcCoveragesHandler
         => FormattableString.Invariant($"http://www.opengis.net/def/crs/EPSG/0/{srid}");
 
     private static string FormatContentCrsHeader(int srid)
-        => FormattableString.Invariant($"<https://www.opengis.net/def/crs/EPSG/0/{srid}>");
+        => FormattableString.Invariant($"<http://www.opengis.net/def/crs/EPSG/0/{srid}>");
 
     private static int ResolveStorageSrid(MetadataV2Object resource, RasterInfo raster)
         => raster.Extent?.Srid ?? raster.Srid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;

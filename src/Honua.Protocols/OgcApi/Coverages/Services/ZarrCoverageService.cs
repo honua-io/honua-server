@@ -829,7 +829,7 @@ internal sealed partial class ZarrCoverageService
         {
             context.Response.Headers.Append(
                 "Content-Crs",
-                FormattableString.Invariant($"<https://www.opengis.net/def/crs/EPSG/0/{metadata.Srid}>"));
+                FormattableString.Invariant($"<http://www.opengis.net/def/crs/EPSG/0/{metadata.Srid}>"));
         }
     }
 

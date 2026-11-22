@@ -325,7 +325,7 @@ internal sealed partial class ZarrCoverageService
             string.Join(",", FormatDouble(extent.XMin), FormatDouble(extent.YMin), FormatDouble(extent.XMax), FormatDouble(extent.YMax)));
         if (extent.Srid is { } srid and not 4326)
         {
-            context.Response.Headers.Append("Content-Crs", FormattableString.Invariant($"<https://www.opengis.net/def/crs/EPSG/0/{srid}>"));
+            context.Response.Headers.Append("Content-Crs", FormattableString.Invariant($"<http://www.opengis.net/def/crs/EPSG/0/{srid}>"));
         }
     }
 }

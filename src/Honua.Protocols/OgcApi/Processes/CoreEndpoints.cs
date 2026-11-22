@@ -44,7 +44,7 @@ internal static class CoreEndpoints
             .Produces<string>(StatusCodes.Status200OK, MediaTypes.Html)
             .ExcludeFromDescription();
 
-        endpoints.MapGet($"{BasePath}/conformance", GetConformance)
+        endpoints.MapGet($"{BaseUrlResolver.GetBaseUrl(context)}{BasePath}/conformance", GetConformance)
             .WithTags(Tag)
             .WithName("OgcProcessesConformance")
             .WithSummary("OGC API Processes conformance declaration")
@@ -83,7 +83,7 @@ internal static class CoreEndpoints
         }
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-        var links = OgcCoreMetadataUtilities.BuildLandingPageLinks(context, BasePath, outputFormat);
+        var links = OgcCoreMetadataUtilities.BuildLandingPageLinks(context, $"{baseUrl}{BasePath}", outputFormat);
         links.Add(Link.Create($"{baseUrl}{BasePath}/openapi.json", RelationTypes.ServiceDesc, MediaTypes.OpenApi, "API definition"));
         links.Add(Link.Create($"{baseUrl}{BasePath}/conformance", RelationTypes.Conformance, MediaTypes.Json, "Conformance declaration"));
         links.Add(Link.Create($"{baseUrl}{BasePath}/processes", "http://www.opengis.net/def/rel/ogc/1.0/processes", MediaTypes.Json, "Process list"));
@@ -125,7 +125,7 @@ internal static class CoreEndpoints
             ConformsTo = ConformanceClasses,
             Links = OgcCoreMetadataUtilities.BuildConformanceLinks(
                 context,
-                $"{BasePath}/conformance",
+                $"{BaseUrlResolver.GetBaseUrl(context)}{BasePath}/conformance",
                 outputFormat)
         };
 

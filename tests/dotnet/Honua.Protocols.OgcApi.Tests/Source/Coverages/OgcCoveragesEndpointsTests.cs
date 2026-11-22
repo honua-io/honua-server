@@ -194,6 +194,23 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
             $"/ogc/coverages/collections/{WebAppFixture.TestLayerId}/coverage?subset={Uri.EscapeDataString(subset)}");
         response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
         _exportQueries.Should().ContainSingle();
+        var clip = _exportQueries.Single().ClipRegion;
+        clip.Should().NotBeNull();
+        clip!.Value.Srid.Should().Be(4326);
+        var geometry = new WKBReader().Read(clip.Value.Geometry);
+        if (subset.StartsWith("Lat", StringComparison.Ordinal))
+        {
+            geometry.GeometryType.Should().Be("LineString");
+            geometry.EnvelopeInternal.MinY.Should().Be(37.8);
+            geometry.EnvelopeInternal.MaxY.Should().Be(37.8);
+        }
+        else
+        {
+            geometry.GeometryType.Should().Be("MultiPolygon");
+            geometry.NumGeometries.Should().Be(2);
+            geometry.GetGeometryN(0).EnvelopeInternal.MinX.Should().Be(170);
+            geometry.GetGeometryN(1).EnvelopeInternal.MaxX.Should().Be(-170);
+        }
     }
 
     [IntegrationTest]
@@ -301,7 +318,7 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.TryGetValues("Content-Crs", out var contentCrs).Should().BeTrue();
-        contentCrs!.Single().Should().Be("<https://www.opengis.net/def/crs/EPSG/0/3857>");
+        contentCrs!.Single().Should().Be("<http://www.opengis.net/def/crs/EPSG/0/3857>");
         response.Headers.TryGetValues("Link", out var links).Should().BeTrue();
         var decodedLinks = Uri.UnescapeDataString(links!.Single());
         decodedLinks.Should().Contain("properties=band_3,band_1");
