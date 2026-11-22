@@ -47,6 +47,7 @@ public sealed class AdminMetadataHistoryAndSchemasTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/history")]
     [Endpoint("GET /api/v1/admin/metadata/history")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/history")]
     [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/discovery")]
     [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/discovery")]
     public async Task EditDiscoveryMetadata_RecordsFieldHistoryVisibleOnItemAndHistoryEndpoint()
@@ -80,6 +81,10 @@ public sealed class AdminMetadataHistoryAndSchemasTests : IAsyncLifetime
             && entry.FieldPath[0] == "title"
             && entry.NewValue.HasValue
             && entry.NewValue.Value.GetString() == "Updated Parcel Title");
+
+        using var serviceHistoryResponse = await client.GetAsync("/api/v1/admin/services/test/history?limit=5");
+        serviceHistoryResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await ReadHistoryAsync(serviceHistoryResponse)).Items.Should().NotBeNull();
 
         using var allHistoryResponse = await client.GetAsync("/api/v1/admin/metadata/history?itemKind=dataset&limit=5");
         allHistoryResponse.StatusCode.Should().Be(HttpStatusCode.OK);
